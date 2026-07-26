@@ -22,6 +22,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_pig_allocation_alerts_data,
     get_riversdale_auction_recommendation_data,
     record_riversdale_auction_decision_data,
+    record_riversdale_candidate_review_data,
     get_purpose_review_queue_data,
     apply_purpose_review_queue_decisions,
     create_purpose_correction_batch,
@@ -144,6 +145,17 @@ def riversdale_auction_confirmation():
     if denied:
         return denied
     result, status_code = record_riversdale_auction_decision_data(
+        request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/riversdale-auction-candidate-reviews", methods=["POST"])
+def riversdale_auction_candidate_review():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_riversdale_candidate_review_data(
         request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
     )
     return jsonify(result), status_code

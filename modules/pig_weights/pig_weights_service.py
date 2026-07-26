@@ -34,6 +34,7 @@ from modules.sales.riversdale_auction import (
     record_owner_auction_decision,
     sanitized_owner_surface,
 )
+from modules.sales.riversdale_auction_candidate_reviews import record_candidate_review
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
 LIFECYCLE_REMOVAL_REASONS = {
@@ -4704,6 +4705,18 @@ def get_riversdale_auction_recommendation(today=None, confirmation=None, ledger_
 def record_riversdale_auction_decision(payload, *, actor_id, database_url=None, connect_factory=None):
     return record_owner_auction_decision(
         payload, actor_id=actor_id, database_url=database_url, connect_factory=connect_factory,
+    )
+
+
+def record_riversdale_candidate_review(payload, *, actor_id, database_url=None, connect_factory=None):
+    packet = get_riversdale_auction_recommendation(database_url=database_url, connect_factory=connect_factory)
+    candidate_ids = [
+        str(row.get("pig_id") or "").strip()
+        for row in packet.get("candidate_preview", []) if isinstance(row, dict)
+    ]
+    return record_candidate_review(
+        payload, actor_id=actor_id, candidate_ids=candidate_ids,
+        database_url=database_url, connect_factory=connect_factory,
     )
 
 
