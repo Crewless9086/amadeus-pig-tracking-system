@@ -374,6 +374,119 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "runner_process_ownership_not_proven")
         stop_tree.assert_not_called()
 
+    @patch("modules.charlie.runner_control._stop_process_tree")
+    @patch("modules.charlie.runner_control.validate_process_tree")
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
+    @patch("modules.charlie.runner_control.runner_status")
+    def test_governed_stop_uses_launcher_tree_and_persists_evidence(
+        self, status, _disabled, _enabled, validate_tree, stop_tree
+    ):
+        root_record = {
+            "pid": 200,
+            "creation_time": "launcher-created",
+            "executable_path": "C:/venv/python.exe",
+            "command_fingerprint": "launcher-command",
+            "parent_pid": 100,
+            "runner_generation": "gen-1",
+            "mission_id": "charlie-control",
+            "execution_id": "gen-1",
+            "ownership_type": "charlie_runner",
+        }
+        interpreter_record = {**root_record, "pid": 201, "parent_pid": 200}
+        status.return_value = {"orphan_processes": [], "active": True}
+        validate_tree.return_value = {
+            "authorized": True,
+            "reason": "logical_process_tree_identity_match",
+            "pid": 200,
+            "member_pids": [200, 201],
+        }
+        stop_tree.return_value = {"authorized": True, "terminated": True, "pid": 200}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            supervisor_path = root / "supervisor.json"
+            heartbeat_path = root / "runner.json"
+            stop_path = root / "supervisor.stop"
+            supervisor_path.write_text(json.dumps({
+                "pid": 100,
+                "generation": "gen-1",
+                "child_pid": 200,
+                "child_identity": root_record,
+            }), encoding="utf-8")
+            heartbeat_path.write_text(
+                json.dumps({"pid": 201, "process_identity": interpreter_record}),
+                encoding="utf-8",
+            )
+            with patch.object(runner_control, "RUNNER_DIR", root), patch.object(
+                runner_control, "SUPERVISOR_PATH", supervisor_path
+            ), patch.object(runner_control, "HEARTBEAT_PATH", heartbeat_path), patch.object(
+                runner_control, "SUPERVISOR_STOP_PATH", stop_path
+            ):
+                result, status_code = runner_control.stop_runner()
+                persisted = json.loads(supervisor_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["pids"], [200])
+        stop_tree.assert_called_once()
+        self.assertTrue(persisted["stop_evidence"]["stop_marker_present"])
+        self.assertEqual(
+            persisted["stop_evidence"]["reason"],
+            "logical_process_tree_identity_match",
+        )
+        self.assertEqual(
+            persisted["stop_evidence"]["process_tree_identity"]["members"][1]["pid"],
+            201,
+        )
+
+    @patch("modules.charlie.runner_control.validate_process_tree")
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
+    @patch("modules.charlie.runner_control.runner_status")
+    def test_governed_stop_returns_and_persists_exact_tree_rejection(
+        self, status, _disabled, _enabled, validate_tree
+    ):
+        record = {
+            "pid": 200,
+            "creation_time": "created",
+            "executable_path": "C:/python.exe",
+            "command_fingerprint": "command",
+            "parent_pid": 100,
+            "runner_generation": "gen-1",
+            "mission_id": "charlie-control",
+            "execution_id": "gen-1",
+            "ownership_type": "charlie_runner",
+        }
+        status.return_value = {"orphan_processes": [], "active": True}
+        validate_tree.return_value = {
+            "authorized": False,
+            "reason": "member_201_command_fingerprint_mismatch",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            supervisor_path = root / "supervisor.json"
+            heartbeat_path = root / "runner.json"
+            stop_path = root / "supervisor.stop"
+            supervisor_path.write_text(json.dumps({
+                "generation": "gen-1", "child_identity": record,
+            }), encoding="utf-8")
+            heartbeat_path.write_text(
+                json.dumps({"process_identity": {**record, "pid": 201}}),
+                encoding="utf-8",
+            )
+            with patch.object(runner_control, "RUNNER_DIR", root), patch.object(
+                runner_control, "SUPERVISOR_PATH", supervisor_path
+            ), patch.object(runner_control, "HEARTBEAT_PATH", heartbeat_path), patch.object(
+                runner_control, "SUPERVISOR_STOP_PATH", stop_path
+            ):
+                result, status_code = runner_control.stop_runner()
+                persisted = json.loads(supervisor_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["reason"], "member_201_command_fingerprint_mismatch")
+        self.assertEqual(persisted["stop_evidence"]["reason"], result["reason"])
+        self.assertTrue(persisted["stop_evidence"]["stop_marker_present"])
+
     @patch("modules.charlie.runner_control.process_termination_enabled", return_value=False)
     @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
     @patch("modules.charlie.runner_control.runner_status")

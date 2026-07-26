@@ -182,7 +182,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["restart_count"], 2)
         child_env = popen.call_args_list[0].kwargs["env"]
         self.assertIn("GIT_CONFIG_GLOBAL", child_env)
-        self.assertEqual(inspect_process.call_count, 2)
+        self.assertEqual(inspect_process.call_count, 3)
 
     @patch.object(supervisor, "inspect_process", return_value={})
     def test_child_base_branch_aliases_override_conflicting_legacy_environment(self, inspect_process):
@@ -201,7 +201,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         child_env = popen.call_args.kwargs["env"]
         self.assertEqual(child_env["CORE_EXECUTION_BASE_BRANCH"], "charlie-core-execution-base")
         self.assertEqual(child_env["CHARLIE_RUNNER_BASE_BRANCH"], "charlie-core-execution-base")
-        self.assertEqual(inspect_process.call_count, 1)
+        self.assertEqual(inspect_process.call_count, 2)
 
     def test_stop_marker_prevents_child_start(self):
         popen = Mock()
@@ -213,6 +213,35 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
 
         popen.assert_not_called()
         self.assertEqual(result["cycles"], 0)
+
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_terminal_supervisor_status_retains_pre_stop_ownership_evidence(self, _inspect):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "supervisor.json"
+            state_path.write_text(json.dumps({
+                "pid": 100,
+                "child_identity": {"pid": 200},
+                "process_tree_identity": {"version": "charlie_process_tree_v1"},
+                "stop_evidence": {
+                    "version": "charlie_governed_stop_evidence_v1",
+                    "status": "runner_stop_requested",
+                    "target_pids": [200],
+                },
+            }), encoding="utf-8")
+            with patch.object(supervisor, "SUPERVISOR_PATH", state_path):
+                supervisor._write_status(
+                    "supervisor_stopped",
+                    child_pid=200,
+                    generation="gen-1",
+                )
+            persisted = json.loads(state_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(persisted["status"], "supervisor_stopped")
+        self.assertEqual(persisted["stop_evidence"]["target_pids"], [200])
+        self.assertEqual(
+            persisted["process_tree_identity"]["version"],
+            "charlie_process_tree_v1",
+        )
 
     @patch.object(supervisor, "inspect_process", return_value={})
     def test_identical_infrastructure_failure_enters_hold_after_three_exits(self, inspect_process):
@@ -237,7 +266,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["restart_count"], 3)
         self.assertEqual(state["identical_failure_count"], 3)
         notifier.assert_called_once()
-        self.assertEqual(inspect_process.call_count, 3)
+        self.assertEqual(inspect_process.call_count, 4)
 
     @patch.object(supervisor, "inspect_process", return_value={})
     def test_three_identical_unclassified_child_crashes_enter_hold(self, inspect_process):
@@ -254,7 +283,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["status"], "infrastructure_hold")
         self.assertIn("child_exit:3221225794", result["failure_status"])
         notifier.assert_called_once()
-        self.assertEqual(inspect_process.call_count, 3)
+        self.assertEqual(inspect_process.call_count, 4)
 
     @patch("modules.charlie.improvement_analyst.run_operational_analyst", return_value=({"success": True, "status": "analyst_cycle_complete", "lifecycle": {"updated_count": 1}}, 200))
     def test_conveyor_repair_triggers_analyst_validation_cycle(self, analyst):

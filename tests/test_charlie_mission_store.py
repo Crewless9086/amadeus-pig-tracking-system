@@ -1093,9 +1093,29 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("where status = %(status)s", sql)
         self.assertIn("metadata_json->'intake_quality'->>'queue_class'", sql)
         self.assertIn("owner_work", sql)
+        self.assertIn("current_contract_replacement", sql)
+        self.assertIn("supersedes_mission_id", sql)
+        self.assertIn("not exists", sql.lower())
         self.assertIn("metadata_json->'queue'->>'priority'", sql)
         self.assertEqual(params["status"], "approved")
         self.assertEqual(params["limit"], 20)
+        self.assertEqual(result["missions"], [])
+
+    def test_execution_list_can_exclude_durably_superseded_legacy_rows(self):
+        connection = FakeConnection([])
+
+        result, status_code = list_missions(
+            status="in_progress",
+            exclude_superseded=True,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        sql = connection.cursor_instance.executed[0][0]
+        self.assertIn("current_contract_replacement", sql)
+        self.assertIn("orchestration_binding", sql)
+        self.assertIn("generation_identity", sql)
         self.assertEqual(result["missions"], [])
 
     def test_list_missions_keeps_recent_order_without_status_filter(self):

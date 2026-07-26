@@ -893,6 +893,43 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertGreaterEqual(write_heartbeat.call_count, 2)
         sleep.assert_called_once_with(5)
 
+    @patch("scripts.charlie_mission_pickup.reconcile_blocked_pr_missions")
+    @patch("scripts.charlie_mission_pickup._run_domain_observers")
+    @patch("scripts.charlie_mission_pickup.run_executive_cycle")
+    @patch("scripts.charlie_mission_pickup.recover_stranded_missions")
+    @patch("scripts.charlie_mission_pickup._active_mission", return_value=None)
+    @patch("scripts.charlie_mission_pickup.pick_up_next_mission")
+    @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
+    def test_first_continuous_cycle_reaches_pickup_before_slow_maintenance(
+        self,
+        write_heartbeat,
+        pickup,
+        _active,
+        recover,
+        executive,
+        observers,
+        reconcile,
+    ):
+        recover.return_value = {"recovered_count": 0}
+        executive.return_value = ({"status": "executive_cycle_complete", "results": []}, 200)
+        pickup.return_value = (
+            {"success": True, "status": "dry_run", "mission_id": "REPLACEMENT"},
+            200,
+        )
+
+        result, status_code = charlie_mission_pickup.watch_for_mission(
+            continuous=True,
+            dry_run=True,
+            max_checks=1,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["mission_id"], "REPLACEMENT")
+        pickup.assert_called_once()
+        observers.assert_not_called()
+        reconcile.assert_not_called()
+        write_heartbeat.assert_called()
+
     @patch("scripts.charlie_mission_pickup.time.sleep")
     @patch("scripts.charlie_mission_pickup.execute_codex_for_mission")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
@@ -990,7 +1027,26 @@ class CharlieMissionPickupTests(unittest.TestCase):
         result = charlie_mission_pickup._active_mission()
 
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-SYSTEM-ACTIVE")
-        list_missions.assert_called_once_with(status="in_progress", limit=1, compact=False)
+        list_missions.assert_called_once_with(
+            status="in_progress",
+            limit=1,
+            compact=False,
+            exclude_superseded=True,
+        )
+
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_stranded_recovery_query_excludes_superseded_legacy_rows(self, list_missions):
+        list_missions.return_value = ({"success": True, "missions": []}, 200)
+
+        result = charlie_mission_pickup.recover_stranded_missions()
+
+        self.assertEqual(result["recovered_count"], 0)
+        list_missions.assert_called_once_with(
+            status="in_progress",
+            limit=100,
+            compact=False,
+            exclude_superseded=True,
+        )
 
     def test_live_process_is_never_recovered_from_idle_observer_shape(self):
         decision = charlie_mission_pickup._stranded_recovery_decision(

@@ -410,7 +410,15 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     }, 201
 
 
-def list_missions(status="", limit=10, database_url=None, connect_factory=None, compact=False, outcome_candidates=False):
+def list_missions(
+    status="",
+    limit=10,
+    database_url=None,
+    connect_factory=None,
+    compact=False,
+    outcome_candidates=False,
+    exclude_superseded=False,
+):
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
         return {"success": False, "configured": False, "status": "not_configured", "missions": []}, 503
@@ -428,6 +436,8 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None, 
                     """
     elif clean_status:
         where_clause = "where status = %(status)s"
+    if exclude_superseded:
+        where_clause += (" and " if where_clause else "where ") + _not_durably_superseded_sql()
     if outcome_candidates:
         candidate_filter = """
                     (
@@ -513,6 +523,7 @@ def list_owner_work_missions(status, limit=10, database_url=None, connect_factor
                     from public.charlie_missions
                     where status = %(status)s
                       and coalesce(nullif(metadata_json->'intake_quality'->>'queue_class', ''), 'owner_work') = 'owner_work'
+                      and {_not_durably_superseded_sql()}
                     {_mission_order_clause(clean_status)}
                     limit %(limit)s
                     """,
@@ -534,6 +545,25 @@ def list_owner_work_missions(status, limit=10, database_url=None, connect_factor
         "status": "ok",
         "missions": [_mission_row(row) for row in rows],
     }, 200
+
+
+def _not_durably_superseded_sql():
+    """Keep immutable legacy rows visible generally but out of execution queues."""
+    return """
+                      not exists (
+                          select 1
+                          from public.charlie_missions as replacement
+                          where replacement.metadata_json->'supersession'->>'status' = 'current_contract_replacement'
+                            and replacement.metadata_json->'supersession'->>'supersedes_mission_id'
+                                = public.charlie_missions.mission_id
+                            and coalesce(
+                                (replacement.metadata_json->'orchestration_binding'->>'validated')::boolean,
+                                false
+                            )
+                            and replacement.metadata_json->'orchestration_binding'->>'generation_identity'
+                                = replacement.metadata_json->'orchestration'->>'generation_identity'
+                      )
+                    """
 
 
 def update_mission_queue_priority(

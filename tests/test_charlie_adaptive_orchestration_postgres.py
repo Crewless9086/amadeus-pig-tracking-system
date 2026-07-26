@@ -10,6 +10,8 @@ from modules.charlie.mission_store import (
     build_mission_review_packet,
     consume_final_agent_artifact,
     get_mission,
+    list_missions,
+    list_owner_work_missions,
     mission_status_summary,
     record_mission,
 )
@@ -277,6 +279,39 @@ class CharlieAdaptiveOrchestrationPostgresTests(unittest.TestCase):
                 [],
             )
             self.assertTrue(metadata["orchestration_binding"]["validated"])
+
+            with psycopg.connect(self.database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        update public.charlie_missions
+                        set status = 'approved'
+                        where mission_id = %s
+                           or mission_id = %s
+                        """,
+                        (legacy_id, first["mission_id"]),
+                    )
+            queue, queue_status = list_owner_work_missions(
+                "approved",
+                limit=10,
+                database_url=self.database_url,
+            )
+            recoverable, recoverable_status = list_missions(
+                "approved",
+                limit=10,
+                database_url=self.database_url,
+                exclude_superseded=True,
+            )
+            self.assertEqual(queue_status, 200)
+            self.assertEqual(recoverable_status, 200)
+            self.assertEqual(
+                [row["mission_id"] for row in queue["missions"]],
+                [first["mission_id"]],
+            )
+            self.assertEqual(
+                [row["mission_id"] for row in recoverable["missions"]],
+                [first["mission_id"]],
+            )
 
             with psycopg.connect(self.database_url) as connection:
                 with connection.cursor() as cursor:

@@ -122,6 +122,83 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
         live = {**self.live, "ancestry": [{"pid": 900, "name": "python.exe"}]}
         self.assertEqual(self.validate(live)["reason"], "current_process_ancestry")
 
+    def test_windows_launcher_and_interpreter_form_one_valid_logical_tree(self):
+        launcher = self.record
+        interpreter_live = {
+            **self.live,
+            "pid": 333,
+            "parent_pid": 222,
+            "command_line": "python worker.py --noninteractive",
+            "ancestry": [
+                {"pid": 222, "name": "python.exe"},
+                {"pid": 111, "name": "python.exe"},
+            ],
+        }
+        interpreter = process_ownership.make_ownership_record(
+            interpreter_live, **self.expected
+        )
+        tree = process_ownership.make_process_tree_record(
+            launcher, [launcher, interpreter], "gen-1"
+        )
+        live = {222: self.live, 333: interpreter_live}
+
+        result = process_ownership.validate_process_tree(
+            tree,
+            self.expected,
+            lambda pid: live[pid],
+            current_pid=900,
+            require_descendant=True,
+        )
+
+        self.assertTrue(result["authorized"])
+        self.assertEqual(result["member_pids"], [222, 333])
+
+    def test_logical_tree_rejects_interpreter_outside_launcher_ancestry(self):
+        unrelated_live = {
+            **self.live,
+            "pid": 333,
+            "parent_pid": 777,
+            "ancestry": [{"pid": 777, "name": "python.exe"}],
+        }
+        unrelated = process_ownership.make_ownership_record(
+            unrelated_live, **self.expected
+        )
+        tree = process_ownership.make_process_tree_record(
+            self.record, [self.record, unrelated], "gen-1"
+        )
+        live = {222: self.live, 333: unrelated_live}
+
+        result = process_ownership.validate_process_tree(
+            tree, self.expected, lambda pid: live[pid], current_pid=900
+        )
+
+        self.assertEqual(result["reason"], "member_333_not_descendant_of_root")
+
+    def test_logical_tree_preserves_exact_member_mismatch_reason(self):
+        interpreter_live = {
+            **self.live,
+            "pid": 333,
+            "parent_pid": 222,
+            "ancestry": [{"pid": 222, "name": "python.exe"}],
+        }
+        interpreter = process_ownership.make_ownership_record(
+            interpreter_live, **self.expected
+        )
+        tree = process_ownership.make_process_tree_record(
+            self.record, [self.record, interpreter], "gen-1"
+        )
+        changed = {**interpreter_live, "command_line": "python unrelated.py"}
+        live = {222: self.live, 333: changed}
+
+        result = process_ownership.validate_process_tree(
+            tree, self.expected, lambda pid: live[pid], current_pid=900
+        )
+
+        self.assertEqual(
+            result["reason"],
+            "member_333_command_fingerprint_mismatch",
+        )
+
     @patch.object(execution_bridge, "emergency_process_cleanup_disabled", return_value=True)
     @patch.object(execution_bridge, "record_emergency_cleanup_refusal", return_value={"status": "emergency_process_cleanup_disabled"})
     @patch.object(execution_bridge.os, "killpg", create=True)

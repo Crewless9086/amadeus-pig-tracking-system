@@ -29,6 +29,55 @@ def blocked(owner_required=False, block_class="implementation_fix_required"):
 
 
 class CharlieExecutiveControlTests(unittest.TestCase):
+    def test_durable_replacement_excludes_legacy_from_queue_and_ranking(self):
+        legacy = {
+            "mission_id": "CHARLIE-MISSION-7001CE3566B4A171",
+            "status": "approved",
+            "urgency": "P2",
+            "created_at": "2026-07-25T22:03:50+00:00",
+            "metadata": {},
+        }
+        replacement = {
+            "mission_id": "CHARLIE-REPLACEMENT-AF110E2A071BC18CCAA00DF2",
+            "status": "approved",
+            "urgency": "P2",
+            "created_at": "2026-07-26T10:21:37+00:00",
+            "metadata": {
+                "orchestration": {"generation_identity": "generation-1"},
+                "orchestration_binding": {
+                    "validated": True,
+                    "generation_identity": "generation-1",
+                },
+                "supersession": {
+                    "status": "current_contract_replacement",
+                    "supersedes_mission_id": legacy["mission_id"],
+                },
+            },
+        }
+
+        cycle = build_executive_cycle(
+            [legacy, replacement],
+            DELEGATED_POLICIES + [{
+                "policy_id": "POLICY-QUEUE",
+                "capability": "core.queue_continue",
+                "authority_tier": "auto",
+                "enabled": True,
+            }],
+            runner={},
+            now=datetime(2026, 7, 26, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(cycle["queue_health"]["runnable_count"], 1)
+        self.assertEqual(
+            cycle["queue_rank"],
+            [{"mission_id": replacement["mission_id"], "score": 60}],
+        )
+        progress = [
+            item for item in cycle["commands"]
+            if item["action"] == "ensure_queue_progress"
+        ]
+        self.assertEqual([item["mission_id"] for item in progress], [replacement["mission_id"]])
+
     def test_cycle_delegates_green_low_risk_review(self):
         review = {
             "mission_id": "M-REVIEW", "status": "pr_ready", "title": "Docs", "raw_text": "Docs", "approval_level": "LEVEL 3",
