@@ -6,6 +6,19 @@ from scripts.oom_sakkie_n8n_relay_contract_check import validate_relay_contract
 
 
 class FrontendRouteContractTests(unittest.TestCase):
+    def test_sam_owner_inbox_is_read_only_and_has_exact_chronology_surface(self):
+        template = Path("templates/sam-owner-inbox.html").read_text(encoding="utf-8")
+        script = Path("static/js/samOwnerInbox.js").read_text(encoding="utf-8")
+        routes = Path("modules/sales/sales_transaction_routes.py").read_text(encoding="utf-8")
+
+        self.assertIn("One canonical view of HUMAN work", template)
+        self.assertIn("chronology_hash", script)
+        self.assertIn("Open exact Chatwoot conversation", script)
+        self.assertNotIn("owner-send", script)
+        self.assertNotIn("telegram", script.lower())
+        self.assertIn("require_owner_read_access()", routes)
+        self.assertIn('"/sales/channels/chatwoot/sam/owner-inbox"', routes)
+
     def test_beacon_exact_weekly_owner_decision_controls_are_distinct_and_safe(self):
         template = Path("templates/beacon-media.html").read_text(encoding="utf-8")
         script = Path("static/js/beaconMedia.js").read_text(encoding="utf-8")
