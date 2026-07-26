@@ -16,10 +16,15 @@ from urllib import request as urllib_request
 from typing import Any, Callable, Iterable, Mapping
 
 from services.database_service import DATABASE_URL_ENV
+from modules.sales.sam_owner_reply_window import (
+    evaluate_reply_window,
+    prepare_window_alert,
+)
 
 
 WORK_TABLE = "sam_owner_work_item_events"
 REPORT_TABLE = "sam_owner_backlog_report_events"
+ALERT_TABLE = "sam_owner_window_alert_events"
 MAX_CONVERSATIONS = 100
 MAX_MESSAGES_PER_CONVERSATION = 100
 MAX_MESSAGE_PAGES = 5
@@ -101,6 +106,21 @@ def build_owner_work_observation(
     protected = sorted(markers & PROTECTED_MARKERS)
     specialist = sorted(markers & SPECIALIST_MARKERS)
     ownership_mode = _ownership_mode(conversation)
+    attrs = conversation.get("custom_attributes")
+    attrs = attrs if isinstance(attrs, Mapping) else {}
+    suspicious_evidence = attrs.get("sam_security_suspicious_link")
+    suspicious_evidence = suspicious_evidence if isinstance(suspicious_evidence, bool) else None
+    window = evaluate_reply_window(
+        raw_messages,
+        conversation_identity={
+            **identity,
+            "channel": conversation.get("channel"),
+            "channel_type": conversation.get("channel_type"),
+            "inbox": conversation.get("inbox"),
+        },
+        suspicious_link_evidence=suspicious_evidence,
+        now=observed_at,
+    )
     withheld = []
     classification = "WAITING_FOR_OWNER_REPLY"
     lane = "GENERAL"
@@ -138,6 +158,18 @@ def build_owner_work_observation(
     if latest_reviewed_inbound and latest_inbound:
         if latest_reviewed_inbound != latest_inbound["message_id"]:
             withheld.append("review_stale_for_latest_inbound")
+    if window["window_state"] == "unavailable":
+        classification = "IDENTITY_OR_EVIDENCE_UNAVAILABLE"
+        actionable = False
+        withheld.append(window["reason"])
+    elif window["window_state"] == "expired":
+        classification = "CUSTOMER_REPLY_PROHIBITED"
+        actionable = False
+        withheld.extend(["provider_reply_window_expired", "customer_reply_prohibited"])
+    elif window["reply_authority_state"] == "customer_reply_prohibited":
+        classification = "CUSTOMER_REPLY_PROHIBITED"
+        actionable = False
+        withheld.extend([window["reason"], "customer_reply_prohibited"])
 
     chronology = [
         {
@@ -163,9 +195,10 @@ def build_owner_work_observation(
         'withheld': sorted(withheld),
         'review_event_id': _clean(review.get("review_event_id")),
         'reviewed_inbound_message_id': latest_reviewed_inbound,
+        'window_evidence_hash': window["window_evidence_hash"],
     })
     event_id = f"SAM-OWNER-WORK-EVENT-{observation_hash[:24]}"
-    return {
+    observation = {
         "work_event_id": event_id,
         "work_item_id": work_item_id,
         **identity,
@@ -193,10 +226,29 @@ def build_owner_work_observation(
         "event_type": event_type,
         "source": "bounded_human_backlog_reconciliation_v1",
         "reconciliation_actor_id": reconciliation_actor_id,
+        "reply_window": window,
+        "window_state": window["window_state"],
+        "reply_authority_state": window["reply_authority_state"],
+        "window_reason": window["reason"],
+        "provider_identity_class": window["provider_identity_class"],
+        "window_evidence_hash": window["window_evidence_hash"],
+        "expires_at_utc": window["expires_at_utc"],
+        "expires_at_johannesburg": window["expires_at_johannesburg"],
+        "remaining_seconds": window["remaining_seconds"],
+        "warning_threshold_hours": window["warning_threshold_hours"],
+        "urgent_threshold_hours": window["urgent_threshold_hours"],
+        "alert_band": window["alert_band"],
+        "ordinary_reply_allowed": window["ordinary_reply_allowed"],
+        "send_reply_action_visible": window["send_reply_action_visible"],
+        "template_required": window["template_required"],
         "observed_at": observed_at.isoformat(),
         "contains_customer_content": False,
         **AUTHORITY_FLAGS,
     }
+    observation["prepared_window_alert"] = prepare_window_alert(
+        work_item_id, observation_hash, window, prepared_at=observed_at
+    )
+    return observation
 
 
 def record_owner_work_observation(
@@ -241,6 +293,13 @@ def record_owner_work_observation(
                       reviewed_inbound_message_id, protected_markers_json,
                       specialist_markers_json, event_type, source,
                       reconciliation_actor_id,
+                      window_state, reply_authority_state, window_reason,
+                      provider_identity_class, window_evidence_hash,
+                      expires_at_utc, expires_at_johannesburg,
+                      remaining_seconds, warning_threshold_hours,
+                      urgent_threshold_hours, alert_band,
+                      ordinary_reply_allowed, send_reply_action_visible,
+                      template_required,
                       prior_event_id, observed_at, contains_customer_content,
                       sends_customer_message, changes_conversation_ownership,
                       calls_telegram, mutates_business_state
@@ -259,6 +318,14 @@ def record_owner_work_observation(
                       %(protected_markers)s::jsonb,
                       %(specialist_markers)s::jsonb, %(event_type)s, %(source)s,
                       %(reconciliation_actor_id)s,
+                      %(window_state)s, %(reply_authority_state)s,
+                      %(window_reason)s, %(provider_identity_class)s,
+                      %(window_evidence_hash)s, %(expires_at_utc)s::timestamptz,
+                      %(expires_at_johannesburg)s::timestamptz,
+                      %(remaining_seconds)s, %(warning_threshold_hours)s,
+                      %(urgent_threshold_hours)s, %(alert_band)s,
+                      %(ordinary_reply_allowed)s, %(send_reply_action_visible)s,
+                      %(template_required)s,
                       %(prior_event_id)s, %(observed_at)s::timestamptz,
                       false, false, false, false, false
                     )
@@ -279,11 +346,47 @@ def record_owner_work_observation(
                     },
                 )
                 created = cursor.fetchone()
+                alert_created = None
+                alert = observation.get("prepared_window_alert")
+                if created and isinstance(alert, Mapping):
+                    cursor.execute(
+                        f"""
+                        insert into public.{ALERT_TABLE} (
+                          alert_event_id,alert_deduplication_hash,work_item_id,
+                          observation_hash,conversation_id,contact_id,inbox_id,
+                          window_contract_version,window_state,
+                          reply_authority_state,alert_band,expires_at_utc,reason,
+                          prepared_at,delivery_enabled,delivered,
+                          contains_customer_content,sends_customer_message,
+                          changes_conversation_ownership,calls_telegram,
+                          uses_template,mutates_business_state
+                        ) values (
+                          %(alert_event_id)s,%(alert_deduplication_hash)s,
+                          %(work_item_id)s,%(observation_hash)s,
+                          %(conversation_id)s,%(contact_id)s,%(inbox_id)s,
+                          %(window_contract_version)s,%(window_state)s,
+                          %(reply_authority_state)s,%(alert_band)s,
+                          %(expires_at_utc)s::timestamptz,%(reason)s,
+                          %(prepared_at)s::timestamptz,false,false,false,
+                          false,false,false,false,false
+                        )
+                        on conflict (alert_event_id) do nothing
+                        returning alert_event_id
+                        """,
+                        alert,
+                    )
+                    alert_created = cursor.fetchone()
             connection.commit()
         return _result(
             "owner_work_observation_recorded" if created else "owner_work_observation_replay_withheld",
             created=bool(created), work_event_id=observation["work_event_id"],
             work_item_id=observation["work_item_id"],
+            alert_prepared=bool(alert_created),
+            alert_event_id=(
+                observation.get("prepared_window_alert", {}).get("alert_event_id")
+                if isinstance(observation.get("prepared_window_alert"), Mapping)
+                else None
+            ),
         ), 201 if created else 200
     except Exception as exc:
         return _result(
@@ -514,7 +617,13 @@ def list_owner_work_items(
                         observation_hash, unanswered_count, classification,
                         missed_message_classification, lane, actionable,
                         withheld_reasons_json, review_event_id, event_type,
-                        observed_at, created_at
+                        window_state,reply_authority_state,window_reason,
+                        provider_identity_class,window_evidence_hash,
+                        expires_at_utc,expires_at_johannesburg,
+                        remaining_seconds,warning_threshold_hours,
+                        urgent_threshold_hours,alert_band,
+                        ordinary_reply_allowed,send_reply_action_visible,
+                        template_required,observed_at, created_at
                       from public.{WORK_TABLE}
                       order by work_item_id, observed_at desc, created_at desc,
                                work_event_id desc
@@ -526,10 +635,19 @@ def list_owner_work_items(
                       observation_hash, unanswered_count, classification,
                       missed_message_classification, lane, actionable,
                       withheld_reasons_json, review_event_id, event_type,
-                      observed_at
+                      window_state,reply_authority_state,window_reason,
+                      provider_identity_class,window_evidence_hash,
+                      expires_at_utc,expires_at_johannesburg,
+                      remaining_seconds,warning_threshold_hours,
+                      urgent_threshold_hours,alert_band,
+                      ordinary_reply_allowed,send_reply_action_visible,
+                      template_required,observed_at
                     from latest
                     where (%s or actionable=true)
-                    order by observed_at desc, created_at desc, work_event_id desc
+                    order by
+                      case when actionable then 0 else 1 end,
+                      expires_at_utc asc nulls last,
+                      observed_at desc, created_at desc, work_event_id desc
                     limit %s
                     """,
                     (bool(include_withheld), limit),
@@ -554,11 +672,17 @@ def build_charlie_backlog_report(
     safe_items = [dict(row) for row in items or []]
     counts = _classification_counts(safe_items)
     reasons: dict[str, int] = {}
+    window_states: dict[str, int] = {}
+    alert_bands: dict[str, int] = {}
     for row in safe_items:
         for reason in row.get("withheld_reasons") or row.get("withheld_reasons_json") or []:
             reason = _clean(reason)
             if reason:
                 reasons[reason] = reasons.get(reason, 0) + 1
+        window_state = _clean(row.get("window_state")) or "unavailable"
+        window_states[window_state] = window_states.get(window_state, 0) + 1
+        alert_band = _clean(row.get("alert_band")) or "none"
+        alert_bands[alert_band] = alert_bands.get(alert_band, 0) + 1
     report_date = report_date or datetime.now(timezone.utc).date().isoformat()
     snapshot_hash = _digest([
         {
@@ -577,6 +701,19 @@ def build_charlie_backlog_report(
         "actionable_count": sum(bool(row.get("actionable")) for row in safe_items),
         "classification_counts": counts,
         "withheld_reason_counts": dict(sorted(reasons.items())),
+        "window_state_counts": dict(sorted(window_states.items())),
+        "alert_band_counts": dict(sorted(alert_bands.items())),
+        "nearest_expiry_utc": next(
+            (
+                row.get("expires_at_utc") for row in sorted(
+                    safe_items,
+                    key=lambda item: item.get("expires_at_utc") or "9999",
+                )
+                if row.get("actionable") and row.get("expires_at_utc")
+            ),
+            None,
+        ),
+        "alerts_delivery_enabled": False,
         "contains_customer_content": False,
         **AUTHORITY_FLAGS,
     }
@@ -748,6 +885,8 @@ def _validate_observation(event: Mapping[str, Any]) -> str:
         "contact_id", "inbox_id", "chronology_hash", "classification",
         "observed_at",
         "reconciliation_actor_id",
+        "window_state", "reply_authority_state", "window_reason",
+        "provider_identity_class", "window_evidence_hash", "alert_band",
     )
     if any(not _clean(event.get(key)) for key in required):
         return "owner_work_observation_incomplete"
@@ -755,6 +894,30 @@ def _validate_observation(event: Mapping[str, Any]) -> str:
         return "customer_content_forbidden"
     if any(event.get(key) is not False for key in AUTHORITY_FLAGS):
         return "owner_work_authority_forbidden"
+    if event.get("ordinary_reply_allowed") is True and event.get("window_state") not in {
+        "open", "approaching_expiry",
+    }:
+        return "ordinary_reply_authority_window_invalid"
+    if event.get("send_reply_action_visible") is True and event.get("ordinary_reply_allowed") is not True:
+        return "send_reply_visibility_authority_invalid"
+    alert = event.get("prepared_window_alert")
+    if alert is not None:
+        if not isinstance(alert, Mapping):
+            return "window_alert_shape_invalid"
+        if (
+            alert.get("work_item_id") != event.get("work_item_id")
+            or alert.get("observation_hash") != event.get("observation_hash")
+            or alert.get("conversation_id") != event.get("conversation_id")
+            or alert.get("contact_id") != event.get("contact_id")
+            or alert.get("inbox_id") != event.get("inbox_id")
+        ):
+            return "window_alert_identity_mismatch"
+        if any(alert.get(key) is not False for key in (
+            "delivery_enabled", "delivered", "contains_customer_content",
+            "sends_customer_message", "changes_conversation_ownership",
+            "calls_telegram", "uses_template", "mutates_business_state",
+        )):
+            return "window_alert_authority_forbidden"
     try:
         json.dumps(_json_safe(event), sort_keys=True, separators=(",", ":"))
     except (TypeError, ValueError):

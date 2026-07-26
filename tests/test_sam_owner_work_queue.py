@@ -8,6 +8,7 @@ from modules.sales.sam_owner_work_queue import (
     build_charlie_backlog_report,
     build_owner_work_observation,
     reconcile_human_backlog,
+    record_owner_work_observation,
     run_daily_backlog_report,
     load_bounded_conversation_messages,
 )
@@ -16,7 +17,7 @@ from modules.sales.sam_owner_work_queue import (
 IDENTITY = {
     "account_id": 147387, "id": 2025, "contact_id": 699428938,
     "inbox_id": 96568, "custom_attributes": {"conversation_mode": "HUMAN"},
-    "labels": ["sam_live_stock"],
+    "labels": ["sam_live_stock"], "channel": "Channel::Whatsapp",
 }
 
 
@@ -89,6 +90,59 @@ def test_newer_inbound_produces_new_sequence_identity_without_telegram_effect():
     assert first["chronology_hash"] != second["chronology_hash"]
     assert first["work_event_id"] != second["work_event_id"]
     assert second["calls_telegram"] is False
+    assert first["window_evidence_hash"] != second["window_evidence_hash"]
+
+
+def test_repeated_same_chronology_reuses_work_observation_and_alert_identity():
+    payload = conversation([
+        message(101, "incoming", "2026-07-25T13:00:00Z"),
+    ])
+    first = build_owner_work_observation(
+        payload, review=review(), reconciliation_actor_id=ACTOR,
+        observed_at=datetime(2026, 7, 26, 12, tzinfo=timezone.utc),
+    )
+    second = build_owner_work_observation(
+        payload, review=review(), reconciliation_actor_id=ACTOR,
+        observed_at=datetime(2026, 7, 26, 12, 5, tzinfo=timezone.utc),
+    )
+    assert first["work_item_id"] == second["work_item_id"]
+    assert first["work_event_id"] == second["work_event_id"]
+    assert first["window_state"] == "approaching_expiry"
+    assert first["prepared_window_alert"]["alert_event_id"] == second["prepared_window_alert"]["alert_event_id"]
+    assert first["prepared_window_alert"]["delivery_enabled"] is False
+
+
+def test_expiry_removes_reply_authority_and_records_missed_window_evidence():
+    observed = build_owner_work_observation(
+        conversation([message(101, "incoming", "2026-07-25T10:00:00Z")]),
+        review=review(), reconciliation_actor_id=ACTOR,
+        observed_at=datetime(2026, 7, 26, 12, tzinfo=timezone.utc),
+    )
+    assert observed["window_state"] == "expired"
+    assert observed["reply_authority_state"] == "template_required"
+    assert observed["ordinary_reply_allowed"] is False
+    assert observed["send_reply_action_visible"] is False
+    assert observed["actionable"] is False
+    assert "provider_reply_window_expired" in observed["withheld_reasons"]
+    assert observed["prepared_window_alert"]["alert_band"] == "missed_window"
+    assert observed["prepared_window_alert"]["uses_template"] is False
+
+
+def test_alert_identity_or_authority_tampering_fails_before_database(monkeypatch):
+    observed = build_owner_work_observation(
+        conversation([message(101, "incoming", "2026-07-25T13:00:00Z")]),
+        review=review(), reconciliation_actor_id=ACTOR,
+        observed_at=datetime(2026, 7, 26, 12, tzinfo=timezone.utc),
+    )
+    observed["prepared_window_alert"]["conversation_id"] = "wrong"
+    result, status = record_owner_work_observation(observed, database_url="unused")
+    assert status == 400
+    assert result["status"] == "window_alert_identity_mismatch"
+    observed["prepared_window_alert"]["conversation_id"] = observed["conversation_id"]
+    observed["prepared_window_alert"]["delivery_enabled"] = True
+    result, status = record_owner_work_observation(observed, database_url="unused")
+    assert status == 400
+    assert result["status"] == "window_alert_authority_forbidden"
 
 
 @pytest.mark.parametrize(
@@ -183,6 +237,8 @@ def test_charlie_report_is_sanitized_and_has_no_authority():
     assert report["contains_customer_content"] is False
     assert report["sends_customer_message"] is False
     assert report["mutates_business_state"] is False
+    assert report["window_state_counts"] == {"open": 1}
+    assert report["alert_band_counts"] == {"none": 1}
 
 
 def test_daily_report_reuses_current_queue_and_persists_idempotent_snapshot(monkeypatch):
