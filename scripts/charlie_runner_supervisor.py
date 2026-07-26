@@ -21,6 +21,7 @@ from modules.charlie.process_policy import background_process_kwargs, background
 from modules.charlie.environment import env_value
 from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 from modules.charlie.runner_control import (
+    _contain_spawned_process,
     RUNNER_DIR,
     SUPERVISOR_PACKET_VERSION,
     _contain_observed_tree,
@@ -241,27 +242,6 @@ def supervise_runner(
             },
         )
         return {"status": "infrastructure_hold", "failure_status": "startup_revision_mismatch"}
-    try:
-        if recovery_fn is not None:
-            recovery, recovery_status = recovery_fn()
-        elif popen_factory is not subprocess.Popen:
-            recovery, recovery_status = ({"status": "test_recovery_skipped"}, 200)
-        else:
-            from modules.charlie.execution_bridge import recover_pending_final_agent_artifact
-            recovery, recovery_status = recover_pending_final_agent_artifact()
-    except Exception as exc:
-        recovery = {"status": "final_artifact_recovery_failed", "error_type": exc.__class__.__name__}
-        recovery_status = 503
-    if recovery_status >= 400:
-        _write_status(
-            "final_artifact_recovery_blocked",
-            generation=generation,
-            intended_runtime_revision=runtime_revision,
-            intended_execution_revision=execution_revision,
-            runner_state="not_spawned",
-            recovery=recovery,
-        )
-        return {"status": "final_artifact_recovery_blocked", "recovery": recovery}
     restart_count = 0
     cycles = 0
     repeated_failure = ""
@@ -349,7 +329,9 @@ def supervise_runner(
             )
         if not runner_observation.get("success"):
             STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-            containment = _contain_observed_tree(runner_observation.get("tree") or {})
+            containment = _contain_spawned_process(
+                child, runner_observation.get("tree") or {}
+            )
             _write_status(
                 "infrastructure_hold",
                 generation=generation,
@@ -429,6 +411,68 @@ def supervise_runner(
             intended_execution_revision=execution_revision,
             runner_state="running",
             runner_acknowledgement=acknowledgement,
+        )
+        if test_mode:
+            _write_test_final_authorization(
+                generation, startup_nonce, runner_nonce, execution_revision, child.pid
+            )
+        final_authorization = _wait_for_controller_final_authorization(
+            child,
+            generation,
+            startup_nonce,
+            runner_nonce,
+            execution_revision,
+            sleep_fn=sleep_fn,
+        )
+        if not final_authorization.get("success") or STOP_PATH.exists():
+            STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+            containment = _contain_observed_tree(runner_tree)
+            _write_status(
+                "infrastructure_hold",
+                generation=generation,
+                runner_state="containment_required",
+                failure_status=final_authorization.get("reason") or "governed_stop_active",
+                failure_detail={"containment": containment},
+            )
+            return {
+                "status": "infrastructure_hold",
+                "failure_status": final_authorization.get("reason") or "governed_stop_active",
+                "containment": containment,
+            }
+        try:
+            if recovery_fn is not None:
+                recovery, recovery_status = recovery_fn()
+            elif test_mode:
+                recovery, recovery_status = ({"status": "test_recovery_skipped"}, 200)
+            else:
+                from modules.charlie.execution_bridge import recover_pending_final_agent_artifact
+                recovery, recovery_status = recover_pending_final_agent_artifact()
+        except Exception as exc:
+            recovery = {
+                "status": "final_artifact_recovery_failed",
+                "error_type": exc.__class__.__name__,
+            }
+            recovery_status = 503
+        if recovery_status >= 400 or STOP_PATH.exists():
+            STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+            containment = _contain_observed_tree(runner_tree)
+            _write_status(
+                "final_artifact_recovery_blocked",
+                generation=generation,
+                runner_state="containment_required",
+                recovery=recovery,
+                failure_detail={"containment": containment},
+            )
+            return {
+                "status": "final_artifact_recovery_blocked",
+                "recovery": recovery,
+                "containment": containment,
+            }
+        _write_status(
+            "operational_authorized",
+            generation=generation,
+            runner_state="operational_authorized",
+            recovery=recovery,
         )
         return_code = child.wait()
         if STOP_PATH.exists():
@@ -680,6 +724,81 @@ def _wait_for_runner_ack(
             return {"success": False, "reason": "governed_stop_during_runner_start"}
         sleep_fn(0.1)
     return {"success": False, "reason": reason}
+
+
+def _wait_for_controller_final_authorization(
+    child,
+    generation,
+    supervisor_nonce,
+    runner_nonce,
+    revision,
+    *,
+    sleep_fn=time.sleep,
+    timeout_seconds=30,
+):
+    deadline = time.monotonic() + max(0, float(timeout_seconds))
+    reason = "controller_final_acknowledgement_missing"
+    while time.monotonic() <= deadline:
+        if STOP_PATH.exists():
+            return {"success": False, "reason": "governed_stop_during_final_authorization"}
+        packet = _read_status()
+        acknowledgement = packet.get("controller_final_acknowledgement")
+        if (
+            str(packet.get("status") or "") == "running_authorized"
+            and str(packet.get("runner_state") or "") == "running_authorized"
+            and isinstance(acknowledgement, dict)
+        ):
+            expected = {
+                "generation": generation,
+                "supervisor_startup_nonce": supervisor_nonce,
+                "runner_startup_nonce": runner_nonce,
+                "revision": revision,
+                "runner_pid": str(child.pid),
+            }
+            mismatch = next(
+                (
+                    field for field, value in expected.items()
+                    if str(acknowledgement.get(field) or "") != str(value or "")
+                ),
+                "",
+            )
+            if mismatch:
+                return {
+                    "success": False,
+                    "reason": f"controller_final_acknowledgement_{mismatch}_mismatch",
+                }
+            return {"success": True, "status": "controller_final_authorized"}
+        if child.poll() is not None:
+            return {"success": False, "reason": "runner_exited_before_final_authorization"}
+        sleep_fn(0.05)
+    return {"success": False, "reason": reason}
+
+
+def _write_test_final_authorization(
+    generation, supervisor_nonce, runner_nonce, revision, runner_pid
+):
+    packet = _read_status()
+    supervisor_members = (
+        (packet.get("supervisor_tree_identity") or {}).get("members") or []
+    )
+    runner_members = (packet.get("process_tree_identity") or {}).get("members") or []
+    packet.update({
+        "status": "running_authorized",
+        "runner_state": "running_authorized",
+        "controller_final_acknowledgement": {
+            "status": "current_process_tree_acknowledged",
+            "generation": generation,
+            "supervisor_startup_nonce": supervisor_nonce,
+            "runner_startup_nonce": runner_nonce,
+            "revision": revision,
+            "supervisor_pid": str(os.getpid()),
+            "runner_pid": str(runner_pid),
+            "supervisor_member_pids": [item.get("pid") for item in supervisor_members],
+            "runner_member_pids": [item.get("pid") for item in runner_members],
+        },
+    })
+    atomic_write_json(SUPERVISOR_PATH, packet)
+    return packet
 
 
 def _prepare_execution_root(run_factory=subprocess.run):

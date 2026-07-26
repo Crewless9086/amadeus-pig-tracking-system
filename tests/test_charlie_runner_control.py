@@ -1,12 +1,14 @@
 import tempfile
 import unittest
 import json
+import os
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from modules.charlie import runner_control
+from modules.charlie import process_ownership, runner_control
 from scripts import charlie_runner_control as runner_control_cli
 
 
@@ -40,6 +42,89 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows governed lifecycle harness")
+    def test_windows_governed_start_and_stop_exact_observed_tree(self):
+        if not process_ownership._windows_process_snapshot():
+            self.skipTest("Windows process inspection is unavailable to this session")
+        powershell = (
+            Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        )
+        command = (
+            "$p=Start-Process powershell.exe -ArgumentList "
+            "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 30' "
+            "-PassThru -WindowStyle Hidden; Wait-Process -Id $p.Id"
+        )
+        original_observe = runner_control.observe_process_tree
+
+        def observe(root_pid, *, generation, revision, startup_nonce, **_kwargs):
+            result = original_observe(
+                root_pid,
+                generation=generation,
+                revision=revision,
+                startup_nonce=startup_nonce,
+                expected_root_executable=str(powershell),
+                process_role_prefix="supervisor",
+                timeout_seconds=10,
+            )
+            if result.get("success"):
+                tree = result["tree"]
+                members = [
+                    item for item in tree["members"]
+                    if Path(str(item.get("executable_path") or "")).name.casefold()
+                    == "powershell.exe"
+                ]
+                tree = process_ownership.make_process_tree_record(
+                    tree["root"], members, generation
+                )
+                result["tree"] = tree
+                result["validation"] = process_ownership.validate_bootstrap_tree(
+                    tree,
+                    generation=generation,
+                    revision=revision,
+                    startup_nonce=startup_nonce,
+                )
+            return result
+
+        started_pid = 0
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+            "CHARLIE_TEST_ISOLATION": "0",
+            process_ownership.TERMINATION_ENABLE_ENV:
+                process_ownership.TERMINATION_ENABLE_VALUE,
+        }, clear=False), patch.object(
+            runner_control, "RUNNER_DIR", Path(tmp)
+        ), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(
+            runner_control, "SUPERVISOR_COMMAND",
+            [str(powershell), "-NoProfile", "-NonInteractive", "-Command", command],
+        ), patch.object(
+            runner_control, "runner_status",
+            return_value={"active": False, "status": "runner_not_started", "orphan_processes": []},
+        ), patch.object(
+            runner_control, "_current_git_commit", return_value="revision-1"
+        ), patch.object(
+            runner_control, "observe_process_tree", side_effect=observe
+        ), patch.object(
+            runner_control, "_wait_for_supervisor_ack",
+            return_value={"success": True, "status": "current_generation_acknowledged"},
+        ):
+            try:
+                started, start_status = runner_control.start_runner()
+                self.assertEqual(start_status, 200, started)
+                started_pid = int(started["pid"])
+                stopped, stop_status = runner_control.stop_runner()
+                self.assertEqual(stop_status, 200, stopped)
+                self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
+                self.assertIsNone(runner_control.inspect_process(started_pid))
+            finally:
+                if started_pid and runner_control.inspect_process(started_pid):
+                    subprocess.run(
+                        ["taskkill", "/PID", str(started_pid), "/T", "/F"],
+                        capture_output=True, text=True, check=False,
+                    )
     def test_governed_start_default_never_removes_stop_marker(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(
             runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
@@ -189,6 +274,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
 
     def test_incomplete_controller_observation_is_durable_and_contained(self):
         process = Mock(pid=4321)
+        process.poll.return_value = 1
         incomplete_tree = {
             "version": "charlie_process_tree_v1",
             "root": {"pid": 4321},
@@ -215,8 +301,11 @@ class CharlieRunnerControlTests(unittest.TestCase):
             "reason": "ownership_identity_incomplete:root.executable_path",
             "tree": incomplete_tree,
         }), patch.object(
-            runner_control, "_contain_observed_tree",
-            return_value={"success": True, "reason": "observed_tree_contained"},
+            runner_control, "_contain_spawned_process",
+            return_value={
+                "success": True,
+                "reason": "fresh_spawn_handle_tree_termination_verified",
+            },
         ):
             result, status = runner_control.start_runner()
             evidence = json.loads(
@@ -225,11 +314,32 @@ class CharlieRunnerControlTests(unittest.TestCase):
             self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
         self.assertEqual(status, 503)
         self.assertEqual(result["status"], "ownership_identity_incomplete")
+        self.assertTrue(result["containment"]["success"])
+        self.assertEqual(
+            result["containment"]["reason"],
+            "fresh_spawn_handle_tree_termination_verified",
+        )
         self.assertEqual(
             evidence["reason"],
             "ownership_identity_incomplete:root.executable_path",
         )
         self.assertEqual(evidence["process_tree_identity"], incomplete_tree)
+
+    def test_empty_observation_falls_back_to_exact_spawn_handle_and_verifies_exit(self):
+        process = Mock(pid=4321)
+        process.poll.return_value = 1
+        with patch.object(
+            runner_control, "_contain_observed_tree",
+            return_value={"success": False, "reason": "ownership_identity_incomplete"},
+        ), patch.object(
+            runner_control.subprocess, "run", return_value=Mock(returncode=0)
+        ):
+            result = runner_control._contain_spawned_process(process, {})
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            result["reason"], "fresh_spawn_handle_tree_termination_verified"
+        )
+        process.wait.assert_called()
 
     def test_atomic_state_replacement_preserves_previous_packet_on_replace_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

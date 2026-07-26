@@ -398,7 +398,9 @@ def start_runner(status_override=None, respect_stop_marker=True):
             observation.get("reason") or "ownership_identity_incomplete",
             observation.get("tree") or {},
         )
-        containment = _contain_observed_tree(observation.get("tree") or {})
+        containment = _contain_spawned_process(
+            process, observation.get("tree") or {}
+        )
         return {
             "success": False,
             "status": "ownership_identity_incomplete",
@@ -717,6 +719,7 @@ def stop_runner():
         expected,
         inspect_process,
         require_descendant=os.name == "nt",
+        allow_current_descendant=target_kind == "supervisor",
     )
     if not decision["authorized"]:
         result = {
@@ -730,7 +733,11 @@ def stop_runner():
     stopped = []
     termination = {}
     try:
-        termination = _stop_process_tree(root, expected)
+        termination = _stop_process_tree(
+            root,
+            expected,
+            allow_current_descendant=target_kind == "supervisor",
+        )
         if termination.get("terminated"):
             stopped.append(int(root["pid"]))
     except OSError:
@@ -1079,6 +1086,57 @@ def _contain_observed_tree(tree):
         "reason": decisions[-1].get("reason") if decisions else "termination_not_confirmed",
         "termination": decisions[-1] if decisions else {},
         "attempts": decisions,
+    }
+
+
+def _contain_spawned_process(process, observed_tree):
+    """Contain a freshly returned Popen handle even when inspection was partial."""
+    observed = _contain_observed_tree(observed_tree)
+    if observed.get("success"):
+        return observed
+    pid = int(getattr(process, "pid", 0) or 0)
+    if pid <= 0:
+        return {
+            "success": False,
+            "reason": "spawned_process_handle_incomplete",
+            "observed_containment": observed,
+        }
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+                **background_run_kwargs(),
+            )
+        else:
+            process.terminate()
+        process.wait(timeout=15)
+    except (OSError, subprocess.SubprocessError, TimeoutError):
+        try:
+            process.kill()
+            process.wait(timeout=10)
+        except (OSError, subprocess.SubprocessError, TimeoutError):
+            return {
+                "success": False,
+                "reason": "spawned_process_termination_not_verified",
+                "pid": pid,
+                "observed_containment": observed,
+            }
+    if getattr(process, "poll", lambda: None)() is None:
+        return {
+            "success": False,
+            "reason": "spawned_process_termination_not_verified",
+            "pid": pid,
+            "observed_containment": observed,
+        }
+    return {
+        "success": True,
+        "reason": "fresh_spawn_handle_tree_termination_verified",
+        "pid": pid,
+        "observed_containment": observed,
     }
 
 

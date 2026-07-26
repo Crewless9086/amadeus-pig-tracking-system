@@ -64,6 +64,30 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["reason"], "governed_stop_active")
 
+    def test_test_isolation_cannot_bypass_canonical_stop_marker(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+            "CHARLIE_TEST_ISOLATION": "1",
+        }, clear=True), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path(tmp) / "stop"
+        ):
+            charlie_mission_pickup.SUPERVISOR_STOP_PATH.write_text(
+                "owner stop", encoding="utf-8"
+            )
+            authorized, reason = charlie_mission_pickup._runtime_pickup_authorized()
+        self.assertFalse(authorized)
+        self.assertEqual(reason, "governed_stop_active")
+
+    def test_direct_stranded_recovery_is_contained_before_mutation(self):
+        with patch.object(
+            charlie_mission_pickup,
+            "_runtime_pickup_authorized",
+            return_value=(False, "governed_stop_active"),
+        ), patch.object(charlie_mission_pickup, "list_missions") as missions:
+            result = charlie_mission_pickup.recover_stranded_missions()
+        self.assertEqual(result["status"], "runner_contained")
+        self.assertEqual(result["recovered_count"], 0)
+        missions.assert_not_called()
+
     def test_runner_waits_for_final_controller_ack_before_pickup(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
             "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
@@ -91,6 +115,35 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(
             result["reason"],
             "controller_final_acknowledgement_missing",
+        )
+
+    def test_runner_revalidates_live_trees_before_operational_pickup(self):
+        packet = {
+            "controller_final_acknowledgement": {
+                "runner_pid": str(os.getpid()),
+                "supervisor_member_pids": [100, 101],
+                "runner_member_pids": [200, os.getpid()],
+            },
+            "supervisor_tree_identity": {},
+            "process_tree_identity": {},
+        }
+        with patch.dict(os.environ, {
+            "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+            "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
+            "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
+            "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+        }, clear=True), patch.object(
+            charlie_mission_pickup,
+            "validate_live_bootstrap_tree",
+            side_effect=[
+                {"authorized": False, "reason": "live_identity_creation_time_mismatch"},
+                {"authorized": True, "member_pids": [200, os.getpid()]},
+            ],
+        ):
+            result = charlie_mission_pickup._validate_final_packet_live(packet)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "live_identity_creation_time_mismatch"
         )
 
     def test_runner_refuses_missing_current_generation_packet(self):

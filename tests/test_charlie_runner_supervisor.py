@@ -15,6 +15,33 @@ SUBPROCESS_TESTS_ENABLED = os.getenv("CHARLIE_SUBPROCESS_TESTS_ENABLED") == "1"
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_recovery_runs_only_after_controller_final_authorization(self):
+        observed = []
+        child = Mock(pid=101)
+        child.wait.return_value = 0
+
+        def recovery():
+            packet = json.loads(
+                supervisor.SUPERVISOR_PATH.read_text(encoding="utf-8")
+            )
+            observed.append((packet["status"], packet["runner_state"]))
+            return {"status": "recovery_complete"}, 200
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"):
+            supervisor.supervise_runner(
+                popen_factory=Mock(return_value=child),
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=recovery,
+                acknowledgement_fn=supervisor._test_acknowledgement,
+                generation="generation-1",
+            )
+        self.assertEqual(observed, [("running_authorized", "running_authorized")])
+
     def test_runner_is_not_spawned_without_current_controller_acknowledgement(self):
         popen = Mock()
         with tempfile.TemporaryDirectory() as tmp, patch.object(

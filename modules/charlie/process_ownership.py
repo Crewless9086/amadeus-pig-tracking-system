@@ -79,7 +79,14 @@ def make_process_tree_record(root_record, member_records, runner_generation):
     }
 
 
-def validate_process_tree(tree, expected, inspect_process, current_pid=None, require_descendant=False):
+def validate_process_tree(
+    tree,
+    expected,
+    inspect_process,
+    current_pid=None,
+    require_descendant=False,
+    allow_current_descendant=False,
+):
     """Validate every identity and bind every interpreter to the launcher."""
     if not isinstance(tree, dict) or tree.get("version") != "charlie_process_tree_v1":
         return _deny("process_tree_metadata_missing")
@@ -87,13 +94,25 @@ def validate_process_tree(tree, expected, inspect_process, current_pid=None, req
     members = tree.get("members") if isinstance(tree.get("members"), list) else []
     if not root or not members:
         return _deny("process_tree_metadata_incomplete")
-    root_decision = validate_termination(root, expected, inspect_process, current_pid=current_pid)
+    root_decision = validate_termination(
+        root,
+        expected,
+        inspect_process,
+        current_pid=current_pid,
+        allow_current_descendant=allow_current_descendant,
+    )
     if not root_decision["authorized"]:
         return _deny(f"root_{root_decision['reason']}")
     root_pid = int(root["pid"])
     validated = []
     for member in members:
-        decision = validate_termination(member, expected, inspect_process, current_pid=current_pid)
+        decision = validate_termination(
+            member,
+            expected,
+            inspect_process,
+            current_pid=current_pid,
+            allow_current_descendant=allow_current_descendant,
+        )
         if not decision["authorized"]:
             return _deny(f"member_{member.get('pid')}_{decision['reason']}")
         current = inspect_process(int(member["pid"]))

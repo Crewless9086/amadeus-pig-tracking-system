@@ -35,6 +35,7 @@ from modules.charlie.runner_control import (
 )
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.process_ownership import validate_bootstrap_tree
+from modules.charlie.process_ownership import validate_live_bootstrap_tree
 from modules.charlie.process_policy import background_run_kwargs
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
 from modules.charlie.improvement_analyst import run_operational_analyst
@@ -289,8 +290,8 @@ def _wait_for_final_start_authorization(sleep_fn=time.sleep, timeout_seconds=30)
         packet = _read_json(SUPERVISOR_PATH)
         acknowledgement = packet.get("controller_final_acknowledgement")
         if (
-            str(packet.get("status") or "") == "running_authorized"
-            and str(packet.get("runner_state") or "") == "running_authorized"
+            str(packet.get("status") or "") == "operational_authorized"
+            and str(packet.get("runner_state") or "") == "operational_authorized"
             and isinstance(acknowledgement, dict)
         ):
             expected = {
@@ -313,6 +314,13 @@ def _wait_for_final_start_authorization(sleep_fn=time.sleep, timeout_seconds=30)
                     "status": "runner_startup_refused",
                     "reason": f"controller_final_acknowledgement_{mismatch}_mismatch",
                 }
+            live = _validate_final_packet_live(packet)
+            if not live["success"]:
+                return {
+                    "success": False,
+                    "status": "runner_startup_refused",
+                    "reason": live["reason"],
+                }
             return {
                 "success": True,
                 "status": "runner_start_authorized",
@@ -328,10 +336,10 @@ def _wait_for_final_start_authorization(sleep_fn=time.sleep, timeout_seconds=30)
 
 
 def _runtime_pickup_authorized():
-    if str(os.getenv("CHARLIE_TEST_ISOLATION") or "") == "1":
-        return True, "test_isolation_authorized"
     if SUPERVISOR_STOP_PATH.exists():
         return False, "governed_stop_active"
+    if str(os.getenv("CHARLIE_TEST_ISOLATION") or "") == "1":
+        return True, "test_isolation_authorized"
     packet = _read_json(SUPERVISOR_PATH)
     generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
     supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
@@ -341,7 +349,7 @@ def _runtime_pickup_authorized():
     if (
         not generation
         or str(packet.get("generation") or "") != generation
-        or str(packet.get("status") or "") != "running_authorized"
+        or str(packet.get("status") or "") != "operational_authorized"
         or not isinstance(acknowledgement, dict)
         or any(
             str(acknowledgement.get(field) or "") != str(expected or "")
@@ -355,7 +363,46 @@ def _runtime_pickup_authorized():
         )
     ):
         return False, "current_generation_running_authorization_missing"
+    live = _validate_final_packet_live(packet)
+    if not live["success"]:
+        return False, live["reason"]
     return True, "current_generation_running_authorized"
+
+
+def _validate_final_packet_live(packet):
+    generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
+    supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
+    runner_nonce = str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or "")
+    revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
+    acknowledgement = packet.get("controller_final_acknowledgement")
+    if not isinstance(acknowledgement, dict):
+        return {"success": False, "reason": "controller_final_acknowledgement_missing"}
+    supervisor = validate_live_bootstrap_tree(
+        packet.get("supervisor_tree_identity"),
+        generation=generation,
+        revision=revision,
+        startup_nonce=supervisor_nonce,
+    )
+    runner = validate_live_bootstrap_tree(
+        packet.get("process_tree_identity"),
+        generation=generation,
+        revision=revision,
+        startup_nonce=runner_nonce,
+    )
+    if not supervisor["authorized"]:
+        return {"success": False, "reason": supervisor["reason"]}
+    if not runner["authorized"]:
+        return {"success": False, "reason": runner["reason"]}
+    expected_lists = {
+        "supervisor_member_pids": supervisor["member_pids"],
+        "runner_member_pids": runner["member_pids"],
+    }
+    for field, expected in expected_lists.items():
+        if sorted(acknowledgement.get(field) or []) != sorted(expected):
+            return {"success": False, "reason": f"controller_final_{field}_mismatch"}
+    if int(acknowledgement.get("runner_pid") or -1) != os.getpid():
+        return {"success": False, "reason": "controller_final_runner_pid_mismatch"}
+    return {"success": True, "reason": "final_live_process_tree_valid"}
 
 
 def watch_for_mission(
@@ -593,6 +640,14 @@ def _active_mission():
 
 
 def recover_stranded_missions(notify=False):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "recovered_count": 0,
+        }
     missions, status_code = _execution_state_missions(statuses=("in_progress",), limit=100)
     if status_code >= 400:
         return {"success": False, "status": "stranded_recovery_queue_unavailable", "recovered_count": 0, "status_code": status_code}
