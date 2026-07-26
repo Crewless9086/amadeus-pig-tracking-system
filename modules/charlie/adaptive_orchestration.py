@@ -55,6 +55,13 @@ _PROHIBITION_SUFFIX = re.compile(
     r"(?:prohibited|forbidden|disabled|not\s+authorized|out\s+of\s+scope)\b",
     re.IGNORECASE,
 )
+_ADMINISTRATIVE_LABELS = (
+    ("production_shaped", re.compile(r"\bproduction[-\s]+shaped\b", re.IGNORECASE)),
+    ("production_canary", re.compile(r"\bproduction[-\s]+canary\b", re.IGNORECASE)),
+    ("deployment_test", re.compile(r"\bdeployment[-\s]+tests?\b", re.IGNORECASE)),
+    ("migration_audit", re.compile(r"\bmigration[-\s]+audits?\b", re.IGNORECASE)),
+    ("publication_review", re.compile(r"\bpublication[-\s]+reviews?\b", re.IGNORECASE)),
+)
 
 
 def _affirmative_hits(text, words):
@@ -104,6 +111,23 @@ def _affirmative_hit(text, words):
     return bool(_affirmative_hits(text, words))
 
 
+def _execution_intent_text(text):
+    """Remove bounded administrative labels before protected-intent scoring.
+
+    These phrases describe the shape or validation context of a mission. They
+    do not themselves authorize the protected action named inside the label.
+    Affirmative verbs and unqualified protected nouns remain available to the
+    normal trigger classifier.
+    """
+    cleaned = str(text or "")
+    labels = []
+    for name, pattern in _ADMINISTRATIVE_LABELS:
+        if pattern.search(cleaned):
+            labels.append(name)
+            cleaned = pattern.sub(" administrative-label ", cleaned)
+    return cleaned, labels
+
+
 def _dimension(score, evidence, reason, *, confidence=0.9, unknown=False):
     return {
         "score": int(score), "evidence": list(evidence), "confidence": confidence,
@@ -113,23 +137,26 @@ def _dimension(score, evidence, reason, *, confidence=0.9, unknown=False):
 
 def score_mission(mission):
     text = _text(mission)
+    execution_text, administrative_labels = _execution_intent_text(text)
     file_hints = sorted(set(re.findall(r"[\w./\\-]+\.(?:py|js|html|css|sql|md|json|ps1)", text)))
-    mutation = _affirmative_hit(text, (r"\b(build|fix|change|edit|implement|create|delete|write|deploy)\b",))
+    mutation = _affirmative_hit(execution_text, (r"\b(build|fix|change|edit|implement|create|delete|write|deploy)\b",))
     docs = _hit(text, (r"\b(typo|documentation|docs?|readme|wording)\b",))
-    read_only = _hit(text, (r"\b(read[- ]only|inspect|audit|report|explain|status)\b",)) and not mutation
+    read_only_signal = _hit(text, (r"\b(read[- ]only|inspect|audit|report|explain|status)\b",))
+    explicit_read_only = _hit(text, (r"\b(read[- ]only|zero\s+writes?|no\s+writes?)\b",))
+    read_only = read_only_signal and not mutation
     triggers = {
         "ui": (
-            _affirmative_hit(text, (r"\b(ui|frontend|screenshot|browser|page|css|template)\b",))
+            _affirmative_hit(execution_text, (r"\b(ui|frontend|screenshot|browser|page|css|template)\b",))
         ),
-        "security": _affirmative_hit(text, (r"\b(auth|security|credential|secret|permission|privacy)\b",)),
-        "database": _affirmative_hit(text, (r"\b(schema|migration|database|postgres|sql|table)\b",)),
-        "customer_delivery": _affirmative_hit(text, (r"\b(customer|telegram|chatwoot|message|send|delivery)\b",)),
-        "financial": _affirmative_hit(text, (r"\b(payment|money|financial|revenue|price|invoice)\b",)),
-        "hardware": _affirmative_hit(text, (r"\b(hardware|irrigation|valve|pump|rootline|physical)\b",)),
-        "publication": _affirmative_hit(text, (r"\b(publish|publication|campaign|spend|beacon|storyworks)\b",)),
-        "farm": _affirmative_hit(text, (r"\b(herdmaster|pig|farm|livestock|litter|observation)\b",)),
-        "sales": _affirmative_hit(text, (r"\b(sam|sales|order|customer|meat)\b",)),
-        "deployment": _affirmative_hit(text, (r"\b(deploy|production|configuration|environment|render)\b",)),
+        "security": _affirmative_hit(execution_text, (r"\b(auth|security|credential|secret|permission|privacy)\b",)),
+        "database": _affirmative_hit(execution_text, (r"\b(schema|migration|database|postgres|sql|table)\b",)),
+        "customer_delivery": _affirmative_hit(execution_text, (r"\b(customer|telegram|chatwoot|message|send|delivery)\b",)),
+        "financial": _affirmative_hit(execution_text, (r"\b(payment|money|financial|revenue|price|invoice)\b",)),
+        "hardware": _affirmative_hit(execution_text, (r"\b(hardware|irrigation|valve|pump|rootline|physical)\b",)),
+        "publication": _affirmative_hit(execution_text, (r"\b(publish|publication|campaign|spend|beacon|storyworks)\b",)),
+        "farm": _affirmative_hit(execution_text, (r"\b(herdmaster|pig|farm|livestock|litter|observation)\b",)),
+        "sales": _affirmative_hit(execution_text, (r"\b(sam|sales|order|customer|meat)\b",)),
+        "deployment": _affirmative_hit(execution_text, (r"\b(deploy|production|configuration|environment|render)\b",)),
     }
     explicit_small = _hit(text, (r"\b(simple|small|tiny|focused|bounded|bug|regression)\b",))
     unknown_scope = mutation and not file_hints and not docs and not explicit_small
@@ -146,7 +173,7 @@ def score_mission(mission):
         "data_sensitivity": _dimension(2 if _hit(text, (r"\b(personal|private|privacy|customer data)\b",)) else 0, [], "Sensitive-data trigger."),
         "authentication_security": _dimension(3 if triggers["security"] else 0, [], "Security trigger."),
         "financial_impact": _dimension(3 if triggers["financial"] else 0, [], "Money/revenue trigger."),
-        "schema_migration": _dimension(3 if triggers["database"] and _affirmative_hit(text, (r"\b(schema|migration|table)\b",)) else 1 if triggers["database"] else 0, [], "Database/schema trigger."),
+        "schema_migration": _dimension(3 if triggers["database"] and _affirmative_hit(execution_text, (r"\b(schema|migration|table)\b",)) else 1 if triggers["database"] else 0, [], "Database/schema trigger."),
         "hardware_physical": _dimension(3 if triggers["hardware"] else 0, [], "Physical-control trigger."),
         "publication_reputation": _dimension(3 if triggers["publication"] else 0, [], "Publication/reputation trigger."),
         "production_configuration": _dimension(3 if triggers["deployment"] else 0, [], "Production/configuration trigger."),
@@ -154,26 +181,38 @@ def score_mission(mission):
         "owner_dependency": _dimension(3 if _affirmative_hit(text, (r"\b(owner approval|owner decision|protected)\b",)) else 0, [], "Explicit owner dependency."),
     }
     protected = [name for name in PROTECTED if values[name]["score"] >= 3]
+    contradictory = bool(explicit_read_only and protected)
     maximum = max(item["score"] for item in values.values())
     total = sum(item["score"] for item in values.values())
-    if _hit(text, (r"\b(charlie core|workflow system|orchestration engine)\b",)) and mutation:
+    if protected:
+        tier = "T4"
+    elif _hit(text, (r"\b(charlie core|workflow system|orchestration engine)\b",)) and mutation:
         tier = "T3"
     elif read_only:
         tier = "T0"
-    elif protected:
-        tier = "T4"
     elif maximum >= 3 or total >= 15:
         tier = "T3"
     elif total >= 7 or values["architectural_complexity"]["score"] >= 2:
         tier = "T2"
     else:
         tier = "T1"
-    return {"version": VERSION, "tier": tier, "total_score": total,
-            "dimensions": values, "triggers": triggers, "protected_triggers": protected}
+    return {
+        "version": VERSION, "tier": tier, "total_score": total,
+        "dimensions": values, "triggers": triggers, "protected_triggers": protected,
+        "intent_context": {
+            "administrative_labels": administrative_labels,
+            "read_only_signal": bool(read_only_signal),
+            "explicit_read_only": bool(explicit_read_only),
+            "affirmative_mutation": bool(mutation),
+            "contradictory_protected_intent": contradictory,
+        },
+    }
 
 
 def build_orchestration_packet(mission):
     score = score_mission(mission)
+    if score["intent_context"]["contradictory_protected_intent"]:
+        raise ValueError("contradictory_read_only_protected_intent")
     tier, triggers = score["tier"], score["triggers"]
     text = _text(mission)
     factory_build = _hit(text, (r"\b(agent build|system improvement|charlie core|workflow system|orchestration engine)\b",))

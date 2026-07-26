@@ -65,6 +65,83 @@ class AdaptiveOrchestrationTests(unittest.TestCase):
         })
         self.assertEqual(packet["tier"], "T0")
 
+    def test_exact_failed_production_canary_wording_is_t0_source_mapper_only(self):
+        mission = {
+            "title": "Controlled T0 adaptive orchestration production canary",
+            "mission_type": "read-only audit",
+            "raw_text": (
+                "Perform a read-only inventory and report of "
+                "docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md. Inspect only. "
+                "Do not edit files, write the repository, invoke product routes, contact "
+                "customers, perform business actions, deploy, publish, migrate, or control "
+                "hardware. Report the documented adaptive orchestration tier and authority "
+                "boundary with source evidence."
+            ),
+            "acceptance_criteria": [
+                "T0 orchestration packet is durable before runnable state.",
+                "Only Source Mapper runs with zero repository mutation authority.",
+                "Final artifact is durably ingested before mission completion.",
+            ],
+        }
+        packet = build_orchestration_packet(mission)
+        self.assertEqual(packet["tier"], "T0")
+        self.assertEqual([row["agent"] for row in packet["selected_agents"]], ["source_mapper"])
+        self.assertEqual(packet["authority_contract"]["permitted_writes"], [])
+        self.assertEqual(packet["selected_agents"][0]["allowed_mutations"], [])
+        self.assertEqual(packet["budgets"], {
+            "maximum_elapsed_minutes": 20,
+            "maximum_attempts_per_stage": 1,
+            "maximum_recovery_cycles": 1,
+            "maximum_tokens": 8000,
+        })
+        self.assertFalse(any(packet["score"]["triggers"].values()))
+        self.assertIn(
+            "production_canary",
+            packet["score"]["intent_context"]["administrative_labels"],
+        )
+
+    def test_administrative_protected_labels_do_not_grant_authority(self):
+        for label in (
+            "production-shaped evidence",
+            "production canary",
+            "deployment test",
+            "migration audit",
+            "publication review",
+        ):
+            with self.subTest(label=label):
+                packet = build_orchestration_packet({
+                    "mission_type": "read-only audit",
+                    "raw_text": f"Read-only inventory for the {label}. No writes or external action.",
+                })
+                self.assertEqual(packet["tier"], "T0")
+                self.assertEqual(
+                    [row["agent"] for row in packet["selected_agents"]],
+                    ["source_mapper"],
+                )
+                self.assertEqual(packet["score"]["protected_triggers"], [])
+
+    def test_genuine_protected_execution_intent_forces_t4(self):
+        cases = (
+            ("Deploy the approved build to production.", "deployment"),
+            ("Publish the approved owner article.", "publication"),
+            ("Apply the approved schema migration.", "database"),
+            ("Send the approved message to the customer.", "customer_delivery"),
+            ("Open the ROOTLINE irrigation valve.", "hardware"),
+        )
+        for text, trigger in cases:
+            with self.subTest(text=text):
+                packet = build_orchestration_packet({"mission_type": "operation", "raw_text": text})
+                self.assertEqual(packet["tier"], "T4")
+                self.assertTrue(packet["score"]["triggers"][trigger])
+                self.assertIn("publisher", [row["agent"] for row in packet["selected_agents"]])
+
+    def test_contradictory_read_only_and_protected_intent_fails_before_packet(self):
+        with self.assertRaisesRegex(ValueError, "contradictory_read_only_protected_intent"):
+            build_orchestration_packet({
+                "mission_type": "read-only audit",
+                "raw_text": "Read-only report that opens the ROOTLINE irrigation valve.",
+            })
+
     def test_trivial_document_fix_is_short_t1(self):
         packet = build_orchestration_packet({"mission_type": "documentation", "raw_text": "Fix typo in README.md."})
         self.assertEqual(packet["tier"], "T1")

@@ -90,7 +90,7 @@ class CharlieAdaptiveOrchestrationPostgresTests(unittest.TestCase):
             {
                 "mission_id": self.mission_id,
                 "status": "approved",
-                "title": "Read-only inventory of CORE adaptive orchestration documentation",
+                "title": "Controlled T0 adaptive orchestration production canary",
                 "mission_type": "read-only audit",
                 "approval_level": "LEVEL 1",
                 "raw_text": PRODUCTION_T0_TEXT,
