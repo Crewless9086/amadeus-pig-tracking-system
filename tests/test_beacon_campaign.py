@@ -748,7 +748,16 @@ class BeaconCampaignTests(unittest.TestCase):
         )
         self.assertTrue(recorded[1]["execution_event_id"].endswith("-RESULT"))
 
-    def test_attempt_claim_persists_exact_media_order_before_meta(self):
+    @patch("modules.sales.beacon_campaign.require_organic_publication_binding")
+    def test_attempt_claim_persists_exact_media_order_before_meta(self, binding):
+        binding.return_value = ({
+            "success": True,
+            "binding": {
+                "binding_id": "BINDING-1",
+                "weekly_packet_id": "WEEKLY-1",
+                "owner_decision_event_id": "DECISION-1",
+            },
+        }, 200)
         recorded = []
         poster_calls = []
         assets = [
@@ -796,6 +805,40 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertNotIn("storage_path", json.dumps(claim))
         self.assertEqual(len(poster_calls), 1)
         self.assertFalse(result["success"])
+
+    @patch("modules.sales.beacon_campaign.require_organic_publication_binding")
+    def test_unbound_awareness_packet_cannot_reach_attempt_or_meta(self, binding):
+        binding.return_value = ({
+            "success": False,
+            "status": "organic_publication_packet_unbound",
+            "publish": False,
+            "upload": False,
+            "scheduled": False,
+            "meta_call": False,
+            "boost": False,
+            "advert": False,
+            "spend": False,
+        }, 409)
+        calls = []
+        result, status = execute_beacon_facebook_page_post({
+            "campaign_lane": "live_stock_awareness",
+            "publish_packet_id": "UNBOUND",
+            "channel": "Facebook",
+            "exact_text": "Follow the farm journey for responsible piglet care.",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, poster=lambda *_: calls.append("meta"),
+           execution_recorder=lambda *_args, **_kwargs: calls.append("claim"),
+           environ={
+               "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+               "BEACON_FACEBOOK_PAGE_ID": "page",
+               "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+           })
+
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "organic_publication_packet_unbound")
+        self.assertEqual(calls, [])
+        self.assertFalse(result["posts_publicly"])
+        self.assertFalse(result["calls_meta"])
 
     def test_duplicate_attempt_is_withheld_before_meta(self):
         poster_calls = []

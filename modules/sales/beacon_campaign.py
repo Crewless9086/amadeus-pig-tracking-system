@@ -21,6 +21,9 @@ from modules.beacon.public_livestock_content_policy import (
     assess_public_livestock_content,
     public_livestock_policy_contract,
 )
+from modules.beacon.organic_publication_binding import (
+    require_organic_publication_binding,
+)
 from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 
@@ -1275,6 +1278,24 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             "execution_event": _public_facebook_post_event(params),
             **_facebook_execution_authority(False),
         }, 400 if validation_error not in {"facebook_posting_disabled", "facebook_page_credentials_missing"} else 503
+    if campaign_lane == "live_stock_awareness":
+        source = environ if environ is not None else os.environ
+        binding_result, binding_status = require_organic_publication_binding(
+            params,
+            target_page_id=_clean_text(source.get(FACEBOOK_PAGE_ID_ENV)),
+            database_url=database_url,
+        )
+        if binding_status != 200:
+            return {
+                **binding_result,
+                "policy": policy,
+                **_facebook_execution_authority(False),
+            }, binding_status
+        binding = binding_result["binding"]
+        params["publication_binding_id"] = binding["binding_id"]
+        params["approved_weekly_packet_id"] = binding["weekly_packet_id"]
+        params["owner_decision_event_id"] = binding["owner_decision_event_id"]
+        params["execution_event_id"] = _facebook_post_execution_id(params)
 
     recorder = execution_recorder or _record_facebook_post_execution_event
     params["execution_status"] = "record_only_before_send"
@@ -3002,6 +3023,9 @@ def _facebook_post_execution_id(params):
     seed = {
         "publish_packet_id": params.get("publish_packet_id", ""),
         "channel": params.get("channel", ""),
+        "publication_binding_id": params.get("publication_binding_id", ""),
+        "approved_weekly_packet_id": params.get("approved_weekly_packet_id", ""),
+        "owner_decision_event_id": params.get("owner_decision_event_id", ""),
     }
     digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
     return f"BEACON-FB-POST-{digest}"
