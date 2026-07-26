@@ -23,4 +23,6 @@ button { border: 0; border-radius: 999px; padding: 10px 16px; background: #f5c95
 .band-warning { color: #9a6500; }
 .band-urgent, .band-missed_window, .band-withheld { color: #a4473d; }
 .work-item a { color: #165f3b; font-weight: 700; }
+.ownership-decision { margin: 14px 0; padding: 14px; background: #fff6dc; border: 1px solid #e6c66d; border-radius: 10px; }
+.ownership-decision select { margin-right: 10px; padding: 9px; border-radius: 8px; }
 @media (max-width: 680px) { .summary { grid-template-columns: repeat(2, 1fr); } }

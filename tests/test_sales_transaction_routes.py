@@ -55,6 +55,37 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "2025", reconciliation_actor_id="owner-admin:stable-server-derived"
         )
 
+    def test_owner_ownership_resolution_uses_only_server_principal(self):
+        result = {
+            "success": True, "status": "ownership_resolution_completed",
+            "sends_customer_message": False, "calls_telegram": False,
+            "mutates_business_state": False,
+        }
+        payload = {"work_item_id": "SAM-OWNER-WORK-1", "target_mode": "HUMAN"}
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), \
+             patch.object(sales_transaction_routes, "owner_admin_principal", return_value="owner-admin:server"), \
+             patch.object(sales_transaction_routes, "resolve_owner_work_ownership", return_value=(result, 200)) as resolve:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam/owner-inbox/ownership",
+                json={**payload, "actor_id": "browser-spoof"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["sends_customer_message"])
+        resolve.assert_called_once_with(
+            {**payload, "actor_id": "browser-spoof"}, actor_id="owner-admin:server"
+        )
+
+    def test_owner_ownership_resolution_requires_owner_admin(self):
+        denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denied), \
+             patch.object(sales_transaction_routes, "resolve_owner_work_ownership") as resolve:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam/owner-inbox/ownership",
+                json={"target_mode": "HUMAN"},
+            )
+        self.assertEqual(response.status_code, 403)
+        resolve.assert_not_called()
+
     def test_charlie_daily_report_write_requires_owner_admin(self):
         denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
         with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denied), \

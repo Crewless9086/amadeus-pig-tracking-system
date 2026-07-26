@@ -143,6 +143,7 @@ from modules.sales.sam_owner_work_queue import (
     reconcile_live_human_conversation,
     run_daily_backlog_report,
 )
+from modules.sales.sam_owner_ownership_resolution import resolve_owner_work_ownership
 from modules.sales.sam_command_state import get_sam_command_state
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.sam_pricing import (
@@ -1018,6 +1019,27 @@ def sam_owner_inbox_reconcile():
     result, status_code = reconcile_live_human_conversation(
         payload.get("conversation_id"),
         reconciliation_actor_id=principal,
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam/owner-inbox/ownership", methods=["POST"])
+def sam_owner_inbox_resolve_ownership():
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    principal = owner_admin_principal()
+    if not principal:
+        return jsonify({
+            "success": False,
+            "status": "owner_identity_required",
+            "sends_customer_message": False,
+            "calls_telegram": False,
+            "mutates_business_state": False,
+        }), 403
+    result, status_code = resolve_owner_work_ownership(
+        request.get_json(silent=True) or {},
+        actor_id=principal,
     )
     return jsonify(result), status_code
 
