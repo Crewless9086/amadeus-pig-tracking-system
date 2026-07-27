@@ -136,6 +136,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202607260008_create_beacon_organic_media_learning.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607270001_create_beacon_media_intake.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607270002_create_rootline_operating_policies.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606300001_create_charlie_mission_queue.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607270003_create_charlie_owner_execution_holds.sql
 
       - name: Run Beacon weekly owner-decision permission gates
