@@ -21,20 +21,29 @@ from modules.charlie.process_policy import background_process_kwargs, background
 from modules.charlie.environment import env_value
 from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 from modules.charlie.runner_control import (
+    _contain_spawned_process,
     RUNNER_DIR,
     SUPERVISOR_PACKET_VERSION,
+    _contain_observed_tree,
     atomic_write_json,
     validate_supervisor_packet,
 )
 from modules.charlie.runner_control import emergency_process_cleanup_disabled, record_emergency_cleanup_refusal
 from modules.charlie.process_ownership import (
     inspect_process,
+    generate_controller_signing_key,
     make_ownership_record,
     make_process_tree_record,
+    observe_process_tree,
     process_termination_enabled,
+    process_tree_identity_digest,
+    sign_controller_acknowledgement,
+    validate_bootstrap_tree,
+    validate_live_bootstrap_tree,
     validate_termination,
+    verify_controller_acknowledgement,
 )
-from modules.charlie.secret_redaction import redact_tree_in_place
+from modules.charlie.secret_redaction import redact_payload, redact_tree_in_place
 EXECUTION_ROOT = Path(env_value("CORE_EXECUTION_ROOT") or (RUNNER_DIR / "core-execution-current")).resolve()
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"
@@ -54,6 +63,7 @@ NON_RETRYABLE_RUNNER_STATUSES = {
     "repository_operation_locked",
     "runner_preflight_failed",
 }
+_TEST_CONTROLLER_SIGNING_KEY = None
 GENERATED_EXECUTION_PATHS = {"planning/CODEX_CHAT.md"}
 
 
@@ -181,8 +191,18 @@ def supervise_runner(
     recovery_fn=None,
 ):
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
+    if STOP_PATH.exists():
+        return {"status": "governed_stop_active", "runner_state": "not_spawned"}
     generation = str(generation or os.getenv("CHARLIE_SUPERVISOR_GENERATION") or uuid.uuid4().hex)
+    startup_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or uuid.uuid4().hex)
     test_mode = popen_factory is not subprocess.Popen
+    controller_public_key = str(os.getenv("CHARLIE_CONTROLLER_PUBLIC_KEY") or "")
+    test_controller_private_key = None
+    if test_mode and not controller_public_key:
+        global _TEST_CONTROLLER_SIGNING_KEY
+        if _TEST_CONTROLLER_SIGNING_KEY is None:
+            _TEST_CONTROLLER_SIGNING_KEY = generate_controller_signing_key()
+        test_controller_private_key, controller_public_key = _TEST_CONTROLLER_SIGNING_KEY
     actual_runtime_revision = _git_revision(REPO_ROOT)
     actual_execution_revision = _git_revision(EXECUTION_ROOT)
     runtime_revision = str(os.getenv("CHARLIE_INTENDED_RUNTIME_REVISION") or actual_runtime_revision)
@@ -190,49 +210,39 @@ def supervise_runner(
     if test_mode:
         runtime_revision = runtime_revision or "test-revision"
         execution_revision = execution_revision or "test-revision"
-    _recover_stale_owned_child()
-    test_tree = None
-    if test_mode:
-        test_identity = {
-            "pid": os.getpid(),
-            "creation_time": "test-process",
-            "executable_path": str(sys.executable),
-            "command_fingerprint": "test-command",
-            "parent_pid": 0,
-            "runner_generation": generation,
-            "mission_id": "charlie-control",
-            "execution_id": generation,
-            "ownership_type": "charlie_runner",
-        }
-        test_tree = make_process_tree_record(test_identity, [test_identity], generation)
-    starting = _write_status(
-        "supervisor_starting",
-        generation=generation,
-        created_at=datetime.now(timezone.utc).isoformat(),
-        intended_runtime_revision=runtime_revision,
-        intended_execution_revision=execution_revision,
-        runner_state="not_spawned",
-        child_pid=0,
-        **({"supervisor_tree_identity": test_tree} if test_tree else {}),
-    )
-    durable = _read_status()
-    valid, reason = validate_supervisor_packet(
-        durable,
+    if test_mode and not _read_status():
+        _write_test_controller_packet(
+            generation,
+            startup_nonce,
+            runtime_revision,
+            execution_revision,
+            controller_public_key,
+            test_controller_private_key,
+        )
+    controller = _wait_for_controller_ack(
         generation,
+        startup_nonce,
         runtime_revision,
         execution_revision,
-        runner_states={"not_spawned"},
+        controller_public_key=controller_public_key,
+        live_validate=not test_mode,
+        sleep_fn=sleep_fn,
     )
-    if not valid or durable != starting:
+    if not controller.get("success"):
         _write_status(
             "infrastructure_hold",
             generation=generation,
+            startup_nonce=startup_nonce,
             intended_runtime_revision=runtime_revision,
             intended_execution_revision=execution_revision,
             runner_state="not_spawned",
-            failure_status=reason if not valid else "supervisor_packet_reread_mismatch",
+            failure_status=controller.get("reason") or "ownership_identity_incomplete",
+            failure_detail=controller,
         )
-        return {"status": "infrastructure_hold", "failure_status": reason}
+        return {
+            "status": "infrastructure_hold",
+            "failure_status": controller.get("reason") or "ownership_identity_incomplete",
+        }
     if not test_mode and (
         actual_runtime_revision != runtime_revision
         or actual_execution_revision != execution_revision
@@ -240,6 +250,7 @@ def supervise_runner(
         _write_status(
             "infrastructure_hold",
             generation=generation,
+            startup_nonce=startup_nonce,
             intended_runtime_revision=runtime_revision,
             intended_execution_revision=execution_revision,
             runner_state="not_spawned",
@@ -250,27 +261,6 @@ def supervise_runner(
             },
         )
         return {"status": "infrastructure_hold", "failure_status": "startup_revision_mismatch"}
-    try:
-        if recovery_fn is not None:
-            recovery, recovery_status = recovery_fn()
-        elif popen_factory is not subprocess.Popen:
-            recovery, recovery_status = ({"status": "test_recovery_skipped"}, 200)
-        else:
-            from modules.charlie.execution_bridge import recover_pending_final_agent_artifact
-            recovery, recovery_status = recover_pending_final_agent_artifact()
-    except Exception as exc:
-        recovery = {"status": "final_artifact_recovery_failed", "error_type": exc.__class__.__name__}
-        recovery_status = 503
-    if recovery_status >= 400:
-        _write_status(
-            "final_artifact_recovery_blocked",
-            generation=generation,
-            intended_runtime_revision=runtime_revision,
-            intended_execution_revision=execution_revision,
-            runner_state="not_spawned",
-            recovery=recovery,
-        )
-        return {"status": "final_artifact_recovery_blocked", "recovery": recovery}
     restart_count = 0
     cycles = 0
     repeated_failure = ""
@@ -321,6 +311,7 @@ def supervise_runner(
         child_env = {
             **os.environ,
             "CHARLIE_SUPERVISOR_GENERATION": generation,
+            "CHARLIE_STARTUP_NONCE": startup_nonce,
             "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
         }
         child_env["DATABASE_URL"] = _transaction_pool_url(child_env.get("DATABASE_URL"))
@@ -338,19 +329,61 @@ def supervise_runner(
                 runner_state="not_spawned", child_pid=0,
             )
             break
+        runner_nonce = uuid.uuid4().hex
+        child_env["CHARLIE_RUNNER_STARTUP_NONCE"] = runner_nonce
         child = popen_factory(RUNNER_COMMAND, cwd=str(EXECUTION_ROOT), env=child_env, **_windowless_process_kwargs())
-        child_identity = make_ownership_record(
-            inspect_process(child.pid), generation, "charlie-control", generation, "charlie_runner"
-        )
+        if test_mode:
+            runner_observation = _test_runner_observation(
+                child.pid, generation, execution_revision, runner_nonce
+            )
+        else:
+            runner_observation = observe_process_tree(
+                child.pid,
+                generation=generation,
+                revision=execution_revision,
+                startup_nonce=runner_nonce,
+                expected_script=Path(RUNNER_COMMAND[1]).name,
+                expected_root_executable=RUNNER_COMMAND[0],
+                process_role_prefix="runner",
+            )
+        if not runner_observation.get("success"):
+            STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+            containment = _contain_spawned_process(
+                child, runner_observation.get("tree") or {}
+            )
+            _write_status(
+                "infrastructure_hold",
+                generation=generation,
+                startup_nonce=startup_nonce,
+                intended_runtime_revision=runtime_revision,
+                intended_execution_revision=execution_revision,
+                runner_state="containment_required",
+                failure_status=runner_observation.get("reason") or "ownership_identity_incomplete",
+                failure_detail={**runner_observation, "containment": containment},
+            )
+            return {
+                "status": "infrastructure_hold",
+                "failure_status": runner_observation.get("reason") or "ownership_identity_incomplete",
+            }
+        runner_tree = runner_observation["tree"]
+        child_identity = runner_tree["root"]
         _write_status(
             "runner_starting", child_pid=child.pid, child_identity=child_identity,
-            process_tree_identity=make_process_tree_record(
-                child_identity, [child_identity], generation
-            ),
+            process_tree_identity=runner_tree,
             restart_count=restart_count, generation=generation,
             intended_runtime_revision=runtime_revision,
             intended_execution_revision=execution_revision,
             runner_state="runner_starting",
+            runner_startup_nonce=runner_nonce,
+            runner_controller_acknowledgement={
+                "status": "runner_identity_acknowledged",
+                "generation": generation,
+                "startup_nonce": runner_nonce,
+                "revision": execution_revision,
+                "member_pids": runner_observation["validation"]["member_pids"],
+                "runner_tree_digest": process_tree_identity_digest(runner_tree),
+                "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
         waiter = acknowledgement_fn
         if waiter is None:
@@ -360,10 +393,12 @@ def supervise_runner(
             generation,
             runtime_revision,
             execution_revision,
+            runner_nonce=runner_nonce,
             sleep_fn=sleep_fn,
         )
         if not acknowledgement.get("success"):
             STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+            containment = _contain_spawned_process(child, runner_tree)
             _write_status(
                 "infrastructure_hold",
                 child_pid=child.pid,
@@ -374,12 +409,16 @@ def supervise_runner(
                 intended_execution_revision=execution_revision,
                 runner_state="containment_required",
                 failure_status="runner_acknowledgement_failed",
-                failure_detail=acknowledgement,
+                failure_detail={
+                    "acknowledgement": acknowledgement,
+                    "containment": containment,
+                },
             )
             return {
                 "status": "infrastructure_hold",
                 "failure_status": "runner_acknowledgement_failed",
                 "acknowledgement": acknowledgement,
+                "containment": containment,
             }
         _write_status(
             "running",
@@ -392,6 +431,76 @@ def supervise_runner(
             intended_execution_revision=execution_revision,
             runner_state="running",
             runner_acknowledgement=acknowledgement,
+        )
+        if test_mode:
+            _write_test_final_authorization(
+                generation,
+                startup_nonce,
+                runner_nonce,
+                execution_revision,
+                child.pid,
+                controller_public_key,
+                test_controller_private_key,
+            )
+        final_authorization = _wait_for_controller_final_authorization(
+            child,
+            generation,
+            startup_nonce,
+            runner_nonce,
+            execution_revision,
+            controller_public_key=controller_public_key,
+            live_validate=not test_mode,
+            sleep_fn=sleep_fn,
+        )
+        if not final_authorization.get("success") or STOP_PATH.exists():
+            STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+            containment = _contain_spawned_process(child, runner_tree)
+            _write_status(
+                "infrastructure_hold",
+                generation=generation,
+                runner_state="containment_required",
+                failure_status=final_authorization.get("reason") or "governed_stop_active",
+                failure_detail={"containment": containment},
+            )
+            return {
+                "status": "infrastructure_hold",
+                "failure_status": final_authorization.get("reason") or "governed_stop_active",
+                "containment": containment,
+            }
+        try:
+            if recovery_fn is not None:
+                recovery, recovery_status = recovery_fn()
+            elif test_mode:
+                recovery, recovery_status = ({"status": "test_recovery_skipped"}, 200)
+            else:
+                from modules.charlie.execution_bridge import recover_pending_final_agent_artifact
+                recovery, recovery_status = recover_pending_final_agent_artifact()
+        except Exception as exc:
+            recovery = {
+                "status": "final_artifact_recovery_failed",
+                "error_type": exc.__class__.__name__,
+            }
+            recovery_status = 503
+        if recovery_status >= 400 or STOP_PATH.exists():
+            STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+            containment = _contain_spawned_process(child, runner_tree)
+            _write_status(
+                "final_artifact_recovery_blocked",
+                generation=generation,
+                runner_state="containment_required",
+                recovery=recovery,
+                failure_detail={"containment": containment},
+            )
+            return {
+                "status": "final_artifact_recovery_blocked",
+                "recovery": recovery,
+                "containment": containment,
+            }
+        _write_status(
+            "operational_authorized",
+            generation=generation,
+            runner_state="operational_authorized",
+            recovery=recovery,
         )
         return_code = child.wait()
         if STOP_PATH.exists():
@@ -443,14 +552,214 @@ def supervise_runner(
     return {"status": "supervisor_stopped", "restart_count": restart_count, "cycles": cycles}
 
 
-def _test_acknowledgement(child, generation, runtime_revision, execution_revision, sleep_fn=None):
+def _test_acknowledgement(
+    child, generation, runtime_revision, execution_revision,
+    runner_nonce=None, sleep_fn=None,
+):
     return {
         "success": True,
         "status": "test_acknowledged",
         "generation": generation,
         "runtime_revision": runtime_revision,
         "execution_revision": execution_revision,
+        "startup_nonce": runner_nonce,
         "process_tree_identity": {},
+    }
+
+
+def _wait_for_controller_ack(
+    generation,
+    startup_nonce,
+    runtime_revision,
+    execution_revision,
+    controller_public_key="",
+    live_validate=True,
+    sleep_fn=time.sleep,
+    timeout_seconds=15,
+):
+    deadline = time.monotonic() + max(0, float(timeout_seconds))
+    last_reason = "controller_ownership_packet_missing"
+    while time.monotonic() <= deadline:
+        packet = _read_status()
+        if packet and str(packet.get("generation") or "") == generation:
+            valid, reason = validate_supervisor_packet(
+                packet,
+                generation,
+                runtime_revision,
+                execution_revision,
+                runner_states={"not_spawned"},
+                startup_nonce=startup_nonce,
+                statuses={"supervisor_ready"},
+            )
+            if not valid:
+                return {"success": False, "reason": reason, "packet": packet}
+            acknowledgement = packet.get("controller_acknowledgement")
+            if not isinstance(acknowledgement, dict):
+                return {
+                    "success": False,
+                    "reason": "ownership_identity_incomplete:controller_acknowledgement",
+                }
+            checks = {
+                "generation": generation,
+                "startup_nonce": startup_nonce,
+                "revision": runtime_revision,
+            }
+            for field, expected in checks.items():
+                if str(acknowledgement.get(field) or "") != expected:
+                    return {
+                        "success": False,
+                        "reason": f"controller_acknowledgement_{field}_mismatch",
+                    }
+            signature = acknowledgement.get("signature")
+            unsigned = {
+                key: value for key, value in acknowledgement.items()
+                if key != "signature"
+            }
+            if (
+                not controller_public_key
+                or str(packet.get("controller_public_key") or "") != controller_public_key
+                or not verify_controller_acknowledgement(
+                    unsigned, signature, controller_public_key
+                )
+            ):
+                return {
+                    "success": False,
+                    "reason": "controller_acknowledgement_signature_invalid",
+                }
+            member_pids = sorted(
+                int(value) for value in acknowledgement.get("member_pids") or []
+            )
+            tree_member_pids = sorted(
+                int(item.get("pid"))
+                for item in (packet.get("supervisor_tree_identity") or {}).get("members", [])
+                if item.get("pid")
+            )
+            if member_pids != tree_member_pids:
+                return {
+                    "success": False,
+                    "reason": "controller_acknowledgement_member_pids_mismatch",
+                }
+            if str(acknowledgement.get("supervisor_tree_digest") or "") != (
+                process_tree_identity_digest(packet.get("supervisor_tree_identity"))
+            ):
+                return {
+                    "success": False,
+                    "reason": "controller_acknowledgement_tree_digest_mismatch",
+                }
+            if live_validate:
+                live = validate_live_bootstrap_tree(
+                    packet.get("supervisor_tree_identity"),
+                    generation=generation,
+                    revision=runtime_revision,
+                    startup_nonce=startup_nonce,
+                )
+                if not live["authorized"]:
+                    return {"success": False, "reason": live["reason"]}
+            return {
+                "success": True,
+                "status": "controller_identity_acknowledged",
+                "packet": packet,
+            }
+        if STOP_PATH.exists():
+            return {"success": False, "reason": "governed_stop_during_supervisor_start"}
+        sleep_fn(0.05)
+    return {"success": False, "reason": last_reason}
+
+
+def _write_test_controller_packet(
+    generation,
+    startup_nonce,
+    runtime_revision,
+    execution_revision,
+    controller_public_key,
+    controller_private_key,
+):
+    root = {
+        "pid": 100,
+        "creation_time": "test-launcher",
+        "executable_path": str(sys.executable),
+        "command_fingerprint": "test-launcher-command",
+        "parent_pid": 1,
+        "runner_generation": generation,
+        "mission_id": "charlie-control",
+        "execution_id": generation,
+        "ownership_type": "charlie_runner",
+        "revision": runtime_revision,
+        "startup_nonce": startup_nonce,
+        "process_role": "supervisor_launcher",
+    }
+    interpreter = {
+        **root,
+        "pid": os.getpid(),
+        "parent_pid": 100,
+        "creation_time": "test-interpreter",
+        "command_fingerprint": "test-interpreter-command",
+        "process_role": "supervisor_interpreter",
+    }
+    supervisor_tree = make_process_tree_record(
+        root, [root, interpreter], generation
+    )
+    acknowledgement = {
+        "status": "supervisor_identity_acknowledged",
+        "generation": generation,
+        "startup_nonce": startup_nonce,
+        "revision": runtime_revision,
+        "member_pids": [100, os.getpid()],
+        "supervisor_tree_digest": process_tree_identity_digest(supervisor_tree),
+    }
+    acknowledgement["signature"] = sign_controller_acknowledgement(
+        acknowledgement, controller_private_key
+    )
+    packet = {
+        "version": SUPERVISOR_PACKET_VERSION,
+        "pid": interpreter["pid"],
+        "status": "supervisor_ready",
+        "runner_state": "not_spawned",
+        "generation": generation,
+        "startup_nonce": startup_nonce,
+        "process_role": "runner_launcher",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "intended_runtime_revision": runtime_revision,
+        "intended_execution_revision": execution_revision,
+        "controller_public_key": controller_public_key,
+        "supervisor_tree_identity": supervisor_tree,
+        "controller_acknowledgement": acknowledgement,
+    }
+    atomic_write_json(SUPERVISOR_PATH, packet)
+    return packet
+
+
+def _test_runner_observation(pid, generation, revision, startup_nonce):
+    root = {
+        "pid": pid,
+        "creation_time": "test-runner-launcher",
+        "executable_path": str(sys.executable),
+        "command_fingerprint": "test-runner-launcher-command",
+        "parent_pid": os.getpid(),
+        "runner_generation": generation,
+        "mission_id": "charlie-control",
+        "execution_id": generation,
+        "ownership_type": "charlie_runner",
+        "revision": revision,
+        "startup_nonce": startup_nonce,
+    }
+    interpreter = {
+        **root,
+        "pid": int(pid) + 1,
+        "parent_pid": pid,
+        "creation_time": "test-runner-interpreter",
+        "command_fingerprint": "test-runner-interpreter-command",
+        "process_role": "runner_interpreter",
+    }
+    tree = make_process_tree_record(root, [root, interpreter], generation)
+    return {
+        "success": True,
+        "tree": tree,
+        "validation": {
+            "authorized": True,
+            "member_pids": [pid, int(pid) + 1],
+        },
     }
 
 
@@ -459,6 +768,7 @@ def _wait_for_runner_ack(
     generation,
     runtime_revision,
     execution_revision,
+    runner_nonce=None,
     sleep_fn=time.sleep,
     timeout_seconds=30,
 ):
@@ -467,20 +777,26 @@ def _wait_for_runner_ack(
     while time.monotonic() <= deadline:
         heartbeat = _read_json(RUNNER_HEARTBEAT_PATH)
         if (
+            str(heartbeat.get("status") or "") == "ownership_ready"
+            and
             str(heartbeat.get("supervisor_generation") or "") == generation
             and str(heartbeat.get("runner_source_commit") or "") == execution_revision
+            and str(heartbeat.get("startup_nonce") or "") == str(runner_nonce or "")
             and isinstance(heartbeat.get("process_identity"), dict)
         ):
             interpreter = heartbeat["process_identity"]
-            tree = make_process_tree_record(
-                _read_status().get("child_identity"),
-                [
-                    item for item in (_read_status().get("child_identity"), interpreter)
-                    if isinstance(item, dict) and item.get("pid")
-                ],
-                generation,
+            tree = _read_status().get("process_tree_identity")
+            decision = validate_bootstrap_tree(
+                tree,
+                generation=generation,
+                revision=execution_revision,
+                startup_nonce=runner_nonce,
+                require_interpreter=True,
             )
-            if tree:
+            if (
+                decision["authorized"]
+                and int(interpreter.get("pid") or -1) in set(decision.get("member_pids") or [])
+            ):
                 return {
                     "success": True,
                     "status": "runner_acknowledged",
@@ -490,13 +806,163 @@ def _wait_for_runner_ack(
                     "runner_pid": heartbeat.get("pid"),
                     "process_tree_identity": tree,
                 }
-            reason = "runner_process_tree_acknowledgement_invalid"
+            reason = decision.get("reason") or "runner_process_tree_acknowledgement_invalid"
         if child.poll() is not None:
             return {"success": False, "reason": "runner_exited_before_acknowledgement"}
         if STOP_PATH.exists():
             return {"success": False, "reason": "governed_stop_during_runner_start"}
         sleep_fn(0.1)
     return {"success": False, "reason": reason}
+
+
+def _wait_for_controller_final_authorization(
+    child,
+    generation,
+    supervisor_nonce,
+    runner_nonce,
+    revision,
+    *,
+    controller_public_key="",
+    live_validate=True,
+    sleep_fn=time.sleep,
+    timeout_seconds=30,
+):
+    deadline = time.monotonic() + max(0, float(timeout_seconds))
+    reason = "controller_final_acknowledgement_missing"
+    while time.monotonic() <= deadline:
+        if STOP_PATH.exists():
+            return {"success": False, "reason": "governed_stop_during_final_authorization"}
+        packet = _read_status()
+        acknowledgement = packet.get("controller_final_acknowledgement")
+        if (
+            str(packet.get("status") or "") == "running_authorized"
+            and str(packet.get("runner_state") or "") == "running_authorized"
+            and isinstance(acknowledgement, dict)
+        ):
+            supervisor_root_pid = int(
+                ((packet.get("supervisor_tree_identity") or {}).get("root") or {}).get("pid")
+                or -1
+            )
+            expected = {
+                "generation": generation,
+                "supervisor_startup_nonce": supervisor_nonce,
+                "runner_startup_nonce": runner_nonce,
+                "revision": revision,
+                "supervisor_pid": str(supervisor_root_pid),
+                "runner_pid": str(child.pid),
+                "supervisor_tree_digest": process_tree_identity_digest(
+                    packet.get("supervisor_tree_identity")
+                ),
+                "runner_tree_digest": process_tree_identity_digest(
+                    packet.get("process_tree_identity")
+                ),
+            }
+            mismatch = next(
+                (
+                    field for field, value in expected.items()
+                    if str(acknowledgement.get(field) or "") != str(value or "")
+                ),
+                "",
+            )
+            if mismatch:
+                return {
+                    "success": False,
+                    "reason": f"controller_final_acknowledgement_{mismatch}_mismatch",
+                }
+            signature = acknowledgement.get("signature")
+            unsigned = {
+                key: value for key, value in acknowledgement.items()
+                if key != "signature"
+            }
+            if (
+                not controller_public_key
+                or str(packet.get("controller_public_key") or "") != controller_public_key
+                or not verify_controller_acknowledgement(
+                    unsigned, signature, controller_public_key
+                )
+            ):
+                return {
+                    "success": False,
+                    "reason": "controller_final_acknowledgement_signature_invalid",
+                }
+            if live_validate:
+                supervisor_live = validate_live_bootstrap_tree(
+                    packet.get("supervisor_tree_identity"),
+                    generation=generation,
+                    revision=revision,
+                    startup_nonce=supervisor_nonce,
+                )
+                runner_live = validate_live_bootstrap_tree(
+                    packet.get("process_tree_identity"),
+                    generation=generation,
+                    revision=revision,
+                    startup_nonce=runner_nonce,
+                )
+                if not supervisor_live["authorized"]:
+                    return {"success": False, "reason": supervisor_live["reason"]}
+                if not runner_live["authorized"]:
+                    return {"success": False, "reason": runner_live["reason"]}
+                for field, expected_members in {
+                    "supervisor_member_pids": supervisor_live["member_pids"],
+                    "runner_member_pids": runner_live["member_pids"],
+                }.items():
+                    if sorted(acknowledgement.get(field) or []) != sorted(expected_members):
+                        return {
+                            "success": False,
+                            "reason": f"controller_final_{field}_mismatch",
+                        }
+            return {"success": True, "status": "controller_final_authorized"}
+        if child.poll() is not None:
+            return {"success": False, "reason": "runner_exited_before_final_authorization"}
+        sleep_fn(0.05)
+    return {"success": False, "reason": reason}
+
+
+def _write_test_final_authorization(
+    generation,
+    supervisor_nonce,
+    runner_nonce,
+    revision,
+    runner_pid,
+    controller_public_key,
+    controller_private_key,
+):
+    packet = _read_status()
+    supervisor_members = (
+        (packet.get("supervisor_tree_identity") or {}).get("members") or []
+    )
+    supervisor_root_pid = (
+        ((packet.get("supervisor_tree_identity") or {}).get("root") or {}).get("pid")
+    )
+    runner_members = (packet.get("process_tree_identity") or {}).get("members") or []
+    acknowledgement = {
+        "status": "current_process_tree_acknowledged",
+        "generation": generation,
+        "supervisor_startup_nonce": supervisor_nonce,
+        "runner_startup_nonce": runner_nonce,
+        "revision": revision,
+        "supervisor_pid": str(supervisor_root_pid or ""),
+        "runner_pid": str(runner_pid),
+        "supervisor_member_pids": [item.get("pid") for item in supervisor_members],
+        "runner_member_pids": [item.get("pid") for item in runner_members],
+        "supervisor_tree_digest": process_tree_identity_digest(
+            packet.get("supervisor_tree_identity")
+        ),
+        "runner_tree_digest": process_tree_identity_digest(
+            packet.get("process_tree_identity")
+        ),
+    }
+    acknowledgement["signature"] = sign_controller_acknowledgement(
+        acknowledgement, controller_private_key
+    )
+    packet.update({
+        "status": "running_authorized",
+        "runner_state": "running_authorized",
+        "controller_public_key": controller_public_key,
+        "controller_final_acknowledgement": acknowledgement,
+    })
+    atomic_write_json(SUPERVISOR_PATH, packet)
+    return packet
 
 
 def _prepare_execution_root(run_factory=subprocess.run):
@@ -847,7 +1313,7 @@ def _write_status(status, **extra):
                 key: previous.get(key)
                 for key in (
                     "version", "generation", "created_at", "updated_at", "status",
-                    "runner_state", "supervisor_tree_identity",
+                    "startup_nonce", "runner_state", "supervisor_tree_identity",
                     "process_tree_identity", "stop_evidence",
                 )
                 if key in previous
@@ -858,32 +1324,20 @@ def _write_status(status, **extra):
     if previous_generation == generation:
         for key in (
             "created_at",
+            "startup_nonce",
+            "controller_acknowledgement",
             "child_identity",
             "process_tree_identity",
             "stop_evidence",
             "supervisor_tree_identity",
             "runner_acknowledgement",
+            "runner_startup_nonce",
+            "runner_controller_acknowledgement",
+            "controller_final_acknowledgement",
         ):
             if key not in payload and key in previous:
                 payload[key] = previous[key]
-    if generation and "supervisor_tree_identity" not in payload:
-        current = inspect_process(os.getpid())
-        interpreter = make_ownership_record(
-            current, generation, "charlie-control", generation, "charlie_runner"
-        )
-        ancestry = current.get("ancestry") if isinstance(current, dict) else []
-        launcher = make_ownership_record(
-            ancestry[0] if ancestry and isinstance(ancestry[0], dict) else {},
-            generation,
-            "charlie-control",
-            generation,
-            "charlie_runner",
-        )
-        payload["supervisor_tree_identity"] = make_process_tree_record(
-            launcher or interpreter,
-            [item for item in (launcher, interpreter) if item],
-            generation,
-        )
+    payload = redact_payload(payload)
     atomic_write_json(SUPERVISOR_PATH, payload)
     return payload
 
@@ -926,7 +1380,7 @@ def main():
         return {"status": "duplicate_supervisor_refused", "existing_supervisor_pid": owner_pid}
     try:
         if STOP_PATH.exists():
-            STOP_PATH.unlink()
+            return {"status": "governed_stop_active", "runner_state": "not_spawned"}
         generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or uuid.uuid4().hex)
         return supervise_runner(
             notifier=_notify_infrastructure_hold,

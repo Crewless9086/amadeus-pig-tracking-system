@@ -1,4 +1,6 @@
+import os
 import subprocess
+import json
 import unittest
 from unittest.mock import Mock, patch
 
@@ -7,6 +9,187 @@ from scripts import charlie_runner_supervisor
 
 
 class CharlieProcessOwnershipTests(unittest.TestCase):
+    def test_process_tree_digest_binds_creation_command_parentage_and_role(self):
+        member = {
+            "pid": 100,
+            "parent_pid": 50,
+            "creation_time": "created-1",
+            "executable_path": "C:/Python/python.exe",
+            "command_fingerprint": "command-1",
+            "runner_generation": "generation-1",
+            "mission_id": "charlie-control",
+            "execution_id": "generation-1",
+            "ownership_type": "charlie_runner",
+            "revision": "revision-1",
+            "startup_nonce": "nonce-1",
+            "process_role": "supervisor_launcher",
+        }
+        tree = successful = {
+            "version": "charlie_process_tree_v1",
+            "runner_generation": "generation-1",
+            "root_pid": 100,
+            "root": dict(member),
+            "members": [dict(member)],
+        }
+        original = process_ownership.process_tree_identity_digest(tree)
+        for field, replacement in {
+            "creation_time": "created-2",
+            "executable_path": "C:/Other/python.exe",
+            "command_fingerprint": "command-2",
+            "parent_pid": 51,
+            "process_role": "runner_launcher",
+        }.items():
+            changed = json.loads(json.dumps(successful))
+            changed["members"][0][field] = replacement
+            self.assertNotEqual(
+                original,
+                process_ownership.process_tree_identity_digest(changed),
+                field,
+            )
+            root_changed = json.loads(json.dumps(successful))
+            root_changed["root"][field] = replacement
+            self.assertNotEqual(
+                original,
+                process_ownership.process_tree_identity_digest(root_changed),
+                f"root:{field}",
+            )
+
+    def test_controller_signature_rejects_child_forgery_and_replay_changes(self):
+        private_key, public_key = process_ownership.generate_controller_signing_key()
+        acknowledgement = {
+            "generation": "generation-1",
+            "revision": "revision-1",
+            "startup_nonce": "nonce-1",
+            "member_pids": [100, 101],
+        }
+        signature = process_ownership.sign_controller_acknowledgement(
+            acknowledgement, private_key
+        )
+        self.assertTrue(process_ownership.verify_controller_acknowledgement(
+            acknowledgement, signature, public_key
+        ))
+        self.assertFalse(process_ownership.verify_controller_acknowledgement(
+            {**acknowledgement, "generation": "generation-2"},
+            signature,
+            public_key,
+        ))
+
+    def test_structurally_present_empty_tree_fails_with_exact_field(self):
+        tree = {
+            "version": "charlie_process_tree_v1",
+            "root": {"pid": None},
+            "members": [{"pid": None}],
+        }
+        result = process_ownership.validate_bootstrap_tree(
+            tree,
+            generation="generation-1",
+            revision="revision-1",
+            startup_nonce="nonce-1",
+        )
+        self.assertFalse(result["authorized"])
+        self.assertEqual(result["reason"], "ownership_identity_incomplete:root.pid")
+
+    def test_live_revalidation_rejects_pid_reuse_creation_identity(self):
+        root = process_ownership.make_ownership_record(
+            {
+                "pid": 100,
+                "parent_pid": 50,
+                "creation_time": "original",
+                "executable_path": "C:/Python/python.exe",
+                "command_line": "python supervisor.py",
+            },
+            "generation-1", "charlie-control", "generation-1", "charlie_runner",
+            revision="revision-1", startup_nonce="nonce-1",
+        )
+        interpreter = {
+            **root,
+            "pid": 101,
+            "parent_pid": 100,
+            "creation_time": "interpreter",
+        }
+        tree = process_ownership.make_process_tree_record(
+            root, [root, interpreter], "generation-1"
+        )
+
+        def inspect(pid):
+            record = root if int(pid) == 100 else interpreter
+            return {
+                "pid": record["pid"],
+                "parent_pid": record["parent_pid"],
+                "creation_time": "reused" if int(pid) == 100 else record["creation_time"],
+                "executable_path": record["executable_path"],
+                "command_line": "python supervisor.py",
+                "ancestry": [] if int(pid) == 100 else [{"pid": 100}],
+                "inspection_complete": True,
+            }
+
+        with patch.object(process_ownership, "inspect_process", side_effect=inspect):
+            result = process_ownership.validate_live_bootstrap_tree(
+                tree,
+                generation="generation-1",
+                revision="revision-1",
+                startup_nonce="nonce-1",
+            )
+        self.assertFalse(result["authorized"])
+        self.assertEqual(
+            result["reason"],
+            "live_identity_creation_time_mismatch:member_0",
+        )
+
+    @unittest.skipUnless(os.name == "nt", "Windows launcher/interpreter harness")
+    def test_external_controller_observes_real_windows_launcher_interpreter_tree(self):
+        child = subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$p=Start-Process powershell.exe -ArgumentList "
+                "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 30' "
+                "-PassThru -WindowStyle Hidden; Wait-Process -Id $p.Id",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        try:
+            result = process_ownership.observe_process_tree(
+                child.pid,
+                generation="generation-1",
+                revision="revision-1",
+                startup_nonce="nonce-1",
+                timeout_seconds=10,
+            )
+            if not result["success"] and not process_ownership._windows_process_snapshot():
+                self.skipTest("Windows process inspection is unavailable to this session")
+            self.assertTrue(result["success"], result)
+            self.assertGreaterEqual(len(result["tree"]["members"]), 2)
+            self.assertEqual(result["tree"]["root"]["parent_pid"], os.getpid())
+            self.assertTrue(all(item.get("executable_path") for item in result["tree"]["members"]))
+            self.assertTrue(all(item.get("command_fingerprint") for item in result["tree"]["members"]))
+            with patch.dict(os.environ, {
+                process_ownership.TERMINATION_ENABLE_ENV:
+                    process_ownership.TERMINATION_ENABLE_VALUE,
+                process_ownership.TEST_ISOLATION_ENV: "0",
+            }, clear=False):
+                contained = runner_control._contain_observed_tree(result["tree"])
+            self.assertTrue(contained["success"], contained)
+            child.wait(timeout=10)
+            self.assertIsNotNone(child.returncode)
+        finally:
+            if child.poll() is None:
+                subprocess.run(
+                    ["taskkill", "/PID", str(child.pid), "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                try:
+                    child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait(timeout=10)
     def setUp(self):
         self.live = {
             "pid": 222, "creation_time": "20260719170000.000000+120", "executable_path": "C:/Python/python.exe",
@@ -76,6 +259,11 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
         result = process_ownership._inspect_proc(222)
         self.assertFalse(result["inspection_complete"])
         self.assertEqual(result["ancestry"][0]["pid"], 111)
+
+    @patch.object(process_ownership.os, "name", "posix")
+    @patch.object(process_ownership, "_inspect_proc", side_effect=FileNotFoundError("exited"))
+    def test_posix_process_exit_during_inspection_returns_no_identity(self, _inspect):
+        self.assertIsNone(process_ownership.inspect_process(222))
 
     @patch.object(process_ownership.os, "name", "nt")
     @patch.object(process_ownership.subprocess, "run", side_effect=subprocess.TimeoutExpired(["powershell"], 8))

@@ -43,6 +43,164 @@ MISSION = {
 
 
 class CharlieMissionPickupTests(unittest.TestCase):
+    def test_direct_pickup_without_supervisor_generation_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ, {}, clear=True
+        ), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path(tmp) / "stop"
+        ):
+            result = charlie_mission_pickup._validate_supervisor_startup()
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "supervisor_generation_missing")
+
+    def test_direct_pickup_honors_stop_marker_before_any_packet(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path(tmp) / "stop"
+        ):
+            charlie_mission_pickup.SUPERVISOR_STOP_PATH.write_text(
+                "owner stop", encoding="utf-8"
+            )
+            result = charlie_mission_pickup._validate_supervisor_startup()
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "governed_stop_active")
+
+    def test_test_isolation_cannot_bypass_canonical_stop_marker(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+            "CHARLIE_TEST_ISOLATION": "1",
+        }, clear=True), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path(tmp) / "stop"
+        ):
+            charlie_mission_pickup.SUPERVISOR_STOP_PATH.write_text(
+                "owner stop", encoding="utf-8"
+            )
+            authorized, reason = charlie_mission_pickup._runtime_pickup_authorized()
+        self.assertFalse(authorized)
+        self.assertEqual(reason, "governed_stop_active")
+
+    def test_inherited_test_environment_is_not_pickup_authority(self):
+        original = charlie_mission_pickup._TEST_PICKUP_AUTHORIZED
+        try:
+            charlie_mission_pickup._TEST_PICKUP_AUTHORIZED = False
+            with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+                "CHARLIE_TEST_ISOLATION": "1",
+            }, clear=True), patch.object(
+                charlie_mission_pickup,
+                "SUPERVISOR_STOP_PATH",
+                Path(tmp) / "stop",
+            ), patch.object(
+                charlie_mission_pickup,
+                "SUPERVISOR_PATH",
+                Path(tmp) / "supervisor.json",
+            ):
+                authorized, reason = (
+                    charlie_mission_pickup._runtime_pickup_authorized()
+                )
+            self.assertFalse(authorized)
+            self.assertEqual(
+                reason, "current_generation_running_authorization_missing"
+            )
+        finally:
+            charlie_mission_pickup._TEST_PICKUP_AUTHORIZED = original
+
+    def test_direct_stranded_recovery_is_contained_before_mutation(self):
+        with patch.object(
+            charlie_mission_pickup,
+            "_runtime_pickup_authorized",
+            return_value=(False, "governed_stop_active"),
+        ), patch.object(charlie_mission_pickup, "list_missions") as missions:
+            result = charlie_mission_pickup.recover_stranded_missions()
+        self.assertEqual(result["status"], "runner_contained")
+        self.assertEqual(result["recovered_count"], 0)
+        missions.assert_not_called()
+
+    def test_direct_release_processing_is_contained_before_mutation(self):
+        with patch.object(
+            charlie_mission_pickup,
+            "_runtime_pickup_authorized",
+            return_value=(False, "governed_stop_active"),
+        ), patch.object(
+            charlie_mission_pickup, "complete_no_release_mission"
+        ) as complete, patch.object(
+            charlie_mission_pickup, "run_release_execution"
+        ) as release, patch.object(
+            charlie_mission_pickup, "prepare_release_execution"
+        ) as prepare:
+            result, status = (
+                charlie_mission_pickup.process_release_approved_mission(
+                    "CHARLIE-MISSION-1",
+                    auto_close_no_release=True,
+                )
+            )
+        self.assertEqual(status, 423)
+        self.assertEqual(result["status"], "runner_contained")
+        complete.assert_not_called()
+        release.assert_not_called()
+        prepare.assert_not_called()
+
+    def test_runner_waits_for_final_controller_ack_before_pickup(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+            "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+            "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
+            "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
+            "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+        }, clear=True), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path(tmp) / "stop"
+        ):
+            charlie_mission_pickup.SUPERVISOR_PATH.write_text(
+                json.dumps({
+                    "status": "running",
+                    "runner_state": "running",
+                    "generation": "generation-1",
+                }),
+                encoding="utf-8",
+            )
+            result = charlie_mission_pickup._wait_for_final_start_authorization(
+                sleep_fn=lambda _seconds: None,
+                timeout_seconds=0,
+            )
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"],
+            "controller_final_acknowledgement_missing",
+        )
+
+    def test_runner_revalidates_live_trees_before_operational_pickup(self):
+        packet = {
+            "controller_final_acknowledgement": {
+                "runner_pid": str(os.getpid()),
+                "supervisor_member_pids": [100, 101],
+                "runner_member_pids": [200, os.getpid()],
+            },
+            "supervisor_tree_identity": {},
+            "process_tree_identity": {},
+        }
+        with patch.dict(os.environ, {
+            "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+            "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
+            "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
+            "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+            "CHARLIE_CONTROLLER_PUBLIC_KEY": "public-key",
+        }, clear=True), patch.object(
+            charlie_mission_pickup,
+            "validate_live_bootstrap_tree",
+            side_effect=[
+                {"authorized": False, "reason": "live_identity_creation_time_mismatch"},
+                {"authorized": True, "member_pids": [200, os.getpid()]},
+            ],
+        ), patch.object(
+            charlie_mission_pickup,
+            "verify_controller_acknowledgement",
+            return_value=True,
+        ):
+            packet["controller_public_key"] = "public-key"
+            result = charlie_mission_pickup._validate_final_packet_live(packet)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "live_identity_creation_time_mismatch"
+        )
+
     def test_runner_refuses_missing_current_generation_packet(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(
             os.environ,
@@ -61,18 +219,21 @@ class CharlieMissionPickupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             packet_path = Path(tmp) / "supervisor.json"
             packet_path.write_text(json.dumps({
-                "version": "charlie_supervisor_ownership_v2",
+                "version": "charlie_supervisor_ownership_v3",
                 "generation": "other-generation",
                 "created_at": "2026-07-26T00:00:00Z",
                 "intended_runtime_revision": "revision-1",
                 "intended_execution_revision": "revision-1",
                 "runner_state": "runner_starting",
+                "startup_nonce": "supervisor-nonce",
                 "supervisor_tree_identity": {"root": {"pid": 1}, "members": [{"pid": 1}]},
             }), encoding="utf-8")
             with patch.dict(os.environ, {
                 "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
                 "CHARLIE_INTENDED_RUNTIME_REVISION": "revision-1",
                 "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+                "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
+                "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
             }, clear=False), patch.object(charlie_mission_pickup, "SUPERVISOR_PATH", packet_path):
                 result = charlie_mission_pickup._validate_supervisor_startup()
         self.assertFalse(result["success"])
@@ -92,6 +253,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertNotIn(["git", "switch", "feature/test"], commands)
         self.assertFalse(any(command[:3] == ["git", "merge", "--ff-only"] for command in commands))
     def setUp(self):
+        charlie_mission_pickup._authorize_test_pickup_for_current_process()
         self._base_branch_env_patcher = patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": ""})
         self._base_branch_env_patcher.start()
         self.addCleanup(self._base_branch_env_patcher.stop)
@@ -563,6 +725,45 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    def test_marker_appearing_after_refresh_prevents_branch_and_status_mutation(
+        self, list_owner_work_missions, get_mission
+    ):
+        list_owner_work_missions.return_value = (
+            {"success": True, "status": "ok", "missions": [MISSION]}, 200
+        )
+        get_mission.return_value = (
+            {"success": True, "status": "ok", "mission": MISSION}, 200
+        )
+        with patch.object(
+            charlie_mission_pickup,
+            "_runtime_pickup_authorized",
+            side_effect=[
+                (True, "authorized"),
+                (True, "authorized"),
+                (False, "governed_stop_active"),
+            ],
+        ), patch.object(
+            charlie_mission_pickup,
+            "_ensure_base_branch",
+            return_value={"success": True},
+        ), patch.object(
+            charlie_mission_pickup,
+            "_refresh_core_plan_for_pickup",
+            return_value={"refreshed": False, "blocked": False},
+        ) as refresh, patch.object(
+            charlie_mission_pickup, "_restore_mission_branch_for_resume"
+        ) as restore, patch.object(
+            charlie_mission_pickup, "update_mission_status"
+        ) as update_status:
+            result, status = charlie_mission_pickup.pick_up_next_mission()
+        self.assertEqual(status, 423)
+        self.assertEqual(result["reason"], "governed_stop_active")
+        refresh.assert_called_once()
+        restore.assert_not_called()
+        update_status.assert_not_called()
+
+    @patch("scripts.charlie_mission_pickup.get_mission")
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_new_adaptive_mission_without_durable_packet_cannot_be_claimed(
         self, update_status, list_owner_work_missions, get_mission
@@ -1000,8 +1201,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
         sleep.assert_not_called()
 
     @patch.dict("os.environ", {}, clear=True)
+    @patch("scripts.charlie_mission_pickup._runtime_pickup_authorized", return_value=(True, "test"))
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
-    def test_watch_notify_preflight_blocks_mute_runner(self, write_heartbeat):
+    def test_watch_notify_preflight_blocks_mute_runner(self, write_heartbeat, _authorized):
         result, status_code = charlie_mission_pickup.watch_for_mission(
             notify=True,
             continuous=True,
