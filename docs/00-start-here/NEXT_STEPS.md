@@ -4,6 +4,15 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## Beacon Marketing Department Roadmap - Owner Approval Queue
 
+0. **BEACON-MEDIA-INTAKE-1 - queued next after current BEACON work reaches a clean integration point.** Use the existing owner-controlled OOM SAKKIE Telegram bot as the preferred mobile intake door for photos, videos, and albums; store them privately in BEACON raw intake; preserve owner context and album order; hash/deduplicate them; and present real thumbnails/contact sheets for library and public-use approval. Historical OneDrive/folder ingestion is a separate bounded follow-up using the same provenance contract. See `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`.
+
+Current production learning state (2026-07-27): one confirmed organic Page
+post and reliable run are persisted with media/post understanding; graduation
+is `not_eligible` and grants no automatic authority. The next bounded
+marketing-learning action is one exact-post, read-only 24-hour snapshot after
+`2026-07-27T16:27:01Z`, preserving unsupported metrics as unavailable. Do not
+retrieve it early or access another post.
+
 1. `CHARLIE-MISSION-0AFC18F12C5CFA64` - Marketing operating contract, brand kit and targets.
 2. `CHARLIE-MISSION-47C615183E54E430` - Fulfilment-aware opportunity scanner.
 3. `CHARLIE-MISSION-64E13E6D891DAD8A` - ElevenLabs and Happy Horse creative-studio provider evaluation.
@@ -11,7 +20,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 5. `CHARLIE-MISSION-AE07E79AAFEF7728` - Meta insights, SAM lead and revenue attribution.
 6. `CHARLIE-MISSION-BD1FB9CC86FD0069` - Marketing command brief and optimization loop.
 
-These missions are `new`, not approved for automatic execution. Public posting remains exact-owner-confirmed; scheduling, paid spend and creative-provider calls remain disabled.
+BEACON-MEDIA-INTAKE-1 is an owner-approved direction and queued milestone, not an implementation or activation authorization. The numbered CHARLIE missions are `new`, not approved for automatic execution. Public posting remains exact-owner-confirmed; Telegram intake, historical import, scheduling, paid spend and creative-provider calls remain disabled until their own reviewed gates are integrated and activated.
 
 ## P0 Operational / Live Issues
 

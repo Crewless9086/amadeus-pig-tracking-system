@@ -11,6 +11,28 @@
 9. Compatible recurring weaknesses may produce deterministic follow-up suggestions for owner review. Single-campaign, stale, malformed, duplicated, superseded, missing, or incompatible evidence cannot establish recurrence.
 10. Previewing a suggestion writes nothing. Only a separate authenticated owner-admin action may create the stable suggestion as a deduplicated CORE mission with status `new`, no owner decision, and no approval or execution state.
 
+## Confirmed Organic Publication Learning
+
+1. Reconstruct a confirmed-publication event only from immutable owner
+   decision, binding, authorization, attempt/result, caption, transport and
+   ordered-media evidence.
+2. Append through the canonical learning rail only when the event and current
+   approved asset hashes match exactly.
+3. Withhold an identical replay and reject altered evidence as an identity
+   conflict.
+4. Recompute graduation from the database after persistence; never accept
+   caller-supplied graduation counts.
+5. Record comparable performance snapshots only at their named windows.
+   Metrics the provider does not support remain `Unavailable`, never zero.
+6. Keep every publication, retry, schedule, message, Meta-write, boost,
+   advertising and spend authority false. Graduation produces recommendations
+   or an owner-review candidate only.
+
+Media arriving through the queued owner Telegram intake is not campaign-ready
+by receipt. Library acceptance and explicit public-use approval must exist
+before selection, while exact publication authorization remains a later
+separate gate.
+
 ## Campaign Outcome Evidence
 
 The authenticated owner may retrieve only provider-supported, allowlisted post metrics. Each metric retains its source, source reference, retrieval time, and evidence status. A numeric zero is verified only when the source explicitly returns zero; absent, unsupported, malformed, or provider-error values remain unavailable and cannot support recommendations or cost calculations.
