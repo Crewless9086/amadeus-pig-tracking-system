@@ -37,7 +37,7 @@ def exact_eligible_row(**overrides):
         "live_stock_sale_eligible": True,
         "exact_animal_eligibility_contract_version": "herdmaster_exact_animal_eligibility_v1",
         "evidence_complete": True,
-        "eligibility_observed_at": "2026-07-24",
+        "eligibility_observed_at": "2026-07-27T14:00:00Z",
         "allocation_query_status": "known",
         "allocation_evidence_state": "known_unallocated",
         "reserved_status": "Not_Reserved",
@@ -77,10 +77,87 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_availability_observation_uses_oldest_counted_row_and_rejects_malformed(self):
+        fresh = exact_eligible_row(
+            pig_id="FRESH", eligibility_observed_at="2026-07-27T11:00:00Z"
+        )
+        older = exact_eligible_row(
+            pig_id="OLDER", eligibility_observed_at="2026-07-26T10:00:00+00:00"
+        )
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            [fresh, older], {"sales_lane": "live_stock_sales", "sex": "female"}
+        )
+        self.assertEqual(
+            summary["observation_timestamp"], "2026-07-26T10:00:00+00:00"
+        )
+
+        malformed = exact_eligible_row(
+            pig_id="MALFORMED", eligibility_observed_at="not-a-timestamp"
+        )
+        unavailable = sam_live_stock_runtime.summarize_live_stock_availability(
+            [fresh, malformed],
+            {"sales_lane": "live_stock_sales", "sex": "female"},
+        )
+        self.assertEqual(unavailable["observation_timestamp"], "")
+
+    def test_zero_eligible_inventory_preserves_complete_result_observation(self):
+        ineligible = exact_eligible_row(
+            pig_id="NOT-ELIGIBLE",
+            live_stock_sale_eligible=False,
+            eligibility_observed_at="2026-07-27T11:00:00Z",
+        )
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            [ineligible], {"sales_lane": "live_stock_sales", "sex": "female"}
+        )
+        self.assertEqual(
+            summary["observation_timestamp"], "2026-07-27T11:00:00+00:00"
+        )
+        self.assertEqual(summary["total_available_count"], 0)
+        self.assertTrue(
+            all(
+                counts["all"] == 0
+                for counts in summary["customer_category_counts"].values()
+            )
+        )
+
+    def test_customer_category_counts_normalize_supported_fallback_fields(self):
+        piglet = exact_eligible_row(
+            pig_id="PIGLET",
+            sale_category="",
+            suggested_price_category="",
+            calculated_stage="Piglet",
+        )
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            [piglet], {"sales_lane": "live_stock_sales", "sex": "female"}
+        )
+        self.assertEqual(
+            summary["customer_category_counts"]["Young Piglets"]["all"], 1
+        )
+        self.assertTrue(summary["customer_category_counts_complete"])
+
+    def test_explicit_sale_category_precedes_conflicting_fallback_stage(self):
+        row = exact_eligible_row(
+            pig_id="CONFLICT",
+            sale_category="Young Piglets",
+            calculated_stage="Weaner",
+            suggested_price_category="Weaner Piglets|10_to_14_Kg",
+        )
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            [row], {"sales_lane": "live_stock_sales", "sex": "female"}
+        )
+        self.assertEqual(
+            summary["customer_category_counts"]["Young Piglets"]["all"], 1
+        )
+        self.assertEqual(
+            summary["customer_category_counts"]["Weaner Piglets"]["all"], 0
+        )
+
     @staticmethod
     def _active_big_pig_prices():
         return {
             "success": True,
+            "configured": True,
+            "source": "supabase",
             "price_entries": [
                 {
                     "pricing_id": "PRICE-GROWER-20",
@@ -129,6 +206,174 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 },
             ],
         }
+
+    @staticmethod
+    def _active_piglet_prices():
+        return {
+            "success": True,
+            "configured": True,
+            "source": "supabase",
+            "price_entries": [
+                {
+                    "pricing_id": "PRICE-YOUNG-1",
+                    "sale_category": "Young Piglets",
+                    "weight_band": "2_to_4_Kg",
+                    "unit_price": 350,
+                    "active": True,
+                    "effective_from": "2026-07-01T00:00:00Z",
+                    "effective_to": "",
+                },
+                {
+                    "pricing_id": "PRICE-YOUNG-2",
+                    "sale_category": "Young Piglets",
+                    "weight_band": "5_to_6_Kg",
+                    "unit_price": 400,
+                    "active": True,
+                    "effective_from": "2026-07-01T00:00:00Z",
+                    "effective_to": "",
+                },
+                {
+                    "pricing_id": "PRICE-WEANER-1",
+                    "sale_category": "Weaner Piglets",
+                    "weight_band": "7_to_9_Kg",
+                    "unit_price": 450,
+                    "active": True,
+                    "effective_from": "2026-07-01T00:00:00Z",
+                    "effective_to": "",
+                },
+                {
+                    "pricing_id": "PRICE-WEANER-2",
+                    "sale_category": "Weaner Piglets",
+                    "weight_band": "15_to_19_Kg",
+                    "unit_price": 600,
+                    "active": True,
+                    "effective_from": "2026-07-01T00:00:00Z",
+                    "effective_to": "",
+                },
+            ],
+        }
+
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_conversation_2054_commercial_question_blocks_general_llm_fallback(
+        self, price_list
+    ):
+        price_list.return_value = (self._active_piglet_prices(), 200)
+        calls = {"llm": 0, "send": 0}
+
+        def llm(*args, **kwargs):
+            calls["llm"] += 1
+            return {"reply_text": "unsafe general fallback"}
+
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                content="Do you sell the piglets",
+                conversation={
+                    "id": 2054,
+                    "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"},
+                },
+                sender={"id": 699428938, "name": "Fanie"},
+            ),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda *_: {
+                "success": True, "known_fields": {}, "items": []
+            },
+            conversation_history_loader=lambda *_: {
+                "success": True, "messages": []
+            },
+            availability_loader=lambda: [
+                exact_eligible_row(
+                    pig_id="PRIVATE-YOUNG", sale_category="Young Piglets",
+                    calculated_stage="Piglet", current_weight_kg=5,
+                    weight_band="5_to_6_Kg",
+                ),
+                exact_eligible_row(
+                    pig_id="PRIVATE-WEANER", sale_category="Weaner Piglets",
+                    calculated_stage="Weaner", current_weight_kg=12,
+                    weight_band="10_to_14_Kg", sex="Male",
+                ),
+            ],
+            llm_drafter=llm,
+            chatwoot_sender=lambda *_: calls.__setitem__(
+                "send", calls["send"] + 1
+            ),
+        )
+        decision = result["sam_decision"]
+        self.assertEqual(status, 200)
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertTrue(
+            decision["contextual_sales"]["general_information_fallback_blocked"]
+        )
+        self.assertEqual(
+            decision["contextual_sales"]["interpretation"]["message_type"],
+            "availability_enquiry",
+        )
+        self.assertEqual(
+            decision["contextual_sales"]["interpretation"]["category"], ""
+        )
+        self.assertIn("Yes, we do sell piglets", decision["suggested_reply_text"])
+        self.assertIn("Young piglets", decision["suggested_reply_text"])
+        self.assertIn("Weaners", decision["suggested_reply_text"])
+        self.assertIn("How many are you looking for", decision["suggested_reply_text"])
+        self.assertNotIn("PRIVATE-", decision["suggested_reply_text"])
+        self.assertEqual(calls, {"llm": 0, "send": 0})
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["reserves_stock"])
+
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_conversation_67_uses_prior_context_and_latest_phonetic_request(
+        self, price_list
+    ):
+        price_list.return_value = (self._active_piglet_prices(), 200)
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                content="Soggies to bay 10",
+                conversation={
+                    "id": 67,
+                    "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"},
+                },
+                sender={"id": 699428938, "name": "Lionel"},
+            ),
+            environ={},
+            intake_context_loader=lambda *_: {
+                "success": True, "known_fields": {}, "items": []
+            },
+            conversation_history_loader=lambda *_: {
+                "success": True,
+                "messages": [{
+                    "id": "67-prior",
+                    "message_type": 0,
+                    "content": "I asked about Ms. Piggy’s piglets.",
+                }],
+            },
+            availability_loader=lambda: [
+                exact_eligible_row(
+                    pig_id="PRIVATE-YOUNG", sale_category="Young Piglets",
+                    calculated_stage="Piglet", current_weight_kg=5,
+                    weight_band="5_to_6_Kg",
+                ),
+                exact_eligible_row(
+                    pig_id="PRIVATE-WEANER", sale_category="Weaner Piglets",
+                    calculated_stage="Weaner", current_weight_kg=12,
+                    weight_band="10_to_14_Kg",
+                ),
+            ],
+        )
+        interpretation = result["sam_decision"]["contextual_sales"]["interpretation"]
+        self.assertEqual(status, 200)
+        self.assertEqual(interpretation["intent"], "buy_live_pigs")
+        self.assertEqual(interpretation["quantity"], 10)
+        self.assertEqual(interpretation["sex"], "female")
+        self.assertEqual(interpretation["category"], "")
+        self.assertIn(
+            "prepare a quote for 10",
+            result["sam_decision"]["suggested_reply_text"],
+        )
+        self.assertFalse(result["sent"])
 
     @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
     def test_big_one_and_pricce_uses_verified_grower_finisher_information(self, price_list):
@@ -230,7 +475,14 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
         decision = result["sam_decision"]
         self.assertEqual(decision["information_response"]["status"], "price_only_verified")
-        self.assertIn("Current verified prices", decision["suggested_reply_text"])
+        self.assertEqual(
+            decision["contextual_sales"]["status"],
+            "commercial_evidence_unavailable",
+        )
+        self.assertIn(
+            "checking the current livestock availability and pricing",
+            decision["suggested_reply_text"],
+        )
         self.assertNotIn("currently eligible", decision["suggested_reply_text"])
         self.assertFalse(result["sent"])
 
@@ -282,23 +534,17 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         decision = result["sam_decision"]
         reply = decision["suggested_reply_text"]
         self.assertEqual(status, 200)
-        self.assertEqual(decision["reply_source"], "llm_live_stock_reply_draft_protected_repair")
+        self.assertEqual(decision["reply_source"], "deterministic_read_only_guard")
+        self.assertFalse(decision["llm_draft"]["used"])
         self.assertEqual(
-            decision["llm_draft_review"]["status"],
-            "composed_with_reservation_owner_authority_acknowledgement",
+            decision["llm_draft"]["status"],
+            "commercial_general_information_fallback_blocked",
         )
         self.assertTrue(decision["facts"]["order_commitment"])
         self.assertTrue(decision["facts"]["reservation_requested"])
         self.assertEqual(decision["conversation_plan"]["goal"], "buy_live_stock: 1 Grower 25-29 kg")
-        self.assertTrue(reply.startswith("Hi Charl, thanks"))
-        self.assertLess(reply.index("farm must approve"), reply.index("The price"))
-        self.assertLess(reply.index("farm must approve"), reply.index("handle payment"))
-        self.assertIn("before I can confirm or reserve it", reply)
-        self.assertEqual(reply.lower().count("hi charl"), 1)
-        self.assertEqual(reply.lower().count("thanks"), 1)
-        self.assertEqual(reply.lower().count("reservation request"), 1)
-        self.assertEqual(reply.count("R1,000"), 1)
-        self.assertEqual(reply.count("?"), 1)
+        self.assertNotIn("R1,000", reply)
+        self.assertNotIn("handle payment", reply)
         self.assertEqual(
             decision["conversation_review"]["protected_action_reasons"],
             ["final_order_owner_authority", "reservation_owner_authority"],
@@ -363,10 +609,13 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
 
         decision = result["sam_decision"]
-        self.assertEqual(decision["reply_source"], "deterministic_fallback_after_llm_review")
-        self.assertEqual(decision["llm_draft_review"]["status"], "rejected_by_safety_review")
-        self.assertIn("implies_payment_secures_animal", decision["llm_draft_review"]["blocked_reasons"])
-        self.assertIn("farm must approve", decision["suggested_reply_text"])
+        self.assertEqual(decision["reply_source"], "deterministic_read_only_guard")
+        self.assertFalse(decision["llm_draft"]["used"])
+        self.assertEqual(
+            decision["llm_draft"]["status"],
+            "commercial_general_information_fallback_blocked",
+        )
+        self.assertNotIn("payment method will secure", decision["suggested_reply_text"])
         self.assertFalse(result["sent"])
         self.assertFalse(decision["creates_order"])
         self.assertFalse(decision["reserves_stock"])
@@ -1344,14 +1593,19 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
 
         decision = result["sam_decision"]
-        self.assertEqual(decision["reply_source"], "llm_live_stock_reply_draft")
-        self.assertTrue(decision["llm_draft"]["used"])
-        self.assertIn("female weaners", decision["suggested_reply_text"])
+        self.assertEqual(
+            decision["reply_source"],
+            "contextual_sales_source_backed_owner_draft",
+        )
+        self.assertFalse(decision["llm_draft"]["used"])
+        self.assertEqual(calls, [])
         self.assertFalse(result["sent"])
         self.assertFalse(decision["customer_send_allowed"])
-        self.assertEqual(calls[0][0]["facts"]["quantity"], 3)
-        self.assertTrue(decision["facts"]["llm_used"])
-        self.assertEqual(decision["facts"]["llm_status"], "llm_reply_draft_used")
+        self.assertFalse(decision["facts"]["llm_used"])
+        self.assertEqual(
+            decision["contextual_sales"]["status"],
+            "commercial_evidence_unavailable",
+        )
 
     def test_explicit_new_request_does_not_inherit_old_intake_or_history_facts(self):
         calls = []
@@ -1400,10 +1654,13 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["facts"]["location"], "")
         self.assertFalse(decision["facts"].get("order_commitment"))
         self.assertEqual(decision["read_context"]["prior_context_source"], "")
-        self.assertEqual(calls[0][0]["recent_chatwoot_history"], [])
+        self.assertEqual(calls, [])
         self.assertNotIn("reservation_request_owner_gate", decision["blockers"])
-        self.assertTrue(decision["facts"]["llm_used"])
-        self.assertEqual(decision["facts"]["llm_status"], "llm_reply_draft_used")
+        self.assertFalse(decision["facts"]["llm_used"])
+        self.assertEqual(
+            decision["contextual_sales"]["status"],
+            "commercial_evidence_unavailable",
+        )
 
     def test_followup_history_starts_at_latest_explicit_new_request_boundary(self):
         history = {
@@ -1460,21 +1717,16 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             )
 
         decision = result["sam_decision"]
-        diagnostics = decision["llm_draft"]["runtime_diagnostics"]
         self.assertEqual(status_code, 200)
-        self.assertEqual(decision["llm_draft"]["status"], "llm_reply_draft_used")
-        self.assertEqual(decision["reply_source"], "llm_live_stock_reply_draft")
-        self.assertEqual(len(calls), 1)
-        self.assertIs(calls[0][1], os.environ)
-        self.assertTrue(diagnostics["source_is_mapping"])
-        self.assertTrue(diagnostics["source_is_process_environment"])
-        self.assertTrue(diagnostics["llm_enabled_key_present"])
-        self.assertTrue(diagnostics["llm_enabled"])
-        self.assertTrue(diagnostics["model_configured"])
-        self.assertTrue(diagnostics["api_key_configured"])
-        self.assertTrue(diagnostics["llm_configured"])
-        self.assertFalse(diagnostics["contains_secret_values"])
-        self.assertNotIn("test-secret-key-never-exposed", json.dumps(diagnostics))
+        self.assertEqual(
+            decision["reply_source"],
+            "contextual_sales_source_backed_owner_draft",
+        )
+        self.assertEqual(calls, [])
+        self.assertEqual(
+            decision["contextual_sales"]["status"],
+            "commercial_evidence_unavailable",
+        )
 
     def test_reviewed_llm_clarification_sends_when_routine_reply_gate_is_enabled(self):
         sends = []
@@ -1507,9 +1759,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(decision["should_reply"])
         self.assertTrue(decision["conversation_review"]["safe_to_send"])
         self.assertEqual(decision["conversation_review"]["recommended_action"], "ask_one_missing_fact")
-        self.assertTrue(result["sent"])
-        self.assertTrue(result["sends_customer_message"])
-        self.assertEqual(sends, [("2401", "I can help with weaners. How many are you looking for?")])
+        self.assertFalse(result["sent"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertEqual(sends, [])
         self.assertFalse(result["creates_order"])
         self.assertFalse(result["reserves_stock"])
         self.assertFalse(result["changes_stock"])
@@ -1639,13 +1891,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(result["sam_decision"]["reply_source"], "llm_live_stock_reply_draft")
-        history = calls[0][0]["recent_chatwoot_history"]
-        self.assertEqual(len(history), 2)
-        self.assertEqual(history[0]["speaker"], "customer")
-        self.assertEqual(history[0]["content"], "I need two weaners near Riversdale.")
-        self.assertEqual(history[1]["speaker"], "farm")
-        self.assertNotIn("message_type", history[0])
+        self.assertEqual(
+            result["sam_decision"]["reply_source"],
+            "contextual_sales_source_backed_owner_draft",
+        )
+        self.assertEqual(calls, [])
         self.assertEqual(result["sam_decision"]["read_context"]["chatwoot_history"]["message_count"], 4)
 
     def test_llm_context_includes_owner_correction_examples_by_default(self):
@@ -1686,13 +1936,15 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(result["sam_decision"]["reply_source"], "llm_live_stock_reply_draft")
-        examples = calls[0][0]["owner_correction_examples"]
-        self.assertEqual(examples[0]["classification"], "owner_replaced")
-        self.assertIn("Riversdale", examples[0]["owner_reply_excerpt"])
-        self.assertEqual(examples[0]["example_relevance_score"], 1.0)
-        self.assertIn("owner_correction_examples", calls[0][0])
-        self.assertFalse(calls[0][0]["meat_public_offer_enabled"])
+        self.assertEqual(
+            result["sam_decision"]["reply_source"],
+            "contextual_sales_source_backed_owner_draft",
+        )
+        self.assertEqual(calls, [])
+        self.assertEqual(
+            result["sam_decision"]["contextual_sales"]["status"],
+            "commercial_evidence_unavailable",
+        )
         self.assertEqual(owner_example_calls[0]["customer_message"], "How much for 1 piglet?")
 
     def test_llm_payload_long_history_remains_valid_json_with_rules(self):
@@ -1736,8 +1988,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
 
         decision = result["sam_decision"]
-        self.assertEqual(decision["reply_source"], "deterministic_fallback_after_llm_review")
-        self.assertEqual(decision["llm_draft_review"]["status"], "rejected_by_safety_review")
+        self.assertEqual(
+            decision["reply_source"],
+            "contextual_sales_source_backed_owner_draft",
+        )
+        self.assertFalse(decision["llm_draft"]["used"])
         self.assertNotIn("reserved them", decision["suggested_reply_text"])
         self.assertFalse(result["sent"])
 
@@ -1837,9 +2092,15 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
 
         decision = result["sam_decision"]
-        self.assertEqual(decision["reply_source"], "deterministic_read_only_guard")
+        self.assertEqual(
+            decision["reply_source"],
+            "contextual_sales_source_backed_owner_draft",
+        )
         self.assertFalse(decision["llm_draft"]["used"])
-        self.assertEqual(decision["llm_draft"]["status"], "llm_call_failed")
+        self.assertEqual(
+            decision["llm_draft"]["status"],
+            "commercial_general_information_fallback_blocked",
+        )
         self.assertFalse(result["sent"])
 
     def test_render_llm_timeout_caps_at_fifteen_seconds(self):
