@@ -19,6 +19,38 @@
   Daily Brief route, not complete telemetry, hardware control, IFTTT
   authorization, or autonomous irrigation.
 
+### Rootline Operating Knowledge And Daily Advisor candidate
+
+- Operating register:
+  `docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md`
+- Read-only advisor:
+  `modules/telemetry/rootline_daily_advisor.py`
+- Owner-only route:
+  `GET /api/telemetry/rootline/daily-advisor`
+- Existing dashboard panel:
+  `templates/dashboard.html`, `static/js/dashboard.js`
+- Tests:
+  `tests/test_rootline_daily_advisor.py`
+- Input evidence:
+  the existing owner Daily Brief plus immutable owner-approved policy.
+- Output:
+  B12345/C12345 eligibility status, fresh-evidence status,
+  `Irrigate`/`Do Not Irrigate`/`Hold`/`Needs Data` vocabulary, runtime only
+  when authoritative policy is complete, explanations, historical-plan
+  separation, and unresolved owner decisions.
+- C12345 proof:
+  packet `ROOTLINE-CANARY-C12345-CH2-20260727-32B0D177-G1`, SHA-256
+  `ef388830f14056bf7baea2915950a655ae77c8f7c058b8e1f9f1c92638d028ab`,
+  records one supervised identity/open/flow/OFF/closure proof ending safe
+  closed. It is not routine irrigation authority.
+- Authority:
+  no database write, migration application, plan/command generation,
+  schedule/workflow/queue/retry, IFTTT/n8n invocation, or hardware control.
+- Future persistence:
+  design-only strict append contract with evidence-content and provenance-
+  envelope checksums; no migration exists and no evidence row is written by
+  this candidate.
+
 Status: active machine-aligned map, maintained with `modules/charlie/source_map.py`.
 
 Purpose: tell CHARLIE CORE where real implementation truth lives before it advises or builds. Vault Brain carries doctrine and strategy; this map links doctrine to code, routes, tests, migrations, and legacy sources.

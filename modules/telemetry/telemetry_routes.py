@@ -9,6 +9,7 @@ from modules.telemetry.power_service import (
 from modules.telemetry.irrigation_service import get_irrigation_status
 from modules.telemetry.rollup_service import get_daily_rollup_compare
 from modules.telemetry.rootline_daily_brief import get_rootline_daily_brief
+from modules.telemetry.rootline_daily_advisor import get_rootline_daily_advisor
 from modules.telemetry.irrigation_daily_plan_service import get_current_daily_plan
 from modules.telemetry.irrigation_command_service import (
     approve_plan_only_command,
@@ -126,6 +127,15 @@ def telemetry_rootline_daily_brief():
     if guard:
         return guard
     result, status_code = get_rootline_daily_brief(request.args.get("date"))
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/daily-advisor", methods=["GET"])
+def telemetry_rootline_daily_advisor():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status_code = get_rootline_daily_advisor(request.args.get("date"))
     return jsonify(result), status_code
 
 

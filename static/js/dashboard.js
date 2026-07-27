@@ -9,6 +9,7 @@ const state = {
   irrigation: null,
   rollup: null,
     rootline: null,
+    rootlineAdvisor: null,
     rootlineDailyPlan: null,
   farm: null,
   orders: null,
@@ -218,6 +219,7 @@ function renderIrrigation() {
 
 function renderRootline() {
   const brief = state.rootline || {};
+  const advisor = state.rootlineAdvisor || {};
   setText("rootline_status", displayLabel(brief.status, "Unavailable"));
   setText("rootline_summary", brief.executive_summary || "Rootline daily brief is unavailable.");
   const conditions = brief.current_conditions || {};
@@ -227,6 +229,28 @@ function renderRootline() {
       ? `${numberOrDash(conditions.temperature_c)} °C · ${numberOrDash(conditions.rain_today_mm)} mm · ${numberOrDash(conditions.wind_speed_kmh)} km/h · ${numberOrDash(conditions.pressure_hpa)} hPa`
       : "Current conditions Unavailable"
   );
+    setText(
+      "rootline_advisor_summary",
+      advisor.executive_summary || "Owner-only advice Unavailable."
+    );
+    const advisorZones = advisor.zones || [];
+    byId("rootline_advisor_zones").innerHTML = advisorZones.length
+      ? advisorZones.map(zone => `
+        <div class="ops-list-row">
+          <strong>${escapeHtml(zone.zone_name || zone.zone_id || "Zone")} · ${escapeHtml(zone.recommendation || "Needs Data")}</strong>
+          <span>Eligible: ${escapeHtml(zone.eligibility_today || "Needs Data")} · Runtime: ${escapeHtml(zone.proposed_runtime_status || "Unavailable")} · ${escapeHtml((zone.reasoning || []).join(" "))}</span>
+        </div>
+      `).join("")
+      : `<div class="ops-empty-inline">Zone advice Unavailable.</div>`;
+    const advisorDecisions = advisor.unresolved_owner_decisions || [];
+    byId("rootline_advisor_decisions").innerHTML = advisorDecisions.length
+      ? advisorDecisions.map(item => `
+        <div class="ops-list-row">
+          <strong>${escapeHtml(displayLabel(item.decision, "Decision"))}</strong>
+          <span>${escapeHtml(item.current_value || "Unknown")}</span>
+        </div>
+      `).join("")
+      : `<div class="ops-empty-inline">No unresolved decisions reported.</div>`;
     const zones = brief.irrigation?.zones || [];
     const planPacket = state.rootlineDailyPlan || {};
     const plan = planPacket.daily_plan;
@@ -337,6 +361,7 @@ async function loadDashboard() {
     ["irrigation", `/api/telemetry/irrigation/status?date=${today}`, "irrigation_panel"],
     ["rollup", `/api/telemetry/rollups/daily?date=${yesterday}`, "power_panel"],
       ["rootline", `/api/telemetry/rootline/daily-brief?date=${today}`, "rootline_panel"],
+      ["rootlineAdvisor", `/api/telemetry/rootline/daily-advisor?date=${today}`, "rootline_panel"],
       ["rootlineDailyPlan", `/api/telemetry/rootline/daily-irrigation-plan?date=${today}`, "rootline_panel"],
     ["farm", "/api/pig-weights/dashboard", "herd_panel"],
     ["orders", `/api/reports/daily-summary?date=${today}`, "orders_panel"],
