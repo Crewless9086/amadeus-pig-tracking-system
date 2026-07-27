@@ -127,8 +127,8 @@ owner-visible reviewed row:
 - Integrated evidence-capture workflow: built, independently reviewed, merged
   and deployed; owner surface operational.
 - First candidate physical-quality evidence: recorded once and verified.
-- Auction List first Add: not performed.
-- Animal/business/protected actions during this work: none.
+- Auction List first Add: completed for one owner-authorized reviewed animal.
+- Additional animal/business/protected actions during this work: none.
 
 ## First Add canary outcome
 
@@ -151,3 +151,29 @@ Therefore the attempted canary did not persist an Add event and is not
 complete. This is a safe zero-state stop, not a successful Auction first use.
 A future attempt requires a new exact owner authorization; it must never be
 treated as an automatic retry.
+
+## Corrected first-use result
+
+Charl separately authorized one corrected retry after the zero-state timeout
+was diagnosed as a temporary harness synchronization defect. The corrected
+browser sequence waited for readiness, recommendation and Auction List state,
+then selected only the authorized row. Checkbox interaction produced no POST.
+The explicit Add produced exactly one POST and returned HTTP 201
+`auction_list_updated`.
+
+The final database/API read-only verification proved:
+
+- exactly one append-only `added` event;
+- decision sequence `1` with no prior event;
+- exact current auction-cycle and canonical Pig_ID binding;
+- exactly one current Auction List member;
+- exactly one total Auction List event and no duplicate;
+- one candidate review and one linked factual observation unchanged;
+- zero cohort membership and zero active-outlet assignment;
+- server-derived owner principal present but not exposed;
+- no reservation, booking, sale, reminder, customer contact, medical,
+  lifecycle, allocation or farm mutation authority in the Add path.
+
+The supervised Auction List first-use canary is complete. Private animal,
+owner-principal and evidence identifiers remain restricted to the protected
+owner surface.
