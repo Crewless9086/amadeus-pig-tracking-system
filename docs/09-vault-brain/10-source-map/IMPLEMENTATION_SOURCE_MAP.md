@@ -120,6 +120,38 @@ Current implementation and verification surface:
   startup, watchdog activation, mission pickup, and natural proof have not
   been authorized.
 
+### CHARLIE CORE Observe-Only Ownership Handshake
+
+- doctrine:
+  `docs/09-vault-brain/01-identity/CHARLIE_CORE.md`,
+  `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md`;
+- governed controller and signed acknowledgement/stop evidence:
+  `modules/charlie/runner_control.py`,
+  `scripts/charlie_runner_control.py`;
+- supervisor mode propagation, credential allowlist, runner-spawn gate, and
+  recovery suppression: `scripts/charlie_runner_supervisor.py`;
+- dedicated no-mission/no-provider child:
+  `scripts/charlie_observe_only_runner.py`;
+- ordinary pickup mode separation and direct-entry fail-closed checks:
+  `scripts/charlie_mission_pickup.py`;
+- watchdog malformed-state and observe-only recovery suppression:
+  `scripts/charlie_runner_watchdog.py`;
+- tests:
+  `tests/test_charlie_observe_only_runner.py`,
+  `tests/test_charlie_runner_control.py`,
+  `tests/test_charlie_runner_supervisor.py`,
+  `tests/test_charlie_mission_pickup.py`,
+  `tests/test_charlie_runner_watchdog.py`;
+- rule: observe-only is a credential-free ownership/start/stop proof. It may
+  emit only heartbeat, signed ownership, containment, and termination
+  evidence. It cannot inspect or mutate mission, queue, lease, review, stage,
+  artifact, product, customer, farm, migration, deployment, or business state
+  and cannot transition into ordinary operation.
+- state: PR #539 merged as
+  `ce8971dff7605a91120a63c26dd22d81ca413360`; code is hosted in current main.
+  Local promotion, handshake execution, ordinary startup, mission processing,
+  and natural operational proof remain separate and incomplete.
+
 ### CHARLIE CORE Dashboard
 
 Current built active workflow surface:

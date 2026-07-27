@@ -177,6 +177,43 @@ PR #517 integrated this ownership bootstrap at merge
 but local promotion, startup, watchdog activation, pickup, and T0 execution
 remain separate and unauthorized.
 
+### Observe-only startup contract
+
+PR #539 adds an explicit `observe_only` governed start mode. It is a process
+ownership test, not a mission workflow:
+
+1. The controller binds observe-only mode to the accepted revision,
+   generation, controller nonce, and observed supervisor tree.
+2. The supervisor receives only an allowlisted OS/bootstrap environment and
+   may spawn only the dedicated observe-only child after controller
+   acknowledgement.
+3. The dedicated child validates the current signed packet and live process
+   trees without importing mission, execution-provider, or recovery modules.
+4. The final signed acknowledgement binds mode, revision, generation, both
+   nonces, launcher/interpreter membership, ancestry, creation identity, and
+   both process-tree digests.
+5. The child may publish ownership heartbeat evidence only. It cannot query
+   runnable missions, inspect or acquire leases, recover work, execute a
+   stage, invoke an agent provider, or mutate mission/queue/review/stage/
+   artifact state.
+6. Governed stop validates the exact tree, retains sanitized signed binding
+   and termination evidence, restores the canonical stop marker, and proves
+   zero survivors.
+
+Direct CLI, supervisor, runner/pickup, recovery, and watchdog entry points
+must all agree on the selected mode. Observe-only never falls back to ordinary
+operation, and ordinary operation never inherits observe-only authority.
+Malformed or unreadable current supervisor state suppresses watchdog recovery
+instead of defaulting to a new ordinary start.
+
+Before a future observe-only handshake, a read-only preflight must establish
+zero runnable missions, zero leases/writers, exact current-main/deployment
+identity, clean runtime/execution worktrees, and zero CORE processes. An
+inability to prove zero runnable missions is a stop condition: retain the
+marker and do not start. Removing and restoring the marker are bounded,
+explicit governed operations; the canary ends stopped and cannot authorize a
+mission.
+
 ## Revision And Finding Contracts
 
 Review and test evidence must identify the packaged PR head as `expected_revision` and the actual checked commit as `tested_revision`. A proven mismatch is a stale-state recovery event, never valid owner-review evidence.

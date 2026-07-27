@@ -128,3 +128,38 @@ Current PR #517 delivery states are deliberately separate:
 
 None of the negative states may be inferred from repository or Render health.
 Each requires its own later governed authorization and evidence.
+
+## Observe-Only Ownership Handshake
+
+PR #539 added a governed `observe_only` startup mode and merged as
+`ce8971dff7605a91120a63c26dd22d81ca413360`. The mode exists only to prove
+controller-observed supervisor/runner ownership and governed shutdown without
+making mission execution reachable.
+
+Observe-only uses a dedicated credential-free child. The controller,
+supervisor, runner, heartbeat, signed full-tree acknowledgement, watchdog
+decision, and stop evidence bind the same execution mode, exact revision,
+generation, nonces, launcher/interpreter identities, ancestry, process
+creation identities, and tree digests. Missing, stale, forged, conflicting,
+or incomplete evidence fails closed.
+
+In observe-only mode the child does not import mission-store,
+execution-bridge, or provider modules and receives no database or provider
+credentials. Mission discovery, recovery, pickup, leases, stage execution,
+agent providers, queue/artifact mutation, and automatic fallback to ordinary
+operation are unreachable. Watchdog recovery remains disabled.
+
+Availability is not activation. At the current documentation cut:
+
+- observe-only code merged: **yes**;
+- exact current hosted revision: **yes**, current main
+  `1c47e53d5121d2fae5e49019f88872838b80d47c`;
+- local runtime/execution/manifest promoted to current main: **no**, all remain
+  `98cfe04e4ea23a4ddc43525671bb56de0a49670d`;
+- observe-only handshake executed: **no**;
+- ordinary CORE operation enabled: **no**;
+- naturally proven mission operation: **no**.
+
+The canonical stop marker remains present and the watchdog remains disabled.
+A later handshake requires a new exact-revision owner authorization and must
+end with zero CORE processes, the marker restored, and watchdog disabled.
