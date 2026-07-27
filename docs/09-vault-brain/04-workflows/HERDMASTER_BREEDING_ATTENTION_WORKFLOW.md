@@ -1,0 +1,117 @@
+# Herdmaster Breeding Attention and Human Observation Workflow
+
+Status: owner-approved direction, queued after the supervised Auction List first-use canary reaches a clean verified stopping point.
+
+This workflow is separate from the Riversdale Auction workflow. An auction-quality observation may remain useful factual evidence, but auction review, Auction List membership, breeding suitability, mating recommendations, and mating records are different decisions and must never imply one another.
+
+## Business outcome
+
+Charl and his father need one owner-only Breeding Attention view that identifies every current sow or gilt, explains her reproductive state, shows decisive missing evidence, and recommends the next human action. Herdmaster should help prevent eligible females from standing idle and should carry human knowledge about body, build, temperament, maternal performance, reproductive signs, and breeding preferences into later recommendations.
+
+The initial useful outcome is an explained daily worklist, not autonomous mating.
+
+## Existing foundation
+
+- Canonical Supabase pig, mating, litter, family-tree, weight, medical, movement, pen, and purpose evidence.
+- Existing mating board and breeding analytics.
+- Merged read-only Herdmaster breeding planner from PR #414.
+- Append-only `pig_observation_events` evidence rail now used by the bounded Auction review workflow.
+- Historical CORE missions:
+  - `CHARLIE-HERDMASTER-OBSERVATION-INTENT-INTEGRATION-20260721-R63C034E2`
+  - `CHARLIE-HERDMASTER-BREEDING-PLANNER-20260721-RI748BC303`
+
+The historical observation/management-intent candidates are not merge instructions. They must be reconciled against current main; stale or overlapping PRs must not be revived.
+
+## Current boundary
+
+The breeding planner can calculate advisory mating/calendar states, but current canonical evidence is incomplete for safe matching. Human conformation and management observations do not yet flow through a general breeding capture surface. The Auction review surface is narrower and must not be treated as the general breeding workflow.
+
+Live evidence reviewed on 2026-07-27 showed 19 sows with breeding history, 3 boars, and 15 mating records. Five sows appeared with no mating record in the analytics and seven had an open mating record. Those counts are attention signals only: absence of a mating does not prove readiness, and an open record does not prove current pregnancy.
+
+## Phase 1 - Breeding Attention view
+
+Produce one owner-only table with one current explained state per sow or gilt:
+
+- ready for mating review;
+- standing or heat observation required;
+- recently mated;
+- pregnancy check due or overdue;
+- expected to farrow;
+- nursing or post-weaning recovery;
+- owner hold;
+- retire or replace review;
+- needs data or conflicting evidence.
+
+Every row must show the evidence date, reason, missing facts, confidence, and one recommended next human action. Missing evidence must display as `Needs Data`, never as ready, not pregnant, healthy, or unsuitable.
+
+## Phase 2 - General human observation capture
+
+Add an owner-only, append-only factual observation workflow for:
+
+- body condition;
+- conformation and body build;
+- legs and feet;
+- udder and teats;
+- temperament;
+- mothering performance;
+- reproductive or standing signs;
+- defects or concerns;
+- owner breeding preference.
+
+Each observation must bind the canonical `Pig_ID`, observation time, recording time, server-derived owner identity, factual note, controlled category, optional measurements, confidence/provenance, and optional canonical media reference.
+
+Observation receipt is not a management decision. A comment must not silently change pregnancy, mating, medical, purpose, lifecycle, availability, retirement, or sale state.
+
+## Phase 3 - Explained mating recommendations
+
+Herdmaster may rank evidence-qualified pairings using:
+
+- current reproductive state and recovery period;
+- mating, pregnancy, farrowing, litter, and weaning history;
+- human observations and owner preferences;
+- body condition and known conformation strengths or concerns;
+- sow and boar family trees and relatedness exclusions;
+- litter performance and repeat-service history;
+- medical, withdrawal, movement, reservation, purpose, pen, and availability evidence;
+- farm capacity and timing.
+
+Each recommendation must name supporting evidence, exclusions, uncertainty, and the owner decision required. Herdmaster must not infer heat, pregnancy, fertility, soundness, genetics, or physical suitability from missing evidence.
+
+## Phase 4 - Agentic operating loop
+
+After the owner workflow is proven, CORE may schedule read-only Herdmaster observation and escalation:
+
+- daily breeding-attention digest;
+- overdue pregnancy checks;
+- eligible but unmated females;
+- expected farrowings;
+- missing physical observations;
+- repeat-service, replacement, or retirement review;
+- owner decisions waiting.
+
+CORE is not a prerequisite for Phases 1-3. CORE later provides continuous observation and delivery; it does not replace the Herdmaster business capability.
+
+## Authority and safety
+
+Herdmaster remains advisory. No observation or recommendation may automatically:
+
+- create or change a mating;
+- assert pregnancy or heat;
+- change medical, lifecycle, purpose, movement, availability, reservation, sale, or retirement state;
+- notify a customer or make a commercial promise;
+- schedule recurring work or grant CORE execution authority.
+
+Actual farm-record changes require a separately reviewed backend action and explicit owner approval.
+
+## Delivery order and acceptance
+
+1. Finish and verify the current one-animal Auction List Add canary.
+2. Reconcile current production breeding evidence and stale historical mission/PR lineage.
+3. Build and visually prove the integrated Breeding Attention and observation workflow.
+4. Independently review, merge, deploy, and perform read-only live verification.
+5. Run one supervised sow observation canary without creating a mating.
+6. Verify the observation changes Herdmaster's explanation while leaving farm records unchanged.
+7. Prepare one separately authorized mating-record canary only after the recommendation and owner decision are proven.
+8. Add recurring CORE observation only after the owner workflow is operational.
+
+The first operational acceptance requires a real owner-recorded observation, an explained updated recommendation, zero unintended farm mutations, and a clear worklist Charl and his father can use without reading technical evidence.
