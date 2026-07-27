@@ -12,6 +12,7 @@ const purposeFilter = document.getElementById("purpose_filter");
 const searchFilter = document.getElementById("search_filter");
 const resetFiltersButton = document.getElementById("reset_allocation_filters");
 const reviewPanel = document.getElementById("allocation_review_panel");
+const reviewHeading = document.getElementById("allocation_review_heading");
 const reviewStatus = document.getElementById("allocation_review_status");
 const reviewDetail = document.getElementById("allocation_review_detail");
 const auctionPanel = document.getElementById("riversdale_auction_panel");
@@ -47,6 +48,7 @@ let auctionCausalHeads = new Map();
 let auctionCycleId = "";
 let auctionListAvailability = "Unavailable";
 let auctionSelection = new Set();
+let auctionEvidenceByPigId = new Map();
 
 const ALLOCATION_PURPOSE_OPTIONS = [
   ["Grow_Out", "Grow out / meat pipeline"],
@@ -524,12 +526,14 @@ function updateAuctionCompactStatus() {
 }
 
 function renderAuctionRow(row) {
+  const evidence = auctionEvidenceByPigId.get(row.pig_id) || {};
   const currentlyEligible = auctionSelectableIds.has(row.pig_id);
   const selectable = bucketFilter.value === "Auction List"
     ? auctionListIds.has(row.pig_id)
     : currentlyEligible;
-  const health = row.health_status || row.medical_status || "Unknown";
-  const withdrawal = row.withdrawal_evidence_state || row.withdrawal_clear || "Unknown";
+  const health = evidence.health_status || row.health_status || row.medical_status || "Unknown";
+  const withdrawal = evidence.withdrawal_evidence_state || row.withdrawal_evidence_state || "Unknown";
+  const quality = evidence.observed_quality || "Unknown";
   const eligibility = currentlyEligible
     ? "Eligible for owner shortlist"
     : (bucketFilter.value === "Auction List"
@@ -547,11 +551,11 @@ function renderAuctionRow(row) {
       <td>${escapeHtml(row.age_days ?? "Unknown")}${row.age_days === null || row.age_days === undefined ? "" : " days"}</td>
       <td>${escapeHtml(formatPen(row))}</td>
       <td><strong>${escapeHtml(row.growth_class || "Unknown")}</strong><span class="table-subtext">${escapeHtml(formatAdg(row.average_daily_gain_kg))}</span></td>
-      <td class="auction-row-health"><strong>${escapeHtml(health)}</strong><span class="table-subtext">Withdrawal: ${escapeHtml(withdrawal)}</span></td>
+      <td class="auction-row-health"><strong>${escapeHtml(health)}</strong><span class="table-subtext">Withdrawal: ${escapeHtml(withdrawal)}</span><span class="table-subtext">Quality: ${escapeHtml(quality)}</span></td>
       <td class="auction-row-eligibility ${currentlyEligible ? "" : "is-blocked"}">${escapeHtml(eligibility)}
         ${bucketFilter.value === "Auction List" ? `<span class="print-only">Owner note: ${escapeHtml(note)}</span>` : ""}</td>
       <td class="auction-screen-only"><button type="button" class="button-link button-link-secondary allocation-review-button auction-row-details-button"
-        data-review-pig-id="${escapeHtml(row.pig_id || "")}">Details</button></td>
+        data-review-pig-id="${escapeHtml(row.pig_id || "")}">Details / Review</button></td>
     </tr>`;
 }
 
@@ -711,6 +715,11 @@ async function loadRiversdaleAuction() {
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.message || "Could not load auction evidence.");
     auctionPacket = data;
+    auctionEvidenceByPigId = new Map(
+      (data.candidate_preview || []).map(item => [
+        item.pig_id, item.herdmaster_evidence || {},
+      ])
+    );
     auctionCandidateIds = new Set((data.candidate_preview || []).map(item => item.pig_id));
     renderAuctionSurface(data.owner_surface);
     populateFilters(allocationRows);
@@ -741,6 +750,65 @@ async function loadRiversdaleAuction() {
     auctionSummary.innerHTML = auctionMetric("Auction evidence", "Unavailable");
     auctionEvidence.textContent = error.message || "Auction evidence is unavailable.";
   }
+}
+
+function renderAuctionEvidenceReview(row) {
+  const evidence = auctionEvidenceByPigId.get(row?.pig_id) || {};
+  const withdrawal = evidence.withdrawal_evidence_state || "unknown";
+  const quality = evidence.observed_quality || "unknown";
+  const review = evidence.auction_review || {};
+  if (reviewHeading) reviewHeading.textContent = "Auction Evidence Review";
+  reviewStatus.textContent = `Owner-only factual review for ${pigLabel(row || {})}. Recording does not add the animal to the Auction List.`;
+  reviewDetail.innerHTML = `
+    <div class="allocation-review-grid auction-evidence-review" data-auction-evidence-review>
+      <div><strong>Pig/tag</strong><span>${escapeHtml(pigLabel(row || {}))}</span></div>
+      <div><strong>Health</strong><span>${escapeHtml(evidence.health_status || row?.medical_status || "Unknown")}</span></div>
+      <div><strong>Authoritative withdrawal</strong><span>${escapeHtml(withdrawal)}</span></div>
+      <div><strong>Latest quality review</strong><span>${escapeHtml(quality)}</span></div>
+      <div><strong>Observed at</strong><input id="auction_review_observed_at" type="datetime-local" required></div>
+      <div><strong>Physical quality</strong><select id="auction_review_quality" required>
+        <option value="unknown"${quality === "unknown" ? " selected" : ""}>Unknown</option>
+        <option value="suitable"${quality === "suitable" ? " selected" : ""}>Suitable</option>
+        <option value="hold"${quality === "hold" ? " selected" : ""}>Hold</option>
+      </select></div>
+      <label>Factual physical observation<textarea id="auction_review_observation" required></textarea></label>
+      <label>Necessary follow-up<textarea id="auction_review_follow_up">${escapeHtml(review.follow_up || "")}</textarea></label>
+      <p class="form-helper">Withdrawal is derived server-side from canonical medical evidence. This review cannot clear a hold, assign an outlet, reserve, book or sell an animal.</p>
+      <button type="button" class="btn-primary" data-auction-review-record>Record append-only review</button>
+    </div>`;
+}
+
+async function submitAuctionEvidenceReview() {
+  const row = allocationRows.find(item => item.pig_id === selectedReviewPigId);
+  const evidence = auctionEvidenceByPigId.get(selectedReviewPigId) || {};
+  const observedLocal = document.getElementById("auction_review_observed_at")?.value || "";
+  const observation = document.getElementById("auction_review_observation")?.value.trim() || "";
+  if (!row || !observedLocal || !observation) {
+    showMessage("Observation time and factual physical observation are required.");
+    return;
+  }
+  const payload = {
+    pig_id:selectedReviewPigId,
+    auction_cycle_id:auctionCycleId,
+    withdrawal_state:evidence.withdrawal_evidence_state || "unknown",
+    quality_state:document.getElementById("auction_review_quality")?.value || "unknown",
+    observed_at:new Date(observedLocal).toISOString(),
+    physical_observation:observation,
+    follow_up:document.getElementById("auction_review_follow_up")?.value.trim() || "",
+    idempotency_key:`riversdale-review-${crypto.randomUUID()}`,
+  };
+  const response = await fetch("/api/pig-weights/riversdale-auction-candidate-reviews", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    showMessage(result.status || "Auction evidence review was not recorded.");
+    return;
+  }
+  showMessage("Append-only auction evidence review recorded.", "success");
+  await loadRiversdaleAuction();
+  renderAuctionEvidenceReview(row);
 }
 
 function optionalNumber(id) {
@@ -870,8 +938,13 @@ bodyEl.addEventListener("click", (event) => {
   if (!button) return;
   selectedReviewPigId = button.dataset.reviewPigId || "";
   const row = allocationRows.find((item) => item.pig_id === selectedReviewPigId);
-  if (isAuctionMode()) allocationCard?.classList.add("auction-review-open");
-  renderPurposeReview(row || null);
+  if (isAuctionMode()) {
+    allocationCard?.classList.add("auction-review-open");
+    renderAuctionEvidenceReview(row || null);
+  } else {
+    if (reviewHeading) reviewHeading.textContent = "Purpose Review";
+    renderPurposeReview(row || null);
+  }
   if (reviewPanel && typeof reviewPanel.scrollIntoView === "function") {
     reviewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -879,6 +952,10 @@ bodyEl.addEventListener("click", (event) => {
 
 if (reviewDetail) {
   reviewDetail.addEventListener("click", (event) => {
+    if (event.target.closest("[data-auction-review-record]")) {
+      submitAuctionEvidenceReview();
+      return;
+    }
     if (event.target.closest("[data-allocation-review-preview]")) {
       submitAllocationPurposeDecision(true);
       return;

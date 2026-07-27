@@ -34,7 +34,10 @@ from modules.sales.riversdale_auction import (
     record_owner_auction_decision,
     sanitized_owner_surface,
 )
-from modules.sales.riversdale_auction_candidate_reviews import record_candidate_review
+from modules.sales.riversdale_auction_candidate_reviews import (
+    read_latest_candidate_reviews,
+    record_candidate_review,
+)
 from modules.sales.riversdale_auction_list import (
     eligibility_tokens, read_auction_list, record_auction_list_events,
 )
@@ -4690,6 +4693,39 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True, connect_
     }
 
 
+def _project_riversdale_review_evidence(
+    allocation, confirmation, *, database_url=None, connect_factory=None
+):
+    cycle_id = to_clean_string(confirmation.get("auction_cycle_id"))
+    pig_ids = [
+        to_clean_string(row.get("pig_id"))
+        for row in allocation.get("pigs", [])
+        if isinstance(row, dict) and to_clean_string(row.get("pig_id"))
+    ]
+    latest_reviews, review_status = read_latest_candidate_reviews(
+        auction_cycle_id=cycle_id, pig_ids=pig_ids,
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    if review_status != 200:
+        latest_reviews = {}
+    for row in allocation.get("pigs", []):
+        if not isinstance(row, dict):
+            continue
+        withdrawal_state = to_clean_string(
+            row.get("withdrawal_evidence_state")
+        ).lower()
+        row["withdrawal_clear"] = (
+            "Yes" if withdrawal_state in {"cleared", "not_applicable"} else "No"
+        )
+        review = latest_reviews.get(to_clean_string(row.get("pig_id")))
+        row["auction_review_evidence"] = review or {}
+        row["observed_quality"] = (
+            to_clean_string((review or {}).get("quality_state"))
+            if (review or {}).get("fresh") is True else "Unknown"
+        )
+    return review_status
+
+
 def get_riversdale_auction_recommendation(today=None, confirmation=None, ledger_evidence=None, sam_demand=None, oom_sakkie_preparation=None, database_url=None, connect_factory=None):
     """Read-only SAM Live Stock auction packet grounded in the canonical allocation."""
     today = today or datetime.now().date()
@@ -4697,11 +4733,18 @@ def get_riversdale_auction_recommendation(today=None, confirmation=None, ledger_
     confirmation = confirmation if isinstance(confirmation, dict) else load_owner_confirmed_cycle(
         today=today, database_url=database_url, connect_factory=connect_factory,
     )
+    review_status = _project_riversdale_review_evidence(
+        allocation, confirmation, database_url=database_url,
+        connect_factory=connect_factory,
+    )
     packet = build_riversdale_auction_packet(
         allocation, today=today, confirmation=confirmation, ledger_evidence=ledger_evidence,
         sam_demand=sam_demand, oom_sakkie_preparation=oom_sakkie_preparation,
     )
     packet["owner_surface"] = sanitized_owner_surface(packet, today=today)
+    packet["review_evidence_status"] = (
+        "available" if review_status == 200 else "unavailable"
+    )
     return packet
 
 
@@ -4711,14 +4754,34 @@ def record_riversdale_auction_decision(payload, *, actor_id, database_url=None, 
     )
 
 
-def record_riversdale_candidate_review(payload, *, actor_id, database_url=None, connect_factory=None):
-    packet = get_riversdale_auction_recommendation(database_url=database_url, connect_factory=connect_factory)
-    candidate_ids = [
-        str(row.get("pig_id") or "").strip()
-        for row in packet.get("candidate_preview", []) if isinstance(row, dict)
+def _auction_review_candidates_in_transaction(connection, auction_cycle_id):
+    allocation = get_pig_allocation_readiness(
+        allow_sheet_fallback=False,
+        connect_factory=_ManagedReadFactory(connection),
+    )
+    if allocation.get("success") is not True:
+        return []
+    packet = build_riversdale_auction_packet(
+        allocation,
+        today=datetime.now().date(),
+        confirmation={
+            "auction_cycle_id": auction_cycle_id,
+            "operating": True,
+            "confirmed_date": datetime.now().date(),
+            "valid": True,
+        },
+    )
+    return [
+        to_clean_string(row.get("pig_id"))
+        for row in packet.get("candidate_preview", [])
+        if isinstance(row, dict) and to_clean_string(row.get("pig_id"))
     ]
+
+
+def record_riversdale_candidate_review(payload, *, actor_id, database_url=None, connect_factory=None):
     return record_candidate_review(
-        payload, actor_id=actor_id, candidate_ids=candidate_ids,
+        payload, actor_id=actor_id,
+        candidate_loader=_auction_review_candidates_in_transaction,
         database_url=database_url, connect_factory=connect_factory,
     )
 
@@ -4730,7 +4793,14 @@ def _auction_selectable_ids(packet):
         withdrawal = to_clean_string(evidence.get("withdrawal_clear")).lower()
         quality = to_clean_string(evidence.get("observed_quality")).lower()
         health = to_clean_string(evidence.get("health_status")).lower()
-        if withdrawal in {"yes", "clear", "cleared", "true", "1"} and quality in {"suitable", "clear", "cleared", "yes"} and health and "hold" not in health:
+        medical = to_clean_string(evidence.get("medical_status")).lower()
+        if (
+            withdrawal in {"yes", "clear", "cleared", "true", "1"}
+            and quality in {"suitable", "clear", "cleared", "yes"}
+            and medical == "clear"
+            and health
+            and "hold" not in health
+        ):
             selectable.append(to_clean_string(item.get("pig_id")))
     return [pig_id for pig_id in selectable if pig_id]
 
@@ -4791,6 +4861,11 @@ def _auction_eligibility_in_transaction(connection, _pig_ids):
         "transport_estimate": row[10], "owner_note": row[11],
         "valid": True,
     }
+    review_status = _project_riversdale_review_evidence(
+        allocation, confirmation, connect_factory=_ManagedReadFactory(connection)
+    )
+    if review_status != 200:
+        return {"success": False, "status": "auction_review_evidence_unavailable"}
     packet = build_riversdale_auction_packet(
         allocation, today=datetime.now().date(), confirmation=confirmation,
     )

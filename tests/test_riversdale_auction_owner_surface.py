@@ -227,6 +227,46 @@ class RiversdaleAuctionOwnerSurfaceTests(unittest.TestCase):
         self.assertEqual(update.call_args.kwargs["actor_id"], "owner-admin:stable")
         self.assertNotEqual(update.call_args.kwargs["actor_id"], "browser-spoof")
 
+    @patch(
+        "modules.pig_weights.pig_weights_routes.owner_admin_principal",
+        return_value="owner-admin:stable",
+    )
+    @patch(
+        "modules.pig_weights.pig_weights_routes.require_owner_admin_access",
+        return_value=None,
+    )
+    @patch(
+        "modules.pig_weights.pig_weights_routes.record_riversdale_candidate_review_data"
+    )
+    def test_candidate_review_uses_server_principal_and_has_no_list_action(
+            self, record, _access, _principal):
+        record.return_value = (
+            {
+                "success": True, "status": "review_recorded",
+                "creates_cohort": False, "creates_outlet_assignment": False,
+                "creates_reservation": False, "books_auction": False,
+                "creates_sale": False, "sends_reminder": False,
+                "contacts_customer": False, "changes_medical_record": False,
+                "changes_lifecycle": False, "changes_purpose": False,
+                "changes_farm_state": False,
+            },
+            201,
+        )
+        response = self.client.post(
+            "/api/pig-weights/riversdale-auction-candidate-reviews",
+            json={
+                "pig_id": "PIG-1", "auction_cycle_id": "cycle-a",
+                "withdrawal_state": "cleared", "quality_state": "suitable",
+                "observed_at": "2026-07-27T08:00:00Z",
+                "physical_observation": "Owner observed sound condition.",
+                "idempotency_key": "review-a",
+                "owner_id": "browser-spoof",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(record.call_args.kwargs["actor_id"], "owner-admin:stable")
+        self.assertNotEqual(record.call_args.kwargs["actor_id"], "browser-spoof")
+
     def test_existing_page_has_one_panel_and_integrated_auction_table(self):
         html = Path("templates/pig-allocation.html").read_text(encoding="utf-8")
         js = Path("static/js/pigAllocation.js").read_text(encoding="utf-8")
@@ -240,6 +280,12 @@ class RiversdaleAuctionOwnerSurfaceTests(unittest.TestCase):
         self.assertIn("data.owner_surface", js)
         self.assertIn("data.candidate_preview", js)
         self.assertNotIn("data.cohort", js)
+        self.assertIn("Auction Evidence Review", js)
+        self.assertIn("Details / Review", js)
+        self.assertIn("withdrawal_evidence_state", js)
+        self.assertIn("observed_quality", js)
+        self.assertIn("Record append-only review", js)
+        self.assertIn("does not add the animal to the Auction List", js)
 
 
 class RiversdaleAuctionOwnerPrincipalAcceptanceTests(unittest.TestCase):

@@ -72,7 +72,18 @@ test("Auction table selection is local and print is list-only", async ({ page, c
     if (url.pathname.endsWith("/riversdale-auction-recommendation")) {
       return json(route, {
         success: true,
-        candidate_preview: rows.map(({ pig_id }) => ({ pig_id })),
+        candidate_preview: rows.map((row, index) => ({
+          pig_id: row.pig_id,
+          herdmaster_evidence: {
+            health_status: row.health_status,
+            withdrawal_evidence_state: row.withdrawal_evidence_state,
+            withdrawal_clear: row.withdrawal_evidence_state === "cleared" ? "Yes" : "No",
+            observed_quality: index === 0 ? "suitable" : "unknown",
+            auction_review: index === 0
+              ? { quality_state: "suitable", follow_up: "Recheck before loading" }
+              : {},
+          },
+        })),
         confirmation: { auction_cycle_id: "visual-cycle-1", confirmed_date: "2026-08-05", location: "Riversdale Showgrounds" },
         owner_surface: {
           version: "riversdale_auction_owner_surface_v1", auction_operating: "Available",
@@ -134,6 +145,15 @@ test("Auction table selection is local and print is list-only", async ({ page, c
   expect((await page.locator("#riversdale_auction_panel").boundingBox()).height).toBeLessThan(100);
   await page.screenshot({ path: testInfo.outputPath("02-auction-candidates.png"), fullPage: true });
   await page.screenshot({ path: testInfo.outputPath("02b-21-candidate-first-viewport.png"), fullPage: false });
+  await page.locator("[data-review-pig-id='VISUAL-PIG-101']").click();
+  await expect(page.locator("#allocation_review_panel")).toBeVisible();
+  await expect(page.locator("#allocation_review_heading")).toHaveText("Auction Evidence Review");
+  await expect(page.locator("[data-auction-evidence-review]")).toContainText("Authoritative withdrawal");
+  await expect(page.locator("[data-auction-evidence-review]")).toContainText("cleared");
+  await expect(page.locator("[data-auction-evidence-review]")).toContainText("suitable");
+  await expect(page.locator("[data-auction-review-record]")).toBeVisible();
+  expect(mutationRequests).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("02c-integrated-evidence-review.png"), fullPage: false });
   await page.check("[data-auction-pig-id='VISUAL-PIG-101']");
   await page.check("[data-auction-pig-id='VISUAL-PIG-102']");
   await expect(page.locator("#auction_selected_count")).toHaveText("2 selected");
@@ -173,7 +193,7 @@ test("Auction table selection is local and print is list-only", async ({ page, c
   expect(printHeadings).not.toContain("Details");
   expect(printHeadings).not.toContain("Select");
   expect(await page.locator("thead").evaluate((element) => getComputedStyle(element).display)).toBe("table-header-group");
-  await expect(page.locator("#allocation_body")).not.toContainText("Review");
+  await expect(page.locator(".auction-row-details-button").first()).toHaveCSS("display", "none");
   expect(mutationRequests).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("05-print-preview.png"), fullPage: true });
   await page.emulateMedia({ media: "screen" });
@@ -187,6 +207,4 @@ test("Auction table selection is local and print is list-only", async ({ page, c
   expect(horizontalTable.scrollWidth).toBeGreaterThan(horizontalTable.clientWidth);
   await page.locator(".allocation-table-wrap").scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("06-mobile-horizontal-table.png"), fullPage: false });
-  await page.locator("[data-review-pig-id='VISUAL-PIG-101']").click();
-  await expect(page.locator("#allocation_review_panel")).toBeVisible();
 });
