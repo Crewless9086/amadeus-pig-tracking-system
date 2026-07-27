@@ -28,6 +28,10 @@ from modules.sales.sam_live_stock_understanding import (
     is_order_commitment_confirmation,
     understand_live_stock_inbound,
 )
+from modules.sales.sam_live_stock_contextual_sales import (
+    build_contextual_sales_recommendation,
+    normalize_livestock_language,
+)
 from modules.sales.sam_live_stock_media import classify_chatwoot_image, media_policy, transcribe_chatwoot_voice
 from modules.sales.sam_delivery_truth import (
     CHATWOOT_ACCEPTED_UNVERIFIED,
@@ -914,7 +918,7 @@ def _public_message_context(message, content_attributes=None):
 
 def extract_live_stock_facts(message, inbound=None):
     inbound = inbound if isinstance(inbound, dict) else {}
-    text = _normal_text(message)
+    text = normalize_livestock_language(_normal_text(message))
     weight_range = _extract_weight_range(text)
     category = _extract_category(text)
     if not category and weight_range:
@@ -1110,7 +1114,7 @@ def _current_message_requires_specialist(inbound, facts):
         if not _blank(facts.get(key))
     )
     affirmative_language = bool(re.search(
-        r"\b(want|need|buy|purchase|order|quote|price|cost|available|availability|"
+        r"\b(want|need|buy|purchase|sell|order|quote|price|cost|available|availability|"
         r"looking for|interested in|reserve|book|soek|koop|wil h[eê]|prys|beskikbaar)\b",
         text,
     ))
@@ -1428,15 +1432,46 @@ def summarize_live_stock_availability(rows, facts=None):
     matched.sort(key=lambda row: _availability_rank_key(row, requested_midpoint))
 
     bucket_counts = {}
+    customer_category_counts = {
+        label: {"all": 0, "female": 0, "male": 0, "unknown": 0}
+        for label in (
+            "Young Piglets",
+            "Weaner Piglets",
+            "Grower Pigs",
+            "Finisher Pigs",
+            "Ready for Slaughter",
+        )
+    }
+    customer_category_counts_complete = True
     for row in safe_rows:
-        label = _clean(row.get("sale_category") or row.get("suggested_price_category") or row.get("calculated_stage") or "Uncategorised", 80)
+        label = _customer_sale_category(row)
+        if not label:
+            customer_category_counts_complete = False
+            continue
         bucket_counts[label] = bucket_counts.get(label, 0) + 1
+        sex_label = _normal_sex(row.get("sex")) or "unknown"
+        category_counts = customer_category_counts.setdefault(
+            label,
+            {"all": 0, "female": 0, "male": 0, "unknown": 0},
+        )
+        category_counts["all"] += 1
+        category_counts[sex_label if sex_label in ("female", "male") else "unknown"] += 1
+    result_observations = [
+        _parse_aware_utc_timestamp(row.get("eligibility_observed_at"))
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    observation_timestamp = (
+        min(result_observations).isoformat()
+        if result_observations and all(result_observations)
+        else ""
+    )
     return {
         "success": True,
         "status": "loaded",
         "read_only": True,
         "contract_version": "herdmaster_exact_animal_eligibility_v1",
-        "observation_timestamp": next((_clean(row.get("eligibility_observed_at"), 40) for row in rows if isinstance(row, dict) and row.get("eligibility_observed_at")), ""),
+        "observation_timestamp": observation_timestamp,
         "allocation_query_status": next((_clean(row.get("allocation_query_status"), 40) for row in rows if isinstance(row, dict) and row.get("allocation_query_status")), "unavailable"),
         "evidence_complete": bool(matched) and all(
             isinstance(row, dict) and row.get("evidence_complete") is True
@@ -1445,6 +1480,8 @@ def summarize_live_stock_availability(rows, facts=None):
         "total_available_count": len(safe_rows),
         "matched_count": len(matched),
         "summary": bucket_counts,
+        "customer_category_counts": customer_category_counts,
+        "customer_category_counts_complete": customer_category_counts_complete,
         "matched_sample": [
             {**_availability_public_row(row), "selection_status": "eligible_exact_match", "exclusion_reasons": []}
             for row in matched[:10]
@@ -1458,6 +1495,46 @@ def summarize_live_stock_availability(rows, facts=None):
             "minimum_usable_constraints": specialist_match_allowed,
         },
     }
+
+
+def _parse_aware_utc_timestamp(value):
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _customer_sale_category(row):
+    for key in (
+        "sale_category",
+        "suggested_price_category",
+        "calculated_stage",
+        "weight_band",
+    ):
+        category = _customer_sale_category_value(row.get(key))
+        if category:
+            return category
+    return ""
+
+
+def _customer_sale_category_value(value):
+    text = _normal_text(value)
+    if "weaner" in text:
+        return "Weaner Piglets"
+    if "young" in text or "piglet" in text:
+        return "Young Piglets"
+    if "grower" in text:
+        return "Grower Pigs"
+    if "finisher" in text:
+        return "Finisher Pigs"
+    if "ready for slaughter" in text or "ready_for_slaughter" in text:
+        return "Ready for Slaughter"
+    return ""
 
 
 def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
@@ -1783,29 +1860,50 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         availability,
         environ=environ,
     )
-    fallback_reply = information_reply.get("reply_text") or _safe_reply_draft(
-        facts,
-        route,
-        missing,
-        availability,
-        blockers,
-        price_answer_packet,
-        conversation_plan,
-    )
-    llm_draft = _build_llm_reply_draft_if_enabled(
+    contextual_sales = build_contextual_sales_recommendation(
         inbound,
         facts,
-        context_packet,
-        route,
-        missing,
-        blockers,
-        match_packet,
-        price_answer_packet,
-        fallback_reply,
-        environ or {},
-        drafter=llm_drafter,
-        owner_correction_examples=owner_correction_examples,
-        conversation_plan=conversation_plan,
+        context_packet.get("chatwoot_history_messages") or [],
+        availability,
+        price_loader=list_live_stock_price_entries,
+        database_url=(environ or {}).get("DATABASE_URL"),
+    )
+    fallback_reply = (
+        contextual_sales.get("recommendation")
+        if contextual_sales.get("applicable") is True
+        else information_reply.get("reply_text") or _safe_reply_draft(
+            facts,
+            route,
+            missing,
+            availability,
+            blockers,
+            price_answer_packet,
+            conversation_plan,
+        )
+    )
+    llm_draft = (
+        {
+            "used": False,
+            "status": "commercial_general_information_fallback_blocked",
+            "reply_text": "",
+            "reply_source": "",
+        }
+        if contextual_sales.get("general_information_fallback_blocked") is True
+        else _build_llm_reply_draft_if_enabled(
+            inbound,
+            facts,
+            context_packet,
+            route,
+            missing,
+            blockers,
+            match_packet,
+            price_answer_packet,
+            fallback_reply,
+            environ or {},
+            drafter=llm_drafter,
+            owner_correction_examples=owner_correction_examples,
+            conversation_plan=conversation_plan,
+        )
     )
     if llm_draft.get("used") and _reply_exposes_internal_animal_evidence(llm_draft.get("reply_text"), match_packet):
         llm_draft = {
@@ -1816,7 +1914,13 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
             "contains_internal_animal_evidence": True,
         }
     reply = llm_draft.get("reply_text") if llm_draft.get("used") else fallback_reply
-    reply_source = llm_draft.get("reply_source") if llm_draft.get("used") else "deterministic_read_only_guard"
+    reply_source = (
+        "contextual_sales_source_backed_owner_draft"
+        if contextual_sales.get("applicable") is True
+        else llm_draft.get("reply_source")
+        if llm_draft.get("used")
+        else "deterministic_read_only_guard"
+    )
     return {
         "version": RUNTIME_VERSION,
         "agent": "sam_live_stock_backend",
@@ -1848,6 +1952,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "match_packet": match_packet,
         "price_answer_packet": price_answer_packet,
         "information_response": information_reply,
+        "contextual_sales": contextual_sales,
         "agent_evidence": agent_evidence,
         "owner_action_packet": owner_action_packet,
         "owner_correction_examples": owner_correction_examples,
@@ -3926,7 +4031,7 @@ def _extract_category(text):
         return "ready_for_slaughter"
     if _asks_about_big_live_pigs(text):
         return "live_pig"
-    if _has_any(text, ("live pig", "live pigs", "pigs to raise", "buy pigs", "pigs for sale", "pig for sale", "pigs available")):
+    if _has_any(text, ("live pig", "live pigs", "female pigs", "male pigs", "pigs to raise", "buy pigs", "pigs for sale", "pig for sale", "pigs available")):
         return "live_pig"
     return ""
 
@@ -3962,6 +4067,9 @@ def _has_live_stock_followup_signal(text):
 
 
 def _extract_quantity(text):
+    match = re.search(r"\b(?:buy|purchase|koop)\s+(\d{1,3})\b", text)
+    if match:
+        return int(match.group(1))
     match = re.search(r"\b(?:for|need|want)\s+(\d{1,3})\b", text)
     if match:
         return int(match.group(1))
