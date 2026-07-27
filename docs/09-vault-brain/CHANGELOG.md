@@ -144,6 +144,21 @@
 - Defined compatible latest-calendar-week campaign comparison and explicit target truth states.
 - Made STOP/CHANGE/BOOST/REUSE classification server-owned and decision preparation owner-authenticated, stateless, and non-executing.
 - Kept attributed revenue unavailable until a canonical paid/completed-sale join is proven.
+## 2026-07-27 - SAM Live Stock P0 operating recovery
+
+- Recorded the production finding that SAM is currently a guarded review and
+  exact owner-approved reply system, not a complete live-stock sales agent.
+- Made complete configured-inbox coverage, current Owner Inbox projection,
+  durable sales memory, source-backed guided selling, consistent owner
+  approval, delivery verification, and deal progression the P0 recovery.
+- Recorded the six exact live regression conversations: 771, 2031, 2029, 2039,
+  2040, and 2023.
+- Defined the 99% operating target as measurable capture latency with 100%
+  live full-inbox reconciliation, zero silent omissions, zero duplicate sends,
+  and 100% stock/price provenance.
+- Preserved exact owner approval for customer sending and separate protected
+  authority for reservation, payment, stock movement, and final promises.
+
 ## 2026-07-14 - CORE final artifact ingestion and supervisor truth
 
 - Made Agent Runner v2 final artifacts idempotent durable stage inputs that advance only the matching first incomplete stage and preserve upstream evidence.

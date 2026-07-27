@@ -15,6 +15,23 @@ These missions are `new`, not approved for automatic execution. Public posting r
 
 ## P0 Operational / Live Issues
 
+- P0 SAM Live Stock end-to-end operating recovery is the current customer-loss
+  priority. Controlling plan:
+  `planning/SAM_LIVE_STOCK_P0_OPERATING_RECOVERY_2026-07-27.md`.
+- Required outcome: every configured-inbox livestock inbound converges on one
+  current Owner Inbox work item, preserves durable sales facts, uses fresh
+  stock/price evidence, produces a commercially useful next action, supports
+  exact owner-approved send, and remains tracked through handled/quote/intake
+  progression.
+- Immediate regressions: conversations 771, 2031, 2029, 2039, 2040, and 2023.
+- Telegram is notification only; missing/unknown Telegram delivery must never
+  hide work.
+- Do not enable general automatic replies, reservations, payment confirmation,
+  stock mutation, or final customer promises during this P0.
+- Target: 100% live full-inbox reconciliation, at least 99% queue capture within
+  two minutes over 100 production-shaped turns, zero silent omissions, zero
+  duplicate sends, and 100% source-backed stock/price claims.
+
 - P0 Bulk Weight Data-Loss Fix: owner entered 71 rows, 60 were recorded in the draft/session, upload failed with a vague error, refresh lost all typed rows. Branch: `p0-bulk-weight-draft-recovery`.
 - P0 Bulk Upload HTML/JSON Failure: owner entered 73 entries with about 21 pen changes; upload returned HTML/non-JSON (`Unexpected token '<'`) instead of structured JSON. JSON-safe hotfix is merged, but live retest still failed through the old synchronous path.
 - P0 Supabase-First Durable Bulk Rail: merged, but owner-facing staging/chunk mechanics are confusing and must be hidden.

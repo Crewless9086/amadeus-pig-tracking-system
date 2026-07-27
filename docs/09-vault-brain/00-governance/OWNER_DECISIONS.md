@@ -2,6 +2,36 @@
 
 Status: owner-reviewed governance decisions captured on 2026-07-02.
 
+## 2026-07-27 - SAM Live Stock Is A P0 Deal-Closing System
+
+SAM Live Stock must be completed as an end-to-end supervised sales agent, not
+left as a first-message or reply-card utility.
+
+Charl must have one authoritative work queue covering every live-stock
+conversation requiring attention. Chatwoot remains conversation truth, the SAM
+Owner Inbox is the current owner-work projection, and Telegram is optional
+notification only.
+
+The system must:
+
+- preserve customer requirements across turns;
+- show useful verified categories, prices, and eligible availability;
+- ask only genuinely missing questions;
+- prepare owner-reviewed responses consistently;
+- track intake, draft-order, and quote progress;
+- remain responsible for follow-up visibility until the conversation is
+  handled;
+- fail visibly rather than silently omit work.
+
+General automatic customer sending remains disabled during this recovery.
+Reservation, payment confirmation, stock movement, and final promises retain
+separate protected authority.
+
+The controlling plan is:
+
+- `planning/SAM_LIVE_STOCK_P0_OPERATING_RECOVERY_2026-07-27.md`
+- `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_P0_RECOVERY.md`
+
 ## Vault Brain Authority
 
 The Vault Brain should become the primary active brain after owner review.
