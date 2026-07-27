@@ -115,3 +115,35 @@ Actual farm-record changes require a separately reviewed backend action and expl
 8. Add recurring CORE observation only after the owner workflow is operational.
 
 The first operational acceptance requires a real owner-recorded observation, an explained updated recommendation, zero unintended farm mutations, and a clear worklist Charl and his father can use without reading technical evidence.
+
+## Phase 1 operational result - 2026-07-27
+
+Phase 1 was merged through PR #549 as
+`028b4181c1c5cd22ffeef5824b7ec9a475458d29` and deployed by Render as
+`dep-d9jqt0ok1i2s73c4gshg` at that exact revision. All exact-merge checks
+passed and `/health` returned HTTP 200.
+
+The deployed owner-authenticated, GET-only proof completed in 3.828 seconds:
+
+- authoritative current sow/gilt inventory: 18, complete;
+- Pregnancy evidence: 9;
+- Post-litter recovery: 3;
+- Needs Data: 6;
+- Hold, Needs observation, Ready for review and Recently mated: 0;
+- counts reconciled exactly to all 18 animals;
+- supporting evidence status: partial;
+- family expansion: partial for all 18 within one bounded in-memory expansion;
+- writes and protected actions: none.
+
+The partial evidence result is intentional and fail-closed. At this evidence
+cut all 18 females lacked affirmative availability, current body-condition,
+current heat-observation, complete family-tree and withdrawal evidence. These
+facts remain missing; they are not inferred as safe, ready, unsuitable,
+not-pregnant or zero.
+
+Phase 1 is operational as an owner-only read surface. The next phase is a
+separately reviewed, append-only human-observation workflow. Its first canary
+should record one factual sow observation, then verify read-only that the
+explanation changes while mating, pregnancy, medical, lifecycle, purpose,
+movement, availability, retirement, customer, notification and farm state
+remain unchanged.
