@@ -418,6 +418,7 @@ def list_missions(
     compact=False,
     outcome_candidates=False,
     exclude_superseded=False,
+    exclude_execution_held=False,
 ):
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -438,6 +439,8 @@ def list_missions(
         where_clause = "where status = %(status)s"
     if exclude_superseded:
         where_clause += (" and " if where_clause else "where ") + _not_durably_superseded_sql()
+    if exclude_execution_held:
+        where_clause += (" and " if where_clause else "where ") + _not_execution_held_sql()
     if outcome_candidates:
         candidate_filter = """
                     (
@@ -524,6 +527,7 @@ def list_owner_work_missions(status, limit=10, database_url=None, connect_factor
                     where status = %(status)s
                       and coalesce(nullif(metadata_json->'intake_quality'->>'queue_class', ''), 'owner_work') = 'owner_work'
                       and {_not_durably_superseded_sql()}
+                      and {_not_execution_held_sql()}
                     {_mission_order_clause(clean_status)}
                     limit %(limit)s
                     """,
@@ -731,15 +735,21 @@ def update_mission_status(
     set_lines.append("updated_at = now()")
     set_sql = ",\n                        ".join(set_lines)
     expected_clause = "and status = %(expected_status)s" if expected_status else ""
+    hold_clause = f"and {_not_execution_held_sql()}"
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
+                    with mission_hold_lock as (
+                        select pg_advisory_xact_lock(hashtextextended(%(mission_id)s, 0))
+                    )
                     update public.charlie_missions
                     set {set_sql}
+                    from mission_hold_lock
                     where mission_id = %(mission_id)s
                     {expected_clause}
+                    {hold_clause}
                     returning mission_id
                     """,
                     {
@@ -752,6 +762,15 @@ def update_mission_status(
                 )
                 rows = cursor.fetchall()
                 if not rows:
+                    held, held_status = owner_execution_hold_status(mission_id, cursor=cursor)
+                    if held_status < 400 and held.get("active"):
+                        return {
+                            "success": False,
+                            "configured": True,
+                            "status": "owner_execution_hold_active",
+                            "mission_id": mission_id,
+                            "hold": _public_owner_execution_hold(held.get("hold")),
+                        }, 423
                     return {
                         "success": False,
                         "configured": True,
@@ -858,6 +877,8 @@ def finalize_owner_review_transaction(
     locks the mission row, rechecks the durable workflow and candidate-bound
     evidence, and writes the packet/status/event together.
     """
+
+
     mission_id = _clean_text(mission_id, 90)
     execution_id = _clean_text(execution_id, 120)
     candidate_revision = _clean_text(candidate_revision, 120)
@@ -965,6 +986,239 @@ def finalize_owner_review_transaction(
     }, 200
 
 
+def _not_execution_held_sql():
+    return """
+        not exists (
+            select 1 from public.charlie_owner_execution_hold_events as hold_event
+            where hold_event.mission_id = public.charlie_missions.mission_id
+              and hold_event.event_type = 'hold_created'
+              and not exists (
+                  select 1 from public.charlie_owner_execution_hold_events as release_event
+                  where release_event.event_type = 'hold_released'
+                    and release_event.release_of_event_id = hold_event.event_id
+              )
+        )
+    """
+
+
+def owner_execution_hold_status(mission_id, database_url=None, connect_factory=None, cursor=None):
+    mission_id = _clean_text(mission_id, 90)
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None and cursor is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    query = """
+        select event_id, hold_id, mission_id, generation_identity, reason,
+               owner_identity_hash, authorization_identity, created_at
+        from public.charlie_owner_execution_hold_events as hold_event
+        where mission_id = %(mission_id)s and event_type = 'hold_created'
+          and not exists (
+              select 1 from public.charlie_owner_execution_hold_events as release_event
+              where release_event.event_type = 'hold_released'
+                and release_event.release_of_event_id = hold_event.event_id
+          )
+        order by created_at desc limit 1
+    """
+    try:
+        if cursor is not None:
+            cursor.execute(query, {"mission_id": mission_id})
+            row = cursor.fetchone()
+        else:
+            with _connect(database_url, connect_factory) as connection:
+                with connection.cursor() as own_cursor:
+                    own_cursor.execute(query, {"mission_id": mission_id})
+                    row = own_cursor.fetchone()
+    except Exception as exc:
+        return {"success": False, "status": "owner_execution_hold_read_failed", "error_type": exc.__class__.__name__}, 503
+    if not row or len(row) < 8:
+        return {"success": True, "status": "not_held", "mission_id": mission_id, "active": False}, 200
+    return {
+        "success": True, "status": "owner_execution_hold_active",
+        "mission_id": mission_id, "active": True,
+        "hold": {
+            "event_id": row[0], "hold_id": row[1], "mission_id": row[2],
+            "generation_identity": row[3], "reason": row[4],
+            "owner_identity_hash": row[5], "authorization_identity": row[6],
+            "created_at": row[7].isoformat() if hasattr(row[7], "isoformat") else str(row[7]),
+        },
+    }, 200
+
+
+def _public_owner_execution_hold(hold):
+    if not isinstance(hold, dict):
+        return {}
+    return {
+        key: hold.get(key)
+        for key in (
+            "event_id", "hold_id", "mission_id", "generation_identity",
+            "reason", "created_at",
+        )
+        if hold.get(key) not in (None, "")
+    }
+
+
+def create_owner_execution_hold(mission_id, generation_identity, reason, *, owner_principal, database_url=None, connect_factory=None):
+    mission_id = _clean_text(mission_id, 90)
+    generation_identity = _clean_text(generation_identity, 120)
+    reason = _clean_text(reason, 200)
+    owner_principal = _clean_text(owner_principal, 500)
+    if not all((mission_id, generation_identity, reason, owner_principal)):
+        return {"success": False, "status": "owner_execution_hold_identity_required"}, 400
+    database_url = _owner_execution_hold_writer_database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    owner_hash = hashlib.sha256(owner_principal.encode("utf-8")).hexdigest()
+    hold_id = "CHARLIE-HOLD-" + hashlib.sha256(
+        f"{mission_id}|{generation_identity}|{reason}".encode("utf-8")
+    ).hexdigest()[:24].upper()
+    event_id = hold_id + "-CREATE"
+    authorization_identity = (
+        hashlib.md5(f"hold|{hold_id}|{owner_hash}".encode("utf-8")).hexdigest()
+        + hashlib.md5(f"hold-proof|{hold_id}|{owner_hash}".encode("utf-8")).hexdigest()
+    )
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "select pg_advisory_xact_lock(hashtextextended(%(mission_id)s, 0))",
+                    {"mission_id": mission_id},
+                )
+                cursor.execute(
+                    """
+                    select status, coalesce(metadata_json, '{}'::jsonb),
+                           not exists (
+                               select 1 from public.charlie_missions as replacement
+                               where replacement.metadata_json->'supersession'->>'status' = 'current_contract_replacement'
+                                 and replacement.metadata_json->'supersession'->>'supersedes_mission_id' = %(mission_id)s
+                                 and coalesce((replacement.metadata_json->'orchestration_binding'->>'validated')::boolean, false)
+                                 and replacement.metadata_json->'orchestration_binding'->>'generation_identity'
+                                     = replacement.metadata_json->'orchestration'->>'generation_identity'
+                           ) as not_superseded
+                    from public.charlie_missions
+                    where mission_id=%(mission_id)s
+                    """,
+                    {"mission_id": mission_id},
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                status, metadata = row[0], dict(row[1] or {})
+                current_generation = _clean_text((metadata.get("orchestration") or {}).get("generation_identity"), 120)
+                if status != "approved":
+                    return {"success": False, "status": "owner_execution_hold_status_conflict", "mission_status": status}, 409
+                disposition = metadata.get("portfolio_disposition") if isinstance(metadata.get("portfolio_disposition"), dict) else {}
+                if str(disposition.get("status") or "").strip().lower() == "superseded" or row[2] is not True:
+                    return {"success": False, "status": "owner_execution_hold_mission_superseded"}, 409
+                if current_generation != generation_identity:
+                    return {"success": False, "status": "owner_execution_hold_stale_generation", "current_generation": current_generation}, 409
+                active, active_code = owner_execution_hold_status(mission_id, cursor=cursor)
+                if active_code >= 400:
+                    return active, active_code
+                if active.get("active"):
+                    existing = active["hold"]
+                    if (
+                        existing.get("hold_id") == hold_id
+                        and existing.get("authorization_identity") == authorization_identity
+                    ):
+                        return {
+                            "success": True,
+                            "status": "owner_execution_hold_replayed",
+                            "mission_id": mission_id,
+                            "hold": _public_owner_execution_hold(existing),
+                        }, 200
+                    return {
+                        "success": False,
+                        "status": "owner_execution_hold_conflict",
+                        "active_hold": _public_owner_execution_hold(existing),
+                    }, 409
+                cursor.execute(
+                    """select public.append_charlie_owner_execution_hold(
+                           %(event_id)s,%(hold_id)s,%(mission_id)s,%(generation)s,
+                           %(reason)s,%(owner_hash)s,%(evidence)s::jsonb)""",
+                    {
+                        "event_id": event_id, "hold_id": hold_id, "mission_id": mission_id,
+                        "generation": generation_identity, "reason": reason,
+                        "owner_hash": owner_hash, "authorization": authorization_identity,
+                        "evidence": json.dumps({"mission_status": "approved", "generation_identity": generation_identity}),
+                    },
+                )
+    except Exception as exc:
+        return {"success": False, "status": "owner_execution_hold_write_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "owner_execution_hold_created", "mission_id": mission_id,
+            "hold": {"event_id": event_id, "hold_id": hold_id, "generation_identity": generation_identity, "reason": reason}}, 201
+
+
+def release_owner_execution_hold(mission_id, generation_identity, hold_id, reason, *, owner_principal, database_url=None, connect_factory=None):
+    mission_id = _clean_text(mission_id, 90)
+    generation_identity = _clean_text(generation_identity, 120)
+    hold_id = _clean_text(hold_id, 120)
+    reason = _clean_text(reason, 200)
+    owner_principal = _clean_text(owner_principal, 500)
+    if not all((mission_id, generation_identity, hold_id, reason, owner_principal)):
+        return {"success": False, "status": "owner_execution_hold_release_identity_required"}, 400
+    database_url = _owner_execution_hold_writer_database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    owner_hash = hashlib.sha256(owner_principal.encode("utf-8")).hexdigest()
+    release_event_id = hold_id + "-RELEASE"
+    authorization_identity = (
+        hashlib.md5(
+            f"release|{hold_id}|{generation_identity}|{owner_hash}".encode("utf-8")
+        ).hexdigest()
+        + hashlib.md5(
+            f"release-proof|{hold_id}|{generation_identity}|{owner_hash}".encode("utf-8")
+        ).hexdigest()
+    )
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "select pg_advisory_xact_lock(hashtextextended(%(mission_id)s, 0))",
+                    {"mission_id": mission_id},
+                )
+                cursor.execute(
+                    "select status,coalesce(metadata_json,'{}'::jsonb) from public.charlie_missions where mission_id=%(mission_id)s",
+                    {"mission_id": mission_id},
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                current_generation = _clean_text((dict(row[1] or {}).get("orchestration") or {}).get("generation_identity"), 120)
+                if current_generation != generation_identity:
+                    return {"success": False, "status": "owner_execution_hold_stale_generation", "current_generation": current_generation}, 409
+                cursor.execute(
+                    "select event_id,generation_identity from public.charlie_owner_execution_hold_events where hold_id=%(hold_id)s and mission_id=%(mission_id)s and event_type='hold_created'",
+                    {"hold_id": hold_id, "mission_id": mission_id},
+                )
+                hold = cursor.fetchone()
+                if not hold or hold[1] != generation_identity:
+                    return {"success": False, "status": "owner_execution_hold_not_found"}, 404
+                cursor.execute(
+                    "select event_id, reason, authorization_identity from public.charlie_owner_execution_hold_events where release_of_event_id=%(event_id)s",
+                    {"event_id": hold[0]},
+                )
+                replay = cursor.fetchone()
+                if replay:
+                    if replay[1] != reason or replay[2] != authorization_identity:
+                        return {"success": False, "status": "owner_execution_hold_release_conflict"}, 409
+                    return {"success": True, "status": "owner_execution_hold_release_replayed", "mission_id": mission_id, "release_event_id": replay[0]}, 200
+                cursor.execute(
+                    """select public.append_charlie_owner_execution_hold_release(
+                           %(event_id)s,%(hold_id)s,%(mission_id)s,%(generation)s,
+                           %(reason)s,%(owner_hash)s,%(release_of)s,%(evidence)s::jsonb)""",
+                    {
+                        "event_id": release_event_id, "hold_id": hold_id, "mission_id": mission_id,
+                        "generation": generation_identity, "reason": reason, "owner_hash": owner_hash,
+                        "authorization": authorization_identity, "release_of": hold[0],
+                        "evidence": json.dumps({"explicit_owner_release": True, "generation_identity": generation_identity}),
+                    },
+                )
+    except Exception as exc:
+        return {"success": False, "status": "owner_execution_hold_release_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "owner_execution_hold_released", "mission_id": mission_id, "release_event_id": release_event_id}, 201
+
+
 def normalize_approval_level(value):
     raw = _clean_text(value, 40).upper().replace("_", " ").replace("-", " ")
     if not raw:
@@ -1061,6 +1315,7 @@ def update_mission_vault(
     if status:
         set_lines.insert(0, "status = %(status)s")
         params["status"] = status
+    where += f" and {_not_execution_held_sql()}"
     if owner_decision:
         set_lines.insert(0, "owner_decision = %(owner_decision)s")
         params["owner_decision"] = _clean_text(owner_decision, 1000)
@@ -1070,8 +1325,12 @@ def update_mission_vault(
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
+                    with mission_hold_lock as (
+                        select pg_advisory_xact_lock(hashtextextended(%(mission_id)s, 0))
+                    )
                     update public.charlie_missions
                     set {", ".join(set_lines)}
+                    from mission_hold_lock
                     where {where}
                     returning mission_id
                     """,
@@ -1079,6 +1338,14 @@ def update_mission_vault(
                 )
                 rows = cursor.fetchall()
                 if not rows:
+                    held, held_status = owner_execution_hold_status(mission_id, cursor=cursor)
+                    if held_status < 400 and held.get("active"):
+                        return {
+                            "success": False, "configured": True,
+                            "status": "owner_execution_hold_active",
+                            "mission_id": mission_id,
+                            "hold": _public_owner_execution_hold(held.get("hold")),
+                        }, 423
                     if expected_status:
                         return {
                             "success": False, "configured": True, "status": "status_claim_lost",
@@ -3042,6 +3309,12 @@ def _clean_media_reference_value(reference, media_type):
 
 def _database_url(database_url):
     return (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+
+
+def _owner_execution_hold_writer_database_url(database_url):
+    if database_url is not None:
+        return str(database_url or "").strip()
+    return os.getenv("CHARLIE_OWNER_EXECUTION_HOLD_DATABASE_URL", "").strip()
 
 
 def _connect(database_url, connect_factory=None):

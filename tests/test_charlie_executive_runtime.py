@@ -43,6 +43,7 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         self.assertTrue(all(call.kwargs.get("outcome_candidates") is True for call in terminal_calls))
         active_calls = [call for call in list_missions.call_args_list if call.kwargs.get("status") not in {"merged", "deployed", "done"}]
         self.assertTrue(all(call.kwargs.get("compact") is False for call in active_calls))
+        self.assertTrue(all(call.kwargs.get("exclude_execution_held") is True for call in list_missions.call_args_list))
         self.assertTrue(all(call.kwargs.get("outcome_candidates") is False for call in active_calls))
 
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))

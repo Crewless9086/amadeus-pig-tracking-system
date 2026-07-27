@@ -769,11 +769,11 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("Supabase is canonical", content)
         self.assertIn("LEVEL 3 may open PR but not merge.", content)
         self.assertIn("LEVEL 3: code and tests may be changed", content)
-        update_status.assert_called_once()
-        self.assertEqual(update_status.call_args.args[1], "in_progress")
-        self.assertEqual(update_status.call_args.kwargs["expected_status"], "approved")
+        update_status.assert_not_called()
         self.assertGreaterEqual(update_vault.call_count, 1)
-        lease = update_vault.call_args.args[1]["execution_lease"]
+        lease = update_vault.call_args_list[0].args[1]["execution_lease"]
+        self.assertEqual(update_vault.call_args_list[0].kwargs["status"], "in_progress")
+        self.assertEqual(update_vault.call_args_list[0].kwargs["expected_status"], "approved")
         self.assertEqual(lease["mission_id"], "CHARLIE-MISSION-123")
         self.assertIn("lease_id", lease)
         self.assertTrue(result["execution_lease"]["persisted"])
@@ -781,7 +781,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
-    def test_marker_appearing_after_refresh_prevents_branch_and_status_mutation(
+    def test_marker_appearing_after_claim_prevents_branch_and_later_mutation(
         self, list_owner_work_missions, get_mission
     ):
         list_owner_work_missions.return_value = (
@@ -809,14 +809,19 @@ class CharlieMissionPickupTests(unittest.TestCase):
         ) as refresh, patch.object(
             charlie_mission_pickup, "_restore_mission_branch_for_resume"
         ) as restore, patch.object(
-            charlie_mission_pickup, "update_mission_status"
-        ) as update_status:
+            charlie_mission_pickup,
+            "update_mission_vault",
+            return_value=(
+                {"success": True, "status": "ok", "mission_status": "in_progress"},
+                200,
+            ),
+        ) as update_vault:
             result, status = charlie_mission_pickup.pick_up_next_mission()
         self.assertEqual(status, 423)
         self.assertEqual(result["reason"], "governed_stop_active")
         refresh.assert_called_once()
         restore.assert_not_called()
-        update_status.assert_not_called()
+        update_vault.assert_called_once()
 
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
@@ -848,9 +853,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
-    @patch("scripts.charlie_mission_pickup.update_mission_status")
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
     def test_pickup_uses_authoritative_coordinator_state_not_compact_queue_row(
-        self, update_status, list_owner_work_missions, get_mission
+        self, update_vault, list_owner_work_missions, get_mission
     ):
         compact = {
             **MISSION,
@@ -883,17 +888,14 @@ class CharlieMissionPickupTests(unittest.TestCase):
             {"success": True, "status": "ok", "mission": authoritative},
             200,
         )
-        update_status.return_value = (
+        update_vault.return_value = (
             {"success": True, "status": "ok", "mission_status": "in_progress"},
             200,
         )
 
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "CODEX_CHAT.md"
-            with patch("scripts.charlie_mission_pickup.CODEX_CHAT_PATH", target), patch(
-                "scripts.charlie_mission_pickup._write_execution_lease",
-                return_value={"persisted": True},
-            ):
+            with patch("scripts.charlie_mission_pickup.CODEX_CHAT_PATH", target):
                 result, status_code = charlie_mission_pickup.pick_up_next_mission()
             content = target.read_text(encoding="utf-8")
 
@@ -906,7 +908,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
-    def test_pickup_refreshes_old_workflow_before_claim(self, update_status, update_vault, list_owner_work_missions, get_mission):
+    def test_pickup_refreshes_old_workflow_after_atomic_claim(self, update_status, update_vault, list_owner_work_missions, get_mission):
         old_mission = {
             **MISSION,
             "metadata": {"charlie_core": {"project_truth": {"pipeline_profile": "full", "workflow_right_sized": False}}},
@@ -932,11 +934,12 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
         self.assertEqual(status_code, 200)
         self.assertTrue(result["workflow_refresh"]["refreshed"])
-        refresh_payload = update_vault.call_args_list[0].args[1]
+        self.assertIn("execution_lease", update_vault.call_args_list[0].args[1])
+        refresh_payload = update_vault.call_args_list[1].args[1]
         self.assertIn("agent_workflow", refresh_payload)
         self.assertIn("mission_context_pack", refresh_payload)
         self.assertIn("charlie_core", refresh_payload)
-        self.assertEqual(update_status.call_args.kwargs["expected_status"], "approved")
+        update_status.assert_not_called()
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
@@ -1112,11 +1115,11 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
-    @patch("scripts.charlie_mission_pickup.update_mission_status")
-    def test_pickup_claim_lost_does_not_write_codex_chat(self, update_status, list_owner_work_missions, get_mission):
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    def test_pickup_claim_lost_does_not_write_codex_chat(self, update_vault, list_owner_work_missions, get_mission):
         list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [MISSION]}, 200)
         get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
-        update_status.return_value = ({"success": False, "status": "status_claim_lost"}, 409)
+        update_vault.return_value = ({"success": False, "status": "status_claim_lost"}, 409)
 
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "CODEX_CHAT.md"
@@ -1326,6 +1329,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             limit=1,
             compact=False,
             exclude_superseded=True,
+            exclude_execution_held=True,
         )
 
     @patch("scripts.charlie_mission_pickup.list_missions")
@@ -1340,6 +1344,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             limit=100,
             compact=False,
             exclude_superseded=True,
+            exclude_execution_held=True,
         )
 
     def test_live_process_is_never_recovered_from_idle_observer_shape(self):

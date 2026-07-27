@@ -8,7 +8,12 @@ from pathlib import Path
 from flask import Blueprint, Response, jsonify, request, send_from_directory, stream_with_context
 
 from modules.charlie import runtime_path_root
-from modules.auth.owner_access import require_owner_admin_access, require_owner_read_access
+from modules.auth.owner_access import (
+    require_owner_admin_access,
+    require_owner_read_access,
+    require_strict_owner_admin_access,
+    strict_owner_admin_principal,
+)
 from modules.charlie.environment import env_value
 from modules.charlie.build_relay import (
     build_relay_policy,
@@ -20,6 +25,8 @@ from modules.charlie.mission_store import (
     get_mission_review_packet,
     list_missions,
     list_owner_work_missions,
+    create_owner_execution_hold,
+    release_owner_execution_hold,
     mission_status_summary,
     record_mission,
     record_mission_review_decision,
@@ -1644,6 +1651,53 @@ def charlie_build_relay_mission_queue_route(mission_id):
         mission_id,
         priority=payload.get("priority"),
         notes=str(payload.get("notes") or "Mission queue priority updated from CHARLIE Mission Control.").strip(),
+    )
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/execution-hold", methods=["POST"])
+def charlie_build_relay_mission_execution_hold_route(mission_id):
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    owner_principal = strict_owner_admin_principal()
+    if not owner_principal or owner_principal == "owner-admin:local-development":
+        return jsonify({"success": False, "status": "owner_admin_session_required"}), 403
+    if (
+        not request.is_json
+        or request.headers.get("X-CHARLIE-Owner-Action") != "owner_execution_hold"
+    ):
+        return jsonify({"success": False, "status": "owner_action_intent_required"}), 403
+    payload = request.get_json(silent=True) or {}
+    result, status_code = create_owner_execution_hold(
+        mission_id,
+        str(payload.get("generation_identity") or "").strip(),
+        str(payload.get("reason") or "").strip(),
+        owner_principal=owner_principal,
+    )
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/execution-hold/release", methods=["POST"])
+def charlie_build_relay_mission_execution_hold_release_route(mission_id):
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    owner_principal = strict_owner_admin_principal()
+    if not owner_principal or owner_principal == "owner-admin:local-development":
+        return jsonify({"success": False, "status": "owner_admin_session_required"}), 403
+    if (
+        not request.is_json
+        or request.headers.get("X-CHARLIE-Owner-Action") != "owner_execution_hold_release"
+    ):
+        return jsonify({"success": False, "status": "owner_action_intent_required"}), 403
+    payload = request.get_json(silent=True) or {}
+    result, status_code = release_owner_execution_hold(
+        mission_id,
+        str(payload.get("generation_identity") or "").strip(),
+        str(payload.get("hold_id") or "").strip(),
+        str(payload.get("reason") or "").strip(),
+        owner_principal=owner_principal,
     )
     return jsonify(result), status_code
 

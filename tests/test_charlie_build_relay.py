@@ -1459,6 +1459,62 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(update_mission_status.call_args.kwargs["approval_level"], "LEVEL 3")
         self.assertEqual(update_mission_status.call_args.kwargs["event_type"], "approval_decision")
 
+    @patch("modules.charlie.routes.strict_owner_admin_principal", return_value="owner:server-derived")
+    @patch("modules.charlie.routes.require_strict_owner_admin_access", return_value=None)
+    @patch("modules.charlie.routes.create_owner_execution_hold")
+    def test_execution_hold_route_uses_server_derived_owner(
+        self, create_hold, _owner_access, owner_principal
+    ):
+        create_hold.return_value = ({"success": True, "status": "owner_execution_hold_created"}, 201)
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/execution-hold",
+            json={"generation_identity": "GEN-1", "reason": "owner_hold", "owner_principal": "forged"},
+            headers={"X-CHARLIE-Owner-Action": "owner_execution_hold"},
+        )
+        self.assertEqual(response.status_code, 201)
+        create_hold.assert_called_once_with(
+            "MISSION-1", "GEN-1", "owner_hold", owner_principal="owner:server-derived"
+        )
+
+    @patch("modules.charlie.routes.strict_owner_admin_principal", return_value="owner:server-derived")
+    @patch("modules.charlie.routes.require_strict_owner_admin_access", return_value=None)
+    @patch("modules.charlie.routes.release_owner_execution_hold")
+    def test_execution_hold_release_is_separate_owner_action(
+        self, release_hold, _owner_access, owner_principal
+    ):
+        release_hold.return_value = ({"success": True, "status": "owner_execution_hold_released"}, 201)
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/execution-hold/release",
+            json={"generation_identity": "GEN-1", "hold_id": "HOLD-1", "reason": "owner_release"},
+            headers={"X-CHARLIE-Owner-Action": "owner_execution_hold_release"},
+        )
+        self.assertEqual(response.status_code, 201)
+        release_hold.assert_called_once_with(
+            "MISSION-1", "GEN-1", "HOLD-1", "owner_release",
+            owner_principal="owner:server-derived",
+        )
+
+    @patch("modules.charlie.routes.strict_owner_admin_principal", return_value="owner-admin:local-development")
+    @patch("modules.charlie.routes.require_strict_owner_admin_access", return_value=None)
+    def test_execution_hold_rejects_loopback_development_bypass(self, _owner_access, _principal):
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/execution-hold",
+            json={"generation_identity": "GEN-1", "reason": "owner_hold"},
+            headers={"X-CHARLIE-Owner-Action": "owner_execution_hold"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "owner_admin_session_required")
+
+    @patch("modules.charlie.routes.strict_owner_admin_principal", return_value="owner:server-derived")
+    @patch("modules.charlie.routes.require_strict_owner_admin_access", return_value=None)
+    def test_execution_hold_requires_explicit_owner_action_header(self, _owner_access, _principal):
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/execution-hold",
+            json={"generation_identity": "GEN-1", "reason": "owner_hold"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "owner_action_intent_required")
+
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.list_improvement_proposals")
     def test_improvements_route_lists_owner_reviewable_proposals(self, list_improvement_proposals, _owner_access):
