@@ -109,6 +109,11 @@ carcass contains two independently selected half-carcass collections, which
 may be the same or different. Customer replies must follow
 `docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`.
 
+Historical search compatibility only: older evidence may say
+`Set A: Family Freezer Pack`, `Set B: Braai Pack`, `Set C: Lean Pack`, or
+`Set D: Budget Bulk Pack`. These labels are not the current offer and must
+never be copied into a new customer reply or quote.
+
 These descriptions do not grant pricing, timing, deposit, booking, order, or stock authority.
 
 ## Legacy/Compatibility Endpoint

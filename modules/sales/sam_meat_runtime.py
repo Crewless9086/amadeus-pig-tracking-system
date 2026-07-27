@@ -74,6 +74,14 @@ OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 DEFAULT_LLM_URL = "https://api.openai.com/v1/chat/completions"
 MIN_TOKEN_CHARS = 32
 CUT_SET_MENU = {code: collection_description(code) for code in COLLECTIONS}
+# Search/audit compatibility only. Never use these retired labels in a new
+# customer offer or map them into CUT_SET_MENU.
+HISTORICAL_CUT_SET_LABELS = (
+    "Set A: Family Freezer Pack",
+    "Set B: Braai Pack",
+    "Set C: Lean Pack",
+    "Set D: Budget Bulk Pack",
+)
 ROBOTIC_REPLY_PATTERNS = [
     r"\bI am still with you on the pork preorder\b",
     r"\bPlease send the delivery street address\b",
