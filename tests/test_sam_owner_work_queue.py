@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
+import types
 
 import pytest
 
@@ -363,7 +365,8 @@ def test_inbound_webhook_fast_path_malformed_timestamp_fails_without_escape():
         recorder=lambda observation: recorded.append(observation),
     )
     assert status == 409
-    assert result["status"] == "owner_work_webhook_observation_evidence_incomplete"
+    assert result["status"] == "owner_work_webhook_timestamp_evidence_unavailable"
+    assert result["failure_reason"] == "message_timestamp_invalid"
     assert result["evidence_complete"] is False
     assert recorded == []
 
@@ -418,6 +421,177 @@ def test_webhook_fast_path_preserves_prior_unanswered_bundle():
     ] == ["761087896", "761497234"]
 
 
+def test_webhook_observation_binds_persistence_to_exact_loaded_prior_event():
+    recorded = []
+    result, status = observe_owner_work_message_event(
+        {
+            "account_id": "147387",
+            "conversation_id": "2031",
+            "contact_id": "981323214",
+            "inbox_id": "96568",
+            "message_id": "761497234",
+            "last_inbound_at": "2026-07-27T07:58:14+00:00",
+            "channel": "Channel::Whatsapp",
+            "identity_provenance": {"conflicts": {}},
+        },
+        {"review_event_id": "SAM-LIVE-REVIEW-5649F767443D"},
+        {"conversation": {"status": "open"}},
+        reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        state_loader=lambda conversation_id: ({
+            "success": True,
+            "found": True,
+            "state": {
+                "account_id": "147387",
+                "conversation_id": "2031",
+                "contact_id": "981323214",
+                "inbox_id": "96568",
+                "ownership_mode": "HUMAN",
+                "work_event_id": "SAM-OWNER-WORK-EVENT-PRIOR",
+                "unanswered_inbound_bundle": [],
+                "latest_inbound_message_id": "",
+                "latest_inbound_at": "",
+                "latest_outgoing_message_id": "",
+                "latest_outgoing_at": "",
+            },
+        }, 200),
+        recorder=lambda observation: (
+            recorded.append(observation)
+            or {"success": True, "created": True, "status": "recorded"},
+            201,
+        ),
+    )
+    assert status == 201
+    assert result["created_count"] == 1
+    assert recorded[0]["_expected_prior_event_id"] == "SAM-OWNER-WORK-EVENT-PRIOR"
+    assert recorded[0]["sends_customer_message"] is False
+
+
+def test_persistence_locks_before_prior_compare_and_withholds_concurrent_fork(
+    monkeypatch,
+):
+    observation = build_owner_work_observation(
+        conversation([message(101, "incoming", "2026-07-27T08:01:00Z")]),
+        review=review(),
+        reconciliation_actor_id=ACTOR,
+    )
+    observation["_expected_prior_event_id"] = "SAM-OWNER-WORK-EVENT-EXPECTED"
+    statements = []
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def execute(self, statement, params=None):
+            statements.append((" ".join(str(statement).split()), params))
+        def fetchone(self):
+            return ("SAM-OWNER-WORK-EVENT-CONCURRENT",)
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def cursor(self): return Cursor()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "psycopg",
+        types.SimpleNamespace(connect=lambda *args, **kwargs: Connection()),
+    )
+    result, status = record_owner_work_observation(
+        observation, database_url="postgresql://sanitized"
+    )
+
+    assert status == 409
+    assert result["status"] == "owner_work_observation_concurrent_state_changed"
+    assert result["created"] is False
+    assert result["evidence_complete"] is False
+    assert "pg_advisory_xact_lock" in statements[0][0]
+    assert "select work_event_id" in statements[1][0]
+    assert len(statements) == 2
+    assert result["sends_customer_message"] is False
+    assert result["calls_telegram"] is False
+    assert result["changes_conversation_ownership"] is False
+    assert result["mutates_business_state"] is False
+
+
+def test_webhook_concurrency_conflict_reloads_and_merges_once():
+    loads = []
+    recorded = []
+
+    def load_state(conversation_id):
+        loads.append(conversation_id)
+        bundle = [] if len(loads) == 1 else [{
+            "message_id": "761497250",
+            "direction": "incoming",
+            "created_at": "2026-07-27T08:00:01+00:00",
+        }]
+        return ({
+            "success": True,
+            "found": True,
+            "state": {
+                "account_id": "147387",
+                "conversation_id": "2031",
+                "contact_id": "981323214",
+                "inbox_id": "96568",
+                "ownership_mode": "HUMAN",
+                "work_event_id": f"SAM-OWNER-WORK-EVENT-{len(loads)}",
+                "unanswered_inbound_bundle": bundle,
+                "latest_inbound_message_id": (
+                    "761497250" if bundle else ""
+                ),
+                "latest_inbound_at": (
+                    "2026-07-27T08:00:01+00:00" if bundle else ""
+                ),
+                "latest_outgoing_message_id": "",
+                "latest_outgoing_at": "",
+            },
+        }, 200)
+
+    def record(observation):
+        recorded.append(observation)
+        if len(recorded) == 1:
+            return ({
+                "success": False,
+                "created": False,
+                "status": "owner_work_observation_concurrent_state_changed",
+                "evidence_complete": False,
+            }, 409)
+        return ({
+            "success": True,
+            "created": True,
+            "status": "owner_work_observation_recorded",
+        }, 201)
+
+    result, status = observe_owner_work_message_event(
+        {
+            "account_id": "147387",
+            "conversation_id": "2031",
+            "contact_id": "981323214",
+            "inbox_id": "96568",
+            "message_id": "761497300",
+            "last_inbound_at": "2026-07-27T08:00:02+00:00",
+            "channel": "Channel::Whatsapp",
+            "identity_provenance": {"conflicts": {}},
+        },
+        {"review_event_id": "SAM-LIVE-REVIEW-5649F767443D"},
+        {"conversation": {"status": "open"}},
+        reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        state_loader=load_state,
+        recorder=record,
+    )
+
+    assert status == 201
+    assert result["created_count"] == 1
+    assert len(loads) == 2
+    assert len(recorded) == 2
+    assert [
+        row["message_id"] for row in recorded[1]["unanswered_inbound_bundle"]
+    ] == ["761497250", "761497300"]
+    assert recorded[1]["_expected_prior_event_id"] == "SAM-OWNER-WORK-EVENT-2"
+    assert result["sends_customer_message"] is False
+    assert result["calls_telegram"] is False
+    assert result["changes_conversation_ownership"] is False
+    assert result["mutates_business_state"] is False
+
+
 def test_outgoing_webhook_fast_path_supersedes_actionable_state_without_http():
     recorded = []
     result, status = observe_owner_work_message_event(
@@ -466,6 +640,303 @@ def test_outgoing_webhook_fast_path_supersedes_actionable_state_without_http():
     assert recorded[0]["actionable"] is False
     assert recorded[0]["unanswered_count"] == 0
     assert recorded[0]["latest_outgoing_message_id"] == "761500248"
+
+
+def test_retried_inbound_webhook_is_withheld_before_persistence():
+    recorded = []
+    result, status = observe_owner_work_message_event(
+        {
+            "account_id": "147387",
+            "conversation_id": "2031",
+            "contact_id": "981323214",
+            "inbox_id": "96568",
+            "message_id": "761497234",
+            "last_inbound_at": "2026-07-27T07:58:14+00:00",
+            "channel": "Channel::Whatsapp",
+            "identity_provenance": {"conflicts": {}},
+        },
+        {"review_event_id": "SAM-LIVE-REVIEW-5649F767443D"},
+        {"conversation": {"status": "open"}},
+        reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        state_loader=lambda conversation_id: ({
+            "success": True,
+            "found": True,
+            "state": {
+                "account_id": "147387",
+                "conversation_id": "2031",
+                "contact_id": "981323214",
+                "inbox_id": "96568",
+                "ownership_mode": "HUMAN",
+                "unanswered_inbound_bundle": [],
+                "latest_inbound_message_id": "761497234",
+                "latest_inbound_at": "2026-07-27T07:58:14+00:00",
+                "latest_outgoing_message_id": "761500248",
+                "latest_outgoing_at": "2026-07-27T08:00:43+00:00",
+            },
+        }, 200),
+        recorder=lambda observation: recorded.append(observation),
+    )
+    assert status == 200
+    assert result["status"] == "owner_work_webhook_observation_already_recorded"
+    assert result["created_count"] == 0
+    assert recorded == []
+
+
+def test_consecutive_outgoing_webhook_preserves_latest_inbound_chronology():
+    recorded = []
+    result, status = observe_owner_work_message_event(
+        {
+            "account_id": "147387",
+            "conversation_id": "2031",
+            "contact_id": "981323214",
+            "inbox_id": "96568",
+            "message_id": "761500300",
+            "last_inbound_at": "2026-07-27T08:02:00+00:00",
+            "channel": "Channel::Whatsapp",
+            "identity_provenance": {"conflicts": {}},
+        },
+        {"review_event_id": "SAM-LIVE-REVIEW-5649F767443D"},
+        {"conversation": {"status": "open"}},
+        direction="outgoing",
+        reconciliation_actor_id="server:sam-live-stock-owner-reply-observer",
+        state_loader=lambda conversation_id: ({
+            "success": True,
+            "found": True,
+            "state": {
+                "account_id": "147387",
+                "conversation_id": "2031",
+                "contact_id": "981323214",
+                "inbox_id": "96568",
+                "ownership_mode": "HUMAN",
+                "unanswered_inbound_bundle": [],
+                "latest_inbound_message_id": "761497234",
+                "latest_inbound_at": "2026-07-27T07:58:14+00:00",
+                "latest_outgoing_message_id": "761500248",
+                "latest_outgoing_at": "2026-07-27T08:00:43+00:00",
+            },
+        }, 200),
+        recorder=lambda observation: (
+            recorded.append(observation)
+            or {"success": True, "created": True, "status": "recorded"},
+            201,
+        ),
+    )
+    assert status == 201
+    assert recorded[0]["classification"] == "CUSTOMER_ALREADY_HANDLED"
+    assert recorded[0]["latest_inbound_message_id"] == "761497234"
+    assert recorded[0]["latest_outgoing_message_id"] == "761500300"
+    assert recorded[0]["unanswered_count"] == 0
+
+
+def test_delayed_inbound_webhook_is_withheld_without_reopening_handled_state():
+    recorded = []
+    result, status = observe_owner_work_message_event(
+        {
+            "account_id": "147387",
+            "conversation_id": "2031",
+            "contact_id": "981323214",
+            "inbox_id": "96568",
+            "message_id": "761497200",
+            "last_inbound_at": "2026-07-27T07:50:00+00:00",
+            "channel": "Channel::Whatsapp",
+            "identity_provenance": {"conflicts": {}},
+        },
+        {"review_event_id": "SAM-LIVE-REVIEW-5649F767443D"},
+        {"conversation": {"status": "open"}},
+        reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        state_loader=lambda conversation_id: ({
+            "success": True,
+            "found": True,
+            "state": {
+                "account_id": "147387",
+                "conversation_id": "2031",
+                "contact_id": "981323214",
+                "inbox_id": "96568",
+                "ownership_mode": "HUMAN",
+                "unanswered_inbound_bundle": [],
+                "latest_inbound_message_id": "761497234",
+                "latest_inbound_at": "2026-07-27T07:58:14+00:00",
+                "latest_outgoing_message_id": "761500248",
+                "latest_outgoing_at": "2026-07-27T08:00:43+00:00",
+            },
+        }, 200),
+        recorder=lambda observation: (
+            recorded.append(observation)
+            or {"success": True, "created": True, "status": "recorded"},
+            201,
+        ),
+    )
+    assert status == 200
+    assert result["status"] == "owner_work_webhook_stale_inbound_withheld"
+    assert result["created_count"] == 0
+    assert recorded == []
+
+
+def _timestamp_observation(
+    event_timestamp,
+    *,
+    prior_timestamp="2026-07-27T08:00:00Z",
+    event_message_id="761497300",
+    prior_message_id="761497234",
+):
+    recorded = []
+    result, status = observe_owner_work_message_event(
+        {
+            "account_id": "147387",
+            "conversation_id": "2031",
+            "contact_id": "981323214",
+            "inbox_id": "96568",
+            "message_id": event_message_id,
+            "last_inbound_at": event_timestamp,
+            "channel": "Channel::Whatsapp",
+            "identity_provenance": {"conflicts": {}},
+        },
+        {"review_event_id": "SAM-LIVE-REVIEW-5649F767443D"},
+        {"conversation": {"status": "open"}},
+        reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        state_loader=lambda conversation_id: ({
+            "success": True,
+            "found": True,
+            "state": {
+                "account_id": "147387",
+                "conversation_id": "2031",
+                "contact_id": "981323214",
+                "inbox_id": "96568",
+                "ownership_mode": "HUMAN",
+                "unanswered_inbound_bundle": [],
+                "latest_inbound_message_id": prior_message_id,
+                "latest_inbound_at": prior_timestamp,
+                "latest_outgoing_message_id": "",
+                "latest_outgoing_at": "",
+            },
+        }, 200),
+        recorder=lambda observation: (
+            recorded.append(observation)
+            or {"success": True, "created": True, "status": "recorded"},
+            201,
+        ),
+    )
+    return result, status, recorded
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not-a-timestamp",
+        "2026-02-30T08:00:00Z",
+        "2026-07-27T08:00:00",
+        1785139200,
+        {"timestamp": "2026-07-27T08:00:00Z"},
+    ],
+)
+def test_webhook_malformed_observed_timestamp_is_visible_and_fail_closed(value):
+    result, status, recorded = _timestamp_observation(value)
+    assert status == 409
+    assert result["status"] == "owner_work_webhook_timestamp_evidence_unavailable"
+    assert result["failure_reason"] == "message_timestamp_invalid"
+    assert result["evidence_complete"] is False
+    assert result["sends_customer_message"] is False
+    assert result["calls_telegram"] is False
+    assert result["changes_conversation_ownership"] is False
+    assert result["mutates_business_state"] is False
+    assert recorded == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "bad-prior-timestamp",
+        "2026-02-30T08:00:00Z",
+        "2026-07-27T08:00:00",
+        1785139200,
+    ],
+)
+def test_webhook_malformed_prior_timestamp_is_visible_and_fail_closed(value):
+    result, status, recorded = _timestamp_observation(
+        "2026-07-27T08:00:01Z", prior_timestamp=value
+    )
+    assert status == 409
+    assert result["status"] == "owner_work_webhook_timestamp_evidence_unavailable"
+    assert result["failure_reason"] == "prior_timestamp_invalid"
+    assert result["evidence_complete"] is False
+    assert recorded == []
+
+
+@pytest.mark.parametrize(
+    ("event_timestamp", "expected_status", "created_count"),
+    [
+        ("2026-07-27T07:59:59Z", "owner_work_webhook_stale_inbound_withheld", 0),
+        ("2026-07-27T08:00:00Z", "owner_work_webhook_stale_inbound_withheld", 0),
+        ("2026-07-27T08:00:01Z", "recorded", 1),
+        ("2026-07-27T10:00:01+02:00", "recorded", 1),
+        ("2026-07-27T03:00:01-05:00", "recorded", 1),
+    ],
+)
+def test_webhook_stale_boundary_uses_utc_instants(
+    event_timestamp, expected_status, created_count
+):
+    result, status, recorded = _timestamp_observation(event_timestamp)
+    assert result["status"] == expected_status
+    assert result["created_count"] == created_count
+    assert status == (201 if created_count else 200)
+    assert len(recorded) == created_count
+
+
+def test_equivalent_offset_instants_are_the_same_replayed_message():
+    result, status, recorded = _timestamp_observation(
+        "2026-07-27T10:00:00+02:00",
+        prior_timestamp="2026-07-27T08:00:00Z",
+        event_message_id="761497234",
+    )
+    assert status == 200
+    assert result["status"] == "owner_work_webhook_observation_already_recorded"
+    assert result["created_count"] == 0
+    assert recorded == []
+
+
+def test_conflicting_timestamp_for_same_message_fails_closed():
+    result, status, recorded = _timestamp_observation(
+        "2026-07-27T08:00:01Z",
+        event_message_id="761497234",
+    )
+    assert status == 409
+    assert result["status"] == "owner_work_webhook_timestamp_evidence_conflict"
+    assert result["evidence_complete"] is False
+    assert recorded == []
+
+
+def test_future_and_both_malformed_timestamp_evidence_fail_before_persistence():
+    future, future_status, future_recorded = _timestamp_observation(
+        "2099-07-27T08:00:00Z"
+    )
+    assert future_status == 409
+    assert future["failure_reason"] == "message_timestamp_in_future"
+    assert future_recorded == []
+
+    malformed, malformed_status, malformed_recorded = _timestamp_observation(
+        "bad-event", prior_timestamp="bad-prior"
+    )
+    assert malformed_status == 409
+    assert malformed["failure_reason"] == "message_timestamp_invalid"
+    assert malformed_recorded == []
+
+
+def test_malformed_replay_does_not_replace_prior_valid_chronology():
+    result, status, recorded = _timestamp_observation(
+        "bad-replay",
+        event_message_id="761497234",
+    )
+    assert status == 409
+    assert result["status"] == "owner_work_webhook_timestamp_evidence_unavailable"
+    assert result["evidence_complete"] is False
+    assert recorded == []
+
+    valid, valid_status, valid_recorded = _timestamp_observation(
+        "2026-07-27T08:00:01Z"
+    )
+    assert valid_status == 201
+    assert valid["created_count"] == 1
+    assert len(valid_recorded) == 1
 
 
 @pytest.mark.parametrize(
@@ -645,7 +1116,7 @@ def test_configured_inventory_repair_cursor_cannot_skip_a_failed_conversation():
     assert result["next_cursor"]
     assert result["remaining_count"] == 2
     assert result["failures"][0]["conversation_id"] == "2029"
-    assert calls == ["1997", "2029", "2031"]
+    assert calls == ["1997", "2029"]
 
     calls.clear()
     recovered, recovered_status = reconcile_configured_owner_inventory_batch(

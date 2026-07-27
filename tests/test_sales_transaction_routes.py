@@ -94,6 +94,32 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             limit=2,
         )
 
+    def test_sam_owner_inventory_reconciliation_preserves_invalid_zero_limit(self):
+        with patch.object(
+            sales_transaction_routes, "require_owner_admin_access",
+            return_value=None,
+        ), patch.object(
+            sales_transaction_routes, "owner_admin_principal",
+            return_value="owner-admin:stable-server-derived",
+        ), patch.object(
+            sales_transaction_routes,
+            "reconcile_configured_owner_inventory_batch",
+            return_value=({
+                "success": False,
+                "status": "owner_inventory_limit_invalid",
+            }, 400),
+        ) as reconcile:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam/owner-inbox/reconcile-inventory",
+                json={"limit": 0},
+            )
+        self.assertEqual(response.status_code, 400)
+        reconcile.assert_called_once_with(
+            reconciliation_actor_id="owner-admin:stable-server-derived",
+            cursor_token="",
+            limit=0,
+        )
+
     def test_owner_ownership_resolution_uses_only_server_principal(self):
         result = {
             "success": True, "status": "ownership_resolution_completed",
@@ -2792,6 +2818,58 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(
             observe_owner_work.call_args.kwargs["direction"], "outgoing"
         )
+
+    def test_attachment_only_public_owner_reply_reaches_owner_work_observer(self):
+        payload = {
+            "event": "message_created",
+            "message_type": "outgoing",
+            "id": 9002,
+            "account": {"id": 147387},
+            "created_at": "2026-07-27T08:05:00+00:00",
+            "content": "",
+            "attachments": [{"file_type": "image"}],
+            "conversation": {
+                "id": 2031,
+                "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"},
+                "meta": {"sender": {"id": 699428938}},
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "get_latest_sam_live_stock_review_event_for_conversation",
+            return_value=({"success": True, "event": {}}, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "record_sales_conversation_learning_event",
+            return_value=({"success": False, "created": False}, 409),
+        ) as record_learning, patch.object(
+            sales_transaction_routes,
+            "observe_owner_work_message_event",
+            return_value=({
+                "success": True,
+                "status": "owner_work_observation_recorded",
+                "evidence_complete": True,
+                "created_count": 1,
+            }, 201),
+        ) as observe_owner_work, patch.object(
+            sales_transaction_routes,
+            "refresh_sam_live_stock_resolve_card_from_outgoing_event",
+            return_value={"success": False, "attempted": False},
+        ):
+            result = sales_transaction_routes._capture_sam_live_stock_owner_reply_if_needed(
+                payload
+            )
+
+        self.assertEqual(
+            result["owner_work_observation"]["status"],
+            "owner_work_observation_recorded",
+        )
+        observe_owner_work.assert_called_once()
+        record_learning.assert_not_called()
+        self.assertEqual(
+            result["status"], "attachment_only_owner_reply_learning_withheld"
+        )
+        self.assertEqual(observe_owner_work.call_args.kwargs["direction"], "outgoing")
 
     def test_owner_admin_exact_resolve_refresh_route_has_no_send_or_ownership_authority(self):
         request_identity = {

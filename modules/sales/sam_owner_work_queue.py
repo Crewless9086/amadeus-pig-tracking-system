@@ -7,7 +7,7 @@ deliberately independent from Telegram delivery and customer-send authority.
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import json
@@ -20,6 +20,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 from services.database_service import DATABASE_URL_ENV
 from modules.sales.sam_owner_reply_window import (
+    WINDOW_HOURS,
     evaluate_reply_window,
     prepare_window_alert,
 )
@@ -309,6 +310,10 @@ def record_owner_work_observation(
         ) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
+                    "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (observation["work_item_id"],),
+                )
+                cursor.execute(
                     f"""
                     select work_event_id
                     from public.{WORK_TABLE}
@@ -319,6 +324,15 @@ def record_owner_work_observation(
                     (observation["work_item_id"],),
                 )
                 prior = cursor.fetchone()
+                if "_expected_prior_event_id" in observation:
+                    expected_prior = _clean(observation.get("_expected_prior_event_id"))
+                    current_prior = _clean(prior[0] if prior else "")
+                    if current_prior != expected_prior:
+                        return _result(
+                            "owner_work_observation_concurrent_state_changed",
+                            created=False,
+                            evidence_complete=False,
+                        ), 409
                 cursor.execute(
                     f"""
                     insert into public.{WORK_TABLE} (
@@ -505,7 +519,10 @@ def load_latest_owner_work_event(
                     f"""
                     select account_id, conversation_id, contact_id, inbox_id,
                            ownership_mode, unanswered_inbound_bundle_json,
-                           review_event_id
+                           review_event_id, latest_message_id,
+                           latest_message_at, latest_inbound_message_id,
+                           latest_outgoing_message_id, expires_at_utc,
+                           work_event_id
                     from public.{WORK_TABLE}
                     where conversation_id=%s
                     order by observed_at desc, created_at desc, work_event_id desc
@@ -533,8 +550,49 @@ def load_latest_owner_work_event(
             "ownership_mode": _clean(row[4]),
             "unanswered_inbound_bundle": _json_value(row[5], []),
             "review_event_id": _clean(row[6]),
+            "latest_inbound_message_id": _clean(row[9]),
+            "latest_inbound_at": _prior_latest_inbound_at(
+                latest_message_id=row[7],
+                latest_message_at=row[8],
+                latest_inbound_message_id=row[9],
+                unanswered_bundle=_json_value(row[5], []),
+                expires_at_utc=row[11],
+            ),
+            "latest_outgoing_message_id": _clean(row[10]),
+            "latest_outgoing_at": (
+                _canonical_timestamp(row[8])
+                if _clean(row[7]) == _clean(row[10])
+                else ""
+            ),
+            "work_event_id": _clean(row[12]),
         },
     ), 200
+
+
+def _prior_latest_inbound_at(
+    *,
+    latest_message_id: Any,
+    latest_message_at: Any,
+    latest_inbound_message_id: Any,
+    unanswered_bundle: Any,
+    expires_at_utc: Any,
+) -> str:
+    inbound_id = _clean(latest_inbound_message_id)
+    if not inbound_id:
+        return ""
+    if isinstance(unanswered_bundle, list):
+        for row in reversed(unanswered_bundle):
+            if isinstance(row, Mapping) and _clean(row.get("message_id")) == inbound_id:
+                return _canonical_timestamp(row.get("created_at"))
+    if _clean(latest_message_id) == inbound_id:
+        return _canonical_timestamp(latest_message_at)
+    expiry = _canonical_timestamp(expires_at_utc)
+    if not expiry:
+        return ""
+    return (
+        datetime.fromisoformat(expiry.replace("Z", "+00:00"))
+        - timedelta(hours=WINDOW_HOURS)
+    ).isoformat()
 
 
 def observe_owner_work_message_event(
@@ -546,6 +604,7 @@ def observe_owner_work_message_event(
     reconciliation_actor_id: str,
     recorder: Callable[[Mapping[str, Any]], tuple[dict[str, Any], int]] | None = None,
     state_loader: Callable[[str], tuple[dict[str, Any], int]] | None = None,
+    _concurrency_retry_allowed: bool = True,
 ) -> tuple[dict[str, Any], int]:
     """Merge one webhook message into sanitized canonical work state."""
     inbound = inbound if isinstance(inbound, Mapping) else {}
@@ -589,6 +648,20 @@ def observe_owner_work_message_event(
             "owner_work_outgoing_prior_state_required",
             evidence_complete=False,
         ), 409
+    try:
+        event_at = _strict_utc_timestamp(inbound["last_inbound_at"])
+    except OwnerWorkEvidenceError:
+        return _result(
+            "owner_work_webhook_timestamp_evidence_unavailable",
+            failure_reason="message_timestamp_invalid",
+            evidence_complete=False,
+        ), 409
+    if event_at > datetime.now(timezone.utc):
+        return _result(
+            "owner_work_webhook_timestamp_evidence_unavailable",
+            failure_reason="message_timestamp_in_future",
+            evidence_complete=False,
+        ), 409
     if prior and any(
         _clean(prior.get(key)) != identity[key]
         for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
@@ -605,6 +678,76 @@ def observe_owner_work_message_event(
             "owner_work_webhook_prior_state_malformed",
             evidence_complete=False,
         ), 409
+    try:
+        prior_bundle_instants = {
+            _clean(row.get("message_id")): _strict_utc_timestamp(row.get("created_at"))
+            for row in prior_bundle
+        }
+        prior_latest_inbound_instant = (
+            _strict_utc_timestamp(prior.get("latest_inbound_at"))
+            if _clean(prior.get("latest_inbound_message_id"))
+            else None
+        )
+        prior_latest_outgoing_instant = (
+            _strict_utc_timestamp(prior.get("latest_outgoing_at"))
+            if _clean(prior.get("latest_outgoing_message_id"))
+            and _clean(prior.get("latest_outgoing_at"))
+            else None
+        )
+    except OwnerWorkEvidenceError:
+        return _result(
+            "owner_work_webhook_timestamp_evidence_unavailable",
+            failure_reason="prior_timestamp_invalid",
+            evidence_complete=False,
+        ), 409
+    event_message_id = _clean(inbound["message_id"])
+    prior_direction_message_id = _clean(
+        prior.get(
+            "latest_inbound_message_id"
+            if direction == "incoming"
+            else "latest_outgoing_message_id"
+        )
+    )
+    duplicate_instant = (
+        prior_latest_inbound_instant
+        if direction == "incoming" and prior_direction_message_id == event_message_id
+        else prior_latest_outgoing_instant
+        if direction == "outgoing" and prior_direction_message_id == event_message_id
+        else prior_bundle_instants.get(event_message_id)
+        if direction == "incoming"
+        else None
+    )
+    if duplicate_instant is not None:
+        if event_at != duplicate_instant:
+            return _result(
+                "owner_work_webhook_timestamp_evidence_conflict",
+                failure_reason="message_timestamp_conflict",
+                evidence_complete=False,
+            ), 409
+        return _result(
+            "owner_work_webhook_observation_already_recorded",
+            created=False,
+            created_count=0,
+            evidence_complete=True,
+        ), 200
+    prior_latest_inbound_id = _clean(prior.get("latest_inbound_message_id"))
+    prior_latest_inbound_at = (
+        prior_latest_inbound_instant.isoformat()
+        if prior_latest_inbound_instant is not None
+        else ""
+    )
+    if (
+        direction == "incoming"
+        and prior_latest_inbound_id
+        and prior_latest_inbound_at
+        and event_at <= prior_latest_inbound_instant
+    ):
+        return _result(
+            "owner_work_webhook_stale_inbound_withheld",
+            created=False,
+            created_count=0,
+            evidence_complete=True,
+        ), 200
     messages = [
         {
             "id": row.get("message_id"),
@@ -615,10 +758,45 @@ def observe_owner_work_message_event(
         }
         for row in prior_bundle
     ]
+    prior_latest_outgoing_id = _clean(prior.get("latest_outgoing_message_id"))
+    if direction == "incoming" and not prior_bundle and prior_latest_outgoing_id:
+        prior_latest_outgoing_at = (
+            prior_latest_outgoing_instant.isoformat()
+            if prior_latest_outgoing_instant is not None
+            else ""
+        )
+        if not prior_latest_outgoing_at:
+            return _result(
+                "owner_work_webhook_prior_state_malformed",
+                evidence_complete=False,
+            ), 409
+        messages.append({
+            "id": prior_latest_outgoing_id,
+            "message_type": 1,
+            "created_at": prior_latest_outgoing_at,
+            "private": False,
+            "conversation_id": identity["conversation_id"],
+        })
+    if (
+        prior_latest_inbound_id
+        and all(_clean(row.get("message_id")) != prior_latest_inbound_id for row in prior_bundle)
+    ):
+        if not prior_latest_inbound_at:
+            return _result(
+                "owner_work_webhook_prior_state_malformed",
+                evidence_complete=False,
+            ), 409
+        messages.append({
+            "id": prior_latest_inbound_id,
+            "message_type": 0,
+            "created_at": prior_latest_inbound_at,
+            "private": False,
+            "conversation_id": identity["conversation_id"],
+        })
     messages.append({
         "id": inbound["message_id"],
         "message_type": 0 if direction == "incoming" else 1,
-        "created_at": inbound["last_inbound_at"],
+        "created_at": event_at.isoformat(),
         "private": False,
         "conversation_id": identity["conversation_id"],
     })
@@ -644,6 +822,9 @@ def observe_owner_work_message_event(
             review=review,
             reconciliation_actor_id=reconciliation_actor_id,
         )
+        observation["_expected_prior_event_id"] = _clean(
+            prior.get("work_event_id") if prior else ""
+        )
     except OwnerWorkEvidenceError as exc:
         return _result(
             "owner_work_webhook_observation_evidence_incomplete",
@@ -660,6 +841,21 @@ def observe_owner_work_message_event(
             error_type=exc.__class__.__name__,
             evidence_complete=False,
         ), 503
+    if (
+        status_code == 409
+        and persisted.get("status") == "owner_work_observation_concurrent_state_changed"
+        and _concurrency_retry_allowed
+    ):
+        return observe_owner_work_message_event(
+            inbound,
+            review,
+            raw_payload,
+            direction=direction,
+            reconciliation_actor_id=reconciliation_actor_id,
+            recorder=recorder,
+            state_loader=state_loader,
+            _concurrency_retry_allowed=False,
+        )
     return _result(
         persisted.get("status", "owner_work_webhook_observation_persistence_failed"),
         created=persisted.get("created") is True,
@@ -994,6 +1190,7 @@ def reconcile_configured_owner_inventory_batch(
         results.append(item)
         if status_code >= 400 or result.get("evidence_complete") is not True:
             failures.append(item)
+            break
     if failures:
         first_failure_id = _clean(failures[0].get("conversation_id"))
         first_failure_offset = next(
@@ -1643,6 +1840,18 @@ def _canonical_timestamp(value: Any) -> str:
         except ValueError as exc:
             raise OwnerWorkEvidenceError("timestamp_invalid") from exc
     return _aware(value).isoformat() if isinstance(value, datetime) else ""
+
+
+def _strict_utc_timestamp(value: Any) -> datetime:
+    if not isinstance(value, str) or not value.strip():
+        raise OwnerWorkEvidenceError("timestamp_type_invalid")
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise OwnerWorkEvidenceError("timestamp_invalid") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise OwnerWorkEvidenceError("timestamp_timezone_missing")
+    return parsed.astimezone(timezone.utc)
 
 
 def _numeric_sort(value: Any) -> tuple[int, str]:

@@ -832,7 +832,15 @@ def _record_sam_live_stock_delivery_outcome(claim, outcome):
 
 def _capture_sam_live_stock_owner_reply_if_needed(payload):
     inbound = parse_sam_live_stock_chatwoot_inbound(payload)
-    if inbound.get("message_type") != "outgoing" or not inbound.get("content") or not inbound.get("conversation_id"):
+    attachments = (payload or {}).get("attachments")
+    has_public_reply_evidence = bool(inbound.get("content")) or (
+        isinstance(attachments, list) and bool(attachments)
+    )
+    if (
+        inbound.get("message_type") != "outgoing"
+        or not has_public_reply_evidence
+        or not inbound.get("conversation_id")
+    ):
         return {"attempted": False, "captured": False, "status": "not_outgoing_owner_reply"}
     event_name = str((payload or {}).get("event") or "").strip().lower()
     if event_name not in {"", "message_created"}:
@@ -845,12 +853,21 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         return _owner_reply_capture_skipped("sam_live_stock_send_echo_skipped", inbound)
     latest, latest_status = get_latest_sam_live_stock_review_event_for_conversation(inbound.get("conversation_id"))
     latest_event = latest.get("event") if latest.get("success") and isinstance(latest.get("event"), dict) else {}
-    event = build_live_stock_owner_reply_learning_event({
-        **inbound,
-        "message_id": str((payload or {}).get("id") or (payload or {}).get("message_id") or ""),
-        "created_at": str((payload or {}).get("created_at") or (payload or {}).get("timestamp") or ""),
-    }, latest_event)
-    learning, learning_status = record_sales_conversation_learning_event(event)
+    if inbound.get("content"):
+        event = build_live_stock_owner_reply_learning_event({
+            **inbound,
+            "message_id": str((payload or {}).get("id") or (payload or {}).get("message_id") or ""),
+            "created_at": str((payload or {}).get("created_at") or (payload or {}).get("timestamp") or ""),
+        }, latest_event)
+        learning, learning_status = record_sales_conversation_learning_event(event)
+    else:
+        learning = {
+            "success": False,
+            "created": False,
+            "created_count": 0,
+            "status": "attachment_only_owner_reply_learning_withheld",
+        }
+        learning_status = 200
     account = payload.get("account") if isinstance(payload.get("account"), dict) else {}
     conversation = payload.get("conversation") if isinstance(payload.get("conversation"), dict) else {}
     contact = conversation.get("contact") if isinstance(conversation.get("contact"), dict) else {}
@@ -1118,7 +1135,7 @@ def sam_owner_inbox_reconcile_inventory():
     result, status_code = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=principal,
         cursor_token=payload.get("cursor") or "",
-        limit=payload.get("limit") or 25,
+        limit=payload["limit"] if "limit" in payload else 25,
     )
     return jsonify(result), status_code
 
