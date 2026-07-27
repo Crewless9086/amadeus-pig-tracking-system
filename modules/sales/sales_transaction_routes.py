@@ -2,6 +2,7 @@ import ipaddress
 import os
 
 from flask import Blueprint, jsonify, render_template, request
+from modules.pig_weights.pig_weights_service import get_sales_availability
 from modules.auth.owner_access import (
     owner_admin_principal,
     owner_session_is_valid,
@@ -95,11 +96,23 @@ from modules.sales.sam_meat_runtime import (
 from modules.sales.sam_live_stock_runtime import (
     authorize_sam_live_stock_webhook,
     build_sam_live_stock_resolved_cleanup_packet,
+    extract_live_stock_facts,
     handle_sam_live_stock_chatwoot_inbound,
+    load_chatwoot_conversation_history,
+    load_chatwoot_conversation_identity,
     parse_chatwoot_inbound as parse_sam_live_stock_chatwoot_inbound,
     review_sam_live_stock_conversation,
     sam_live_stock_webhook_policy,
     send_owner_approved_live_stock_reply,
+    summarize_live_stock_availability,
+)
+from modules.sales.sam_live_stock_contextual_sales import (
+    build_contextual_sales_recommendation,
+)
+from modules.sales.sam_live_stock_availability_observation import (
+    append_availability_observation,
+    build_availability_observation_preview,
+    resolve_authoritative_availability,
 )
 from modules.sales.sam_live_stock_launch_control import (
     _telegram_send_message,
@@ -707,6 +720,191 @@ def sam_live_stock_chatwoot_policy():
         "policy": sam_live_stock_webhook_policy(),
         "launch_control": sam_live_stock_launch_control_policy(),
     }), 200
+
+
+@sales_bp.route(
+    "/sales/channels/chatwoot/sam-live-stock/availability/page",
+    methods=["GET"],
+)
+def sam_live_stock_availability_page():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    return render_template("sam-live-stock-availability.html")
+
+
+@sales_bp.route(
+    "/sales/channels/chatwoot/sam-live-stock/availability/preview",
+    methods=["POST"],
+)
+def sam_live_stock_availability_preview():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    rows = get_sales_availability()
+    result = build_availability_observation_preview(
+        rows if isinstance(rows, list) else [],
+        proposed_observed_at=payload.get("observed_at") or "",
+        max_age_hours=payload.get("max_age_hours", 24),
+    )
+    result.pop("_lineage", None)
+    return jsonify(result), 200 if result.get("success") else 400
+
+
+@sales_bp.route(
+    "/sales/channels/chatwoot/sam-live-stock/availability/confirm",
+    methods=["POST"],
+)
+def sam_live_stock_availability_confirm():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    principal = owner_admin_principal()
+    if not principal:
+        return jsonify({
+            "success": False,
+            "status": "owner_identity_required",
+            "sends_customer_message": False,
+            "mutates_business_state": False,
+        }), 403
+    rows = get_sales_availability()
+    result, status_code = append_availability_observation(
+        rows if isinstance(rows, list) else [],
+        request.get_json(silent=True) or {},
+        actor_id=principal,
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route(
+    "/sales/channels/chatwoot/sam-live-stock/availability/recommendation",
+    methods=["POST"],
+)
+def sam_live_stock_availability_recommendation():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    conversation_id = str(payload.get("conversation_id") or "").strip()
+    expected_account_id = str(payload.get("account_id") or "").strip()
+    latest_inbound_id = str(payload.get("latest_inbound_id") or "").strip()
+    expected_contact_id = str(payload.get("contact_id") or "").strip()
+    expected_inbox_id = str(payload.get("inbox_id") or "").strip()
+    expected_observation = {
+        "event_id": str(payload.get("observation_event_id") or "").strip(),
+        "cohort_hash": str(payload.get("cohort_hash") or "").strip(),
+        "observed_at": str(payload.get("observed_at_utc") or "").strip(),
+        "expires_at": str(payload.get("expires_at_utc") or "").strip(),
+    }
+    if not all(expected_observation.values()):
+        return jsonify({
+            "success": False,
+            "status": "recommendation_observation_binding_required",
+            "sends_customer_message": False,
+            "mutates_business_state": False,
+        }), 409
+    identity = load_chatwoot_conversation_identity(conversation_id)
+    if not identity.get("success") or any((
+        identity.get("account_id") != expected_account_id,
+        identity.get("conversation_id") != conversation_id,
+        identity.get("contact_id") != expected_contact_id,
+        identity.get("inbox_id") != expected_inbox_id,
+    )):
+        return jsonify({
+            "success": False,
+            "status": "recommendation_identity_mismatch",
+            "sends_customer_message": False,
+            "mutates_business_state": False,
+        }), 409
+    history = load_chatwoot_conversation_history(conversation_id, limit=200)
+    messages = history.get("messages") if isinstance(history.get("messages"), list) else []
+    public_messages = [
+        row for row in messages
+        if isinstance(row, dict)
+        and row.get("private") is not True
+        and row.get("message_type") in (0, 1, "incoming", "outgoing")
+    ]
+    incoming = [
+        row for row in public_messages
+        if row.get("message_type") in (0, "incoming")
+    ]
+    latest = incoming[-1] if incoming else {}
+    if str(latest.get("id") or "") != latest_inbound_id:
+        return jsonify({
+            "success": False,
+            "status": "recommendation_latest_inbound_changed",
+            "sends_customer_message": False,
+            "mutates_business_state": False,
+        }), 409
+    inbound = {
+        "conversation_id": conversation_id,
+        "message_id": latest_inbound_id,
+        "customer_name": str(payload.get("customer_name") or "").strip(),
+        "content": str(latest.get("content") or ""),
+    }
+    facts = extract_live_stock_facts(inbound["content"], inbound)
+    compact_history = [
+        {
+            "speaker": (
+                "customer"
+                if row.get("message_type") in (0, "incoming")
+                else "farm"
+            ),
+            "content": str(row.get("content") or ""),
+            "created_at": row.get("created_at"),
+        }
+        for row in public_messages
+        if str(row.get("id") or "") != latest_inbound_id
+    ]
+    rows = get_sales_availability()
+    rows = rows if isinstance(rows, list) else []
+    summary = summarize_live_stock_availability(rows, facts)
+    summary = resolve_authoritative_availability(
+        rows,
+        summary,
+        expected_observation_event_id=expected_observation["event_id"],
+        expected_cohort_hash=expected_observation["cohort_hash"],
+        expected_observed_at=expected_observation["observed_at"],
+        expected_expires_at=expected_observation["expires_at"],
+    )
+    packet = build_contextual_sales_recommendation(
+        inbound,
+        facts,
+        compact_history,
+        summary,
+    )
+    aggregate = packet.get("herdmaster_aggregate") if isinstance(
+        packet.get("herdmaster_aggregate"), dict
+    ) else {}
+    return jsonify({
+        "success": packet.get("status") == "commercial_recommendation_ready",
+        "status": packet.get("status"),
+        "card_contract_version": "sam_live_stock_owner_recommendation_card_v1",
+        "account_id": expected_account_id,
+        "conversation_id": conversation_id,
+        "contact_id": expected_contact_id,
+        "inbox_id": expected_inbox_id,
+        "latest_inbound_id": latest_inbound_id,
+        "interpretation": packet.get("interpretation"),
+        "recommendation": packet.get("recommendation"),
+        "next_action": packet.get("next_action"),
+        "availability_observation_event_id": summary.get(
+            "cohort_observation_event_id"
+        ),
+        "availability_expires_at_utc": summary.get("cohort_expires_at_utc"),
+        "evidence_complete": aggregate.get("evidence_complete"),
+        "contains_pig_ids": False,
+        "sends_customer_message": False,
+        "customer_send_allowed": False,
+        "calls_telegram": False,
+        "creates_quote": False,
+        "creates_order": False,
+        "reserves_stock": False,
+        "allocates_stock": False,
+        "changes_stock": False,
+        "mutates_business_state": False,
+    }), 200 if packet.get("status") == "commercial_recommendation_ready" else 409
 
 
 @sales_bp.route("/sales/channels/chatwoot/sam-live-stock/inbound", methods=["POST"])

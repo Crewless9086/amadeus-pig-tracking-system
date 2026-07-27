@@ -32,6 +32,9 @@ from modules.sales.sam_live_stock_contextual_sales import (
     build_contextual_sales_recommendation,
     normalize_livestock_language,
 )
+from modules.sales.sam_live_stock_availability_observation import (
+    resolve_authoritative_availability,
+)
 from modules.sales.sam_live_stock_media import classify_chatwoot_image, media_policy, transcribe_chatwoot_voice
 from modules.sales.sam_delivery_truth import (
     CHATWOOT_ACCEPTED_UNVERIFIED,
@@ -1373,6 +1376,11 @@ def load_live_stock_read_context(
             availability_rows = herdmaster_evidence.get("availability_rows") or []
         availability_facts = merge_prior_live_stock_context(facts, prior_context)
         availability = summarize_live_stock_availability(availability_rows, availability_facts)
+        availability = resolve_authoritative_availability(
+            availability_rows,
+            availability,
+            database_url=source.get("DATABASE_URL"),
+        )
     except Exception as exc:
         context_errors.append(_integration_failure("sales_availability_read_failed", exc))
         availability = {"success": False, "status": "read_failed", "rows": [], "matched_count": 0, "summary": {}}
@@ -1570,6 +1578,7 @@ def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
         messages.append({
             "id": _clean(row.get("id"), 100),
             "message_type": row.get("message_type"),
+            "private": row.get("private") is True,
             "content": content,
             "created_at": row.get("created_at"),
             "message_context": _public_message_context(
@@ -1612,6 +1621,7 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
     return {
         "success": True,
         "status": "chatwoot_conversation_identity_loaded",
+        "account_id": account_id,
         "conversation_id": _clean(conversation.get("id") or conversation_id, 100),
         "contact_id": _clean(sender.get("id") or contact.get("id"), 100),
         "inbox_id": _clean(conversation.get("inbox_id") or inbox.get("id"), 100),

@@ -72,6 +72,38 @@ eligibility, unavailable pricing, inactive pricing, or ineffective pricing
 fails closed. SAM may state that it is checking current evidence, but may not
 claim stock, count, price, quote, reservation, delivery, or commitment.
 
+## Authoritative Availability Observation
+
+Animal existence is not commercial availability. A customer-facing count
+requires one append-only owner-confirmed cohort observation with:
+
+- an explicit timezone-aware Johannesburg observation instant, normalized to
+  UTC;
+- a server-derived owner principal and reviewed physical/weighing source;
+- an exact cohort digest and privacy-safe per-animal lineage digest;
+- category and sex totals;
+- explicit exclusion and unresolved counts;
+- a reviewed lifetime, initially 24 hours and never more than 48 hours.
+
+The owner preview displays proposed totals, all exclusion reasons, unresolved
+rows, observation time, and expiry before confirmation. The cohort observation
+does not edit HERDMASTER animals. Known reservations, allocations, medical or
+withdrawal holds, sold/moved/dead state, non-sale purpose, incomplete
+eligibility evidence, and missing identity/category exclude or withhold rows.
+A newer individual observation changes the cohort digest and prevents the old
+cohort evidence from authorizing a recommendation.
+
+Request time, database read time, application deployment time, and page-open
+time are never availability evidence. Replay of the same owner confirmation is
+withheld; a conflicting observation at the same owner/time fails closed.
+Malformed, stale, conflicting, incomplete, or unavailable observation evidence
+cannot support customer-facing counts or availability.
+
+The observation event is evidence only. The recommendation endpoint separately
+revalidates exact account, conversation, contact, inbox, and latest public
+inbound identity, rereads current chronology and HERDMASTER state, binds active
+pricing, and returns an owner-review card without persisting or sending it.
+
 ## Response Policy
 
 A supervised recommendation must:
@@ -101,6 +133,11 @@ This package produces drafts and recommendations only:
 
 Any live recommendation requires a separately authorized owner-reviewed
 canary after deployment and read-only shadow verification.
+
+The contextual interpretation is deployed and production-shadowed. The
+availability-backed recommendation remains operationally unproven until a
+separately authorized owner observation is recorded and the conversation-67
+owner-review card is generated without sending.
 
 ## Deferred Shared Documentation
 
