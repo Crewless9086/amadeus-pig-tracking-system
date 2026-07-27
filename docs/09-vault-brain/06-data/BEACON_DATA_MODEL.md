@@ -28,7 +28,7 @@ post: media understanding, post understanding, confirmed publication and a
 `not_eligible` graduation evaluation. No performance snapshot has been
 recorded because the first 24-hour measurement window is not yet due.
 
-## Queued Media Intake Evidence
+## Media Intake Foundation Candidate
 
 `BEACON-MEDIA-INTAKE-1` must bind immutable intake-group and asset identities,
 Telegram media-group order, bounded source references, intake and authoritative
@@ -36,7 +36,25 @@ capture times separately, original metadata where available, MIME, dimensions,
 size, server SHA-256, owner context, qualified observations, duplicate links,
 and append-only decision/usage history.
 
-This is a target contract, not a statement that Telegram intake persistence is
-operational. Intake receipt, library acceptance, public-use approval and
-publication authorization are separate evidence states. Historical
-OneDrive/folder ingestion remains a separate phase.
+Migration `202607270001_create_beacon_media_intake.sql` is the unapplied
+additive candidate. It introduces:
+
+- immutable intake groups, source items and explicit album membership;
+- one SHA-256-unique canonical binary with many source links;
+- append-only intake/reconciliation, understanding and library/context events,
+  with public-use approval/revocation bridged transactionally to the existing
+  canonical `beacon_media_asset_events` rail;
+- a read-only current-state projection;
+- owner/chat identity HMACs, Telegram replay identities, source-message time,
+  capture time and intake time as separate evidence; and
+- private thumbnail and qualified-observation provenance.
+
+Every table has RLS enabled with no browser policy. PUBLIC, `anon` and
+`authenticated` have no table privileges; `service_role` has SELECT/INSERT
+only. UPDATE/DELETE triggers enforce append-only evidence, and direct execution
+of their enforcement function is revoked from every application role.
+
+The migration is unapplied and no production row exists. Intake receipt,
+library acceptance, public-use approval and publication authorization remain
+separate evidence states. Historical OneDrive/folder ingestion remains a
+separate phase.

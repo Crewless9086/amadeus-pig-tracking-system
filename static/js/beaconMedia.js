@@ -12,6 +12,7 @@
     performanceEvents: [],
     metaImportPacket: null,
     currentReviewPacket: null,
+    intakeItems: [],
   };
 
   const byId = (id) => document.getElementById(id);
@@ -171,6 +172,12 @@
     metaImportApproval: byId("beacon_meta_import_approval"),
     metaImportExecute: byId("beacon_meta_import_execute"),
     metaImportResult: byId("beacon_meta_import_result"),
+    intakeRefresh: byId("beacon_intake_refresh"),
+    intakeState: byId("beacon_intake_state"),
+    intakeContactSheet: byId("beacon_intake_contact_sheet"),
+    intakePreview: byId("beacon_intake_preview"),
+    intakePreviewImage: byId("beacon_intake_preview_image"),
+    intakePreviewClose: byId("beacon_intake_preview_close"),
   };
 
   const safe = (value, fallback = "--") => {
@@ -1254,9 +1261,9 @@
       const selected = asset.asset_id === state.selectedAssetId ? " is-selected" : "";
       return `
         <button type="button" class="beacon-media-asset-row${selected}" data-asset-id="${escapeHtml(asset.asset_id)}">
-          <strong>${escapeHtml(safe(asset.title || asset.original_filename, asset.asset_id))}</strong>
+          <strong>${escapeHtml(safe(asset.title, asset.asset_id))}</strong>
           <span>${escapeHtml(statusOf(asset))} | ${escapeHtml(safe(asset.media_type))} | ${escapeHtml(listText(asset.subject_tags))}</span>
-          <span>${escapeHtml(safe(asset.storage_bucket))}/${escapeHtml(safe(asset.storage_path))}</span>
+          <span>Owner review evidence only; private storage details withheld.</span>
         </button>
       `;
     }).join("");
@@ -1288,14 +1295,11 @@
       return;
     }
     setReviewDisabled(false);
-    elements.detailTitle.textContent = safe(asset.title || asset.original_filename, asset.asset_id);
+    elements.detailTitle.textContent = safe(asset.title, asset.asset_id);
     elements.detailStatus.textContent = `${statusOf(asset)} | ${safe(asset.media_type)} | public use ${asset.effective_public_use_approved ? "approved" : "locked"}`;
     elements.facts.innerHTML = [
       ["Asset ID", asset.asset_id],
-      ["File", asset.original_filename],
       ["Source", asset.source],
-      ["Bucket", asset.storage_bucket],
-      ["Path", asset.storage_path],
       ["Tags", listText(asset.subject_tags)],
       ["Relevance", listText(asset.sale_stream_relevance)],
       ["Latest Event", asset.latest_event?.event_type || "none"],
@@ -1365,6 +1369,123 @@
     await loadBeaconMedia();
   }
 
+  function intakeDate(item) {
+    if (item.capture_time_state === "unknown" || !item.capture_time) return "Capture: Unknown";
+    return `Capture: ${safe(item.capture_time)} (${safe(item.capture_time_state)})`;
+  }
+
+  function renderIntakeItems(items) {
+    state.intakeItems = Array.isArray(items) ? items : [];
+    elements.intakeState.textContent = state.intakeItems.length
+      ? `${state.intakeItems.length} private item${state.intakeItems.length === 1 ? "" : "s"} awaiting or carrying review evidence.`
+      : "No durable Telegram intake items yet. The gateway remains inactive until separately activated.";
+    elements.intakeContactSheet.innerHTML = state.intakeItems.map((item) => {
+      const observation = item.observation && typeof item.observation === "object" ? item.observation : {};
+      const tags = Array.isArray(observation.suggested_tags) ? observation.suggested_tags.join(", ") : "Unavailable";
+      const warnings = Array.isArray(observation.warnings) ? observation.warnings.join("; ") : "No evidence-qualified warnings recorded";
+      return `
+      <article class="beacon-intake-card" data-binary-id="${escapeHtml(item.binary_asset_id || "")}" data-intake-group-id="${escapeHtml(item.intake_group_id || "")}">
+        ${item.thumbnail_url
+          ? `<button type="button" class="beacon-intake-thumb" data-preview="${escapeHtml(item.thumbnail_url)}" aria-label="Enlarge private thumbnail"><img src="${escapeHtml(item.thumbnail_url)}" alt="Private BEACON intake thumbnail, album position ${escapeHtml(item.album_position || "pending")}" loading="lazy" /></button>`
+          : `<div class="table-empty">Private thumbnail pending</div>`}
+        <div class="beacon-intake-card-body">
+          <strong>${escapeHtml(item.owner_explanation || "No owner explanation supplied")}</strong>
+          <dl>
+            <dt>Album order</dt><dd>${escapeHtml(item.album_position || "Pending explicit completion")}</dd>
+            <dt>Media</dt><dd>${escapeHtml(`${item.width || "?"} × ${item.height || "?"} · ${item.observed_mime_type || "pending"}`)}</dd>
+            <dt>Capture</dt><dd>${escapeHtml(intakeDate(item).replace("Capture: ", ""))}</dd>
+            <dt>Intake</dt><dd>${escapeHtml(item.intake_at || "Unavailable")}</dd>
+            <dt>Duplicate</dt><dd>${item.exact_duplicate ? "Exact-byte duplicate retained as source provenance" : "No exact duplicate linked"}</dd>
+            <dt>Observations</dt><dd>${escapeHtml(observation.summary || "Unavailable until evidence-qualified understanding is recorded")} (${escapeHtml(item.observation_confidence || "unavailable")})</dd>
+            <dt>Suggested tags</dt><dd>${escapeHtml(tags)}</dd>
+            <dt>Warnings</dt><dd>${escapeHtml(warnings)}</dd>
+            <dt>Library state</dt><dd>${escapeHtml(item.latest_library_event || "Intake only—not accepted")}</dd>
+            <dt>Public use</dt><dd>${item.effective_public_use_approved ? "Owner approved (publication still separate)" : "Not approved"}</dd>
+            <dt>Prior use</dt><dd>${Number(item.prior_campaign_use_count || 0)} recorded campaign use(s); confirmed publication requires separate final-post evidence</dd>
+          </dl>
+          <p><strong>Authority:</strong> private review only. Library acceptance, public use, and publication are separate.</p>
+          <div class="beacon-intake-card-actions">
+            <button type="button" data-intake-review="library_accepted" class="button-link">Library Accept</button>
+            <button type="button" data-intake-review="public_use_approved" class="button-link button-link-secondary">Public-use Approve</button>
+            <button type="button" data-intake-review="library_rejected" class="button-link button-link-secondary">Reject</button>
+            <button type="button" data-intake-review="archived" class="button-link button-link-secondary">Archive</button>
+            <button type="button" data-intake-review="owner_context_recorded" class="button-link button-link-secondary">Edit owner context</button>
+            ${item.album_completed ? `
+              <button type="button" data-intake-group-review="library_accepted" class="button-link button-link-secondary">Accept whole album</button>
+              <button type="button" data-intake-group-review="library_rejected" class="button-link button-link-secondary">Reject whole album</button>
+            ` : `<span class="beacon-status-chip" data-state="blocked">Whole-album review waits for explicit completion</span>`}
+          </div>
+        </div>
+      </article>
+    `;
+    }).join("");
+  }
+
+  async function loadMediaIntakes() {
+    const result = await fetchJson("/api/oom-sakkie/beacon/media-intakes?limit=100");
+    renderIntakeItems(result.items);
+  }
+
+  async function recordIntakeReview(binaryAssetId, eventType) {
+    if (!binaryAssetId) throw new Error("Private binary identity is unavailable.");
+    let notes = "";
+    if (eventType === "owner_context_recorded") {
+      notes = window.prompt("Record corrected owner context. This appends evidence; it does not rewrite intake history.") || "";
+      if (!notes.trim()) return;
+    }
+    const result = await fetchJson(
+      `/api/oom-sakkie/beacon/media-intakes/${encodeURIComponent(binaryAssetId)}/review`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: eventType,
+          notes,
+          owner_action_id: crypto.randomUUID(),
+          expected_predecessor_event_id: state.intakeItems.find(
+            (item) => item.binary_asset_id === binaryAssetId,
+          )?.latest_review_event_id || "",
+        }),
+      },
+    );
+    showMessage(`${safe(result.status)}. No publication action occurred.`, "success");
+    await loadMediaIntakes();
+  }
+
+  async function recordIntakeGroupReview(intakeGroupId, eventType) {
+    if (!intakeGroupId) throw new Error("Private album identity is unavailable.");
+    const result = await fetchJson(
+      `/api/oom-sakkie/beacon/media-intakes/groups/${encodeURIComponent(intakeGroupId)}/review`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: eventType,
+          notes: "",
+          owner_action_id: crypto.randomUUID(),
+          expected_predecessors: Object.fromEntries(
+            state.intakeItems
+              .filter((item) => item.intake_group_id === intakeGroupId)
+              .map((item) => [
+                item.binary_asset_id,
+                item.latest_review_event_id || "",
+              ]),
+          ),
+        }),
+      },
+    );
+    showMessage(`${safe(result.status)}. No publication action occurred.`, "success");
+    await loadMediaIntakes();
+  }
+
+  let intakePreviewOpener = null;
+  function closeIntakePreview() {
+    elements.intakePreview.classList.add("hidden");
+    elements.intakePreviewImage.removeAttribute("src");
+    if (intakePreviewOpener) intakePreviewOpener.focus();
+    intakePreviewOpener = null;
+  }
+
   async function uploadAsset(event) {
     event.preventDefault();
     clearMessage();
@@ -1398,6 +1519,47 @@
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
+    elements.intakeRefresh.addEventListener("click", () => loadMediaIntakes().catch((error) => {
+      elements.intakeState.textContent = "Private intake unavailable";
+      showMessage(error.message);
+    }));
+    elements.intakePreviewClose.addEventListener("click", closeIntakePreview);
+    elements.intakePreview.addEventListener("click", (event) => {
+      if (event.target === elements.intakePreview) closeIntakePreview();
+    });
+    elements.intakePreview.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeIntakePreview();
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        elements.intakePreviewClose.focus();
+      }
+    });
+    elements.intakeContactSheet.addEventListener("click", (event) => {
+      const preview = event.target.closest("[data-preview]");
+      if (preview) {
+        intakePreviewOpener = preview;
+        elements.intakePreviewImage.src = preview.dataset.preview;
+        elements.intakePreview.classList.remove("hidden");
+        elements.intakePreviewClose.focus();
+        return;
+      }
+      const groupDecision = event.target.closest("[data-intake-group-review]");
+      if (groupDecision) {
+        const card = groupDecision.closest("[data-intake-group-id]");
+        recordIntakeGroupReview(
+          card?.dataset.intakeGroupId || "",
+          groupDecision.dataset.intakeGroupReview,
+        ).catch((error) => showMessage(error.message));
+        return;
+      }
+      const decision = event.target.closest("[data-intake-review]");
+      if (!decision) return;
+      const card = decision.closest("[data-binary-id]");
+      recordIntakeReview(card?.dataset.binaryId || "", decision.dataset.intakeReview)
+        .catch((error) => showMessage(error.message));
+    });
     elements.metaPreviewRefresh.addEventListener("click", () => loadMetaAdsPreview().catch((error) => {
       elements.metaPreviewState.textContent = "Preview unavailable";
       elements.metaPreviewState.dataset.state = "blocked";
@@ -1460,5 +1622,9 @@
       showMessage(error.message);
     });
     await loadBeaconMedia().catch((error) => showMessage(error.message));
+    await loadMediaIntakes().catch((error) => {
+      elements.intakeState.textContent = "Private intake persistence is not operational yet.";
+      elements.intakeContactSheet.innerHTML = `<div class="table-empty">${escapeHtml(error.message)}</div>`;
+    });
   });
 })();
