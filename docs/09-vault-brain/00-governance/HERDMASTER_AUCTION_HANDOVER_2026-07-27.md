@@ -129,3 +129,25 @@ owner-visible reviewed row:
 - First candidate physical-quality evidence: recorded once and verified.
 - Auction List first Add: not performed.
 - Animal/business/protected actions during this work: none.
+
+## First Add canary outcome
+
+Charl authorized a one-animal Add for the single reviewed and affirmatively
+selectable candidate. The controlled browser harness reached its total timeout
+without returning an Add response. The action was not retried.
+
+The immediate database/API read-only verification proved:
+
+- zero Auction List events for the authorized animal;
+- zero Auction List events in total;
+- zero current Auction List members;
+- the animal remained selectable and unlisted;
+- its one candidate review and one linked factual observation were unchanged;
+- medical state remained `Clear`;
+- withdrawal state remained `cleared`;
+- no unrelated livestock, auction or business mutation was evidenced.
+
+Therefore the attempted canary did not persist an Add event and is not
+complete. This is a safe zero-state stop, not a successful Auction first use.
+A future attempt requires a new exact owner authorization; it must never be
+treated as an automatic retry.
