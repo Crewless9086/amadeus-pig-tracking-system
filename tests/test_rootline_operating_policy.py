@@ -41,6 +41,7 @@ def unknown_policy():
             for zone_id in ("B12345", "C12345")
         },
         "forecast_rain": "Unknown",
+        "live_rain_hold": "Unknown",
         "temperature_limits": "Unknown",
         "crop_need_bands": {"B12345": "Unknown", "C12345": "Unknown"},
         "controller_power_loss": "Unknown",
@@ -74,6 +75,52 @@ class RootlineOperatingPolicyTests(unittest.TestCase):
         self.assertEqual(result["seasonal_boundaries"], "Unknown")
         self.assertEqual(result["zones"]["B12345"]["daylight_window"], "Unknown")
         self.assertEqual(result["crop_need_bands"]["C12345"], "Unknown")
+        self.assertEqual(result["live_rain_hold"], "Unknown")
+
+    def test_confirmed_live_rain_hold_is_valid_with_every_other_rule_unknown(self):
+        payload = unknown_policy()
+        payload["live_rain_hold"] = {
+            "evidence_field": "current_rain_rate_mm_per_hour",
+            "threshold_mm_per_hour": 0.2,
+            "comparison": "greater_than",
+            "release_policy": "Unknown",
+        }
+        normalized = normalize_policy_snapshot(payload)
+        self.assertEqual(normalized["live_rain_hold"]["threshold_mm_per_hour"], 0.2)
+        self.assertEqual(normalized["live_rain_hold"]["comparison"], "greater_than")
+        self.assertEqual(normalized["live_rain_hold"]["release_policy"], "Unknown")
+        self.assertEqual(normalized["forecast_rain"], "Unknown")
+        preview, status = preview_policy_effect(payload, {"status": "needs_data"})
+        self.assertEqual(status, 200)
+        self.assertTrue(preview["proposal_can_be_recorded"])
+        self.assertEqual(preview["eligibility_after_preview"], "Needs Data")
+
+    def test_exact_threshold_does_not_mean_greater_than(self):
+        payload = unknown_policy()
+        payload["live_rain_hold"] = {
+            "evidence_field": "current_rain_rate_mm_per_hour",
+            "threshold_mm_per_hour": 0.2,
+            "comparison": "greater_than",
+            "release_policy": "Unknown",
+        }
+        rule = normalize_policy_snapshot(payload)["live_rain_hold"]
+        self.assertFalse(0.2 > rule["threshold_mm_per_hour"])
+        self.assertTrue(0.21 > rule["threshold_mm_per_hour"])
+
+    def test_unconfirmed_live_rain_thresholds_are_rejected(self):
+        for threshold in (0, 0.19, 0.21, 0.3, 100):
+            with self.subTest(threshold=threshold):
+                payload = unknown_policy()
+                payload["live_rain_hold"] = {
+                    "evidence_field": "current_rain_rate_mm_per_hour",
+                    "threshold_mm_per_hour": threshold,
+                    "comparison": "greater_than",
+                    "release_policy": "Unknown",
+                }
+                with self.assertRaisesRegex(
+                    PolicyValidationError, "not_owner_confirmed"
+                ):
+                    normalize_policy_snapshot(payload)
 
     def test_exact_zone_identity_is_required(self):
         payload = unknown_policy()
@@ -447,6 +494,43 @@ class RootlineOperatingPolicyRouteTests(unittest.TestCase):
         actor = propose.call_args.args[1]
         self.assertTrue(actor.startswith("owner-admin:"))
         self.assertNotIn("actor", propose.call_args.args[0])
+
+    def test_owner_admin_can_record_one_live_rain_value_with_other_rules_unknown(self):
+        self.login("admin")
+        policy = unknown_policy()
+        policy["live_rain_hold"] = {
+            "evidence_field": "current_rain_rate_mm_per_hour",
+            "threshold_mm_per_hour": 0.2,
+            "comparison": "greater_than",
+            "release_policy": "Unknown",
+        }
+        payload = {
+            "idempotency_key": "charl-live-rain-hold-v1",
+            "evidence": {"owner_note": "Charl confirmed the live-rain threshold."},
+            "policy": policy,
+        }
+        with mock.patch(
+            "modules.telemetry.telemetry_routes.propose_policy",
+            return_value=(
+                {
+                    "success": True,
+                    "status": "proposal_recorded",
+                    "writes_performed": True,
+                    **AUTHORITY,
+                },
+                201,
+            ),
+        ) as propose:
+            response = self.client.post(
+                "/api/telemetry/rootline/operating-policy/proposals",
+                json=payload,
+            )
+        self.assertEqual(response.status_code, 201)
+        submitted, actor = propose.call_args.args
+        self.assertEqual(submitted["policy"]["live_rain_hold"]["threshold_mm_per_hour"], 0.2)
+        self.assertEqual(submitted["policy"]["forecast_rain"], "Unknown")
+        self.assertEqual(submitted["policy"]["zones"]["B12345"]["daylight_window"], "Unknown")
+        self.assertTrue(actor.startswith("owner-admin:"))
 
     def test_dashboard_shell_links_to_strict_owner_page_without_payload(self):
         response = self.client.get("/")

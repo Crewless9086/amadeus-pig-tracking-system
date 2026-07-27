@@ -11,6 +11,8 @@ const errorMessages = {
   crop_need_bands_must_increase: "Crop-need bands must increase from low to medium to high.",
   invalid_forecast_probability: "Forecast probability must be between 0% and 100%.",
   invalid_forecast_amount: "Forecast rain amount must be between 0 and 200 mm.",
+  invalid_live_rain_threshold: "Live-rain threshold must be the confirmed numeric value 0.2 mm/hour.",
+  live_rain_threshold_not_owner_confirmed: "The confirmed live-rain threshold is exactly 0.2 mm/hour.",
   invalid_minimum_temperature: "Minimum temperature must be between -20 °C and 50 °C.",
   invalid_maximum_temperature: "Maximum temperature must be between -20 °C and 60 °C.",
   activation_effective_time_required: "Choose an explicit activation effective time.",
@@ -85,6 +87,12 @@ function policyPayload() {
       amount_mm: requiredNumber("forecast_amount", "Forecast amount"),
       probability_pct: requiredNumber("forecast_probability", "Forecast probability"),
       horizon_hours: requiredNumber("forecast_horizon", "Forecast horizon", true),
+    })),
+    live_rain_hold: unknownOr("live_rain_unknown", () => ({
+      evidence_field: "current_rain_rate_mm_per_hour",
+      threshold_mm_per_hour: requiredNumber("live_rain_threshold", "Live-rain threshold"),
+      comparison: "greater_than",
+      release_policy: "Unknown",
     })),
     temperature_limits: unknownOr("temperature_unknown", () => ({
       minimum_c: requiredNumber("temperature_min", "Minimum temperature"),
@@ -161,7 +169,7 @@ async function preview() {
     body: JSON.stringify({ policy: policyPayload() }),
   });
   byId("policy_preview_result").innerHTML =
-    `<div class="ops-list-row"><strong>${explain(result.eligibility_after_preview)}</strong><span>Runtime ${result.runtime_status}; ${result.remaining_unknown_policy_inputs.length} inputs remain Unknown.</span></div>`;
+    `<div class="ops-list-row"><strong>Valid partial proposal · may be recorded</strong><span>Advice preview: ${explain(result.eligibility_after_preview)}. Runtime ${result.runtime_status}; ${result.remaining_unknown_policy_inputs.length} inputs remain Unknown. Recording this proposal will not change current advice.</span></div>`;
 }
 
 async function propose() {
@@ -175,7 +183,7 @@ async function propose() {
       policy: policyPayload(),
     }),
   });
-  showMessage("Immutable proposal recorded. It is not active for advice.");
+  showMessage("Proposal recorded. It is not reviewed, not active, and current advice is unchanged.");
   await loadPolicy();
 }
 

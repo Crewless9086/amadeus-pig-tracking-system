@@ -64,6 +64,19 @@ DECISION_GUIDANCE = [
         "applies_to": "both zones",
     },
     {
+        "key": "live_rain_hold",
+        "question": "At what current rain rate must ROOTLINE place advice on Hold?",
+        "recommendation": (
+            "Use Charl's confirmed greater-than 0.2 mm/hour threshold; keep "
+            "the rain-release interval Unknown."
+        ),
+        "consequence": (
+            "Fresh current rain above 0.2 mm/hour produces Hold. Exactly "
+            "0.2 mm/hour does not exceed the threshold."
+        ),
+        "applies_to": "both zones",
+    },
+    {
         "key": "temperature_limits",
         "question": "What minimum and maximum temperature limits affect advice?",
         "recommendation": "Keep Unknown; temperature remains informational.",
@@ -132,6 +145,7 @@ def normalize_policy_snapshot(payload):
         "seasonal_boundaries",
         "zones",
         "forecast_rain",
+        "live_rain_hold",
         "temperature_limits",
         "crop_need_bands",
         "controller_power_loss",
@@ -173,6 +187,7 @@ def normalize_policy_snapshot(payload):
         "seasonal_boundaries": _season(source.get("seasonal_boundaries")),
         "zones": normalized_zones,
         "forecast_rain": _forecast(source.get("forecast_rain")),
+        "live_rain_hold": _live_rain_hold(source.get("live_rain_hold", UNKNOWN)),
         "temperature_limits": _temperature(source.get("temperature_limits")),
         "crop_need_bands": _crop_bands(source.get("crop_need_bands")),
         "controller_power_loss": _power_loss(source.get("controller_power_loss")),
@@ -224,6 +239,7 @@ def preview_policy_effect(proposal_payload, current_advisor):
     still_unknown = []
     _classify_unknown("seasonal_boundaries", snapshot["seasonal_boundaries"], resolved, still_unknown)
     _classify_unknown("forecast_rain", snapshot["forecast_rain"], resolved, still_unknown)
+    _classify_unknown("live_rain_hold", snapshot["live_rain_hold"], resolved, still_unknown)
     _classify_unknown("temperature_limits", snapshot["temperature_limits"], resolved, still_unknown)
     _classify_unknown("crop_need_bands", snapshot["crop_need_bands"], resolved, still_unknown)
     _classify_unknown("controller_power_loss", snapshot["controller_power_loss"], resolved, still_unknown)
@@ -242,6 +258,8 @@ def preview_policy_effect(proposal_payload, current_advisor):
         "resolved_policy_inputs": resolved,
         "remaining_unknown_policy_inputs": still_unknown,
         "eligibility_after_preview": "Needs Data" if still_unknown else "owner_review_required",
+        "preview_is_valid": True,
+        "proposal_can_be_recorded": True,
         "runtime_after_preview": None,
         "runtime_status": "Unavailable",
         "preview_becomes_active": False,
@@ -705,6 +723,32 @@ def _forecast(value):
     }
 
 
+def _live_rain_hold(value):
+    if value == UNKNOWN:
+        return UNKNOWN
+    if not isinstance(value, dict) or set(value) != {
+        "evidence_field",
+        "threshold_mm_per_hour",
+        "comparison",
+        "release_policy",
+    }:
+        raise PolicyValidationError("invalid_live_rain_hold_policy")
+    if value["evidence_field"] != "current_rain_rate_mm_per_hour":
+        raise PolicyValidationError("invalid_live_rain_evidence_field")
+    if value["comparison"] != "greater_than":
+        raise PolicyValidationError("invalid_live_rain_comparison")
+    if value["release_policy"] != UNKNOWN:
+        raise PolicyValidationError("live_rain_release_policy_must_remain_unknown")
+    return {
+        "evidence_field": "current_rain_rate_mm_per_hour",
+        "threshold_mm_per_hour": _confirmed_live_rain_threshold(
+            value["threshold_mm_per_hour"]
+        ),
+        "comparison": "greater_than",
+        "release_policy": UNKNOWN,
+    }
+
+
 def _temperature(value):
     if value == UNKNOWN:
         return UNKNOWN
@@ -796,6 +840,13 @@ def _drainage(value):
 
 def _unknown_or_int(value, low, high, status):
     return UNKNOWN if value == UNKNOWN else _integer(value, low, high, status)
+
+
+def _confirmed_live_rain_threshold(value):
+    threshold = _number(value, 0, 100, "invalid_live_rain_threshold")
+    if threshold != 0.2:
+        raise PolicyValidationError("live_rain_threshold_not_owner_confirmed")
+    return threshold
 
 
 def _integer(value, low, high, status):
