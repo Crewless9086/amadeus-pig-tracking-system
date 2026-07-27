@@ -48,11 +48,17 @@ class SalesTransactionRoutesTests(unittest.TestCase):
              patch.object(sales_transaction_routes, "reconcile_live_human_conversation", return_value=(result, 200)) as reconcile:
             response = self.client.post(
                 "/api/sales/channels/chatwoot/sam/owner-inbox/reconcile",
-                json={"conversation_id": "2025", "owner_identity": "browser-spoof"},
+                json={
+                    "conversation_id": "2025",
+                    "expected_classification": "OWNERSHIP_DECISION_REQUIRED",
+                    "owner_identity": "browser-spoof",
+                },
             )
         self.assertEqual(response.status_code, 200)
         reconcile.assert_called_once_with(
-            "2025", reconciliation_actor_id="owner-admin:stable-server-derived"
+            "2025",
+            reconciliation_actor_id="owner-admin:stable-server-derived",
+            expected_classification="OWNERSHIP_DECISION_REQUIRED",
         )
 
     def test_sam_owner_inventory_reconciliation_is_owner_admin_bounded_and_no_send(self):
@@ -83,6 +89,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
                 json={
                     "cursor": "server-signed-cursor",
                     "limit": 2,
+                    "expected_classification": "OWNERSHIP_DECISION_REQUIRED",
                     "owner_identity": "browser-spoof",
                 },
             )
@@ -90,6 +97,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertFalse(response.get_json()["sends_customer_message"])
         reconcile.assert_called_once_with(
             reconciliation_actor_id="owner-admin:stable-server-derived",
+            expected_classification="OWNERSHIP_DECISION_REQUIRED",
             cursor_token="server-signed-cursor",
             limit=2,
         )
@@ -116,6 +124,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         reconcile.assert_called_once_with(
             reconciliation_actor_id="owner-admin:stable-server-derived",
+            expected_classification=None,
             cursor_token="",
             limit=0,
         )

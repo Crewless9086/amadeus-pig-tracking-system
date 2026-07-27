@@ -1111,6 +1111,7 @@ def sam_owner_inbox_reconcile():
     result, status_code = reconcile_live_human_conversation(
         payload.get("conversation_id"),
         reconciliation_actor_id=principal,
+        expected_classification=payload.get("expected_classification"),
     )
     return jsonify(result), status_code
 
@@ -1134,6 +1135,7 @@ def sam_owner_inbox_reconcile_inventory():
     payload = request.get_json(silent=True) or {}
     result, status_code = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=principal,
+        expected_classification=payload.get("expected_classification"),
         cursor_token=payload.get("cursor") or "",
         limit=payload["limit"] if "limit" in payload else 25,
     )
