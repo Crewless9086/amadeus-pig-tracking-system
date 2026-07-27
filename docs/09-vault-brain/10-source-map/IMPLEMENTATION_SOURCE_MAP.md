@@ -60,6 +60,34 @@ Current implementation and review surface:
   owner gates outrank aggregate scores. Existing persisted workflows remain
   frozen.
 
+### CHARLIE CORE Process Ownership Bootstrap
+
+Current implementation and verification surface:
+
+- ownership identity, canonical tree normalization, signing, redaction, and
+  live validation: `modules/charlie/process_ownership.py`;
+- governed start/stop, stop-marker enforcement, acknowledgement waiting, and
+  containment: `modules/charlie/runner_control.py`;
+- supervisor-side handshake and runner-spawn gate:
+  `scripts/charlie_runner_supervisor.py`;
+- pickup/recovery acknowledgement gate:
+  `scripts/charlie_mission_pickup.py`;
+- focused tests:
+  `tests/test_charlie_process_ownership.py`,
+  `tests/test_charlie_runner_control.py`,
+  `tests/test_charlie_runner_supervisor.py`,
+  `tests/test_charlie_mission_pickup.py`;
+- rule: startup or stop work must validate the complete externally observed
+  launcher/interpreter topology, generation, revision, startup nonce,
+  executable/command roles, parentage, PIDs, and live creation identity.
+  Missing or stale identity fails closed. The canonical stop marker is not an
+  implicit startup toggle, and watchdog enablement remains a separate governed
+  action.
+- delivery state: PR #517 code is merged and Render-deployed at
+  `0c4eb404fce6df8dfc2e8aab100690697d6e7cb9`; local governed promotion,
+  startup, watchdog activation, mission pickup, and natural proof have not
+  been authorized.
+
 ### CHARLIE CORE Dashboard
 
 Current built active workflow surface:

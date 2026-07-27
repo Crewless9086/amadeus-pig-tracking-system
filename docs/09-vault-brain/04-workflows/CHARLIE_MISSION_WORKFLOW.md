@@ -131,6 +131,35 @@ Every inbox item must identify its source agent, source type, exact proposed act
 
 Telegram and `/charlie` record mission authority, but they do not execute shell commands directly. A local runner/Codex process must pick up and execute approved work.
 
+Governed startup is a controller-side ownership bootstrap:
+
+1. The controller generates the startup nonce and supervisor generation.
+2. It observes and validates the complete Windows supervisor
+   launcher/interpreter tree before acknowledging supervisor readiness.
+3. The supervisor may spawn the runner only after that exact durable
+   acknowledgement.
+4. The controller then observes and validates the runner
+   launcher/interpreter tree and publishes a signed full-tree acknowledgement
+   bound to generation, nonce, exact revision, PID topology, executable,
+   command role, and live creation identity.
+5. Runner recovery and mission pickup remain disabled until the exact current
+   acknowledgement is durably readable.
+
+Partial or stale acknowledgements, PID reuse, wrong ancestry, role, command,
+path, revision, generation, nonce, or creation identity fail closed. Repeated
+live validation at the acknowledgement boundary limits PID-reuse and TOCTOU
+risk. Timeout, crash, mismatch, or validation failure must terminate and
+verify the entire proven spawned tree while retaining redacted durable
+evidence.
+
+The canonical stop marker blocks governed CLI startup, direct supervisor
+startup, direct pickup, runner recovery, and watchdog recovery. It is never
+removed implicitly. Governed stop must handle supervisor-only,
+runner-starting, and running trees, retain pre-stop ownership and termination
+evidence, and never target an unrelated process. Disabled-watchdog state
+remains authoritative until separately changed by an explicit governed owner
+action.
+
 If an agent subprocess times out or crashes, CHARLIE must record stdout/stderr excerpts, return code, changed files, blocker class, responsible stage, and recovery guidance, then queue an internal environment retry. A timed-out runner must not leave a mission silently stuck in `in_progress` or create false owner work. Repeated identical failures become an honest owner block only after the durable recovery cap is exhausted.
 
 The no-final-artifact watchdog measures inactivity, not total elapsed build time. Continued stdout/stderr or worktree progress keeps a bounded agent run alive until the hard stage timeout; a productive long Builder must not be killed merely because its final handoff JSON is written at the end.
@@ -142,6 +171,11 @@ Existing `in_progress` missions must not be blindly re-executed by the watch loo
 Runner recovery requires both an expired durable execution lease and a dead/stale matching process. An empty current-agent display, a between-stage heartbeat, or another active mission is not enough to block a mission. Recovery returns the mission to its responsible internal stage and appends `runner_recovery_history`; it does not overwrite the original review packet or create owner work.
 
 Builder packaging is transactional. CORE stages every actual Git change except runner-generated scratch output, including untracked files omitted by a model artifact. If commit packaging fails, CORE preserves the complete dirty state in a mission-labelled recovery stash, cleans the shared runner worktree, and reapplies that stash only when the same mission resumes.
+
+PR #517 integrated this ownership bootstrap at merge
+`0c4eb404fce6df8dfc2e8aab100690697d6e7cb9`. Hosted deployment is proven,
+but local promotion, startup, watchdog activation, pickup, and T0 execution
+remain separate and unauthorized.
 
 ## Revision And Finding Contracts
 

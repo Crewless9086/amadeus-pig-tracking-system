@@ -1,5 +1,22 @@
 # Vault Brain Changelog
 
+## 2026-07-27 - CORE controller-observed ownership bootstrap
+
+- Recorded PR #517's controller-observed Windows launcher/interpreter
+  bootstrap, signed full-tree acknowledgement, exact
+  generation/revision/nonce/process binding, pickup gating, and fail-closed
+  tree containment.
+- Made the canonical stop marker an explicit owner-controlled boundary across
+  governed start, direct supervisor startup, pickup, recovery, and watchdog
+  paths; startup may not remove it implicitly.
+- Recorded exact code merge and hosted deployment
+  `0c4eb404fce6df8dfc2e8aab100690697d6e7cb9` while keeping local promotion,
+  startup, watchdog enablement, mission pickup, and T0 proof explicitly
+  separate and not yet authorized.
+- Marked open PR #530's 2026-07-26 night handover as stale and
+  non-authoritative pending reconciliation or closure. SAM Live Stock P0
+  remains the business priority and is outside this documentation change.
+
 ## 2026-07-25
 
 - Added the Rootline owner-only daily brief contract and implementation map:
