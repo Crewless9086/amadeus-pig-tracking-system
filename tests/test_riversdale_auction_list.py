@@ -1,9 +1,10 @@
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 from modules.sales.riversdale_auction_list import (
-    eligibility_tokens, record_auction_list_events,
+    eligibility_tokens, read_auction_list, record_auction_list_events,
 )
 from modules.pig_weights.pig_weights_service import get_riversdale_auction_list
 
@@ -23,6 +24,127 @@ def packet(cycle="cycle-a", pig_id="PIG-1", *, eligible=True):
 
 
 class RiversdaleAuctionListTests(unittest.TestCase):
+    class _Cursor:
+        def __init__(self, rows=None, error=None):
+            self.rows = rows if rows is not None else [
+                ("cycle-a", None, None, None, None, None, None)
+            ]
+            self.error = error
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, _sql, _params=None):
+            if self.error:
+                raise self.error
+
+        def fetchall(self):
+            return self.rows
+
+    class _Connection:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def cursor(self):
+            return self._cursor
+
+    def _capturing_factory(self, captured, *, rows=None, error=None):
+        def factory(url):
+            captured.append(url)
+            return self._Connection(self._Cursor(rows=rows, error=error))
+        return factory
+
+    def test_reader_uses_canonical_database_url_when_farm_override_absent(self):
+        captured = []
+        with patch.dict("os.environ", {
+            "DATABASE_URL": "postgresql://canonical",
+            "FARM_SUPABASE_DATABASE_URL": "",
+        }, clear=False):
+            result, status = read_auction_list(
+                connect_factory=self._capturing_factory(captured)
+            )
+        self.assertEqual((status, result["status"]), (200, "available"))
+        self.assertEqual(captured, ["postgresql://canonical"])
+
+    def test_explicit_farm_override_precedes_canonical_database_url(self):
+        captured = []
+        with patch.dict("os.environ", {
+            "DATABASE_URL": "postgresql://canonical",
+            "FARM_SUPABASE_DATABASE_URL": "postgresql://farm-override",
+        }, clear=False):
+            result, status = read_auction_list(
+                connect_factory=self._capturing_factory(captured)
+            )
+        self.assertEqual((status, result["status"]), (200, "available"))
+        self.assertEqual(captured, ["postgresql://farm-override"])
+
+    def test_neither_connection_configured_fails_before_connect(self):
+        with patch.dict("os.environ", {
+            "DATABASE_URL": "", "FARM_SUPABASE_DATABASE_URL": "",
+        }, clear=False):
+            result, status = read_auction_list()
+        self.assertEqual((status, result["status"]),
+                         (503, "auction_list_store_unavailable"))
+
+    def test_malformed_or_unavailable_connection_fails_closed(self):
+        captured = []
+        result, status = read_auction_list(
+            database_url="malformed",
+            connect_factory=self._capturing_factory(
+                captured, error=ConnectionError("unavailable")
+            ),
+        )
+        self.assertEqual((status, result["status"]),
+                         (503, "auction_list_store_unavailable"))
+        self.assertEqual(result["error_type"], "ConnectionError")
+        self.assertEqual(captured, ["malformed"])
+
+    def test_unavailable_table_fails_closed(self):
+        class UndefinedTable(Exception):
+            pass
+
+        result, status = read_auction_list(
+            database_url="postgresql://test",
+            connect_factory=self._capturing_factory([], error=UndefinedTable()),
+        )
+        self.assertEqual((status, result["status"]),
+                         (503, "auction_list_store_unavailable"))
+        self.assertEqual(result["error_type"], "UndefinedTable")
+
+    def test_successful_zero_state_read_reports_available_empty_list(self):
+        result, status = read_auction_list(
+            database_url="postgresql://test",
+            connect_factory=self._capturing_factory([]),
+        )
+        self.assertEqual((status, result["status"]), (200, "available"))
+        self.assertEqual(result["auction_cycle_id"], "cycle-a")
+        self.assertEqual(result["items"], [])
+        self.assertEqual(result["causal_heads"], {})
+
+    def test_existing_append_only_events_project_current_membership(self):
+        rows = [
+            ("cycle-a", "PIG-1", "added", "owner note",
+             datetime(2026, 7, 27, tzinfo=timezone.utc), "EVENT-1", 1),
+            ("cycle-a", "PIG-2", "removed", "",
+             datetime(2026, 7, 27, tzinfo=timezone.utc), "EVENT-2", 2),
+        ]
+        result, status = read_auction_list(
+            database_url="postgresql://test",
+            connect_factory=self._capturing_factory([], rows=rows),
+        )
+        self.assertEqual((status, result["status"]), (200, "available"))
+        self.assertEqual([item["pig_id"] for item in result["items"]], ["PIG-1"])
+        self.assertEqual(result["causal_heads"]["PIG-2"]["decision_sequence"], 2)
+
     def test_missing_identity_and_incomplete_contract_fail_before_database(self):
         called = []
         factory = lambda _: called.append(True)

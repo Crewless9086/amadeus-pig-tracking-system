@@ -4,7 +4,10 @@ import json
 import os
 import uuid
 
+from services.database_service import DATABASE_URL_ENV
+
 VERSION = "riversdale_auction_list_v2"
+FARM_DATABASE_URL_ENV = "FARM_SUPABASE_DATABASE_URL"
 
 
 def _result(ok, status, **extra):
@@ -33,6 +36,15 @@ def _canonical_hash(value):
     ).hexdigest()
 
 
+def _resolve_database_url(database_url=None):
+    if database_url is not None:
+        return str(database_url).strip()
+    farm_override = os.getenv(FARM_DATABASE_URL_ENV, "").strip()
+    if farm_override:
+        return farm_override
+    return os.getenv(DATABASE_URL_ENV, "").strip()
+
+
 def eligibility_tokens(packet):
     """Hash the exact server-derived candidate evidence accepted for Add."""
     result = {}
@@ -58,8 +70,7 @@ def eligibility_tokens(packet):
 
 
 def read_auction_list(*, database_url=None, connect_factory=None):
-    url = (database_url if database_url is not None else os.getenv(
-        "FARM_SUPABASE_DATABASE_URL", "")).strip()
+    url = _resolve_database_url(database_url)
     if not url and connect_factory is None:
         return _result(False, "auction_list_store_unavailable"), 503
     try:
@@ -129,8 +140,7 @@ def record_auction_list_events(payload, *, actor_id, eligibility_loader,
         "prior_event_ids": {pig_id: str(expected_prior.get(pig_id) or "") for pig_id in ids},
     }
     request_hash = _canonical_hash(request_identity)
-    url = (database_url if database_url is not None else os.getenv(
-        "FARM_SUPABASE_DATABASE_URL", "")).strip()
+    url = _resolve_database_url(database_url)
     if not url and connect_factory is None:
         return _result(False, "auction_list_store_unavailable"), 503
     try:
