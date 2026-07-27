@@ -11,6 +11,7 @@ const state = {
     rootline: null,
     rootlineAdvisor: null,
     rootlineDailyPlan: null,
+    rootlinePolicy: null,
   farm: null,
   orders: null,
 };
@@ -251,6 +252,7 @@ function renderRootline() {
         </div>
       `).join("")
       : `<div class="ops-empty-inline">No unresolved decisions reported.</div>`;
+    renderRootlinePolicy();
     const zones = brief.irrigation?.zones || [];
     const planPacket = state.rootlineDailyPlan || {};
     const plan = planPacket.daily_plan;
@@ -272,6 +274,19 @@ function renderRootline() {
   byId("rootline_decisions").innerHTML = decisions.length
     ? decisions.map(item => `<div class="ops-list-row"><span>${escapeHtml(item)}</span></div>`).join("")
     : `<div class="ops-empty-inline">No owner decision is currently supported.</div>`;
+}
+
+function renderRootlinePolicy() {
+  const packet = state.rootlinePolicy || {};
+  const active = packet.active_policy;
+  setText(
+    "rootline_policy_status",
+    active
+      ? `Active advice policy version ${active.version}.`
+      : packet.status === "rootline_policy_schema_unavailable"
+        ? "Policy schema is not applied; active advice policy is Unavailable."
+        : "No policy version is active for advice."
+  );
 }
 
 function renderFarmSummary() {
@@ -363,6 +378,7 @@ async function loadDashboard() {
       ["rootline", `/api/telemetry/rootline/daily-brief?date=${today}`, "rootline_panel"],
       ["rootlineAdvisor", `/api/telemetry/rootline/daily-advisor?date=${today}`, "rootline_panel"],
       ["rootlineDailyPlan", `/api/telemetry/rootline/daily-irrigation-plan?date=${today}`, "rootline_panel"],
+      ["rootlinePolicy", "/api/telemetry/rootline/operating-policy", "rootline_panel"],
     ["farm", "/api/pig-weights/dashboard", "herd_panel"],
     ["orders", `/api/reports/daily-summary?date=${today}`, "orders_panel"],
   ];

@@ -10,6 +10,14 @@ from modules.telemetry.irrigation_service import get_irrigation_status
 from modules.telemetry.rollup_service import get_daily_rollup_compare
 from modules.telemetry.rootline_daily_brief import get_rootline_daily_brief
 from modules.telemetry.rootline_daily_advisor import get_rootline_daily_advisor
+from modules.telemetry.rootline_operating_policy import (
+    activate_policy,
+    list_policy_review,
+    policy_review_contract,
+    preview_policy_effect,
+    propose_policy,
+    review_policy,
+)
 from modules.telemetry.irrigation_daily_plan_service import get_current_daily_plan
 from modules.telemetry.irrigation_command_service import (
     approve_plan_only_command,
@@ -19,8 +27,12 @@ from modules.telemetry.irrigation_command_service import (
 )
 from modules.auth.owner_access import (
     owner_admin_principal,
+    strict_owner_admin_principal,
+    owner_session_is_valid,
     require_owner_admin_access,
     require_owner_read_access,
+    require_strict_owner_admin_access,
+    require_strict_owner_read_access,
 )
 from modules.telemetry.weather_service import (
     evaluate_weather_alerts,
@@ -136,6 +148,74 @@ def telemetry_rootline_daily_advisor():
     if guard:
         return guard
     result, status_code = get_rootline_daily_advisor(request.args.get("date"))
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/operating-policy", methods=["GET"])
+def telemetry_rootline_operating_policy():
+    guard = require_strict_owner_read_access()
+    if guard:
+        return guard
+    result, status_code = list_policy_review()
+    result["owner_can_administer"] = owner_session_is_valid("admin")
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/operating-policy/contract", methods=["GET"])
+def telemetry_rootline_operating_policy_contract():
+    guard = require_strict_owner_read_access()
+    if guard:
+        return guard
+    return jsonify(policy_review_contract()), 200
+
+
+@telemetry_bp.route("/telemetry/rootline/operating-policy/preview", methods=["POST"])
+def telemetry_rootline_operating_policy_preview():
+    guard = require_strict_owner_read_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    advisor, _status = get_rootline_daily_advisor(request.args.get("date"))
+    result, status_code = preview_policy_effect(payload.get("policy"), advisor)
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/operating-policy/proposals", methods=["POST"])
+def telemetry_rootline_operating_policy_propose():
+    guard = require_strict_owner_admin_access()
+    if guard:
+        return guard
+    result, status_code = propose_policy(
+        request.get_json(silent=True) or {}, strict_owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route(
+    "/telemetry/rootline/operating-policy/proposals/<proposal_id>/review",
+    methods=["POST"],
+)
+def telemetry_rootline_operating_policy_review(proposal_id):
+    guard = require_strict_owner_admin_access()
+    if guard:
+        return guard
+    result, status_code = review_policy(
+        proposal_id, request.get_json(silent=True) or {}, strict_owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route(
+    "/telemetry/rootline/operating-policy/proposals/<proposal_id>/activate",
+    methods=["POST"],
+)
+def telemetry_rootline_operating_policy_activate(proposal_id):
+    guard = require_strict_owner_admin_access()
+    if guard:
+        return guard
+    result, status_code = activate_policy(
+        proposal_id, request.get_json(silent=True) or {}, strict_owner_admin_principal()
+    )
     return jsonify(result), status_code
 
 

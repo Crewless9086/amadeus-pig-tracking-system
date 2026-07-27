@@ -12,6 +12,7 @@ from modules.auth.owner_access import (
     require_owner_admin_access,
     require_owner_page_access,
     require_owner_read_access,
+    require_strict_owner_read_access,
 )
 from modules.beacon.content_operations import (
     build_beacon_content_candidate,
@@ -69,6 +70,14 @@ app.register_blueprint(charlie_bp, url_prefix="/api")
 @app.route("/")
 def home():
     return render_template("dashboard.html")
+
+
+@app.route("/rootline/policy-review")
+def rootline_policy_review_page():
+    guard = require_strict_owner_read_access()
+    if guard:
+        return guard
+    return render_template("rootline-policy-review.html")
 
 
 @app.route("/pigs")
