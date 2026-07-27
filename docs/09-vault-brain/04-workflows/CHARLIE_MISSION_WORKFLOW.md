@@ -96,6 +96,12 @@ the ledger exists fails closed and makes authoritative mission selection
 unavailable. Rollback restores the prior code revision while retaining the
 additive append-only ledger and its evidence.
 
+Hold and release writes require the dedicated
+`CHARLIE_OWNER_EXECUTION_HOLD_DATABASE_URL` credential whose database login is
+authenticates only as the `charlie_owner_execution_hold_writer` login. Generic
+`service_role` access is read-only for this ledger and cannot call its
+append functions. Missing dedicated writer configuration fails closed.
+
 CHARLIE owner-facing queues, Telegram handoff views, command-center buckets, and local runner pickup must treat `owner_work` as the actionable queue class. System smoke tests, validation missions, canary/no-op checks, placeholder relay records, and low-signal intake are not owner work and must not crowd out real owner missions waiting for approval, pickup, review, or release handling.
 
 Dependencies are executable gates, not display hints. A child remains `waiting_dependency` until every `depends_on_mission_id` is `done`, `merged`, or `deployed`. Oversized parents become paused `waiting_children` coordinators after their deterministic children are created; the parent pipeline may not execute in parallel with those children. Child scope is frozen from its explicit family scope and may not recursively split from words inherited from the parent title.

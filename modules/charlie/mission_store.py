@@ -1065,7 +1065,7 @@ def create_owner_execution_hold(mission_id, generation_identity, reason, *, owne
     owner_principal = _clean_text(owner_principal, 500)
     if not all((mission_id, generation_identity, reason, owner_principal)):
         return {"success": False, "status": "owner_execution_hold_identity_required"}, 400
-    database_url = _database_url(database_url)
+    database_url = _owner_execution_hold_writer_database_url(database_url)
     if not database_url and connect_factory is None:
         return {"success": False, "configured": False, "status": "not_configured"}, 503
     owner_hash = hashlib.sha256(owner_principal.encode("utf-8")).hexdigest()
@@ -1153,7 +1153,7 @@ def release_owner_execution_hold(mission_id, generation_identity, hold_id, reaso
     owner_principal = _clean_text(owner_principal, 500)
     if not all((mission_id, generation_identity, hold_id, reason, owner_principal)):
         return {"success": False, "status": "owner_execution_hold_release_identity_required"}, 400
-    database_url = _database_url(database_url)
+    database_url = _owner_execution_hold_writer_database_url(database_url)
     if not database_url and connect_factory is None:
         return {"success": False, "configured": False, "status": "not_configured"}, 503
     owner_hash = hashlib.sha256(owner_principal.encode("utf-8")).hexdigest()
@@ -3305,6 +3305,12 @@ def _clean_media_reference_value(reference, media_type):
 
 def _database_url(database_url):
     return (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+
+
+def _owner_execution_hold_writer_database_url(database_url):
+    if database_url is not None:
+        return str(database_url or "").strip()
+    return os.getenv("CHARLIE_OWNER_EXECUTION_HOLD_DATABASE_URL", "").strip()
 
 
 def _connect(database_url, connect_factory=None):

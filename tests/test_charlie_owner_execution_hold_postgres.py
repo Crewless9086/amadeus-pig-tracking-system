@@ -170,6 +170,19 @@ class CharlieOwnerExecutionHoldPostgresTests(unittest.TestCase):
                             "a" * 64, "b" * 64, created["hold"]["event_id"],
                         ),
                     )
+        with self.assertRaises(psycopg.Error):
+            with psycopg.connect(self.database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("set local role service_role")
+                    cursor.execute(
+                        """select public.append_charlie_owner_execution_hold_release(
+                               'FORGED-FUNCTION-RELEASE',%s,%s,%s,'forged',
+                               %s,%s,'{}'::jsonb)""",
+                        (
+                            created["hold"]["hold_id"], self.mission_id, GENERATION,
+                            "a" * 64, created["hold"]["event_id"],
+                        ),
+                    )
 
     def test_database_write_function_rejects_conflicting_stale_and_nonapproved_holds(self):
         created, status = create_owner_execution_hold(

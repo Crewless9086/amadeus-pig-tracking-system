@@ -232,17 +232,32 @@ end;
 $$;
 
 alter table public.charlie_owner_execution_hold_events enable row level security;
+do $$
+begin
+    if not exists (select 1 from pg_roles where rolname = 'charlie_owner_execution_hold_writer') then
+        create role charlie_owner_execution_hold_writer login
+            nosuperuser nocreatedb nocreaterole noinherit;
+    end if;
+end;
+$$;
 revoke all on public.charlie_owner_execution_hold_events from public, anon, authenticated;
 grant select on public.charlie_owner_execution_hold_events to service_role;
-revoke insert, update, delete, truncate on public.charlie_owner_execution_hold_events from service_role;
+revoke insert, update, delete, truncate on public.charlie_owner_execution_hold_events
+    from service_role, charlie_owner_execution_hold_writer;
+grant select on public.charlie_missions, public.charlie_owner_execution_hold_events
+    to charlie_owner_execution_hold_writer;
 revoke all on function public.append_charlie_owner_execution_hold(text,text,text,text,text,text,jsonb)
     from public, anon, authenticated;
 revoke all on function public.append_charlie_owner_execution_hold_release(text,text,text,text,text,text,text,jsonb)
     from public, anon, authenticated;
 grant execute on function public.append_charlie_owner_execution_hold(text,text,text,text,text,text,jsonb)
-    to service_role;
+    to charlie_owner_execution_hold_writer;
 grant execute on function public.append_charlie_owner_execution_hold_release(text,text,text,text,text,text,text,jsonb)
-    to service_role;
+    to charlie_owner_execution_hold_writer;
+revoke all on function public.append_charlie_owner_execution_hold(text,text,text,text,text,text,jsonb)
+    from service_role;
+revoke all on function public.append_charlie_owner_execution_hold_release(text,text,text,text,text,text,text,jsonb)
+    from service_role;
 
 insert into app_private.migration_log (migration_id, description)
 values (
