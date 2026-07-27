@@ -246,6 +246,13 @@ revoke insert, update, delete, truncate on public.charlie_owner_execution_hold_e
     from service_role, charlie_owner_execution_hold_writer;
 grant select on public.charlie_missions, public.charlie_owner_execution_hold_events
     to charlie_owner_execution_hold_writer;
+drop policy if exists charlie_owner_execution_hold_writer_read
+    on public.charlie_owner_execution_hold_events;
+create policy charlie_owner_execution_hold_writer_read
+    on public.charlie_owner_execution_hold_events
+    for select
+    to charlie_owner_execution_hold_writer
+    using (true);
 revoke all on function public.append_charlie_owner_execution_hold(text,text,text,text,text,text,jsonb)
     from public, anon, authenticated;
 revoke all on function public.append_charlie_owner_execution_hold_release(text,text,text,text,text,text,text,jsonb)

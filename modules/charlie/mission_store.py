@@ -1097,7 +1097,6 @@ def create_owner_execution_hold(mission_id, generation_identity, reason, *, owne
                            ) as not_superseded
                     from public.charlie_missions
                     where mission_id=%(mission_id)s
-                    for update
                     """,
                     {"mission_id": mission_id},
                 )
@@ -1122,7 +1121,12 @@ def create_owner_execution_hold(mission_id, generation_identity, reason, *, owne
                         existing.get("hold_id") == hold_id
                         and existing.get("authorization_identity") == authorization_identity
                     ):
-                        return {"success": True, "status": "owner_execution_hold_replayed", "mission_id": mission_id, "hold": existing}, 200
+                        return {
+                            "success": True,
+                            "status": "owner_execution_hold_replayed",
+                            "mission_id": mission_id,
+                            "hold": _public_owner_execution_hold(existing),
+                        }, 200
                     return {
                         "success": False,
                         "status": "owner_execution_hold_conflict",
@@ -1174,7 +1178,7 @@ def release_owner_execution_hold(mission_id, generation_identity, hold_id, reaso
                     {"mission_id": mission_id},
                 )
                 cursor.execute(
-                    "select status,coalesce(metadata_json,'{}'::jsonb) from public.charlie_missions where mission_id=%(mission_id)s for update",
+                    "select status,coalesce(metadata_json,'{}'::jsonb) from public.charlie_missions where mission_id=%(mission_id)s",
                     {"mission_id": mission_id},
                 )
                 row = cursor.fetchone()
@@ -1184,7 +1188,7 @@ def release_owner_execution_hold(mission_id, generation_identity, hold_id, reaso
                 if current_generation != generation_identity:
                     return {"success": False, "status": "owner_execution_hold_stale_generation", "current_generation": current_generation}, 409
                 cursor.execute(
-                    "select event_id,generation_identity from public.charlie_owner_execution_hold_events where hold_id=%(hold_id)s and mission_id=%(mission_id)s and event_type='hold_created' for share",
+                    "select event_id,generation_identity from public.charlie_owner_execution_hold_events where hold_id=%(hold_id)s and mission_id=%(mission_id)s and event_type='hold_created'",
                     {"hold_id": hold_id, "mission_id": mission_id},
                 )
                 hold = cursor.fetchone()

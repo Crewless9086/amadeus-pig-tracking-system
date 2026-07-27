@@ -38,6 +38,12 @@ class CharlieOwnerExecutionHoldPostgresTests(unittest.TestCase):
                        )"""
                 )
                 cursor.execute(migration.read_text(encoding="utf-8"))
+        separator = "&" if "?" in cls.database_url else "?"
+        cls.writer_database_url = (
+            cls.database_url
+            + separator
+            + "options=-c%20role%3Dcharlie_owner_execution_hold_writer"
+        )
 
     def setUp(self):
         self.mission_id = f"{REPLACEMENT_FIXTURE}-FIXTURE-{uuid.uuid4().hex[:8].upper()}"
@@ -66,14 +72,14 @@ class CharlieOwnerExecutionHoldPostgresTests(unittest.TestCase):
         before = self._mission_hash()
         created, status = create_owner_execution_hold(
             self.mission_id, GENERATION, "owner_hold_for_zero_runnable_observe_only_handshake",
-            owner_principal="owner:test", database_url=self.database_url,
+            owner_principal="owner:test", database_url=self.writer_database_url,
         )
         self.assertEqual((status, created["status"]), (201, "owner_execution_hold_created"))
         self.assertEqual(before, self._mission_hash())
 
         replay, replay_status = create_owner_execution_hold(
             self.mission_id, GENERATION, "owner_hold_for_zero_runnable_observe_only_handshake",
-            owner_principal="owner:test", database_url=self.database_url,
+            owner_principal="owner:test", database_url=self.writer_database_url,
         )
         self.assertEqual((replay_status, replay["status"]), (200, "owner_execution_hold_replayed"))
 
@@ -116,14 +122,16 @@ class CharlieOwnerExecutionHoldPostgresTests(unittest.TestCase):
 
         released, released_status = release_owner_execution_hold(
             self.mission_id, GENERATION, created["hold"]["hold_id"], "handshake_complete",
-            owner_principal="owner:test", database_url=self.database_url,
+            owner_principal="owner:test", database_url=self.writer_database_url,
         )
         self.assertEqual((released_status, released["status"]), (201, "owner_execution_hold_released"))
         release_replay, release_replay_status = release_owner_execution_hold(
             self.mission_id, GENERATION, created["hold"]["hold_id"], "handshake_complete",
-            owner_principal="owner:test", database_url=self.database_url,
+            owner_principal="owner:test", database_url=self.writer_database_url,
         )
         self.assertEqual((release_replay_status, release_replay["status"]), (200, "owner_execution_hold_release_replayed"))
+        self.assertNotIn("owner_identity_hash", replay["hold"])
+        self.assertNotIn("authorization_identity", replay["hold"])
         hold, hold_status = owner_execution_hold_status(self.mission_id, database_url=self.database_url)
         self.assertEqual((hold_status, hold["active"]), (200, False))
         self.assertEqual(before, self._mission_hash())
