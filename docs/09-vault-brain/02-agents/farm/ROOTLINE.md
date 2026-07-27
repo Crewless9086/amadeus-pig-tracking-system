@@ -66,3 +66,23 @@ roadmap are defined in the
 [`ROOTLINE Control Architecture`](../../04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md).
 The deployed Daily Brief is Level 1 observe-and-advise only; it does not grant
 IFTTT activation, physical hardware control, or autonomous irrigation.
+
+## Operating Knowledge Register And Daily Advisor
+
+The approved initial operating policy is maintained in the
+[`ROOTLINE Operating Knowledge Register`](../../../06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md).
+The owner-only Daily Advisor may combine that policy with the existing Daily
+Brief to explain B12345 and C12345 eligibility, weather freshness, advice,
+evidence gaps, and unresolved owner decisions.
+
+Unknown seasonal boundaries, operating windows, runtime limits, crop-need
+bands, or forecast-rain thresholds remain visibly `Unknown`. When material,
+they suppress eligibility and runtime conclusions. Legacy planned minutes,
+observed runtime, and measured delivery remain separate.
+
+The single supervised C12345 channel-2 canary proved the intended valve
+opened, the intended vegetable drippers flowed, OFF was accepted, the valve
+closed, and new full-pressure supply stopped. Residual drainage diminished,
+but its decay time remains `Unavailable`. This is one physical
+identity-and-shutdown proof, not routine irrigation, transport, command,
+scheduling, or autonomous-control authority.

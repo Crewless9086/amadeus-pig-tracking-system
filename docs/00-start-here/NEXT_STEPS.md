@@ -22,6 +22,26 @@ retrieve it early or access another post.
 
 BEACON-MEDIA-INTAKE-1 is an owner-approved direction with built-only candidate code, not migration or activation authority. The numbered CHARLIE missions are `new`, not approved for automatic execution. Public posting remains exact-owner-confirmed; Telegram intake, historical import, scheduling, paid spend and creative-provider calls remain disabled until their own reviewed gates are integrated and activated.
 
+## ROOTLINE Read-Only Advisor Queue
+
+1. Review the command-inert Operating Knowledge Register and owner-only Daily
+   Advisor candidate. It preserves Charl's approved initial policy, visibly
+   withholds eligibility/runtime where material values remain Unknown, and
+   keeps historical planned minutes separate from observed runtime and measured
+   water.
+2. Review the design-only append-only canary-evidence contract. Do not create
+   or apply a migration or persist the C12345 result until separately
+   authorized.
+3. Resolve the remaining owner values: seasonal boundaries, exact daylight
+   windows, per-zone minimum/maximum runtime, forecast-rain policy,
+   temperature limits, crop-need bands, power-loss behavior, and—if
+   available—the C12345 residual-drainage decay time.
+
+The single supervised C12345 channel-2 identity-and-shutdown canary passed and
+ended safe closed. It is evidence of one physical mapping and shutdown, not
+routine irrigation, scheduling, command dispatch, IFTTT/n8n activation, or
+autonomous authority.
+
 ## P0 Operational / Live Issues
 
 - CORE ownership bootstrap code from PR #517 is merged and hosted at

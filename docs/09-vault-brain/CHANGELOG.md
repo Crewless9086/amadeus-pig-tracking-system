@@ -1,5 +1,24 @@
 # Vault Brain Changelog
 
+## 2026-07-27 - ROOTLINE operating knowledge and Daily Advisor candidate
+
+- Recorded Charl's approved initial B12345/C12345 operating policy, keeping
+  unknown seasonal, window, runtime, crop-need and forecast-rain values
+  explicit and fail-closed.
+- Added a command-inert owner-only Daily Advisor candidate on the existing
+  Rootline dashboard. Legacy planned minutes, observed runtime and measured
+  delivery remain separate; no unknown numeric policy becomes zero.
+- Reconciled supervised C12345 packet
+  `ROOTLINE-CANARY-C12345-CH2-20260727-32B0D177-G1` and evidence SHA-256
+  `ef388830f14056bf7baea2915950a655ae77c8f7c058b8e1f9f1c92638d028ab`:
+  correct channel-2 opening and dripper flow, observed closure and stopped
+  full-pressure supply, diminishing residual drainage with decay time
+  unavailable, zero retries, no manual isolation, final safe closed.
+- The canary is one physical identity-and-shutdown proof only. Added a
+  design-only append-only evidence contract; no migration, evidence append,
+  plan, command, schedule, workflow, IFTTT/n8n invocation, or hardware
+  authority is included.
+
 ## 2026-07-27 - BEACON private media-intake foundation candidate
 
 - Built a default-disabled OOM SAKKIE-to-BEACON JPEG/PNG intake candidate with
