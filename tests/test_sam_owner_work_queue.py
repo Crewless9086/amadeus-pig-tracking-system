@@ -8,11 +8,14 @@ from modules.sales.sam_owner_work_queue import (
     OwnerWorkEvidenceError,
     build_charlie_backlog_report,
     build_owner_work_observation,
+    reconcile_configured_owner_inventory_batch,
     reconcile_human_backlog,
     record_owner_work_observation,
     run_daily_backlog_report,
+    load_bounded_configured_inbox_inventory,
     load_bounded_owner_attention_conversations,
     load_bounded_conversation_messages,
+    observe_owner_work_message_event,
 )
 
 
@@ -215,6 +218,552 @@ def test_owner_attention_reader_fails_closed_on_partial_or_conflicting_inventory
                 closed
             ),
         )
+
+
+def test_configured_inbox_inventory_reads_every_page_and_includes_missing_ownership():
+    pages = {
+        1: [
+            {**IDENTITY, "id": 1997, "status": "open", "custom_attributes": {}},
+            {**IDENTITY, "id": 2029, "status": "open", "custom_attributes": {}},
+        ],
+        2: [
+            {**IDENTITY, "id": 2031, "status": "open", "custom_attributes": {}},
+            {**IDENTITY, "id": 2039, "status": "open", "custom_attributes": {}},
+        ],
+    }
+
+    class Response:
+        status = 200
+        def __init__(self, payload): self.payload = payload
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def read(self): return json.dumps(self.payload).encode()
+
+    seen = []
+
+    def opener(request, timeout):
+        page = int(request.full_url.rsplit("page=", 1)[1])
+        seen.append((page, timeout))
+        return Response({"data": {"meta": {"all_count": 4}, "payload": pages[page]}})
+
+    loaded = load_bounded_configured_inbox_inventory(
+        {
+            "CHATWOOT_BASE_URL": "https://chatwoot.example",
+            "CHATWOOT_ACCOUNT_ID": "147387",
+            "CHATWOOT_API_ACCESS_TOKEN": "test-token",
+            "SAM_LIVE_STOCK_CHATWOOT_INBOX_ID": "96568",
+        },
+        opener=opener,
+        monotonic=iter([0, 1, 2]).__next__,
+    )
+    assert loaded["evidence_complete"] is True
+    assert loaded["expected_count"] == loaded["observed_count"] == 4
+    assert [row["id"] for row in loaded["conversations"]] == [1997, 2029, 2031, 2039]
+    assert [page for page, _ in seen] == [1, 2]
+    assert loaded["sends_customer_message"] is False
+    assert loaded["changes_conversation_ownership"] is False
+
+
+def test_inbound_webhook_fast_path_persists_without_chatwoot_reread_or_content():
+    recorded = []
+    result, status = observe_owner_work_message_event(
+        {
+            "account_id": "147387",
+            "conversation_id": "2031",
+            "contact_id": "981323214",
+            "inbox_id": "96568",
+            "message_id": "761497234",
+            "last_inbound_at": "2026-07-27T07:58:14+00:00",
+            "channel": "Channel::Whatsapp",
+            "conversation_custom_attributes": {"conversation_mode": "HUMAN"},
+            "identity_provenance": {
+                "conflicts": {
+                    "conversation_id": False,
+                    "contact_id": False,
+                    "inbox_id": False,
+                }
+            },
+            "content": "must never be persisted",
+        },
+        {
+            "review_event_id": "SAM-LIVE-REVIEW-5649F767443D",
+            "chatwoot_message_id": "761497234",
+        },
+        {
+            "conversation": {"status": "open", "labels": ["hot_lead"]},
+            "content": "must never be persisted",
+        },
+        reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        state_loader=lambda conversation_id: ({
+            "success": True, "found": False, "state": {}
+        }, 200),
+        recorder=lambda observation: (
+            recorded.append(observation)
+            or {
+                "success": True,
+                "created": True,
+                "status": "owner_work_observation_recorded",
+            },
+            201,
+        ),
+    )
+    assert status == 201
+    assert result["evidence_complete"] is True
+    assert result["created_count"] == 1
+    assert recorded[0]["conversation_id"] == "2031"
+    serialized = json.dumps(recorded[0], sort_keys=True)
+    assert "must never be persisted" not in serialized
+    assert recorded[0]["sends_customer_message"] is False
+
+
+def test_inbound_webhook_fast_path_missing_identity_fails_before_persistence():
+    recorded = []
+    result, status = observe_owner_work_message_event(
+        {
+            "conversation_id": "2031",
+            "message_id": "761497234",
+            "last_inbound_at": "2026-07-27T07:58:14+00:00",
+        },
+        {},
+        {"conversation": {"status": "open"}},
+        reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        state_loader=lambda conversation_id: ({
+            "success": True, "found": False, "state": {}
+        }, 200),
+        recorder=lambda observation: recorded.append(observation),
+    )
+    assert status == 409
+    assert result["evidence_complete"] is False
+    assert recorded == []
+
+
+def test_inbound_webhook_fast_path_malformed_timestamp_fails_without_escape():
+    recorded = []
+    result, status = observe_owner_work_message_event(
+        {
+            "account_id": "147387",
+            "conversation_id": "2031",
+            "contact_id": "981323214",
+            "inbox_id": "96568",
+            "message_id": "761497234",
+            "last_inbound_at": "not-a-timestamp",
+            "channel": "Channel::Whatsapp",
+            "conversation_custom_attributes": {"conversation_mode": "HUMAN"},
+            "identity_provenance": {"conflicts": {}},
+        },
+        {
+            "review_event_id": "SAM-LIVE-REVIEW-5649F767443D",
+            "chatwoot_message_id": "761497234",
+        },
+        {"conversation": {"status": "open"}},
+        reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        state_loader=lambda conversation_id: ({
+            "success": True, "found": False, "state": {}
+        }, 200),
+        recorder=lambda observation: recorded.append(observation),
+    )
+    assert status == 409
+    assert result["status"] == "owner_work_webhook_observation_evidence_incomplete"
+    assert result["evidence_complete"] is False
+    assert recorded == []
+
+
+def test_webhook_fast_path_preserves_prior_unanswered_bundle():
+    recorded = []
+    result, status = observe_owner_work_message_event(
+        {
+            "account_id": "147387",
+            "conversation_id": "2031",
+            "contact_id": "981323214",
+            "inbox_id": "96568",
+            "message_id": "761497234",
+            "last_inbound_at": "2026-07-27T07:58:14+00:00",
+            "channel": "Channel::Whatsapp",
+            "conversation_custom_attributes": {"conversation_mode": "HUMAN"},
+            "identity_provenance": {"conflicts": {}},
+        },
+        {
+            "review_event_id": "SAM-LIVE-REVIEW-5649F767443D",
+            "chatwoot_message_id": "761497234",
+        },
+        {"conversation": {"status": "open"}},
+        reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        state_loader=lambda conversation_id: ({
+            "success": True,
+            "found": True,
+            "state": {
+                "account_id": "147387",
+                "conversation_id": "2031",
+                "contact_id": "981323214",
+                "inbox_id": "96568",
+                "ownership_mode": "HUMAN",
+                "unanswered_inbound_bundle": [{
+                    "message_id": "761087896",
+                    "direction": "incoming",
+                    "created_at": "2026-07-27T07:30:46+00:00",
+                }],
+            },
+        }, 200),
+        recorder=lambda observation: (
+            recorded.append(observation)
+            or {"success": True, "created": True, "status": "recorded"},
+            201,
+        ),
+    )
+    assert status == 201
+    assert result["evidence_complete"] is True
+    assert recorded[0]["unanswered_count"] == 2
+    assert [
+        row["message_id"] for row in recorded[0]["unanswered_inbound_bundle"]
+    ] == ["761087896", "761497234"]
+
+
+def test_outgoing_webhook_fast_path_supersedes_actionable_state_without_http():
+    recorded = []
+    result, status = observe_owner_work_message_event(
+        {
+            "account_id": "147387",
+            "conversation_id": "2031",
+            "contact_id": "981323214",
+            "inbox_id": "96568",
+            "message_id": "761500248",
+            "last_inbound_at": "2026-07-27T08:00:43+00:00",
+            "channel": "Channel::Whatsapp",
+            "identity_provenance": {"conflicts": {}},
+        },
+        {
+            "review_event_id": "SAM-LIVE-REVIEW-5649F767443D",
+            "chatwoot_message_id": "761497234",
+        },
+        {"conversation": {"status": "open"}},
+        direction="outgoing",
+        reconciliation_actor_id="server:sam-live-stock-owner-reply-observer",
+        state_loader=lambda conversation_id: ({
+            "success": True,
+            "found": True,
+            "state": {
+                "account_id": "147387",
+                "conversation_id": "2031",
+                "contact_id": "981323214",
+                "inbox_id": "96568",
+                "ownership_mode": "HUMAN",
+                "unanswered_inbound_bundle": [{
+                    "message_id": "761497234",
+                    "direction": "incoming",
+                    "created_at": "2026-07-27T07:58:14+00:00",
+                }],
+            },
+        }, 200),
+        recorder=lambda observation: (
+            recorded.append(observation)
+            or {"success": True, "created": True, "status": "recorded"},
+            201,
+        ),
+    )
+    assert status == 201
+    assert result["evidence_complete"] is True
+    assert recorded[0]["classification"] == "CUSTOMER_ALREADY_HANDLED"
+    assert recorded[0]["actionable"] is False
+    assert recorded[0]["unanswered_count"] == 0
+    assert recorded[0]["latest_outgoing_message_id"] == "761500248"
+
+
+@pytest.mark.parametrize(
+    "second_payload,reason",
+    [
+        (
+            {"data": {"meta": {"all_count": 3}, "payload": []}},
+            "owner_inventory_pagination_incomplete",
+        ),
+        (
+            {
+                "data": {
+                    "meta": {"all_count": 2},
+                    "payload": [
+                        {**IDENTITY, "id": 1997, "status": "open"},
+                        {**IDENTITY, "id": 1997, "status": "open"},
+                    ],
+                }
+            },
+            "owner_inventory_identity_conflict",
+        ),
+    ],
+)
+def test_configured_inbox_inventory_never_publishes_partial_or_duplicate_all_clear(
+    second_payload, reason
+):
+    class Response:
+        status = 200
+        def __init__(self, payload): self.payload = payload
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def read(self): return json.dumps(self.payload).encode()
+
+    first = (
+        second_payload
+        if reason == "owner_inventory_identity_conflict"
+        else {
+            "data": {
+                "meta": {"all_count": 3},
+                "payload": [{**IDENTITY, "id": 1997, "status": "open"}],
+            }
+        }
+    )
+    payloads = iter(
+        [first]
+        if reason == "owner_inventory_identity_conflict"
+        else [first, second_payload]
+    )
+    with pytest.raises(OwnerWorkEvidenceError, match=reason):
+        load_bounded_configured_inbox_inventory(
+            {
+                "CHATWOOT_BASE_URL": "https://chatwoot.example",
+                "CHATWOOT_ACCOUNT_ID": "147387",
+                "CHATWOOT_API_ACCESS_TOKEN": "test-token",
+                "SAM_LIVE_STOCK_CHATWOOT_INBOX_ID": "96568",
+            },
+            opener=lambda request, timeout: Response(next(payloads)),
+            monotonic=iter([0, 1, 2]).__next__,
+        )
+
+
+def test_configured_inventory_repair_is_bounded_cursor_driven_and_never_partial_all_clear():
+    rows = [
+        {**IDENTITY, "id": value, "status": "open", "custom_attributes": {}}
+        for value in (1997, 2029, 2031)
+    ]
+    calls = []
+
+    def reconcile(conversation_id, **kwargs):
+        calls.append((conversation_id, kwargs))
+        return {
+            "success": True,
+            "status": "owner_work_reconciliation_completed",
+            "created_count": 1,
+            "evidence_complete": True,
+        }, 200
+
+    inventory = {
+        "success": True,
+        "evidence_complete": True,
+        "expected_count": 3,
+        "observed_count": 3,
+        "conversations": rows,
+    }
+    first, first_status = reconcile_configured_owner_inventory_batch(
+        reconciliation_actor_id=ACTOR,
+        limit=2,
+        environ={"OWNER_SESSION_SECRET": "test-secret"},
+        inventory_reader=lambda source: inventory,
+        conversation_reconciler=reconcile,
+    )
+    assert first_status == 409
+    assert first["status"] == "owner_inventory_reconciliation_incomplete"
+    assert first["evidence_complete"] is False
+    assert first["next_cursor"]
+    assert first["remaining_count"] == 1
+    assert [row[0] for row in calls] == ["1997", "2029"]
+
+    second, second_status = reconcile_configured_owner_inventory_batch(
+        reconciliation_actor_id=ACTOR,
+        cursor_token=first["next_cursor"],
+        limit=2,
+        environ={"OWNER_SESSION_SECRET": "test-secret"},
+        inventory_reader=lambda source: inventory,
+        conversation_reconciler=reconcile,
+    )
+    assert second_status == 200
+    assert second["evidence_complete"] is True
+    assert second["reconciled_count"] == 1
+    assert calls[-1][0] == "2031"
+    assert all(
+        second[key] is False
+        for key in (
+            "sends_customer_message",
+            "changes_conversation_ownership",
+            "calls_telegram",
+            "mutates_business_state",
+        )
+    )
+
+
+def test_configured_inventory_repair_does_not_reconcile_when_coverage_is_incomplete():
+    calls = []
+    result, status = reconcile_configured_owner_inventory_batch(
+        reconciliation_actor_id=ACTOR,
+        environ={"OWNER_SESSION_SECRET": "test-secret"},
+        inventory_reader=lambda source: {
+            "success": False,
+            "evidence_complete": False,
+            "conversations": [{**IDENTITY, "id": 1997}],
+        },
+        conversation_reconciler=lambda *args, **kwargs: calls.append(args),
+    )
+    assert status == 503
+    assert result["evidence_complete"] is False
+    assert calls == []
+
+
+def test_configured_inventory_repair_cursor_cannot_skip_a_failed_conversation():
+    rows = [
+        {**IDENTITY, "id": value, "status": "open", "custom_attributes": {}}
+        for value in (1997, 2029, 2031)
+    ]
+    calls = []
+
+    def reconcile(conversation_id, **kwargs):
+        calls.append(conversation_id)
+        if conversation_id == "2029":
+            return {
+                "success": False,
+                "status": "owner_work_chronology_evidence_unavailable",
+                "evidence_complete": False,
+            }, 503
+        return {
+            "success": True,
+            "status": "owner_work_reconciliation_completed",
+            "evidence_complete": True,
+            "created_count": 1,
+        }, 200
+
+    inventory = {
+        "success": True,
+        "evidence_complete": True,
+        "expected_count": 3,
+        "observed_count": 3,
+        "conversations": rows,
+    }
+    result, status = reconcile_configured_owner_inventory_batch(
+        reconciliation_actor_id=ACTOR,
+        limit=3,
+        environ={"OWNER_SESSION_SECRET": "test-secret"},
+        inventory_reader=lambda source: inventory,
+        conversation_reconciler=reconcile,
+    )
+    assert status == 409
+    assert result["evidence_complete"] is False
+    assert result["next_cursor"]
+    assert result["remaining_count"] == 2
+    assert result["failures"][0]["conversation_id"] == "2029"
+    assert calls == ["1997", "2029", "2031"]
+
+    calls.clear()
+    recovered, recovered_status = reconcile_configured_owner_inventory_batch(
+        reconciliation_actor_id=ACTOR,
+        cursor_token=result["next_cursor"],
+        limit=3,
+        environ={"OWNER_SESSION_SECRET": "test-secret"},
+        inventory_reader=lambda source: inventory,
+        conversation_reconciler=lambda conversation_id, **kwargs: (
+            calls.append(conversation_id)
+            or {
+                "success": True,
+                "status": "owner_work_reconciliation_completed",
+                "evidence_complete": True,
+                "created_count": 1,
+            },
+            200,
+        ),
+    )
+    assert recovered_status == 200
+    assert recovered["evidence_complete"] is True
+    assert calls == ["2029", "2031"]
+
+
+def test_configured_inventory_repair_rejects_unsigned_cursor_without_work():
+    rows = [
+        {**IDENTITY, "id": value, "status": "open", "custom_attributes": {}}
+        for value in (1997, 2029)
+    ]
+    calls = []
+    result, status = reconcile_configured_owner_inventory_batch(
+        reconciliation_actor_id=ACTOR,
+        cursor_token="9999",
+        environ={"OWNER_SESSION_SECRET": "test-secret"},
+        inventory_reader=lambda source: {
+            "success": True,
+            "evidence_complete": True,
+            "expected_count": 2,
+            "observed_count": 2,
+            "conversations": rows,
+        },
+        conversation_reconciler=lambda *args, **kwargs: calls.append(args),
+    )
+    assert status == 409
+    assert result["status"] == "owner_inventory_batch_cursor_invalid"
+    assert calls == []
+
+
+def test_configured_inventory_repair_first_failure_reports_every_row_remaining():
+    rows = [
+        {**IDENTITY, "id": value, "status": "open", "custom_attributes": {}}
+        for value in (1997, 2029, 2031)
+    ]
+    result, status = reconcile_configured_owner_inventory_batch(
+        reconciliation_actor_id=ACTOR,
+        environ={"OWNER_SESSION_SECRET": "test-secret"},
+        inventory_reader=lambda source: {
+            "success": True,
+            "evidence_complete": True,
+            "expected_count": 3,
+            "observed_count": 3,
+            "conversations": rows,
+        },
+        conversation_reconciler=lambda conversation_id, **kwargs: ({
+            "success": False,
+            "status": "owner_work_chronology_evidence_unavailable",
+            "evidence_complete": False,
+        }, 503),
+    )
+    assert status == 409
+    assert result["remaining_count"] == 3
+    assert result["next_cursor"]
+
+
+def test_configured_inventory_repair_rejects_cursor_after_inventory_changes():
+    rows = [
+        {**IDENTITY, "id": value, "status": "open", "custom_attributes": {}}
+        for value in (1997, 2029)
+    ]
+    inventory = {
+        "success": True,
+        "evidence_complete": True,
+        "expected_count": 2,
+        "observed_count": 2,
+        "conversations": rows,
+    }
+    first, status = reconcile_configured_owner_inventory_batch(
+        reconciliation_actor_id=ACTOR,
+        limit=1,
+        environ={"OWNER_SESSION_SECRET": "test-secret"},
+        inventory_reader=lambda source: inventory,
+        conversation_reconciler=lambda conversation_id, **kwargs: ({
+            "success": True,
+            "status": "owner_work_reconciliation_completed",
+            "evidence_complete": True,
+        }, 200),
+    )
+    assert status == 409
+    changed = {
+        **inventory,
+        "conversations": [
+            *rows,
+            {**IDENTITY, "id": 2031, "status": "open", "custom_attributes": {}},
+        ],
+        "expected_count": 3,
+        "observed_count": 3,
+    }
+    calls = []
+    rejected, rejected_status = reconcile_configured_owner_inventory_batch(
+        reconciliation_actor_id=ACTOR,
+        cursor_token=first["next_cursor"],
+        environ={"OWNER_SESSION_SECRET": "test-secret"},
+        inventory_reader=lambda source: changed,
+        conversation_reconciler=lambda *args, **kwargs: calls.append(args),
+    )
+    assert rejected_status == 409
+    assert rejected["status"] == "owner_inventory_batch_cursor_invalid"
+    assert calls == []
 
 
 def test_ownership_exception_stale_review_and_new_inbound_remain_no_send():

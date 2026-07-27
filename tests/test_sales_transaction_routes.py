@@ -55,6 +55,45 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "2025", reconciliation_actor_id="owner-admin:stable-server-derived"
         )
 
+    def test_sam_owner_inventory_reconciliation_is_owner_admin_bounded_and_no_send(self):
+        result = {
+            "success": False,
+            "status": "owner_inventory_reconciliation_incomplete",
+            "evidence_complete": False,
+            "next_cursor": "2029",
+            "remaining_count": 1,
+            "sends_customer_message": False,
+            "changes_conversation_ownership": False,
+            "calls_telegram": False,
+            "mutates_business_state": False,
+        }
+        with patch.object(
+            sales_transaction_routes, "require_owner_admin_access",
+            return_value=None,
+        ), patch.object(
+            sales_transaction_routes, "owner_admin_principal",
+            return_value="owner-admin:stable-server-derived",
+        ), patch.object(
+            sales_transaction_routes,
+            "reconcile_configured_owner_inventory_batch",
+            return_value=(result, 409),
+        ) as reconcile:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam/owner-inbox/reconcile-inventory",
+                json={
+                    "cursor": "server-signed-cursor",
+                    "limit": 2,
+                    "owner_identity": "browser-spoof",
+                },
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(response.get_json()["sends_customer_message"])
+        reconcile.assert_called_once_with(
+            reconciliation_actor_id="owner-admin:stable-server-derived",
+            cursor_token="server-signed-cursor",
+            limit=2,
+        )
+
     def test_owner_ownership_resolution_uses_only_server_principal(self):
         result = {
             "success": True, "status": "ownership_resolution_completed",
@@ -2425,6 +2464,76 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             routine_delivery_evidence_recorder=sales_transaction_routes._record_sam_live_stock_delivery_outcome,
         )
 
+    def test_sam_live_stock_webhook_observes_exact_owner_work_after_review_persistence(self):
+        service_result = {
+            "success": True,
+            "status": "sam_live_stock_read_only_processed",
+            "processed": True,
+            "sent": False,
+            "sam_decision": {
+                "inbound": {
+                    "conversation_id": "2031",
+                    "message_id": "761497234",
+                },
+                "facts": {},
+                "conversation_review": {},
+            },
+        }
+        observed = {
+            "success": True,
+            "status": "owner_work_reconciliation_completed",
+            "evidence_complete": True,
+            "created_count": 1,
+        }
+        order = []
+        with patch.object(
+            sales_transaction_routes, "authorize_sam_live_stock_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes, "handle_sam_live_stock_chatwoot_inbound",
+            return_value=(service_result, 200),
+        ), patch.object(
+            sales_transaction_routes, "build_sam_live_stock_review_event",
+            return_value={"review_event_id": "SAM-LIVE-REVIEW-2031"},
+        ), patch.object(
+            sales_transaction_routes, "record_sam_live_stock_review_event",
+            return_value=({
+                "success": True,
+                "created": True,
+                "status": "sam_live_stock_review_event_recorded",
+                "review_event_id": "SAM-LIVE-REVIEW-2031",
+                "conversation_event_count": 1,
+            }, 201),
+        ), patch.object(
+            sales_transaction_routes,
+            "_send_sam_live_stock_owner_notification_if_needed",
+            side_effect=lambda *args: (
+                order.append("telegram"),
+                {"attempted": False, "status": "not_required"},
+            )[1],
+        ), patch.object(
+            sales_transaction_routes, "observe_owner_work_message_event",
+            side_effect=lambda *args, **kwargs: (
+                order.append("owner_work"),
+                (observed, 200),
+            )[1],
+        ) as reconcile:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/inbound",
+                json={"event": "message_created"},
+            )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["owner_work_observation"]["evidence_complete"])
+        self.assertFalse(payload["owner_work_observation"]["sends_customer_message"])
+        reconcile.assert_called_once_with(
+            service_result["sam_decision"]["inbound"],
+            {"review_event_id": "SAM-LIVE-REVIEW-2031"},
+            {"event": "message_created"},
+            reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        )
+        self.assertEqual(order, ["owner_work", "telegram"])
+
     def test_sam_live_stock_routine_delivery_claim_uses_distinct_append_only_attempt(self):
         with patch.object(
             sales_transaction_routes,
@@ -2644,6 +2753,15 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             return_value={"attempted": False},
         ), patch.object(
             sales_transaction_routes,
+            "observe_owner_work_message_event",
+            return_value=({
+                "success": True,
+                "status": "owner_work_observation_recorded",
+                "evidence_complete": True,
+                "created_count": 1,
+            }, 201),
+        ) as observe_owner_work, patch.object(
+            sales_transaction_routes,
             "refresh_sam_live_stock_resolve_card_from_outgoing_event",
             return_value={"success": True, "status": "resolve_card_refresh_completed"},
         ) as refresh:
@@ -2664,6 +2782,16 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "identity_conflicting": False,
         })
         self.assertTrue(response.get_json()["captured"])
+        self.assertEqual(
+            response.get_json()["owner_work_observation"]["status"],
+            "owner_work_observation_recorded",
+        )
+        self.assertTrue(
+            response.get_json()["owner_work_observation"]["evidence_complete"]
+        )
+        self.assertEqual(
+            observe_owner_work.call_args.kwargs["direction"], "outgoing"
+        )
 
     def test_owner_admin_exact_resolve_refresh_route_has_no_send_or_ownership_authority(self):
         request_identity = {
