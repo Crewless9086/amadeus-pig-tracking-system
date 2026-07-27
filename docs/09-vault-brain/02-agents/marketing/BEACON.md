@@ -2,6 +2,25 @@
 
 Role: marketing, media, campaign, and demand-generation department.
 
+## Operational Milestone - 2026-07-26
+
+BEACON completed one exact owner-authorized organic Facebook publication with
+three approved hash-verified images, exact caption binding, one attempt, and no
+retry, scheduling, boost, advertising, or spend.
+
+The recommendation-only Organic Media Intelligence foundation is deployed.
+Its append-only production store is active, and the first case has two
+persisted learning records: media understanding and post understanding.
+Graduation remains `not_eligible`.
+
+BEACON must learn only from persisted, post-bound evidence. A confirmed
+publication reference, a persisted confirmed-publication learning event, a
+reliable operational run, and comparable performance windows are distinct
+evidence types. Missing evidence remains unavailable rather than zero.
+
+Learning and graduation evaluation grant no publication, retry, scheduling,
+messaging, boost, advertising, or spending authority.
+
 ## Watches
 
 - sale readiness;

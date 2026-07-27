@@ -2,6 +2,28 @@
 
 Role: Farm Sales CEO for Amadeus Farm customer/client interaction, starting with meat sales through Chatwoot/WhatsApp.
 
+## Operational Milestone - 2026-07-26
+
+SAM's owner-work foundation is live. Missing or invalid Chatwoot ownership is
+now surfaced as `OWNERSHIP_DECISION_REQUIRED` instead of silently excluded.
+The owner can resolve ownership through exact revalidation without granting
+customer-send authority.
+
+Four live-stock conversations (1997, 2029, 2031, and 2039) were recovered into
+the HUMAN workflow. After exact owner review, SAM sent one approved reply to
+each and verified provider read/delivered evidence with zero automatic retries.
+
+This proves a governed bounded loop, not general autonomous sales authority:
+
+`observe -> classify -> request owner decision -> prepare exact draft -> owner
+approve -> revalidate -> send once -> verify`.
+
+The owner-facing page is
+`/api/sales/channels/chatwoot/sam/owner-inbox/page`. It is a work queue and
+links to Chatwoot; it is not yet a complete in-page draft/edit/send interface.
+Automatic ownership, automatic replies, pricing, orders, reservations, stock,
+and business mutations remain disabled unless separately authorized.
+
 ## Watches
 
 - customer messages;

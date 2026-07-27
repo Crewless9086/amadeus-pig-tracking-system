@@ -201,14 +201,15 @@ Current built Supabase-backed surface:
 
 Current built read-only readiness surface to expand:
 
-- routes: `/pig-allocation`, `/api/pig-weights/pig-allocation-readiness`, `/api/pig-weights/purpose-review`, `/api/pig-weights/purpose-review/apply`, `/api/pig-weights/purpose-review/recheck`;
+- routes: `/pig-allocation`, `/api/pig-weights/pig-allocation-readiness`, `/api/pig-weights/riversdale-auction-recommendation`, `/api/pig-weights/riversdale-auction-list`, `/api/pig-weights/riversdale-auction-list/events`, `/api/pig-weights/purpose-review`, `/api/pig-weights/purpose-review/apply`, `/api/pig-weights/purpose-review/recheck`;
 - Vault doctrine: `docs/09-vault-brain/02-agents/farm/HERDMASTER.md`, `docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md`, `docs/09-vault-brain/06-data/FARM_DATA_MODEL.md`, `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`, `docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md`, `docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md`;
-- code: `modules/pig_weights/pig_weights_service.py`;
+- code: `modules/pig_weights/pig_weights_service.py`, `modules/sales/riversdale_auction_list.py`;
 - UI: `templates/pig-allocation.html`, `static/js/pigAllocation.js`;
-- tests: `tests/test_pig_allocation_readiness_service.py`;
-- migrations: none for the first read-only alert build;
+- tests: `tests/test_pig_allocation_readiness_service.py`, `tests/test_riversdale_auction_list.py`, `tests/test_riversdale_auction_postgres.py`;
+- migrations: `supabase/migrations/202607260009_create_riversdale_auction_list_events.sql` is applied as the append-only Auction List persistence rail; its initial and 2026-07-27 verified event count is zero;
 - legacy references: `docs/03-google-sheets/sheets/PIG_MASTER.md`, `docs/03-google-sheets/sheets/PIG_OVERVIEW.md`, `docs/03-google-sheets/sheets/WEIGHT_LOG.md`;
 - rule: Herdmaster Pig Allocation alert missions must inspect this section and the alert rules doc before advising or building. Alerts are advisory until owner-approved backend rails create any write, lifecycle, purpose, sales, slaughter, reservation, or customer-facing action.
+- Auction rule: persistence, browser selection, Auction List membership, cohort/outlet assignment, reservation, booking and sale are distinct states. The applied event rail grants none of the latter authorities. First use remains blocked until the production GET reader uses the canonical deployed database connection.
 
 ### Live Pig Sales Legacy
 
