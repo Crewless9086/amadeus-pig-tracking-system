@@ -155,6 +155,61 @@ class CharlieOwnerExecutionHoldPostgresTests(unittest.TestCase):
                             created["hold"]["event_id"],
                         ),
                     )
+        with self.assertRaises(psycopg.Error):
+            with psycopg.connect(self.database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("set local role service_role")
+                    cursor.execute(
+                        """insert into public.charlie_owner_execution_hold_events
+                           (event_id,hold_id,mission_id,generation_identity,event_type,reason,
+                            owner_identity_hash,authorization_identity,release_of_event_id)
+                           values ('FORGED-MATCHING-RELEASE',%s,%s,%s,'hold_released','forged',
+                                   %s,%s,%s)""",
+                        (
+                            created["hold"]["hold_id"], self.mission_id, GENERATION,
+                            "a" * 64, "b" * 64, created["hold"]["event_id"],
+                        ),
+                    )
+
+    def test_database_write_function_rejects_conflicting_stale_and_nonapproved_holds(self):
+        created, status = create_owner_execution_hold(
+            self.mission_id, GENERATION, "first",
+            owner_principal="owner:test", database_url=self.database_url,
+        )
+        self.assertEqual(status, 201)
+        with self.assertRaises(psycopg.Error):
+            with psycopg.connect(self.database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """select public.append_charlie_owner_execution_hold(
+                               'DIRECT-CONFLICT','DIRECT-CONFLICT',%s,%s,'second',%s,'{}'::jsonb)""",
+                        (self.mission_id, GENERATION, "a" * 64),
+                    )
+
+        for suffix, mission_status, generation in (
+            ("PAUSED", "paused", GENERATION),
+            ("STALE", "approved", "wrong-generation"),
+        ):
+            mission_id = f"{self.mission_id}-{suffix}"
+            with psycopg.connect(self.database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """insert into public.charlie_missions
+                           (mission_id,status,source,raw_text,title,urgency,mission_type,approval_level,metadata_json)
+                           values (%s,%s,'test','fixture','fixture','P2','audit','LEVEL 1',%s::jsonb)""",
+                        (mission_id, mission_status, json.dumps(self.metadata)),
+                    )
+            with self.assertRaises(psycopg.Error):
+                with psycopg.connect(self.database_url) as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            """select public.append_charlie_owner_execution_hold(
+                                   %s,%s,%s,%s,'invalid',%s,'{}'::jsonb)""",
+                            (
+                                f"EVENT-{suffix}", f"HOLD-{suffix}", mission_id,
+                                generation, "a" * 64,
+                            ),
+                        )
 
     def test_concurrent_hold_and_pickup_has_one_fail_closed_winner(self):
         barrier = threading.Barrier(2)

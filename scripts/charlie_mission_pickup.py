@@ -1283,13 +1283,13 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
     # Claim execution eligibility before workflow refresh, branch restoration,
     # or any other pickup side effect. The store serializes this transition
     # with the same mission-scoped advisory lock used by owner holds.
-    updated, update_status = update_mission_status(
+    execution_lease = _execution_lease_packet(mission_id)
+    updated, update_status = update_mission_vault(
         mission_id,
-        "in_progress",
+        {"execution_lease": execution_lease},
+        status="in_progress",
         owner_decision="Codex picked up this approved CHARLIE mission for execution under CODEX_CHAT rules.",
-        event_type="status_changed",
-        notes="Codex mission pickup claimed the mission before pickup preparation.",
-        metadata={"script": "scripts/charlie_mission_pickup.py"},
+        notes="CHARLIE runner atomically claimed mission status and execution lease before pickup preparation.",
         expected_status=clean_status,
     )
     if update_status >= 400:
@@ -1352,16 +1352,12 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "mission_id": mission_id,
             "codex_chat_written": False,
         }, 423
-    lease = _write_execution_lease(mission_id)
-    if not lease.get("persisted"):
-        return {
-            "success": False,
-            "status": lease.get("write_status") or "execution_lease_not_persisted",
-            "reason": lease.get("reason") or "execution_lease_not_persisted",
-            "mission_id": mission_id,
-            "codex_chat_written": False,
-            "execution_lease": lease,
-        }, int(lease.get("write_status_code") or 503)
+    lease = {
+        **execution_lease,
+        "write_status": updated.get("status") if isinstance(updated, dict) else "unknown",
+        "write_status_code": update_status,
+        "persisted": True,
+    }
     _write_codex_chat(codex_chat_preview)
     if notify:
         _send_pickup_notification(mission)

@@ -769,7 +769,7 @@ def update_mission_status(
                             "configured": True,
                             "status": "owner_execution_hold_active",
                             "mission_id": mission_id,
-                            "hold": held.get("hold"),
+                            "hold": _public_owner_execution_hold(held.get("hold")),
                         }, 423
                     return {
                         "success": False,
@@ -1045,6 +1045,19 @@ def owner_execution_hold_status(mission_id, database_url=None, connect_factory=N
     }, 200
 
 
+def _public_owner_execution_hold(hold):
+    if not isinstance(hold, dict):
+        return {}
+    return {
+        key: hold.get(key)
+        for key in (
+            "event_id", "hold_id", "mission_id", "generation_identity",
+            "reason", "created_at",
+        )
+        if hold.get(key) not in (None, "")
+    }
+
+
 def create_owner_execution_hold(mission_id, generation_identity, reason, *, owner_principal, database_url=None, connect_factory=None):
     mission_id = _clean_text(mission_id, 90)
     generation_identity = _clean_text(generation_identity, 120)
@@ -1060,7 +1073,10 @@ def create_owner_execution_hold(mission_id, generation_identity, reason, *, owne
         f"{mission_id}|{generation_identity}|{reason}".encode("utf-8")
     ).hexdigest()[:24].upper()
     event_id = hold_id + "-CREATE"
-    authorization_identity = hashlib.sha256(f"hold|{hold_id}|{owner_hash}".encode("utf-8")).hexdigest()
+    authorization_identity = (
+        hashlib.md5(f"hold|{hold_id}|{owner_hash}".encode("utf-8")).hexdigest()
+        + hashlib.md5(f"hold-proof|{hold_id}|{owner_hash}".encode("utf-8")).hexdigest()
+    )
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -1107,13 +1123,15 @@ def create_owner_execution_hold(mission_id, generation_identity, reason, *, owne
                         and existing.get("authorization_identity") == authorization_identity
                     ):
                         return {"success": True, "status": "owner_execution_hold_replayed", "mission_id": mission_id, "hold": existing}, 200
-                    return {"success": False, "status": "owner_execution_hold_conflict", "active_hold": existing}, 409
+                    return {
+                        "success": False,
+                        "status": "owner_execution_hold_conflict",
+                        "active_hold": _public_owner_execution_hold(existing),
+                    }, 409
                 cursor.execute(
-                    """insert into public.charlie_owner_execution_hold_events
-                       (event_id,hold_id,mission_id,generation_identity,event_type,reason,
-                        owner_identity_hash,authorization_identity,evidence_json)
-                       values (%(event_id)s,%(hold_id)s,%(mission_id)s,%(generation)s,'hold_created',
-                               %(reason)s,%(owner_hash)s,%(authorization)s,%(evidence)s::jsonb)""",
+                    """select public.append_charlie_owner_execution_hold(
+                           %(event_id)s,%(hold_id)s,%(mission_id)s,%(generation)s,
+                           %(reason)s,%(owner_hash)s,%(evidence)s::jsonb)""",
                     {
                         "event_id": event_id, "hold_id": hold_id, "mission_id": mission_id,
                         "generation": generation_identity, "reason": reason,
@@ -1140,7 +1158,14 @@ def release_owner_execution_hold(mission_id, generation_identity, hold_id, reaso
         return {"success": False, "configured": False, "status": "not_configured"}, 503
     owner_hash = hashlib.sha256(owner_principal.encode("utf-8")).hexdigest()
     release_event_id = hold_id + "-RELEASE"
-    authorization_identity = hashlib.sha256(f"release|{hold_id}|{generation_identity}|{owner_hash}".encode("utf-8")).hexdigest()
+    authorization_identity = (
+        hashlib.md5(
+            f"release|{hold_id}|{generation_identity}|{owner_hash}".encode("utf-8")
+        ).hexdigest()
+        + hashlib.md5(
+            f"release-proof|{hold_id}|{generation_identity}|{owner_hash}".encode("utf-8")
+        ).hexdigest()
+    )
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -1175,11 +1200,9 @@ def release_owner_execution_hold(mission_id, generation_identity, hold_id, reaso
                         return {"success": False, "status": "owner_execution_hold_release_conflict"}, 409
                     return {"success": True, "status": "owner_execution_hold_release_replayed", "mission_id": mission_id, "release_event_id": replay[0]}, 200
                 cursor.execute(
-                    """insert into public.charlie_owner_execution_hold_events
-                       (event_id,hold_id,mission_id,generation_identity,event_type,reason,
-                        owner_identity_hash,authorization_identity,release_of_event_id,evidence_json)
-                       values (%(event_id)s,%(hold_id)s,%(mission_id)s,%(generation)s,'hold_released',
-                               %(reason)s,%(owner_hash)s,%(authorization)s,%(release_of)s,%(evidence)s::jsonb)""",
+                    """select public.append_charlie_owner_execution_hold_release(
+                           %(event_id)s,%(hold_id)s,%(mission_id)s,%(generation)s,
+                           %(reason)s,%(owner_hash)s,%(release_of)s,%(evidence)s::jsonb)""",
                     {
                         "event_id": release_event_id, "hold_id": hold_id, "mission_id": mission_id,
                         "generation": generation_identity, "reason": reason, "owner_hash": owner_hash,
@@ -1316,7 +1339,8 @@ def update_mission_vault(
                         return {
                             "success": False, "configured": True,
                             "status": "owner_execution_hold_active",
-                            "mission_id": mission_id, "hold": held.get("hold"),
+                            "mission_id": mission_id,
+                            "hold": _public_owner_execution_hold(held.get("hold")),
                         }, 423
                     if expected_status:
                         return {
