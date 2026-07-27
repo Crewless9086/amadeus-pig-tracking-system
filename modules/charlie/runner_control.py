@@ -31,6 +31,7 @@ from modules.charlie.process_ownership import (
     validate_live_bootstrap_tree,
     validate_process_tree,
     validate_termination,
+    verify_controller_acknowledgement,
 )
 from modules.charlie.secret_redaction import redact_payload
 
@@ -55,6 +56,9 @@ LOG_PATH = RUNNER_DIR / "runner.log"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 START_CONTAINMENT_PATH = RUNNER_DIR / "startup-containment.json"
 SUPERVISOR_STOP_PATH = RUNNER_DIR / "supervisor.stop"
+EXECUTION_MODE_ORDINARY = "ordinary"
+EXECUTION_MODE_OBSERVE_ONLY = "observe_only"
+EXECUTION_MODES = {EXECUTION_MODE_ORDINARY, EXECUTION_MODE_OBSERVE_ONLY}
 EMERGENCY_CLEANUP_DISABLED_PATH = RUNNER_DIR / "EMERGENCY_PROCESS_CLEANUP_DISABLED"
 EMERGENCY_CLEANUP_REFUSAL_LOG = RUNNER_DIR / "emergency-process-cleanup-refusals.jsonl"
 STALE_SECONDS = 120
@@ -239,6 +243,7 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "runner_source_branch": _current_git_branch(),
         "supervisor_generation": str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or ""),
         "startup_nonce": str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or ""),
+        "execution_mode": str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY),
     }
     for key in (
         "elapsed_seconds",
@@ -325,7 +330,10 @@ def record_emergency_cleanup_refusal(operation, requested_pid, log_path=None):
     return packet
 
 
-def start_runner(status_override=None, respect_stop_marker=True):
+def start_runner(status_override=None, respect_stop_marker=True, execution_mode=EXECUTION_MODE_ORDINARY):
+    execution_mode = str(execution_mode or "").strip().lower()
+    if execution_mode not in EXECUTION_MODES:
+        return {"success": False, "status": "execution_mode_invalid"}, 400
     # Starting and clearing containment are deliberately separate governed
     # actions.  No startup caller is allowed to consume or remove this marker.
     if SUPERVISOR_STOP_PATH.exists():
@@ -336,14 +344,86 @@ def start_runner(status_override=None, respect_stop_marker=True):
         }, 423
     supervisor = _read_json(SUPERVISOR_PATH)
     if _pid_alive(supervisor.get("pid")):
+        active_mode = str(
+            supervisor.get("execution_mode") or EXECUTION_MODE_ORDINARY
+        )
+        final_ack = supervisor.get("controller_final_acknowledgement")
+        signed_mode = str(
+            (
+                final_ack if isinstance(final_ack, dict) else {}
+            ).get("execution_mode")
+            or EXECUTION_MODE_ORDINARY
+        )
+        active_mode_valid = active_mode == execution_mode and signed_mode == execution_mode
+        if execution_mode == EXECUTION_MODE_OBSERVE_ONLY and active_mode_valid:
+            public_key = str(supervisor.get("controller_public_key") or "")
+            unsigned_ack = (
+                {
+                    key: value
+                    for key, value in final_ack.items()
+                    if key != "signature"
+                }
+                if isinstance(final_ack, dict)
+                else {}
+            )
+            supervisor_live = validate_live_bootstrap_tree(
+                supervisor.get("supervisor_tree_identity"),
+                generation=str(supervisor.get("generation") or ""),
+                revision=str(supervisor.get("intended_runtime_revision") or ""),
+                startup_nonce=str(supervisor.get("startup_nonce") or ""),
+            )
+            runner_nonce = str(
+                (final_ack or {}).get("runner_startup_nonce") or ""
+            )
+            runner_live = validate_live_bootstrap_tree(
+                supervisor.get("process_tree_identity"),
+                generation=str(supervisor.get("generation") or ""),
+                revision=str(supervisor.get("intended_execution_revision") or ""),
+                startup_nonce=runner_nonce,
+            )
+            active_mode_valid = bool(
+                public_key
+                and verify_controller_acknowledgement(
+                    unsigned_ack, final_ack.get("signature"), public_key
+                )
+                and supervisor_live.get("authorized")
+                and runner_live.get("authorized")
+                and sorted(final_ack.get("supervisor_member_pids") or [])
+                == sorted(supervisor_live.get("member_pids") or [])
+                and sorted(final_ack.get("runner_member_pids") or [])
+                == sorted(runner_live.get("member_pids") or [])
+                and str(final_ack.get("supervisor_tree_digest") or "")
+                == process_tree_identity_digest(
+                    supervisor.get("supervisor_tree_identity")
+                )
+                and str(final_ack.get("runner_tree_digest") or "")
+                == process_tree_identity_digest(
+                    supervisor.get("process_tree_identity")
+                )
+            )
+        if not active_mode_valid:
+            return {
+                "success": False,
+                "status": "active_runner_execution_mode_mismatch",
+                "requested_execution_mode": execution_mode,
+                "active_execution_mode": active_mode,
+            }, 409
         return {
             "success": True,
             "status": "runner_already_active",
-            "runner": status_override if isinstance(status_override, dict) else runner_status(),
+            "runner": (
+                status_override
+                if isinstance(status_override, dict)
+                else runner_status(include_ledger=execution_mode != EXECUTION_MODE_OBSERVE_ONLY)
+            ),
             "supervisor_pid": supervisor.get("pid"),
             "supervisor_generation": supervisor.get("generation", ""),
         }, 200
-    status = status_override if isinstance(status_override, dict) else runner_status()
+    status = (
+        status_override
+        if isinstance(status_override, dict)
+        else runner_status(include_ledger=execution_mode != EXECUTION_MODE_OBSERVE_ONLY)
+    )
     if status["active"]:
         return {"success": True, "status": "runner_already_active", "runner": status}, 200
     if status.get("orphan_processes"):
@@ -375,6 +455,7 @@ def start_runner(status_override=None, respect_stop_marker=True):
         "CHARLIE_INTENDED_RUNTIME_REVISION": intended_revision,
         "CHARLIE_INTENDED_EXECUTION_REVISION": intended_revision,
         "CHARLIE_CONTROLLER_PUBLIC_KEY": controller_public_key,
+        "CHARLIE_CORE_EXECUTION_MODE": execution_mode,
     }
     # The final check is deliberately adjacent to process creation.  A marker
     # arriving after this point is still authoritative: both the child entry
@@ -439,6 +520,7 @@ def start_runner(status_override=None, respect_stop_marker=True):
         "generation": generation,
         "startup_nonce": startup_nonce,
         "revision": intended_revision,
+        "execution_mode": execution_mode,
         "member_pids": observation["validation"]["member_pids"],
         "supervisor_tree_digest": process_tree_identity_digest(supervisor_tree),
         "acknowledged_at": datetime.now(timezone.utc).isoformat(),
@@ -458,6 +540,7 @@ def start_runner(status_override=None, respect_stop_marker=True):
         "intended_runtime_revision": intended_revision,
         "intended_execution_revision": intended_revision,
         "controller_public_key": controller_public_key,
+        "execution_mode": execution_mode,
         "supervisor_tree_identity": supervisor_tree,
         "controller_acknowledgement": controller_acknowledgement,
         "ownership_history": history,
@@ -472,6 +555,7 @@ def start_runner(status_override=None, respect_stop_marker=True):
         runner_states={"not_spawned"},
         startup_nonce=startup_nonce,
         statuses={"supervisor_ready"},
+        execution_mode=execution_mode,
     )
     if not valid or reread != controller_packet:
         SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
@@ -494,6 +578,7 @@ def start_runner(status_override=None, respect_stop_marker=True):
         startup_nonce=startup_nonce,
         controller_private_key=controller_private_key,
         controller_public_key=controller_public_key,
+        execution_mode=execution_mode,
     )
     if not acknowledgement.get("success"):
         SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
@@ -513,6 +598,7 @@ def start_runner(status_override=None, respect_stop_marker=True):
         "status": "runner_started",
         "pid": process.pid,
         "generation": generation,
+        "execution_mode": execution_mode,
         "acknowledgement": acknowledgement,
         "command": _display_command(command),
         "log_path": str(LOG_PATH),
@@ -526,6 +612,7 @@ def _wait_for_supervisor_ack(
     startup_nonce=None,
     controller_private_key=None,
     controller_public_key="",
+    execution_mode=EXECUTION_MODE_ORDINARY,
     timeout_seconds=START_ACK_TIMEOUT_SECONDS,
     poll_seconds=0.1,
     sleep_fn=time.sleep,
@@ -547,6 +634,7 @@ def _wait_for_supervisor_ack(
             runner_states={"running"},
             startup_nonce=startup_nonce or generation,
             statuses={"running"},
+            execution_mode=execution_mode,
         )
         if valid:
             heartbeat = _read_json(HEARTBEAT_PATH)
@@ -583,6 +671,8 @@ def _wait_for_supervisor_ack(
                 last_reason = "runner_heartbeat_revision_mismatch"
             elif str(heartbeat.get("startup_nonce") or "") != runner_nonce:
                 last_reason = "runner_heartbeat_startup_nonce_mismatch"
+            elif str(heartbeat.get("execution_mode") or EXECUTION_MODE_ORDINARY) != execution_mode:
+                last_reason = "runner_heartbeat_execution_mode_mismatch"
             elif not isinstance(runner_ack, dict):
                 last_reason = "runner_controller_acknowledgement_missing"
             elif any(
@@ -591,10 +681,13 @@ def _wait_for_supervisor_ack(
                     "generation": generation,
                     "startup_nonce": runner_nonce,
                     "revision": intended_revision,
+                    "execution_mode": execution_mode,
                     "runner_tree_digest": process_tree_identity_digest(
                         runner_tree
                     ),
                 }.items()
+                if field != "execution_mode"
+                or str(runner_ack.get(field) or EXECUTION_MODE_ORDINARY) != str(expected)
             ):
                 last_reason = "runner_controller_acknowledgement_mismatch"
             elif not supervisor_live["authorized"]:
@@ -627,6 +720,7 @@ def _wait_for_supervisor_ack(
                     "runner_tree_digest": process_tree_identity_digest(
                         runner_tree
                     ),
+                    "execution_mode": execution_mode,
                     "acknowledged_at": datetime.now(timezone.utc).isoformat(),
                 }
                 final_acknowledgement["signature"] = sign_controller_acknowledgement(
@@ -638,6 +732,7 @@ def _wait_for_supervisor_ack(
                     "runner_state": "running_authorized",
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                     "controller_public_key": controller_public_key,
+                    "execution_mode": execution_mode,
                     "controller_final_acknowledgement": final_acknowledgement,
                 }
                 atomic_write_json(SUPERVISOR_PATH, redact_payload(final_packet))
@@ -689,10 +784,15 @@ def stop_runner():
         return {"success": False, **refusal}, 423
     if not process_termination_enabled():
         return {"success": False, "status": "process_termination_not_enabled"}, 423
-    status = runner_status()
+    supervisor = _read_json(SUPERVISOR_PATH)
+    execution_mode = str(
+        supervisor.get("execution_mode") or EXECUTION_MODE_ORDINARY
+    )
+    status = runner_status(
+        include_ledger=execution_mode != EXECUTION_MODE_OBSERVE_ONLY
+    )
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
     SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-    supervisor = _read_json(SUPERVISOR_PATH)
     persisted_runner_tree = supervisor.get("process_tree_identity")
     if (
         isinstance(persisted_runner_tree, dict)
@@ -835,6 +935,44 @@ def stop_runner():
 def _write_stop_evidence(supervisor, tree, result):
     payload = dict(supervisor) if isinstance(supervisor, dict) else {}
     payload["process_tree_identity"] = tree
+    final_acknowledgement = payload.get("controller_final_acknowledgement")
+    final_ack = (
+        final_acknowledgement
+        if isinstance(final_acknowledgement, dict)
+        else {}
+    )
+    public_key = str(payload.get("controller_public_key") or "")
+    unsigned_ack = {
+        key: value for key, value in final_ack.items() if key != "signature"
+    }
+    binding_checks = {
+        "generation": str(payload.get("generation") or ""),
+        "revision": str(payload.get("intended_execution_revision") or ""),
+        "supervisor_startup_nonce": str(payload.get("startup_nonce") or ""),
+        "execution_mode": str(
+            payload.get("execution_mode") or EXECUTION_MODE_ORDINARY
+        ),
+        "supervisor_tree_digest": process_tree_identity_digest(
+            payload.get("supervisor_tree_identity")
+        ),
+        "runner_tree_digest": process_tree_identity_digest(tree),
+    }
+    binding_mismatch = next(
+        (
+            field
+            for field, expected in binding_checks.items()
+            if str(final_ack.get(field) or "") != expected
+        ),
+        "",
+    )
+    authorization_binding_valid = bool(
+        final_ack
+        and not binding_mismatch
+        and public_key
+        and verify_controller_acknowledgement(
+            unsigned_ack, final_ack.get("signature"), public_key
+        )
+    )
     payload["stop_evidence"] = {
         "version": "charlie_governed_stop_evidence_v1",
         "recorded_at": datetime.now(timezone.utc).isoformat(),
@@ -845,6 +983,40 @@ def _write_stop_evidence(supervisor, tree, result):
             (result.get("logical_process_tree") or {}).get("reason")
         ),
         "target_pids": result.get("pids") or [],
+        "execution_mode": str(
+            payload.get("execution_mode") or EXECUTION_MODE_ORDINARY
+        ),
+        "generation": str(payload.get("generation") or ""),
+        "intended_runtime_revision": str(
+            payload.get("intended_runtime_revision") or ""
+        ),
+        "intended_execution_revision": str(
+            payload.get("intended_execution_revision") or ""
+        ),
+        "supervisor_startup_nonce": str(payload.get("startup_nonce") or ""),
+        "runner_startup_nonce": str(
+            (
+                final_acknowledgement
+                if isinstance(final_acknowledgement, dict)
+                else {}
+            ).get("runner_startup_nonce")
+            or ""
+        ),
+        "signed_final_acknowledgement": (
+            final_acknowledgement
+            if isinstance(final_acknowledgement, dict)
+            else {}
+        ),
+        "authorization_binding_valid": authorization_binding_valid,
+        "authorization_binding_reason": (
+            "verified"
+            if authorization_binding_valid
+            else (
+                f"controller_final_{binding_mismatch}_mismatch"
+                if binding_mismatch
+                else "controller_final_acknowledgement_unverified"
+            )
+        ),
         "process_tree_identity": tree,
     }
     atomic_write_json(SUPERVISOR_PATH, payload)
@@ -1062,6 +1234,7 @@ def validate_supervisor_packet(
     runner_states=None,
     startup_nonce=None,
     statuses=None,
+    execution_mode=None,
 ):
     if not isinstance(packet, dict) or not packet:
         return False, "supervisor_packet_missing"
@@ -1075,6 +1248,12 @@ def validate_supervisor_packet(
     for field, expected in checks:
         if not expected or str(packet.get(field) or "") != expected:
             return False, f"supervisor_packet_{field}_mismatch"
+    if execution_mode is not None:
+        if execution_mode not in EXECUTION_MODES:
+            return False, "supervisor_packet_execution_mode_invalid"
+        observed_mode = str(packet.get("execution_mode") or EXECUTION_MODE_ORDINARY)
+        if observed_mode != execution_mode:
+            return False, "supervisor_packet_execution_mode_mismatch"
     if not str(packet.get("created_at") or ""):
         return False, "supervisor_packet_creation_timestamp_missing"
     tree = packet.get("supervisor_tree_identity")
@@ -1100,7 +1279,7 @@ def _historical_ownership_packet(packet):
         for key in (
             "version", "generation", "startup_nonce", "created_at", "updated_at",
             "status", "runner_state", "supervisor_tree_identity",
-            "process_tree_identity", "stop_evidence",
+            "process_tree_identity", "stop_evidence", "execution_mode",
         )
         if key in packet
     })
@@ -1113,6 +1292,9 @@ def _write_startup_failure(generation, startup_nonce, revision, reason, tree):
         "generation": str(generation or ""),
         "startup_nonce": str(startup_nonce or ""),
         "revision": str(revision or ""),
+        "execution_mode": str(
+            os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY
+        ),
         "status": "ownership_identity_incomplete",
         "reason": str(reason or "ownership_identity_incomplete"),
         "process_tree_identity": tree if isinstance(tree, dict) else {},

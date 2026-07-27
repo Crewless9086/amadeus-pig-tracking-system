@@ -43,6 +43,62 @@ MISSION = {
 
 
 class CharlieMissionPickupTests(unittest.TestCase):
+    def test_observe_only_runtime_makes_pickup_authorization_unreachable(self):
+        with patch.dict(
+            os.environ,
+            {"CHARLIE_CORE_EXECUTION_MODE": "observe_only"},
+            clear=False,
+        ), patch.object(
+            charlie_mission_pickup, "_read_json",
+            side_effect=AssertionError("mission authorization state must not be read"),
+        ), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path("missing-observe-only-stop-marker")
+        ):
+            allowed, reason = charlie_mission_pickup._runtime_pickup_authorized()
+        self.assertFalse(allowed)
+        self.assertEqual(reason, "observe_only_mission_paths_unreachable")
+
+    def test_forged_observe_only_cli_without_mode_fails_before_startup(self):
+        with patch.object(
+            charlie_mission_pickup.sys, "argv",
+            ["charlie_mission_pickup.py", "--observe-only"],
+        ), patch.dict(
+            os.environ, {"CHARLIE_CORE_EXECUTION_MODE": "ordinary"}, clear=False
+        ), patch.object(
+            charlie_mission_pickup, "_validate_supervisor_startup",
+            side_effect=AssertionError("startup must remain unreachable"),
+        ), patch.object(charlie_mission_pickup, "write_runner_heartbeat"):
+            result = charlie_mission_pickup.main()
+        self.assertEqual(result, 1)
+
+    def test_observe_only_main_exits_without_mission_or_recovery_access(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stop_path = Path(tmp) / "supervisor.stop"
+            stop_path.write_text("stop", encoding="utf-8")
+            with patch.object(
+            charlie_mission_pickup.sys, "argv",
+            ["charlie_mission_pickup.py", "--observe-only"],
+        ), patch.dict(
+            os.environ, {"CHARLIE_CORE_EXECUTION_MODE": "observe_only"}, clear=False
+        ), patch.object(
+            charlie_mission_pickup, "_validate_supervisor_startup",
+            return_value={"success": True},
+        ), patch.object(
+            charlie_mission_pickup, "_wait_for_final_start_authorization",
+            return_value={"success": True},
+        ), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", stop_path,
+        ), patch.object(
+            charlie_mission_pickup, "write_runner_heartbeat",
+        ), patch.object(
+            charlie_mission_pickup, "list_missions",
+            side_effect=AssertionError("mission discovery must be unreachable"),
+        ), patch.object(
+            charlie_mission_pickup, "consume_final_agent_artifact",
+            side_effect=AssertionError("recovery must be unreachable"),
+        ):
+                result = charlie_mission_pickup.main()
+        self.assertEqual(result, 0)
     def test_direct_pickup_without_supervisor_generation_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(
             os.environ, {}, clear=True

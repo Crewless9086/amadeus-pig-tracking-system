@@ -24,6 +24,8 @@ from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids, mission_execution_dependency_ids
 from modules.charlie.repository_guard import RepositoryOperationLock, inspect_git_operation_markers, repository_lock_path
 from modules.charlie.runner_control import (
+    EXECUTION_MODE_OBSERVE_ONLY,
+    EXECUTION_MODE_ORDINARY,
     STALE_SECONDS,
     SUPERVISOR_PATH,
     SUPERVISOR_STOP_PATH,
@@ -90,7 +92,18 @@ def _load_runner_dotenv():
 
 
 def main():
-    _load_runner_dotenv()
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY).strip().lower()
+    cli_observe_only = "--observe-only" in sys.argv[1:]
+    if (
+        execution_mode not in {EXECUTION_MODE_ORDINARY, EXECUTION_MODE_OBSERVE_ONLY}
+        or cli_observe_only != (execution_mode == EXECUTION_MODE_OBSERVE_ONLY)
+    ):
+        result = {"success": False, "status": "runner_startup_refused", "reason": "execution_mode_conflict"}
+        write_runner_heartbeat(result)
+        print(result)
+        return 1
+    if execution_mode == EXECUTION_MODE_ORDINARY:
+        _load_runner_dotenv()
     startup = _validate_supervisor_startup()
     if not startup["success"]:
         write_runner_heartbeat(startup)
@@ -107,6 +120,7 @@ def main():
         return 1
     parser = argparse.ArgumentParser(description="Pick up the next approved CHARLIE mission for Codex.")
     parser.add_argument("--status", default="approved", help="Mission status to pick up. Default: approved.")
+    parser.add_argument("--observe-only", action="store_true")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--notify", action="store_true", help="Send owner Telegram notification after pickup.")
@@ -120,6 +134,16 @@ def main():
     parser.add_argument("--auto-merge-pr", action="store_true", help="For release_approved missions with a PR link, merge the PR locally with gh.")
     parser.add_argument("--release-verify-url", default="", help="Live URL to verify before marking a merged release deployed.")
     args = parser.parse_args()
+
+    if args.observe_only:
+        while not SUPERVISOR_STOP_PATH.exists():
+            write_runner_heartbeat({
+                "status": "observe_only_ready",
+                "active_status": "observe_only",
+                "current_action": "ownership_handshake_only",
+            })
+            time.sleep(0.2)
+        return 0
 
     if args.watch:
         result, status_code = watch_for_mission(
@@ -180,6 +204,7 @@ def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep
     execution_revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
     supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
     runner_nonce = str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or "")
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY)
     packet = _read_json(SUPERVISOR_PATH)
     deadline = time.monotonic() + max(0, float(transition_timeout_seconds))
     while (
@@ -197,6 +222,7 @@ def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep
         runner_states={"runner_starting"},
         startup_nonce=supervisor_nonce,
         statuses={"runner_starting"},
+        execution_mode=execution_mode,
     )
     if not valid:
         return {
@@ -233,11 +259,14 @@ def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep
             "status": "runner_startup_refused",
             "reason": "ownership_identity_incomplete:runner_controller_acknowledgement",
         }
-    for field, expected in {
+    acknowledgement_checks = {
         "generation": generation,
         "startup_nonce": runner_nonce,
         "revision": execution_revision,
-    }.items():
+    }
+    if execution_mode == EXECUTION_MODE_OBSERVE_ONLY or acknowledgement.get("execution_mode"):
+        acknowledgement_checks["execution_mode"] = execution_mode
+    for field, expected in acknowledgement_checks.items():
         if str(acknowledgement.get(field) or "") != expected:
             return {
                 "success": False,
@@ -275,6 +304,7 @@ def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep
         "status": "runner_startup_validated",
         "supervisor_generation": generation,
         "execution_revision": actual_revision,
+        "execution_mode": execution_mode,
     }
 
 
@@ -283,6 +313,7 @@ def _wait_for_final_start_authorization(sleep_fn=time.sleep, timeout_seconds=30)
     supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
     runner_nonce = str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or "")
     revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY)
     deadline = time.monotonic() + max(0, float(timeout_seconds))
     reason = "controller_final_acknowledgement_missing"
     while time.monotonic() <= deadline:
@@ -306,6 +337,8 @@ def _wait_for_final_start_authorization(sleep_fn=time.sleep, timeout_seconds=30)
                 "revision": revision,
                 "runner_pid": str(os.getpid()),
             }
+            if execution_mode == EXECUTION_MODE_OBSERVE_ONLY or acknowledgement.get("execution_mode"):
+                expected["execution_mode"] = execution_mode
             mismatch = next(
                 (
                     field for field, value in expected.items()
@@ -331,6 +364,7 @@ def _wait_for_final_start_authorization(sleep_fn=time.sleep, timeout_seconds=30)
                 "status": "runner_start_authorized",
                 "supervisor_generation": generation,
                 "execution_revision": revision,
+                "execution_mode": execution_mode,
             }
         sleep_fn(0.05)
     return {
@@ -343,6 +377,11 @@ def _wait_for_final_start_authorization(sleep_fn=time.sleep, timeout_seconds=30)
 def _runtime_pickup_authorized():
     if SUPERVISOR_STOP_PATH.exists():
         return False, "governed_stop_active"
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY)
+    if execution_mode == EXECUTION_MODE_OBSERVE_ONLY:
+        return False, "observe_only_mission_paths_unreachable"
+    if execution_mode != EXECUTION_MODE_ORDINARY:
+        return False, "execution_mode_invalid"
     if _TEST_PICKUP_AUTHORIZED:
         return True, "test_isolation_authorized"
     packet = _read_json(SUPERVISOR_PATH)

@@ -195,6 +195,9 @@ def supervise_runner(
         return {"status": "governed_stop_active", "runner_state": "not_spawned"}
     generation = str(generation or os.getenv("CHARLIE_SUPERVISOR_GENERATION") or uuid.uuid4().hex)
     startup_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or uuid.uuid4().hex)
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or "ordinary").strip().lower()
+    if execution_mode not in {"ordinary", "observe_only"}:
+        return {"status": "infrastructure_hold", "failure_status": "execution_mode_invalid"}
     test_mode = popen_factory is not subprocess.Popen
     controller_public_key = str(os.getenv("CHARLIE_CONTROLLER_PUBLIC_KEY") or "")
     test_controller_private_key = None
@@ -218,6 +221,7 @@ def supervise_runner(
             execution_revision,
             controller_public_key,
             test_controller_private_key,
+            execution_mode,
         )
     controller = _wait_for_controller_ack(
         generation,
@@ -225,6 +229,7 @@ def supervise_runner(
         runtime_revision,
         execution_revision,
         controller_public_key=controller_public_key,
+        execution_mode=execution_mode,
         live_validate=not test_mode,
         sleep_fn=sleep_fn,
     )
@@ -236,6 +241,7 @@ def supervise_runner(
             intended_runtime_revision=runtime_revision,
             intended_execution_revision=execution_revision,
             runner_state="not_spawned",
+            execution_mode=execution_mode,
             failure_status=controller.get("reason") or "ownership_identity_incomplete",
             failure_detail=controller,
         )
@@ -308,13 +314,32 @@ def supervise_runner(
             if notifier:
                 notifier(payload)
             return {"status": "infrastructure_hold", "failure_status": "secret_scrub_failed", "scrub_results": scrub_results}
-        child_env = {
-            **os.environ,
+        if execution_mode == "observe_only":
+            child_env = {
+                key: os.environ[key]
+                for key in (
+                    "PATH",
+                    "PATHEXT",
+                    "SYSTEMROOT",
+                    "WINDIR",
+                    "COMSPEC",
+                    "TEMP",
+                    "TMP",
+                    "GIT_CONFIG_GLOBAL",
+                )
+                if os.environ.get(key)
+            }
+        else:
+            child_env = dict(os.environ)
+            child_env["DATABASE_URL"] = _transaction_pool_url(
+                child_env.get("DATABASE_URL")
+            )
+        child_env.update({
             "CHARLIE_SUPERVISOR_GENERATION": generation,
             "CHARLIE_STARTUP_NONCE": startup_nonce,
+            "CHARLIE_CORE_EXECUTION_MODE": execution_mode,
             "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
-        }
-        child_env["DATABASE_URL"] = _transaction_pool_url(child_env.get("DATABASE_URL"))
+        })
         # The legacy alias can still be present in the scheduled-task
         # environment.  Child configuration is a single supervisor-owned
         # value, so keep both names identical instead of triggering the
@@ -331,7 +356,12 @@ def supervise_runner(
             break
         runner_nonce = uuid.uuid4().hex
         child_env["CHARLIE_RUNNER_STARTUP_NONCE"] = runner_nonce
-        child = popen_factory(RUNNER_COMMAND, cwd=str(EXECUTION_ROOT), env=child_env, **_windowless_process_kwargs())
+        runner_command = (
+            [RUNNER_COMMAND[0], str(REPO_ROOT / "scripts" / "charlie_observe_only_runner.py")]
+            if execution_mode == "observe_only"
+            else list(RUNNER_COMMAND)
+        )
+        child = popen_factory(runner_command, cwd=str(EXECUTION_ROOT), env=child_env, **_windowless_process_kwargs())
         if test_mode:
             runner_observation = _test_runner_observation(
                 child.pid, generation, execution_revision, runner_nonce
@@ -342,7 +372,7 @@ def supervise_runner(
                 generation=generation,
                 revision=execution_revision,
                 startup_nonce=runner_nonce,
-                expected_script=Path(RUNNER_COMMAND[1]).name,
+                expected_script=Path(runner_command[1]).name,
                 expected_root_executable=RUNNER_COMMAND[0],
                 process_role_prefix="runner",
             )
@@ -374,12 +404,14 @@ def supervise_runner(
             intended_runtime_revision=runtime_revision,
             intended_execution_revision=execution_revision,
             runner_state="runner_starting",
+            execution_mode=execution_mode,
             runner_startup_nonce=runner_nonce,
             runner_controller_acknowledgement={
                 "status": "runner_identity_acknowledged",
                 "generation": generation,
                 "startup_nonce": runner_nonce,
                 "revision": execution_revision,
+                "execution_mode": execution_mode,
                 "member_pids": runner_observation["validation"]["member_pids"],
                 "runner_tree_digest": process_tree_identity_digest(runner_tree),
                 "acknowledged_at": datetime.now(timezone.utc).isoformat(),
@@ -468,7 +500,9 @@ def supervise_runner(
                 "containment": containment,
             }
         try:
-            if recovery_fn is not None:
+            if execution_mode == "observe_only":
+                recovery, recovery_status = ({"status": "observe_only_recovery_unreachable"}, 200)
+            elif recovery_fn is not None:
                 recovery, recovery_status = recovery_fn()
             elif test_mode:
                 recovery, recovery_status = ({"status": "test_recovery_skipped"}, 200)
@@ -500,6 +534,7 @@ def supervise_runner(
             "operational_authorized",
             generation=generation,
             runner_state="operational_authorized",
+            execution_mode=execution_mode,
             recovery=recovery,
         )
         return_code = child.wait()
@@ -573,6 +608,7 @@ def _wait_for_controller_ack(
     runtime_revision,
     execution_revision,
     controller_public_key="",
+    execution_mode="ordinary",
     live_validate=True,
     sleep_fn=time.sleep,
     timeout_seconds=15,
@@ -590,6 +626,7 @@ def _wait_for_controller_ack(
                 runner_states={"not_spawned"},
                 startup_nonce=startup_nonce,
                 statuses={"supervisor_ready"},
+                execution_mode=execution_mode,
             )
             if not valid:
                 return {"success": False, "reason": reason, "packet": packet}
@@ -604,6 +641,8 @@ def _wait_for_controller_ack(
                 "startup_nonce": startup_nonce,
                 "revision": runtime_revision,
             }
+            if execution_mode == "observe_only" or acknowledgement.get("execution_mode"):
+                checks["execution_mode"] = execution_mode
             for field, expected in checks.items():
                 if str(acknowledgement.get(field) or "") != expected:
                     return {
@@ -673,6 +712,7 @@ def _write_test_controller_packet(
     execution_revision,
     controller_public_key,
     controller_private_key,
+    execution_mode="ordinary",
 ):
     root = {
         "pid": 100,
@@ -685,6 +725,7 @@ def _write_test_controller_packet(
         "execution_id": generation,
         "ownership_type": "charlie_runner",
         "revision": runtime_revision,
+        "execution_mode": execution_mode,
         "startup_nonce": startup_nonce,
         "process_role": "supervisor_launcher",
     }
@@ -704,6 +745,7 @@ def _write_test_controller_packet(
         "generation": generation,
         "startup_nonce": startup_nonce,
         "revision": runtime_revision,
+        "execution_mode": execution_mode,
         "member_pids": [100, os.getpid()],
         "supervisor_tree_digest": process_tree_identity_digest(supervisor_tree),
     }
@@ -723,6 +765,7 @@ def _write_test_controller_packet(
         "intended_runtime_revision": runtime_revision,
         "intended_execution_revision": execution_revision,
         "controller_public_key": controller_public_key,
+        "execution_mode": execution_mode,
         "supervisor_tree_identity": supervisor_tree,
         "controller_acknowledgement": acknowledgement,
     }
@@ -827,6 +870,7 @@ def _wait_for_controller_final_authorization(
     sleep_fn=time.sleep,
     timeout_seconds=30,
 ):
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or "ordinary")
     deadline = time.monotonic() + max(0, float(timeout_seconds))
     reason = "controller_final_acknowledgement_missing"
     while time.monotonic() <= deadline:
@@ -857,6 +901,8 @@ def _wait_for_controller_final_authorization(
                     packet.get("process_tree_identity")
                 ),
             }
+            if execution_mode == "observe_only" or acknowledgement.get("execution_mode"):
+                expected["execution_mode"] = execution_mode
             mismatch = next(
                 (
                     field for field, value in expected.items()
@@ -927,6 +973,7 @@ def _write_test_final_authorization(
     controller_public_key,
     controller_private_key,
 ):
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or "ordinary")
     packet = _read_status()
     supervisor_members = (
         (packet.get("supervisor_tree_identity") or {}).get("members") or []
@@ -951,6 +998,7 @@ def _write_test_final_authorization(
         "runner_tree_digest": process_tree_identity_digest(
             packet.get("process_tree_identity")
         ),
+        "execution_mode": execution_mode,
     }
     acknowledgement["signature"] = sign_controller_acknowledgement(
         acknowledgement, controller_private_key
@@ -959,6 +1007,7 @@ def _write_test_final_authorization(
         "status": "running_authorized",
         "runner_state": "running_authorized",
         "controller_public_key": controller_public_key,
+        "execution_mode": execution_mode,
         "controller_final_acknowledgement": acknowledgement,
     })
     atomic_write_json(SUPERVISOR_PATH, packet)
@@ -1334,6 +1383,7 @@ def _write_status(status, **extra):
             "runner_startup_nonce",
             "runner_controller_acknowledgement",
             "controller_final_acknowledgement",
+            "execution_mode",
         ):
             if key not in payload and key in previous:
                 payload[key] = previous[key]
