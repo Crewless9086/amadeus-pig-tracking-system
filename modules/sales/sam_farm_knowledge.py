@@ -29,13 +29,21 @@ DEFAULT_KNOWLEDGE = {
     ],
     "meat_sales": {
         "positioning": "Pre-booked Amadeus Farm pork for freezer buyers.",
-        "core_options": ["half carcass", "full carcass", "custom cuts", "assisted slaughter"],
+        "core_options": ["half carcass", "full carcass"],
+        "price_per_kg_including_vat": 130,
+        "deposit_percent": 50,
+        "fulfilment_mode": "delivery only",
+        "transport_packaging": "Unresolved",
         "payment_rule": "For meat sales we use EFT only for now so the reference and payment trail stay clean.",
         "pilot_payment_rule": "For meat sales we use EFT only for now so the reference and payment trail stay clean.",
         "deposit_explanation": "The deposit holds the customer's place in the preorder run and helps the farm plan properly.",
         "pop_explanation": "Proof of payment is useful evidence, but the booking only moves forward once the money reflects in the farm account.",
     },
-    "cut_sets": {},
+    "cut_sets": {
+        "Set A": "Amadeus Signature Collection",
+        "Set B": "Amadeus Ember Collection",
+        "Set C": "Amadeus Grand Cut Collection",
+    },
     "faq": {},
     "blocked_claims": [],
 }

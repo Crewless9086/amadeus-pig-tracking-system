@@ -264,8 +264,9 @@ class SamV3ReplayStressTests(unittest.TestCase):
         rewriter.assert_not_called()
         self.assertEqual(result["sam_decision"]["reply_source"], "hard_product_knowledge")
         self.assertIn("Set A", reply)
-        self.assertIn("Set D", reply)
-        self.assertIn("ribs", reply)
+        self.assertNotIn("Set D", reply)
+        self.assertIn("Amadeus Grand Cut Collection", reply)
+        self.assertIn("whole pork rib", reply.lower())
         self.assertNotIn("send the set sheet", reply.lower())
 
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")

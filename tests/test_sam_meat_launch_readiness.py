@@ -54,7 +54,9 @@ class SamMeatLaunchReadinessTests(unittest.TestCase):
     def test_address_only_required_for_delivery(self):
         collection = packet(["Half carcass Set A, 1 half carcass, collection next week."])
         delivery = packet(["Half carcass Set A, 1 half carcass, delivery in Riversdale next week."])
-        self.assertNotEqual(collection["next_missing_field"], "delivery_address")
+        self.assertEqual(collection["facts"]["delivery_mode"], "delivery")
+        self.assertTrue(collection["facts"]["customer_requested_collection"])
+        self.assertEqual(collection["next_missing_field"], "delivery_town")
         self.assertEqual(delivery["next_missing_field"], "delivery_address")
 
     def test_question_order_delays_payment(self):
@@ -62,7 +64,7 @@ class SamMeatLaunchReadinessTests(unittest.TestCase):
         self.assertEqual(result["next_missing_field"], "quantity")
         self.assertNotIn("EFT", result["next_safe_question"])
         stale = packet(["Half carcass Set A, 1 half carcass, collection next week."], truth_readers=readers(stale=True))
-        self.assertEqual(stale["next_missing_field"], "")
+        self.assertEqual(stale["next_missing_field"], "delivery_town")
         self.assertIn("current_matching_price_rule_required", stale["price_basis"]["blockers"])
 
     def test_english_afrikaans_and_mixed_localization(self):

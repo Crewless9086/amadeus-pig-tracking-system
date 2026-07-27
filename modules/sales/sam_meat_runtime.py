@@ -56,6 +56,7 @@ from modules.sales.sam_farm_knowledge import (
 )
 from modules.sales.sam_shared_context import build_sam_v3_context_packet
 from modules.sales.sam_sales_router import LANE_LIVE_STOCK, LANE_MEAT, classify_sam_sales_lane
+from modules.sales.sam_meat_commercial_standard import COLLECTIONS, collection_description
 
 
 WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
@@ -72,12 +73,7 @@ LLM_TIMEOUT_ENV = "SAM_MEAT_BACKEND_LLM_TIMEOUT_SECONDS"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 DEFAULT_LLM_URL = "https://api.openai.com/v1/chat/completions"
 MIN_TOKEN_CHARS = 32
-CUT_SET_MENU = {
-    "Set A": "Family Freezer Pack: pork chops, leg portions or roasts, shoulder roasts, belly strips, ribs, mince or stew meat, and bones for soup or stock.",
-    "Set B": "Braai Pack: chops, rashers or belly strips, ribs, shoulder steaks, sosatie or stew cubes, and mince or sausage meat option.",
-    "Set C": "Lean Pack: lean chops, leg steaks, lean shoulder cuts, mince, stew cubes, and fewer fatty belly cuts.",
-    "Set D": "Slow-Cook Family Roast Pack: larger roasting cuts, shoulder, mixed chops, mince or stew meat, and soup bones for slow cooking, roasting, and family meals.",
-}
+CUT_SET_MENU = {code: collection_description(code) for code in COLLECTIONS}
 ROBOTIC_REPLY_PATTERNS = [
     r"\bI am still with you on the pork preorder\b",
     r"\bPlease send the delivery street address\b",
@@ -1354,10 +1350,10 @@ def _agent_v3_payload(context_packet, facts, source):
             "reply_text": "natural customer-facing WhatsApp sales reply, normally 1-4 short sentences",
             "facts_patch": {
                 "product_type": "half_carcass|full_carcass|custom_cut|assisted_slaughter|unknown",
-                "cut_set": "Set A|Set B|Set C|Set D",
+                "cut_set": "Set A|Set B|Set C (Set D is historical-only)",
                 "location": "town or area",
                 "timing": "this week|next week|next available farm run|customer wording",
-                "delivery_or_collection": "delivery only for public meat sales unless owner approves an exception",
+                "delivery_or_collection": "delivery only for current meat sales; collection is not offered",
                 "delivery_address_line_1": "street address, farm name, or shared location label",
                 "delivery_town": "town",
                 "delivery_area": "area/suburb",
@@ -1447,10 +1443,10 @@ def _agent_v2_payload(inbound, facts, prior_context, source):
             "reply_text": "short customer-facing WhatsApp reply",
             "facts_patch": {
                 "product_type": "half_carcass|full_carcass|custom_cut|assisted_slaughter|unknown",
-                "cut_set": "Set A|Set B|Set C|Set D",
+                "cut_set": "Set A|Set B|Set C (Set D is historical-only)",
                 "location": "town or area",
                 "timing": "this week|next week|next available farm run|customer wording",
-                "delivery_or_collection": "delivery only for public meat sales unless owner approves an exception",
+                "delivery_or_collection": "delivery only for current meat sales; collection is not offered",
                 "delivery_address_line_1": "street address or farm name",
                 "delivery_town": "town",
                 "delivery_area": "area/suburb",
@@ -1883,7 +1879,8 @@ def _deterministic_extract(message):
     cut_set = ""
     match = re.search(r"\bset\s*([abcd])\b", normalized)
     if match:
-        cut_set = f"Set {match.group(1).upper()}"
+        mentioned_set = f"Set {match.group(1).upper()}"
+        cut_set = "" if mentioned_set == "Set D" else mentioned_set
     if (
         cut_set
         and product_type == "unknown"
@@ -1960,6 +1957,11 @@ def _deterministic_extract(message):
 
 def _cut_menu_reply(message, facts):
     text = str(message or "").lower()
+    if _mentioned_cut_set(text) == "Set D":
+        return (
+            "Set D is retired for new sales. The current choices are Set A Amadeus Signature, "
+            "Set B Amadeus Ember, and Set C Amadeus Grand Cut. Which of those suits you?"
+        )
     asks_cut_menu = bool(re.search(
         r"\bwhat\b.*\b(set|sets|cut|cuts)\b|"
         r"\b(set|sets|cut|cuts)\b.*\b(include|includes|mean|means|option|options|different|difference|sheet|list|explain)\b|"
@@ -2000,8 +2002,8 @@ def _set_recommendation_reply(message, facts, prior_context=None, knowledge=None
         suggestion = "Set C is the better fit if you want leaner freezer meat, mince and stew cuts with fewer fatty belly cuts."
         suggested_set = "Set C"
     elif re.search(r"\b(slow\s*cook|roast|roasting|family\s+meal|larger\s+cuts|bulk)\b", normalized):
-        suggestion = "Set D is the better fit if you want larger roasting cuts, shoulder, mixed chops, mince or stew meat, and soup bones for slow cooking and family meals."
-        suggested_set = "Set D"
+        suggestion = "Set C / Amadeus Grand Cut Collection is the whole-cut option, with a whole rib, belly, leg and shanks alongside neck and loin chops and stew meat."
+        suggested_set = "Set C"
     else:
         suggestion = (
             "For a family of 3, I would normally start with Set A. "
@@ -2254,7 +2256,7 @@ def _payment_state_reply(message, facts, prior_context, knowledge=None):
 
 def _next_fact_question(facts):
     if facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
-        return "That can work. For the cutting style, Set A is the safest family freezer pack. Should I note Set A for you, or would you like the other sets first?"
+        return "That can work. The current choices are Set A Amadeus Signature, Set B Amadeus Ember, and Set C Amadeus Grand Cut. Which collection should I note for this half?"
     if not facts.get("location"):
         return "Which town or area should I plan around so the farm run stays practical?"
     if not facts.get("delivery_or_collection"):
@@ -2325,7 +2327,7 @@ def _safe_llm_fact_patch(value):
         product_type = ""
     patch = {
         "product_type": product_type,
-        "cut_set": _normal_cut_set(value.get("cut_set")),
+        "cut_set": "" if _normal_cut_set(value.get("cut_set")) == "Set D" else _normal_cut_set(value.get("cut_set")),
         "location": _normal_location(value.get("location")),
         "timing": _clean(value.get("timing"), 120),
         "delivery_or_collection": _normal_delivery(value.get("delivery_or_collection")),
