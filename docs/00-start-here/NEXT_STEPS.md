@@ -1,6 +1,16 @@
-﻿# Next Steps
+# Next Steps
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
+## SAM-MEAT-LAUNCH-READINESS-1
+
+Complete the owner-assisted meat launch slice before any customer-send canary:
+use only Set A Amadeus Signature, Set B Amadeus Ember and Set C Amadeus Grand
+Cut; support one collection per half of a full carcass; prepare evidence-bound
+R130/kg VAT-inclusive estimates with a 50% estimated deposit and final
+butcher-confirmed packed-weight reconciliation; deliver only; leave delivery
+fee, timing and transport packaging unresolved; and keep every send, order,
+payment, allocation and slaughter action owner-protected. The authoritative
+cutting source is `external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md`.
 
 ## Beacon Marketing Department Roadmap - Owner Approval Queue
 

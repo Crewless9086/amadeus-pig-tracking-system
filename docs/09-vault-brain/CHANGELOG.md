@@ -1,4 +1,9 @@
 # Vault Brain Changelog
+## 2026-07-27 - SAM Meat owner-assisted launch truth reconciled
+
+- Replaced the retired four-set new-sales menu with Amadeus Signature, Ember and Grand Cut while preserving Set D as historical evidence only.
+- Recorded two independent half-carcass collection choices for a full carcass, R130/kg including VAT, a 50% estimated deposit, final butcher-confirmed packed-weight billing, delivery-only fulfilment and unresolved delivery fee/timing/transport packaging.
+- Kept customer send, binding quote/order, payment confirmation, reservation/allocation and slaughter actions owner-protected. Conversation 2033 remains a prepare-only regression; no customer or business action was performed.
 
 ## 2026-07-27 - CORE observe-only ownership handshake integrated
 
