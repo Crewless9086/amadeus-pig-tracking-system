@@ -1,5 +1,26 @@
 # Vault Brain Changelog
 
+## 2026-07-27 - ROOTLINE Daily Advisor integrated and verified
+
+- PR #544 merged normally as
+  `bd66fade8b753412a47994894f7e1aa881fc83f1`; all three exact-merge
+  checks passed. Render deployment `dep-d9jndo1oagis7390c2eg` is live at
+  that exact revision and `/health` returned HTTP 200.
+- One owner-authenticated read-only production verification returned the
+  ROOTLINE dashboard and Daily Advisor successfully. Anonymous direct Advisor
+  access returned structured HTTP 403, and the anonymous dashboard shell
+  contained no protected canary payload.
+- B12345 and C12345 both returned `Needs Data` with no proposed runtime.
+  Current weather was fresh while the forecast was stale; Unknown policy and
+  unavailable delivery evidence remained explicit and fail-closed.
+- Legacy planned minutes remained historical/provisional evidence. Observed
+  runtime, measured water and verified watering remained Unavailable. The
+  C12345 canary remained one supervised identity-and-shutdown proof and did
+  not become watering or routine control authority.
+- Every write, plan, command, schedule, workflow, n8n/IFTTT, retry and hardware
+  authority flag remained false. No migration, evidence row, production plan,
+  command, schedule, workflow, irrigation request or hardware action occurred.
+
 ## 2026-07-27 - ROOTLINE operating knowledge and Daily Advisor candidate
 
 - Recorded Charl's approved initial B12345/C12345 operating policy, keeping
