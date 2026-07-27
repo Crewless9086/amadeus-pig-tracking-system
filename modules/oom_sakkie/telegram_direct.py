@@ -15,6 +15,12 @@ from modules.oom_sakkie.telegram_gateway import (
     TRUTHY,
     parse_telegram_gateway_payload,
 )
+from modules.beacon.media_intake import (
+    complete_telegram_album,
+    handle_telegram_media_intake,
+    media_intake_policy,
+    telegram_media_envelope,
+)
 
 
 DIRECT_ENABLED_ENV = "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED"
@@ -101,6 +107,7 @@ def telegram_direct_policy(environ=None):
             "dispatch_enabled": False,
             "can_trigger_outbound_llm": False,
         },
+        "beacon_media_intake": media_intake_policy(source),
     }
 
 
@@ -190,6 +197,25 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         })
         return body, ack_status if ack_status >= 400 else 200
 
+    media = telegram_media_envelope(payload)
+    if media is not None:
+        allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
+        if media["owner_user_id"] not in allowed_ids:
+            body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
+            return body, status_code
+
+        def receipt_sender(chat_id, text):
+            result, _ = send_owner_telegram_reply(
+                chat_id=chat_id, text=text, environ=environ
+            )
+            return result
+
+        return handle_telegram_media_intake(
+            payload,
+            environ=environ,
+            receipt_sender=receipt_sender,
+        )
+
     parsed = parse_telegram_gateway_payload(payload)
     if not parsed["text"]:
         return _direct_result(False, "telegram_text_required", policy, 400)
@@ -198,6 +224,21 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
         body["telegram_user_id"] = parsed["telegram_user_id"]
         return body, status_code
+
+    if parsed["text"].strip().lower().startswith("/beacon-complete "):
+        completion_code = parsed["text"].strip().split(maxsplit=1)[1].strip()
+
+        def receipt_sender(chat_id, text):
+            result, _ = send_owner_telegram_reply(
+                chat_id=chat_id, text=text, environ=environ
+            )
+            return result
+
+        return complete_telegram_album({
+            "chat_id": parsed["telegram_chat_id"],
+            "owner_user_id": parsed["telegram_user_id"],
+            "completion_code": completion_code,
+        }, environ=environ, receipt_sender=receipt_sender)
 
     command = _telegram_command_for_text(parsed["text"])
     if command["kind"] == "help":

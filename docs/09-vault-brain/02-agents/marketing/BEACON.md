@@ -52,14 +52,17 @@ Beacon should become its own department with focused sub-agents:
 - `BEACON_MEDIA_LIBRARIAN.md` for media catalog, approval, and public-use status.
 - `BEACON_PERFORMANCE_ANALYST.md` for performance evidence, learning, and next-action recommendations.
 
-## Queued Media Intake Direction
+## Media Intake Foundation Candidate
 
 The next media-library milestone after the confirmed-publication learning loop
-is `BEACON-MEDIA-INTAKE-1`. The preferred owner workflow is OOM SAKKIE
+is `BEACON-MEDIA-INTAKE-1`. A default-disabled foundation candidate now
+implements the preferred owner workflow: OOM SAKKIE
 Telegram intake -> private BEACON raw storage -> BEACON understanding and
 cataloguing -> visual Farm App approval. It removes the routine
 OneDrive/manual-upload step while preserving separate intake, library,
-public-use and publication gates.
+public-use and publication gates. Its migration is unapplied, the gateway is
+inactive, videos remain unsupported pending bounded resumable transport, and
+no production canary has run.
 
 Canonical workflow:
 `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`.

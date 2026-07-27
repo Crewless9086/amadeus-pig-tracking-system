@@ -1,8 +1,8 @@
 # BEACON Media Intake Workflow
 
-Status: owner-approved direction, queued after BEACON's confirmed-publication
-learning work reached a clean integration point. Not yet implemented or
-activated.
+Status: owner-approved direction with a default-disabled foundation candidate.
+The additive migration is unapplied, the Telegram gate is inactive, and no
+production intake canary has run.
 
 ## Owner Outcome
 
@@ -42,6 +42,41 @@ or a second manual Farm App upload.
    album-level decisions are available where safe.
 9. Public use and later publication remain separate decisions.
 
+## Built Candidate Contract
+
+The `BEACON-MEDIA-INTAKE-1` candidate:
+
+- requires both the existing OOM SAKKIE owner-user allowlist and a separately
+  configured exact private-chat allowlist;
+- stores only process-keyed/HMAC-derived owner and chat identities in intake
+  evidence, never the raw chat or owner identifier;
+- validates replay identity before Telegram file access;
+- streams JPEG/PNG downloads in 64 KiB chunks through an 8 MiB hard limit,
+  ignoring `Content-Length` as authority over the observed byte count;
+- validates magic bytes, declared and returned MIME, complete decoding,
+  maximum 12,000-pixel dimensions, and a 40-megapixel pixel cap;
+- computes SHA-256 during bounded processing and verifies the private object
+  by storage readback before final metadata;
+- creates one canonical binary for identical bytes while retaining every
+  immutable Telegram source reference;
+- never uses perceptual similarity to merge assets;
+- exposes partial storage/metadata outcomes as failed, quarantined or
+  reconciliation-required rather than claiming cross-service atomicity;
+- sends one bounded, opaque `/beacon-complete` action for a Telegram album,
+  never exposes the provider media-group identifier, and derives immutable
+  final order from Telegram message order only after every item is durable;
+- supports owner-authenticated private thumbnail/contact-sheet review without
+  exposing storage URLs;
+- permits whole-album review only after durable explicit completion, and binds
+  every owner decision to a stable action identity plus its exact predecessor
+  so delayed delivery cannot become a new transition; and
+- keeps video visibly unsupported until bounded resumable transport is
+  separately designed and reviewed, and sends the owner one bounded
+  unsupported receipt without accessing the video file.
+
+The candidate is not operational until its migration and configuration receive
+separate authorization.
+
 ## Required Evidence
 
 Each asset or intake group should preserve:
@@ -56,7 +91,8 @@ Each asset or intake group should preserve:
 - owner-provided context;
 - BEACON observations and confidence;
 - duplicate and source-provenance links;
-- library decision, public-use decision, revocation, and usage history.
+- library/context decisions on the intake rail; public-use approval/revocation
+  on the existing canonical BEACON asset-event rail; and usage history.
 
 Bot credentials, private download URLs, signed storage URLs, unnecessary chat
 content, and unbounded Telegram metadata must not enter the asset record.
@@ -124,6 +160,11 @@ Initial authority excludes:
 - customer messaging;
 - animal identity or business-state mutation;
 - automatic historical imports.
+
+The gateway may send at most one bounded receipt to the already-validated
+owner private chat after durable single-item or explicitly completed album
+intake. That receipt is not general conversation or customer-message
+authority.
 
 ## Delivery Sequence
 

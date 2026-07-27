@@ -4,7 +4,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## Beacon Marketing Department Roadmap - Owner Approval Queue
 
-0. **BEACON-MEDIA-INTAKE-1 - queued next after current BEACON work reaches a clean integration point.** Use the existing owner-controlled OOM SAKKIE Telegram bot as the preferred mobile intake door for photos, videos, and albums; store them privately in BEACON raw intake; preserve owner context and album order; hash/deduplicate them; and present real thumbnails/contact sheets for library and public-use approval. Historical OneDrive/folder ingestion is a separate bounded follow-up using the same provenance contract. See `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`.
+0. **BEACON-MEDIA-INTAKE-1 - default-disabled foundation candidate built for review.** Use the existing owner-controlled OOM SAKKIE Telegram bot as the preferred mobile intake door; store validated JPEG/PNG media privately in BEACON raw intake; preserve owner context and explicit album order; hash/deduplicate exact bytes; and present real owner-authorized thumbnails/contact sheets for separate library and public-use decisions. The additive migration is unapplied, Telegram intake is inactive, videos remain visibly unsupported pending bounded resumable transport, and no first canary has run. Historical OneDrive/folder ingestion is a separate bounded follow-up using the same provenance contract. See `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`.
 
 Current production learning state (2026-07-27): one confirmed organic Page
 post and reliable run are persisted with media/post understanding; graduation
@@ -20,7 +20,7 @@ retrieve it early or access another post.
 5. `CHARLIE-MISSION-AE07E79AAFEF7728` - Meta insights, SAM lead and revenue attribution.
 6. `CHARLIE-MISSION-BD1FB9CC86FD0069` - Marketing command brief and optimization loop.
 
-BEACON-MEDIA-INTAKE-1 is an owner-approved direction and queued milestone, not an implementation or activation authorization. The numbered CHARLIE missions are `new`, not approved for automatic execution. Public posting remains exact-owner-confirmed; Telegram intake, historical import, scheduling, paid spend and creative-provider calls remain disabled until their own reviewed gates are integrated and activated.
+BEACON-MEDIA-INTAKE-1 is an owner-approved direction with built-only candidate code, not migration or activation authority. The numbered CHARLIE missions are `new`, not approved for automatic execution. Public posting remains exact-owner-confirmed; Telegram intake, historical import, scheduling, paid spend and creative-provider calls remain disabled until their own reviewed gates are integrated and activated.
 
 ## P0 Operational / Live Issues
 

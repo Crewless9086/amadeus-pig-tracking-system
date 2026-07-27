@@ -1,5 +1,24 @@
 # Vault Brain Changelog
 
+## 2026-07-27 - BEACON private media-intake foundation candidate
+
+- Built a default-disabled OOM SAKKIE-to-BEACON JPEG/PNG intake candidate with
+  exact owner-user/private-chat binding, deterministic replay identities,
+  bounded streaming, magic/MIME/decoder validation, server SHA-256, private
+  storage readback and explicit album completion.
+- Added an unapplied additive provenance migration with SHA-256 canonical
+  binary deduplication, immutable source links, append-only intake,
+  understanding and library events, RLS, client-role denial and least-
+  privilege service access.
+- Added owner-authenticated private thumbnails/contact sheets and separate
+  Library Accept, Public-use Approve, Reject, Archive and owner-context
+  controls. None grants publication authority.
+- Videos remain visibly unsupported until bounded resumable transport is
+  separately reviewed. Historical OneDrive/folder import remains unstarted.
+- Designed/built: yes/yes. Migration applied/gateway active/first intake
+  canary/historical import/public-use change/publication authority:
+  no/no/no/no/no/no/no.
+
 ## 2026-07-27 - BEACON owner media-intake direction
 
 - Recorded `BEACON-MEDIA-INTAKE-1` as the queued milestone after the

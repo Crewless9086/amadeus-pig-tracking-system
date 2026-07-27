@@ -500,3 +500,119 @@
 .beacon-content-operations{margin:0 0 18px;padding:20px;border:1px solid #c8d8cc;border-radius:10px;background:#f5faf6}.beacon-content-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:14px;margin-top:14px}.beacon-content-grid>section,.beacon-owner-packet{min-width:0;padding:14px;border:1px solid #d7ded6;border-radius:9px;background:#fff}.beacon-owner-packet{margin-top:14px}.beacon-delivery-state{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.beacon-delivery-state span{display:flex;justify-content:space-between;gap:8px;padding:9px;border-radius:7px;background:#f2e0e0;color:#7c2929;text-transform:capitalize}.beacon-delivery-state span[data-state=ready]{background:#e2f0e5;color:#24532e}.beacon-content-evidence{display:grid;gap:8px}.beacon-content-evidence>div,.beacon-content-media{display:grid;gap:3px;padding:10px;border-radius:7px;background:#f5f7f4;overflow-wrap:anywhere}.beacon-content-evidence span,.beacon-content-evidence p,.beacon-content-media span,.beacon-content-media small{color:#607066}.beacon-packet-copy{padding:14px;border:1px solid #d7ded6;border-radius:8px;background:#f8faf7;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.5}@media(max-width:720px){.beacon-content-grid,.beacon-delivery-state{grid-template-columns:1fr}}
 .beacon-content-media-sequence{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.beacon-content-media-sequence figure{display:grid;gap:6px;margin:0}.beacon-content-media-sequence img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:7px;background:#e7ece7}.beacon-content-media-sequence figcaption{display:grid;gap:2px;font-size:.82rem}.beacon-content-media-sequence figcaption span{color:#607066}@media(max-width:720px){.beacon-content-media-sequence{grid-template-columns:1fr}}
 .beacon-packet-decision{display:grid;gap:12px;margin-top:14px;padding:14px;border:1px solid #b8cab8;border-radius:9px;background:#f7faf7}.beacon-packet-decision h4{margin:3px 0}.beacon-approval-warning{margin:4px 0 0;padding:9px 11px;border-left:4px solid #b48019;background:#fff7e4;color:#765410;font-weight:800}.beacon-packet-decision-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.beacon-packet-decision-actions{display:flex;flex-wrap:wrap;gap:9px}.beacon-packet-decision-actions .button-link{flex:1 1 180px;width:auto;margin:0}.beacon-packet-decision-actions .button-link:disabled{cursor:not-allowed;opacity:.55}.button-link-danger{background:#7c2929;color:#fff}.beacon-packet-decision[data-state="recorded"]{border-color:#6c9a73;background:#eef6ef}@media(max-width:720px){.beacon-packet-decision-fields{grid-template-columns:1fr}.beacon-packet-decision-actions{display:grid}.beacon-packet-decision-actions .button-link{width:100%}}
+.beacon-intake-review {
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #d7ddd8);
+  border-radius: 16px;
+  background: #f7faf7;
+}
+
+.beacon-intake-contact-sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.9rem;
+}
+
+.beacon-intake-card {
+  overflow: hidden;
+  border: 1px solid #d3ddd5;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(24, 58, 37, 0.08);
+}
+
+.beacon-intake-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #e8eeea;
+}
+
+.beacon-intake-thumb {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.beacon-intake-card-body {
+  padding: 0.8rem;
+}
+
+.beacon-intake-card dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.6rem;
+  margin: 0.7rem 0;
+  font-size: 0.87rem;
+}
+
+.beacon-intake-card dt {
+  font-weight: 700;
+}
+
+.beacon-intake-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.beacon-intake-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.beacon-intake-card-actions button {
+  min-height: 42px;
+}
+
+.beacon-intake-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 4rem 1rem 1rem;
+  background: rgba(10, 22, 14, 0.86);
+}
+
+.beacon-intake-preview.hidden {
+  display: none;
+}
+
+.beacon-intake-preview img {
+  max-width: min(94vw, 1100px);
+  max-height: 82vh;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.beacon-intake-preview button {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+}
+
+@media (max-width: 620px) {
+  .beacon-intake-contact-sheet {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem;
+  }
+
+  .beacon-intake-card-body {
+    padding: 0.6rem;
+  }
+
+  .beacon-intake-card dl {
+    grid-template-columns: 1fr;
+  }
+
+  .beacon-intake-card dd {
+    margin-bottom: 0.35rem;
+  }
+}
