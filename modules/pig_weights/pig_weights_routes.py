@@ -342,6 +342,9 @@ def litter_profile(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/mark-weaned", methods=["POST"])
 def mark_litter_weaned_route(litter_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = mark_litter_profile_weaned(litter_id, payload)
     return jsonify(result), status_code
@@ -349,6 +352,9 @@ def mark_litter_weaned_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/weaning-day", methods=["POST"])
 def litter_weaning_day_route(litter_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     try:
         result, status_code = process_litter_profile_weaning_day(litter_id, payload)
@@ -366,6 +372,9 @@ def litter_weaning_day_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/newborn-health", methods=["POST"])
 def litter_newborn_health_route(litter_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_litter_profile_newborn_health(litter_id, payload)
     return jsonify(result), status_code
@@ -383,6 +392,9 @@ def litter_piglet_deaths_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/sex-counts", methods=["POST"])
 def litter_sex_counts_route(litter_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_litter_profile_piglet_sex_counts(litter_id, payload)
     return jsonify(result), status_code
@@ -390,6 +402,9 @@ def litter_sex_counts_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/tag-numbers", methods=["POST"])
 def litter_tag_numbers_route(litter_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = assign_litter_profile_piglet_tag_numbers(litter_id, payload)
     return jsonify(result), status_code
@@ -397,6 +412,9 @@ def litter_tag_numbers_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/reconcile-birth-counts", methods=["POST"])
 def litter_reconcile_birth_counts_route(litter_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = reconcile_litter_profile_birth_counts(litter_id, payload)
     return jsonify(result), status_code
@@ -404,6 +422,9 @@ def litter_reconcile_birth_counts_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/reclassify-stillborn", methods=["POST"])
 def litter_reclassify_stillborn_route(litter_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = reclassify_litter_profile_stillborn(litter_id, payload)
     return jsonify(result), status_code
@@ -411,6 +432,9 @@ def litter_reclassify_stillborn_route(litter_id):
 
 @pig_weights_bp.route("/master/pigs", methods=["POST"])
 def new_pig():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = create_new_pig(payload)
     return jsonify(result), status_code
@@ -432,6 +456,9 @@ def new_pen():
 
 @pig_weights_bp.route("/master/litters", methods=["POST"])
 def new_litter():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = create_new_litter(payload)
     return jsonify(result), status_code
@@ -439,6 +466,9 @@ def new_litter():
 
 @pig_weights_bp.route("/weights", methods=["POST"])
 def add_weight():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = create_weight_entry(payload)
     return jsonify(result), status_code
@@ -446,6 +476,9 @@ def add_weight():
 
 @pig_weights_bp.route("/weights-with-optional-move", methods=["POST"])
 def add_weight_with_optional_move():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = create_weight_entry_with_optional_move(payload)
     return jsonify(result), status_code
@@ -473,6 +506,9 @@ def bulk_batch_status(batch_id):
 
 @pig_weights_bp.route("/bulk-batches/<batch_id>/process", methods=["POST"])
 def bulk_batch_process(batch_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     try:
         result, status_code = process_bulk_weight_batch(batch_id, chunk_size=payload.get("chunk_size", 3))
@@ -483,6 +519,9 @@ def bulk_batch_process(batch_id):
 
 @pig_weights_bp.route("/bulk-batches/<batch_id>/retry-failed", methods=["POST"])
 def bulk_batch_retry_failed(batch_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     try:
         result, status_code = retry_failed_bulk_weight_batch(batch_id, chunk_size=payload.get("chunk_size", 3))
@@ -502,6 +541,9 @@ def preflight_weights_batch():
 
 @pig_weights_bp.route("/weights-batch", methods=["POST"])
 def add_weights_batch():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     try:
         result, status_code = create_bulk_weight_entries(payload)
@@ -512,6 +554,9 @@ def add_weights_batch():
 
 @pig_weights_bp.route("/treatments", methods=["POST"])
 def add_treatment():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = create_treatment_entry(payload)
     return jsonify(result), status_code
@@ -519,6 +564,9 @@ def add_treatment():
 
 @pig_weights_bp.route("/movements", methods=["POST"])
 def add_movement():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = create_movement_entry(payload)
     return jsonify(result), status_code
