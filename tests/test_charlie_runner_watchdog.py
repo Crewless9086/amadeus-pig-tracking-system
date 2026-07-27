@@ -6,6 +6,18 @@ from scripts.charlie_runner_watchdog import _configure_git_safe_directory, watch
 
 
 class CharlieRunnerWatchdogTests(unittest.TestCase):
+    def test_observe_only_state_disables_watchdog_without_queue_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = []
+            result = watchdog_tick(
+                status_reader=lambda: calls.append("status"),
+                starter=lambda: calls.append("start"),
+                supervisor_state_reader=lambda: {"execution_mode": "observe_only"},
+                state_path=Path(tmp) / "watchdog.json",
+                stop_path=Path(tmp) / "supervisor.stop",
+            )
+        self.assertEqual(result["status"], "observe_only_watchdog_recovery_disabled")
+        self.assertEqual(calls, [])
     def test_governed_stop_marker_prevents_watchdog_tick_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             stop = Path(tmp) / "supervisor.stop"

@@ -23,6 +23,10 @@ from modules.charlie.runner_control import (
     runner_status,
     start_runner,
 )
+from modules.charlie.process_ownership import (
+    process_tree_identity_digest,
+    verify_controller_acknowledgement,
+)
 from modules.charlie.runtime_integrity import cold_start_readiness
 
 
@@ -103,10 +107,96 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return payload
+    supervisor_state_path = state_path.with_name("supervisor.json")
+    supervisor_state = (
+        supervisor_state_reader()
+        if supervisor_state_reader
+        else _supervisor_state(supervisor_state_path)
+    )
+    if (
+        supervisor_state_reader is None
+        and supervisor_state_path.exists()
+        and not supervisor_state
+    ):
+        payload = {
+            "status": "supervisor_state_unreadable",
+            "started": False,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "runner_status_before": "not_read_with_unreadable_supervisor_state",
+        }
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return payload
+    persisted_mode = str(supervisor_state.get("execution_mode") or "")
+    final_ack = supervisor_state.get("controller_final_acknowledgement")
+    signed_mode = str(
+        (final_ack if isinstance(final_ack, dict) else {}).get("execution_mode")
+        or ""
+    )
+    if not persisted_mode and signed_mode == "observe_only":
+        persisted_mode = "observe_only"
+    elif not persisted_mode:
+        persisted_mode = "ordinary"
+    if supervisor_state and persisted_mode not in {"ordinary", "observe_only"}:
+        payload = {
+            "status": "execution_mode_evidence_invalid",
+            "started": False,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "runner_status_before": "not_read_with_invalid_mode_evidence",
+        }
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return payload
+    if persisted_mode == "observe_only":
+        public_key = str(supervisor_state.get("controller_public_key") or "")
+        if isinstance(final_ack, dict):
+            unsigned = {
+                key: value for key, value in final_ack.items()
+                if key != "signature"
+            }
+            signature_valid = (
+                str(final_ack.get("execution_mode") or "") == "observe_only"
+                and str(final_ack.get("generation") or "")
+                == str(supervisor_state.get("generation") or "")
+                and str(final_ack.get("revision") or "")
+                == str(supervisor_state.get("intended_execution_revision") or "")
+                and str(final_ack.get("supervisor_startup_nonce") or "")
+                == str(supervisor_state.get("startup_nonce") or "")
+                and str(final_ack.get("supervisor_tree_digest") or "")
+                == process_tree_identity_digest(
+                    supervisor_state.get("supervisor_tree_identity")
+                )
+                and str(final_ack.get("runner_tree_digest") or "")
+                == process_tree_identity_digest(
+                    supervisor_state.get("process_tree_identity")
+                )
+                and bool(public_key)
+                and verify_controller_acknowledgement(
+                    unsigned, final_ack.get("signature"), public_key
+                )
+            )
+            if not signature_valid:
+                payload = {
+                    "status": "observe_only_authorization_invalid",
+                    "started": False,
+                    "checked_at": datetime.now(timezone.utc).isoformat(),
+                    "runner_status_before": "not_read_with_invalid_authorization",
+                }
+                state_path.parent.mkdir(parents=True, exist_ok=True)
+                state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                return payload
+        payload = {
+            "status": "observe_only_watchdog_recovery_disabled",
+            "started": False,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "runner_status_before": "not_read_in_observe_only",
+        }
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return payload
     status = status_reader()
     supervisor_pid = supervisor_lock_reader()
     hold = hold_reader() if hold_reader else _infrastructure_hold(state_path.with_name("supervisor.json"))
-    supervisor_state = supervisor_state_reader() if supervisor_state_reader else _supervisor_state(state_path.with_name("supervisor.json"))
     if hold:
         result = {
             "status": "infrastructure_hold",

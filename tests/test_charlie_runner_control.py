@@ -45,6 +45,35 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    def test_observe_only_packet_requires_exact_mode(self):
+        tree = successful_bootstrap_observation(
+            100, generation="g", revision="r", startup_nonce="n"
+        )["tree"]
+        packet = {
+            "version": runner_control.SUPERVISOR_PACKET_VERSION,
+            "generation": "g",
+            "startup_nonce": "n",
+            "created_at": "now",
+            "intended_runtime_revision": "r",
+            "intended_execution_revision": "r",
+            "runner_state": "not_spawned",
+            "status": "supervisor_ready",
+            "supervisor_tree_identity": tree,
+        }
+        valid, reason = runner_control.validate_supervisor_packet(
+            packet, "g", "r", "r",
+            runner_states={"not_spawned"}, startup_nonce="n",
+            statuses={"supervisor_ready"}, execution_mode="observe_only",
+        )
+        self.assertFalse(valid)
+        self.assertEqual(reason, "supervisor_packet_execution_mode_mismatch")
+
+    def test_invalid_execution_mode_never_spawns(self):
+        result, status = runner_control.start_runner(
+            status_override={"active": False}, execution_mode="forged"
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(result["status"], "execution_mode_invalid")
     @unittest.skipUnless(os.name == "nt", "Windows launcher-first exit harness")
     def test_windows_exited_launcher_still_contains_unobserved_child(self):
         powershell = (

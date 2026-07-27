@@ -15,6 +15,51 @@ SUBPROCESS_TESTS_ENABLED = os.getenv("CHARLIE_SUBPROCESS_TESTS_ENABLED") == "1"
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_observe_only_spawn_is_explicit_and_recovery_is_unreachable(self):
+        child = Mock(pid=101)
+        child.wait.return_value = 0
+        popen = Mock(return_value=child)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(
+            supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(
+            supervisor, "STOP_PATH", Path(tmp) / "stop"
+        ), patch.object(
+            supervisor, "redact_tree_in_place", return_value={"errors": []}
+        ), patch.dict(
+            os.environ,
+            {
+                "CHARLIE_CORE_EXECUTION_MODE": "observe_only",
+                "SUPABASE_SERVICE_ROLE_KEY": "must-not-cross",
+                "PROVIDER_KEY": "must-not-cross",
+                "DATABASE_URL": "must-not-cross",
+            },
+            clear=False,
+        ):
+            supervisor.supervise_runner(
+                popen_factory=popen,
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=lambda: (_ for _ in ()).throw(
+                    AssertionError("recovery must be unreachable")
+                ),
+                acknowledgement_fn=supervisor._test_acknowledgement,
+                generation="observe-generation",
+            )
+            packet = json.loads(
+                (Path(tmp) / "supervisor.json").read_text(encoding="utf-8")
+            )
+        self.assertTrue(
+            str(popen.call_args.args[0][-1]).endswith("charlie_observe_only_runner.py")
+        )
+        self.assertNotIn("DATABASE_URL", popen.call_args.kwargs["env"])
+        self.assertNotIn("SUPABASE_SERVICE_ROLE_KEY", popen.call_args.kwargs["env"])
+        self.assertNotIn("PROVIDER_KEY", popen.call_args.kwargs["env"])
+        self.assertEqual(packet["execution_mode"], "observe_only")
+
     def test_recovery_runs_only_after_controller_final_authorization(self):
         observed = []
         child = Mock(pid=101)
