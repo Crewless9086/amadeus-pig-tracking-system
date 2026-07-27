@@ -6,7 +6,10 @@ from unittest.mock import patch
 from modules.sales.riversdale_auction_list import (
     eligibility_tokens, read_auction_list, record_auction_list_events,
 )
-from modules.pig_weights.pig_weights_service import get_riversdale_auction_list
+from modules.pig_weights.pig_weights_service import (
+    get_riversdale_auction_list,
+    get_riversdale_auction_recommendation,
+)
 
 
 def packet(cycle="cycle-a", pig_id="PIG-1", *, eligible=True):
@@ -14,6 +17,7 @@ def packet(cycle="cycle-a", pig_id="PIG-1", *, eligible=True):
         "withdrawal_clear": "Yes" if eligible else "Unknown",
         "observed_quality": "Suitable" if eligible else "Unknown",
         "health_status": "Clear" if eligible else "Hold",
+        "medical_status": "Clear" if eligible else "Follow-up hold",
     }
     return {
         "success": True,
@@ -162,6 +166,88 @@ class RiversdaleAuctionListTests(unittest.TestCase):
         self.assertIn("PIG-1", eligibility_tokens(packet()))
         self.assertEqual(eligibility_tokens(packet(eligible=False)), {})
 
+    def test_unknown_or_follow_up_medical_state_remains_blocked(self):
+        for status in ("Unknown", "Follow-up hold", ""):
+            with self.subTest(status=status):
+                value = packet()
+                value["candidate_preview"][0]["herdmaster_evidence"][
+                    "medical_status"
+                ] = status
+                self.assertEqual(eligibility_tokens(value), {})
+
+    def test_quality_review_cannot_override_withdrawal_hold(self):
+        value = packet()
+        value["candidate_preview"][0]["herdmaster_evidence"].update({
+            "withdrawal_clear": "No",
+            "withdrawal_evidence_state": "hold",
+            "observed_quality": "Suitable",
+            "health_status": "Clear",
+            "medical_status": "Clear",
+        })
+        self.assertEqual(eligibility_tokens(value), {})
+
+    def test_withdrawal_clearance_cannot_replace_physical_quality(self):
+        value = packet()
+        value["candidate_preview"][0]["herdmaster_evidence"].update({
+            "withdrawal_clear": "Yes",
+            "withdrawal_evidence_state": "cleared",
+            "observed_quality": "Unknown",
+            "health_status": "Clear",
+            "medical_status": "Clear",
+        })
+        self.assertEqual(eligibility_tokens(value), {})
+
+    def test_both_evidence_sets_select_only_matching_animal(self):
+        value = packet()
+        value["candidate_preview"].append({
+            "pig_id": "PIG-2",
+            "herdmaster_evidence": {
+                "withdrawal_clear": "Yes",
+                "withdrawal_evidence_state": "cleared",
+                "observed_quality": "Unknown",
+                "health_status": "Clear",
+                "medical_status": "Clear",
+            },
+        })
+        self.assertEqual(set(eligibility_tokens(value)), {"PIG-1"})
+
+    @patch(
+        "modules.pig_weights.pig_weights_service.read_latest_candidate_reviews"
+    )
+    @patch(
+        "modules.pig_weights.pig_weights_service.load_owner_confirmed_cycle"
+    )
+    @patch(
+        "modules.pig_weights.pig_weights_service.get_pig_allocation_readiness"
+    )
+    def test_recommendation_projects_canonical_withdrawal_and_matching_review(
+            self, readiness, confirmation, reviews):
+        readiness.return_value = {"pigs": [{
+            "pig_id": "PIG-1", "growth_class": "Extremely Slow",
+            "readiness_bucket": "Livestock Candidate",
+            "withdrawal_evidence_state": "cleared",
+            "health_status": "Clear",
+            "medical_status": "Clear",
+        }]}
+        confirmation.return_value = {
+            "auction_cycle_id": "cycle-a", "operating": True,
+            "confirmed_date": "2026-08-05", "valid": True,
+        }
+        reviews.return_value = ({
+            "PIG-1": {
+                "quality_state": "suitable", "withdrawal_state": "cleared",
+                "review_id": "REVIEW-1", "fresh": True,
+            }
+        }, 200)
+        result = get_riversdale_auction_recommendation(
+            today=datetime(2026, 7, 27, tzinfo=timezone.utc).date()
+        )
+        evidence = result["candidate_preview"][0]["herdmaster_evidence"]
+        self.assertEqual(evidence["withdrawal_clear"], "Yes")
+        self.assertEqual(evidence["withdrawal_evidence_state"], "cleared")
+        self.assertEqual(evidence["observed_quality"], "suitable")
+        self.assertIn("PIG-1", eligibility_tokens(result))
+
     def test_frontend_binds_cycle_evidence_and_prior_cause(self):
         js = Path("static/js/pigAllocation.js").read_text(encoding="utf-8")
         for contract_field in (
@@ -242,6 +328,24 @@ class RiversdaleAuctionListTests(unittest.TestCase):
         self.assertIn(
             "Auction List unavailable; candidates remain read-only", frontend
         )
+
+    def test_integrated_review_is_explicit_and_checkbox_remains_local(self):
+        frontend = Path("static/js/pigAllocation.js").read_text()
+        self.assertIn("Details / Review", frontend)
+        self.assertIn("renderAuctionEvidenceReview", frontend)
+        self.assertIn(
+            'fetch("/api/pig-weights/riversdale-auction-candidate-reviews"',
+            frontend,
+        )
+        checkbox_at = frontend.index(
+            'bodyEl.addEventListener("change", (event) =>'
+        )
+        add_at = frontend.index(
+            'auctionAddButton?.addEventListener("click"'
+        )
+        self.assertLess(checkbox_at, add_at)
+        checkbox_block = frontend[checkbox_at:add_at]
+        self.assertNotIn("fetch(", checkbox_block)
 
 
 if __name__ == "__main__":

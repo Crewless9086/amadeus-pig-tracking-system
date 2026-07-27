@@ -64,7 +64,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
 
         states = {row["Pig_ID"]: row["Withdrawal_Evidence_State"] for row in result["overview_rows"]}
         self.assertEqual(states, {
-            "PIG-NONE": "not_applicable",
+            "PIG-NONE": "unknown",
             "PIG-NA": "not_applicable",
             "PIG-CLEAR": "cleared",
             "PIG-HOLD": "hold",

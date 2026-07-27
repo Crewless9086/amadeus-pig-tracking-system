@@ -56,10 +56,12 @@ def eligibility_tokens(packet):
         withdrawal = str((evidence or {}).get("withdrawal_clear") or "").strip().lower()
         quality = str((evidence or {}).get("observed_quality") or "").strip().lower()
         health = str((evidence or {}).get("health_status") or "").strip().lower()
+        medical = str((evidence or {}).get("medical_status") or "").strip().lower()
         eligible = (
             withdrawal in {"yes", "clear", "cleared", "true", "1"}
             and quality in {"suitable", "clear", "cleared", "yes"}
-            and bool(health) and "hold" not in health
+            and medical == "clear"
+            and "hold" not in health
         )
         if pig_id and isinstance(evidence, dict) and eligible:
             result[pig_id] = _canonical_hash({

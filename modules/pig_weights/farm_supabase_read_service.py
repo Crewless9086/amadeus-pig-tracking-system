@@ -846,7 +846,9 @@ def get_allocation_input_rows(connect_factory=None):
             withdrawal_evidence_state = "unknown"
         elif applicable_ended:
             withdrawal_evidence_state = "cleared"
-        elif not withdrawal_history or all(item.get("withdrawal_days") == 0 for item in withdrawal_history):
+        elif withdrawal_history and all(
+            item.get("withdrawal_days") == 0 for item in withdrawal_history
+        ):
             withdrawal_evidence_state = "not_applicable"
         else:
             withdrawal_evidence_state = "unknown"

@@ -166,7 +166,7 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
                     "pig_id": pig_id,
                     "herdmaster_evidence": {
                         "withdrawal_clear": "Yes", "observed_quality": "Suitable",
-                        "health_status": "Clear",
+                        "health_status": "Clear", "medical_status": "Clear",
                     },
                 } for pig_id in eligible_ids],
                 "coordination_evidence": {"herdmaster": "canonical_allocation_rows"},
@@ -313,7 +313,7 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
                 "pig_id": pig_id,
                 "herdmaster_evidence": {
                     "withdrawal_clear": "Yes", "observed_quality": "Suitable",
-                    "health_status": "Clear",
+                    "health_status": "Clear", "medical_status": "Clear",
                 },
             } for pig_id in pigs],
             "coordination_evidence": {"herdmaster": "canonical_allocation_rows"},

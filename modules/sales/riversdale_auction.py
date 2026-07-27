@@ -374,8 +374,13 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
                 "herdmaster_evidence": {
                     "litter_quality": pig.get("litter_quality", ""),
                     "health_status": pig.get("health_status", ""),
+                    "medical_status": pig.get("medical_status", ""),
                     "withdrawal_clear": pig.get("withdrawal_clear", ""),
+                    "withdrawal_evidence_state": pig.get(
+                        "withdrawal_evidence_state", "unknown"
+                    ),
                     "observed_quality": pig.get("observed_quality", pig.get("quality_status", "")),
+                    "auction_review": pig.get("auction_review_evidence", {}),
                     "customer_suitability": pig.get("customer_suitability", ""),
                 },
                 "ledger_evidence": ledger_evidence.get(pig_id, ledger_evidence.get("default", {})),
@@ -396,7 +401,14 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
         for item in candidates
     )
     health_evidence_complete = all(
-        _has_text(item["herdmaster_evidence"].get("health_status"))
+        str(item["herdmaster_evidence"].get("medical_status") or "").strip().lower()
+        == "clear"
+        and bool(str(
+            item["herdmaster_evidence"].get("health_status") or ""
+        ).strip())
+        and "hold" not in str(
+            item["herdmaster_evidence"].get("health_status") or ""
+        ).strip().lower()
         for item in candidates
     )
     withdrawal_evidence_complete = all(
