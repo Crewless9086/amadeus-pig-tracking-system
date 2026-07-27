@@ -1,7 +1,7 @@
 # ROOTLINE Operating Knowledge Policy Review
 
-Status: implementation deployed and zero-state schema active. No production
-proposal, review or activation exists.
+Status: implementation deployed and schema active. One immutable live-rain
+proposal exists; it is not owner-reviewed or active for advice.
 
 ## Decision
 
@@ -123,6 +123,42 @@ B12345 and C12345 remained `Needs Data`; unresolved values stayed
 `Unknown`/`Unavailable`, and no runtime or measured water was inferred.
 
 Policy persistence foundation deployed: yes. Proposal/review/activation
-recorded: no/no/no. Plan or command generated: no. Schedule/workflow,
+recorded: yes/no/no. Plan or command generated: no. Schedule/workflow,
 IFTTT/n8n, retry, transport and hardware authority: all false. Irrigation or
 hardware action: none.
+
+## Live-rain partial proposal result
+
+PR #552 was rebased conflict-free onto
+`0e8c8869067b94505550db48aae83ecc967e9c4d`. Its stable patch identity
+remained unchanged and its effective scope remained exactly five reviewed
+implementation/UI/test files. It merged normally as
+`c2c2fa4cd7df4d0ba9d75b886770071b3bd6c0db` from exact reviewed head
+`a2dd6cf5fc73f130f899092737826b2660c3d8ec`.
+
+Exact-merge CI passed: CHARLIE CORE `30298640334`, disposable-PostgreSQL
+audit rails `30298640894`, and Playwright `30298640785`. Render deployment
+`dep-d9jrefjtqb8s73av5ba0` reached live at the exact merge revision and
+`/health` returned HTTP 200.
+
+Using the protected owner-admin route and server-derived Charl identity, one
+immutable proposal was recorded as
+`ROOTLINE-POLICY-265279FBF16C45ECC2DB4D94`, version 1. It specifies that fresh
+`current_rain_rate_mm_per_hour` strictly greater than `0.2` produces `Hold`;
+exactly `0.2` is non-triggering. Rain-release/dry-interval policy and every
+unrelated unresolved field remain `Unknown`.
+
+Pre-write inspection found no equivalent or other proposal. The initial
+request returned `proposal_recorded`; one deliberate identical replay returned
+`proposal_replay` with `writes_performed=false`. Final production evidence is
+exactly one immutable version and one `proposed` event, with zero owner-review
+events, zero activation events and a null active policy. The Daily Advisor
+active result remained unchanged. Preview marks the partial proposal valid and
+recordable, documents the future rain-triggered `Hold`, and remains
+`Needs Data` because release behavior is unresolved.
+
+Desktop and mobile owner-only verification showed the proposal, deliberate
+`Unknown` defaults, valid `Needs Data` messaging, and separate Record, Review
+and Activate lifecycle steps. No policy review or activation, plan, command,
+schedule, workflow, transport, retry, IFTTT/n8n call, telemetry/farm-data
+write, irrigation action or hardware authority occurred.
