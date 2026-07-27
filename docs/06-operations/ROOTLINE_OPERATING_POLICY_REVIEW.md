@@ -1,7 +1,7 @@
 # ROOTLINE Operating Knowledge Policy Review
 
-Status: reviewed candidate only. Migration unapplied. No production proposal,
-review or activation exists.
+Status: implementation deployed and zero-state schema active. No production
+proposal, review or activation exists.
 
 ## Decision
 
@@ -91,3 +91,38 @@ versions and events database-constrain the following to false:
 This PR does not apply the migration, create a production proposal, review or
 activation, generate a production plan or command, change configuration, call
 IFTTT/n8n, or operate irrigation hardware.
+
+## Controlled integration and zero-state activation
+
+PR #550 merged normally as
+`2ea2598ec2869d34f69d8096abca987b758a8242`. Exact-merge CHARLIE CORE,
+disposable-PostgreSQL audit-rails and Playwright checks passed. Render
+deployment `dep-d9jpjnn41pts73bfem0g` reached live at that exact revision and
+`/health` returned HTTP 200.
+
+Migration `202607270002_create_rootline_operating_policies`, SHA-256
+`802e55410d0e0e23de82c348a8d15d307f48389fd86000b318bd2953382301e9`,
+passed absent-object preflight and a complete rolled-back rehearsal before
+transactional production application. Fresh pre-application schema-only
+snapshot
+`C:\tmp\rootline-operating-policy-schema-before-20260727T175355Z.json`
+has SHA-256
+`c95d8f37ac57f25f1602f5d70182343b25d919ae455ecf45527be2132ca1882b`.
+
+Post-application inspection proved two RLS-enabled tables, 46 columns, 47
+constraints, eight indexes, four trigger rows, four dedicated functions, one
+sequence and the exact migration-log entry. PUBLIC, anon and authenticated
+have no direct table, sequence or function path. The service role has SELECT
+on both tables and EXECUTE only on the two reviewed append functions; it has
+no direct INSERT, UPDATE, DELETE, TRUNCATE or sequence privilege.
+
+Both production policy tables remained at exactly zero rows before and after
+GET-only verification. Anonymous policy API and page access returned HTTP 403.
+The owner policy page, policy API and Daily Advisor returned HTTP 200.
+B12345 and C12345 remained `Needs Data`; unresolved values stayed
+`Unknown`/`Unavailable`, and no runtime or measured water was inferred.
+
+Policy persistence foundation deployed: yes. Proposal/review/activation
+recorded: no/no/no. Plan or command generated: no. Schedule/workflow,
+IFTTT/n8n, retry, transport and hardware authority: all false. Irrigation or
+hardware action: none.
