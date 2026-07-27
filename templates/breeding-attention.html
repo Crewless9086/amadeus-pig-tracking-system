@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Breeding Attention</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell"><div class="page-card">
+    <div class="page-header page-header-with-link">
+      <div><h1>Breeding Attention</h1><p id="attention_freshness">Loading owner-only evidence…</p></div>
+      <div><a href="/breeding-analytics" class="secondary-link">Breeding Analytics</a><a href="/" class="secondary-link">Dashboard</a></div>
+    </div>
+    <label>Attention
+      <select id="attention_filter"><option value="">All current sows and gilts</option></select>
+    </label>
+    <div id="attention_counts" class="bulk-weight-summary breeding-summary"></div>
+    <div id="attention_message" class="message-box hidden"></div>
+    <div class="simple-table-wrap">
+      <table class="simple-table breeding-analytics-table">
+        <thead><tr><th>Animal</th><th>Current explained state</th><th>Evidence dates</th><th>Freshness</th><th>Confidence</th><th>Missing/conflicting facts</th><th>Human action</th></tr></thead>
+        <tbody id="attention_body"><tr><td colspan="7" class="table-empty">Loading breeding attention…</td></tr></tbody>
+      </table>
+    </div>
+    <p class="field-hint">Advisory only. This view cannot record heat, mating, pregnancy, medical, lifecycle, purpose, availability, or farm changes.</p>
+  </div></div>
+  <script src="{{ url_for('static', filename='js/breedingAttention.js') }}"></script>
+</body>
+</html>
