@@ -798,12 +798,35 @@ def stop_runner():
         }
         _write_stop_evidence(supervisor, tree, result)
         return result, 409
+    supervisor_tree = supervisor.get("supervisor_tree_identity")
+    supervisor_containment = {"success": True, "reason": "supervisor_tree_absent"}
+    if (
+        target_kind == "runner"
+        and isinstance(supervisor_tree, dict)
+        and supervisor_tree.get("root")
+    ):
+        supervisor_containment = _contain_observed_tree(
+            supervisor_tree,
+            allow_root_current_descendant=False,
+        )
+        if not supervisor_containment.get("success"):
+            result = {
+                "success": False,
+                "status": "supervisor_process_ownership_not_proven",
+                "reason": supervisor_containment.get("reason"),
+                "pids": stopped,
+                "runner_termination": termination,
+                "supervisor_containment": supervisor_containment,
+            }
+            _write_stop_evidence(supervisor, tree, result)
+            return result, 409
     result = {
         "success": True,
         "status": "runner_stop_requested",
         "pids": stopped,
         "target_kind": target_kind,
         "logical_process_tree": decision,
+        "supervisor_containment": supervisor_containment,
     }
     _write_stop_evidence(supervisor, tree, result)
     return result, 200
@@ -1100,7 +1123,7 @@ def _write_startup_failure(generation, startup_nonce, revision, reason, tree):
     return evidence
 
 
-def _contain_observed_tree(tree):
+def _contain_observed_tree(tree, *, allow_root_current_descendant=True):
     root = tree.get("root") if isinstance(tree, dict) else {}
     if not isinstance(root, dict) or not root.get("pid"):
         return {"success": False, "reason": "ownership_identity_incomplete:root.pid"}
@@ -1118,7 +1141,9 @@ def _contain_observed_tree(tree):
         decision = _stop_process_tree(
             record,
             expected,
-            allow_current_descendant=record is root,
+            allow_current_descendant=(
+                allow_root_current_descendant and record is root
+            ),
         )
         decisions.append(decision)
         if decision.get("terminated"):

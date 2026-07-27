@@ -174,6 +174,10 @@ def process_tree_identity_digest(tree):
         "version": str(tree.get("version") or ""),
         "runner_generation": str(tree.get("runner_generation") or ""),
         "root_pid": int(tree.get("root_pid") or 0),
+        "root": {
+            field: (tree.get("root") or {}).get(field)
+            for field in stable_fields
+        },
         "members": members,
     }
     return hashlib.sha256(
@@ -282,6 +286,13 @@ def validate_bootstrap_tree(
         return _deny("ownership_identity_incomplete:duplicate_pid")
     if root_pid not in member_pids:
         return _deny("ownership_identity_incomplete:root_member")
+    canonical_root = next(
+        (item for item in members if int(item.get("pid") or -1) == root_pid),
+        {},
+    )
+    root_fields = set(REQUIRED_IDENTITY_FIELDS) | {"process_role"}
+    if any(root.get(field) != canonical_root.get(field) for field in root_fields):
+        return _deny("root_member_identity_mismatch")
     descendants = [item for item in members if int(item["pid"]) != root_pid]
     if require_interpreter and not descendants:
         return _deny("ownership_identity_incomplete:interpreter")

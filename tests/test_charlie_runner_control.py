@@ -406,6 +406,9 @@ class CharlieRunnerControlTests(unittest.TestCase):
                     ):
                         stopped, stop_status = runner_control.stop_runner()
                     self.assertEqual(stop_status, 200, stopped)
+                    self.assertTrue(
+                        stopped["supervisor_containment"]["success"], stopped
+                    )
                     self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
                     deadline = time.monotonic() + 10
                     while (
@@ -414,6 +417,11 @@ class CharlieRunnerControlTests(unittest.TestCase):
                     ):
                         time.sleep(0.05)
                     self.assertIsNone(runner_control.inspect_process(started_pid))
+                    for runner_pid in runner_pids:
+                        self.assertIsNone(
+                            runner_control.inspect_process(runner_pid),
+                            runner_pid,
+                        )
                     for publisher in publisher_threads:
                         publisher.join(timeout=5)
                 finally:
@@ -661,7 +669,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
 
     def test_empty_observation_falls_back_to_exact_spawn_handle_and_verifies_exit(self):
         process = Mock(pid=4321)
-        process.poll.side_effect = [None, 1]
+        process.poll.side_effect = lambda: 1 if process.wait.called else None
         with patch.object(
             runner_control, "_contain_observed_tree",
             return_value={"success": False, "reason": "ownership_identity_incomplete"},
