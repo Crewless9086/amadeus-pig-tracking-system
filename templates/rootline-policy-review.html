@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ROOTLINE Operating Knowledge</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+  <main class="dashboard-shell">
+    <header class="dashboard-header">
+      <div>
+        <p class="eyebrow">Owner-only · advice governance</p>
+        <h1>ROOTLINE Operating Knowledge</h1>
+        <p>Review immutable policy proposals before explicitly activating an exact version for advice.</p>
+      </div>
+      <a class="ops-text-link" href="/">Back to Daily Advisor</a>
+    </header>
+
+    <section class="ops-panel" aria-labelledby="safety-title">
+      <h2 id="safety-title">Command-inert policy review</h2>
+      <p class="ops-note">Nothing entered here generates a plan or command, changes a schedule, calls IFTTT/n8n, retries, or controls irrigation hardware.</p>
+      <div class="ops-metric-grid">
+        <div class="ops-metric"><span>Proposal</span><strong>Not active</strong></div>
+        <div class="ops-metric"><span>Owner reviewed</span><strong>Not active</strong></div>
+        <div class="ops-metric"><span>Active for advice</span><strong>Explicit action only</strong></div>
+      </div>
+      <p id="policy_schema_status" role="status">Loading policy evidence…</p>
+    </section>
+
+    <section class="ops-panel">
+      <h2>Decision guidance</h2>
+      <div id="policy_guidance" class="ops-list"><div class="ops-empty-inline">Loading guidance…</div></div>
+    </section>
+
+    <form id="policy_form" class="ops-panel" novalidate>
+      <h2>Draft a proposal</h2>
+      <p>Choose <strong>Unknown</strong> deliberately whenever authoritative evidence or an owner decision is missing.</p>
+
+      <fieldset>
+        <legend>Seasonal boundaries</legend>
+        <label><input type="checkbox" name="season_unknown" data-controls="summer_start,winter_start" checked> Unknown</label>
+        <label>Summer starts <input name="summer_start" type="text" placeholder="MM-DD"></label>
+        <label>Winter starts <input name="winter_start" type="text" placeholder="MM-DD"></label>
+      </fieldset>
+
+      <div class="ops-grid">
+        {% for zone_id, crop in [('B12345', 'lucerne'), ('C12345', 'vegetables')] %}
+        <fieldset>
+          <legend>{{ zone_id }} · {{ crop }}</legend>
+          <label><input type="checkbox" name="{{ zone_id }}_window_unknown" data-controls="{{ zone_id }}_start,{{ zone_id }}_end" checked> Exact daylight window Unknown</label>
+          <label>Start <input name="{{ zone_id }}_start" type="time"></label>
+          <label>End <input name="{{ zone_id }}_end" type="time"></label>
+          <label><input type="checkbox" name="{{ zone_id }}_min_unknown" data-controls="{{ zone_id }}_min" checked> Minimum useful runtime Unknown</label>
+          <label>Minimum minutes <input name="{{ zone_id }}_min" type="number" min="1" max="1440"></label>
+          <label><input type="checkbox" name="{{ zone_id }}_max_unknown" data-controls="{{ zone_id }}_max" checked> Maximum continuous runtime Unknown</label>
+          <label>Maximum minutes <input name="{{ zone_id }}_max" type="number" min="1" max="1440"></label>
+          <label><input type="checkbox" name="{{ zone_id }}_crop_unknown" data-controls="{{ zone_id }}_low,{{ zone_id }}_medium,{{ zone_id }}_high" checked> Crop-need bands Unknown</label>
+          <label>Low mm/day <input name="{{ zone_id }}_low" type="number" min="0" max="50" step="0.1"></label>
+          <label>Medium mm/day <input name="{{ zone_id }}_medium" type="number" min="0" max="50" step="0.1"></label>
+          <label>High mm/day <input name="{{ zone_id }}_high" type="number" min="0" max="50" step="0.1"></label>
+        </fieldset>
+        {% endfor %}
+      </div>
+
+      <fieldset>
+        <legend>Weather advice limits</legend>
+        <label><input type="checkbox" name="forecast_unknown" data-controls="forecast_amount,forecast_probability,forecast_horizon" checked> Forecast-rain rule Unknown</label>
+        <label>Amount (mm) <input name="forecast_amount" type="number" min="0" max="200" step="0.1"></label>
+        <label>Probability (%) <input name="forecast_probability" type="number" min="0" max="100" step="0.1"></label>
+        <label>Horizon (hours) <input name="forecast_horizon" type="number" min="1" max="168"></label>
+        <label><input type="checkbox" name="temperature_unknown" data-controls="temperature_min,temperature_max" checked> Temperature limits Unknown</label>
+        <label>Minimum (°C) <input name="temperature_min" type="number" min="-20" max="50" step="0.1"></label>
+        <label>Maximum (°C) <input name="temperature_max" type="number" min="-20" max="60" step="0.1"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Physical evidence</legend>
+        <label>Controller power-loss state
+          <select name="power_loss" data-controls="power_note">
+            <option>Unknown</option>
+            <option value="fail_closed_physically_verified">Fail closed physically verified</option>
+            <option value="fails_open_physically_verified">Fails open physically verified</option>
+            <option value="other_physically_verified">Other physically verified</option>
+          </select>
+        </label>
+        <label>Power-loss evidence <textarea name="power_note" maxlength="500"></textarea></label>
+        <label>Residual drainage
+          <select name="drainage" data-controls="drainage_seconds,drainage_note">
+            <option>Unknown</option>
+            <option value="none">None</option>
+            <option value="diminishing">Diminishing</option>
+            <option value="continued_full_pressure">Continued full pressure</option>
+          </select>
+        </label>
+        <label>Observed seconds <input name="drainage_seconds" type="number" min="0" max="1800"></label>
+        <label>Drainage evidence <textarea name="drainage_note" maxlength="500"></textarea></label>
+      </fieldset>
+
+      <label>Proposal evidence and owner reasoning
+        <textarea name="proposal_evidence" required maxlength="1000"></textarea>
+      </label>
+      <div class="ops-actions">
+        <button type="button" id="policy_preview">Preview advice effect</button>
+        <button type="button" id="policy_propose">Record immutable proposal</button>
+      </div>
+      <div id="policy_message" role="status"></div>
+      <div id="policy_preview_result" class="ops-list"></div>
+    </form>
+
+    <section class="ops-panel">
+      <h2>Immutable version history</h2>
+      <label>Review / activation evidence <textarea id="transition_evidence" maxlength="1000"></textarea></label>
+      <label>Activation effective time <input id="activation_effective_at" type="datetime-local"></label>
+      <div id="policy_history" class="ops-list"><div class="ops-empty-inline">No policy history available.</div></div>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='js/rootlinePolicyReview.js') }}"></script>
+</body>
+</html>

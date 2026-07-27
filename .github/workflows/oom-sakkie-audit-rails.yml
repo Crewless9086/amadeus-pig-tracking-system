@@ -135,6 +135,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202607250001_create_beacon_weekly_review_decisions.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607260008_create_beacon_organic_media_learning.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607270001_create_beacon_media_intake.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607270002_create_rootline_operating_policies.sql
 
       - name: Run Beacon weekly owner-decision permission gates
         env:
@@ -165,6 +166,9 @@ jobs:
 
       - name: Run ROOTLINE plan-only ledger disposable-Postgres tests
         run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_irrigation_command_ledger_postgres tests.test_irrigation_daily_plan_postgres
+
+      - name: Run ROOTLINE Operating Knowledge policy-review permission gates
+        run: ROOTLINE_POLICY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_operating_policy_postgres
 
       - name: Run SAM Meat PostgreSQL deadline gates without skips
         env:

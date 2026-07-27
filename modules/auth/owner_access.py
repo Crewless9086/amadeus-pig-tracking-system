@@ -80,6 +80,42 @@ def require_owner_admin_access():
     return jsonify(body), status_code
 
 
+def require_strict_owner_read_access():
+    """Require an authenticated owner read session, except explicit loopback dev."""
+    if _correction_batch_local_dev_allowed():
+        return None
+    if not _configured():
+        body, status_code = _denied("owner_access_not_configured", 503)
+        return jsonify(body), status_code
+    if owner_session_is_valid("read"):
+        return None
+    body, status_code = _denied("owner_read_access_denied", 403)
+    return jsonify(body), status_code
+
+
+def require_strict_owner_admin_access():
+    """Require an authenticated owner admin session, except explicit loopback dev."""
+    if _correction_batch_local_dev_allowed():
+        return None
+    if not _configured():
+        body, status_code = _denied("owner_access_not_configured", 503)
+        return jsonify(body), status_code
+    if _owner_admin_session_principal():
+        return None
+    body, status_code = _denied("owner_admin_access_denied", 403)
+    return jsonify(body), status_code
+
+
+def strict_owner_admin_principal():
+    """Return only the principal accepted by the strict owner-admin guard."""
+    principal = _owner_admin_session_principal()
+    if principal:
+        return principal
+    if _correction_batch_local_dev_allowed():
+        return "owner-admin:local-development"
+    return ""
+
+
 def require_correction_batch_owner_admin_access():
     """Require an admin session for correction batches, with loopback-only dev access.
 
