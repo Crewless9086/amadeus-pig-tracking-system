@@ -38,6 +38,19 @@ Its purpose is to take a simple owner idea and craft it into an operational resu
 
 CORE executes missions. CHARLIE supervises CORE. Recoverable non-red blocks should enter bounded recovery with a responsible stage, attempt budget, deadline, and idempotent command. Genuine owner decisions remain blocked. A blocked family must not stop unrelated approved work.
 
+Supervisor and runner authority is established by a controller-observed,
+generation-bound process tree. Launcher and interpreter identities, executable
+and command roles, parentage, creation identity, exact revision, and startup
+nonce must be complete and must match the signed durable acknowledgement.
+Self-inspection by a starting child is not sufficient authority.
+
+The canonical stop marker is authoritative at every startup, recovery, and
+pickup entry point. No startup path may remove it implicitly. Watchdog
+enablement and stop-marker removal are separate, explicit owner-authorized
+operations. Missing, stale, partial, replayed, or mismatched ownership evidence
+fails closed before runner pickup, and failed startup contains only the
+externally proven current process tree.
+
 ## Required Operating Standard
 
 CHARLIE CORE must not aim for shallow completion.
@@ -81,10 +94,37 @@ CORE must produce one honest outcome for every claimed mission: verified owner r
 CHARLIE owns mission closure above CORE. A duplicate control command is complete only when authoritative mission state proves its intended outcome. Exhausted internal recovery changes strategy rather than waking Charl, and completed recovery children return their parent to evidence reconciliation. Charl is required only for genuine red-zone authority or material business discretion.
 
 - Supabase mission state and the durable execution lease are authoritative.
-- One supervisor generation owns one runner process tree.
+- One supervisor generation owns one controller-observed supervisor/runner
+  process tree, with a signed acknowledgement bound to exact process and
+  revision identity.
 - Split parents coordinate; ordered child missions deliver.
 - Dependencies are enforced before claim.
 - Mission-family scope is deduplicated and frozen.
 - Review and recovery history is append-only.
 - Dirty Builder work is packaged or durably preserved before the runner changes mission branches.
 - Public posting, spend, migrations, customer sends, payment, stock, and farm lifecycle authority remain owner-gated.
+
+## Integration And Activation Truth
+
+Code merge, hosted deployment, local governed promotion, process startup, and
+natural mission proof are separate states. A merged and Render-deployed CORE
+change is not locally operational until a separately authorized governed
+promotion and startup complete with exact revision and ownership evidence.
+
+PR #517 was merged and Render-deployed as
+`0c4eb404fce6df8dfc2e8aab100690697d6e7cb9`. Local CORE remains stopped:
+the canonical stop marker is present and the watchdog is disabled. That merge
+does not authorize promotion, startup, mission pickup, or either T0 canary.
+
+Current PR #517 delivery states are deliberately separate:
+
+- code merged: **yes**, at `0c4eb404fce6df8dfc2e8aab100690697d6e7cb9`;
+- Render deployed: **yes**, and later mainline deployments retain that merge;
+- local runtime promoted to PR #517/current main: **no**;
+- CORE supervisor or runner started: **no**;
+- watchdog enabled: **no**;
+- real mission processed by this ownership bootstrap: **no**;
+- naturally proven operation: **no**.
+
+None of the negative states may be inferred from repository or Render health.
+Each requires its own later governed authorization and evidence.

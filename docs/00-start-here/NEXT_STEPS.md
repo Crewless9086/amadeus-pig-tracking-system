@@ -15,6 +15,17 @@ These missions are `new`, not approved for automatic execution. Public posting r
 
 ## P0 Operational / Live Issues
 
+- CORE ownership bootstrap code from PR #517 is merged and hosted at
+  `0c4eb404fce6df8dfc2e8aab100690697d6e7cb9`, but local runtime activation is
+  deliberately pending a separate owner decision. Keep CORE stopped, retain
+  the canonical stop marker, keep the watchdog disabled, and do not run either
+  T0 mission until governed promotion/startup is separately authorized.
+- PR #530 is a stale, open 2026-07-26 night-handover candidate. It is not
+  authoritative current state and must be reconciled or closed rather than
+  merged as-is. SAM Live Stock P0 remains the current business priority; this
+  CORE documentation reconciliation does not claim SAM files or authorize SAM
+  work.
+
 - P0 Bulk Weight Data-Loss Fix: owner entered 71 rows, 60 were recorded in the draft/session, upload failed with a vague error, refresh lost all typed rows. Branch: `p0-bulk-weight-draft-recovery`.
 - P0 Bulk Upload HTML/JSON Failure: owner entered 73 entries with about 21 pen changes; upload returned HTML/non-JSON (`Unexpected token '<'`) instead of structured JSON. JSON-safe hotfix is merged, but live retest still failed through the old synchronous path.
 - P0 Supabase-First Durable Bulk Rail: merged, but owner-facing staging/chunk mechanics are confusing and must be hidden.
