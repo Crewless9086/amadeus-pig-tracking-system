@@ -1,5 +1,23 @@
 # Vault Brain Changelog
 
+## 2026-07-27 - BEACON owner media-intake direction
+
+- Recorded `BEACON-MEDIA-INTAKE-1` as the queued milestone after the
+  confirmed-publication learning loop reached a clean integration point.
+- Selected the existing owner-controlled OOM SAKKIE Telegram bot as the
+  preferred phone photo/video/album intake gateway, with BEACON responsible
+  for private storage, hashing, provenance, understanding, cataloguing, visual
+  review, approval state, and usage history.
+- Required thumbnails/contact sheets and enlarged previews so the owner
+  approves visible media rather than filenames.
+- Separated intake receipt, library acceptance, public-use approval, and exact
+  publication authorization.
+- Kept historical OneDrive/folder ingestion as a later bounded phase using the
+  same hash/provenance contract.
+- This records owner-approved direction only. Telegram media intake,
+  historical import, public use, posting, scheduling, messaging, advertising,
+  and spending received no activation authority.
+
 ## 2026-07-27 - CORE controller-observed ownership bootstrap
 
 - Recorded PR #517's controller-observed Windows launcher/interpreter
@@ -16,6 +34,21 @@
 - Marked open PR #530's 2026-07-26 night handover as stale and
   non-authoritative pending reconciliation or closure. SAM Live Stock P0
   remains the business priority and is outside this documentation change.
+
+## 2026-07-27 - Beacon confirmed-publication learning canary
+
+- Merged the persisted-evidence graduation correction as PR #529, exact merge
+  `9feb7bee5d645a19a5a44df0aa814acbdee93ca4`.
+- Appended one canonical confirmed-publication event for Facebook post
+  `920598737794159_122145593991122163`; exact replay was withheld and altered
+  evidence conflicted.
+- Recomputed graduation from persisted evidence and appended a fresh
+  `not_eligible` evaluation: one confirmed post, one reliable run, no
+  compatible performance window, no owner usefulness rating and no policy
+  evidence counted for graduation.
+- Preserved recommendation-only authority. No Meta read, publication, retry,
+  scheduling, message, boost, advertisement, spend or cross-post access
+  occurred; the 24-hour performance window was not yet due.
 
 ## 2026-07-25
 
