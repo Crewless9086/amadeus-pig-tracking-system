@@ -2,6 +2,18 @@
 
 Status: Current authority. SAM Live Stock may create backend draft orders when source truth, fact completeness, availability, and pricing gates pass. It does not reserve stock, confirm payment, send quotes, or make final customer promises without the relevant backend/owner gates.
 
+P0 operating correction: the 2026-07-27 live audit proved that the current
+production path does not yet deliver this complete workflow. The controlling
+recovery is:
+
+- `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_P0_RECOVERY.md`
+- `planning/SAM_LIVE_STOCK_P0_OPERATING_RECOVERY_2026-07-27.md`
+
+Until that recovery passes its production gates, production must be described
+truthfully as guarded review and exact owner-approved send, with intake,
+draft-order, quote, and continuous follow-up capability unavailable or
+disabled.
+
 ## Purpose
 
 SAM Live Stock Sales turns customer interest in live pigs into clean, source-backed sales opportunities. The workflow must reduce feed-pressure losses without creating wrong stock promises or confusing live-stock sales with meat sales.
