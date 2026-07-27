@@ -18,6 +18,7 @@ from modules.sales.sam_owner_work_queue import (
     load_bounded_owner_attention_conversations,
     load_bounded_conversation_messages,
     observe_owner_work_message_event,
+    reconcile_live_human_conversation,
 )
 
 
@@ -48,6 +49,12 @@ def review(message_id=101):
 
 
 ACTOR = "owner-admin:server-derived-test"
+AUTHORITY_RESULT_KEYS = (
+    "sends_customer_message",
+    "changes_conversation_ownership",
+    "calls_telegram",
+    "mutates_business_state",
+)
 OWNERSHIP_FIXTURE = json.loads(
     Path("tests/fixtures/sam_owner_inventory_ownership_exceptions.json").read_text(
         encoding="utf-8"
@@ -1023,6 +1030,7 @@ def test_configured_inventory_repair_is_bounded_cursor_driven_and_never_partial_
     }
     first, first_status = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
         limit=2,
         environ={"OWNER_SESSION_SECRET": "test-secret"},
         inventory_reader=lambda source: inventory,
@@ -1037,6 +1045,7 @@ def test_configured_inventory_repair_is_bounded_cursor_driven_and_never_partial_
 
     second, second_status = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
         cursor_token=first["next_cursor"],
         limit=2,
         environ={"OWNER_SESSION_SECRET": "test-secret"},
@@ -1062,6 +1071,7 @@ def test_configured_inventory_repair_does_not_reconcile_when_coverage_is_incompl
     calls = []
     result, status = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
         environ={"OWNER_SESSION_SECRET": "test-secret"},
         inventory_reader=lambda source: {
             "success": False,
@@ -1106,6 +1116,7 @@ def test_configured_inventory_repair_cursor_cannot_skip_a_failed_conversation():
     }
     result, status = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
         limit=3,
         environ={"OWNER_SESSION_SECRET": "test-secret"},
         inventory_reader=lambda source: inventory,
@@ -1121,6 +1132,7 @@ def test_configured_inventory_repair_cursor_cannot_skip_a_failed_conversation():
     calls.clear()
     recovered, recovered_status = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
         cursor_token=result["next_cursor"],
         limit=3,
         environ={"OWNER_SESSION_SECRET": "test-secret"},
@@ -1149,6 +1161,7 @@ def test_configured_inventory_repair_rejects_unsigned_cursor_without_work():
     calls = []
     result, status = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
         cursor_token="9999",
         environ={"OWNER_SESSION_SECRET": "test-secret"},
         inventory_reader=lambda source: {
@@ -1172,6 +1185,7 @@ def test_configured_inventory_repair_first_failure_reports_every_row_remaining()
     ]
     result, status = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
         environ={"OWNER_SESSION_SECRET": "test-secret"},
         inventory_reader=lambda source: {
             "success": True,
@@ -1205,6 +1219,7 @@ def test_configured_inventory_repair_rejects_cursor_after_inventory_changes():
     }
     first, status = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
         limit=1,
         environ={"OWNER_SESSION_SECRET": "test-secret"},
         inventory_reader=lambda source: inventory,
@@ -1227,6 +1242,7 @@ def test_configured_inventory_repair_rejects_cursor_after_inventory_changes():
     calls = []
     rejected, rejected_status = reconcile_configured_owner_inventory_batch(
         reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
         cursor_token=first["next_cursor"],
         environ={"OWNER_SESSION_SECRET": "test-secret"},
         inventory_reader=lambda source: changed,
@@ -1441,15 +1457,284 @@ def test_reconciliation_is_bounded_and_replay_safe_through_recorder():
     first, status1 = reconcile_human_backlog(
         rows, review_by_conversation={"2025": review()}, recorder=recorder,
         reconciliation_actor_id=ACTOR,
+        expected_classification="WAITING_FOR_OWNER_REPLY",
+        observed_at=datetime(2026, 7, 26, 11, tzinfo=timezone.utc),
     )
     second, status2 = reconcile_human_backlog(
         rows, review_by_conversation={"2025": review()}, recorder=recorder,
         reconciliation_actor_id=ACTOR,
+        expected_classification="WAITING_FOR_OWNER_REPLY",
+        observed_at=datetime(2026, 7, 26, 11, tzinfo=timezone.utc),
     )
     assert status1 == status2 == 200
     assert first["created_count"] == 1
     assert second["created_count"] == 0
     assert len(recorded) == 1
+
+
+def test_conversation_67_changed_to_handled_is_withheld_before_persistence():
+    recorded = []
+    row = conversation(
+        [
+            message(761948125, "incoming", "2026-07-27T07:10:00Z"),
+            message(761994281, "outgoing", "2026-07-27T08:05:00Z"),
+        ],
+        id=67,
+        custom_attributes={},
+    )
+    result, status = reconcile_human_backlog(
+        [row],
+        review_by_conversation={
+            "67": {
+                "review_event_id": "SAM-LIVE-CARD-SEND-B29B6BE6AE20",
+                "chatwoot_conversation_id": "67",
+                "chatwoot_message_id": "761948125",
+            }
+        },
+        recorder=lambda event: recorded.append(event),
+        reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
+    )
+    assert status == 409
+    assert result["status"] == "owner_work_expected_classification_mismatch"
+    assert result["observed_classification"] == "CUSTOMER_ALREADY_HANDLED"
+    assert result["created_count"] == 0
+    assert recorded == []
+    assert all(result[key] is False for key in AUTHORITY_RESULT_KEYS)
+
+
+def test_conversation_771_exact_ownership_exception_replay_creates_zero_rows():
+    recorded = {}
+
+    def recorder(event):
+        created = event["work_event_id"] not in recorded
+        recorded[event["work_event_id"]] = event
+        return {"success": True, "created": created}, 201 if created else 200
+
+    row = conversation(
+        [
+            message(761498959, "outgoing", "2026-07-27T05:00:00Z"),
+            message(761560740, "incoming", "2026-07-27T06:00:00Z"),
+        ],
+        id=771,
+        custom_attributes={},
+    )
+    current_review = {
+        "review_event_id": "SAM-LIVE-REVIEW-FB15D85ACDE7",
+        "chatwoot_conversation_id": "771",
+        "chatwoot_message_id": "761560740",
+    }
+    first, first_status = reconcile_human_backlog(
+        [row], review_by_conversation={"771": current_review},
+        recorder=recorder, reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
+    )
+    replay, replay_status = reconcile_human_backlog(
+        [row], review_by_conversation={"771": current_review},
+        recorder=recorder, reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
+    )
+    assert first_status == replay_status == 200
+    assert first["created_count"] == 1
+    assert replay["created_count"] == 0
+    assert len(recorded) == 1
+    assert next(iter(recorded.values()))["classification"] == (
+        "OWNERSHIP_DECISION_REQUIRED"
+    )
+
+
+def test_handled_projection_supersedes_stale_actionable_event_append_only():
+    recorded = {}
+
+    def recorder(event):
+        created = event["work_event_id"] not in recorded
+        recorded[event["work_event_id"]] = event
+        return {"success": True, "created": created}, 201 if created else 200
+
+    row = conversation(
+        [
+            message(761497234, "incoming", "2026-07-27T06:00:00Z"),
+            message(761500248, "outgoing", "2026-07-27T06:05:00Z"),
+        ],
+        id=2031,
+    )
+    current_review = {
+        "review_event_id": "SAM-LIVE-REVIEW-2031",
+        "chatwoot_conversation_id": "2031",
+        "chatwoot_message_id": "761497234",
+    }
+    first, first_status = reconcile_human_backlog(
+        [row], review_by_conversation={"2031": current_review},
+        recorder=recorder, reconciliation_actor_id=ACTOR,
+        expected_classification="CUSTOMER_ALREADY_HANDLED",
+    )
+    replay, replay_status = reconcile_human_backlog(
+        [row], review_by_conversation={"2031": current_review},
+        recorder=recorder, reconciliation_actor_id=ACTOR,
+        expected_classification="CUSTOMER_ALREADY_HANDLED",
+    )
+    assert first_status == replay_status == 200
+    assert first["created_count"] == 1
+    assert replay["created_count"] == 0
+    assert len(recorded) == 1
+    event = next(iter(recorded.values()))
+    assert event["classification"] == "CUSTOMER_ALREADY_HANDLED"
+    assert event["actionable"] is False
+    assert event["unanswered_count"] == 0
+    assert all(event[key] is False for key in AUTHORITY_RESULT_KEYS)
+
+
+def test_expected_classification_guard_withholds_out_of_order_and_concurrent_changes():
+    recorded = []
+    exception = conversation(
+        [message(101, "incoming", "2026-07-27T08:00:00Z")],
+        custom_attributes={},
+    )
+    handled = conversation(
+        [
+            message(101, "incoming", "2026-07-27T08:00:00Z"),
+            message(102, "outgoing", "2026-07-27T08:01:00Z"),
+        ],
+        custom_attributes={},
+    )
+    first, first_status = reconcile_human_backlog(
+        [exception], review_by_conversation={"2025": review()},
+        recorder=lambda event: (
+            recorded.append(event) or {"success": True, "created": True}, 201
+        ),
+        reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
+    )
+    changed, changed_status = reconcile_human_backlog(
+        [handled], review_by_conversation={"2025": review()},
+        recorder=lambda event: recorded.append(event),
+        reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
+    )
+    assert first_status == 200
+    assert first["created_count"] == 1
+    assert changed_status == 409
+    assert changed["status"] == "owner_work_expected_classification_mismatch"
+    assert len(recorded) == 1
+
+
+def test_multi_row_expected_classification_preflight_is_zero_write_atomic():
+    recorded = []
+    matching = conversation(
+        [message(101, "incoming", "2026-07-27T08:00:00Z")],
+        id=2025, custom_attributes={},
+    )
+    changed = conversation(
+        [
+            message(201, "incoming", "2026-07-27T08:00:00Z"),
+            message(202, "outgoing", "2026-07-27T08:01:00Z"),
+        ],
+        id=67, custom_attributes={},
+    )
+    result, status = reconcile_human_backlog(
+        [matching, changed],
+        review_by_conversation={
+            "2025": review(101),
+            "67": {
+                "review_event_id": "SAM-LIVE-CARD-SEND-B29B6BE6AE20",
+                "chatwoot_conversation_id": "67",
+                "chatwoot_message_id": "201",
+            },
+        },
+        recorder=lambda event: recorded.append(event),
+        reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
+    )
+    assert status == 409
+    assert result["status"] == "owner_work_expected_classification_mismatch"
+    assert result["conversation_id"] == "67"
+    assert result["created_count"] == 0
+    assert recorded == []
+
+
+def test_live_reconciliation_revalidates_chronology_immediately_before_write():
+    reads = iter([
+        {
+            "success": True,
+            "evidence_complete": True,
+            "messages": [message(101, "incoming", "2026-07-27T08:00:00Z")],
+        },
+        {
+            "success": True,
+            "evidence_complete": True,
+            "messages": [
+                message(101, "incoming", "2026-07-27T08:00:00Z"),
+                message(102, "outgoing", "2026-07-27T08:01:00Z"),
+            ],
+        },
+    ])
+    recorded = []
+    result, status = reconcile_live_human_conversation(
+        "2025",
+        reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
+        environ={},
+        conversation_reader=lambda conversation_id, source: [
+            conversation([], id=2025, custom_attributes={})
+        ],
+        message_reader=lambda conversation_id, source: (next(reads), 200),
+        review_loader=lambda ids: ({
+            "success": True,
+            "events_by_conversation_id": {"2025": review()},
+        }, 200),
+        state_loader=lambda conversation_id: ({
+            "success": True, "found": False,
+        }, 200),
+        recorder=lambda event: recorded.append(event),
+    )
+    assert status == 409
+    assert result["status"] == "owner_work_expected_classification_mismatch"
+    assert result["observed_classification"] == "CUSTOMER_ALREADY_HANDLED"
+    assert recorded == []
+
+
+def test_live_reconciliation_prior_event_guard_withholds_concurrent_queue_change():
+    current_messages = {
+        "success": True,
+        "evidence_complete": True,
+        "messages": [message(101, "incoming", "2026-07-27T08:00:00Z")],
+    }
+    recorded = []
+
+    def recorder(event):
+        recorded.append(event)
+        return {
+            "success": False,
+            "status": "owner_work_observation_concurrent_state_changed",
+            "created": False,
+        }, 409
+
+    result, status = reconcile_live_human_conversation(
+        "2025",
+        reconciliation_actor_id=ACTOR,
+        expected_classification="OWNERSHIP_DECISION_REQUIRED",
+        environ={},
+        conversation_reader=lambda conversation_id, source: [
+            conversation([], id=2025, custom_attributes={})
+        ],
+        message_reader=lambda conversation_id, source: (current_messages, 200),
+        review_loader=lambda ids: ({
+            "success": True,
+            "events_by_conversation_id": {"2025": review()},
+        }, 200),
+        state_loader=lambda conversation_id: ({
+            "success": True,
+            "found": True,
+            "state": {"work_event_id": "SAM-OWNER-WORK-EVENT-PRIOR"},
+        }, 200),
+        recorder=recorder,
+    )
+    assert status == 409
+    assert result["status"] == "owner_work_observation_concurrent_state_changed"
+    assert result["created_count"] == 0
+    assert recorded[0]["_expected_prior_event_id"] == (
+        "SAM-OWNER-WORK-EVENT-PRIOR"
+    )
 
 
 def test_charlie_report_is_sanitized_and_has_no_authority():

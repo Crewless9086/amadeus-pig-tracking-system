@@ -41,6 +41,15 @@ INVENTORY_TOTAL_DEADLINE_SECONDS = 360
 MAX_RECONCILIATION_BATCH = 25
 SUPPORTED_OWNERSHIP_MODES = {"HUMAN", "AUTO_GENERAL", "AUTO_SPECIALIST"}
 AGENT_OWNERSHIP_MODES = {"AUTO_GENERAL", "AUTO_SPECIALIST"}
+OWNER_WORK_CLASSIFICATIONS = {
+    "WAITING_FOR_OWNER_REPLY",
+    "OWNERSHIP_DECISION_REQUIRED",
+    "CUSTOMER_ALREADY_HANDLED",
+    "IDENTITY_OR_EVIDENCE_UNAVAILABLE",
+    "PROTECTED_ACTION_REQUIRED",
+    "SPECIALIST_REVIEW_REQUIRED",
+    "CUSTOMER_REPLY_PROHIBITED",
+}
 OWNER_ATTENTION_POLICY_REASONS = {
     "explicit_human_request", "protected_policy", "specialist_policy",
     "delivery_exception_policy",
@@ -456,6 +465,7 @@ def reconcile_human_backlog(
     recorder: Callable[[Mapping[str, Any]], tuple[dict[str, Any], int]] | None = None,
     observed_at: datetime | None = None,
     reconciliation_actor_id: str,
+    expected_classification: str | None = None,
 ) -> tuple[dict[str, Any], int]:
     """Bounded injected reconciliation; callers own authoritative reads."""
     rows = list(conversations or [])
@@ -463,9 +473,16 @@ def reconcile_human_backlog(
         return _result("owner_work_conversation_bound_exceeded"), 400
     review_by_conversation = dict(review_by_conversation or {})
     recorder = recorder or record_owner_work_observation
+    expected_classification = _clean(expected_classification).upper()
+    if (
+        not expected_classification
+        or expected_classification not in OWNER_WORK_CLASSIFICATIONS
+    ):
+        return _result(
+            "owner_work_expected_classification_required",
+            evidence_complete=False,
+        ), 400
     observations = []
-    failures = []
-    created = 0
     for index, conversation in enumerate(rows):
         conversation_id = _clean(
             conversation.get("id") if isinstance(conversation, Mapping) else ""
@@ -477,21 +494,42 @@ def reconcile_human_backlog(
                 observed_at=observed_at,
                 reconciliation_actor_id=reconciliation_actor_id,
             )
-            result, status = recorder(observation)
-            if status >= 400:
-                failures.append({
-                    "conversation_id": conversation_id,
-                    "reason": result.get("status", "persistence_failed"),
-                })
-                continue
-            created += int(result.get("created") is True)
+            if observation["classification"] != expected_classification:
+                return _result(
+                    "owner_work_expected_classification_mismatch",
+                    conversation_id=conversation_id,
+                    expected_classification=expected_classification,
+                    observed_classification=observation["classification"],
+                    created_count=0,
+                    evidence_complete=False,
+                ), 409
             observations.append(observation)
         except OwnerWorkEvidenceError as exc:
+            return _result(
+                "owner_work_reconciliation_withheld",
+                observations=[],
+                failures=[{
+                    "conversation_id": conversation_id,
+                    "reason": str(exc),
+                    "item_index": index,
+                }],
+                observed_count=0,
+                created_count=0,
+                counts={},
+                evidence_complete=False,
+            ), 409
+
+    failures = []
+    created = 0
+    for observation in observations:
+        result, status = recorder(observation)
+        if status >= 400:
             failures.append({
-                "conversation_id": conversation_id,
-                "reason": str(exc),
-                "item_index": index,
+                "conversation_id": observation["conversation_id"],
+                "reason": result.get("status", "persistence_failed"),
             })
+            continue
+        created += int(result.get("created") is True)
     counts = _classification_counts(observations)
     status = "owner_work_reconciliation_completed" if not failures else "owner_work_reconciliation_withheld"
     return _result(
@@ -870,8 +908,13 @@ def reconcile_live_human_conversation(
     conversation_id: str,
     *,
     reconciliation_actor_id: str,
+    expected_classification: str,
     environ: Mapping[str, str] | None = None,
     message_reader: Callable[[str, Mapping[str, str]], tuple[dict[str, Any], int]] | None = None,
+    conversation_reader: Callable[[str, Mapping[str, str]], list[dict[str, Any]]] | None = None,
+    review_loader: Callable[[list[str]], tuple[dict[str, Any], int]] | None = None,
+    state_loader: Callable[[str], tuple[dict[str, Any], int]] | None = None,
+    recorder: Callable[[Mapping[str, Any]], tuple[dict[str, Any], int]] | None = None,
 ) -> tuple[dict[str, Any], int]:
     """Run one bounded authoritative owner-attention read and evidence append."""
     from modules.sales.sam_live_stock_launch_control import (
@@ -884,31 +927,44 @@ def reconcile_live_human_conversation(
         return _result("owner_work_conversation_id_required"), 400
     if not _clean(reconciliation_actor_id, 200):
         return _result("server_derived_owner_principal_required"), 403
-    try:
-        conversations = load_bounded_owner_attention_conversations(
-            conversation_id, source
-        )
-    except Exception as exc:
+    expected_classification = _clean(expected_classification).upper()
+    if expected_classification not in OWNER_WORK_CLASSIFICATIONS:
         return _result(
-            "owner_work_chatwoot_read_failed", error_type=exc.__class__.__name__
-        ), 503
-    if not isinstance(conversations, list) or len(conversations) > MAX_CONVERSATIONS:
-        return _result("owner_work_conversation_evidence_incomplete"), 503
-    exact = [
-        row for row in conversations
-        if isinstance(row, Mapping) and _clean(row.get("id")) == conversation_id
-    ]
-    if len(exact) != 1:
-        return _result(
-            "owner_work_exact_conversation_unavailable",
-            exact_match_count=len(exact),
-        ), 409
-    hydrated = []
+            "owner_work_expected_classification_required",
+            evidence_complete=False,
+        ), 400
     reader = message_reader or load_bounded_conversation_messages
-    for row in exact:
-        if not isinstance(row, Mapping):
+    conversation_reader = (
+        conversation_reader or load_bounded_owner_attention_conversations
+    )
+    review_loader = (
+        review_loader
+        or load_latest_sam_live_stock_review_events_for_conversations
+    )
+
+    def read_current_observation() -> tuple[dict[str, Any], int]:
+        try:
+            conversations = conversation_reader(conversation_id, source)
+        except Exception as exc:
+            return _result(
+                "owner_work_chatwoot_read_failed",
+                error_type=exc.__class__.__name__,
+            ), 503
+        if (
+            not isinstance(conversations, list)
+            or len(conversations) > MAX_CONVERSATIONS
+        ):
             return _result("owner_work_conversation_evidence_incomplete"), 503
-        conversation_id = _clean(row.get("id"))
+        exact = [
+            row for row in conversations
+            if isinstance(row, Mapping)
+            and _clean(row.get("id")) == conversation_id
+        ]
+        if len(exact) != 1:
+            return _result(
+                "owner_work_exact_conversation_unavailable",
+                exact_match_count=len(exact),
+            ), 409
         history, history_status = reader(conversation_id, source)
         if history_status >= 400 or history.get("evidence_complete") is not True:
             return _result(
@@ -916,16 +972,73 @@ def reconcile_live_human_conversation(
                 failed_conversation_id=conversation_id,
                 failure_reason=history.get("status"),
             ), 503
-        hydrated.append({**row, "messages": history["messages"]})
-    ids = [_clean(row.get("id")) for row in hydrated]
-    reviews, review_status = load_latest_sam_live_stock_review_events_for_conversations(ids)
-    if review_status >= 400 or not reviews.get("success"):
-        return _result("owner_work_review_evidence_unavailable"), 503
-    return reconcile_human_backlog(
-        hydrated,
-        review_by_conversation=reviews.get("events_by_conversation_id") or {},
-        reconciliation_actor_id=reconciliation_actor_id,
+        reviews, review_status = review_loader([conversation_id])
+        if review_status >= 400 or not reviews.get("success"):
+            return _result("owner_work_review_evidence_unavailable"), 503
+        review = (
+            reviews.get("events_by_conversation_id") or {}
+        ).get(conversation_id)
+        try:
+            observation = build_owner_work_observation(
+                {**exact[0], "messages": history["messages"]},
+                review=review,
+                reconciliation_actor_id=reconciliation_actor_id,
+            )
+        except OwnerWorkEvidenceError as exc:
+            return _result(
+                "owner_work_conversation_evidence_incomplete",
+                failure_reason=str(exc)[:120],
+            ), 409
+        if observation["classification"] != expected_classification:
+            return _result(
+                "owner_work_expected_classification_mismatch",
+                conversation_id=conversation_id,
+                expected_classification=expected_classification,
+                observed_classification=observation["classification"],
+                created_count=0,
+                evidence_complete=False,
+            ), 409
+        return observation, 200
+
+    first, first_status = read_current_observation()
+    if first_status >= 400:
+        return first, first_status
+    prior_result, prior_status = (state_loader or load_latest_owner_work_event)(
+        conversation_id
     )
+    if prior_status >= 400:
+        return _result(
+            "owner_work_prior_state_unavailable",
+            evidence_complete=False,
+        ), 503
+    expected_prior_event_id = _clean(
+        (prior_result.get("state") or {}).get("work_event_id")
+        if prior_result.get("found") is True
+        else ""
+    )
+    current, current_status = read_current_observation()
+    if current_status >= 400:
+        return current, current_status
+    if (
+        current.get("observation_hash") != first.get("observation_hash")
+        or current.get("work_event_id") != first.get("work_event_id")
+    ):
+        return _result(
+            "owner_work_authoritative_evidence_changed",
+            created_count=0,
+            evidence_complete=False,
+        ), 409
+    current["_expected_prior_event_id"] = expected_prior_event_id
+    persisted, status_code = (recorder or record_owner_work_observation)(current)
+    return _result(
+        persisted.get("status", "owner_work_observation_persistence_failed"),
+        created=persisted.get("created") is True,
+        created_count=int(persisted.get("created") is True),
+        work_item_id=current.get("work_item_id"),
+        work_event_id=current.get("work_event_id"),
+        classification=current.get("classification"),
+        evidence_complete=persisted.get("success") is True,
+    ), status_code
 
 
 def load_bounded_owner_attention_conversations(
@@ -1091,6 +1204,7 @@ def load_bounded_configured_inbox_inventory(
 def reconcile_configured_owner_inventory_batch(
     *,
     reconciliation_actor_id: str,
+    expected_classification: str,
     cursor_token: str = "",
     limit: int = MAX_RECONCILIATION_BATCH,
     environ: Mapping[str, str] | None = None,
@@ -1102,6 +1216,12 @@ def reconcile_configured_owner_inventory_batch(
     actor = _clean(reconciliation_actor_id, 200)
     if not actor:
         return _result("server_derived_owner_principal_required"), 403
+    expected_classification = _clean(expected_classification).upper()
+    if expected_classification not in OWNER_WORK_CLASSIFICATIONS:
+        return _result(
+            "owner_work_expected_classification_required",
+            evidence_complete=False,
+        ), 400
     try:
         limit = int(limit)
     except (TypeError, ValueError):
@@ -1179,6 +1299,7 @@ def reconcile_configured_owner_inventory_batch(
         result, status_code = reconciler(
             conversation_id,
             reconciliation_actor_id=actor,
+            expected_classification=expected_classification,
             environ=source,
         )
         item = {
@@ -1186,6 +1307,8 @@ def reconcile_configured_owner_inventory_batch(
             "status": result.get("status"),
             "status_code": status_code,
             "created_count": int(result.get("created_count") or 0),
+            "expected_classification": result.get("expected_classification"),
+            "observed_classification": result.get("observed_classification"),
         }
         results.append(item)
         if status_code >= 400 or result.get("evidence_complete") is not True:
