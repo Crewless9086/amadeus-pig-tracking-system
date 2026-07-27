@@ -85,13 +85,39 @@ def graduate(rows):
         return evaluate_graduation()
 
 
+def confirmed_payload(post, run):
+    return {
+        "delivery_verified": True,
+        "reliable": True,
+        "publication_run_id": run,
+        "weekly_packet_id": f"packet-{post}",
+        "owner_decision_event_id": f"decision-{post}",
+        "publication_binding_id": f"binding-{post}",
+        "authorization_generation_id": f"authorization-{post}",
+        "confirmed_authorization_event_id": f"confirmation-{post}",
+        "execution_publish_packet_id": f"execution-packet-{post}",
+        "execution_attempt_identity": run,
+        "confirmed_execution_event_id": f"execution-result-{post}",
+        "confirmed_facebook_post_id": post,
+        "caption_sha256": "a" * 64,
+        "media_order_sha256": "b" * 64,
+        "media_payload_sha256": "c" * 64,
+        "transport_sha256": "d" * 64,
+        "execution_payload_sha256": "e" * 64,
+        "exact_ordered_assets": [{
+            "asset_id": f"asset-{post}",
+            "asset_sha256": "f" * 64,
+        }],
+    }
+
+
 def graduation_events(count=3, policy_failure=False):
     rows = []
     for number in range(count):
         post = f"post-{number}"
         rows.extend([
             persisted("confirmed_publication", post, str(number),
-                      {"delivery_verified": True}),
+                      confirmed_payload(post, f"run-{number}")),
             persisted("policy_evaluation", post, str(number),
                       {"policy_passed": not (policy_failure and number == 0)}),
             persisted("performance_snapshot", post, str(number),
@@ -149,7 +175,7 @@ class OrganicMediaIntelligenceTests(unittest.TestCase):
         )
 
     def test_reliable_runs_for_one_post_do_not_cover_three_posts(self):
-        rows = graduation_events()
+        rows = graduation_events(1)
         reliability = [
             persisted("publication_reliability", "post-0", f"extra-{number}",
                       {"publication_run_id": f"extra-run-{number}", "reliable": True})
@@ -159,6 +185,41 @@ class OrganicMediaIntelligenceTests(unittest.TestCase):
         self.assertFalse(
             graduate(rows + reliability)["eligible_for_owner_review_candidate"]
         )
+
+    def test_confirmed_delivery_counts_one_post_and_one_reliable_run(self):
+        result = graduate([
+            persisted(
+                "confirmed_publication", "post-1", "one",
+                confirmed_payload("post-1", "run-1"),
+            )
+        ])
+        self.assertEqual(result["observed"]["distinct_confirmed_posts"], 1)
+        self.assertEqual(
+            result["observed"]["distinct_reliable_publication_runs"], 1
+        )
+        self.assertEqual(
+            result["observed"]["distinct_posts_with_reliable_publication_runs"], 1
+        )
+        self.assertFalse(result["eligible_for_owner_review_candidate"])
+
+    def test_separate_reliability_replay_does_not_double_count_confirmed_run(self):
+        result = graduate(graduation_events(1))
+        self.assertEqual(
+            result["observed"]["distinct_reliable_publication_runs"], 1
+        )
+
+    def test_confirmed_delivery_requires_immutable_run_evidence(self):
+        result, status = append_learning_event({
+            "event_id": "confirmed-1",
+            "event_kind": "confirmed_publication",
+            "facebook_post_id": "post-1",
+            "channel": "Facebook",
+            "objective": "farm_awareness",
+            "evidence_key": "confirmed/post-1",
+            "payload": {"delivery_verified": True},
+        }, database_url="configured")
+        self.assertEqual(status, 400)
+        self.assertEqual(result["status"], "organic_learning_payload_invalid")
 
     def test_missing_ratings_or_windows_blocks(self):
         rows = [

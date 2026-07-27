@@ -125,13 +125,23 @@ def evaluate_graduation(database_url=None):
         if row.get("event_kind") == "owner_usefulness_rating"
         and _post_id(row) in confirmed and _stable(row["payload"].get("rating_id"))
     }
-    reliable_run_posts = {
+    reliability_event_runs = {
         (_post_id(row), str(row["payload"].get("publication_run_id") or ""))
         for row in events
         if row.get("event_kind") == "publication_reliability"
         and row["payload"].get("reliable") is True and _post_id(row) in confirmed
         and _stable(row["payload"].get("publication_run_id"))
     }
+    confirmed_delivery_runs = {
+        (_post_id(row), str(row["payload"].get("publication_run_id") or ""))
+        for row in events
+        if row.get("event_kind") == "confirmed_publication"
+        and row["payload"].get("delivery_verified") is True
+        and row["payload"].get("reliable") is True
+        and _post_id(row) in confirmed
+        and _stable(row["payload"].get("publication_run_id"))
+    }
+    reliable_run_posts = reliability_event_runs | confirmed_delivery_runs
     reliable_posts = {post_id for post_id, _ in reliable_run_posts}
     pass_rate = (
         len(policy_passes) / len(confirmed)
@@ -440,11 +450,40 @@ def _validate_event(event):
     if event["event_kind"] == "performance_snapshot":
         if not _compatible_snapshot({"metrics": payload.get("metrics")}):
             return "organic_learning_metric_evidence_invalid"
-    if (
-        event["event_kind"] == "confirmed_publication"
-        and not isinstance(payload.get("delivery_verified"), bool)
-    ):
-        return "organic_learning_payload_invalid"
+    if event["event_kind"] == "confirmed_publication":
+        ordered_assets = payload.get("exact_ordered_assets")
+        if not (
+            payload.get("delivery_verified") is True
+            and payload.get("reliable") is True
+            and _bounded_identity(payload.get("publication_run_id"))
+            and _bounded_identity(payload.get("weekly_packet_id"))
+            and _bounded_identity(payload.get("owner_decision_event_id"))
+            and _bounded_identity(payload.get("publication_binding_id"))
+            and _bounded_identity(payload.get("authorization_generation_id"))
+            and _bounded_identity(payload.get("confirmed_authorization_event_id"))
+            and _bounded_identity(payload.get("execution_publish_packet_id"))
+            and _bounded_identity(payload.get("execution_attempt_identity"))
+            and _bounded_identity(payload.get("confirmed_execution_event_id"))
+            and payload.get("confirmed_facebook_post_id")
+            == event["facebook_post_id"]
+            and _sha(payload.get("caption_sha256"))
+            and _sha(payload.get("media_order_sha256"))
+            and _sha(payload.get("media_payload_sha256"))
+            and _sha(payload.get("transport_sha256"))
+            and _sha(payload.get("execution_payload_sha256"))
+            and isinstance(ordered_assets, list) and ordered_assets
+            and len(ordered_assets) == len({
+                item.get("asset_id") for item in ordered_assets
+                if isinstance(item, dict)
+            })
+            and all(
+                isinstance(item, dict)
+                and _bounded_identity(item.get("asset_id"))
+                and _sha(item.get("asset_sha256"))
+                for item in ordered_assets
+            )
+        ):
+            return "organic_learning_payload_invalid"
     if (
         event["event_kind"] == "policy_evaluation"
         and not isinstance(payload.get("policy_passed"), bool)
