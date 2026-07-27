@@ -140,6 +140,8 @@ from modules.sales.sam_response_class_authority import (
 from modules.sales.sam_owner_work_queue import (
     build_charlie_backlog_report,
     list_owner_work_items,
+    observe_owner_work_message_event,
+    reconcile_configured_owner_inventory_batch,
     reconcile_live_human_conversation,
     run_daily_backlog_report,
 )
@@ -573,7 +575,40 @@ def _attach_sam_live_stock_review_event(result, raw_payload, *, event_source="sa
     delivery = decision.get("routine_reply_delivery") if isinstance(decision.get("routine_reply_delivery"), dict) else {}
     claim = delivery.get("claim") if isinstance(delivery.get("claim"), dict) else {}
     notification_learning = claim if claim.get("review_event_id") == event.get("review_event_id") and claim.get("created") is True else learning_result
-    notification_result = _send_sam_live_stock_owner_notification_if_needed(event, notification_learning)
+    inbound = decision.get("inbound")
+    inbound = inbound if isinstance(inbound, dict) else {}
+    conversation_id = str(inbound.get("conversation_id") or "").strip()
+    owner_work_packet = {
+        "status": "owner_work_observation_identity_unavailable",
+        "status_code": 409,
+        "evidence_complete": False,
+        "created_count": 0,
+        "sends_customer_message": False,
+        "changes_conversation_ownership": False,
+        "calls_telegram": False,
+        "mutates_business_state": False,
+    }
+    if conversation_id:
+        owner_work, owner_work_status = observe_owner_work_message_event(
+            inbound,
+            event,
+            raw_payload,
+            reconciliation_actor_id="server:sam-live-stock-webhook-observer",
+        )
+        owner_work_packet = {
+            "status": owner_work.get("status"),
+            "status_code": owner_work_status,
+            "evidence_complete": owner_work.get("evidence_complete") is True,
+            "created_count": int(owner_work.get("created_count") or 0),
+            "sends_customer_message": False,
+            "changes_conversation_ownership": False,
+            "calls_telegram": False,
+            "mutates_business_state": False,
+        }
+    result["owner_work_observation"] = owner_work_packet
+    notification_result = _send_sam_live_stock_owner_notification_if_needed(
+        event, notification_learning
+    )
     result["conversation_review_event"] = {
         "status": learning_result.get("status"),
         "status_code": learning_status,
@@ -797,7 +832,15 @@ def _record_sam_live_stock_delivery_outcome(claim, outcome):
 
 def _capture_sam_live_stock_owner_reply_if_needed(payload):
     inbound = parse_sam_live_stock_chatwoot_inbound(payload)
-    if inbound.get("message_type") != "outgoing" or not inbound.get("content") or not inbound.get("conversation_id"):
+    attachments = (payload or {}).get("attachments")
+    has_public_reply_evidence = bool(inbound.get("content")) or (
+        isinstance(attachments, list) and bool(attachments)
+    )
+    if (
+        inbound.get("message_type") != "outgoing"
+        or not has_public_reply_evidence
+        or not inbound.get("conversation_id")
+    ):
         return {"attempted": False, "captured": False, "status": "not_outgoing_owner_reply"}
     event_name = str((payload or {}).get("event") or "").strip().lower()
     if event_name not in {"", "message_created"}:
@@ -810,12 +853,21 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         return _owner_reply_capture_skipped("sam_live_stock_send_echo_skipped", inbound)
     latest, latest_status = get_latest_sam_live_stock_review_event_for_conversation(inbound.get("conversation_id"))
     latest_event = latest.get("event") if latest.get("success") and isinstance(latest.get("event"), dict) else {}
-    event = build_live_stock_owner_reply_learning_event({
-        **inbound,
-        "message_id": str((payload or {}).get("id") or (payload or {}).get("message_id") or ""),
-        "created_at": str((payload or {}).get("created_at") or (payload or {}).get("timestamp") or ""),
-    }, latest_event)
-    learning, learning_status = record_sales_conversation_learning_event(event)
+    if inbound.get("content"):
+        event = build_live_stock_owner_reply_learning_event({
+            **inbound,
+            "message_id": str((payload or {}).get("id") or (payload or {}).get("message_id") or ""),
+            "created_at": str((payload or {}).get("created_at") or (payload or {}).get("timestamp") or ""),
+        }, latest_event)
+        learning, learning_status = record_sales_conversation_learning_event(event)
+    else:
+        learning = {
+            "success": False,
+            "created": False,
+            "created_count": 0,
+            "status": "attachment_only_owner_reply_learning_withheld",
+        }
+        learning_status = 200
     account = payload.get("account") if isinstance(payload.get("account"), dict) else {}
     conversation = payload.get("conversation") if isinstance(payload.get("conversation"), dict) else {}
     contact = conversation.get("contact") if isinstance(conversation.get("contact"), dict) else {}
@@ -826,6 +878,45 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
     conversation_values = [payload.get("conversation_id"), conversation.get("id")]
     contact_values = [payload.get("contact_id"), contact.get("id"), sender.get("id")]
     inbox_values = [payload.get("inbox_id"), conversation.get("inbox_id"), inbox.get("id")]
+    identity_conflicting = any(
+        len({str(value).strip() for value in values if value not in (None, "")}) > 1
+        for values in (account_values, conversation_values, contact_values, inbox_values)
+    )
+    owner_work, owner_work_status = observe_owner_work_message_event(
+        {
+            "account_id": next(
+                (value for value in account_values if value not in (None, "")), ""
+            ),
+            "conversation_id": inbound.get("conversation_id"),
+            "contact_id": next(
+                (value for value in contact_values if value not in (None, "")), ""
+            ),
+            "inbox_id": next(
+                (value for value in inbox_values if value not in (None, "")), ""
+            ),
+            "message_id": payload.get("id") or payload.get("message_id"),
+            "last_inbound_at": payload.get("created_at") or payload.get("timestamp"),
+            "channel": inbound.get("channel"),
+            "conversation_custom_attributes": conversation.get("custom_attributes"),
+            "identity_provenance": {
+                "conflicts": {"webhook_identity": identity_conflicting}
+            },
+        },
+        latest_event,
+        payload,
+        direction="outgoing",
+        reconciliation_actor_id="server:sam-live-stock-owner-reply-observer",
+    )
+    owner_work_observation = {
+        "status": owner_work.get("status"),
+        "status_code": owner_work_status,
+        "evidence_complete": owner_work.get("evidence_complete") is True,
+        "created_count": int(owner_work.get("created_count") or 0),
+        "sends_customer_message": False,
+        "changes_conversation_ownership": False,
+        "calls_telegram": False,
+        "mutates_business_state": False,
+    }
     resolve_refresh = refresh_sam_live_stock_resolve_card_from_outgoing_event({
         "account_id": next((value for value in account_values if value not in (None, "")), ""),
         "conversation_id": inbound.get("conversation_id"),
@@ -833,10 +924,7 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         "inbox_id": next((value for value in inbox_values if value not in (None, "")), ""),
         "message_id": payload.get("id") or payload.get("message_id"),
         "public": not _truthy_payload_value(payload.get("private")),
-        "identity_conflicting": any(
-            len({str(value).strip() for value in values if value not in (None, "")}) > 1
-            for values in (account_values, conversation_values, contact_values, inbox_values)
-        ),
+        "identity_conflicting": identity_conflicting,
     })
     graduation_notification = {"attempted": False, "status": "learning_event_not_created"}
     authority_evaluation = {"attempted": False, "status": "learning_event_not_created"}
@@ -875,6 +963,7 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         "graduation_notification": graduation_notification,
         "authority_evaluation": authority_evaluation,
         "resolve_card_refresh": resolve_refresh,
+        "owner_work_observation": owner_work_observation,
         "chatwoot_conversation_id": inbound.get("conversation_id"),
         "source": "sam_live_stock_owner_reply_capture",
         "processed": False,
@@ -1022,6 +1111,31 @@ def sam_owner_inbox_reconcile():
     result, status_code = reconcile_live_human_conversation(
         payload.get("conversation_id"),
         reconciliation_actor_id=principal,
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route(
+    "/sales/channels/chatwoot/sam/owner-inbox/reconcile-inventory",
+    methods=["POST"],
+)
+def sam_owner_inbox_reconcile_inventory():
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    principal = owner_admin_principal()
+    if not principal:
+        return jsonify({
+            "success": False,
+            "status": "owner_identity_required",
+            "sends_customer_message": False,
+            "mutates_business_state": False,
+        }), 403
+    payload = request.get_json(silent=True) or {}
+    result, status_code = reconcile_configured_owner_inventory_batch(
+        reconciliation_actor_id=principal,
+        cursor_token=payload.get("cursor") or "",
+        limit=payload["limit"] if "limit" in payload else 25,
     )
     return jsonify(result), status_code
 
