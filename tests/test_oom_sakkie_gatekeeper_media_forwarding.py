@@ -10,7 +10,11 @@ from scripts.oom_sakkie_gatekeeper_media_forwarding_contract import (
     build_deployment_packet,
     classify_update,
     load_workflow,
+    reconcile_n8n_variable_create,
+    reconcile_n8n_variable_pair,
     validate_workflow,
+    variable_value_fingerprint,
+    verify_n8n_variable_readback,
 )
 
 
@@ -187,6 +191,247 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         serialized = json.dumps(packet)
         self.assertNotIn("owner-123", serialized)
         self.assertNotIn("secret-token", serialized)
+
+    def _fingerprint(self, key, value):
+        return variable_value_fingerprint(
+            stable_secret="stable-owner-secret", variable_key=key, value=value
+        )
+
+    def _pair_kwargs(self):
+        owner_key = "BEACON_MEDIA_INTAKE_OWNER_USER_ID"
+        chat_key = "BEACON_MEDIA_INTAKE_PRIVATE_CHAT_ID"
+        return {
+            "owner_key": owner_key,
+            "chat_key": chat_key,
+            "owner_expected_fingerprint": self._fingerprint(owner_key, "owner"),
+            "chat_expected_fingerprint": self._fingerprint(chat_key, "chat"),
+        }
+
+    def _verified(self, key, value, variable_id):
+        return {
+            "status": "verified",
+            "variable_key": key,
+            "variable_id": variable_id,
+            "value_fingerprint": self._fingerprint(key, value),
+        }
+
+    def test_observed_wrapped_create_response_uses_authoritative_readback(self):
+        key = "BEACON_MEDIA_INTAKE_OWNER_USER_ID"
+        result = reconcile_n8n_variable_create(
+            create_http_status=201,
+            create_response={"data": {"id": "var-1", "key": key}},
+            read_payload={"data": [{"id": "var-1", "key": key, "value": "owner"}]},
+            variable_key=key,
+            expected_fingerprint=self._fingerprint(key, "owner"),
+            stable_secret="stable-owner-secret",
+        )
+        self.assertEqual(result["status"], "verified")
+        self.assertEqual(result["create_response_shape"], "object:data")
+        self.assertFalse(result["rollback_required"])
+
+    def test_successful_readback_is_bound_to_identity_and_fingerprint(self):
+        key = "BEACON_MEDIA_INTAKE_PRIVATE_CHAT_ID"
+        result = verify_n8n_variable_readback(
+            {"data": [{"id": "var-chat", "key": key, "value": "chat"}]},
+            variable_key=key,
+            expected_fingerprint=self._fingerprint(key, "chat"),
+            stable_secret="stable-owner-secret",
+        )
+        self.assertEqual(result["status"], "verified")
+        self.assertEqual(result["variable_id"], "var-chat")
+        self.assertNotIn("chat", {k: v for k, v in result.items() if k != "variable_id"})
+
+    def test_ambiguous_create_without_persisted_variable_fails_closed(self):
+        key = "BEACON_MEDIA_INTAKE_OWNER_USER_ID"
+        result = reconcile_n8n_variable_create(
+            create_http_status=201,
+            create_response={},
+            read_payload={"data": []},
+            variable_key=key,
+            expected_fingerprint=self._fingerprint(key, "owner"),
+            stable_secret="stable-owner-secret",
+        )
+        self.assertEqual(result["status"], "missing")
+        self.assertFalse(result["rollback_required"])
+
+    def test_persisted_mismatched_value_is_conflict_and_requires_rollback(self):
+        key = "BEACON_MEDIA_INTAKE_OWNER_USER_ID"
+        result = reconcile_n8n_variable_create(
+            create_http_status=201,
+            create_response={"data": {}},
+            read_payload={"data": [{"id": "var-1", "key": key, "value": "other"}]},
+            variable_key=key,
+            expected_fingerprint=self._fingerprint(key, "owner"),
+            stable_secret="stable-owner-secret",
+        )
+        self.assertEqual(result["status"], "conflict")
+        self.assertTrue(result["rollback_required"])
+        self.assertNotIn("other", json.dumps(result))
+
+    def test_partial_pair_blocks_workflow_and_rolls_back_only_created_identity(self):
+        pair = reconcile_n8n_variable_pair(
+            owner_result=self._verified(
+                "BEACON_MEDIA_INTAKE_OWNER_USER_ID", "owner", "var-owner"
+            ),
+            chat_result={"status": "missing"},
+            created_this_attempt={"owner"},
+            **self._pair_kwargs(),
+        )
+        self.assertEqual(pair["status"], "partial_or_conflicting")
+        self.assertFalse(pair["workflow_update_permitted"])
+        self.assertEqual(pair["rollback_variable_ids"], ["var-owner"])
+
+    def test_existing_matching_pair_is_idempotent_and_permits_workflow(self):
+        pair = reconcile_n8n_variable_pair(
+            owner_result=self._verified(
+                "BEACON_MEDIA_INTAKE_OWNER_USER_ID", "owner", "existing-owner"
+            ),
+            chat_result=self._verified(
+                "BEACON_MEDIA_INTAKE_PRIVATE_CHAT_ID", "chat", "existing-chat"
+            ),
+            created_this_attempt=set(),
+            **self._pair_kwargs(),
+        )
+        self.assertEqual(pair["status"], "verified")
+        self.assertTrue(pair["workflow_update_permitted"])
+        self.assertEqual(pair["rollback_variable_ids"], [])
+
+    def test_authoritative_create_results_form_exact_verified_pair(self):
+        pair_kwargs = self._pair_kwargs()
+        owner_result = reconcile_n8n_variable_create(
+            create_http_status=201,
+            create_response={"data": {"id": "owner-id"}},
+            read_payload={
+                "data": [
+                    {
+                        "id": "owner-id",
+                        "key": pair_kwargs["owner_key"],
+                        "value": "owner",
+                    }
+                ]
+            },
+            variable_key=pair_kwargs["owner_key"],
+            expected_fingerprint=pair_kwargs["owner_expected_fingerprint"],
+            stable_secret="stable-owner-secret",
+        )
+        chat_result = reconcile_n8n_variable_create(
+            create_http_status=201,
+            create_response={"data": {"id": "chat-id"}},
+            read_payload={
+                "data": [
+                    {
+                        "id": "chat-id",
+                        "key": pair_kwargs["chat_key"],
+                        "value": "chat",
+                    }
+                ]
+            },
+            variable_key=pair_kwargs["chat_key"],
+            expected_fingerprint=pair_kwargs["chat_expected_fingerprint"],
+            stable_secret="stable-owner-secret",
+        )
+
+        pair = reconcile_n8n_variable_pair(
+            owner_result=owner_result,
+            chat_result=chat_result,
+            created_this_attempt={"owner", "private_chat"},
+            **pair_kwargs,
+        )
+
+        self.assertEqual(pair["status"], "verified")
+        self.assertTrue(pair["workflow_update_permitted"])
+        self.assertEqual(pair["rollback_variable_ids"], [])
+
+    def test_later_gatekeeper_mismatch_preserves_pair_rollback_contract(self):
+        pair = reconcile_n8n_variable_pair(
+            owner_result={"status": "conflict", "variable_id": "var-owner"},
+            chat_result=self._verified(
+                "BEACON_MEDIA_INTAKE_PRIVATE_CHAT_ID", "chat", "var-chat"
+            ),
+            created_this_attempt={"owner", "private_chat"},
+            **self._pair_kwargs(),
+        )
+        self.assertFalse(pair["workflow_update_permitted"])
+        self.assertEqual(
+            pair["rollback_variable_ids"], ["var-chat", "var-owner"]
+        )
+
+    def test_same_verified_result_cannot_satisfy_both_pair_slots(self):
+        result = self._verified(
+            "BEACON_MEDIA_INTAKE_OWNER_USER_ID", "owner", "same-id"
+        )
+        pair = reconcile_n8n_variable_pair(
+            owner_result=result,
+            chat_result=result,
+            created_this_attempt=set(),
+            **self._pair_kwargs(),
+        )
+        self.assertFalse(pair["workflow_update_permitted"])
+
+    def test_swapped_owner_and_chat_results_fail_closed(self):
+        pair = reconcile_n8n_variable_pair(
+            owner_result=self._verified(
+                "BEACON_MEDIA_INTAKE_PRIVATE_CHAT_ID", "chat", "chat-id"
+            ),
+            chat_result=self._verified(
+                "BEACON_MEDIA_INTAKE_OWNER_USER_ID", "owner", "owner-id"
+            ),
+            created_this_attempt=set(),
+            **self._pair_kwargs(),
+        )
+        self.assertFalse(pair["workflow_update_permitted"])
+
+    def test_duplicate_variable_ids_fail_even_with_distinct_keys(self):
+        pair = reconcile_n8n_variable_pair(
+            owner_result=self._verified(
+                "BEACON_MEDIA_INTAKE_OWNER_USER_ID", "owner", "same-id"
+            ),
+            chat_result=self._verified(
+                "BEACON_MEDIA_INTAKE_PRIVATE_CHAT_ID", "chat", "same-id"
+            ),
+            created_this_attempt=set(),
+            **self._pair_kwargs(),
+        )
+        self.assertFalse(pair["workflow_update_permitted"])
+
+    def test_malformed_verified_pair_result_fails_closed(self):
+        pair = reconcile_n8n_variable_pair(
+            owner_result={"status": "verified", "variable_id": "owner-id"},
+            chat_result=self._verified(
+                "BEACON_MEDIA_INTAKE_PRIVATE_CHAT_ID", "chat", "chat-id"
+            ),
+            created_this_attempt=set(),
+            **self._pair_kwargs(),
+        )
+        self.assertFalse(pair["workflow_update_permitted"])
+
+    def test_duplicate_readback_rows_are_conflict(self):
+        key = "BEACON_MEDIA_INTAKE_OWNER_USER_ID"
+        result = verify_n8n_variable_readback(
+            {
+                "data": [
+                    {"id": "one", "key": key, "value": "owner"},
+                    {"id": "two", "key": key, "value": "owner"},
+                ]
+            },
+            variable_key=key,
+            expected_fingerprint=self._fingerprint(key, "owner"),
+            stable_secret="stable-owner-secret",
+        )
+        self.assertEqual(result["status"], "conflict")
+
+    def test_rejected_create_remains_failed_even_if_readback_exists(self):
+        key = "BEACON_MEDIA_INTAKE_OWNER_USER_ID"
+        result = reconcile_n8n_variable_create(
+            create_http_status=409,
+            create_response={"message": "conflict"},
+            read_payload={"data": [{"id": "existing", "key": key, "value": "owner"}]},
+            variable_key=key,
+            expected_fingerprint=self._fingerprint(key, "owner"),
+            stable_secret="stable-owner-secret",
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertTrue(result["rollback_required"])
 
 
 if __name__ == "__main__":
