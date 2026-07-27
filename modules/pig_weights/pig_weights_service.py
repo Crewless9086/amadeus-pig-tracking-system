@@ -4517,13 +4517,49 @@ def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=N
     return "Needs Data", "No trusted allocation rule matched this pig yet."
 
 
-def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True, connect_factory=None):
+def _complete_canonical_allocation_inputs(value):
+    if not isinstance(value, dict):
+        return False
+    required_lists = (
+        "overview_rows", "pig_master_rows", "weight_rows",
+        "sales_rows", "litter_rows",
+    )
+    if any(not isinstance(value.get(key), list) for key in required_lists):
+        return False
+    if not isinstance(value.get("pen_lookup"), dict):
+        return False
+    progress = value.get("read_progress")
+    return (
+        isinstance(progress, dict)
+        and progress.get("status") == "complete"
+        and value.get("allocation_query_status") == "known"
+        and value.get("medical_query_status") == "known"
+    )
+
+
+def get_pig_allocation_readiness(
+    today=None,
+    allow_sheet_fallback=True,
+    connect_factory=None,
+    canonical_inputs=None,
+):
     today = today or datetime.now().date()
     settings = _allocation_settings()
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    supabase_inputs = _try_supabase_read(
-        farm_supabase_read_service.get_allocation_input_rows, connect_factory,
-    )
+    supplied_canonical_inputs = canonical_inputs is not None
+    supabase_inputs = canonical_inputs
+    if not supplied_canonical_inputs:
+        supabase_inputs = _try_supabase_read(
+            farm_supabase_read_service.get_allocation_input_rows, connect_factory,
+        )
+    elif not _complete_canonical_allocation_inputs(supabase_inputs):
+        return {
+            "source": "supabase_allocation_readiness_unavailable",
+            "pigs": [],
+            "counts": {},
+            "success": False,
+            "status": "malformed_or_partial_canonical_snapshot",
+        }
     if supabase_inputs is not None:
         overview_rows = supabase_inputs.get("overview_rows", [])
         pig_master_rows = supabase_inputs.get("pig_master_rows", [])
@@ -4671,6 +4707,11 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True, connect_
         "success": True,
         "generated_date": today.isoformat(),
         "source": source,
+        "source_read_progress": (
+            supabase_inputs.get("read_progress")
+            if supabase_inputs is not None and isinstance(supabase_inputs.get("read_progress"), dict)
+            else {"status": "not_exposed", "shared_snapshot": False}
+        ),
         "thresholds": settings,
         "business_rules": {
             "source": settings["source"],
