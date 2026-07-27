@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from pathlib import Path
 from typing import Any
@@ -15,10 +16,171 @@ TEXT_NODE = "Call '2.0 - OOM SAKKIE - Amadeus Assistant Agent'"
 SAM_NODE = "Relay SAM Callback to Backend"
 DEPLOYMENT_PACKET_ID = "BEACON-GATEKEEPER-DEPLOYMENT-20260727-01"
 NEXT_CANARY_ID = "BEACON-MEDIA-INTAKE-ACTIVATION-CANARY-20260727-02"
+VARIABLE_FINGERPRINT_DOMAIN = b"beacon-n8n-variable-readback-v1\0"
 
 
 def load_workflow(path: Path = WORKFLOW_PATH) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def variable_value_fingerprint(
+    *, stable_secret: str, variable_key: str, value: str
+) -> str:
+    if not stable_secret or not variable_key or not value:
+        raise ValueError("stable_secret_variable_key_and_value_required")
+    return hmac.new(
+        stable_secret.encode("utf-8"),
+        VARIABLE_FINGERPRINT_DOMAIN
+        + variable_key.encode("utf-8")
+        + b"\0"
+        + value.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def verify_n8n_variable_readback(
+    payload: Any,
+    *,
+    variable_key: str,
+    expected_fingerprint: str,
+    stable_secret: str,
+) -> dict[str, Any]:
+    """Treat only the authoritative list/read response as persistence proof."""
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return {"status": "unavailable", "reason": "read_response_malformed"}
+    matches = [
+        row
+        for row in rows
+        if isinstance(row, dict) and str(row.get("key") or "") == variable_key
+    ]
+    if not matches:
+        return {"status": "missing", "reason": "variable_not_persisted"}
+    if len(matches) != 1:
+        return {"status": "conflict", "reason": "duplicate_variable_identity"}
+    row = matches[0]
+    variable_id = str(row.get("id") or "")
+    value = row.get("value")
+    if not variable_id or not isinstance(value, str) or not value:
+        return {"status": "unavailable", "reason": "read_identity_or_value_missing"}
+    actual_fingerprint = variable_value_fingerprint(
+        stable_secret=stable_secret, variable_key=variable_key, value=value
+    )
+    if not hmac.compare_digest(actual_fingerprint, expected_fingerprint):
+        return {
+            "status": "conflict",
+            "reason": "protected_value_fingerprint_mismatch",
+            "variable_id": variable_id,
+        }
+    return {
+        "status": "verified",
+        "reason": "authoritative_readback_match",
+        "variable_key": variable_key,
+        "variable_id": variable_id,
+        "value_fingerprint": actual_fingerprint,
+    }
+
+
+def reconcile_n8n_variable_create(
+    *,
+    create_http_status: int,
+    create_response: Any,
+    read_payload: Any,
+    variable_key: str,
+    expected_fingerprint: str,
+    stable_secret: str,
+) -> dict[str, Any]:
+    """Accept response-envelope variation, never response-only persistence."""
+    response_shape = (
+        "object:" + ",".join(sorted(create_response))
+        if isinstance(create_response, dict)
+        else type(create_response).__name__
+    )
+    readback = verify_n8n_variable_readback(
+        read_payload,
+        variable_key=variable_key,
+        expected_fingerprint=expected_fingerprint,
+        stable_secret=stable_secret,
+    )
+    accepted_status = create_http_status in {200, 201, 202, 204}
+    if not accepted_status:
+        return {
+            "status": "failed",
+            "reason": "create_http_rejected",
+            "create_response_shape": response_shape,
+            "rollback_required": readback["status"] != "missing",
+        }
+    if readback["status"] != "verified":
+        return {
+            "status": readback["status"],
+            "reason": readback["reason"],
+            "create_response_shape": response_shape,
+            "rollback_required": readback["status"] != "missing",
+            **(
+                {"variable_id": readback["variable_id"]}
+                if readback.get("variable_id")
+                else {}
+            ),
+        }
+    return {
+        "status": "verified",
+        "reason": "create_accepted_and_authoritative_readback_match",
+        "create_response_shape": response_shape,
+        "variable_key": readback["variable_key"],
+        "variable_id": readback["variable_id"],
+        "value_fingerprint": readback["value_fingerprint"],
+        "rollback_required": False,
+    }
+
+
+def reconcile_n8n_variable_pair(
+    *,
+    owner_result: dict[str, Any],
+    chat_result: dict[str, Any],
+    created_this_attempt: set[str],
+    owner_key: str,
+    chat_key: str,
+    owner_expected_fingerprint: str,
+    chat_expected_fingerprint: str,
+) -> dict[str, Any]:
+    results = {"owner": owner_result, "private_chat": chat_result}
+    expected = {
+        "owner": (owner_key, owner_expected_fingerprint),
+        "private_chat": (chat_key, chat_expected_fingerprint),
+    }
+    identities = [str(result.get("variable_id") or "") for result in results.values()]
+    structurally_valid = bool(
+        owner_key
+        and chat_key
+        and owner_key != chat_key
+        and all(identities)
+        and len(set(identities)) == 2
+    )
+    verified = structurally_valid and all(
+        result.get("status") == "verified"
+        and result.get("variable_key") == expected[name][0]
+        and isinstance(result.get("value_fingerprint"), str)
+        and hmac.compare_digest(
+            result["value_fingerprint"], expected[name][1]
+        )
+        for name, result in results.items()
+    )
+    if verified:
+        return {
+            "status": "verified",
+            "rollback_variable_ids": [],
+            "workflow_update_permitted": True,
+        }
+    rollback_ids = sorted(
+        str(result["variable_id"])
+        for name, result in results.items()
+        if name in created_this_attempt and result.get("variable_id")
+    )
+    return {
+        "status": "partial_or_conflicting",
+        "rollback_variable_ids": rollback_ids,
+        "workflow_update_permitted": False,
+    }
 
 
 def classify_update(
