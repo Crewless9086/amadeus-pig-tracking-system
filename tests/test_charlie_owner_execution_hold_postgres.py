@@ -90,6 +90,18 @@ class CharlieOwnerExecutionHoldPostgresTests(unittest.TestCase):
             expected_status="approved", database_url=self.database_url,
         )
         self.assertEqual((lease_status, lease["status"]), (423, "owner_execution_hold_active"))
+        metadata_update, metadata_status = update_mission_vault(
+            self.mission_id, {"orchestration": {"generation_identity": "changed"}},
+            expected_status="approved", database_url=self.database_url,
+        )
+        self.assertEqual(metadata_status, 423)
+        self.assertEqual(metadata_update["status"], "owner_execution_hold_active")
+        other_transition, other_status = update_mission_status(
+            self.mission_id, "paused", expected_status="approved",
+            database_url=self.database_url,
+        )
+        self.assertEqual(other_status, 423)
+        self.assertEqual(other_transition["status"], "owner_execution_hold_active")
 
         conflict, conflict_status = create_owner_execution_hold(
             self.mission_id, GENERATION, "different_reason",
@@ -121,6 +133,27 @@ class CharlieOwnerExecutionHoldPostgresTests(unittest.TestCase):
                     cursor.execute(
                         "update public.charlie_owner_execution_hold_events set reason='changed' where event_id=%s",
                         (created["hold"]["event_id"],),
+                    )
+
+    def test_database_rejects_forged_release_provenance(self):
+        created, status = create_owner_execution_hold(
+            self.mission_id, GENERATION, "forged_release_test",
+            owner_principal="owner:test", database_url=self.database_url,
+        )
+        self.assertEqual(status, 201)
+        with self.assertRaises(psycopg.Error):
+            with psycopg.connect(self.database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """insert into public.charlie_owner_execution_hold_events
+                           (event_id,hold_id,mission_id,generation_identity,event_type,reason,
+                            owner_identity_hash,authorization_identity,release_of_event_id)
+                           values ('FORGED-RELEASE','WRONG-HOLD',%s,%s,'hold_released','forged',
+                                   %s,%s,%s)""",
+                        (
+                            self.mission_id, GENERATION, "a" * 64, "b" * 64,
+                            created["hold"]["event_id"],
+                        ),
                     )
 
     def test_concurrent_hold_and_pickup_has_one_fail_closed_winner(self):

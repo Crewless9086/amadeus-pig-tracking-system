@@ -1280,6 +1280,26 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "mission_id": mission_id,
             "codex_chat_written": False,
         }, 423
+    # Claim execution eligibility before workflow refresh, branch restoration,
+    # or any other pickup side effect. The store serializes this transition
+    # with the same mission-scoped advisory lock used by owner holds.
+    updated, update_status = update_mission_status(
+        mission_id,
+        "in_progress",
+        owner_decision="Codex picked up this approved CHARLIE mission for execution under CODEX_CHAT rules.",
+        event_type="status_changed",
+        notes="Codex mission pickup claimed the mission before pickup preparation.",
+        metadata={"script": "scripts/charlie_mission_pickup.py"},
+        expected_status=clean_status,
+    )
+    if update_status >= 400:
+        return {
+            "success": False,
+            "status": "claim_lost" if updated.get("status") == "status_claim_lost" else updated.get("status", "mission_status_update_failed"),
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+            "expected_status": clean_status,
+        }, update_status
     refresh = _refresh_core_plan_for_pickup(mission)
     if refresh.get("blocked"):
         return {
@@ -1323,24 +1343,6 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "mission_id": mission_id,
             "codex_chat_written": False,
         }, 423
-    updated, update_status = update_mission_status(
-        mission_id,
-        "in_progress",
-        owner_decision="Codex picked up this approved CHARLIE mission for execution under CODEX_CHAT rules.",
-        event_type="status_changed",
-        notes="Codex mission pickup wrote planning/CODEX_CHAT.md and marked the mission in progress.",
-        metadata={"script": "scripts/charlie_mission_pickup.py"},
-        expected_status=clean_status,
-    )
-    if update_status >= 400:
-        return {
-            "success": False,
-            "status": "claim_lost" if updated.get("status") == "status_claim_lost" else updated.get("status", "mission_status_update_failed"),
-            "mission_id": mission_id,
-            "codex_chat_written": False,
-            "expected_status": clean_status,
-        }, update_status
-
     authorized, reason = _runtime_pickup_authorized()
     if not authorized:
         return {

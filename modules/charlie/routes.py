@@ -1660,12 +1660,20 @@ def charlie_build_relay_mission_execution_hold_route(mission_id):
     denied = require_strict_owner_admin_access()
     if denied:
         return denied
+    owner_principal = strict_owner_admin_principal()
+    if not owner_principal or owner_principal == "owner-admin:local-development":
+        return jsonify({"success": False, "status": "owner_admin_session_required"}), 403
+    if (
+        not request.is_json
+        or request.headers.get("X-CHARLIE-Owner-Action") != "owner_execution_hold"
+    ):
+        return jsonify({"success": False, "status": "owner_action_intent_required"}), 403
     payload = request.get_json(silent=True) or {}
     result, status_code = create_owner_execution_hold(
         mission_id,
         str(payload.get("generation_identity") or "").strip(),
         str(payload.get("reason") or "").strip(),
-        owner_principal=strict_owner_admin_principal(),
+        owner_principal=owner_principal,
     )
     return jsonify(result), status_code
 
@@ -1675,13 +1683,21 @@ def charlie_build_relay_mission_execution_hold_release_route(mission_id):
     denied = require_strict_owner_admin_access()
     if denied:
         return denied
+    owner_principal = strict_owner_admin_principal()
+    if not owner_principal or owner_principal == "owner-admin:local-development":
+        return jsonify({"success": False, "status": "owner_admin_session_required"}), 403
+    if (
+        not request.is_json
+        or request.headers.get("X-CHARLIE-Owner-Action") != "owner_execution_hold_release"
+    ):
+        return jsonify({"success": False, "status": "owner_action_intent_required"}), 403
     payload = request.get_json(silent=True) or {}
     result, status_code = release_owner_execution_hold(
         mission_id,
         str(payload.get("generation_identity") or "").strip(),
         str(payload.get("hold_id") or "").strip(),
         str(payload.get("reason") or "").strip(),
-        owner_principal=strict_owner_admin_principal(),
+        owner_principal=owner_principal,
     )
     return jsonify(result), status_code
 

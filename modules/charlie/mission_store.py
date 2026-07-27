@@ -735,28 +735,18 @@ def update_mission_status(
     set_lines.append("updated_at = now()")
     set_sql = ",\n                        ".join(set_lines)
     expected_clause = "and status = %(expected_status)s" if expected_status else ""
-    hold_clause = ""
-    if status in {"in_progress", "release_in_progress"}:
-        hold_clause = f"and {_not_execution_held_sql()}"
+    hold_clause = f"and {_not_execution_held_sql()}"
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
-                if hold_clause:
-                    cursor.execute(
-                        "select pg_advisory_xact_lock(hashtextextended(%(mission_id)s, 0))",
-                        {"mission_id": mission_id},
-                    )
-                    held, held_status = owner_execution_hold_status(mission_id, cursor=cursor)
-                    if held_status < 400 and held.get("active"):
-                        return {
-                            "success": False, "configured": True,
-                            "status": "owner_execution_hold_active",
-                            "mission_id": mission_id, "hold": held.get("hold"),
-                        }, 423
                 cursor.execute(
                     f"""
+                    with mission_hold_lock as (
+                        select pg_advisory_xact_lock(hashtextextended(%(mission_id)s, 0))
+                    )
                     update public.charlie_missions
                     set {set_sql}
+                    from mission_hold_lock
                     where mission_id = %(mission_id)s
                     {expected_clause}
                     {hold_clause}
@@ -772,16 +762,15 @@ def update_mission_status(
                 )
                 rows = cursor.fetchall()
                 if not rows:
-                    if hold_clause:
-                        held, held_status = owner_execution_hold_status(mission_id, cursor=cursor)
-                        if held_status < 400 and held.get("active"):
-                            return {
-                                "success": False,
-                                "configured": True,
-                                "status": "owner_execution_hold_active",
-                                "mission_id": mission_id,
-                                "hold": held.get("hold"),
-                            }, 423
+                    held, held_status = owner_execution_hold_status(mission_id, cursor=cursor)
+                    if held_status < 400 and held.get("active"):
+                        return {
+                            "success": False,
+                            "configured": True,
+                            "status": "owner_execution_hold_active",
+                            "mission_id": mission_id,
+                            "hold": held.get("hold"),
+                        }, 423
                     return {
                         "success": False,
                         "configured": True,
@@ -1299,8 +1288,7 @@ def update_mission_vault(
     if status:
         set_lines.insert(0, "status = %(status)s")
         params["status"] = status
-    if "execution_lease" in vault_metadata:
-        where += f" and {_not_execution_held_sql()}"
+    where += f" and {_not_execution_held_sql()}"
     if owner_decision:
         set_lines.insert(0, "owner_decision = %(owner_decision)s")
         params["owner_decision"] = _clean_text(owner_decision, 1000)
@@ -1308,15 +1296,14 @@ def update_mission_vault(
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
-                if "execution_lease" in vault_metadata:
-                    cursor.execute(
-                        "select pg_advisory_xact_lock(hashtextextended(%(mission_id)s, 0))",
-                        {"mission_id": mission_id},
-                    )
                 cursor.execute(
                     f"""
+                    with mission_hold_lock as (
+                        select pg_advisory_xact_lock(hashtextextended(%(mission_id)s, 0))
+                    )
                     update public.charlie_missions
                     set {", ".join(set_lines)}
+                    from mission_hold_lock
                     where {where}
                     returning mission_id
                     """,
@@ -1324,14 +1311,13 @@ def update_mission_vault(
                 )
                 rows = cursor.fetchall()
                 if not rows:
-                    if "execution_lease" in vault_metadata:
-                        held, held_status = owner_execution_hold_status(mission_id, cursor=cursor)
-                        if held_status < 400 and held.get("active"):
-                            return {
-                                "success": False, "configured": True,
-                                "status": "owner_execution_hold_active",
-                                "mission_id": mission_id, "hold": held.get("hold"),
-                            }, 423
+                    held, held_status = owner_execution_hold_status(mission_id, cursor=cursor)
+                    if held_status < 400 and held.get("active"):
+                        return {
+                            "success": False, "configured": True,
+                            "status": "owner_execution_hold_active",
+                            "mission_id": mission_id, "hold": held.get("hold"),
+                        }, 423
                     if expected_status:
                         return {
                             "success": False, "configured": True, "status": "status_claim_lost",
