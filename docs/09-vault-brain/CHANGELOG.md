@@ -1,5 +1,28 @@
 # Vault Brain Changelog
 
+## 2026-07-27 - CORE observe-only ownership handshake integrated
+
+- PR #539 merged normally as
+  `ce8971dff7605a91120a63c26dd22d81ca413360` after exact-head CI and an
+  independent security/architecture approval.
+- Added a dedicated credential-free observe-only child and bound mode,
+  revision, generation, nonces, live launcher/interpreter topology, creation
+  identity, signed tree digests, heartbeat, watchdog decision, and governed
+  stop evidence.
+- Observe-only cannot import or invoke mission-store, execution-provider, or
+  recovery paths; cannot query or acquire missions/leases; and cannot mutate
+  mission, queue, stage, review, artifact, product, customer, farm, migration,
+  deployment, or business state.
+- Current main and Render are exactly
+  `1c47e53d5121d2fae5e49019f88872838b80d47c`
+  (`dep-d9jni4741pts73bd639g`, HTTP 200). Local runtime, execution, and
+  manifest remain `98cfe04e4ea23a4ddc43525671bb56de0a49670d`.
+- Code available/merged/hosted: yes/yes/yes. Local promotion, handshake
+  execution, ordinary startup, mission processing, and natural proof:
+  no/no/no/no/no.
+- CORE remains stopped with the canonical stop marker present and watchdog
+  disabled. No T0 mission or PR #466 action occurred.
+
 ## 2026-07-27 - ROOTLINE Daily Advisor integrated and verified
 
 - PR #544 merged normally as

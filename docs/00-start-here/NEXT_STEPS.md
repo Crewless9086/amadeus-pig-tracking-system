@@ -44,11 +44,17 @@ autonomous authority.
 
 ## P0 Operational / Live Issues
 
-- CORE ownership bootstrap code from PR #517 is merged and hosted at
-  `0c4eb404fce6df8dfc2e8aab100690697d6e7cb9`, but local runtime activation is
-  deliberately pending a separate owner decision. Keep CORE stopped, retain
-  the canonical stop marker, keep the watchdog disabled, and do not run either
-  T0 mission until governed promotion/startup is separately authorized.
+- CORE ownership bootstrap and observe-only mode are merged. PR #539 merged
+  as `ce8971dff7605a91120a63c26dd22d81ca413360`; current main and exact
+  Render deployment are now
+  `1c47e53d5121d2fae5e49019f88872838b80d47c`. Local runtime, execution, and
+  manifest remain deliberately unpromoted at
+  `98cfe04e4ea23a4ddc43525671bb56de0a49670d`.
+- Keep CORE stopped, retain the canonical stop marker, and keep the watchdog
+  disabled. A future separately authorized observe-only handshake must first
+  prove zero runnable missions without starting CORE, then prove the signed
+  ownership tree and governed zero-survivor stop. It may not execute either T0
+  mission or transition into ordinary operation.
 - PR #530 is a stale, open 2026-07-26 night-handover candidate. It is not
   authoritative current state and must be reconciled or closed rather than
   merged as-is. SAM Live Stock P0 remains the current business priority; this
