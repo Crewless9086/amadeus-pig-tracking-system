@@ -33,6 +33,16 @@ for (const viewport of [
     await page.route("**/api/**", route => {
       const path = new URL(route.request().url()).pathname;
       if (path.endsWith("/rootline/operating-policy/contract")) return json(route, contract);
+      if (path.endsWith("/rootline/operating-policy/preview")) {
+        return json(route, {
+          success: true,
+          preview_is_valid: true,
+          proposal_can_be_recorded: true,
+          eligibility_after_preview: "Needs Data",
+          runtime_status: "Unavailable",
+          remaining_unknown_policy_inputs: ["seasonal_boundaries", "forecast_rain"],
+        });
+      }
       if (path.endsWith("/rootline/operating-policy")) return json(route, policy);
       return json(route, { success: true });
     });
@@ -45,15 +55,23 @@ for (const viewport of [
     await expect(review).toContainText("Controller power-loss state");
     await expect(review).toContainText("Residual drainage");
     await expect(review.getByRole("button", { name: "Preview advice effect" })).toBeVisible();
-    await expect(review.getByRole("button", { name: "Record immutable proposal" })).toBeVisible();
+    await expect(review.getByRole("button", { name: "Record proposal (does not change advice)" })).toBeVisible();
     await expect(review.getByRole("button", { name: "Record owner review" })).toBeVisible();
     await expect(review.getByRole("button", { name: "Activate exact version for advice" })).toHaveCount(0);
     await expect(page.locator('[name="B12345_min"]')).toBeDisabled();
+    await expect(page.locator('[name="live_rain_threshold"]')).toBeDisabled();
     await expect(page.locator('[name="power_note"]')).toBeDisabled();
     await expect(page.locator('[name="drainage_seconds"]')).toBeDisabled();
     await expect(page.locator('[name="drainage_note"]')).toBeDisabled();
     await expect(review).not.toContainText("Irrigate now");
     await expect(review).not.toContainText("Run valve");
+    await page.locator('[name="live_rain_unknown"]').uncheck();
+    await expect(page.locator('[name="live_rain_threshold"]')).toHaveValue("0.2");
+    await page.locator('[name="proposal_evidence"]').fill("Charl confirmed current rain rate greater than 0.2 mm/hour causes Hold.");
+    await review.getByRole("button", { name: "Preview advice effect" }).click();
+    await expect(review).toContainText("Valid partial proposal · may be recorded");
+    await expect(review).toContainText("Advice preview: Needs Data");
+    await expect(review).toContainText("Recording this proposal will not change current advice");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
   });
 }

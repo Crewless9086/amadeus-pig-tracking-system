@@ -34,8 +34,8 @@
     </section>
 
     <form id="policy_form" class="ops-panel" novalidate>
-      <h2>Draft a proposal</h2>
-      <p>Choose <strong>Unknown</strong> deliberately whenever authoritative evidence or an owner decision is missing.</p>
+      <h2>Step 1 · Draft and record a proposal</h2>
+      <p>Choose <strong>Unknown</strong> deliberately whenever authoritative evidence or an owner decision is missing. A valid partial proposal may remain Needs Data; that does not prevent recording it.</p>
 
       <fieldset>
         <legend>Seasonal boundaries</legend>
@@ -65,6 +65,11 @@
 
       <fieldset>
         <legend>Weather advice limits</legend>
+        <label><input type="checkbox" name="live_rain_unknown" data-controls="live_rain_threshold" checked> Live-rain hold threshold Unknown</label>
+        <label>Hold when current rain rate is greater than
+          <input name="live_rain_threshold" type="number" value="0.2" min="0.2" max="0.2" step="0.1" readonly> mm/hour
+        </label>
+        <p>Exactly the threshold does not trigger Hold. Rain-release/dry-interval policy remains Unknown.</p>
         <label><input type="checkbox" name="forecast_unknown" data-controls="forecast_amount,forecast_probability,forecast_horizon" checked> Forecast-rain rule Unknown</label>
         <label>Amount (mm) <input name="forecast_amount" type="number" min="0" max="200" step="0.1"></label>
         <label>Probability (%) <input name="forecast_probability" type="number" min="0" max="100" step="0.1"></label>
@@ -102,14 +107,15 @@
       </label>
       <div class="ops-actions">
         <button type="button" id="policy_preview">Preview advice effect</button>
-        <button type="button" id="policy_propose">Record immutable proposal</button>
+        <button type="button" id="policy_propose">Record proposal (does not change advice)</button>
       </div>
       <div id="policy_message" role="status"></div>
       <div id="policy_preview_result" class="ops-list"></div>
     </form>
 
     <section class="ops-panel">
-      <h2>Immutable version history</h2>
+      <h2>Steps 2 and 3 · Review, then activate</h2>
+      <p>Recording a proposal does not review it or change current advice. Review and activation are separate owner-admin actions bound to the exact version.</p>
       <label>Review / activation evidence <textarea id="transition_evidence" maxlength="1000"></textarea></label>
       <label>Activation effective time <input id="activation_effective_at" type="datetime-local"></label>
       <div id="policy_history" class="ops-list"><div class="ops-empty-inline">No policy history available.</div></div>
