@@ -62,6 +62,15 @@ Each observation must bind the canonical `Pig_ID`, observation time, recording t
 
 Observation receipt is not a management decision. A comment must not silently change pregnancy, mating, medical, purpose, lifecycle, availability, retirement, or sale state.
 
+Phase 2 implementation uses the existing canonical
+`pig_observation_events` rail without a new migration. Owner-read may inspect
+history; only an authenticated owner-admin principal may append evidence.
+Preview separates observed facts, owner interpretation and the resulting
+Herdmaster explanation. Replay is withheld, altered evidence under the same
+identity conflicts, and corrections append a same-animal superseding event.
+No observation is itself a heat, pregnancy, fertility, health, breeding
+readiness, retirement or mating decision.
+
 ## Phase 3 - Explained mating recommendations
 
 Herdmaster may rank evidence-qualified pairings using:

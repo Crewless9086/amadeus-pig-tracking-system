@@ -2,6 +2,15 @@
 
 Status: owner-reviewed governance decisions captured on 2026-07-02.
 
+## Herdmaster Breeding Observation Boundary - 2026-07-27
+
+Charl authorized an owner-only, append-only factual observation workflow for
+current sows and gilts. Observed facts, owner interpretation and Herdmaster
+recommendations remain separate. A factual note may improve an explanation
+but cannot create a mating, assert heat or pregnancy, clear medical evidence,
+or change lifecycle, purpose, movement, availability, retirement or farm
+state. The first real observation requires a separate supervised canary.
+
 ## Vault Brain Authority
 
 The Vault Brain should become the primary active brain after owner review.

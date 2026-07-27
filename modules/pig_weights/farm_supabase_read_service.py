@@ -993,7 +993,14 @@ def get_breeding_attention_source_snapshot(
             select event.pig_id, event.observed_at, event.observation_category,
                    event.measurements_json, event.observation_event_id
             from public.pig_observation_events event
-            where event.observation_category in ('behaviour', 'body_condition')
+            where (
+                event.observation_category in ('behaviour', 'body_condition')
+                or (
+                    event.observation_category = 'other'
+                    and event.measurements_json->>'contract_version' =
+                        'herdmaster_breeding_observation_v1'
+                )
+            )
               and not exists (
                 select 1 from public.pig_observation_events correction
                 where correction.supersedes_observation_event_id = event.observation_event_id

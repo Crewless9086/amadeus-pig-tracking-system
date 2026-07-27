@@ -4,7 +4,11 @@ from time import monotonic
 
 from flask import Blueprint, current_app, jsonify, render_template, request
 
-from modules.auth.owner_access import require_owner_read_access
+from modules.auth.owner_access import (
+    require_owner_read_access,
+    require_strict_owner_admin_access,
+    strict_owner_admin_principal,
+)
 from modules.pig_weights.herdmaster_breeding_attention_service import (
     build_bounded_family_evidence,
     build_breeding_attention,
@@ -24,6 +28,14 @@ from modules.pig_weights.mating_service import (
     mark_not_pregnant,
 )
 from modules.pig_weights.pig_weights_service import get_pig_allocation_readiness
+from modules.pig_weights.herdmaster_breeding_observation_service import (
+    CONTRACT_VERSION as BREEDING_OBSERVATION_VERSION,
+    list_observations,
+    observation_event_id,
+    preview_observation,
+    record_observation,
+    validate_observation,
+)
 from modules.pig_weights.mating_validation import (
     validate_new_mating_payload,
     validate_assume_pregnant_payload,
@@ -55,8 +67,19 @@ def _deadline_read(started, reader, *args, **kwargs):
 def _project_breeding_observations(rows, now=None):
     now = now or datetime.now(timezone.utc)
     by_pig = {}
-    seen = set()
-    for row in rows:
+    seen_heat = set()
+    seen_body_condition = set()
+    def chronological_key(row):
+        if isinstance(row, dict):
+            observed = row.get("observed_at")
+            event_id = row.get("observation_event_id")
+        else:
+            observed = row[1] if len(row) > 1 else None
+            event_id = row[4] if len(row) > 4 else ""
+        instant = observed.timestamp() if isinstance(observed, datetime) else float("-inf")
+        return instant, str(event_id or "")
+
+    for row in sorted(list(rows), key=chronological_key, reverse=True):
         if isinstance(row, dict):
             raw_pig_id = row.get("pig_id")
             observed_at = row.get("observed_at")
@@ -65,25 +88,43 @@ def _project_breeding_observations(rows, now=None):
         else:
             raw_pig_id, observed_at, raw_category, measurements, _event_id = row
         pig_id, category = str(raw_pig_id), str(raw_category)
-        key = (pig_id, category)
-        if key in seen:
-            continue
-        seen.add(key)
         measurements = measurements if isinstance(measurements, dict) else {}
-        item = by_pig.setdefault(pig_id, {})
         age_seconds = (now - observed_at).total_seconds() if isinstance(observed_at, datetime) else float("inf")
-        if category == "behaviour" and measurements.get("standing_heat_observed") is True and 0 <= age_seconds <= 172800:
-            item["heat_state"] = "standing"
-            item["heat_observed_at"] = observed_at.isoformat()
+        is_breeding_observation = (
+            measurements.get("contract_version") == BREEDING_OBSERVATION_VERSION
+        )
+        if category == "other" and not is_breeding_observation:
+            continue
+        item = by_pig.setdefault(pig_id, {})
+        if pig_id not in seen_heat:
+            heat_value = (
+                measurements.get("standing_heat")
+                if is_breeding_observation
+                else (
+                    "observed"
+                    if measurements.get("standing_heat_observed") is True
+                    else "not_observed"
+                    if measurements.get("standing_heat_observed") is False
+                    else "not_recorded"
+                )
+            )
+            if (category == "behaviour" or is_breeding_observation) and heat_value != "not_recorded":
+                seen_heat.add(pig_id)
+                if heat_value == "observed" and 0 <= age_seconds <= 172800:
+                    item["heat_state"] = "standing"
+                    item["heat_observed_at"] = observed_at.isoformat()
         score = measurements.get("body_condition_score")
         if (
-            category == "body_condition"
+            pig_id not in seen_body_condition
+            and
+            (category == "body_condition" or is_breeding_observation)
             and not isinstance(score, bool)
             and isinstance(score, (int, float))
             and isfinite(score)
             and 1 <= score <= 5
             and 0 <= age_seconds <= 2592000
         ):
+            seen_body_condition.add(pig_id)
             item["body_condition_score"] = score
             item["body_condition_observed_at"] = observed_at.isoformat()
     return by_pig
@@ -153,12 +194,7 @@ def breeding_analytics():
     return jsonify(get_breeding_analytics())
 
 
-@mating_bp.route("/breeding-attention", methods=["GET"])
-def breeding_attention():
-    denied = require_owner_read_access()
-    if denied:
-        return denied
-    try:
+def _build_breeding_attention_packets(proposed_observation=None):
         started = monotonic()
         snapshot = get_breeding_attention_source_snapshot(
             connect_factory=_bounded_read_connection,
@@ -233,7 +269,40 @@ def breeding_attention():
         }
         _route_stage(route_progress, "attention_projection", stage_started, monotonic(), len(packet.get("animals", [])), started)
         _require_route_deadline(started)
+        hypothetical = None
+        if proposed_observation:
+            proposed_rows = list(snapshot["observation_rows"])
+            proposed_rows.append({
+                "pig_id": proposed_observation["pig_id"],
+                "observed_at": proposed_observation["observed_at"],
+                "observation_category": "other",
+                "measurements_json": proposed_observation["measurements"],
+                "observation_event_id": observation_event_id(
+                    proposed_observation["idempotency_key"]
+                ),
+            })
+            hypothetical = build_breeding_attention(
+                readiness,
+                matings={"success": True, "records": mating_rows},
+                analytics=analytics,
+                litters=litters,
+                family_trees=family_evidence,
+                observations={
+                    "success": True,
+                    "by_pig": _project_breeding_observations(proposed_rows),
+                },
+            )
+            _require_route_deadline(started)
+        return packet, hypothetical, started
 
+
+@mating_bp.route("/breeding-attention", methods=["GET"])
+def breeding_attention():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    try:
+        packet, _hypothetical, started = _build_breeding_attention_packets()
         serialized = current_app.json.dumps(packet)
         _require_route_deadline(started)
         return current_app.response_class(serialized, status=200, mimetype="application/json")
@@ -248,6 +317,66 @@ def breeding_attention_view():
     if denied:
         return denied
     return render_template("breeding-attention.html")
+
+
+@mating_bp.route("/breeding-attention/<pig_id>/observations", methods=["GET"])
+def breeding_attention_observations(pig_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status = list_observations(pig_id)
+    return jsonify(result), status
+
+
+@mating_bp.route("/breeding-attention/<pig_id>/observations/preview", methods=["POST"])
+def breeding_attention_observation_preview(pig_id):
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    payload["pig_id"] = pig_id
+    payload.pop("current_attention", None)
+    clean, validation_error = validate_observation(payload)
+    if validation_error:
+        result, status = preview_observation(payload)
+        return jsonify(result), status
+    try:
+        attention_packet, hypothetical_packet, _started = _build_breeding_attention_packets(
+            proposed_observation=clean,
+        )
+    except Exception:
+        return jsonify({
+            "success": False,
+            "status": "current_attention_evidence_unavailable",
+            "advisory_only": True,
+        }), 503
+    authoritative_attention = next((
+        row for row in attention_packet.get("animals", [])
+        if isinstance(row, dict) and str(row.get("pig_id") or "") == pig_id
+    ), None)
+    hypothetical_attention = next((
+        row for row in (hypothetical_packet or {}).get("animals", [])
+        if isinstance(row, dict) and str(row.get("pig_id") or "") == pig_id
+    ), None)
+    result, status = preview_observation(
+        payload,
+        authoritative_attention=authoritative_attention,
+        hypothetical_attention=hypothetical_attention,
+    )
+    return jsonify(result), status
+
+
+@mating_bp.route("/breeding-attention/<pig_id>/observations", methods=["POST"])
+def breeding_attention_observation_record(pig_id):
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    payload["pig_id"] = pig_id
+    result, status = record_observation(
+        payload, actor_id=strict_owner_admin_principal(),
+    )
+    return jsonify(result), status
 
 @mating_bp.route("/breeding-analytics/<pig_id>", methods=["GET"])
 def breeding_animal_detail(pig_id):
