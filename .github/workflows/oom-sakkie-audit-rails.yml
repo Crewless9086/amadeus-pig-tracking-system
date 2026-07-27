@@ -153,7 +153,7 @@ jobs:
         run: python -m unittest tests.test_charlie_callback_postgres
 
       - name: Run CHARLIE adaptive orchestration durable canary tests
-        run: python -m unittest tests.test_charlie_adaptive_orchestration_postgres
+        run: python -m unittest tests.test_charlie_adaptive_orchestration_postgres tests.test_charlie_owner_execution_hold_postgres
 
       - name: Run pig observation privilege gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_observation_event_postgres

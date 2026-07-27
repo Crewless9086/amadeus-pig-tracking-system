@@ -11,6 +11,7 @@ from modules.charlie.mission_store import (
     get_mission,
     list_missions,
     list_owner_work_missions,
+    owner_execution_hold_status,
     mission_status_summary,
     normalize_approval_level,
     record_mission_review_decision,
@@ -1095,10 +1096,26 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("owner_work", sql)
         self.assertIn("current_contract_replacement", sql)
         self.assertIn("supersedes_mission_id", sql)
+        self.assertIn("charlie_owner_execution_hold_events", sql)
+        self.assertIn("hold_released", sql)
         self.assertIn("not exists", sql.lower())
         self.assertIn("metadata_json->'queue'->>'priority'", sql)
         self.assertEqual(params["status"], "approved")
         self.assertEqual(params["limit"], 20)
+        self.assertEqual(result["missions"], [])
+
+    def test_execution_list_can_exclude_active_owner_holds(self):
+        connection = FakeConnection([])
+        result, status_code = list_missions(
+            status="approved",
+            exclude_execution_held=True,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 200)
+        sql = connection.cursor_instance.executed[0][0]
+        self.assertIn("charlie_owner_execution_hold_events", sql)
+        self.assertIn("release_of_event_id", sql)
         self.assertEqual(result["missions"], [])
 
     def test_execution_list_can_exclude_durably_superseded_legacy_rows(self):
@@ -1191,7 +1208,10 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 409)
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "status_claim_lost")
-        update_sql, update_params = connection.cursor_instance.executed[0]
+        update_sql, update_params = next(
+            item for item in connection.cursor_instance.executed
+            if "update public.charlie_missions" in item[0]
+        )
         self.assertIn("and status = %(expected_status)s", update_sql)
         self.assertEqual(update_params["expected_status"], "approved")
 

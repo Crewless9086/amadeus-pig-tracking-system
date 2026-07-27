@@ -78,6 +78,18 @@ Parent missions become review-ready when their frozen matrix and focused mission
 
 ## Queue Discipline
 
+Mission approval and execution eligibility are distinct. An approved mission
+may carry a current-generation `owner_execution_hold` without changing its
+owner approval, orchestration packet, workflow, or mission row. The hold and
+its later release are separate append-only, server-owner-derived events.
+
+While a hold is active, every authoritative runnable query, executive queue
+cycle, direct pickup, stranded recovery, status claim, and execution-lease
+write must exclude or reject that mission. Holds have no timeout and survive
+restart. Only a separate exact owner-admin release for the same mission,
+generation, and hold identity restores execution eligibility. Replays are
+idempotent; stale generations and conflicting holds fail closed.
+
 CHARLIE owner-facing queues, Telegram handoff views, command-center buckets, and local runner pickup must treat `owner_work` as the actionable queue class. System smoke tests, validation missions, canary/no-op checks, placeholder relay records, and low-signal intake are not owner work and must not crowd out real owner missions waiting for approval, pickup, review, or release handling.
 
 Dependencies are executable gates, not display hints. A child remains `waiting_dependency` until every `depends_on_mission_id` is `done`, `merged`, or `deployed`. Oversized parents become paused `waiting_children` coordinators after their deterministic children are created; the parent pipeline may not execute in parallel with those children. Child scope is frozen from its explicit family scope and may not recursively split from words inherited from the parent title.

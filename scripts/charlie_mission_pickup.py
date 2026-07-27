@@ -969,6 +969,7 @@ def _execution_state_missions(statuses, limit=100):
             limit=parsed_limit,
             compact=False,
             exclude_superseded=True,
+            exclude_execution_held=True,
         )
         if status_code >= 400:
             return [], status_code

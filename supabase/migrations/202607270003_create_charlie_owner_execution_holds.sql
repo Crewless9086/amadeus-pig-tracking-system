@@ -1,0 +1,58 @@
+create table if not exists public.charlie_owner_execution_hold_events (
+    event_id text primary key,
+    hold_id text not null,
+    mission_id text not null references public.charlie_missions(mission_id) on delete restrict,
+    generation_identity text not null,
+    event_type text not null check (event_type in ('hold_created', 'hold_released')),
+    reason text not null,
+    owner_identity_hash text not null check (length(owner_identity_hash) = 64),
+    authorization_identity text not null check (length(authorization_identity) = 64),
+    release_of_event_id text references public.charlie_owner_execution_hold_events(event_id) on delete restrict,
+    evidence_json jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    check (
+        (event_type = 'hold_created' and release_of_event_id is null)
+        or
+        (event_type = 'hold_released' and release_of_event_id is not null)
+    ),
+    unique (hold_id, event_type),
+    unique (release_of_event_id)
+);
+
+create index if not exists idx_charlie_owner_execution_holds_mission_created
+    on public.charlie_owner_execution_hold_events(mission_id, created_at desc);
+
+create or replace function public.prevent_charlie_owner_execution_hold_mutation()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+    raise exception 'charlie_owner_execution_hold_events is append-only';
+end;
+$$;
+
+drop trigger if exists prevent_charlie_owner_execution_hold_events_update
+    on public.charlie_owner_execution_hold_events;
+create trigger prevent_charlie_owner_execution_hold_events_update
+before update on public.charlie_owner_execution_hold_events
+for each row execute function public.prevent_charlie_owner_execution_hold_mutation();
+
+drop trigger if exists prevent_charlie_owner_execution_hold_events_delete
+    on public.charlie_owner_execution_hold_events;
+create trigger prevent_charlie_owner_execution_hold_events_delete
+before delete on public.charlie_owner_execution_hold_events
+for each row execute function public.prevent_charlie_owner_execution_hold_mutation();
+
+alter table public.charlie_owner_execution_hold_events enable row level security;
+revoke all on public.charlie_owner_execution_hold_events from public, anon, authenticated;
+grant select, insert on public.charlie_owner_execution_hold_events to service_role;
+revoke update, delete, truncate on public.charlie_owner_execution_hold_events from service_role;
+
+insert into app_private.migration_log (migration_id, description)
+values (
+    '202607270003_create_charlie_owner_execution_holds',
+    'Create append-only, generation-bound CHARLIE owner execution hold and release evidence.'
+)
+on conflict (migration_id) do nothing;

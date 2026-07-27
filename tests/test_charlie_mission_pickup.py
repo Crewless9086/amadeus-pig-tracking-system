@@ -1326,6 +1326,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             limit=1,
             compact=False,
             exclude_superseded=True,
+            exclude_execution_held=True,
         )
 
     @patch("scripts.charlie_mission_pickup.list_missions")
@@ -1340,6 +1341,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             limit=100,
             compact=False,
             exclude_superseded=True,
+            exclude_execution_held=True,
         )
 
     def test_live_process_is_never_recovered_from_idle_observer_shape(self):
