@@ -634,6 +634,8 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
                 delivery_claim is not None and delivery_evidence_recorder is not None
             ),
             "automatic_retry": False,
+            "guidance_policy_version": "sam_live_stock_customer_guidance_v1",
+            "location_guidance_authorized": True,
             "availability": (
                 decision.get("authoritative_availability")
                 or decision.get("availability_evidence")

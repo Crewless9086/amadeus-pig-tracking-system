@@ -12,6 +12,7 @@ from modules.sales.sam_owner_reply_window import (
     ReplyWindowEvidenceError,
     evaluate_reply_window,
 )
+from modules.sales.sam_response_usefulness import evaluate_response_usefulness
 
 
 LEVEL_ENV = "SAM_SALES_AUTONOMY_LEVEL"
@@ -278,6 +279,12 @@ def evaluate_level1_authority(
     cohort_bindings, cohort_bindings_valid = _cohort_bindings(
         source.get(COHORT_BINDINGS_ENV)
     )
+    usefulness = evaluate_response_usefulness(
+        lane=lane,
+        inbound=inbound,
+        decision=decision,
+        evidence=evidence,
+    )
     conversation_id = identity["conversation_id"]
     isolated_enabled = bool(
         isolated.get("allowed") is True
@@ -325,6 +332,7 @@ def evaluate_level1_authority(
             not availability_required or availability_current or supported_partial
         ),
         "supporting_evidence_valid": evidence.get("supporting_evidence_valid") is True,
+        "response_usefulness_passed": usefulness.get("passed") is True,
         "durable_delivery_rail_available": evidence.get("delivery_rail_available") is True,
         "automatic_retry_disabled": evidence.get("automatic_retry") is not True,
     }
@@ -377,6 +385,7 @@ def evaluate_level1_authority(
             "contains_identity_values": False,
         },
         "owner_decision": _owner_decision_card(decision, classification, protected),
+        "response_usefulness": usefulness,
         "authority_id": _identity(lane, conversation_id, inbound_id, reply),
         "reply_hash": hashlib.sha256(reply.encode("utf-8")).hexdigest() if reply else "",
         "contains_customer_values": False,

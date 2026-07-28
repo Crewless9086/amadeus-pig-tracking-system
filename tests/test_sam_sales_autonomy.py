@@ -9,6 +9,10 @@ from modules.sales.sam_sales_autonomy import (
     supporting_claims_are_evidence_backed,
     sales_autonomy_level1_policy,
 )
+from modules.sales.sam_response_usefulness import (
+    customer_advancement_outcome,
+    evaluate_response_usefulness,
+)
 from modules.sales import sam_live_stock_runtime, sam_meat_runtime
 
 
@@ -46,12 +50,315 @@ def review(**overrides):
 def evidence(**overrides):
     row = {"supporting_evidence_valid": True, "automatic_retry": False,
            "delivery_rail_available": True,
+           "guidance_policy_version": "sam_live_stock_customer_guidance_v1",
+           "location_guidance_authorized": True,
            "availability": {"evidence_complete": False, "freshness": "Unavailable"}}
     row.update(overrides)
     return row
 
 
 class SamSalesAutonomyLevel1Tests(unittest.TestCase):
+    def test_production_shaped_2070_deferral_fails_usefulness_before_dispatch(self):
+        result = evaluate_level1_authority(
+            lane="live_stock",
+            inbound=inbound(
+                content=(
+                    "Hello, I am looking for piglets. Where are you based? "
+                    "I do not know which size."
+                ),
+            ),
+            decision=decision(
+                suggested_reply_text=(
+                    "I'm checking the current livestock availability and "
+                    "pricing before giving you an answer."
+                ),
+                missing_fields=["item.category", "item.weight_range", "item.sex"],
+                next_action="answer_location",
+            ),
+            review=review(),
+            evidence=evidence(),
+            environ={"SAM_SALES_AUTONOMY_LEVEL": "1",
+                     "SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED": "1",
+                     "SAM_SALES_LEVEL1_BROAD_DISPATCH_ENABLED": "1"},
+        )
+        self.assertFalse(result["dispatch_authorized"])
+        self.assertIn("response_usefulness_passed", result["blockers"])
+        self.assertEqual(
+            result["response_usefulness"]["unanswered_intents"],
+            ["location", "size"],
+        )
+
+    def test_useful_location_and_customer_size_guidance_passes(self):
+        reply = (
+            "We are based near Riversdale in the Western Cape. Small piglets "
+            "are approximately 2 to 6 kg and weaned piglets approximately "
+            "7 to 19 kg. Which size suits you, and would you prefer a male, "
+            "female, or either? I can then confirm availability and price."
+        )
+        result = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(
+                content="Where are you based? I want piglets but do not know the size.",
+            ),
+            decision=decision(
+                suggested_reply_text=reply,
+                missing_fields=["item.category", "item.weight_range", "item.sex"],
+            ),
+            evidence=evidence(),
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["unanswered_intents"], [])
+        self.assertFalse(result["contains_customer_content"])
+
+    def test_size_only_and_location_only_are_covered_semantically(self):
+        cases = (
+            (
+                "What pig sizes do you sell?",
+                ["item.category"],
+                "Small piglets are approximately 2 to 6 kg and weaned piglets "
+                "are approximately 7 to 19 kg. Which size would suit you?",
+            ),
+            (
+                "Where are you located?",
+                [],
+                "We are based near Riversdale in the Western Cape. Collection "
+                "is arranged once the order details are confirmed.",
+            ),
+        )
+        for content, missing, reply in cases:
+            with self.subTest(content=content):
+                packet = evaluate_response_usefulness(
+                    lane="live_stock",
+                    inbound=inbound(content=content),
+                    decision=decision(
+                        suggested_reply_text=reply,
+                        missing_fields=missing,
+                    ),
+                    evidence=evidence(),
+                )
+                self.assertTrue(packet["passed"], packet)
+
+    def test_combined_missing_fields_require_specific_advancement(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(
+                content="I need pigs but do not know the size. Where are you?",
+            ),
+            decision=decision(
+                suggested_reply_text=(
+                    "We are near Riversdale. Small piglets are approximately "
+                    "2 to 6 kg and weaned piglets 7 to 19 kg. Which size suits "
+                    "you, how many do you need, and would you prefer male, "
+                    "female, or either?"
+                ),
+                missing_fields=["item.category", "item.quantity", "item.sex"],
+            ),
+            evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"])
+
+    def test_unknown_availability_does_not_block_supported_guidance(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="Do you have piglets available?"),
+            decision=decision(
+                suggested_reply_text=(
+                    "Small piglets are approximately 2 to 6 kg and weaned "
+                    "piglets 7 to 19 kg. Which size and quantity suit you? "
+                    "I will confirm current availability once I know that."
+                ),
+                missing_fields=["item.category", "item.quantity"],
+            ),
+            evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"])
+
+    def test_already_answered_size_and_sex_are_not_reasked(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(
+                content="What is the price for a 10 kg female weaner?",
+            ),
+            decision=decision(
+                suggested_reply_text=(
+                    "I will confirm the current approved price. How many do "
+                    "you need?"
+                ),
+                missing_fields=["item.quantity"],
+            ),
+            evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"])
+        self.assertNotIn("size", packet["intents"])
+        self.assertNotIn("sex", packet["missing_facts"])
+
+    def test_specific_weaner_enquiry_does_not_require_size_menu(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="Do you have 3 female weaners available?"),
+            decision=decision(
+                suggested_reply_text=(
+                    "I am confirming current availability for 3 female "
+                    "weaners and will update you."
+                ),
+                missing_fields=[],
+            ),
+            evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"])
+        self.assertNotIn("size", packet["intents"])
+
+    def test_direct_weaner_definition_accepts_one_relevant_band(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="What is a weaner?"),
+            decision=decision(
+                suggested_reply_text=(
+                    "A weaned piglet is approximately 7 to 19 kg."
+                ),
+                missing_fields=[],
+            ),
+            evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"])
+
+    def test_fresh_affirmative_availability_is_recognized(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="Are weaned piglets available?"),
+            decision=decision(
+                suggested_reply_text=(
+                    "Yes, we currently have weaned piglets available."
+                ),
+                missing_fields=[],
+            ),
+            evidence=evidence(availability={
+                "evidence_complete": True,
+                "freshness": "current",
+            }),
+        )
+        self.assertTrue(packet["passed"])
+
+    def test_location_question_is_not_a_location_answer(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="Where are you based?"),
+            decision=decision(
+                suggested_reply_text="Are you based in Riversdale?",
+                missing_fields=[],
+            ),
+            evidence=evidence(),
+        )
+        self.assertFalse(packet["passed"])
+        self.assertIn("location", packet["unanswered_intents"])
+
+    def test_collection_question_is_not_collection_guidance(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="Where can I collect?"),
+            decision=decision(
+                suggested_reply_text="Where would you prefer collection?",
+                missing_fields=[],
+            ),
+            evidence=evidence(),
+        )
+        self.assertFalse(packet["passed"])
+        self.assertIn("collection", packet["unanswered_intents"])
+
+    def test_location_and_size_claims_require_specific_provenance(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="Where are you based and what pig sizes do you sell?"),
+            decision=decision(
+                suggested_reply_text=(
+                    "We are based near Riversdale. Small piglets are "
+                    "approximately 2 to 6 kg and weaned piglets 7 to 19 kg."
+                ),
+                missing_fields=[],
+            ),
+            evidence={
+                "supporting_evidence_valid": True,
+                "availability": {
+                    "evidence_complete": False,
+                    "freshness": "unavailable",
+                },
+            },
+        )
+        self.assertFalse(packet["passed"])
+        self.assertIn("claim_specific_provenance_valid", packet["blockers"])
+
+    def test_malformed_missing_fields_fails_closed(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="I need a piglet."),
+            decision=decision(
+                suggested_reply_text=(
+                    "Small piglets are approximately 2 to 6 kg and weaned "
+                    "piglets 7 to 19 kg. Which size suits you?"
+                ),
+                missing_fields="item.category",
+            ),
+            evidence=evidence(),
+        )
+        self.assertFalse(packet["passed"])
+        self.assertIn("missing_fields_valid", packet["blockers"])
+
+    def test_supported_natural_location_availability_and_price_variants(self):
+        cases = (
+            (
+                "Where can I collect?",
+                "Collection is arranged in Albertinia.",
+                evidence(),
+            ),
+            (
+                "Are weaners available?",
+                "Yes, we have weaners in stock.",
+                evidence(availability={
+                    "evidence_complete": True,
+                    "freshness": "current",
+                }),
+            ),
+            (
+                "How much are weaners?",
+                "They cost 500 rand each.",
+                evidence(),
+            ),
+            (
+                "What is the current price?",
+                "The current amount is 500 ZAR each.",
+                evidence(),
+            ),
+        )
+        for content, reply, proof in cases:
+            with self.subTest(reply=reply):
+                packet = evaluate_response_usefulness(
+                    lane="live_stock",
+                    inbound=inbound(content=content),
+                    decision=decision(
+                        suggested_reply_text=reply,
+                        missing_fields=[],
+                    ),
+                    evidence=proof,
+                )
+                self.assertTrue(packet["passed"], packet)
+
+    def test_delivered_transport_is_not_advancement_without_usefulness(self):
+        inadequate = customer_advancement_outcome(
+            provider_state="provider_delivered",
+            usefulness_passed=False,
+            qualification_advanced=False,
+        )
+        self.assertTrue(inadequate["provider_transport_confirmed"])
+        self.assertFalse(inadequate["customer_advancement_confirmed"])
+        ambiguous = customer_advancement_outcome(
+            provider_state="provider_outcome_ambiguous",
+            usefulness_passed=True,
+            qualification_advanced=True,
+        )
+        self.assertTrue(ambiguous["ambiguous_quarantine"])
+        self.assertFalse(ambiguous["customer_advancement_confirmed"])
+        self.assertFalse(ambiguous["intake_write_alone_is_advancement"])
+
     def test_decorated_and_punctuated_display_name_shapes_are_safe(self):
         for name in ("😎Customer🔥", "Surname,Name"):
             with self.subTest(name=name):
