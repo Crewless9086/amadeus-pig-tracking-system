@@ -7,12 +7,14 @@ from scripts.oom_sakkie_gatekeeper_media_forwarding_contract import (
     MEDIA_NODE,
     SAM_NODE,
     TEXT_NODE,
+    build_n8n_workflow_update,
     build_deployment_packet,
     classify_update,
     load_workflow,
     reconcile_n8n_variable_create,
     reconcile_n8n_variable_pair,
     validate_workflow,
+    validate_n8n_workflow_update,
     variable_value_fingerprint,
     verify_n8n_variable_readback,
 )
@@ -42,6 +44,42 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
     def setUpClass(cls):
         cls.workflow = load_workflow()
         cls.nodes = {node["name"]: node for node in cls.workflow["nodes"]}
+
+    def _production_live(self):
+        live = copy.deepcopy(self.workflow)
+        old_name = "Call '2.0 - OOM SAKKIE - Amadeus Assistant Agent'"
+        new_name = "Call '2.0B - Oom Sakkie Backend Read-Only Relay'"
+        live["settings"] = {"binaryMode": "default", "executionOrder": "v1"}
+        live["nodes"] = [
+            node
+            for node in live["nodes"]
+            if node["name"]
+            not in {
+                "Code - Gate BEACON Single Photo",
+                "Switch - BEACON Media Intake",
+                MEDIA_NODE,
+            }
+        ]
+        for node in live["nodes"]:
+            if node["name"] == old_name:
+                node["name"] = new_name
+                node["parameters"]["url"] = "https://example.invalid/2.0b"
+        live["connections"].pop("Code - Gate BEACON Single Photo")
+        live["connections"].pop("Switch - BEACON Media Intake")
+        live["connections"].pop(MEDIA_NODE)
+        live["connections"]["Security Check"]["main"][1] = [
+            {
+                "node": "Switch - Telegram Update Type",
+                "type": "main",
+                "index": 0,
+            }
+        ]
+        for spec in live["connections"].values():
+            for output in spec.get("main", []):
+                for edge in output:
+                    if edge.get("node") == old_name:
+                        edge["node"] = new_name
+        return live
 
     def test_workflow_contract_is_fail_closed_and_authority_free(self):
         report = validate_workflow()
@@ -180,8 +218,11 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         )
 
     def test_deployment_packet_is_secret_free_and_does_not_activate(self):
+        live = self._production_live()
         packet = build_deployment_packet(
-            render_deployment_id="dep-safe", render_revision="a" * 40
+            render_deployment_id="dep-safe",
+            render_revision="a" * 40,
+            live_workflow=live,
         )
         self.assertFalse(packet["execution"]["activate_workflow"])
         self.assertFalse(packet["execution"]["register_second_webhook"])
@@ -191,6 +232,112 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         serialized = json.dumps(packet)
         self.assertNotIn("owner-123", serialized)
         self.assertNotIn("secret-token", serialized)
+
+    def test_update_payload_uses_exact_installed_api_shape(self):
+        live = self._production_live()
+        live.update(
+            {
+                "id": "read-only",
+                "active": True,
+                "versionId": "read-only",
+                "updatedAt": "read-only",
+            }
+        )
+        payload = build_n8n_workflow_update(
+            live_workflow=live, reviewed_workflow=self.workflow
+        )
+        self.assertEqual(
+            set(payload), {"name", "nodes", "connections", "settings"}
+        )
+        self.assertEqual(
+            payload["settings"],
+            {"binaryMode": "default", "executionOrder": "v1"},
+        )
+        self.assertFalse(set(payload) & {"id", "active", "versionId", "updatedAt"})
+        by_name = {node["name"]: node for node in payload["nodes"]}
+        self.assertIn("Call '2.0B - Oom Sakkie Backend Read-Only Relay'", by_name)
+        self.assertNotIn("Call '2.0 - OOM SAKKIE - Amadeus Assistant Agent'", by_name)
+        self.assertEqual(
+            by_name["Call '2.0B - Oom Sakkie Backend Read-Only Relay'"],
+            next(
+                node
+                for node in live["nodes"]
+                if node["name"]
+                == "Call '2.0B - Oom Sakkie Backend Read-Only Relay'"
+            ),
+        )
+        self.assertEqual(
+            payload["connections"]["Security Check"]["main"][0],
+            live["connections"]["Security Check"]["main"][0],
+        )
+        self.assertEqual(
+            payload["connections"]["Security Check"]["main"][1][0]["node"],
+            "Code - Gate BEACON Single Photo",
+        )
+        self.assertEqual(
+            payload["connections"]["Relay SAM Callback to Backend"],
+            live["connections"]["Relay SAM Callback to Backend"],
+        )
+
+    def test_repository_only_execution_settings_are_not_sent(self):
+        live = self._production_live()
+        payload = build_n8n_workflow_update(
+            live_workflow=live, reviewed_workflow=self.workflow
+        )
+        for key in (
+            "saveDataErrorExecution",
+            "saveDataSuccessExecution",
+            "saveExecutionProgress",
+            "saveManualExecutions",
+        ):
+            self.assertNotIn(key, payload["settings"])
+
+    def test_extra_missing_stale_read_only_and_unsupported_fields_fail_closed(self):
+        live = self._production_live()
+        payload = build_n8n_workflow_update(
+            live_workflow=live, reviewed_workflow=self.workflow
+        )
+        cases = []
+        extra = copy.deepcopy(payload)
+        extra["unexpected"] = True
+        cases.append(extra)
+        missing = copy.deepcopy(payload)
+        del missing["connections"]
+        cases.append(missing)
+        stale = copy.deepcopy(payload)
+        stale["name"] = "stale"
+        cases.append(stale)
+        read_only = copy.deepcopy(payload)
+        read_only["active"] = True
+        cases.append(read_only)
+        unsupported = copy.deepcopy(payload)
+        unsupported["settings"]["saveManualExecutions"] = False
+        cases.append(unsupported)
+        for candidate in cases:
+            with self.subTest(keys=sorted(candidate)):
+                with self.assertRaises(ValueError):
+                    validate_n8n_workflow_update(
+                        candidate,
+                        live_workflow=live,
+                        reviewed_workflow=self.workflow,
+                    )
+
+    def test_missing_or_unsupported_live_settings_fail_closed(self):
+        missing = self._production_live()
+        missing.pop("settings", None)
+        with self.assertRaisesRegex(ValueError, "live_workflow_settings_required"):
+            build_n8n_workflow_update(
+                live_workflow=missing, reviewed_workflow=self.workflow
+            )
+        unsupported = self._production_live()
+        unsupported["settings"] = {
+            "executionOrder": "v1",
+            "unsupported": True,
+        }
+        with self.assertRaisesRegex(ValueError, "live_workflow_setting_unsupported"):
+            build_n8n_workflow_update(
+                live_workflow=unsupported, reviewed_workflow=self.workflow
+            )
 
     def _fingerprint(self, key, value):
         return variable_value_fingerprint(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
@@ -17,10 +18,213 @@ SAM_NODE = "Relay SAM Callback to Backend"
 DEPLOYMENT_PACKET_ID = "BEACON-GATEKEEPER-DEPLOYMENT-20260727-01"
 NEXT_CANARY_ID = "BEACON-MEDIA-INTAKE-ACTIVATION-CANARY-20260727-02"
 VARIABLE_FINGERPRINT_DOMAIN = b"beacon-n8n-variable-readback-v1\0"
+WORKFLOW_UPDATE_KEYS = frozenset({"name", "nodes", "connections", "settings"})
+SUPPORTED_LIVE_SETTING_KEYS = frozenset({"binaryMode", "executionOrder"})
+READ_ONLY_WORKFLOW_KEYS = frozenset(
+    {
+        "active",
+        "activeVersion",
+        "activeVersionId",
+        "createdAt",
+        "id",
+        "shared",
+        "tags",
+        "triggerCount",
+        "updatedAt",
+        "versionCounter",
+        "versionId",
+    }
+)
+NORMALIZE_NODE = "Code - Normalize Telegram Update"
+MEDIA_GATE_NODE = "Code - Gate BEACON Single Photo"
+MEDIA_SWITCH_NODE = "Switch - BEACON Media Intake"
+BEACON_ADDED_NODES = frozenset({MEDIA_GATE_NODE, MEDIA_SWITCH_NODE, MEDIA_NODE})
+LIVE_ORDINARY_NODE = "Call '2.0B - Oom Sakkie Backend Read-Only Relay'"
 
 
 def load_workflow(path: Path = WORKFLOW_PATH) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def build_n8n_workflow_update(
+    *,
+    live_workflow: dict[str, Any],
+    reviewed_workflow: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the installed public-API payload without copying export-only fields."""
+    if not isinstance(live_workflow, dict) or not isinstance(reviewed_workflow, dict):
+        raise ValueError("workflow_objects_required")
+    missing = [
+        key
+        for key in ("name", "nodes", "connections")
+        if key not in live_workflow or key not in reviewed_workflow
+    ]
+    if missing:
+        raise ValueError("workflow_update_required_field_missing")
+    live_settings = live_workflow.get("settings")
+    if not isinstance(live_settings, dict):
+        raise ValueError("live_workflow_settings_required")
+    unsupported_live_settings = set(live_settings) - SUPPORTED_LIVE_SETTING_KEYS
+    if unsupported_live_settings:
+        raise ValueError("live_workflow_setting_unsupported")
+
+    live_nodes = live_workflow["nodes"]
+    reviewed_nodes = reviewed_workflow["nodes"]
+    if not isinstance(live_nodes, list) or not isinstance(reviewed_nodes, list):
+        raise ValueError("workflow_update_nodes_invalid")
+    live_by_name = {
+        node.get("name"): node for node in live_nodes if isinstance(node, dict)
+    }
+    reviewed_by_name = {
+        node.get("name"): node for node in reviewed_nodes if isinstance(node, dict)
+    }
+    if len(live_by_name) != len(live_nodes) or len(reviewed_by_name) != len(
+        reviewed_nodes
+    ):
+        raise ValueError("workflow_node_identity_conflict")
+    required_live = {
+        NORMALIZE_NODE,
+        LIVE_ORDINARY_NODE,
+        SAM_NODE,
+        "Security Check",
+        "Switch - Telegram Update Type",
+    }
+    if not required_live.issubset(live_by_name):
+        raise ValueError("live_workflow_topology_drift")
+    if BEACON_ADDED_NODES & set(live_by_name):
+        raise ValueError("beacon_media_nodes_already_present")
+    if not (BEACON_ADDED_NODES | {NORMALIZE_NODE}).issubset(reviewed_by_name):
+        raise ValueError("reviewed_beacon_nodes_missing")
+    if sum(
+        node.get("type") == "n8n-nodes-base.telegramTrigger"
+        for node in live_nodes
+    ) != 1:
+        raise ValueError("live_telegram_trigger_count_invalid")
+
+    merged_nodes = copy.deepcopy(live_nodes)
+    merged_by_name = {node["name"]: node for node in merged_nodes}
+    live_normalize = merged_by_name[NORMALIZE_NODE]
+    reviewed_normalize = reviewed_by_name[NORMALIZE_NODE]
+    live_normalize.setdefault("parameters", {})["jsCode"] = reviewed_normalize[
+        "parameters"
+    ]["jsCode"]
+    for node in reviewed_nodes:
+        if node.get("name") in BEACON_ADDED_NODES:
+            merged_nodes.append(copy.deepcopy(node))
+
+    live_connections = live_workflow.get("connections")
+    reviewed_connections = reviewed_workflow.get("connections")
+    if not isinstance(live_connections, dict) or not isinstance(
+        reviewed_connections, dict
+    ):
+        raise ValueError("workflow_update_connections_invalid")
+    merged_connections = copy.deepcopy(live_connections)
+    live_security = merged_connections.get("Security Check", {}).get("main")
+    reviewed_security = reviewed_connections.get("Security Check", {}).get("main")
+    if (
+        not isinstance(live_security, list)
+        or len(live_security) != 2
+        or [edge.get("node") for edge in live_security[1]]
+        != ["Switch - Telegram Update Type"]
+        or not isinstance(reviewed_security, list)
+        or len(reviewed_security) != 2
+        or [edge.get("node") for edge in reviewed_security[1]]
+        != [MEDIA_GATE_NODE]
+    ):
+        raise ValueError("security_check_topology_drift")
+    merged_connections["Security Check"]["main"][1] = copy.deepcopy(
+        reviewed_security[1]
+    )
+    for source in BEACON_ADDED_NODES:
+        if source not in reviewed_connections:
+            raise ValueError("reviewed_beacon_connection_missing")
+        merged_connections[source] = copy.deepcopy(reviewed_connections[source])
+
+    payload = {
+        "name": live_workflow["name"],
+        "nodes": merged_nodes,
+        "connections": merged_connections,
+        "settings": {
+            key: live_settings[key]
+            for key in sorted(live_settings)
+        },
+    }
+    validate_n8n_workflow_update(
+        payload,
+        live_workflow=live_workflow,
+        reviewed_workflow=reviewed_workflow,
+    )
+    return payload
+
+
+def validate_n8n_workflow_update(
+    payload: dict[str, Any],
+    *,
+    live_workflow: dict[str, Any],
+    reviewed_workflow: dict[str, Any],
+) -> None:
+    """Fail closed on stale/read-only fields or any route-bearing drift."""
+    if not isinstance(payload, dict) or set(payload) != WORKFLOW_UPDATE_KEYS:
+        raise ValueError("workflow_update_top_level_shape_invalid")
+    if set(payload) & READ_ONLY_WORKFLOW_KEYS:
+        raise ValueError("workflow_update_read_only_field")
+    if not isinstance(payload["name"], str) or not payload["name"]:
+        raise ValueError("workflow_update_name_invalid")
+    if payload["name"] != live_workflow.get("name"):
+        raise ValueError("workflow_update_stale_name")
+    if not isinstance(payload["nodes"], list) or not payload["nodes"]:
+        raise ValueError("workflow_update_nodes_invalid")
+    if not isinstance(payload["connections"], dict):
+        raise ValueError("workflow_update_connections_invalid")
+    payload_by_name = {node.get("name"): node for node in payload["nodes"]}
+    live_by_name = {node.get("name"): node for node in live_workflow["nodes"]}
+    reviewed_by_name = {
+        node.get("name"): node for node in reviewed_workflow["nodes"]
+    }
+    for name, live_node in live_by_name.items():
+        if name == NORMALIZE_NODE:
+            expected = copy.deepcopy(live_node)
+            expected.setdefault("parameters", {})["jsCode"] = reviewed_by_name[
+                NORMALIZE_NODE
+            ]["parameters"]["jsCode"]
+            if payload_by_name.get(name) != expected:
+                raise ValueError("workflow_update_normalizer_drift")
+        elif payload_by_name.get(name) != live_node:
+            raise ValueError("workflow_update_live_node_drift")
+    for name in BEACON_ADDED_NODES:
+        if payload_by_name.get(name) != reviewed_by_name.get(name):
+            raise ValueError("workflow_update_beacon_node_drift")
+    if set(payload_by_name) != set(live_by_name) | BEACON_ADDED_NODES:
+        raise ValueError("workflow_update_node_scope_expanded")
+
+    payload_connections = payload["connections"]
+    live_connections = live_workflow["connections"]
+    reviewed_connections = reviewed_workflow["connections"]
+    for source, live_connection in live_connections.items():
+        if source == "Security Check":
+            expected = copy.deepcopy(live_connection)
+            expected["main"][1] = copy.deepcopy(
+                reviewed_connections["Security Check"]["main"][1]
+            )
+            if payload_connections.get(source) != expected:
+                raise ValueError("workflow_update_security_edge_drift")
+        elif payload_connections.get(source) != live_connection:
+            raise ValueError("workflow_update_live_connection_drift")
+    for source in BEACON_ADDED_NODES:
+        if payload_connections.get(source) != reviewed_connections.get(source):
+            raise ValueError("workflow_update_beacon_connection_drift")
+    if set(payload_connections) != set(live_connections) | BEACON_ADDED_NODES:
+        raise ValueError("workflow_update_connection_scope_expanded")
+    settings = payload["settings"]
+    if not isinstance(settings, dict):
+        raise ValueError("workflow_update_settings_invalid")
+    if set(settings) - SUPPORTED_LIVE_SETTING_KEYS:
+        raise ValueError("workflow_update_setting_unsupported")
+    if settings != {
+        key: live_workflow["settings"][key]
+        for key in sorted(live_workflow["settings"])
+    }:
+        raise ValueError("workflow_update_settings_drift")
 
 
 def variable_value_fingerprint(
@@ -331,17 +535,16 @@ def build_deployment_packet(
     *,
     render_deployment_id: str,
     render_revision: str,
+    live_workflow: dict[str, Any],
     path: Path = WORKFLOW_PATH,
 ) -> dict[str, Any]:
     """Build a secret-free packet; activation remains a separate authority."""
     validation = validate_workflow(path)
     workflow = load_workflow(path)
-    update_body = {
-        "name": workflow["name"],
-        "nodes": workflow["nodes"],
-        "connections": workflow["connections"],
-        "settings": workflow["settings"],
-    }
+    update_body = build_n8n_workflow_update(
+        live_workflow=live_workflow,
+        reviewed_workflow=workflow,
+    )
     update_sha = hashlib.sha256(
         json.dumps(
             update_body, sort_keys=True, separators=(",", ":"), ensure_ascii=False
