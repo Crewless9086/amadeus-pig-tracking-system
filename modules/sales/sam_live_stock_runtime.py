@@ -23,6 +23,11 @@ from modules.sales.sam_pricing import (
     resolve_live_stock_price_rule,
 )
 from modules.sales.sam_sales_router import LANE_FARM_GENERAL, LANE_LIVE_STOCK, LANE_MEAT, classify_sam_sales_lane
+from modules.sales.sam_sales_autonomy import (
+    bind_authoritative_conversation_evidence,
+    evaluate_level1_authority,
+    supporting_claims_are_evidence_backed,
+)
 from modules.sales.sam_conversation_state import plan_live_stock_next_action
 from modules.sales.sam_live_stock_understanding import (
     is_order_commitment_confirmation,
@@ -346,6 +351,10 @@ def handle_sam_live_stock_chatwoot_inbound(
         availability_evidence=availability_evidence,
         environ=source,
     )
+    level1_inbound = bind_authoritative_conversation_evidence(
+        inbound,
+        context_packet.get("chatwoot_authority_messages") or [],
+    )
     if _explicit_new_request(inbound.get("content")):
         context_packet["prior_context"] = {}
         context_packet["chatwoot_history_messages"] = []
@@ -368,6 +377,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         llm_drafter=llm_drafter,
         owner_example_loader=owner_example_loader,
     )
+    decision["sales_autonomy_level1_inbound_evidence"] = level1_inbound
     decision["conversation_ownership"] = AUTO_SPECIALIST
     decision["specialist_lane_selected"] = True
     decision["specialist_tools_called"] = sorted(
@@ -498,10 +508,53 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
     decision = decision if isinstance(decision, dict) else {}
     review = review if isinstance(review, dict) else {}
     reply = _clean_multiline(decision.get("suggested_reply_text"), 1800)
-    canary = (
+    legacy_canary = (
         _auto_general_canary_evaluation(inbound, decision, review, source)
         if decision.get("conversation_ownership") == AUTO_GENERAL
         else _autoreply_canary_evaluation(inbound, decision, review, source)
+    )
+    level1 = evaluate_level1_authority(
+        lane="live_stock",
+        inbound=(
+            decision.get("sales_autonomy_level1_inbound_evidence")
+            if isinstance(decision.get("sales_autonomy_level1_inbound_evidence"), dict)
+            else inbound
+        ),
+        decision=decision,
+        review=review,
+        evidence={
+            "supporting_evidence_valid": supporting_claims_are_evidence_backed(
+                "live_stock",
+                decision,
+                review_evidence_ready=(
+                    review.get("safe_to_send") is True
+                    and delivery_claim is not None
+                ),
+            ),
+            "delivery_rail_available": (
+                delivery_claim is not None and delivery_evidence_recorder is not None
+            ),
+            "automatic_retry": False,
+            "availability": (
+                decision.get("authoritative_availability")
+                or decision.get("availability_evidence")
+                or {}
+            ),
+        },
+        environ=source,
+    )
+    decision["sales_autonomy_level1"] = level1
+    canary = (
+        {
+            "allowed": True,
+            "status": "sales_autonomy_level1_eligible",
+            "checks": level1.get("checks", {}),
+            "authority_id": level1.get("authority_id", ""),
+            "contains_identity_values": False,
+            "contains_secret_values": False,
+        }
+        if level1.get("dispatch_authorized") is True
+        else legacy_canary
     )
     decision["autoreply_canary"] = canary
     if not canary["allowed"]:
@@ -510,7 +563,10 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
         return {"attempted": False, "sent": False, "status": "routine_reply_not_recommended"}
     if review.get("escalation_required") or not review.get("safe_to_send"):
         return {"attempted": False, "sent": False, "status": "routine_reply_review_blocked"}
-    if not str(decision.get("reply_source") or "").startswith("llm_"):
+    if (
+        not str(decision.get("reply_source") or "").startswith("llm_")
+        and level1.get("dispatch_authorized") is not True
+    ):
         return {"attempted": False, "sent": False, "status": "routine_reply_requires_llm_draft"}
     conversation_id = _clean(inbound.get("conversation_id"), 100)
     if not conversation_id:
@@ -1394,6 +1450,9 @@ def load_live_stock_read_context(
             chatwoot_history,
             current_message_id=inbound.get("message_id"),
         ),
+        "chatwoot_authority_messages": _authority_chatwoot_messages(
+            chatwoot_history,
+        ),
         "availability": availability,
         "agent_evidence": {"herdmaster": herdmaster_evidence} if herdmaster_evidence else {},
         "context_errors": context_errors,
@@ -1573,7 +1632,8 @@ def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
         if not isinstance(row, dict):
             continue
         content = _clean_multiline(row.get("content"), 800)
-        if not content:
+        attachments = row.get("attachments")
+        if not content and not attachments:
             continue
         messages.append({
             "id": _clean(row.get("id"), 100),
@@ -1581,6 +1641,7 @@ def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
             "private": row.get("private") is True,
             "content": content,
             "created_at": row.get("created_at"),
+            "attachments": attachments,
             "message_context": _public_message_context(
                 row,
                 row.get("content_attributes") if isinstance(row.get("content_attributes"), dict) else {},
@@ -1739,6 +1800,26 @@ def _compact_chatwoot_history_messages(history, limit=10, current_message_id="")
             "created_at": message.get("created_at"),
         })
     return compact
+
+
+def _authority_chatwoot_messages(history, limit=20):
+    history = history if isinstance(history, dict) else {}
+    messages = history.get("messages") if isinstance(history.get("messages"), list) else []
+    authoritative = []
+    for message in messages[-max(int(limit or 20), 1):]:
+        if not isinstance(message, dict):
+            continue
+        authoritative.append({
+            "id": _clean(message.get("id"), 100),
+            "message_type": message.get("message_type"),
+            "direction": _clean(message.get("direction"), 20),
+            "private": message.get("private") is True,
+            "created_at": message.get("created_at"),
+            "attachments": (
+                message.get("attachments")
+            ),
+        })
+    return authoritative
 
 
 def _chatwoot_message_is_incoming(message):
