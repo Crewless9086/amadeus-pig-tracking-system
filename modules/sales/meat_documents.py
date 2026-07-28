@@ -122,6 +122,8 @@ def build_meat_estimated_quote_packet(lead_id, payload=None, environ=None, datab
     price_result, price_status = list_meat_price_book_entries(limit=100, database_url=database_url)
     if price_status != 200:
         return price_result, price_status
+    if price_result.get("source") != "supabase":
+        return {"success": False, "status": "authoritative_price_book_unavailable", "quote_safe": False, "blockers": ["authoritative_supabase_price_book_required"], **_authority(False, False)}, 503
 
     packet = build_estimated_quote_packet_from_contract(
         contract_result.get("lead") or {},
@@ -161,6 +163,7 @@ def build_estimated_quote_packet_from_contract(lead, contract, price_entries=Non
     delivery_mode = _clean(required.get("delivery_or_collection") or interest.get("delivery_or_collection"), 80)
     payment_method = _clean(payload.get("payment_method") or required.get("payment_method") or interest.get("payment_method") or "EFT", 80).upper()
     bank = bank_details(source)
+
     quote_safe, blockers = quote_safe_gate(
         {
             "product_type": product_type,
@@ -173,6 +176,15 @@ def build_estimated_quote_packet_from_contract(lead, contract, price_entries=Non
         },
         bank,
     )
+    if cut_set == "Set D" or (cut_set and cut_set not in {"Set A", "Set B", "Set C"}):
+        blockers.append("current_collection_required")
+        quote_safe = False
+    if delivery_mode.lower() != "delivery":
+        blockers.append("delivery_only_offer_required")
+        quote_safe = False
+    if price_per_kg != 130:
+        blockers.append("current_r130_vat_inclusive_rule_required")
+        quote_safe = False
     totals = calculate_estimated_quote_totals(
         price_per_kg=price_per_kg,
         estimated_weight_kg=estimated_weight_kg,

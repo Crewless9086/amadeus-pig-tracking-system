@@ -16,10 +16,14 @@
 - Bank-confirmed money unlocks the next gate.
 - Balance must clear before delivery.
 - Delivery remains `To be confirmed` until approved.
-- Public meat sales are delivery-first. Collection is not a normal public option because there is no collection point yet; any collection exception requires owner approval.
+- Public meat sales are delivery-only. Collection is not offered because there is no approved collection facility.
 - Customer payment reference should stay short and stable, using the last six alphanumeric characters of the order/sale reference.
 - No pig is slaughtered for meat sales unless it is pre-sold and the required deposit is bank-confirmed.
-- Public pilot should start with half carcass / Set A only, with full carcass allowed as manual override for trusted known customers.
+- New pilot sales use only Set A / Amadeus Signature Collection, Set B / Amadeus Ember Collection, or Set C / Amadeus Grand Cut Collection.
+- A full carcass consists of two complete half-carcass selections. The selections may be the same or different, but each half must independently follow one valid collection route.
+- Slaughter may proceed only when one full-carcass customer or two half-carcass customers complete the carcass and every required deposit is bank-confirmed.
+- Set D is retired from new offers. Historical Set D evidence is preserved and never automatically remapped.
+- Head, feet, offal, excess bones/fat/skin, and unlisted butcher by-products are excluded from the current offer.
 - Meat Sales must not compete on supermarket price. It competes on trust, quality, traceability, relationship, and controlled availability.
 
 ## Launch Capacity Rules
@@ -33,7 +37,7 @@
 
 ## Pricing And Margin Rules
 
-- Standard half/full carcass planning price is around `R130/kg` VAT-inclusive.
+- Standard half/full carcass price is `R130/kg` VAT-inclusive.
 - Custom processing later should price around `R145-R150/kg`.
 - Avoid launching too cheap and trying to raise pricing aggressively later.
 - Margin calculators should eventually show how price/kg changes affect pigs/month, feed pressure, delivery load, and profitability.
@@ -46,6 +50,7 @@
 - If cold-chain confidence is lost, product does not go out.
 - Start with simple strict controls: cool boxes, frozen ice packs, sanitized delivery boxes, pack date tracking, same-day delivery where possible, limited route duration, and manual temperature checks.
 - Minimum label fields: product name, packed weight, packing date, use/freeze guidance, batch/order ID, farm name, and storage instructions.
+- Standard suitable cut pieces are packed four per pack; pork leg chops are packed two per pack. Whole cuts remain complete and stew meat is distributed evenly across applicable packs.
 - Do not over-design labels before the first sales cycle. Clarity and traceability come first.
 
 ## Agent Boundaries

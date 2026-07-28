@@ -460,8 +460,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
             201,
         )
 
-        self.assertIn("Set A is the Family Freezer Pack", decision["reply_text"])
-        self.assertIn("pork chops", decision["reply_text"])
+        self.assertIn("Set A is the Amadeus Signature Collection", decision["reply_text"])
+        self.assertIn("boneless neck steaks", decision["reply_text"].lower())
         self.assertIn("before quoting or booking", decision["reply_text"])
         self.assertNotIn("R100", decision["reply_text"])
 
@@ -486,10 +486,19 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertEqual(decision["reply_source"], "hard_product_knowledge")
         self.assertIn("Set A", decision["reply_text"])
-        self.assertIn("Set D", decision["reply_text"])
-        self.assertIn("Slow-Cook Family Roast Pack", decision["reply_text"])
+        self.assertNotIn("Set D", decision["reply_text"])
+        self.assertIn("Amadeus Grand Cut Collection", decision["reply_text"])
         self.assertNotIn("Budget", decision["reply_text"])
 
+    def test_retired_set_d_is_not_retained_or_offered_for_new_sale(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(content="I want a full carcass Set D"))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound, facts, {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"}, 201,
+        )
+        self.assertEqual(facts["cut_set"], "")
+        self.assertIn("Set D is retired", decision["reply_text"])
+        self.assertIn("Set C Amadeus Grand Cut", decision["reply_text"])
     def test_non_pork_request_is_redirected_without_pretending_to_sell_it(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Can I order beef mince from you?",
@@ -741,7 +750,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
             prior_context={"lead_id": "OSK-SALES-LEAD-TEST", "latest_event": "estimated_quote_chatwoot_accepted"},
         )
 
-        self.assertIn("place in the preorder run", decision["reply_text"])
+        self.assertIn("50% deposit", decision["reply_text"])
+        self.assertIn("butcher-confirmed packed weight", decision["reply_text"])
         self.assertIn("money reflects", decision["reply_text"])
         self.assertNotIn("Is EFT fine", decision["reply_text"])
 

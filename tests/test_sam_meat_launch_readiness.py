@@ -12,11 +12,11 @@ from modules.sales.sam_meat_launch_readiness import (
 NOW = datetime(2026, 7, 24, 10, 0, tzinfo=timezone.utc)
 
 
-def readers(unavailable=(), stale=False, zero=False):
+def readers(unavailable=(), stale=False, zero=False, price_amount=None):
     unavailable = set(unavailable)
     def item(name, data):
         return {"usable": False, "blockers": [name + "_offline"]} if name in unavailable else {"usable": True, "status": "verified_" + name, "freshness": "current", "data": data}
-    price = {"product_type": "half_carcass", "cut_set": "Set A", "price_unit": "per_kg", "price_amount": 0 if zero else 130,
+    price = {"product_type": "half_carcass", "cut_set": "Set A", "price_unit": "per_kg", "price_amount": price_amount if price_amount is not None else (0 if zero else 130),
              "effective_from": "2026-07-01T00:00:00+00:00", "effective_to": "2026-07-10T00:00:00+00:00" if stale else "2026-08-31T00:00:00+00:00", "status": "active"}
     return {
         "catalogue": lambda **_: item("catalogue", {"products": ["half carcass", "full carcass"], "units": ["kg", "half_carcass", "carcass"], "packs": ["Set A"]}),
@@ -54,7 +54,9 @@ class SamMeatLaunchReadinessTests(unittest.TestCase):
     def test_address_only_required_for_delivery(self):
         collection = packet(["Half carcass Set A, 1 half carcass, collection next week."])
         delivery = packet(["Half carcass Set A, 1 half carcass, delivery in Riversdale next week."])
-        self.assertNotEqual(collection["next_missing_field"], "delivery_address")
+        self.assertEqual(collection["facts"]["delivery_mode"], "delivery")
+        self.assertTrue(collection["facts"]["customer_requested_collection"])
+        self.assertEqual(collection["next_missing_field"], "delivery_town")
         self.assertEqual(delivery["next_missing_field"], "delivery_address")
 
     def test_question_order_delays_payment(self):
@@ -62,7 +64,7 @@ class SamMeatLaunchReadinessTests(unittest.TestCase):
         self.assertEqual(result["next_missing_field"], "quantity")
         self.assertNotIn("EFT", result["next_safe_question"])
         stale = packet(["Half carcass Set A, 1 half carcass, collection next week."], truth_readers=readers(stale=True))
-        self.assertEqual(stale["next_missing_field"], "")
+        self.assertEqual(stale["next_missing_field"], "delivery_town")
         self.assertIn("current_matching_price_rule_required", stale["price_basis"]["blockers"])
 
     def test_english_afrikaans_and_mixed_localization(self):
@@ -85,7 +87,20 @@ class SamMeatLaunchReadinessTests(unittest.TestCase):
         stale = packet(["Half carcass Set A."], truth_readers=readers(stale=True))
         self.assertFalse(stale["price_basis"]["current"]); self.assertIsNone(stale["price_basis"]["amount"])
         zero = packet(["Half carcass Set A."], truth_readers=readers(zero=True))
-        self.assertTrue(zero["price_basis"]["verified_zero"]); self.assertEqual(zero["price_basis"]["amount"], 0)
+        self.assertTrue(zero["price_basis"]["verified_zero"])
+        self.assertIsNone(zero["price_basis"]["amount"])
+        self.assertFalse(zero["price_basis"]["current"])
+
+    def test_non_r130_authoritative_rule_fails_closed(self):
+        result = packet(
+            ["Half carcass Set A."],
+            truth_readers=readers(price_amount=135),
+        )
+        self.assertEqual(result["price_basis"]["status"], "authoritative_rule_mismatch")
+        self.assertFalse(result["price_basis"]["current"])
+        self.assertIsNone(result["price_basis"]["amount"])
+        self.assertEqual(result["estimated_quote_preview"]["status"], "Unavailable")
+        self.assertNotIn("R135", result["prepared_reply"])
 
     def test_injected_authoritative_adapters(self):
         calls = []

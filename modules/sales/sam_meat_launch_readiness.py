@@ -5,6 +5,7 @@ route. Default readers use production-connected sources; tests inject fakes.
 """
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import hashlib
 import re
 
@@ -16,6 +17,10 @@ from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.sam_meat_runtime import extract_meat_facts
 from modules.sales.sam_meat_database_deadline import SamMeatDatabaseDeadline
 from modules.sales.sam_meat_truth_snapshot import load_sam_meat_truth_snapshot
+from modules.sales.sam_meat_commercial_standard import (
+    COLLECTIONS, PRICE_PER_KG_INCLUDING_VAT, DEPOSIT_PERCENT,
+    build_estimated_quote_preview, commercial_authority,
+)
 
 PACKET_VERSION = "sam_meat_launch_packet_v2"
 TRUTH_READER_DEADLINE_SECONDS = 5.0
@@ -54,6 +59,11 @@ def build_sam_meat_launch_packet(messages, *, conversation_ref="", inbound_event
     source_id = str(inbound_event_id or (rows[-1]["message_id"] if rows else "") or "missing-inbound-event-id")
     review_id = _id("SAM-MEAT-REVIEW", conversation_ref, source_id, PACKET_VERSION)
     correction_id = _id("SAM-MEAT-CORRECTION", conversation_ref, source_id, PACKET_VERSION) if corrections else ""
+    butcher_data = truth["butcher"].get("data", {}) if truth["butcher"].get("usable") else {}
+    quote_preview = build_estimated_quote_preview(
+        packed_weight_kg=butcher_data.get("packed_weight_kg") or price.get("yield_basis"),
+        weight_evidence_id=butcher_data.get("packed_weight_evidence_id") or price.get("weight_evidence_id"),
+    )
     return {
         "success": True, "packet_version": PACKET_VERSION, "mode": "prepared_owner_review_connected_no_send",
         "connection_state": {"deployed_caller_exists": True, "operationally_testable": True,
@@ -62,11 +72,11 @@ def build_sam_meat_launch_packet(messages, *, conversation_ref="", inbound_event
         "understood_request": {k: v for k, v in facts.items() if v not in (None, "")},
         "facts": facts, "fact_evidence": evidence, "corrections": corrections,
         "missing_facts": missing, "next_missing_field": next_field, "next_safe_question": question,
-        "catalogue_match": catalogue, "quantity": {"value": facts.get("quantity"), "unit": facts.get("quantity_unit", "")},
+        "catalogue_match": catalogue, "commercial_offer": {"collections": COLLECTIONS, "retired_sets": ["Set D"], "price_per_kg_including_vat": float(PRICE_PER_KG_INCLUDING_VAT), "deposit_percent": float(DEPOSIT_PERCENT), "delivery_mode": "delivery", "collection_offered": False, "transport_packaging": "Unresolved"}, "estimated_quote_preview": quote_preview, "quantity": {"value": facts.get("quantity"), "unit": facts.get("quantity_unit", "")},
         "price_basis": price, "final_total": {"status": "not_calculated", "amount": None,
             "reason": "owner_review_only_no_final_quote"},
         "availability": truth["availability"], "fulfilment": truth["fulfilment"], "butcher_loop": truth["butcher"],
-        "truth": truth, "prepared_reply": _reply(language, question, truth, catalogue, price, protected),
+        "truth": truth, "prepared_reply": _reply(language, question, truth, catalogue, price, protected, facts, quote_preview),
         "protected_decision": {"required": bool(protected), "actions": protected,
             "exact_owner_question": _owner_question(protected, truth)},
         "review_event": {"event_id": review_id, "event_type": "sam_meat_launch_owner_review_prepared",
@@ -79,7 +89,7 @@ def build_sam_meat_launch_packet(messages, *, conversation_ref="", inbound_event
             "fact_fields": sorted(facts), "correction_count": len(corrections),
             "truth_states": {k: v["status"] for k, v in truth.items()},
             "address_captured": bool(facts.get("delivery_address"))},
-        "canary": _canary(), "owner_checklist": _checklist(), "authority": _authority(),
+        "canary": _canary(), "owner_checklist": _checklist(), "authority": {**_authority(), **commercial_authority()},
     }
 
 
@@ -121,17 +131,41 @@ def _extract(text):
     result = {k: base.get(k) for k in ("product_type", "cut_set", "delivery_mode", "delivery_town",
               "delivery_address", "timing", "payment_method") if base.get(k) not in (None, "", "unknown")}
     lower = str(text).lower()
+    if re.search(r"\b(?:signature|ember|grand\s+cut)\s+collection\b", lower) and result.get("delivery_mode") == "collection":
+        result.pop("delivery_mode", None)
     if not result.get("cut_set"):
-        cut = re.search(r"\b(?:set|stel)\s*([a-d])\b", lower)
+        cut = re.search(r"\b(?:set|stel)\s*([a-c])\b", lower)
         if cut:
             result["cut_set"] = "Set " + cut.group(1).upper()
+    if re.search(r"\b(grand\s+cut|grand\s+kut|groot\s+snit)\b", lower):
+        result["cut_set"] = "Set C"
+    both = re.search(r"\b(?:both halves|albei helftes)\b.*\b(?:set|stel)\s*([a-c])\b", lower)
+    if both:
+        result["cut_set_half_1"] = result["cut_set_half_2"] = "Set " + both.group(1).upper()
+    half_one = re.search(r"\b(?:half|helfte)\s*(?:one|1|een)\b.*?\b(?:set|stel)\s*([a-c])\b", lower)
+    half_two = re.search(r"\b(?:half|helfte)\s*(?:two|2|twee)\b.*?\b(?:set|stel)\s*([a-c])\b", lower)
+    if half_one:
+        result["cut_set_half_1"] = "Set " + half_one.group(1).upper()
+    if half_two:
+        result["cut_set_half_2"] = "Set " + half_two.group(1).upper()
+    if half_one or half_two:
+        # Explicit per-half choices refine the carcass route; they must not
+        # replace the retained overall collection with the first set token.
+        result.pop("cut_set", None)
     if re.search(r"\b(delivery|deliver|aflewer|afgelewer)\b", lower):
         result["delivery_mode"] = "delivery"
-    elif re.search(r"\b(collection|collect|pickup|afhaal)\b", lower):
-        result["delivery_mode"] = "collection"
+    elif re.search(r"\b(collection|collect|pickup|afhaal)\b", lower) and not re.search(r"\b(?:signature|ember|grand\s+cut)\s+collection\b", lower):
+        result["customer_requested_collection"] = True
+        result["delivery_mode"] = "delivery"
     quantity, unit = _quantity(lower)
     if quantity is not None:
         result.update(quantity=quantity, quantity_unit=unit)
+    if result.get("product_type") in {"half_carcass", "full_carcass"}:
+        result["delivery_mode"] = "delivery"
+    if result.get("product_type") == "full_carcass":
+        result.setdefault("quantity", 1)
+        result.setdefault("quantity_unit", "carcass")
+        result.setdefault("delivery_mode", "delivery")
     commitment = _commitment(str(text).lower())
     if commitment:
         result["commitment"] = commitment
@@ -333,9 +367,24 @@ def _price_basis(facts, source, now):
     matches = [e for e in source["data"].get("entries", []) if isinstance(e, dict) and e.get("product_type") == facts.get("product_type") and (not e.get("cut_set") or not facts.get("cut_set") or e.get("cut_set") == facts.get("cut_set")) and _current(e, now)]
     if not matches: return {"status": "stale_or_unmatched", "current": False, "effective_at": source.get("effective_at", ""), "blockers": ["current_matching_price_rule_required"], "amount": None}
     rule = matches[-1]
+    try:
+        amount = Decimal(str(rule.get("price_amount")))
+    except (InvalidOperation, TypeError, ValueError):
+        amount = None
+    unit = str(rule.get("price_unit") or "").strip().lower()
+    if amount != PRICE_PER_KG_INCLUDING_VAT or unit not in {"kg", "per_kg"}:
+        return {
+            "status": "authoritative_rule_mismatch",
+            "current": False,
+            "effective_at": str(rule.get("effective_from") or source.get("effective_at") or ""),
+            "blockers": ["current_r130_per_kg_vat_inclusive_rule_required"],
+            "amount": None,
+            "verified_zero": amount == 0,
+        }
     return {"status": "current_verified_rule", "current": True, "source": source["status"],
         "effective_at": str(rule.get("effective_from") or source.get("effective_at") or ""),
-        "unit": rule.get("price_unit", ""), "amount": rule.get("price_amount"),
+        "unit": rule.get("price_unit", ""), "amount": float(amount),
+        "yield_basis": rule.get("yield_basis", ""), "weight_evidence_id": str(rule.get("price_book_id") or rule.get("price_entry_id") or rule.get("effective_from") or ""),
         "verified_zero": rule.get("price_amount") == 0, "blockers": []}
 
 
@@ -347,31 +396,78 @@ def _current(entry, now):
 
 def _missing(facts):
     required = ["product_type", "cut_set", "quantity", "quantity_unit", "delivery_mode"]
+    if facts.get("product_type") == "full_carcass" and not facts.get("cut_set_half_2"):
+        required.append("full_carcass_half_choices")
     if facts.get("delivery_mode") == "delivery": required += ["delivery_town", "delivery_address"]
     required += ["timing", "payment_method"]
     return [f for f in required if facts.get(f) in (None, "")]
 
 
 def _next_field(missing, facts, price):
-    for field in ("product_type", "cut_set", "quantity", "quantity_unit", "delivery_mode"):
-        if field in missing: return field
+    for field in ("product_type", "cut_set", "quantity", "quantity_unit"):
+        if field in missing:
+            return field
+    if "full_carcass_half_choices" in missing and "delivery_town" in missing:
+        return "full_carcass_choices_and_town"
+    if "full_carcass_half_choices" in missing:
+        return "full_carcass_half_choices"
+    if "delivery_mode" in missing:
+        return "delivery_mode"
     if facts.get("delivery_mode") == "delivery":
         for field in ("delivery_town", "delivery_address"):
-            if field in missing: return field
-    if "timing" in missing: return "timing"
+            if field in missing:
+                return field
+    if "timing" in missing:
+        return "timing"
     return "payment_method" if "payment_method" in missing and price.get("current") else ""
 
 
 def _question(field, language):
-    en = {"product_type": "Are you looking for a half carcass, full carcass, or another pork option?", "cut_set": "Which cut style suits you best: family freezer, braai, lean, or slow-cook?", "quantity": "How much would you like?", "quantity_unit": "Should I record that quantity in kilograms, packs, halves, or whole carcasses?", "delivery_mode": "Do you need delivery, or do you want the owner to review a collection request?", "delivery_town": "Which town or area is the delivery for?", "delivery_address": "What delivery address or farm name should we use for the review?", "timing": "When would you ideally need it?", "payment_method": "The current protected payment path is EFT. Does that suit you?"}
-    af = {"product_type": "Soek jy 'n halwe karkas, 'n hele karkas, of 'n ander varkvleis-opsie?", "cut_set": "Watter snystyl pas jou die beste: gesinspak, braai, maer, of stadig-gaar?", "quantity": "Hoeveel wil jy graag hÃƒÂª?", "quantity_unit": "Moet ek die hoeveelheid as kilogram, pakke, halwes, of hele karkasse noteer?", "delivery_mode": "Moet dit afgelewer word, of wil jy hÃƒÂª die eienaar moet 'n afhaalversoek hersien?", "delivery_town": "Vir watter dorp of area is die aflewering?", "delivery_address": "Watter afleweringsadres of plaasnaam moet ons vir die hersiening gebruik?", "timing": "Wanneer het jy dit ideaal nodig?", "payment_method": "Die huidige beskermde betaalpad is EFT. Pas dit jou?"}
+    en = {"product_type": "Are you looking for a half carcass, full carcass, or another pork option?", "cut_set": "Which collection would you like: Set A Amadeus Signature, Set B Amadeus Ember, or Set C Amadeus Grand Cut?", "quantity": "How much would you like?", "quantity_unit": "Should I record that quantity in kilograms, packs, halves, or whole carcasses?", "delivery_mode": "Which town or area should we plan the delivery for?", "delivery_town": "Which town or area is the delivery for?", "delivery_address": "What delivery address or farm name should we use for the review?", "timing": "When would you ideally need it?", "full_carcass_half_choices": "Would you like this collection for both halves, or a different collection for each half?", "full_carcass_choices_and_town": "Would you like this collection for both halves, and which town or area should we plan delivery to?", "payment_method": "The current protected payment path is EFT. Does that suit you?"}
+    af = {
+        "product_type": "Soek jy 'n halwe karkas, 'n hele karkas, of 'n ander varkvleis-opsie?",
+        "cut_set": "Watter versameling wil jy hê: Stel A Amadeus Signature, Stel B Amadeus Ember, of Stel C Amadeus Grand Cut?",
+        "quantity": "Hoeveel wil jy graag hê?",
+        "quantity_unit": "Moet ek die hoeveelheid as kilogram, pakke, halwes, of hele karkasse noteer?",
+        "delivery_mode": "Vir watter dorp of area moet ons die aflewering beplan?",
+        "delivery_town": "Vir watter dorp of area is die aflewering?",
+        "delivery_address": "Watter afleweringsadres of plaasnaam moet ons vir die hersiening gebruik?",
+        "timing": "Wanneer het jy dit ideaal nodig?",
+        "full_carcass_half_choices": "Wil jy hierdie versameling vir albei helftes hê, of 'n ander versameling vir elke helfte?",
+        "full_carcass_choices_and_town": "Wil jy hierdie versameling vir albei helftes hê, en vir watter dorp of area moet ons die aflewering beplan?",
+        "payment_method": "Die huidige beskermde betaalpad is EFT. Pas dit jou?",
+    }
     return (af if language == "af" else en).get(field, "")
 
 
-def _reply(language, question, truth, catalogue, price, protected):
-    if question: return ("Dankie, ek het jou besonderhede genoteer. " if language == "af" else "Thanks, I have noted your details. ") + question
+def _reply(language, question, truth, catalogue, price, protected, facts=None, quote=None):
+    facts = facts or {}
+    quote = quote or {}
+    if language == "en" and facts.get("product_type") == "full_carcass" and facts.get("cut_set") == "Set C":
+        summary = COLLECTIONS["Set C"]["summary"]
+        if quote.get("estimated_total_range"):
+            weight_range = quote.get("packed_weight_range_label") or "Unavailable"
+            total_range = quote.get("estimated_total_range_label") or "Unavailable"
+            deposit_range = quote.get("estimated_deposit_range_label") or "Unavailable"
+            estimate = (
+                "Based on the current approved packed-weight estimate of "
+                f"{weight_range} for a full carcass, the estimated total is "
+                f"{total_range}, and the 50% estimated deposit is {deposit_range}."
+            )
+        elif quote.get("estimated_total") is not None:
+            estimate = f"Based on the current packed-weight evidence, the estimated total is R{quote['estimated_total']:,.0f}, with a 50% estimated deposit of R{quote['estimated_deposit']:,.0f}."
+        else:
+            estimate = "The packed-weight estimate is currently unavailable, so I have not calculated a total."
+        return (
+            f"The Amadeus Grand Cut Collection includes {summary[0].lower() + summary[1:]} "
+            f"The price is R130/kg including VAT. {estimate} This is an estimate only; final billing uses the butcher-confirmed packed weight, and the balance is payable before delivery. Delivery fee and timing still need confirmation. "
+            f"{question or 'Would you like Grand Cut for both halves, and which town or area should we plan delivery to?'}"
+        )
+    if question:
+        return ("Dankie, ek het jou besonderhede genoteer. " if language == "af" else "Thanks, I have noted your details. ") + question
     blocked = not catalogue.get("exact_match") or not price.get("current") or not truth["availability"]["usable"] or not truth["fulfilment"]["usable"] or protected
-    if language == "af": return "Dankie, ek het die hoofbesonderhede. Die eienaar moet nog die huidige produk-, prys-, beskikbaarheid- en afleweringswaarheid hersien voordat enigiets finaal is." if blocked else "Dankie, die hoofbesonderhede is gereed vir die eienaar se hersiening."
+    if language == "af":
+        return "Dankie, ek het die hoofbesonderhede. Die eienaar moet nog die huidige produk-, prys-, beskikbaarheid- en afleweringswaarheid hersien voordat enigiets finaal is." if blocked else "Dankie, die hoofbesonderhede is gereed vir die eienaar se hersiening."
     return "Thanks, I have the main details. The owner still needs to review current product, price, availability, and fulfilment truth before anything is final." if blocked else "Thanks, the main details are ready for the owner's review."
 
 
