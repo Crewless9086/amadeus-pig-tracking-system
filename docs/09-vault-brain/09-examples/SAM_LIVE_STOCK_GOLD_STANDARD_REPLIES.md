@@ -1,6 +1,29 @@
 # SAM Live Stock Gold Standard Replies
 
-Status: Stage 1 examples. These are standards for future runtime behavior, not approved automation.
+Status: Current response-quality examples. Ordinary claim-safe qualification
+may use the reviewed Level 1 rail; protected actions remain separately gated.
+
+## Size And Sex Both Missing
+
+Customer: `I want one pig.`
+
+Good SAM:
+
+`We offer pigs in different sizes: small piglets (about 2 to 6 kg), weaned piglets (about 7 to 19 kg), growing pigs (about 20 to 49 kg), larger pigs (about 50 to 79 kg), and slaughter-size pigs (80 kg and above). Which size would suit you, and would you prefer a male, female, or either? Once I know that, I can confirm the supported availability and price.`
+
+This answer makes no stock or price claim. Missing availability/pricing must
+not suppress it.
+
+## Customer Supplies Size After Guidance
+
+Customer: `Weaned piglets.`
+
+Good SAM:
+
+`Thanks. Would you prefer a male, female, or would either be suitable?`
+
+Do not ask for size again. A persisted `Any` or default weight is not an answer
+unless the customer's chronology independently supplies it.
 
 ## Vague Live-Pig Interest
 

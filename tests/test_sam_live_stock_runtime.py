@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from modules.sales import sam_live_stock_runtime
@@ -37,7 +38,7 @@ def exact_eligible_row(**overrides):
         "live_stock_sale_eligible": True,
         "exact_animal_eligibility_contract_version": "herdmaster_exact_animal_eligibility_v1",
         "evidence_complete": True,
-        "eligibility_observed_at": "2026-07-27T14:00:00Z",
+        "eligibility_observed_at": datetime.now(timezone.utc).isoformat(),
         "allocation_query_status": "known",
         "allocation_evidence_state": "known_unallocated",
         "reserved_status": "Not_Reserved",
@@ -950,9 +951,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 "success": True,
                 "status": "loaded",
                 "messages": [
-                    {"id": 730682977, "message_type": 0, "content": "2 female 1 male"},
-                    {"id": 730720079, "message_type": 0, "content": "Ok how big is the (7-9) kg if you can send me pics of them please please then i will take 3 female 1 male"},
-                    {"id": 730727167, "message_type": 0, "content": "Tank you albertinia can do"},
+                    {"id": 730682977, "message_type": 0, "created_at": 1783530000, "content": "2 female 1 male"},
+                    {"id": 730720079, "message_type": 0, "created_at": 1783530100, "content": "Ok how big is the (7-9) kg if you can send me pics of them please please then i will take 3 female 1 male"},
+                    {"id": 730727167, "message_type": 0, "created_at": 1783530200, "content": "Tank you albertinia can do"},
                 ],
             },
             availability_loader=lambda: [],
@@ -1670,16 +1671,19 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 {
                     "id": "old-reservation",
                     "message_type": 0,
+                    "created_at": "2026-07-28T08:00:00Z",
                     "content": "Reserve 3 male growers until Friday.",
                 },
                 {
                     "id": "new-request",
                     "message_type": 0,
+                    "created_at": "2026-07-28T09:00:00+00:00",
                     "content": "This is a new request. I want 1 male grower around 25 to 30 kg.",
                 },
                 {
                     "id": "current",
                     "message_type": 0,
+                    "created_at": "2026-07-28T10:00:00Z",
                     "content": "I would collect in Riversdale. What do you need next?",
                 },
             ],
@@ -1939,9 +1943,13 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         self.assertEqual(
             result["sam_decision"]["reply_source"],
-            "contextual_sales_source_backed_owner_draft",
+            "deterministic_customer_size_guidance",
         )
         self.assertEqual(calls, [])
+        self.assertIn(
+            "Which size would suit you",
+            result["sam_decision"]["suggested_reply_text"],
+        )
         self.assertEqual(
             result["sam_decision"]["contextual_sales"]["status"],
             "commercial_evidence_unavailable",
@@ -3472,6 +3480,62 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(delivery["status"], "routine_reply_idempotency_claim_failed")
         self.assertEqual(calls, [])
 
+    def test_auto_general_invalid_chronology_blocks_before_claim_or_send(self):
+        for timestamp in (None, "malformed", "NaN", "Infinity", "-Infinity"):
+            with self.subTest(timestamp=timestamp):
+                calls = []
+                delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+                    {
+                        "conversation_id": "2013",
+                        "contact_id": "699428938",
+                        "inbox_id": "96568",
+                        "content": "Hi",
+                        "identity_provenance": verified_identity(
+                            "2013", "699428938", "96568"
+                        ),
+                    },
+                    {
+                        "conversation_ownership": "AUTO_GENERAL",
+                        "suggested_reply_text": "Hi! How can I help you today?",
+                        "reply_source": "llm_auto_general_reply_draft",
+                        "should_reply": True,
+                        "llm_draft": {"used": True, "confidence": 0.99},
+                        "specialist_lane_selected": False,
+                        "specialist_tools_called": [],
+                        "owner_escalation_required": False,
+                        "read_context": {
+                            "chatwoot_history": {
+                                "chronology_evidence_complete": False,
+                            },
+                            "context_errors": [{
+                                "status": "chatwoot_chronology_evidence_unavailable",
+                                "reason": "chronology_timestamp_unavailable",
+                                "sanitized_timestamp_shape": type(timestamp).__name__,
+                            }],
+                        },
+                    },
+                    {"safe_to_send": True, "escalation_required": False},
+                    {
+                        "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+                        "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+                        "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "2013",
+                        "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "699428938",
+                        "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "96568",
+                    },
+                    delivery_claim=lambda *_args: calls.append("claim"),
+                    chatwoot_sender=lambda *_args: calls.append("send"),
+                    delivery_evidence_recorder=lambda *_args: calls.append(
+                        "evidence"
+                    ),
+                )
+                self.assertEqual(
+                    delivery["status"],
+                    "routine_reply_chronology_evidence_unavailable",
+                )
+                self.assertFalse(delivery["attempted"])
+                self.assertFalse(delivery["sent"])
+                self.assertEqual(calls, [])
+
     def test_production_message_759342561_recovers_authoritative_conversation_inbox(self):
         result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(
@@ -3911,6 +3975,384 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             ambiguous["sam_decision"]["routine_reply_delivery"]["automatic_retry_prohibited"]
         )
         self.assertEqual(evidence[-1]["delivery_state"], "provider_outcome_ambiguous")
+
+    def test_persisted_default_sentinels_do_not_satisfy_customer_qualification(self):
+        prior = sam_live_stock_runtime._prior_context_from_intake({
+            "success": True,
+            "known_fields": {
+                "collection_location": "Any",
+                "collection_time_text": "Unknown",
+            },
+            "items": [{
+                "status": "active",
+                "quantity": 1,
+                "category": "Unknown",
+                "weight_range": "defaulted",
+                "sex": "Any",
+            }],
+        })
+
+        self.assertEqual(prior["interest"]["quantity"], 1)
+        self.assertEqual(prior["interest"]["category"], "")
+        self.assertEqual(prior["interest"]["weight_range"], "")
+        self.assertEqual(prior["interest"]["sex"], "")
+        self.assertEqual(prior["interest"]["location"], "")
+        self.assertEqual(prior["interest"]["timing"], "")
+
+    def test_customer_chronology_overrides_persisted_projection_without_repeating_answers(self):
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": 763629726,
+                    "message_type": 0,
+                    "private": False,
+                    "created_at": 1785220000,
+                    "content": "I want one pig",
+                },
+                {
+                    "id": 764070982,
+                    "message_type": 1,
+                    "private": False,
+                    "created_at": 1785249000,
+                    "content": (
+                        "We offer pigs in different sizes. Which size would "
+                        "suit you?"
+                    ),
+                },
+                {
+                    "id": 764166766,
+                    "message_type": 0,
+                    "private": False,
+                    "created_at": 1785253248,
+                    "content": "And weaned piglets",
+                },
+            ],
+        }
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                content="And weaned piglets",
+                id=764166766,
+                created_at=1785253248,
+                conversation={
+                    "id": 2068,
+                    "inbox": {
+                        "id": 96568,
+                        "channel_type": "Channel::Whatsapp",
+                    },
+                    "meta": {"sender": {"id": 984794646}},
+                },
+                sender={"id": 984794646, "name": "Leonello"},
+                account={"id": 147387},
+            ),
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "conversation_id": "2068",
+                "known_fields": {"collection_location": "Any"},
+                "items": [{
+                    "status": "active",
+                    "quantity": 1,
+                    "category": "Piglet",
+                    "weight_range": "5_to_6_Kg",
+                    "sex": "Any",
+                }],
+            },
+            conversation_history_loader=lambda *_args: history,
+            availability_loader=lambda: [],
+            environ={"SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "0"},
+        )
+
+        self.assertEqual(status, 200)
+        decision = result["sam_decision"]
+        self.assertEqual(decision["facts"]["category"], "weaner")
+        self.assertEqual(decision["facts"]["quantity"], 1)
+        self.assertEqual(decision["facts"]["sex"], "")
+        self.assertEqual(decision["facts"]["weight_range"], "")
+        self.assertIn("male, female, or either", decision["suggested_reply_text"])
+        self.assertNotIn("Which size", decision["suggested_reply_text"])
+        self.assertNotIn("how many", decision["suggested_reply_text"])
+        self.assertNotIn("checking the current livestock availability", decision["suggested_reply_text"])
+        self.assertFalse(result["sent"])
+        self.assertFalse(decision["sends_customer_message"])
+        self.assertFalse(decision["creates_order"])
+        self.assertFalse(decision["reserves_stock"])
+        self.assertFalse(decision["changes_stock"])
+
+    def test_explicit_customer_either_remains_a_supplied_sex_preference(self):
+        for message in (
+            "I need two growing pigs; either is fine.",
+            "Either male or female is fine.",
+            "Male or female, no preference.",
+        ):
+            with self.subTest(message=message):
+                facts = sam_live_stock_runtime.extract_live_stock_facts(
+                    message, {"content": message}
+                )
+                self.assertEqual(facts["sex"], "any")
+                guidance = sam_live_stock_runtime.build_live_stock_customer_guidance(
+                    {"content": message}, facts
+                )
+                self.assertNotIn(
+                    "male, female, or either",
+                    guidance.get("reply_text") or "",
+                )
+        category_flexible = sam_live_stock_runtime.extract_live_stock_facts(
+            "Either weaners or growers, female please.",
+            {"content": "Either weaners or growers, female please."},
+        )
+        self.assertEqual(category_flexible["sex"], "female")
+        size_flexible = sam_live_stock_runtime.extract_live_stock_facts(
+            "Either size is fine, but females only.",
+            {"content": "Either size is fine, but females only."},
+        )
+        self.assertEqual(size_flexible["sex"], "female")
+
+    def test_intake_normalizers_never_manufacture_customer_preferences(self):
+        self.assertEqual(sam_live_stock_runtime._normal_intake_sex("Unknown"), "")
+        self.assertEqual(sam_live_stock_runtime._normal_intake_sex(""), "")
+        self.assertEqual(sam_live_stock_runtime._normal_intake_location("Unknown"), "")
+        self.assertEqual(
+            sam_live_stock_runtime._normal_intake_weight_range("", "Weaner"),
+            "",
+        )
+
+    def test_historical_category_default_weight_does_not_become_customer_evidence(self):
+        prior = sam_live_stock_runtime._prior_context_from_intake({
+            "known_fields": {},
+            "items": [{
+                "status": "active",
+                "quantity": 1,
+                "category": "Piglet",
+                "weight_range": "5_to_6_Kg",
+                "sex": "Any",
+            }],
+        })
+        self.assertEqual(prior["interest"]["quantity"], 1)
+        self.assertEqual(prior["interest"]["category"], "Piglet")
+        self.assertEqual(prior["interest"]["weight_range"], "")
+        self.assertEqual(prior["interest"]["sex"], "")
+
+    def test_one_big_retains_quantity_while_asking_customer_friendly_size(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I want one big how much",
+            {"content": "I want one big how much"},
+        )
+        self.assertEqual(facts["quantity"], 1)
+        guidance = sam_live_stock_runtime.build_live_stock_customer_guidance(
+            {"content": "I want one big how much"},
+            facts,
+        )
+        self.assertNotIn("how many", guidance["reply_text"])
+
+    def test_location_question_answers_supported_fact_before_sales_guidance(self):
+        packet = sam_live_stock_runtime.build_live_stock_customer_guidance(
+            {"content": "Where are you located?"},
+            {
+                "sales_lane": "live_stock_sales",
+                "message_intent": "location_question",
+                "category": "",
+                "quantity": 3,
+                "sex": "",
+            },
+        )
+        self.assertFalse(packet["applicable"])
+
+    def test_standalone_flexible_sex_reply_does_not_manufacture_livestock_context(self):
+        for message in ("Either is fine", "No preference", "Doesn't matter"):
+            with self.subTest(message=message):
+                facts = sam_live_stock_runtime.extract_live_stock_facts(
+                    message, {"content": message}
+                )
+                self.assertFalse(
+                    sam_live_stock_runtime._looks_like_customer_qualification_answer(
+                        message,
+                        facts,
+                        context_packet={"chatwoot_history_messages": []},
+                    )
+                )
+
+    def test_bound_sex_only_answer_stays_on_livestock_path(self):
+        message = "Either male or female is fine"
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            message, {"content": message}
+        )
+        self.assertTrue(
+            sam_live_stock_runtime._looks_like_customer_qualification_answer(
+                message,
+                facts,
+                context_packet={
+                    "chatwoot_history": {
+                        "chronology_evidence_complete": True,
+                    },
+                    "chatwoot_history_messages": [{
+                        "speaker": "farm",
+                        "content": "Would you prefer a male, female, or either?",
+                    }],
+                },
+            )
+        )
+
+    def test_out_of_order_history_uses_newest_customer_qualification(self):
+        inbound = {"message_id": "current"}
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": "newer",
+                    "message_type": 0,
+                    "created_at": "2026-07-28T10:00:00+00:00",
+                    "content": "I prefer females",
+                },
+                {
+                    "id": "older",
+                    "message_type": 0,
+                    "created_at": "2026-07-28T09:00:00Z",
+                    "content": "I prefer males",
+                },
+            ],
+        }
+        prior = sam_live_stock_runtime._prior_context_from_chatwoot_history(
+            history, inbound
+        )
+        self.assertEqual(prior["interest"]["sex"], "female")
+
+    def test_malformed_timestamp_fails_closed_instead_of_reordering_chronology(self):
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": "newer",
+                    "message_type": 0,
+                    "created_at": 1785253248,
+                    "content": "I prefer females",
+                },
+                {
+                    "id": "malformed-replay",
+                    "message_type": 0,
+                    "created_at": "not-a-timestamp",
+                    "content": "I prefer males",
+                },
+            ],
+        }
+        prior = sam_live_stock_runtime._prior_context_from_chatwoot_history(
+            history, {"message_id": "current"}
+        )
+        self.assertFalse(prior["evidence_complete"])
+        self.assertEqual(prior["reason"], "chronology_timestamp_unavailable")
+        self.assertEqual(prior["interest"], {})
+
+    def test_non_finite_history_timestamps_fail_closed(self):
+        for timestamp in (
+            "NaN",
+            "Infinity",
+            "-Infinity",
+            float("nan"),
+            float("inf"),
+            float("-inf"),
+        ):
+            with self.subTest(timestamp=repr(timestamp)):
+                prior = sam_live_stock_runtime._prior_context_from_chatwoot_history(
+                    {
+                        "success": True,
+                        "messages": [{
+                            "id": "bad-time",
+                            "message_type": 0,
+                            "created_at": timestamp,
+                            "content": "I prefer males",
+                        }],
+                    },
+                    {"message_id": "current"},
+                )
+                self.assertFalse(prior["evidence_complete"])
+                self.assertEqual(
+                    prior["reason"], "chronology_timestamp_unavailable"
+                )
+                self.assertEqual(prior["interest"], {})
+
+    def test_malformed_history_timestamp_blocks_intake_and_customer_send(self):
+        calls = {"intake": 0, "send": 0}
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                id=9002,
+                created_at=1785254000,
+                content="I need female piglets",
+            ),
+            environ={
+                sam_live_stock_runtime.INTAKE_WRITE_ENABLED_ENV: "1",
+                "SAM_SALES_LEVEL1_ENABLED": "1",
+                "SAM_SALES_LEVEL1_LIVESTOCK_ENABLED": "1",
+            },
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "known_fields": {},
+                "items": [],
+            },
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [{
+                    "id": 9001,
+                    "message_type": 0,
+                    "created_at": "malformed",
+                    "content": "I need one pig",
+                }],
+            },
+            availability_loader=lambda: [],
+            intake_writer=lambda _payload: calls.__setitem__(
+                "intake", calls["intake"] + 1
+            ),
+            chatwoot_sender=lambda *_args: calls.__setitem__(
+                "send", calls["send"] + 1
+            ),
+        )
+        self.assertEqual(status, 200)
+        decision = result["sam_decision"]
+        self.assertIn("read_context_error", decision["blockers"])
+        self.assertNotIn("intake_write", decision)
+        self.assertFalse(result["sent"])
+        self.assertEqual(calls, {"intake": 0, "send": 0})
+
+    def test_non_finite_history_timestamp_blocks_intake_and_customer_send(self):
+        for timestamp in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(timestamp=timestamp):
+                calls = {"intake": 0, "send": 0}
+                result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                    inbound_payload(
+                        id=9102,
+                        created_at=1785255000,
+                        content="I need female piglets",
+                    ),
+                    environ={
+                        sam_live_stock_runtime.INTAKE_WRITE_ENABLED_ENV: "1",
+                        "SAM_SALES_LEVEL1_ENABLED": "1",
+                        "SAM_SALES_LEVEL1_LIVESTOCK_ENABLED": "1",
+                    },
+                    intake_context_loader=lambda _conversation_id: {
+                        "success": True,
+                        "known_fields": {},
+                        "items": [],
+                    },
+                    conversation_history_loader=lambda *_args: {
+                        "success": True,
+                        "messages": [{
+                            "id": 9101,
+                            "message_type": 0,
+                            "created_at": timestamp,
+                            "content": "I need one pig",
+                        }],
+                    },
+                    availability_loader=lambda: [],
+                    intake_writer=lambda _payload: calls.__setitem__(
+                        "intake", calls["intake"] + 1
+                    ),
+                    chatwoot_sender=lambda *_args: calls.__setitem__(
+                        "send", calls["send"] + 1
+                    ),
+                )
+                self.assertEqual(status, 200)
+                self.assertIn("read_context_error", result["sam_decision"]["blockers"])
+                self.assertFalse(result["sent"])
+                self.assertEqual(calls, {"intake": 0, "send": 0})
+
 
 if __name__ == "__main__":
     unittest.main()
