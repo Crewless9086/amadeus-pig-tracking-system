@@ -251,8 +251,9 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         )
         self.assertEqual(
             payload["settings"],
-            {"binaryMode": "default", "executionOrder": "v1"},
+            {"executionOrder": "v1"},
         )
+        self.assertNotIn("binaryMode", payload["settings"])
         self.assertFalse(set(payload) & {"id", "active", "versionId", "updatedAt"})
         by_name = {node["name"]: node for node in payload["nodes"]}
         self.assertIn("Call '2.0B - Oom Sakkie Backend Read-Only Relay'", by_name)
@@ -285,6 +286,7 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
             live_workflow=live, reviewed_workflow=self.workflow
         )
         for key in (
+            "binaryMode",
             "saveDataErrorExecution",
             "saveDataSuccessExecution",
             "saveExecutionProgress",

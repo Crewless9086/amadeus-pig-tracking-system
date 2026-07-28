@@ -20,6 +20,7 @@ NEXT_CANARY_ID = "BEACON-MEDIA-INTAKE-ACTIVATION-CANARY-20260727-02"
 VARIABLE_FINGERPRINT_DOMAIN = b"beacon-n8n-variable-readback-v1\0"
 WORKFLOW_UPDATE_KEYS = frozenset({"name", "nodes", "connections", "settings"})
 SUPPORTED_LIVE_SETTING_KEYS = frozenset({"binaryMode", "executionOrder"})
+SUPPORTED_UPDATE_SETTING_KEYS = frozenset({"executionOrder"})
 READ_ONLY_WORKFLOW_KEYS = frozenset(
     {
         "active",
@@ -147,6 +148,7 @@ def build_n8n_workflow_update(
         "settings": {
             key: live_settings[key]
             for key in sorted(live_settings)
+            if key in SUPPORTED_UPDATE_SETTING_KEYS
         },
     }
     validate_n8n_workflow_update(
@@ -218,11 +220,12 @@ def validate_n8n_workflow_update(
     settings = payload["settings"]
     if not isinstance(settings, dict):
         raise ValueError("workflow_update_settings_invalid")
-    if set(settings) - SUPPORTED_LIVE_SETTING_KEYS:
+    if set(settings) != SUPPORTED_UPDATE_SETTING_KEYS:
         raise ValueError("workflow_update_setting_unsupported")
     if settings != {
         key: live_workflow["settings"][key]
         for key in sorted(live_workflow["settings"])
+        if key in SUPPORTED_UPDATE_SETTING_KEYS
     }:
         raise ValueError("workflow_update_settings_drift")
 
