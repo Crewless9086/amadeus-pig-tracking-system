@@ -372,8 +372,11 @@ def supervise_runner(
                 generation=generation,
                 revision=execution_revision,
                 startup_nonce=runner_nonce,
-                expected_script=Path(runner_command[1]).name,
+                expected_script=str(Path(runner_command[1])),
                 expected_root_executable=RUNNER_COMMAND[0],
+                expected_interpreter_executable=str(
+                    getattr(sys, "_base_executable", "") or sys.executable
+                ),
                 process_role_prefix="runner",
             )
         if not runner_observation.get("success"):
@@ -937,6 +940,9 @@ def _wait_for_controller_final_authorization(
                     generation=generation,
                     revision=revision,
                     startup_nonce=supervisor_nonce,
+                    allowed_descendant_tree=packet.get(
+                        "process_tree_identity"
+                    ),
                 )
                 runner_live = validate_live_bootstrap_tree(
                     packet.get("process_tree_identity"),

@@ -371,6 +371,9 @@ def start_runner(status_override=None, respect_stop_marker=True, execution_mode=
                 generation=str(supervisor.get("generation") or ""),
                 revision=str(supervisor.get("intended_runtime_revision") or ""),
                 startup_nonce=str(supervisor.get("startup_nonce") or ""),
+                allowed_descendant_tree=supervisor.get(
+                    "process_tree_identity"
+                ),
             )
             runner_nonce = str(
                 (final_ack or {}).get("runner_startup_nonce") or ""
@@ -481,8 +484,11 @@ def start_runner(status_override=None, respect_stop_marker=True, execution_mode=
         generation=generation,
         revision=intended_revision,
         startup_nonce=startup_nonce,
-        expected_script=Path(command[-1]).name,
+        expected_script=str(Path(command[-1])),
         expected_root_executable=python_path,
+        expected_interpreter_executable=str(
+            getattr(sys, "_base_executable", "") or sys.executable
+        ),
         process_role_prefix="supervisor",
     )
     if not observation.get("success"):
@@ -649,6 +655,7 @@ def _wait_for_supervisor_ack(
                 generation=generation,
                 revision=intended_revision,
                 startup_nonce=startup_nonce or generation,
+                allowed_descendant_tree=runner_tree,
             )
             runner_live = validate_live_bootstrap_tree(
                 runner_tree,

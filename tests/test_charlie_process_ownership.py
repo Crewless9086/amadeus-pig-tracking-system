@@ -9,6 +9,289 @@ from scripts import charlie_runner_supervisor
 
 
 class CharlieProcessOwnershipTests(unittest.TestCase):
+    def _windows_supervisor_rows(self):
+        script = r"C:\runtime\scripts\charlie_runner_supervisor.py"
+        return script, [
+            {
+                "pid": 158104,
+                "parent_pid": os.getpid(),
+                "creation_time": "07/28/2026 11:08:16",
+                "executable_path": r"C:\runtime\venv\Scripts\python.exe",
+                "command_line": f'"C:\\runtime\\venv\\Scripts\\python.exe" "{script}"',
+                "name": "python.exe",
+            },
+            {
+                "pid": 27632,
+                "parent_pid": 158104,
+                "creation_time": "07/28/2026 11:08:16",
+                "executable_path": r"C:\Windows\System32\conhost.exe",
+                "command_line": r"\??\C:\Windows\System32\conhost.exe 0x4",
+                "name": "conhost.exe",
+            },
+            {
+                "pid": 289832,
+                "parent_pid": 158104,
+                "creation_time": "07/28/2026 11:08:16",
+                "executable_path": r"C:\Python312\python.exe",
+                "command_line": f'"C:\\Python312\\python.exe" "{script}"',
+                "name": "python.exe",
+            },
+        ]
+
+    def _observe_windows_supervisor_rows(self, rows, script):
+        with patch.object(
+            process_ownership, "_inspect_process_descendants", return_value=rows
+        ):
+            return process_ownership.observe_process_tree(
+                158104,
+                generation="927212e230b14d5da1af4d4a7eaba561",
+                revision="4587c2f73cd5d2845c4a3e34c018c5f7263b27b1",
+                startup_nonce="nonce-1",
+                expected_script=script,
+                expected_root_executable=r"C:\runtime\venv\Scripts\python.exe",
+                expected_interpreter_executable=r"C:\Python312\python.exe",
+                process_role_prefix="supervisor",
+                timeout_seconds=0.01,
+                poll_seconds=0,
+                sleep_fn=lambda _seconds: None,
+            )
+
+    def test_production_windows_console_host_is_signed_as_wrapper_not_interpreter(self):
+        script, rows = self._windows_supervisor_rows()
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertTrue(result["success"], result)
+        roles = {
+            item["pid"]: item["process_role"]
+            for item in result["tree"]["members"]
+        }
+        self.assertEqual(roles[158104], "supervisor_launcher")
+        self.assertEqual(roles[27632], "supervisor_console_host")
+        self.assertEqual(roles[289832], "supervisor_interpreter")
+        self.assertEqual(
+            result["validation"]["member_pids"], [27632, 158104, 289832]
+        )
+        self.assertEqual(
+            len(process_ownership.process_tree_identity_digest(result["tree"])),
+            64,
+        )
+
+    def test_swapped_launcher_interpreter_command_roles_fail_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows[0]["command_line"], rows[2]["command_line"] = (
+            rows[2]["command_line"].replace(
+                r"C:\Python312\python.exe",
+                r"C:\runtime\venv\Scripts\python.exe",
+            ),
+            r'"C:\Python312\python.exe" worker.py',
+        )
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "command_role_identity_mismatch:289832"
+        )
+
+    def test_altered_interpreter_command_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows[2]["command_line"] = r'"C:\Python312\python.exe" unrelated.py'
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "command_role_identity_mismatch:289832"
+        )
+
+    def test_unexpected_console_wrapper_path_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows[1]["executable_path"] = r"C:\Temp\conhost.exe"
+        rows[1]["command_line"] = r"C:\Temp\conhost.exe 0x4"
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "command_role_identity_mismatch:27632")
+
+    def test_console_wrapper_system32_suffix_spoof_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows[1]["executable_path"] = (
+            r"C:\attacker\Windows\System32\conhost.exe"
+        )
+        rows[1]["command_line"] = (
+            r"C:\attacker\Windows\System32\conhost.exe 0x4"
+        )
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "command_role_identity_mismatch:27632")
+
+    def test_interpreter_marker_as_unrelated_argument_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows[2]["command_line"] = (
+            f'"C:\\Python312\\python.exe" evil.py --label "{script}"'
+        )
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "command_role_identity_mismatch:289832"
+        )
+
+    def test_interpreter_script_prefix_or_suffix_collision_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows[2]["command_line"] = (
+            f'"C:\\Python312\\python.exe" "{script}.backup"'
+        )
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "command_role_identity_mismatch:289832"
+        )
+
+    def test_arbitrary_executable_carrying_exact_script_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows[2]["executable_path"] = r"C:\Windows\System32\cmd.exe"
+        rows[2]["command_line"] = f'cmd.exe "{script}"'
+        rows[2]["name"] = "cmd.exe"
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "command_role_identity_mismatch:289832"
+        )
+
+    def test_console_wrapper_wrong_parent_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows[1]["parent_pid"] = 999999
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "parentage_mismatch:member_27632"
+        )
+
+    def test_additional_descendant_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows.append({
+            **rows[2],
+            "pid": 300001,
+            "creation_time": "07/28/2026 11:08:17",
+            "command_line": r'"C:\Python312\python.exe" unrelated.py',
+        })
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "command_role_identity_mismatch:300001"
+        )
+
+    def test_missing_wrapper_creation_identity_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows[1]["creation_time"] = ""
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"],
+            "ownership_identity_incomplete:member_1.creation_time",
+        )
+
+    def test_stale_parent_pid_edge_preceding_launcher_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        rows[2]["creation_time"] = "07/28/2026 11:08:15"
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"],
+            "creation_identity_precedes_parent:member_289832",
+        )
+
+    def test_linux_start_tick_chronology_is_ordered_in_its_own_domain(self):
+        rows = [
+            {"pid": 100, "parent_pid": 50, "creation_time": "5000"},
+            {"pid": 101, "parent_pid": 100, "creation_time": "5001"},
+        ]
+        self.assertEqual(
+            process_ownership._validate_process_creation_chronology(rows, 100),
+            "",
+        )
+        rows[1]["creation_time"] = "4999"
+        self.assertEqual(
+            process_ownership._validate_process_creation_chronology(rows, 100),
+            "creation_identity_precedes_parent:member_101",
+        )
+
+    def test_windows_dmtf_minute_offset_chronology_is_explicit(self):
+        rows = [
+            {
+                "pid": 100,
+                "parent_pid": 50,
+                "creation_time": "20260719170000.000000+120",
+            },
+            {
+                "pid": 101,
+                "parent_pid": 100,
+                "creation_time": "20260719170001.000000+120",
+            },
+        ]
+        self.assertEqual(
+            process_ownership._validate_process_creation_chronology(rows, 100),
+            "",
+        )
+        rows[1]["creation_time"] = "20260719165959.999999+120"
+        self.assertEqual(
+            process_ownership._validate_process_creation_chronology(rows, 100),
+            "creation_identity_precedes_parent:member_101",
+        )
+
+    def test_live_validation_rejects_post_observation_descendant(self):
+        script, rows = self._windows_supervisor_rows()
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertTrue(result["success"], result)
+        tree = result["tree"]
+        by_pid = {row["pid"]: row for row in rows}
+
+        def inspect(pid):
+            row = dict(by_pid[int(pid)])
+            row["inspection_complete"] = True
+            row["ancestry"] = (
+                []
+                if int(pid) == 158104
+                else [{"pid": 158104}]
+            )
+            return row
+
+        live_rows = [
+            *rows,
+            {
+                **rows[2],
+                "pid": 300002,
+                "creation_time": "07/28/2026 11:08:17",
+                "command_line": r'"C:\Python312\python.exe" unexpected.py',
+            },
+        ]
+        with patch.object(
+            process_ownership, "inspect_process", side_effect=inspect
+        ), patch.object(
+            process_ownership,
+            "_inspect_process_descendants",
+            return_value=live_rows,
+        ):
+            decision = process_ownership.validate_live_bootstrap_tree(
+                tree,
+                generation="927212e230b14d5da1af4d4a7eaba561",
+                revision="4587c2f73cd5d2845c4a3e34c018c5f7263b27b1",
+                startup_nonce="nonce-1",
+            )
+        self.assertFalse(decision["authorized"])
+        self.assertEqual(
+            decision["reason"], "live_identity_descendant_set_mismatch"
+        )
+
+    def test_stale_generation_in_observed_wrapper_tree_fails_closed(self):
+        script, rows = self._windows_supervisor_rows()
+        result = self._observe_windows_supervisor_rows(rows, script)
+        self.assertTrue(result["success"], result)
+        stale = json.loads(json.dumps(result["tree"]))
+        stale["members"][1]["runner_generation"] = "prior-generation"
+        decision = process_ownership.validate_bootstrap_tree(
+            stale,
+            generation="927212e230b14d5da1af4d4a7eaba561",
+            revision="4587c2f73cd5d2845c4a3e34c018c5f7263b27b1",
+            startup_nonce="nonce-1",
+        )
+        self.assertFalse(decision["authorized"])
+        self.assertEqual(decision["reason"], "stale_generation:member_1")
+
     def test_process_tree_digest_binds_creation_command_parentage_and_role(self):
         member = {
             "pid": 100,
@@ -94,7 +377,7 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
             {
                 "pid": 100,
                 "parent_pid": 50,
-                "creation_time": "original",
+                "creation_time": "2026-07-28T09:00:00+00:00",
                 "executable_path": "C:/Python/python.exe",
                 "command_line": "python supervisor.py",
             },
@@ -105,7 +388,7 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
             **root,
             "pid": 101,
             "parent_pid": 100,
-            "creation_time": "interpreter",
+            "creation_time": "2026-07-28T09:00:01+00:00",
         }
         tree = process_ownership.make_process_tree_record(
             root, [root, interpreter], "generation-1"
@@ -123,7 +406,25 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
                 "inspection_complete": True,
             }
 
-        with patch.object(process_ownership, "inspect_process", side_effect=inspect):
+        live_rows = [
+            {
+                "pid": root["pid"],
+                "parent_pid": root["parent_pid"],
+                "creation_time": root["creation_time"],
+            },
+            {
+                "pid": interpreter["pid"],
+                "parent_pid": interpreter["parent_pid"],
+                "creation_time": interpreter["creation_time"],
+            },
+        ]
+        with patch.object(
+            process_ownership, "inspect_process", side_effect=inspect
+        ), patch.object(
+            process_ownership,
+            "_inspect_process_descendants",
+            return_value=live_rows,
+        ):
             result = process_ownership.validate_live_bootstrap_tree(
                 tree,
                 generation="generation-1",
