@@ -1,12 +1,52 @@
 import unittest
 
 from modules.sales.sam_live_stock_runtime import (
+    _prefer_customer_size_guidance,
     build_live_stock_customer_guidance,
     extract_live_stock_facts,
 )
 
 
 class SamLiveStockCustomerGuidanceTests(unittest.TestCase):
+    def test_vague_production_shape_prefers_guidance_over_noncommercial_classifier(self):
+        self.assertTrue(_prefer_customer_size_guidance(
+            customer_guidance={"applicable": True},
+            contextual_sales={
+                "applicable": False,
+                "status": "not_commercial_livestock",
+            },
+            information_reply={"status": None},
+            price_answer_packet={"can_answer_price": False},
+            information_scope="",
+            sales_lane="live_stock_sales",
+        ))
+
+    def test_source_backed_commercial_answer_still_precedes_guidance(self):
+        self.assertFalse(_prefer_customer_size_guidance(
+            customer_guidance={"applicable": True},
+            contextual_sales={
+                "applicable": True,
+                "status": "commercial_evidence_verified",
+            },
+            information_reply={"status": None},
+            price_answer_packet={"can_answer_price": False},
+            information_scope="",
+            sales_lane="live_stock_sales",
+        ))
+
+    def test_greeting_without_livestock_signal_never_selects_size_guidance(self):
+        self.assertFalse(_prefer_customer_size_guidance(
+            customer_guidance={"applicable": True},
+            contextual_sales={
+                "applicable": False,
+                "status": "not_commercial_livestock",
+            },
+            information_reply={"status": None},
+            price_answer_packet={"can_answer_price": False},
+            information_scope="",
+            sales_lane="unclear",
+        ))
+
     def test_vague_pig_enquiry_explains_all_customer_facing_sizes(self):
         packet = build_live_stock_customer_guidance(
             {"customer_name": "Leonello", "content": "How much for one pig?"},
