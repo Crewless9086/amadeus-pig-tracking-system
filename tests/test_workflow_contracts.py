@@ -484,7 +484,10 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("Call 2.4 - Approval Callback Worker", [target["node"] for target in outputs[2]])
         self.assertEqual(relay["parameters"]["method"], "POST")
         self.assertTrue(relay["parameters"]["url"].endswith("/api/oom-sakkie/channels/telegram/direct-webhook"))
-        self.assertEqual(relay["parameters"]["rawContent"], "={{ JSON.stringify($json.raw_update) }}")
+        self.assertEqual(relay["parameters"]["contentType"], "json")
+        self.assertEqual(relay["parameters"]["specifyBody"], "json")
+        self.assertEqual(relay["parameters"]["jsonBody"], "={{ $json.raw_update }}")
+        self.assertNotIn("rawContent", relay["parameters"])
         self.assertIn("$vars.OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET", json.dumps(relay))
         self.assertNotIn("callback_data.replace", normalize)
 

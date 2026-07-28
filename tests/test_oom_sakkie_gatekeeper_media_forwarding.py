@@ -110,15 +110,24 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         self.assertEqual(switch[1][0]["node"], "Switch - Telegram Update Type")
         self.assertIn(TEXT_NODE, self.nodes)
 
-    def test_sam_callback_route_is_unchanged(self):
+    def test_sam_callback_route_and_payload_are_preserved_as_json(self):
         callback_switch = self.workflow["connections"][
             "Switch - Route Telegram Callback Type"
         ]["main"]
         self.assertEqual(callback_switch[3][0]["node"], SAM_NODE)
         self.assertEqual(
-            self.nodes[SAM_NODE]["parameters"]["rawContent"],
-            "={{ JSON.stringify($json.raw_update) }}",
+            self.nodes[SAM_NODE]["parameters"]["contentType"],
+            "json",
         )
+        self.assertEqual(
+            self.nodes[SAM_NODE]["parameters"]["specifyBody"],
+            "json",
+        )
+        self.assertEqual(
+            self.nodes[SAM_NODE]["parameters"]["jsonBody"],
+            "={{ $json.raw_update }}",
+        )
+        self.assertNotIn("rawContent", self.nodes[SAM_NODE]["parameters"])
 
     def test_allowlisted_private_photo_reaches_only_beacon_handler(self):
         update = photo_update()
@@ -130,9 +139,17 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         self.assertEqual([edge["node"] for edge in outputs[0]], [MEDIA_NODE])
         self.assertEqual(self.workflow["connections"][MEDIA_NODE]["main"], [[]])
         self.assertEqual(
-            self.nodes[MEDIA_NODE]["parameters"]["rawContent"],
-            "={{ JSON.stringify($json.raw_update) }}",
+            self.nodes[MEDIA_NODE]["parameters"]["contentType"],
+            "json",
         )
+        self.assertEqual(
+            self.nodes[MEDIA_NODE]["parameters"]["specifyBody"], "json"
+        )
+        self.assertEqual(
+            self.nodes[MEDIA_NODE]["parameters"]["jsonBody"],
+            "={{ $json.raw_update }}",
+        )
+        self.assertNotIn("rawContent", self.nodes[MEDIA_NODE]["parameters"])
 
     def test_unauthorized_and_wrong_chat_media_fail_closed(self):
         self.assertEqual(

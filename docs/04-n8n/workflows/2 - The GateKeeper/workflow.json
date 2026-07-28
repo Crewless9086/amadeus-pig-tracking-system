@@ -701,8 +701,9 @@
                                                                                  ]
                                                               },
                                          "sendBody":  true,
-                                         "contentType":  "raw",
-                                         "rawContent":  "={{ JSON.stringify($json.raw_update) }}",
+                                         "contentType":  "json",
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ $json.raw_update }}",
                                          "options":  {
                                                          "timeout":  10000
                                                      }
@@ -852,8 +853,9 @@
                                                                                  ]
                                                               },
                                          "sendBody":  true,
-                                         "contentType":  "raw",
-                                         "rawContent":  "={{ JSON.stringify($json.raw_update) }}",
+                                         "contentType":  "json",
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ $json.raw_update }}",
                                          "options":  {
                                                          "timeout":  10000
                                                      }

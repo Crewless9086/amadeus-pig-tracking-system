@@ -526,12 +526,25 @@ def validate_workflow(path: Path = WORKFLOW_PATH) -> dict[str, Any]:
         params = relay.get("parameters", {})
         if not str(params.get("url", "")).endswith(DIRECT_WEBHOOK_PATH):
             errors.append("media relay does not target the protected direct webhook")
-        if params.get("rawContent") != "={{ JSON.stringify($json.raw_update) }}":
-            errors.append("media relay does not forward the untouched raw update")
+        if (
+            params.get("contentType") != "json"
+            or params.get("specifyBody") != "json"
+            or params.get("jsonBody") != "={{ $json.raw_update }}"
+            or "rawContent" in params
+        ):
+            errors.append("media relay does not forward one structured JSON object")
         if params.get("options", {}).get("timeout") != 10000:
             errors.append("media relay timeout is not exactly 10 seconds")
         if relay.get("retryOnFail") is not False or relay.get("onError") != "stopWorkflow":
             errors.append("media relay is not one-attempt/fail-closed")
+        sam_params = nodes[SAM_NODE].get("parameters", {})
+        if (
+            sam_params.get("contentType") != "json"
+            or sam_params.get("specifyBody") != "json"
+            or sam_params.get("jsonBody") != "={{ $json.raw_update }}"
+            or "rawContent" in sam_params
+        ):
+            errors.append("SAM relay does not forward one structured JSON object")
         headers = params.get("headerParameters", {}).get("parameters", [])
         expected_header = {
             "name": "X-Telegram-Bot-Api-Secret-Token",
