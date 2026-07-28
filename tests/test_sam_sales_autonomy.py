@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from modules.sales.sam_sales_autonomy import (
     bind_authoritative_conversation_evidence,
+    classify_level1_cohort_delivery_outcome,
     evaluate_level1_authority,
     supporting_claims_are_evidence_backed,
     sales_autonomy_level1_policy,
@@ -49,6 +50,152 @@ def evidence(**overrides):
 
 
 class SamSalesAutonomyLevel1Tests(unittest.TestCase):
+    @staticmethod
+    def _delivery_binding(state):
+        identity = {
+            "account_id": "147387",
+            "conversation_id": "2067",
+            "contact_id": "984686440",
+            "inbox_id": "96568",
+            "inbound_message_id": "764065807",
+            "delivery_attempt_id": "ATTEMPT-2067",
+        }
+        return (
+            {**identity, "delivery_state": state},
+            {**identity, "persisted_claim_verified": True},
+            {
+                "conversation_id": "2067",
+                "inbound_message_id": "764065807",
+                "configured_binding_verified": True,
+            },
+        )
+
+    def test_ambiguous_binding_is_quarantined_and_next_binding_continues(self):
+        delivery, claim, binding = self._delivery_binding(
+            "provider_outcome_ambiguous"
+        )
+        ambiguous = classify_level1_cohort_delivery_outcome(
+            delivery,
+            persisted_claim=claim,
+            configured_binding=binding,
+            quarantine_event={
+                "persisted_quarantine_verified": True,
+                "quarantine_event_id": "QUARANTINE-2067",
+                "delivery_attempt_id": "ATTEMPT-2067",
+                "conversation_id": "2067",
+                "inbound_message_id": "764065807",
+                "delivery_state": "provider_outcome_ambiguous",
+            },
+        )
+        self.assertTrue(ambiguous["quarantine_binding"])
+        self.assertTrue(ambiguous["continue_cohort"])
+        self.assertFalse(ambiguous["stop_cohort"])
+        self.assertFalse(ambiguous["binding_retry_authorized"])
+        self.assertFalse(ambiguous["customer_delivery_counted"])
+
+        following_delivery, following_claim, following_binding = (
+            self._delivery_binding("provider_delivered")
+        )
+        following_delivery.update({
+            "provider_evidence_verified": True,
+            "provider_evidence_attempt_id": "ATTEMPT-2067",
+            "provider_evidence_conversation_id": "2067",
+        })
+        following = classify_level1_cohort_delivery_outcome(
+            following_delivery,
+            persisted_claim=following_claim,
+            configured_binding=following_binding,
+        )
+        self.assertTrue(following["continue_cohort"])
+        self.assertTrue(following["customer_delivery_counted"])
+
+    def test_systemic_failures_stop_complete_cohort(self):
+        for reason in (
+            "systemic_provider_outage",
+            "claim_rail_corrupted",
+            "cross_binding_identity_collision",
+            "authority_breach",
+        ):
+            with self.subTest(reason=reason):
+                delivery, claim, binding = self._delivery_binding(
+                    "provider_outcome_ambiguous"
+                )
+                result = classify_level1_cohort_delivery_outcome(
+                    delivery,
+                    persisted_claim=claim,
+                    configured_binding=binding,
+                    systemic_failure=reason,
+                )
+                self.assertTrue(result["stop_cohort"])
+                self.assertFalse(result["continue_cohort"])
+                self.assertTrue(result["systemic_failure"])
+                self.assertFalse(result["binding_retry_authorized"])
+
+    def test_only_confirmed_provider_states_count_as_delivered(self):
+        for state, counted in (
+            ("provider_delivered", True),
+            ("provider_read", True),
+            ("provider_failed", False),
+            ("provider_outcome_ambiguous", False),
+        ):
+            with self.subTest(state=state):
+                delivery, claim, binding = self._delivery_binding(state)
+                if counted:
+                    delivery.update({
+                        "provider_evidence_verified": True,
+                        "provider_evidence_attempt_id": "ATTEMPT-2067",
+                        "provider_evidence_conversation_id": "2067",
+                    })
+                    quarantine = None
+                else:
+                    quarantine = {
+                        "persisted_quarantine_verified": True,
+                        "quarantine_event_id": "QUARANTINE-2067",
+                        "delivery_attempt_id": "ATTEMPT-2067",
+                        "conversation_id": "2067",
+                        "inbound_message_id": "764065807",
+                        "delivery_state": state,
+                    }
+                result = classify_level1_cohort_delivery_outcome(
+                    delivery,
+                    persisted_claim=claim,
+                    configured_binding=binding,
+                    quarantine_event=quarantine,
+                )
+                self.assertEqual(result["customer_delivery_counted"], counted)
+                self.assertFalse(result["binding_retry_authorized"])
+
+    def test_missing_claim_identity_stops_as_corrupted_rail(self):
+        result = classify_level1_cohort_delivery_outcome({
+            "delivery_state": "provider_outcome_ambiguous",
+            "conversation_id": "2067",
+        })
+        self.assertTrue(result["stop_cohort"])
+        self.assertEqual(result["reason"], "claim_rail_corrupted")
+        self.assertFalse(result["binding_retry_authorized"])
+
+    def test_mismatched_claim_or_missing_quarantine_stops_fail_closed(self):
+        delivery, claim, binding = self._delivery_binding(
+            "provider_outcome_ambiguous"
+        )
+        mismatched = classify_level1_cohort_delivery_outcome(
+            delivery,
+            persisted_claim={**claim, "contact_id": "DIFFERENT"},
+            configured_binding=binding,
+        )
+        self.assertTrue(mismatched["stop_cohort"])
+        self.assertEqual(mismatched["reason"], "claim_rail_corrupted")
+
+        unrecorded = classify_level1_cohort_delivery_outcome(
+            delivery,
+            persisted_claim=claim,
+            configured_binding=binding,
+        )
+        self.assertTrue(unrecorded["stop_cohort"])
+        self.assertEqual(
+            unrecorded["reason"], "delivery_quarantine_not_persisted"
+        )
+
     def test_unrelated_context_blocker_does_not_block_claim_free_guidance(self):
         reply = (
             "Hi Leonello, thanks for your message.\n\n"

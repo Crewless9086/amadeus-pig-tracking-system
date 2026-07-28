@@ -4,6 +4,14 @@ Status: Current authority for SAM Live Stock Sales.
 
 ## Non-Negotiables
 
+- Claim each exact customer reply once before attempting delivery.
+- Never retry a failed or ambiguous outcome automatically.
+- Quarantine only the affected conversation and send when its provider outcome
+  is failed or ambiguous; continue unrelated exact Level 1 bindings.
+- Stop the full cohort only for a systemic provider outage, corrupted claim
+  rail, cross-binding identity/chronology collision, or authority breach.
+- Count a delivered customer only after provider delivered/read evidence.
+
 - Current stock truth must come from app/Supabase-backed backend reads.
 - Legacy n8n and Google Sheet files are reference history only.
 - SAM may conduct ordinary general conversation before lane classification.

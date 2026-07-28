@@ -21,6 +21,12 @@ COHORT_STOPPED_ENV = "SAM_SALES_LEVEL1_COHORT_STOPPED"
 MEAT_ENABLED_ENV = "SAM_SALES_LEVEL1_MEAT_ENABLED"
 LIVE_STOCK_ENABLED_ENV = "SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED"
 CONTRACT_VERSION = "sam_sales_autonomy_level_1_v1"
+SYSTEMIC_COHORT_STOP_REASONS = {
+    "systemic_provider_outage",
+    "claim_rail_corrupted",
+    "cross_binding_identity_collision",
+    "authority_breach",
+}
 
 TIER1_ACTIONS = {
     "answer_general_info", "answer_location", "answer_price",
@@ -75,6 +81,141 @@ def sales_autonomy_level1_policy(environ: Mapping | None = None) -> dict:
         "contains_identity_values": False,
         "protected_actions_authorized": False,
         "automatic_retry_authorized": False,
+    }
+
+
+def classify_level1_cohort_delivery_outcome(
+    delivery: Mapping | None,
+    *,
+    persisted_claim: Mapping | None = None,
+    configured_binding: Mapping | None = None,
+    quarantine_event: Mapping | None = None,
+    systemic_failure: str = "",
+) -> dict:
+    """Contain one exact delivery outcome without authorizing a retry."""
+    row = dict(delivery or {})
+    claim = dict(persisted_claim or {})
+    binding = dict(configured_binding or {})
+    quarantine = dict(quarantine_event or {})
+    state = _text(row.get("delivery_state"), 80)
+    systemic = _text(systemic_failure, 100)
+    identity_fields = (
+        "account_id", "conversation_id", "contact_id", "inbox_id",
+        "inbound_message_id", "delivery_attempt_id",
+    )
+    outcome_identity = {
+        field: _text(row.get(field), 120) for field in identity_fields
+    }
+    claim_identity = {
+        field: _text(claim.get(field), 120) for field in identity_fields
+    }
+    identity_complete = all(outcome_identity.values()) and all(
+        claim_identity.values()
+    )
+    exact_claim_binding = bool(
+        identity_complete
+        and claim.get("persisted_claim_verified") is True
+        and outcome_identity == claim_identity
+        and binding.get("configured_binding_verified") is True
+        and _text(binding.get("conversation_id"), 120)
+        == outcome_identity["conversation_id"]
+        and _text(binding.get("inbound_message_id"), 120)
+        == outcome_identity["inbound_message_id"]
+    )
+    if systemic:
+        recognized = systemic in SYSTEMIC_COHORT_STOP_REASONS
+        return {
+            "continue_cohort": False,
+            "stop_cohort": True,
+            "quarantine_binding": bool(exact_claim_binding),
+            "binding_retry_authorized": False,
+            "customer_delivery_counted": False,
+            "reason": systemic if recognized else "cohort_control_evidence_malformed",
+            "systemic_failure": recognized,
+            "contains_identity_values": False,
+        }
+    if not exact_claim_binding:
+        return {
+            "continue_cohort": False,
+            "stop_cohort": True,
+            "quarantine_binding": False,
+            "binding_retry_authorized": False,
+            "customer_delivery_counted": False,
+            "reason": "claim_rail_corrupted",
+            "systemic_failure": True,
+            "contains_identity_values": False,
+        }
+    if state in {"provider_delivered", "provider_read"}:
+        provider_evidence_bound = bool(
+            row.get("provider_evidence_verified") is True
+            and _text(row.get("provider_evidence_attempt_id"), 120)
+            == outcome_identity["delivery_attempt_id"]
+            and _text(row.get("provider_evidence_conversation_id"), 120)
+            == outcome_identity["conversation_id"]
+        )
+        if not provider_evidence_bound:
+            return {
+                "continue_cohort": False,
+                "stop_cohort": True,
+                "quarantine_binding": True,
+                "binding_retry_authorized": False,
+                "customer_delivery_counted": False,
+                "reason": "provider_evidence_binding_invalid",
+                "systemic_failure": True,
+                "contains_identity_values": False,
+            }
+        return {
+            "continue_cohort": True,
+            "stop_cohort": False,
+            "quarantine_binding": False,
+            "binding_retry_authorized": False,
+            "customer_delivery_counted": True,
+            "reason": "provider_delivery_confirmed",
+            "systemic_failure": False,
+            "contains_identity_values": False,
+        }
+    if state in {"provider_outcome_ambiguous", "provider_failed"}:
+        quarantine_bound = bool(
+            quarantine.get("persisted_quarantine_verified") is True
+            and _text(quarantine.get("delivery_attempt_id"), 120)
+            == outcome_identity["delivery_attempt_id"]
+            and _text(quarantine.get("conversation_id"), 120)
+            == outcome_identity["conversation_id"]
+            and _text(quarantine.get("inbound_message_id"), 120)
+            == outcome_identity["inbound_message_id"]
+            and _text(quarantine.get("delivery_state"), 80) == state
+            and _text(quarantine.get("quarantine_event_id"), 120)
+        )
+        if not quarantine_bound:
+            return {
+                "continue_cohort": False,
+                "stop_cohort": True,
+                "quarantine_binding": True,
+                "binding_retry_authorized": False,
+                "customer_delivery_counted": False,
+                "reason": "delivery_quarantine_not_persisted",
+                "systemic_failure": True,
+                "contains_identity_values": False,
+            }
+        return {
+            "continue_cohort": True,
+            "stop_cohort": False,
+            "quarantine_binding": True,
+            "binding_retry_authorized": False,
+            "customer_delivery_counted": False,
+            "reason": state,
+            "systemic_failure": False,
+            "contains_identity_values": False,
+        }
+    return {
+        "continue_cohort": False,
+        "stop_cohort": True,
+        "quarantine_binding": True,
+        "binding_retry_authorized": False,
+        "customer_delivery_counted": False,
+        "reason": "cohort_control_evidence_malformed",
+        "systemic_failure": True,
+        "contains_identity_values": False,
     }
 
 def evaluate_level1_authority(
