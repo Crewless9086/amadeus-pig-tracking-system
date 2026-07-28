@@ -612,6 +612,18 @@ function setWeaningDaySubmitting(isSubmitting, mode = "preview") {
   weaningDayApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Weaning Day";
 }
 
+async function readWeaningDayResponse(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    const requestId = response.headers.get("x-request-id");
+    throw new Error(
+      `The server could not complete the weaning-day save${requestId ? ` (request ${requestId})` : ""}. ` +
+      "Do not press Save again; reload the litter to check what was recorded."
+    );
+  }
+  return response.json();
+}
+
 function renderWeaningDayPreview(preview) {
   if (!weaningDayPreview) return;
   weaningDayPreview.classList.remove("hidden");
@@ -647,7 +659,7 @@ async function previewWeaningDay() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(weaningDayPayload(true)),
     });
-    const data = await response.json();
+    const data = await readWeaningDayResponse(response);
     if (!response.ok || !data.success) {
       throw new Error((data.errors || [data.error || "Could not preview weaning day."]).join(" "));
     }
@@ -678,7 +690,7 @@ async function submitWeaningDay(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(weaningDayPayload(false)),
     });
-    const data = await response.json();
+    const data = await readWeaningDayResponse(response);
     if (!response.ok || !data.success) {
       throw new Error((data.errors || [data.error || "Could not save weaning day."]).join(" "));
     }

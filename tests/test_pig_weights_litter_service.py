@@ -292,6 +292,168 @@ class LitterWeaningDayWorkflowTests(unittest.TestCase):
         save_movement.assert_not_called()
         mark_weaned.assert_not_called()
 
+    def test_weaning_day_supabase_apply_uses_one_atomic_packet(self):
+        atomic_result = {
+            "success": True,
+            "status": "weaning_day_committed",
+            "operation_id": "WEAN-EXACT",
+            "tags_created": 2,
+            "treatments_created": 4,
+            "weights_created": 2,
+            "movements_created": 2,
+            "piglets_updated": 2,
+            "litter_updated": 1,
+        }
+        with patch.object(
+            pig_weights_service, "_get_pig_master_rows",
+            return_value=self._active_rows(),
+        ), patch.object(
+            pig_weights_service, "assign_litter_piglet_tag_numbers",
+            return_value=({
+                "success": True,
+                "selected_piglets": [
+                    {"pig_id": "PIG-1"}, {"pig_id": "PIG-2"},
+                ],
+            }, 200),
+        ), patch.object(
+            pig_weights_service, "record_litter_newborn_health",
+            return_value=({
+                "success": True,
+                "treatment_rows_planned": 4,
+                "planned_treatment_rows": [
+                    ["MED-1", "PIG-1", "06 Jul 2026", "Deworming"],
+                ],
+            }, 200),
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "farm_supabase_writes_available", return_value=True,
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "apply_litter_weaning_day_packet", return_value=atomic_result,
+        ) as atomic, patch.object(
+            pig_weights_service, "save_weight_entry",
+        ) as save_weight, patch.object(
+            pig_weights_service, "save_movement_entry",
+        ) as save_movement, patch.object(
+            pig_weights_service, "mark_litter_weaned",
+        ) as mark_weaned:
+            result, status = pig_weights_service.process_litter_weaning_day(
+                "LIT-1", {
+                    "wean_date": "2026-07-06",
+                    "target_pen_id": "PEN-WEAN",
+                    "assignments": [
+                        {
+                            "pig_id": "PIG-1", "tag_number": "101",
+                            "wean_weight_kg": "8.5",
+                        },
+                        {
+                            "pig_id": "PIG-2", "tag_number": "102",
+                            "wean_weight_kg": "9.1",
+                        },
+                    ],
+                    "medicine": {
+                        "deworming_product_id": "PRD-DEWORM",
+                    },
+                    "dry_run": False,
+                },
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["operation_id"], "WEAN-EXACT")
+        self.assertTrue(result["operation_committed"])
+        packet = atomic.call_args.args[0]
+        self.assertEqual(
+            [row["pig_id"] for row in packet["piglets"]],
+            ["PIG-1", "PIG-2"],
+        )
+        save_weight.assert_not_called()
+        save_movement.assert_not_called()
+        mark_weaned.assert_not_called()
+
+    def test_weaning_day_supabase_failure_is_structured_and_never_falls_back(self):
+        with patch.object(
+            pig_weights_service, "_get_pig_master_rows",
+            return_value=self._active_rows(),
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "farm_supabase_writes_available", return_value=True,
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "apply_litter_weaning_day_packet",
+            side_effect=TimeoutError("statement timeout"),
+        ), patch.object(
+            pig_weights_service, "save_weight_entry",
+        ) as save_weight, patch.object(
+            pig_weights_service, "batch_update_rows_by_id",
+        ) as sheet_write:
+            result, status = pig_weights_service.process_litter_weaning_day(
+                "LIT-1", {
+                    "wean_date": "2026-07-06",
+                    "assignments": [
+                        {"pig_id": "PIG-1", "wean_weight_kg": "8.5"},
+                        {"pig_id": "PIG-2", "wean_weight_kg": "9.1"},
+                    ],
+                    "dry_run": False,
+                },
+            )
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "weaning_day_transaction_failed")
+        self.assertIsNone(result["operation_committed"])
+        self.assertEqual(
+            result["operation_state"], "unknown_verify_before_retry"
+        )
+        save_weight.assert_not_called()
+        sheet_write.assert_not_called()
+
+    def test_exact_completed_request_reaches_atomic_replay_without_tag_rewrite(self):
+        completed = self._active_rows()
+        completed[0]["Tag_Number"] = "101"
+        completed[1]["Tag_Number"] = "102"
+        completed[0]["Current_Pen_ID"] = "PEN-WEAN"
+        completed[1]["Current_Pen_ID"] = "PEN-WEAN"
+        with patch.object(
+            pig_weights_service, "_get_pig_master_rows",
+            return_value=completed,
+        ), patch.object(
+            pig_weights_service, "assign_litter_piglet_tag_numbers",
+        ) as assign_tags, patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "farm_supabase_writes_available", return_value=True,
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "apply_litter_weaning_day_packet", return_value={
+                "success": True,
+                "status": "weaning_day_replayed_withheld",
+                "operation_id": "WEAN-EXACT",
+                "tags_created": 0, "treatments_created": 0,
+                "weights_created": 0, "movements_created": 0,
+                "piglets_updated": 2, "litter_updated": 1,
+            },
+        ) as atomic:
+            result, status = pig_weights_service.process_litter_weaning_day(
+                "LIT-1", {
+                    "wean_date": "2026-07-06",
+                    "target_pen_id": "PEN-WEAN",
+                    "assignments": [
+                        {
+                            "pig_id": "PIG-1", "tag_number": "101",
+                            "wean_weight_kg": "8.5",
+                        },
+                        {
+                            "pig_id": "PIG-2", "tag_number": "102",
+                            "wean_weight_kg": "9.1",
+                        },
+                    ],
+                    "dry_run": False,
+                },
+            )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["replay_withheld"])
+        assign_tags.assert_not_called()
+        self.assertEqual(
+            atomic.call_args.args[0]["piglets"][0]["to_pen_id"],
+            "PEN-WEAN",
+        )
+
     def test_save_new_litter_prefers_supabase_transaction(self):
         cleaned_data = {
             "mating_id": "",
