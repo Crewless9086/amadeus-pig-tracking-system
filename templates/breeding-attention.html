@@ -15,6 +15,16 @@
     <label>Attention
       <select id="attention_filter"><option value="">All current sows and gilts</option></select>
     </label>
+    <section id="breeding_worklist_audit" class="breeding-worklist-audit" aria-labelledby="breeding_worklist_heading">
+      <div class="page-header">
+        <div>
+          <h2 id="breeding_worklist_heading">Herdmaster Monday worklist</h2>
+          <p id="breeding_worklist_status">Loading the same owner worklist used by Oom Sakkie…</p>
+        </div>
+      </div>
+      <div id="breeding_worklist_tasks" class="breeding-task-list"></div>
+      <p class="field-hint">Audit surface only. Oom Sakkie guides the ordinary farm workflow; no task, observation, mating or reminder is executed from this summary.</p>
+    </section>
     <div id="attention_counts" class="bulk-weight-summary breeding-summary"></div>
     <div id="attention_message" class="message-box hidden"></div>
     <div class="simple-table-wrap">
@@ -49,10 +59,13 @@
     <p class="field-hint">Advisory only. Observations append factual evidence; they cannot record a mating or change protected farm state.</p>
   </div></div>
   <style>
+    .breeding-worklist-audit{margin:1rem 0;padding:1rem;border:1px solid #d8e0da;border-radius:12px;background:#f7faf7}
+    .breeding-task-list{display:grid;gap:.6rem}.breeding-task{display:grid;grid-template-columns:minmax(8rem,.7fr) minmax(14rem,2fr) auto;gap:.75rem;align-items:start;padding:.75rem;background:#fff;border-left:4px solid #52765b;border-radius:8px}
+    .breeding-task strong,.breeding-task span{display:block}.breeding-task .task-state{font-weight:700;color:#294832}.breeding-task .task-checks{font-size:.92rem;color:#46534a;margin-top:.25rem}
     #observation_panel{margin-top:1rem}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
     #observation_panel label{display:flex;flex-direction:column;gap:.3rem;margin:.5rem 0}
     #observation_panel textarea{min-height:4.5rem}.button-row{display:flex;gap:.5rem;flex-wrap:wrap;margin:.75rem 0}
-    @media(max-width:720px){.form-grid{grid-template-columns:1fr}}
+    @media(max-width:720px){.form-grid{grid-template-columns:1fr}.breeding-task{grid-template-columns:1fr}.breeding-task button{width:100%}}
   </style>
   <script src="{{ url_for('static', filename='js/breedingAttention.js') }}"></script>
 </body>

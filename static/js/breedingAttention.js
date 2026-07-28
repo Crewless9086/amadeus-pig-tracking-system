@@ -3,6 +3,8 @@ const filter = document.getElementById("attention_filter");
 const counts = document.getElementById("attention_counts");
 const freshness = document.getElementById("attention_freshness");
 const message = document.getElementById("attention_message");
+const worklistStatus = document.getElementById("breeding_worklist_status");
+const worklistTasks = document.getElementById("breeding_worklist_tasks");
 let rows = [];
 let activeRow = null;
 let acceptedPreviewPayload = null;
@@ -24,6 +26,21 @@ function render() {
       <td><button type="button" class="secondary-button observation-review" data-pig-id="${escapeHtml(row.pig_id)}">Details / Observe</button></td></tr>`;
   }).join("") : `<tr><td colspan="8" class="table-empty">No animals in this attention state.</td></tr>`;
 }
+function renderWorklist(loop) {
+  if (!loop || loop.success !== true) {
+    worklistStatus.textContent = "Worklist unavailable — this is not a zero.";
+    worklistTasks.innerHTML = "";
+    return;
+  }
+  worklistStatus.textContent = `${loop.task_count} current task(s); week of ${loop.week_start}. Observation, mating and reminder execution are disabled.`;
+  worklistTasks.innerHTML = (loop.tasks || []).length
+    ? loop.tasks.map(task => `<article class="breeding-task" data-task-id="${escapeHtml(task.task_id)}">
+        <div><strong><a class="detail-link" href="${escapeHtml(task.animal_href)}">${escapeHtml(task.tag_number)}</a></strong><span class="task-state">${escapeHtml(task.task_group)}</span></div>
+        <div><span>${escapeHtml(task.why)}</span><span class="task-checks">Check: ${escapeHtml((task.required_checks || []).join(", ") || "owner decision")}. Delay: ${escapeHtml(task.delay_consequence)}</span></div>
+        <button type="button" class="secondary-button worklist-observe" data-pig-id="${escapeHtml(task.pig_id)}">Review evidence</button>
+      </article>`).join("")
+    : `<p class="table-empty">No animal requires attention in the current evidence cut.</p>`;
+}
 async function load() {
   try {
     const response = await fetch("/api/pig-weights/breeding-attention");
@@ -34,9 +51,10 @@ async function load() {
       (data.filters || []).map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
     counts.innerHTML = (data.filters || []).map(name => `<div><span class="info-title">${escapeHtml(name)}: </span><span class="info-value">${escapeHtml(data.counts?.[name] ?? "Unknown")}</span></div>`).join("");
     freshness.textContent = `Evidence: ${data.source_status}; observed ${data.observation_timestamp || "Unknown"}.`;
+    renderWorklist(data.operating_loop);
     render();
   } catch (error) {
-    rows = []; counts.innerHTML = "";
+    rows = []; counts.innerHTML = ""; renderWorklist(null);
     freshness.textContent = "Evidence unavailable — counts are not zero.";
     message.classList.remove("hidden"); message.textContent = error.message;
     body.innerHTML = `<tr><td colspan="8" class="table-empty">Needs Data — canonical evidence unavailable.</td></tr>`;
@@ -86,6 +104,10 @@ async function openObservation(pigId) {
 }
 body.addEventListener("click", event => {
   const button = event.target.closest(".observation-review");
+  if (button) openObservation(button.dataset.pigId);
+});
+worklistTasks.addEventListener("click", event => {
+  const button = event.target.closest(".worklist-observe");
   if (button) openObservation(button.dataset.pigId);
 });
 document.getElementById("observation_close").addEventListener("click", () => panel.classList.add("hidden"));

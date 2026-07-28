@@ -179,6 +179,19 @@ jobs:
       - name: Run ROOTLINE Water and Energy Plan permission gates
         run: ROOTLINE_WATER_ENERGY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_water_energy_plan_postgres
 
+      - name: Run HERDMASTER breeding operating-loop gates
+        run: |
+          python - <<'PY'
+          import tests.test_herdmaster_breeding_operating_loop as suite
+          tests = [
+              getattr(suite, name) for name in dir(suite)
+              if name.startswith("test_")
+          ]
+          for test in tests:
+              test()
+          print(f"{len(tests)} HERDMASTER operating-loop gates passed")
+          PY
+
       - name: Run SAM Meat PostgreSQL deadline gates without skips
         env:
           SAM_MEAT_DEADLINE_POSTGRES_URL: ${{ env.DATABASE_URL }}

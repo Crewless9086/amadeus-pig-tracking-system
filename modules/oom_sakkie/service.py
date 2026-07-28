@@ -40,6 +40,38 @@ class IntentMatch:
 
 RULES = [
     (
+        re.compile(
+            r"\b("
+            r"monday breeding|breeding round|breeding worklist|"
+            r"breeding attention|which females need attention|"
+            r"which sows need attention|which gilts need attention|"
+            r"herdmaster breeding"
+            r")\b",
+            re.I,
+        ),
+        IntentMatch(
+            "herdmaster_breeding_worklist",
+            "herdmaster_breeding_worklist",
+            0.95,
+            "rule:herdmaster_breeding_worklist",
+        ),
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"body condition|bcs|standing heat|no heat|not in heat|"
+            r"moving well|walking well|no injury|visible concern"
+            r")\b",
+            re.I,
+        ),
+        IntentMatch(
+            "herdmaster_breeding_observation_preview",
+            "herdmaster_breeding_observation_preview",
+            0.95,
+            "rule:herdmaster_breeding_observation_preview",
+        ),
+    ),
+    (
         re.compile(r"\b(agent command center|jarvis command center|oom sakkie command center|command center status|agent workspace|team workspace|who is working|what are the agents doing|show me the team workspace|control tower)\b", re.I),
         IntentMatch("agent_command_center", "agent_command_center", 0.95, "rule:agent_command_center"),
     ),

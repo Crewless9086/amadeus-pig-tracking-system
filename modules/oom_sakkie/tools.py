@@ -58,6 +58,10 @@ from modules.telemetry.rootline_water_energy_plan import (
     get_oom_sakkie_water_energy_summary,
 )
 from modules.auth.owner_access import owner_session_is_valid
+from modules.pig_weights.herdmaster_breeding_operating_loop import (
+    oom_sakkie_worklist_summary,
+    preview_conversational_inspection,
+)
 
 
 class RiskLevel(IntEnum):
@@ -1292,6 +1296,99 @@ def rootline_water_energy_plan_handler(args):
             "Read-only advice; no command, schedule, workflow or hardware authority."
         ],
         "raw": result,
+    }
+
+
+def _current_herdmaster_breeding_loop():
+    # Imported at execution time so the Oom Sakkie registry does not create an
+    # app/blueprint import cycle during startup.
+    from modules.pig_weights.mating_routes import (
+        _build_breeding_attention_packets,
+    )
+    packet, _hypothetical, _started = _build_breeding_attention_packets()
+    return packet.get("operating_loop") or {}
+
+
+def herdmaster_breeding_worklist_handler(_args):
+    if not owner_session_is_valid("read"):
+        return {
+            "success": False,
+            "status": "owner_authentication_required",
+            "summary": "Protected breeding worklist is unavailable without an owner session.",
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": ["No protected animal evidence was disclosed."],
+            "raw": {},
+        }
+    try:
+        loop = _current_herdmaster_breeding_loop()
+    except Exception:
+        loop = {}
+    success = loop.get("success") is True
+    return {
+        "success": success,
+        "status": "ok" if success else "breeding_worklist_unavailable",
+        "summary": oom_sakkie_worklist_summary(loop),
+        "links": [{
+            "label": "Breeding Attention audit",
+            "href": "/api/pig-weights/breeding-attention/view",
+        }],
+        "stale_warnings": list(loop.get("limitations") or []) if success else [
+            "Canonical breeding evidence could not be reconciled."
+        ],
+        "safety_notes": [
+            "Read-only reconciliation; no observation or mating was recorded.",
+            "A mating requires one exact owner decision and a separate protected write.",
+        ],
+        "raw": loop if success else {},
+    }
+
+
+def herdmaster_breeding_observation_preview_handler(args):
+    if not owner_session_is_valid("admin"):
+        return {
+            "success": False,
+            "status": "owner_authentication_required",
+            "summary": "Observation preview requires the authenticated owner.",
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": ["No protected animal evidence was disclosed."],
+            "raw": {},
+        }
+    try:
+        loop = _current_herdmaster_breeding_loop()
+        preview = preview_conversational_inspection(
+            loop,
+            (args or {}).get("owner_words") or (args or {}).get("user_text"),
+        )
+    except Exception:
+        preview = {"success": False, "status": "breeding_worklist_unavailable"}
+    success = preview.get("success") is True
+    summary = (
+        "I found these directly stated facts for {}: {}. Confirm to record this factual observation once."
+        .format(
+            preview.get("tag_number"),
+            ", ".join(
+                "{}={}".format(item["fact"], item["value"])
+                for item in preview.get("interpretation", [])
+            ),
+        )
+        if success else
+        str(preview.get("clarification") or "I could not safely bind those words to one current breeding task.")
+    )
+    return {
+        "success": success,
+        "status": str(preview.get("status") or "inspection_preview_unavailable"),
+        "summary": summary,
+        "links": [{
+            "label": "Breeding Attention audit",
+            "href": "/api/pig-weights/breeding-attention/view",
+        }],
+        "stale_warnings": list(preview.get("missing_after_preview") or []),
+        "safety_notes": [
+            "Preview only; no observation, mating, pregnancy, fertility, clearance or suitability was recorded or inferred."
+        ],
+        "raw": preview,
     }
 
 
@@ -3118,6 +3215,29 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=rootline_water_energy_plan_handler,
         description="Read-only canonical ROOTLINE Water and Energy Plan summary.",
+    ),
+    "herdmaster_breeding_worklist": OomSakkieTool(
+        name="herdmaster_breeding_worklist",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=herdmaster_breeding_worklist_handler,
+        description="Owner-only canonical Monday breeding worklist and evidence-backed next decision. Never records an observation or mating.",
+    ),
+    "herdmaster_breeding_observation_preview": OomSakkieTool(
+        name="herdmaster_breeding_observation_preview",
+        input_schema={
+            "type": "object",
+            "required": ["owner_words"],
+            "properties": {"owner_words": {"type": "string", "minLength": 1}},
+            "additionalProperties": False,
+        },
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=herdmaster_breeding_observation_preview_handler,
+        description="Preview directly stated owner inspection facts against one current breeding task. Never records or infers facts.",
     ),
     "weather_today": OomSakkieTool(
         name="weather_today",

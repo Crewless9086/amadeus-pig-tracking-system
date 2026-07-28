@@ -199,6 +199,8 @@ from modules.oom_sakkie.trace_store import (
 from modules.oom_sakkie.tools import (
     RiskLevel,
     TOOL_REGISTRY,
+    herdmaster_breeding_observation_preview_handler,
+    herdmaster_breeding_worklist_handler,
     list_tool_catalog,
     rootline_water_energy_plan_handler,
 )
@@ -273,6 +275,8 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "power_current",
                 "power_recent",
                 "rootline_water_energy_plan",
+                "herdmaster_breeding_worklist",
+                "herdmaster_breeding_observation_preview",
                 "weather_now",
                 "weather_today",
                 "weather_forecast",
@@ -285,7 +289,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         )
         for tool in TOOL_REGISTRY.values():
             with self.subTest(tool=tool.name):
-                expected_risk = RiskLevel.DRAFT_ONLY if tool.name in {"sales_customer_draft", "ledger_sales_agent"} else RiskLevel.READ_ONLY
+                expected_risk = RiskLevel.DRAFT_ONLY if tool.name in {
+                    "sales_customer_draft",
+                    "ledger_sales_agent",
+                } else RiskLevel.READ_ONLY
                 self.assertEqual(tool.risk_level, expected_risk)
                 self.assertFalse(tool.requires_confirmation)
                 self.assertEqual(tool.input_schema["type"], "object")
@@ -318,6 +325,87 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(draft["risk_level"], 1)
         self.assertEqual(draft["risk_label"], "DRAFT_ONLY")
         self.assertFalse(draft["requires_confirmation"])
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    def test_herdmaster_worklist_preserves_canonical_loop(
+        self, current_loop, _owner
+    ):
+        current_loop.return_value = {
+            "success": True,
+            "week_start": "2026-07-27",
+            "task_count": 1,
+            "tasks": [{
+                "tag_number": "Ms Piggy",
+                "why": "Heat was not affirmatively observed.",
+                "required_checks": ["availability", "family tree", "withdrawal"],
+                "provisional_recommendation": "Needs Data",
+                "delay_consequence": "Mating consideration remains blocked.",
+            }],
+            "limitations": [],
+        }
+        result = herdmaster_breeding_worklist_handler({})
+        self.assertTrue(result["success"])
+        self.assertIn("Ms Piggy", result["summary"])
+        self.assertIn("no observation or mating was recorded", result["safety_notes"][0])
+        self.assertIs(result["raw"], current_loop.return_value)
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    def test_herdmaster_conversation_preview_never_writes(
+        self, current_loop, _owner
+    ):
+        current_loop.return_value = {
+            "success": True,
+            "tasks": [{
+                "task_id": "HERD-TASK-1",
+                "pig_id": "PIG-MS",
+                "tag_number": "Ms Piggy",
+                "required_checks": ["heat signs"],
+                "provisional_recommendation": "Needs Data",
+            }],
+        }
+        result = herdmaster_breeding_observation_preview_handler({
+            "owner_words": "Ms Piggy has no standing heat today.",
+        })
+        self.assertTrue(result["success"])
+        self.assertEqual(result["raw"]["facts"]["standing_heat"], "not_observed")
+        self.assertFalse(result["raw"]["writes_performed"])
+
+    def test_herdmaster_breeding_intents_use_deterministic_owner_tools(self):
+        worklist = classify_intent("Please give me the Monday breeding round")
+        self.assertEqual(worklist.tool_name, "herdmaster_breeding_worklist")
+        preview = classify_intent(
+            "Ms Piggy body condition 3, moving well and no heat today"
+        )
+        self.assertEqual(
+            preview.tool_name,
+            "herdmaster_breeding_observation_preview",
+        )
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    def test_telegram_style_user_text_reaches_observation_preview(
+        self, current_loop, _owner
+    ):
+        current_loop.return_value = {
+            "success": True,
+            "tasks": [{
+                "task_id": "HERD-TASK-1",
+                "pig_id": "PIG-MS",
+                "tag_number": "Ms Piggy",
+                "required_checks": ["body condition", "heat signs"],
+                "provisional_recommendation": "Needs Data",
+            }],
+        }
+        result = herdmaster_breeding_observation_preview_handler({
+            "user_text": "Ms Piggy body condition 3 and no heat today.",
+        })
+        self.assertTrue(result["success"])
+        self.assertEqual(result["raw"]["facts"]["body_condition_score"], 3.0)
+        self.assertEqual(result["raw"]["facts"]["standing_heat"], "not_observed")
+        self.assertFalse(result["raw"]["writes_performed"])
+        catalog = list_tool_catalog()
         ledger = next(item for item in catalog if item["name"] == "ledger_sales_agent")
         self.assertEqual(ledger["risk_level"], 1)
         self.assertEqual(ledger["risk_label"], "DRAFT_ONLY")
