@@ -296,6 +296,44 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
             review_evidence_ready=True,
         ))
 
+    def test_unrelated_missing_evidence_does_not_block_claim_free_clarification(self):
+        proposed = {
+            "should_reply": True,
+            "next_action": "request_missing_fact",
+            "suggested_reply_text": (
+                "We offer small piglets, weaned piglets, growing pigs, "
+                "larger pigs, and slaughter-size pigs. Which size would "
+                "suit you?"
+            ),
+            "blockers": [
+                "availability_evidence_missing",
+                "category_not_selected",
+                "weight_not_selected",
+            ],
+        }
+        claim_evidence_valid = supporting_claims_are_evidence_backed(
+            "live_stock",
+            proposed,
+            review_evidence_ready=True,
+        )
+        self.assertTrue(claim_evidence_valid)
+
+        result = evaluate_level1_authority(
+            lane="live_stock",
+            inbound=inbound(),
+            decision=proposed,
+            review=review(),
+            evidence=evidence(supporting_evidence_valid=claim_evidence_valid),
+            environ={
+                "SAM_SALES_AUTONOMY_LEVEL": "1",
+                "SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED": "1",
+                "SAM_SALES_LEVEL1_COHORT_ENABLED": "1",
+                "SAM_SALES_LEVEL1_COHORT_BINDINGS": "2033:M-1",
+            },
+        )
+        self.assertTrue(result["dispatch_authorized"])
+        self.assertEqual(result["classification"], "qualified")
+
     def test_unsupported_price_or_count_claim_fails_closed(self):
         for reply in ("Weaners are R500 each.", "We have 10 pigs available."):
             with self.subTest(reply=reply):

@@ -3563,7 +3563,7 @@ def _price_answer_reply(facts, packet):
     packet = packet if isinstance(packet, dict) else {}
     if not packet.get("can_answer_price"):
         if _blank(facts.get("category")):
-            return "What size or type are you asking about: piglets, weaners, growers, finishers, or ready-for-slaughter pigs?"
+            return _customer_livestock_choice_guide()
         if _blank(facts.get("weight_range")):
             return "What weight band should I price for you?"
         return "I do not want to guess the price. I can check the current SAM price list for farm review."
@@ -4071,12 +4071,22 @@ def _human_weight_band(value):
 
 def _question_for_missing(field):
     return {
-        "category": "What size or type are you looking for: piglets, weaners, growers, or finishers?",
+        "category": _customer_livestock_choice_guide(),
         "quantity": "How many live pigs are you looking for?",
         "sex": "Do you need males, females, or does the sex not matter if the size is right?",
         "timing": "When would you want them?",
         "location": "Where would they need to go?",
     }.get(field, "What detail should I note for the farm?")
+
+
+def _customer_livestock_choice_guide():
+    """Translate the farm taxonomy into choices an ordinary buyer can answer."""
+    return (
+        "We offer pigs in a few practical size groups: small piglets are "
+        "approximately 2 to 6 kg, weaned piglets 7 to 19 kg, growing pigs "
+        "20 to 49 kg, larger pigs 50 to 79 kg, and slaughter-size pigs "
+        "80 kg and above. Which size would suit you?"
+    )
 
 
 def _missing_live_stock_fields(facts):

@@ -33,6 +33,27 @@ Preferred order:
 
 Do not interrogate the customer with the full list unless the owner is entering a manual back-office note.
 
+## Guide Buyers Through The Choices
+
+Customers do not know Amadeus's internal categories and must not be expected to
+answer with `Young Piglet`, `Weaner`, `Grower`, `Finisher`, or
+`Ready for Slaughter`.
+
+For a vague request such as `one pig`, `a piglet`, `what pigs do you have?`, or
+`what size?`, explain the choices first:
+
+- small piglets: approximately 2 to 6 kg;
+- weaned piglets: approximately 7 to 19 kg;
+- growing pigs: approximately 20 to 49 kg;
+- larger pigs: approximately 50 to 79 kg;
+- slaughter-size pigs: approximately 80 kg and above.
+
+Then ask only the smallest genuinely missing fact, normally which size suits
+them. Ask quantity or male/female/either later only when it is still unknown;
+never repeat a fact already supplied. This is customer guidance, not an
+availability or price claim. Missing stock evidence must remove unsupported
+stock claims, not prevent this clarification.
+
 ## Safe Wording
 
 Use:

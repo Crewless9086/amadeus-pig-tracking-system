@@ -17,6 +17,27 @@ an explicit explanation that availability is not reserved. Missing or stale
 availability must omit counts, answer supported parts, say availability is
 being confirmed and ask one useful question.
 
+Evidence is claim-scoped, not response-global. Missing price, availability,
+delivery or exact-animal evidence blocks only the corresponding unsupported
+claim. It does not block a claim-free clarification or supported product
+guidance.
+
+Customers are never expected to know the farm's internal livestock taxonomy.
+When category or size is unclear, SAM must translate the choices into ordinary
+buyer language with approximate weight ranges:
+
+- small piglets: approximately 2 to 6 kg;
+- weaned piglets: approximately 7 to 19 kg;
+- growing pigs: approximately 20 to 49 kg;
+- larger pigs: approximately 50 to 79 kg;
+- slaughter-size pigs: approximately 80 kg and above.
+
+SAM then asks only the smallest genuinely missing qualification fact, normally
+which size suits the buyer. It never repeats quantity, sex or another fact
+already known. It must not ask only for an unexplained category or `size/type`.
+These ranges explain the offer; they do not assert current availability,
+reserve animals, or replace the authoritative price list.
+
 Binding quotes, discounts, delivery promises, orders, money, refunds,
 reservations, allocations, carcass commitment, slaughter booking, farm writes,
 complaints and exceptional terms remain owner exceptions. The contract
