@@ -106,6 +106,7 @@ class SamLiveStockLevel1ControlTests(unittest.TestCase):
                 )
                 self.assertFalse(result["allowed"])
                 self.assertIn(blocker, result["blockers"])
+                self.assertFalse(result["legacy_fallback_permitted"])
 
     def test_identity_time_and_policy_mismatch_fail_closed(self):
         event = self.event()
@@ -183,6 +184,7 @@ class SamLiveStockLevel1ControlTests(unittest.TestCase):
             ),
             isolated_runtime={
                 "allowed": True,
+                "control_event_id": "SAM-L1-CONTROL-1",
                 "intake_write_authorized": True,
             },
         )
@@ -200,11 +202,101 @@ class SamLiveStockLevel1ControlTests(unittest.TestCase):
             intake_writer=lambda payload: writes.append(payload),
             isolated_runtime={
                 "allowed": True,
+                "control_event_id": "SAM-L1-CONTROL-1",
                 "intake_write_authorized": False,
             },
         )
         self.assertFalse(withheld["attempted"])
         self.assertEqual(len(writes), 1)
+
+    def test_legacy_business_write_env_cannot_spill_into_isolated_level1(self):
+        intake_writes = []
+        intake = sam_live_stock_runtime.write_live_stock_intake_if_enabled(
+            {"conversation_id": "2100", "content": "I need pigs"},
+            {"quantity": 2, "category": "piglet", "sex": "female"},
+            {"sales_lane": "live_stock_sales", "blockers": []},
+            {
+                sam_live_stock_runtime.INTAKE_WRITE_ENABLED_ENV: "true",
+            },
+            intake_writer=lambda payload: intake_writes.append(payload),
+            isolated_runtime={
+                "allowed": True,
+                "control_event_id": "SAM-L1-CONTROL-1",
+                "intake_write_authorized": False,
+            },
+        )
+        self.assertFalse(intake["attempted"])
+        self.assertEqual(intake_writes, [])
+
+        order_creates = []
+        draft = sam_live_stock_runtime.create_live_stock_draft_order_if_enabled(
+            {"conversation_id": "2100"},
+            {"quantity": 2, "category": "piglet", "sex": "female"},
+            {
+                "sales_lane": "live_stock_sales",
+                "draft_order_packet": {"draft_ready": True},
+            },
+            {
+                sam_live_stock_runtime.DRAFT_ORDER_CREATE_ENABLED_ENV: "true",
+            },
+            draft_order_creator=lambda payload: order_creates.append(payload),
+            isolated_runtime={
+                "allowed": True,
+                "control_event_id": "SAM-L1-CONTROL-1",
+                "intake_write_authorized": True,
+            },
+        )
+        self.assertFalse(draft["attempted"])
+        self.assertEqual(
+            draft["status"],
+            "sam_live_stock_draft_order_isolated_level1_prohibited",
+        )
+        self.assertEqual(order_creates, [])
+
+    def test_legacy_business_write_requires_proven_not_configured_state(self):
+        source = {
+            sam_live_stock_runtime.INTAKE_WRITE_ENABLED_ENV: "true",
+            sam_live_stock_runtime.DRAFT_ORDER_CREATE_ENABLED_ENV: "true",
+        }
+        intake_writes = []
+        base_args = (
+            {"conversation_id": "2100", "content": "I need pigs"},
+            {"quantity": 2, "category": "piglet", "sex": "female"},
+            {"sales_lane": "live_stock_sales", "blockers": []},
+        )
+        unavailable = {
+            "allowed": False,
+            "control_event_id": "",
+            "legacy_fallback_permitted": False,
+        }
+        intake = sam_live_stock_runtime.write_live_stock_intake_if_enabled(
+            *base_args,
+            source,
+            intake_writer=lambda payload: intake_writes.append(payload),
+            isolated_runtime=unavailable,
+        )
+        draft = sam_live_stock_runtime.create_live_stock_draft_order_if_enabled(
+            *base_args,
+            source,
+            draft_order_creator=lambda payload: None,
+            isolated_runtime=unavailable,
+        )
+        self.assertFalse(intake["attempted"])
+        self.assertFalse(draft["attempted"])
+        self.assertEqual(intake_writes, [])
+
+        no_event = {
+            "allowed": False,
+            "control_event_id": "",
+            "legacy_fallback_permitted": True,
+        }
+        legacy_intake = sam_live_stock_runtime.write_live_stock_intake_if_enabled(
+            *base_args,
+            source,
+            intake_writer=lambda payload: {"success": True},
+            isolated_runtime=no_event,
+        )
+        self.assertTrue(legacy_intake["attempted"])
 
 
 if __name__ == "__main__":
