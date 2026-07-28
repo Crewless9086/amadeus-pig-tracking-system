@@ -369,10 +369,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(interpretation["quantity"], 10)
         self.assertEqual(interpretation["sex"], "female")
         self.assertEqual(interpretation["category"], "")
-        self.assertIn(
-            "prepare a quote for 10",
-            result["sam_decision"]["suggested_reply_text"],
-        )
+        reply = result["sam_decision"]["suggested_reply_text"]
+        self.assertIn("no single category currently has all 10", reply)
+        self.assertNotIn("split across categories", reply)
+        self.assertIn("check again when more eligible animals become available", reply)
+        self.assertIn("does not reserve the animals", reply)
         self.assertFalse(result["sent"])
 
     @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
