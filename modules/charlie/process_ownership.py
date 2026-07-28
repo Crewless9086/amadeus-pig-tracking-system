@@ -3,9 +3,12 @@
 import hashlib
 import json
 import os
+import re
 import secrets
+import shlex
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -19,6 +22,12 @@ TERMINATION_ENABLE_ENV = "CHARLIE_PROCESS_TERMINATION_ENABLED"
 TERMINATION_ENABLE_VALUE = "I_UNDERSTAND_THIS_CAN_TERMINATE_PROCESSES"
 TEST_ISOLATION_ENV = "CHARLIE_TEST_ISOLATION"
 _SHA256_DIGEST_INFO_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
+_WINDOWS_CONSOLE_HOST = "conhost.exe"
+_WINDOWS_CONSOLE_HOST_COMMAND = re.compile(
+    r'^(?:\\\\\?\\|\\\?\?\\)?(?:"?[^"]*\\)?conhost\.exe"?(?:\s+(?:0x[0-9a-f]+|'
+    r'0xffffffff|-forcev1|--headless|[0-9]+))*\s*$',
+    re.IGNORECASE,
+)
 
 
 def process_termination_enabled(environ=None):
@@ -218,6 +227,11 @@ def validate_process_tree(
             inspect_process,
             current_pid=current_pid,
             allow_current_descendant=allow_current_descendant,
+            allow_console_host_tree_member=(
+                str(member.get("process_role") or "").endswith(
+                    "_console_host"
+                )
+            ),
         )
         if not decision["authorized"]:
             return _deny(f"member_{member.get('pid')}_{decision['reason']}")
@@ -311,7 +325,14 @@ def validate_bootstrap_tree(
     }
 
 
-def validate_live_bootstrap_tree(tree, *, generation, revision, startup_nonce):
+def validate_live_bootstrap_tree(
+    tree,
+    *,
+    generation,
+    revision,
+    startup_nonce,
+    allowed_descendant_tree=None,
+):
     """Revalidate a persisted bootstrap tree against current OS identities."""
     structural = validate_bootstrap_tree(
         tree,
@@ -349,6 +370,31 @@ def validate_live_bootstrap_tree(tree, *, generation, revision, startup_nonce):
                 if isinstance(item, dict)
             }:
                 return _deny(f"live_identity_parentage_mismatch:{label}")
+    live_rows = _inspect_process_descendants(root_pid)
+    live_identities = {
+        (int(row.get("pid") or -1), str(row.get("creation_time") or ""))
+        for row in live_rows
+        if isinstance(row, dict)
+    }
+    recorded_identities = {
+        (int(record.get("pid") or -1), str(record.get("creation_time") or ""))
+        for record in members
+        if isinstance(record, dict)
+    }
+    allowed_identities = {
+        (int(record.get("pid") or -1), str(record.get("creation_time") or ""))
+        for record in (
+            (allowed_descendant_tree or {}).get("members") or []
+        )
+        if isinstance(record, dict)
+    }
+    if allowed_identities:
+        live_identities -= allowed_identities
+    if live_identities != recorded_identities:
+        return _deny("live_identity_descendant_set_mismatch")
+    chronology = _validate_process_creation_chronology(live_rows, root_pid)
+    if chronology:
+        return _deny(chronology)
     return {
         **structural,
         "reason": "live_ownership_bootstrap_identity_match",
@@ -363,6 +409,7 @@ def observe_process_tree(
     startup_nonce,
     expected_script="",
     expected_root_executable="",
+    expected_interpreter_executable="",
     expected_root_parent_pid=None,
     process_role_prefix="process",
     timeout_seconds=10,
@@ -372,6 +419,7 @@ def observe_process_tree(
     """Observe a launcher/interpreter tree externally from its controller."""
     deadline = time.monotonic() + max(0, float(timeout_seconds))
     last_reason = "ownership_identity_incomplete:root"
+    previous_candidate_digest = ""
     while time.monotonic() <= deadline:
         rows = _inspect_process_descendants(root_pid)
         records = [
@@ -383,10 +431,12 @@ def observe_process_tree(
                 "charlie_runner",
                 revision=revision,
                 startup_nonce=startup_nonce,
-                process_role=(
-                    f"{process_role_prefix}_launcher"
-                    if int(row.get("pid") or -1) == int(root_pid)
-                    else f"{process_role_prefix}_interpreter"
+                process_role=_observed_process_role(
+                    row,
+                    root_pid=root_pid,
+                    expected_script=expected_script,
+                    expected_interpreter_executable=expected_interpreter_executable,
+                    process_role_prefix=process_role_prefix,
                 ),
             )
             for row in rows
@@ -407,16 +457,108 @@ def observe_process_tree(
             require_interpreter=True,
         )
         if decision["authorized"]:
+            chronology = _validate_process_creation_chronology(rows, root_pid)
+            if chronology:
+                last_reason = chronology
+                sleep_fn(poll_seconds)
+                continue
             if str(root.get("process_role") or "") != f"{process_role_prefix}_launcher":
                 last_reason = "root_process_role_mismatch"
                 sleep_fn(poll_seconds)
                 continue
-            if any(
-                str(item.get("process_role") or "") != f"{process_role_prefix}_interpreter"
-                for item in records
+            row_by_pid = {
+                int(row.get("pid") or -1): row
+                for row in rows
+                if isinstance(row, dict)
+            }
+            descendants = [
+                item for item in records
                 if int(item.get("pid") or -1) != int(root_pid)
-            ):
-                last_reason = "interpreter_process_role_mismatch"
+            ]
+            interpreters = [
+                item for item in descendants
+                if str(item.get("process_role") or "")
+                == f"{process_role_prefix}_interpreter"
+            ]
+            wrappers = [
+                item for item in descendants
+                if str(item.get("process_role") or "")
+                == f"{process_role_prefix}_console_host"
+            ]
+            unexpected = next(
+                (
+                    item for item in descendants
+                    if item not in interpreters and item not in wrappers
+                ),
+                None,
+            )
+            if unexpected is not None:
+                last_reason = (
+                    f"command_role_identity_mismatch:{unexpected.get('pid')}"
+                )
+                sleep_fn(poll_seconds)
+                continue
+            if expected_script and len(interpreters) != 1:
+                last_reason = "interpreter_process_role_ambiguous"
+                sleep_fn(poll_seconds)
+                continue
+            invalid_interpreter = next(
+                (
+                    item for item in interpreters
+                    if expected_script
+                    and not _valid_interpreter_command_role(
+                        row_by_pid.get(int(item.get("pid") or -1), {}),
+                        expected_script=expected_script,
+                        expected_interpreter_executable=(
+                            expected_interpreter_executable
+                        ),
+                    )
+                ),
+                None,
+            )
+            if invalid_interpreter is not None:
+                last_reason = (
+                    f"interpreter_identity_mismatch:"
+                    f"{invalid_interpreter.get('pid')}"
+                )
+                sleep_fn(poll_seconds)
+                continue
+            wrapper_parent_pids = {
+                int(root_pid),
+                *[int(item.get("pid") or -1) for item in interpreters],
+            }
+            wrapper_parent_counts = {}
+            for item in wrappers:
+                row = row_by_pid.get(int(item.get("pid") or -1), {})
+                parent_pid = int(row.get("parent_pid") or -1)
+                wrapper_parent_counts[parent_pid] = (
+                    wrapper_parent_counts.get(parent_pid, 0) + 1
+                )
+            invalid_wrapper = next(
+                (
+                    item for item in wrappers
+                    if not _valid_windows_console_host_wrapper(
+                        row_by_pid.get(int(item.get("pid") or -1), {}),
+                        allowed_parent_pids=wrapper_parent_pids,
+                        expected_script=expected_script,
+                    )
+                    or wrapper_parent_counts.get(
+                        int(
+                            row_by_pid.get(
+                                int(item.get("pid") or -1), {}
+                            ).get("parent_pid")
+                            or -1
+                        ),
+                        0,
+                    )
+                    != 1
+                ),
+                None,
+            )
+            if invalid_wrapper is not None:
+                last_reason = (
+                    f"console_host_identity_mismatch:{invalid_wrapper.get('pid')}"
+                )
                 sleep_fn(poll_seconds)
                 continue
             root_row = next(
@@ -430,24 +572,233 @@ def observe_process_tree(
                 sleep_fn(poll_seconds)
                 continue
             if expected_script:
+                command_role_rows = [
+                    root_row,
+                    *[
+                        row_by_pid.get(int(item.get("pid") or -1), {})
+                        for item in interpreters
+                    ],
+                ]
                 missing_role = next(
                     (
-                        row for row in rows
-                        if str(expected_script).casefold()
-                        not in str(row.get("command_line") or "").casefold()
+                        row for row in command_role_rows
+                        if not _command_has_exact_script(
+                            row.get("command_line"),
+                            expected_script,
+                        )
                     ),
                     None,
                 )
                 if missing_role is not None:
                     last_reason = f"command_role_identity_mismatch:{missing_role.get('pid')}"
                 else:
-                    return {"success": True, "tree": tree, "validation": decision}
+                    candidate_digest = process_tree_identity_digest(tree)
+                    if candidate_digest == previous_candidate_digest:
+                        return {
+                            "success": True,
+                            "tree": tree,
+                            "validation": decision,
+                        }
+                    previous_candidate_digest = candidate_digest
+                    last_reason = "process_tree_identity_not_stable"
             else:
-                return {"success": True, "tree": tree, "validation": decision}
+                candidate_digest = process_tree_identity_digest(tree)
+                if candidate_digest == previous_candidate_digest:
+                    return {
+                        "success": True,
+                        "tree": tree,
+                        "validation": decision,
+                    }
+                previous_candidate_digest = candidate_digest
+                last_reason = "process_tree_identity_not_stable"
         else:
             last_reason = decision["reason"]
         sleep_fn(poll_seconds)
     return {"success": False, "reason": last_reason, "tree": tree if "tree" in locals() else {}}
+
+
+def _observed_process_role(
+    row,
+    *,
+    root_pid,
+    expected_script,
+    expected_interpreter_executable,
+    process_role_prefix,
+):
+    """Classify one observed member without conflating wrappers and interpreters."""
+    if int(row.get("pid") or -1) == int(root_pid):
+        return f"{process_role_prefix}_launcher"
+    if _looks_like_windows_console_host(row):
+        return f"{process_role_prefix}_console_host"
+    if not expected_script or _valid_interpreter_command_role(
+        row,
+        expected_script=expected_script,
+        expected_interpreter_executable=expected_interpreter_executable,
+    ):
+        return f"{process_role_prefix}_interpreter"
+    return f"{process_role_prefix}_unexpected"
+
+
+def _looks_like_windows_console_host(row):
+    executable = str(row.get("executable_path") or "").replace("/", "\\")
+    name = str(row.get("name") or executable.rsplit("\\", 1)[-1]).casefold()
+    system_root = str(
+        os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+    ).replace("/", "\\").rstrip("\\")
+    expected = f"{system_root}\\System32\\{_WINDOWS_CONSOLE_HOST}"
+    return (
+        name == _WINDOWS_CONSOLE_HOST
+        and _canonical_windows_path(executable)
+        == _canonical_windows_path(expected)
+    )
+
+
+def _valid_windows_console_host_wrapper(
+    row,
+    *,
+    allowed_parent_pids,
+    expected_script,
+):
+    """Accept only the bounded Windows console host attached to this launcher."""
+    if not _looks_like_windows_console_host(row):
+        return False
+    if int(row.get("parent_pid") or -1) not in {
+        int(pid) for pid in allowed_parent_pids
+    }:
+        return False
+    command = " ".join(str(row.get("command_line") or "").split())
+    if not command or not _WINDOWS_CONSOLE_HOST_COMMAND.fullmatch(command):
+        return False
+    executable = str(row.get("executable_path") or "").replace("/", "\\")
+    command_end = command.casefold().find(_WINDOWS_CONSOLE_HOST)
+    if command_end < 0:
+        return False
+    command_executable = command[:command_end + len(_WINDOWS_CONSOLE_HOST)]
+    command_executable = command_executable.strip('"')
+    for prefix in ("\\\\?\\", "\\??\\"):
+        if command_executable.startswith(prefix):
+            command_executable = command_executable[len(prefix):]
+            break
+    if command_executable.casefold() != executable.casefold():
+        return False
+    if expected_script and str(expected_script).casefold() in command.casefold():
+        return False
+    return True
+
+
+def _valid_interpreter_command_role(
+    row,
+    *,
+    expected_script,
+    expected_interpreter_executable,
+):
+    executable = _canonical_windows_path(row.get("executable_path"))
+    expected_executable = _canonical_windows_path(
+        expected_interpreter_executable
+    )
+    if expected_executable and executable != expected_executable:
+        return False
+    name = executable.rsplit("\\", 1)[-1]
+    if name not in {"python.exe", "pythonw.exe"}:
+        return False
+    return _command_has_exact_script(row.get("command_line"), expected_script)
+
+
+def _command_has_exact_script(command, expected_script):
+    tokens = _windows_command_tokens(command)
+    if len(tokens) < 2:
+        return False
+    return (
+        _canonical_windows_path(tokens[1])
+        == _canonical_windows_path(expected_script)
+    )
+
+
+def _windows_command_tokens(command):
+    try:
+        return [
+            str(token).strip('"')
+            for token in shlex.split(str(command or ""), posix=False)
+        ]
+    except ValueError:
+        return []
+
+
+def _canonical_windows_path(value):
+    path = str(value or "").strip().strip('"').replace("/", "\\")
+    for prefix in ("\\\\?\\", "\\??\\"):
+        if path.startswith(prefix):
+            path = path[len(prefix):]
+            break
+    return os.path.normpath(path).casefold() if path else ""
+
+
+def _validate_process_creation_chronology(rows, root_pid):
+    rows = [row for row in (rows or []) if isinstance(row, dict)]
+    by_pid = {int(row.get("pid") or -1): row for row in rows}
+    if int(root_pid) not in by_pid:
+        return "ownership_identity_incomplete:root"
+    for row in rows:
+        pid = int(row.get("pid") or -1)
+        if pid == int(root_pid):
+            continue
+        parent = by_pid.get(int(row.get("parent_pid") or -1))
+        if not parent:
+            return f"parentage_mismatch:member_{pid}"
+        child_created = _parse_creation_identity(row.get("creation_time"))
+        parent_created = _parse_creation_identity(parent.get("creation_time"))
+        if child_created is None or parent_created is None:
+            return f"creation_identity_invalid:member_{pid}"
+        if child_created[0] != parent_created[0]:
+            return f"creation_identity_domain_mismatch:member_{pid}"
+        if child_created[1] < parent_created[1]:
+            return f"creation_identity_precedes_parent:member_{pid}"
+    return ""
+
+
+def _parse_creation_identity(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return ("process_start_ticks", int(text))
+    dmtf = re.fullmatch(
+        r"(\d{14})\.(\d{6})([+-])(\d{3})",
+        text,
+    )
+    if dmtf:
+        try:
+            local = datetime.strptime(
+                f"{dmtf.group(1)}.{dmtf.group(2)}",
+                "%Y%m%d%H%M%S.%f",
+            )
+            minutes = int(dmtf.group(4))
+            if dmtf.group(3) == "-":
+                minutes = -minutes
+            parsed = local.replace(
+                tzinfo=timezone(timedelta(minutes=minutes))
+            ).astimezone(timezone.utc)
+            return ("wall_clock", parsed.timestamp())
+        except (ValueError, OverflowError):
+            return None
+    for parser in (
+        lambda item: datetime.fromisoformat(item.replace("Z", "+00:00")),
+        lambda item: datetime.strptime(item, "%m/%d/%Y %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        ),
+        lambda item: datetime.strptime(item, "%Y%m%d%H%M%S.%f%z"),
+    ):
+        try:
+            parsed = parser(text)
+            parsed = (
+                parsed.replace(tzinfo=timezone.utc)
+                if parsed.tzinfo is None
+                else parsed.astimezone(timezone.utc)
+            )
+            return ("wall_clock", parsed.timestamp())
+        except ValueError:
+            continue
+    return None
 
 
 def _inspect_process_descendants(root_pid):
@@ -488,6 +839,7 @@ def validate_termination(
     inspect_process,
     current_pid=None,
     allow_current_descendant=False,
+    allow_console_host_tree_member=False,
 ):
     """Authorize only a complete, exact, non-interactive disposable identity."""
     if not isinstance(record, dict):
@@ -527,7 +879,19 @@ def validate_termination(
     if not isinstance(ancestry, list):
         return _deny("process_inspection_failed")
     if _protected(current):
-        return _deny("protected_process_boundary")
+        console_host_member = bool(
+            allow_console_host_tree_member
+            and str(record.get("process_role") or "").endswith(
+                "_console_host"
+            )
+            and _valid_windows_console_host_wrapper(
+                current,
+                allowed_parent_pids={parent_pid},
+                expected_script="",
+            )
+        )
+        if not console_host_member:
+            return _deny("protected_process_boundary")
     protected_pids = {int(current_pid or os.getpid())}
     for item in current.get("current_process_ancestry", []):
         if isinstance(item, dict) and str(item.get("pid") or "").isdigit():

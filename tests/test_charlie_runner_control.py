@@ -196,19 +196,28 @@ class CharlieRunnerControlTests(unittest.TestCase):
             )
             if result.get("success"):
                 tree = result["tree"]
+                excluded_pids = set()
+                if runner_pid_path.exists():
+                    excluded_pids.add(
+                        int(runner_pid_path.read_text(encoding="utf-8"))
+                    )
+                    changed = True
+                    while changed:
+                        changed = False
+                        for item in tree["members"]:
+                            if (
+                                int(item.get("parent_pid") or -1)
+                                in excluded_pids
+                                and int(item.get("pid") or -1)
+                                not in excluded_pids
+                            ):
+                                excluded_pids.add(
+                                    int(item.get("pid") or -1)
+                                )
+                                changed = True
                 members = [
                     item for item in tree["members"]
-                    if (
-                        int(item.get("pid") or -1) == int(root_pid)
-                        or int(item.get("parent_pid") or -1) == int(root_pid)
-                    )
-                    and (
-                        not runner_pid_path.exists()
-                        or int(item.get("pid") or -1)
-                        != int(runner_pid_path.read_text(encoding="utf-8"))
-                    )
-                    and Path(str(item.get("executable_path") or "")).name.casefold()
-                    == "powershell.exe"
+                    if int(item.get("pid") or -1) not in excluded_pids
                 ]
                 tree = process_ownership.make_process_tree_record(
                     tree["root"], members, generation
@@ -262,12 +271,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                             )
                             return
                         runner_tree = runner_observation["tree"]
-                        runner_members = [
-                            item for item in runner_tree["members"]
-                            if Path(
-                                str(item.get("executable_path") or "")
-                            ).name.casefold() == "powershell.exe"
-                        ]
+                        runner_members = list(runner_tree["members"])
                         runner_tree = process_ownership.make_process_tree_record(
                             runner_tree["root"], runner_members, generation
                         )
