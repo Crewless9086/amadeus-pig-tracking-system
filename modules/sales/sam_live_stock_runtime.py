@@ -1,6 +1,7 @@
 import hmac
 import hashlib
 import json
+import math
 import os
 import re
 from collections.abc import Mapping
@@ -250,7 +251,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         conversation_history_loader=conversation_history_loader,
         environ=source,
     )
-    if _should_use_auto_general_path(inbound, facts):
+    if _should_use_auto_general_path(inbound, facts, general_context):
         inbound = resolve_sam_general_inbound_identity(
             inbound,
             payload,
@@ -510,6 +511,26 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
     inbound = inbound if isinstance(inbound, dict) else {}
     decision = decision if isinstance(decision, dict) else {}
     review = review if isinstance(review, dict) else {}
+    read_context = (
+        decision.get("read_context")
+        if isinstance(decision.get("read_context"), dict)
+        else {}
+    )
+    if (
+        read_context.get("context_errors")
+        or (
+            isinstance(read_context.get("chatwoot_history"), dict)
+            and read_context["chatwoot_history"].get(
+                "chronology_evidence_complete"
+            ) is False
+        )
+        or "read_context_error" in (decision.get("blockers") or [])
+    ):
+        return {
+            "attempted": False,
+            "sent": False,
+            "status": "routine_reply_chronology_evidence_unavailable",
+        }
     reply = _clean_multiline(decision.get("suggested_reply_text"), 1800)
     legacy_canary = (
         _auto_general_canary_evaluation(inbound, decision, review, source)
@@ -1042,6 +1063,7 @@ def merge_prior_live_stock_context(facts, prior_context):
         not _blank(interest.get(key))
         for key in ("category", "quantity", "sex", "weight_range")
     )
+    current_category = _normal_category(facts.get("category"))
     for key in (
         "category",
         "quantity",
@@ -1054,8 +1076,17 @@ def merge_prior_live_stock_context(facts, prior_context):
         "quote_requested",
         "order_commitment",
     ):
-        if _blank(facts.get(key)) and not _blank(interest.get(key)):
-            facts[key] = interest.get(key)
+        prior_value = interest.get(key)
+        if (
+            key == "weight_range"
+            and current_category
+            and not _blank(prior_value)
+        ):
+            prior_weight_category = _category_from_weight_range(prior_value)
+            if prior_weight_category and prior_weight_category != current_category:
+                continue
+        if _blank(facts.get(key)) and not _blank(prior_value):
+            facts[key] = prior_value
     if _blank(facts.get("sales_lane")) and not _blank(interest.get("sales_lane")):
         facts["sales_lane"] = interest.get("sales_lane")
     if interest.get("quote_requested") and not facts.get("quote_requested"):
@@ -1084,12 +1115,21 @@ def load_sam_general_context(inbound, *, conversation_history_loader=None, envir
             history = {"success": False, "status": "read_failed", "messages": []}
     current_context = inbound.get("message_context") if isinstance(inbound.get("message_context"), dict) else {}
     recovered_reference = _recover_general_reference(current_context, history)
+    compact_history = _compact_chatwoot_history(history)
+    if (
+        history.get("success")
+        and compact_history.get("chronology_evidence_complete") is False
+    ):
+        errors.append({
+            "status": "chatwoot_chronology_evidence_unavailable",
+            "reason": "chronology_timestamp_unavailable",
+        })
     return {
         "success": not errors,
         "read_only": True,
         "current_message_context": current_context,
         "recovered_reference": recovered_reference,
-        "chatwoot_history": _compact_chatwoot_history(history),
+        "chatwoot_history": compact_history,
         "chatwoot_history_messages": _compact_chatwoot_history_messages(
             history,
             current_message_id=inbound.get("message_id"),
@@ -1197,11 +1237,15 @@ def _current_message_requires_specialist(inbound, facts):
     )
 
 
-def _should_use_auto_general_path(inbound, facts):
+def _should_use_auto_general_path(inbound, facts, context_packet=None):
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
     text = _normal_text(inbound.get("content"))
     if _current_message_requires_specialist(inbound, facts):
+        return False
+    if _looks_like_customer_qualification_answer(
+        text, facts, context_packet=context_packet
+    ):
         return False
     if _hostile_or_scam_signal(text) or _price_challenge_signal(text):
         return False
@@ -1210,6 +1254,65 @@ def _should_use_auto_general_path(inbound, facts):
     if _natural_close_signal(text):
         return True
     return facts.get("sales_lane") in {"", "unclear", "owner_handoff", LANE_LIVE_STOCK}
+
+
+def _looks_like_customer_qualification_answer(text, facts, context_packet=None):
+    """Keep concise customer answers on the Livestock persistence path."""
+    words = str(text or "").split()
+    if not words or len(words) > 8:
+        return False
+    if _has_any(text, ("post", "advert", "ad", "picture", "photo", "more info")):
+        return False
+    has_qualification = any(
+        not _blank((facts or {}).get(key))
+        for key in ("category", "sex", "weight_range")
+    )
+    if not has_qualification:
+        return False
+    if (facts or {}).get("sales_lane") == LANE_LIVE_STOCK:
+        return True
+    history_evidence = (
+        (context_packet or {}).get("chatwoot_history")
+        if isinstance(context_packet, dict)
+        else {}
+    )
+    if not isinstance(history_evidence, dict) or (
+        history_evidence.get("chronology_evidence_complete") is not True
+    ):
+        return False
+    history = (
+        (context_packet or {}).get("chatwoot_history_messages")
+        if isinstance(context_packet, dict)
+        else []
+    )
+    farm_messages = [
+        row for row in history or []
+        if isinstance(row, dict) and row.get("speaker") == "farm"
+    ]
+    if not farm_messages:
+        return False
+    prompt = _normal_text(farm_messages[-1].get("content"))
+    if not prompt:
+        return False
+    if not _blank((facts or {}).get("sex")):
+        return _has_any(prompt, (
+            "male, female, or either",
+            "males, females, or either",
+            "sex",
+            "male or female",
+        ))
+    if not _blank((facts or {}).get("category")) or not _blank(
+        (facts or {}).get("weight_range")
+    ):
+        return _has_any(prompt, (
+            "which size",
+            "what size",
+            "weight",
+            "which category",
+            "small piglets",
+            "weaned piglets",
+        ))
+    return False
 
 
 def _potential_specialist_followup(text):
@@ -1404,10 +1507,19 @@ def load_live_stock_read_context(
             history_loader = conversation_history_loader or load_chatwoot_conversation_history
             chatwoot_history = history_loader(inbound.get("conversation_id"), source)
             if not reset_prior_context:
-                prior_context = _merge_prior_context_packets(
-                    prior_context,
-                    _prior_context_from_chatwoot_history(chatwoot_history, inbound),
+                history_prior = _prior_context_from_chatwoot_history(
+                    chatwoot_history, inbound
                 )
+                if history_prior.get("evidence_complete") is False:
+                    context_errors.append({
+                        "status": "chatwoot_chronology_evidence_unavailable",
+                        "reason": history_prior.get("reason")
+                        or "chronology_ordering_unavailable",
+                    })
+                else:
+                    prior_context = _merge_prior_context_packets(
+                        prior_context, history_prior
+                    )
         except Exception as exc:
             context_errors.append(_integration_failure("chatwoot_conversation_history_read_failed", exc))
             chatwoot_history = {"success": False, "status": "read_failed", "messages": []}
@@ -1699,11 +1811,38 @@ def _prior_context_from_chatwoot_history(history, inbound):
         return {}
     current_id = _clean((inbound or {}).get("message_id"), 100)
     incoming_texts = []
-    for message in history.get("messages") if isinstance(history.get("messages"), list) else []:
-        if not _chatwoot_message_is_incoming(message):
-            continue
-        if current_id and _clean(message.get("id"), 100) == current_id:
-            continue
+    raw_messages = (
+        history.get("messages")
+        if isinstance(history.get("messages"), list)
+        else []
+    )
+    relevant_messages = [
+        message for message in raw_messages
+        if isinstance(message, dict)
+        and _chatwoot_message_is_incoming(message)
+        and not (
+            current_id
+            and _clean(message.get("id"), 100) == current_id
+        )
+    ]
+    if any(
+        _chatwoot_history_instant(message.get("created_at")) is None
+        for message in relevant_messages
+    ):
+        return {
+            "interest": {},
+            "source": "chatwoot_conversation_history",
+            "evidence_complete": False,
+            "reason": "chronology_timestamp_unavailable",
+        }
+    ordered_messages = sorted(
+        relevant_messages,
+        key=lambda message: (
+            _chatwoot_history_instant(message.get("created_at")),
+            _clean(message.get("id"), 100),
+        ),
+    )
+    for message in ordered_messages:
         content = _clean_multiline(message.get("content"), 500)
         if content:
             incoming_texts.append(content)
@@ -1751,7 +1890,26 @@ def _prior_context_from_chatwoot_history(history, inbound):
         "quote_requested": bool(facts.get("quote_requested")),
         "order_commitment": bool(facts.get("order_commitment")),
     }
-    return {"interest": interest, "source": "chatwoot_conversation_history"} if any(interest.values()) else {}
+    return {
+        "interest": interest,
+        "source": "chatwoot_conversation_history",
+        "evidence_complete": True,
+    } if any(interest.values()) else {}
+
+
+def _chatwoot_history_instant(value):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        instant = float(value)
+        return instant if math.isfinite(instant) else None
+    elif isinstance(value, str) and value.strip():
+        text = value.strip()
+        try:
+            instant = float(text)
+            return instant if math.isfinite(instant) else None
+        except ValueError:
+            parsed = _parse_aware_utc_timestamp(text)
+            return parsed.timestamp() if parsed is not None else None
+    return None
 
 
 def _merge_prior_context_packets(primary, secondary):
@@ -1760,8 +1918,20 @@ def _merge_prior_context_packets(primary, secondary):
     if not secondary_interest:
         return primary or {}
     merged = dict(primary_interest)
+    customer_qualification_fields = {
+        "quantity", "category", "sex", "weight_range", "timing", "location",
+    }
     for key, value in secondary_interest.items():
-        if _blank(merged.get(key)) and not _blank(value):
+        if key in customer_qualification_fields and not _blank(value):
+            # Customer chronology is authoritative when an intake projection
+            # and the customer's own messages overlap.
+            if (
+                key == "category"
+                and _normal_category(merged.get(key)) == _normal_category(value)
+            ):
+                continue
+            merged[key] = value
+        elif _blank(merged.get(key)) and not _blank(value):
             merged[key] = value
         elif key in {"quote_requested", "order_commitment"} and value:
             merged[key] = True
@@ -1774,11 +1944,20 @@ def _merge_prior_context_packets(primary, secondary):
 def _compact_chatwoot_history(history):
     history = history if isinstance(history, dict) else {}
     messages = history.get("messages") if isinstance(history.get("messages"), list) else []
+    chronology_rows = [
+        message for message in messages
+        if isinstance(message, dict)
+        and not _chatwoot_message_is_activity(message)
+    ]
     return {
         "success": bool(history.get("success")),
         "status": history.get("status", ""),
         "message_count": len(messages),
         "incoming_count": sum(1 for message in messages if _chatwoot_message_is_incoming(message)),
+        "chronology_evidence_complete": all(
+            _chatwoot_history_instant(message.get("created_at")) is not None
+            for message in chronology_rows
+        ),
     }
 
 
@@ -1786,6 +1965,23 @@ def _compact_chatwoot_history_messages(history, limit=10, current_message_id="")
     history = history if isinstance(history, dict) else {}
     messages = history.get("messages") if isinstance(history.get("messages"), list) else []
     current_message_id = _clean(current_message_id, 100)
+    if all(
+        _chatwoot_history_instant(message.get("created_at")) is not None
+        for message in messages
+        if isinstance(message, dict) and not _chatwoot_message_is_activity(message)
+    ):
+        messages = sorted(
+            messages,
+            key=lambda message: (
+                _chatwoot_history_instant(message.get("created_at"))
+                if isinstance(message, dict)
+                and not _chatwoot_message_is_activity(message)
+                else float("-inf"),
+                _clean(message.get("id"), 100)
+                if isinstance(message, dict)
+                else "",
+            ),
+        )
     compact = []
     for message in messages[-max(int(limit or 10), 1):]:
         if not isinstance(message, dict):
@@ -2156,6 +2352,12 @@ def write_live_stock_intake_if_enabled(inbound, facts, decision, environ=None, i
         return {"attempted": False, "success": False, "status": "sam_live_stock_intake_write_disabled"}
     if (decision or {}).get("sales_lane") != LANE_LIVE_STOCK:
         return {"attempted": False, "success": False, "status": "sam_live_stock_intake_wrong_lane"}
+    if "read_context_error" in ((decision or {}).get("blockers") or []):
+        return {
+            "attempted": False,
+            "success": False,
+            "status": "sam_live_stock_intake_evidence_unavailable",
+        }
     if facts.get("breeding_interest"):
         return {"attempted": False, "success": False, "status": "sam_live_stock_intake_owner_gate_breeding"}
     payload = build_live_stock_intake_payload(inbound, facts, decision)
@@ -3650,6 +3852,26 @@ def build_live_stock_customer_guidance(inbound, facts):
     """Explain customer-facing sizes while keeping taxonomy mapping internal."""
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
+    if _normal_text(facts.get("message_intent")) in {
+        "location question",
+        "location_question",
+        "delivery question",
+        "delivery_question",
+        "timing or collection",
+        "timing_or_collection",
+        "social acknowledgement",
+        "social_acknowledgement",
+        "social close",
+        "social_close",
+    }:
+        return {
+            "applicable": False,
+            "reply_text": "",
+            "options": [],
+            "canonical_mapping": {},
+            "customer_send_allowed": False,
+            "guidance_scope": "",
+        }
     category = _normal_category(facts.get("category"))
     weight_range = _clean(facts.get("weight_range"), 80)
     customer_text = _normal_text(
@@ -3707,7 +3929,11 @@ def build_live_stock_customer_guidance(inbound, facts):
         if vague_all or vague_piglet:
             questions.append("Which size would suit you")
     if needs_sex:
-        questions.append("would you prefer a male, female, or either")
+        questions.append(
+            "Would you prefer a male, female, or either"
+            if not options
+            else "would you prefer a male, female, or either"
+        )
     if needs_quantity:
         questions.append("how many do you need")
     lines.extend(["", _joined_customer_questions(questions)])
@@ -3761,7 +3987,6 @@ def _prefer_customer_size_guidance(
         customer_guidance.get("applicable") is True
         and sales_lane == LANE_LIVE_STOCK
         and not information_scope
-        and contextual_sales.get("applicable") is not True
         and contextual_sales.get("status") in {
             "commercial_evidence_unavailable",
             "not_commercial_livestock",
@@ -4290,22 +4515,71 @@ def _prior_context_from_intake(intake):
     known = intake.get("known_fields") if isinstance(intake.get("known_fields"), dict) else {}
     items = intake.get("items") if isinstance(intake.get("items"), list) else []
     interest = {
-        "location": known.get("collection_location") or "",
-        "timing": known.get("collection_time_text") or known.get("collection_date") or "",
-        "payment_method": known.get("payment_method") or "",
+        "location": _persisted_customer_qualification(
+            known.get("collection_location")
+        ),
+        "timing": _persisted_customer_qualification(
+            known.get("collection_time_text") or known.get("collection_date")
+        ),
+        "payment_method": _persisted_customer_qualification(
+            known.get("payment_method")
+        ),
         "quote_requested": bool(known.get("quote_requested")),
         "order_commitment": bool(known.get("order_commitment")),
     }
     active_items = [item for item in items if isinstance(item, dict) and str(item.get("status") or "").lower() == "active"]
     if active_items:
         item = active_items[0]
+        persisted_category = _persisted_customer_qualification(
+            item.get("category")
+        )
         interest.update({
-            "quantity": item.get("quantity") or "",
-            "category": item.get("category") or "",
-            "weight_range": item.get("weight_range") or "",
-            "sex": item.get("sex") or "",
+            "quantity": _persisted_customer_qualification(item.get("quantity")),
+            "category": persisted_category,
+            "weight_range": _persisted_intake_weight_qualification(
+                item.get("weight_range"), persisted_category
+            ),
+            "sex": _persisted_customer_qualification(item.get("sex")),
         })
     return {"interest": interest, "source": "order_intake_context"} if any(interest.values()) else {}
+
+
+def _persisted_customer_qualification(value):
+    """Exclude historical default sentinels from customer-supplied facts."""
+    text = _clean(value, 120)
+    if _normal_text(text) in {
+        "",
+        "any",
+        "unknown",
+        "unspecified",
+        "not supplied",
+        "not_supplied",
+        "default",
+        "defaulted",
+        "inferred",
+        "n/a",
+        "na",
+    }:
+        return ""
+    return value
+
+
+def _persisted_intake_weight_qualification(value, category):
+    value = _persisted_customer_qualification(value)
+    if _blank(value):
+        return ""
+    historical_defaults = {
+        "piglet": "5_to_6_Kg",
+        "weaner": "10_to_14_Kg",
+        "grower": "30_to_34_Kg",
+        "finisher": "60_to_64_Kg",
+        "ready_for_slaughter": "80_to_84_Kg",
+    }
+    if _clean(value, 80) == historical_defaults.get(_normal_category(category)):
+        # Historical rows do not distinguish this manufactured category
+        # default from customer evidence, so it must fail closed.
+        return ""
+    return value
 
 
 def _extract_category(text):
@@ -4389,7 +4663,7 @@ def _extract_quantity(text):
     for word, value in number_words.items():
         if re.search(
             rf"\b{word}\s+(?:(?:live|breeding)\s+)?"
-            r"(?:male|female|males|females|piglets|pigs|weaners|growers|finishers|gilts|boars|sows)\b",
+            r"(?:big\b|male|female|males|females|piglets|pigs|weaners|growers|finishers|gilts|boars|sows)\b",
             text,
         ):
             return value
@@ -4399,13 +4673,40 @@ def _extract_quantity(text):
 def _extract_sex(text):
     male = _has_any(text, ("male", "males", "boar", "boars"))
     female = _has_any(text, ("female", "females", "gilt", "gilts", "sow", "sows"))
-    if male and female:
-        return "split"
-    if female:
+    explicit_flexibility = _has_any(text, (
+        "any sex",
+        "sex does not matter",
+        "sex doesn't matter",
+        "sex is not important",
+        "male or female is fine",
+        "male or female, no preference",
+        "either male or female",
+        "either sex",
+    ))
+    if explicit_flexibility:
+        return "any"
+    if female and not male:
         return "female"
-    if male:
+    if male and not female:
         return "male"
-    if _has_any(text, ("any sex", "sex does not matter", "doesn't matter", "no preference")):
+    if male and female:
+        if _has_any(text, ("either", "no preference", "doesn't matter")):
+            return "any"
+        return "split"
+    if _has_any(text, (
+        "either size",
+        "either category",
+        "either weaner",
+        "either grower",
+        "either piglet",
+    )):
+        return ""
+    if _has_any(text, (
+        "either",
+        "either is fine",
+        "doesn't matter",
+        "no preference",
+    )):
         return "any"
     return ""
 
@@ -5245,7 +5546,7 @@ def _normal_intake_sex(value):
         "female": "Female",
         "any": "Any",
         "split": "Any",
-    }.get(sex, "Any")
+    }.get(sex, "")
 
 
 def _normal_intake_location(value):
@@ -5254,7 +5555,7 @@ def _normal_intake_location(value):
         return "Riversdale"
     if text == "albertinia":
         return "Albertinia"
-    return "Any"
+    return ""
 
 
 def _normal_intake_payment(value):
@@ -5272,14 +5573,8 @@ def _normal_intake_weight_range(value, category):
     if numbers:
         weight = min(numbers)
         return _weight_band_for_kg(weight)
-    defaults = {
-        "Piglet": "5_to_6_Kg",
-        "Weaner": "10_to_14_Kg",
-        "Grower": "30_to_34_Kg",
-        "Finisher": "60_to_64_Kg",
-        "Slaughter": "80_to_84_Kg",
-    }
-    return defaults.get(category, "")
+    # Category-derived defaults are not customer-supplied weight evidence.
+    return ""
 
 
 def _weight_band_for_kg(weight):

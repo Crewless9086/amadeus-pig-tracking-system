@@ -33,7 +33,9 @@ Telegram escalation or HUMAN ownership.
 3. SAM Sales Router classifies the lane before live-stock claims, tools, order
    preparation, or other consequential work. If the lane is not
    `live_stock_sales`, continue general discovery or use the correct specialist.
-4. If lane is live stock, collect only the next missing fact.
+4. If lane is live stock, collect only facts the customer has not supplied.
+   When both size and sex are missing, ask both together using plain-language
+   size/weight choices. Never require the customer to know internal categories.
 5. Load existing conversation/order-intake memory when the backend runtime exists.
 6. Read current availability from backend source truth.
 7. Prepare advisory next action, owner packet, or safe draft reply.
@@ -41,6 +43,32 @@ Telegram escalation or HUMAN ownership.
 9. Backend/owner gates decide whether reservation, quote, customer send, or payment-dependent actions may happen.
 10. Append learning evidence after blocked, unclear, rejected, or corrected outcomes.
 11. If the customer becomes hostile, repeatedly demands the exact farm location, calls the farm a scam, or aggressively challenges pricing, SAM should close politely, stop replying, and escalate/log the conversation for owner visibility.
+
+## Qualification Evidence
+
+- Blank, `Any`, `Unknown`, defaulted, or inferred persisted values are not
+  evidence that the customer supplied a preference.
+- An explicit customer statement such as `either` or `no preference` is valid
+  sex-preference evidence because it is independently present in chronology.
+- Current customer chronology overrides a conflicting intake projection.
+- A category-derived weight default must not satisfy a requested weight/size
+  field.
+- Missing stock or price evidence blocks only the unsupported stock or price
+  claim. It does not block a safe size/sex clarification or supported product
+  explanation.
+- A concise customer qualification answer stays in the Livestock lane so the
+  durable intake can advance; it must not fall back to general conversation.
+
+## Complete Sales Inbox Operation
+
+The configured Chatwoot inbox, read with complete deterministic pagination, is
+the source inventory. Every current Livestock sales conversation receives one
+durable disposition: Level 1 reply now, awaiting customer, owner-review draft,
+exact fact required, closed provider window, protected decision, technical
+evidence defect, handled, or retired. Open status alone never creates owner
+work. Already answered, duplicate, spam, acknowledgement-only, stale, and
+non-sales conversations remain audit evidence but leave the actionable queue.
+`can_reply=false` must be expanded into its exact provider/evidence reason.
 
 ## Required Facts
 
