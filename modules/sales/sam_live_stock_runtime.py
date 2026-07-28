@@ -1963,15 +1963,13 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         database_url=(environ or {}).get("DATABASE_URL"),
     )
     customer_guidance = build_live_stock_customer_guidance(inbound, facts)
-    customer_guidance_preferred = bool(
-        customer_guidance.get("applicable") is True
-        and not facts.get("information_scope")
-        and contextual_sales.get("status") == "commercial_evidence_unavailable"
-        and information_reply.get("status") not in {
-            "availability_and_pricing_verified",
-            "price_only_verified",
-        }
-        and price_answer_packet.get("can_answer_price") is not True
+    customer_guidance_preferred = _prefer_customer_size_guidance(
+        customer_guidance=customer_guidance,
+        contextual_sales=contextual_sales,
+        information_reply=information_reply,
+        price_answer_packet=price_answer_packet,
+        information_scope=facts.get("information_scope"),
+        sales_lane=facts.get("sales_lane"),
     )
     fallback_reply = (
         customer_guidance.get("reply_text")
@@ -3747,6 +3745,33 @@ def build_live_stock_customer_guidance(inbound, facts):
         "price_claimed": False,
         "customer_send_allowed": False,
     }
+
+
+def _prefer_customer_size_guidance(
+    *,
+    customer_guidance,
+    contextual_sales,
+    information_reply,
+    price_answer_packet,
+    information_scope,
+    sales_lane,
+):
+    """Prefer safe guidance only when no stronger source-backed answer exists."""
+    return bool(
+        customer_guidance.get("applicable") is True
+        and sales_lane == LANE_LIVE_STOCK
+        and not information_scope
+        and contextual_sales.get("applicable") is not True
+        and contextual_sales.get("status") in {
+            "commercial_evidence_unavailable",
+            "not_commercial_livestock",
+        }
+        and information_reply.get("status") not in {
+            "availability_and_pricing_verified",
+            "price_only_verified",
+        }
+        and price_answer_packet.get("can_answer_price") is not True
+    )
 
 
 def _joined_customer_questions(questions):

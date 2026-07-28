@@ -117,7 +117,9 @@ def evaluate_level1_authority(
         and re.search(r"\b\d+\s+(?:available|in stock|pigs?|carcasses?)\b", reply, re.I)
     )
     unsupported_availability = bool(
-        not availability_current and _affirmative_availability_claim(reply)
+        not availability_current
+        and _affirmative_availability_claim(reply)
+        and not _is_canonical_claim_free_customer_guidance(reply)
     )
     availability_required = _availability_question(inbound.get("content"))
     supported_partial = bool(

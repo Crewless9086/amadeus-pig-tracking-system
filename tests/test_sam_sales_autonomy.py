@@ -201,6 +201,39 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
                     review_evidence_ready=True,
                 ))
 
+    def test_canonical_future_confirmation_is_not_availability_claim(self):
+        canonical = (
+            "Hi Leonello, thanks for your message. We offer pigs in different sizes:\n\n"
+            "- Small piglets: approximately 2 to 6 kg\n"
+            "- Weaned piglets: approximately 7 to 19 kg\n"
+            "- Growing pigs: approximately 20 to 49 kg\n"
+            "- Larger pigs: approximately 50 to 79 kg\n"
+            "- Slaughter-size pigs: approximately 80 kg and above\n\n"
+            "Which size would suit you, and would you prefer a male, female, or either?\n"
+            "Once I know that, I can confirm the available options and price."
+        )
+        result = evaluate_level1_authority(
+            lane="live_stock",
+            inbound=inbound(),
+            decision={
+                **decision(),
+                "suggested_reply_text": canonical,
+                "next_action": "ask_one_missing_detail",
+            },
+            review=review(),
+            evidence={
+                **evidence(),
+                "availability": {"evidence_complete": False, "freshness": "unavailable"},
+            },
+            environ={
+                "SAM_SALES_AUTONOMY_LEVEL": "1",
+                "SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED": "1",
+                "SAM_SALES_LEVEL1_COHORT_ENABLED": "1",
+                "SAM_SALES_LEVEL1_COHORT_BINDINGS": "2033:M-1",
+            },
+        )
+        self.assertTrue(result["checks"]["unsupported_availability_claim_absent"])
+
     def test_unknown_blocker_remains_fail_closed_for_claim_free_text(self):
         self.assertFalse(supporting_claims_are_evidence_backed(
             "live_stock",
