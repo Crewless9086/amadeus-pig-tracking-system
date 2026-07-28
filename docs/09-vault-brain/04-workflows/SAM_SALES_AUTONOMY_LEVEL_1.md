@@ -27,7 +27,13 @@ Code defaults are disabled. The first production cohort is separately enabled
 for no more than five exact conversation and inbound-event identity pairs. Every attempt is claimed
 before dispatch, every accepted message awaits provider delivered/read truth,
 and the cohort stops on the first incorrect interpretation, unsupported claim
-or authority breach. Broad dispatch remains a separate explicit gate.
+or authority breach. A provider failure or ambiguous result quarantines only
+that exact claimed conversation/send, prohibits retry, and does not prevent
+the next unrelated exact binding from being evaluated. The full cohort stops
+only for a systemic provider outage, corrupted claim rail, cross-binding
+identity/chronology collision, or authority breach. Provider delivered/read
+evidence remains mandatory before counting a customer as delivered. Broad
+dispatch remains a separate explicit gate.
 
 The reviewed runtime controls are default disabled:
 

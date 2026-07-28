@@ -139,6 +139,13 @@ Internal order-intake planner actions may still be preserved as implementation d
 
 ## Outbound Delivery Truth
 
+Delivery containment is conversation-scoped. A provider failure or ambiguous
+outcome preserves the exact append-only attempt and creates a delivery
+exception with no retry; unrelated exact Level 1 bindings may continue.
+A systemic provider outage, corrupted claim rail, cross-binding identity or
+chronology collision, or authority breach stops the complete cohort.
+Chatwoot acceptance alone never counts as provider-confirmed delivery.
+
 All normal, owner-approved, Telegram-assisted, and future automatic replies use
 the shared
 [`OUTBOUND_DELIVERY_TRUTH_STANDARD.md`](../07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md).
