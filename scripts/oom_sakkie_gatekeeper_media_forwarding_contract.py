@@ -47,6 +47,71 @@ def load_workflow(path: Path = WORKFLOW_PATH) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+def canonicalize_n8n_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
+    """Return the shared semantic and PUT-safe n8n workflow representation."""
+    if not isinstance(workflow, dict):
+        raise ValueError("workflow_object_required")
+    missing = [key for key in WORKFLOW_UPDATE_KEYS if key not in workflow]
+    if missing:
+        raise ValueError("workflow_canonical_required_field_missing")
+    if not isinstance(workflow["name"], str) or not workflow["name"]:
+        raise ValueError("workflow_canonical_name_invalid")
+    if not isinstance(workflow["nodes"], list) or not workflow["nodes"]:
+        raise ValueError("workflow_canonical_nodes_invalid")
+    node_names = [
+        node.get("name") for node in workflow["nodes"] if isinstance(node, dict)
+    ]
+    if (
+        len(node_names) != len(workflow["nodes"])
+        or any(not isinstance(name, str) or not name for name in node_names)
+        or len(set(node_names)) != len(node_names)
+    ):
+        raise ValueError("workflow_canonical_node_identity_conflict")
+    if not isinstance(workflow["connections"], dict):
+        raise ValueError("workflow_canonical_connections_invalid")
+    settings = workflow["settings"]
+    if not isinstance(settings, dict):
+        raise ValueError("workflow_canonical_settings_invalid")
+    if set(settings) - SUPPORTED_LIVE_SETTING_KEYS:
+        raise ValueError("workflow_canonical_setting_unsupported")
+    if set(settings) & SUPPORTED_UPDATE_SETTING_KEYS != SUPPORTED_UPDATE_SETTING_KEYS:
+        raise ValueError("workflow_canonical_required_setting_missing")
+    return {
+        "name": workflow["name"],
+        "nodes": copy.deepcopy(workflow["nodes"]),
+        "connections": copy.deepcopy(workflow["connections"]),
+        "settings": {
+            key: copy.deepcopy(settings[key])
+            for key in sorted(SUPPORTED_UPDATE_SETTING_KEYS)
+        },
+    }
+
+
+def n8n_workflow_semantic_sha256(workflow: dict[str, Any]) -> str:
+    canonical = canonicalize_n8n_workflow(workflow)
+    return hashlib.sha256(
+        json.dumps(
+            canonical,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def n8n_workflows_semantically_equal(
+    expected: dict[str, Any], actual: dict[str, Any]
+) -> bool:
+    return canonicalize_n8n_workflow(expected) == canonicalize_n8n_workflow(
+        actual
+    )
+
+
+def build_n8n_workflow_put_payload(workflow: dict[str, Any]) -> dict[str, Any]:
+    """Build an accepted PUT body for installation or exact rollback."""
+    return canonicalize_n8n_workflow(workflow)
+
+
 def build_n8n_workflow_update(
     *,
     live_workflow: dict[str, Any],
@@ -141,16 +206,12 @@ def build_n8n_workflow_update(
             raise ValueError("reviewed_beacon_connection_missing")
         merged_connections[source] = copy.deepcopy(reviewed_connections[source])
 
-    payload = {
+    payload = canonicalize_n8n_workflow({
         "name": live_workflow["name"],
         "nodes": merged_nodes,
         "connections": merged_connections,
-        "settings": {
-            key: live_settings[key]
-            for key in sorted(live_settings)
-            if key in SUPPORTED_UPDATE_SETTING_KEYS
-        },
-    }
+        "settings": live_settings,
+    })
     validate_n8n_workflow_update(
         payload,
         live_workflow=live_workflow,

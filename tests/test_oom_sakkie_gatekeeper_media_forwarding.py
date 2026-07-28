@@ -7,10 +7,14 @@ from scripts.oom_sakkie_gatekeeper_media_forwarding_contract import (
     MEDIA_NODE,
     SAM_NODE,
     TEXT_NODE,
+    build_n8n_workflow_put_payload,
     build_n8n_workflow_update,
     build_deployment_packet,
+    canonicalize_n8n_workflow,
     classify_update,
     load_workflow,
+    n8n_workflow_semantic_sha256,
+    n8n_workflows_semantically_equal,
     reconcile_n8n_variable_create,
     reconcile_n8n_variable_pair,
     validate_workflow,
@@ -294,6 +298,98 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         ):
             self.assertNotIn(key, payload["settings"])
 
+    def test_get_and_put_safe_workflows_share_one_semantic_hash(self):
+        live = self._production_live()
+        put_payload = build_n8n_workflow_put_payload(live)
+        self.assertEqual(put_payload["settings"], {"executionOrder": "v1"})
+        self.assertNotIn("binaryMode", put_payload["settings"])
+        self.assertTrue(n8n_workflows_semantically_equal(live, put_payload))
+        self.assertEqual(
+            n8n_workflow_semantic_sha256(live),
+            n8n_workflow_semantic_sha256(put_payload),
+        )
+
+    def test_provider_read_only_fields_do_not_change_semantics(self):
+        live = self._production_live()
+        provider_get = copy.deepcopy(live)
+        provider_get.update(
+            {
+                "id": "provider-id",
+                "active": True,
+                "versionId": "provider-version",
+                "updatedAt": "provider-time",
+                "tags": [],
+            }
+        )
+        self.assertEqual(
+            canonicalize_n8n_workflow(provider_get),
+            build_n8n_workflow_put_payload(live),
+        )
+
+    def test_meaningful_workflow_drift_changes_semantics(self):
+        live = self._production_live()
+        mutations = []
+
+        changed_node = copy.deepcopy(live)
+        changed_node["nodes"][0]["name"] = "Changed trigger"
+        mutations.append(changed_node)
+
+        changed_connection = copy.deepcopy(live)
+        changed_connection["connections"]["Security Check"]["main"][1][0][
+            "node"
+        ] = "Changed route"
+        mutations.append(changed_connection)
+
+        extra_trigger = copy.deepcopy(live)
+        trigger = next(
+            node
+            for node in extra_trigger["nodes"]
+            if node["type"] == "n8n-nodes-base.telegramTrigger"
+        )
+        second_trigger = copy.deepcopy(trigger)
+        second_trigger["name"] = "Second Telegram Trigger"
+        second_trigger["id"] = "second-trigger"
+        extra_trigger["nodes"].append(second_trigger)
+        mutations.append(extra_trigger)
+
+        changed_setting = copy.deepcopy(live)
+        changed_setting["settings"]["executionOrder"] = "v0"
+        mutations.append(changed_setting)
+
+        for candidate in mutations:
+            with self.subTest(candidate=candidate["nodes"][0]["name"]):
+                self.assertFalse(n8n_workflows_semantically_equal(live, candidate))
+                self.assertNotEqual(
+                    n8n_workflow_semantic_sha256(live),
+                    n8n_workflow_semantic_sha256(candidate),
+                )
+
+    def test_rollback_put_and_get_restore_exact_contained_semantics(self):
+        contained_get = self._production_live()
+        installed_put = build_n8n_workflow_update(
+            live_workflow=contained_get, reviewed_workflow=self.workflow
+        )
+        installed_get = copy.deepcopy(installed_put)
+        installed_get["settings"]["binaryMode"] = "default"
+        installed_get["active"] = True
+        self.assertTrue(
+            n8n_workflows_semantically_equal(installed_put, installed_get)
+        )
+
+        rollback_put = build_n8n_workflow_put_payload(contained_get)
+        rollback_get = copy.deepcopy(rollback_put)
+        rollback_get["settings"]["binaryMode"] = "default"
+        rollback_get["active"] = True
+        self.assertEqual(set(rollback_put), {"name", "nodes", "connections", "settings"})
+        self.assertEqual(rollback_put["settings"], {"executionOrder": "v1"})
+        self.assertTrue(
+            n8n_workflows_semantically_equal(contained_get, rollback_get)
+        )
+        self.assertEqual(
+            n8n_workflow_semantic_sha256(contained_get),
+            n8n_workflow_semantic_sha256(rollback_get),
+        )
+
     def test_extra_missing_stale_read_only_and_unsupported_fields_fail_closed(self):
         live = self._production_live()
         payload = build_n8n_workflow_update(
@@ -339,6 +435,14 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "live_workflow_setting_unsupported"):
             build_n8n_workflow_update(
                 live_workflow=unsupported, reviewed_workflow=self.workflow
+            )
+        required_missing = self._production_live()
+        required_missing["settings"] = {"binaryMode": "default"}
+        with self.assertRaisesRegex(
+            ValueError, "workflow_canonical_required_setting_missing"
+        ):
+            build_n8n_workflow_update(
+                live_workflow=required_missing, reviewed_workflow=self.workflow
             )
 
     def _fingerprint(self, key, value):
