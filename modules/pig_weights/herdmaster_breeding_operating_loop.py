@@ -377,8 +377,29 @@ def _classify(attention, readiness, matings, litters, observations, today):
             "Observe for heat", "observe for standing heat", 32
         )
         reason = "No fresh affirmative standing-heat observation is present."
+    lifecycle = _norm(readiness.get("status"))
+    on_farm = _norm(readiness.get("on_farm"))
+    purpose = _norm(readiness.get("purpose"))
+    if (
+        lifecycle in {"retired", "sold", "dead", "removed", "slaughtered"}
+        or on_farm in {"no", "false", "0"}
+        or purpose in {"retired", "sale", "meat", "not_for_breeding"}
+    ):
+        readiness_status = "Do Not Breed"
+        readiness_reason = "Lifecycle, location or purpose excludes breeding."
+    elif state == "Ready for mating review":
+        readiness_status = "Ready"
+        readiness_reason = reason
+    elif state == "Hold for medical/withdrawal evidence":
+        readiness_status = "Hold"
+        readiness_reason = reason
+    else:
+        readiness_status = "Needs Data"
+        readiness_reason = reason
     return {
         "state": state,
+        "readiness": readiness_status,
+        "readiness_reason": readiness_reason,
         "task_group": action,
         "priority": priority,
         "reason": reason,

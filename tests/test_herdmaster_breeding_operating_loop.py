@@ -105,6 +105,43 @@ def test_ms_piggy_real_observation_closes_physical_recovery_check():
     assert result["writes_performed"] is False
 
 
+def test_ms_piggy_immutable_observation_asks_only_unresolved_nonphysical_facts():
+    observation = obs(
+        body_condition_score=3,
+        visible_build="even",
+        feet_legs_movement="no_visible_concern",
+        visible_injury="none_observed",
+        standing_heat="not_observed",
+    )
+    observation["observation_event_id"] = (
+        "HERD-OBS-F9F01AF68E805C94B2533DA30CF3C801"
+    )
+    result = build(
+        female_row=female(
+            available_for_breeding="",
+            withdrawal_evidence_state="",
+            mother_id="",
+            father_id="",
+        ),
+        observations=[observation],
+    )
+    task = result["tasks"][0]
+    case = result["cases"][0]
+    assert case["classification"]["readiness"] == "Needs Data"
+    assert case["classification"]["current_heat"] == "not_observed"
+    assert set(task["required_checks"]) == {
+        "withdrawal evidence",
+        "breeding availability",
+        "family-tree evidence",
+    }
+    assert not {
+        "body condition", "movement", "visible concerns", "heat signs",
+    }.intersection(task["required_checks"])
+    assert case["observation_history"][0]["observation_event_id"] == (
+        "HERD-OBS-F9F01AF68E805C94B2533DA30CF3C801"
+    )
+
+
 def test_post_litter_natural_reply_previews_direct_facts_and_can_close_task():
     result = build(
         litters=[{
@@ -133,6 +170,7 @@ def test_observed_heat_with_complete_evidence_ranks_compatible_male():
         body_condition_score=3, standing_heat="observed"
     )])
     task = result["tasks"][0]
+    assert result["cases"][0]["classification"]["readiness"] == "Ready"
     assert task["provisional_recommendation"] == "Ready for mating review"
     assert task["male_recommendation"]["recommended"]["tag_number"] == "Prince"
     packet = result["cases"][0]["approval_packet"]
@@ -203,6 +241,7 @@ def test_repeat_service_requires_decision_but_never_disposition():
 
 def test_medical_or_withdrawal_hold_blocks_readiness():
     result = build(female(medical_status="Hold"))
+    assert result["cases"][0]["classification"]["readiness"] == "Hold"
     assert result["tasks"][0]["provisional_recommendation"] == (
         "Hold for medical/withdrawal evidence"
     )
