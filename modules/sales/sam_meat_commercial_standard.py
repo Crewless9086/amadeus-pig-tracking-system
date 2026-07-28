@@ -19,9 +19,20 @@ def collection_description(code):
 
 def build_estimated_quote_preview(*, packed_weight_kg, weight_evidence_id):
     """Build a non-binding estimate only from bound packed-weight evidence."""
-    values = re.findall(r"\d+(?:[.,]\d+)?", str(packed_weight_kg or ""))
+    weight_text = str(packed_weight_kg or "").strip()
+    range_matches = re.findall(
+        r"(\d+(?:[.,]\d+)?)\s*(?:-|–|to)\s*(\d+(?:[.,]\d+)?)\s*kg\b",
+        weight_text,
+        re.I,
+    )
+    if range_matches:
+        values = list(range_matches[-1])
+    elif re.fullmatch(r"\s*\d+(?:[.,]\d+)?\s*(?:kg)?\s*", weight_text, re.I):
+        values = re.findall(r"\d+(?:[.,]\d+)?", weight_text)
+    else:
+        values = []
     try:
-        weights = [Decimal(value.replace(",", ".")) for value in values[:2]]
+        weights = sorted(Decimal(value.replace(",", ".")) for value in values[:2])
     except (InvalidOperation, TypeError, ValueError):
         weights = []
     evidence_id = str(weight_evidence_id or "").strip()

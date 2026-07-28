@@ -68,6 +68,24 @@ class SamMeatCommercialStandardTests(unittest.TestCase):
         self.assertEqual(preview["estimated_total_range"], [4940.0, 5460.0])
         self.assertEqual(preview["estimated_deposit_range"], [2470.0, 2730.0])
         self.assertIsNone(preview["final_total"])
+    def test_live_weight_reference_is_not_misread_as_packed_weight(self):
+        preview = build_estimated_quote_preview(
+            packed_weight_kg=(
+                "Estimated packed full-carcass weight from 60kg live pig: "
+                "38-42kg; final amount uses actual packed weight."
+            ),
+            weight_evidence_id="PRICE-BOOK-FULL",
+        )
+        self.assertEqual(preview["packed_weight_range_kg"], [38.0, 42.0])
+        self.assertEqual(preview["estimated_total_range"], [4940.0, 5460.0])
+
+    def test_unlabelled_multiple_numbers_do_not_create_an_estimate(self):
+        preview = build_estimated_quote_preview(
+            packed_weight_kg="60 live, expected 38 and 42 packed",
+            weight_evidence_id="PRICE-BOOK-FULL",
+        )
+        self.assertEqual(preview["status"], "Unavailable")
+        self.assertIsNone(preview["estimated_total"])
     def test_missing_weight_never_becomes_zero_quote(self):
         readers = {name: truth_reader(name, {"products": ["full carcass"]} if name == "catalogue" else {}) for name in ("catalogue", "pricing", "availability", "fulfilment", "butcher")}
         packet = build_sam_meat_launch_packet([{"message_id": "M-1", "content": "I want a full carcass Set C"}], conversation_ref="2033", truth_readers=readers)

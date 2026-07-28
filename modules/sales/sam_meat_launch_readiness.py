@@ -5,6 +5,7 @@ route. Default readers use production-connected sources; tests inject fakes.
 """
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import hashlib
 import re
 
@@ -366,9 +367,23 @@ def _price_basis(facts, source, now):
     matches = [e for e in source["data"].get("entries", []) if isinstance(e, dict) and e.get("product_type") == facts.get("product_type") and (not e.get("cut_set") or not facts.get("cut_set") or e.get("cut_set") == facts.get("cut_set")) and _current(e, now)]
     if not matches: return {"status": "stale_or_unmatched", "current": False, "effective_at": source.get("effective_at", ""), "blockers": ["current_matching_price_rule_required"], "amount": None}
     rule = matches[-1]
+    try:
+        amount = Decimal(str(rule.get("price_amount")))
+    except (InvalidOperation, TypeError, ValueError):
+        amount = None
+    unit = str(rule.get("price_unit") or "").strip().lower()
+    if amount != PRICE_PER_KG_INCLUDING_VAT or unit not in {"kg", "per_kg"}:
+        return {
+            "status": "authoritative_rule_mismatch",
+            "current": False,
+            "effective_at": str(rule.get("effective_from") or source.get("effective_at") or ""),
+            "blockers": ["current_r130_per_kg_vat_inclusive_rule_required"],
+            "amount": None,
+            "verified_zero": amount == 0,
+        }
     return {"status": "current_verified_rule", "current": True, "source": source["status"],
         "effective_at": str(rule.get("effective_from") or source.get("effective_at") or ""),
-        "unit": rule.get("price_unit", ""), "amount": rule.get("price_amount"),
+        "unit": rule.get("price_unit", ""), "amount": float(amount),
         "yield_basis": rule.get("yield_basis", ""), "weight_evidence_id": str(rule.get("price_book_id") or rule.get("price_entry_id") or rule.get("effective_from") or ""),
         "verified_zero": rule.get("price_amount") == 0, "blockers": []}
 
