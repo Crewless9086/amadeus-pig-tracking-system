@@ -1,5 +1,18 @@
 # ROOTLINE Operating Knowledge Register
 
+## Owner-approved Water & Energy baseline — 2026-07-28
+
+The authoritative Phase 1 contract is
+[ROOTLINE Water & Energy Manager Phase 1](ROOTLINE_WATER_ENERGY_MANAGER_PHASE1.md).
+It records the 40% absolute floor, provisional 50% working reserve, learned
+63/67/70% reserve comparison, provisional approximately R9/kWh tariff, the
+five-storage/twelve-reservoir topology, manual count observations, unresolved
+SmartLife/transfer bindings and the SONOFF fertilizer controller contract.
+
+These facts authorize advice and immutable evidence only. They do not authorize
+a plan consumer, command, schedule, workflow, SmartLife/SONOFF/IFTTT/n8n call,
+retry or hardware action.
+
 Status: owner-approved initial governance baseline; command-inert.
 
 This register supplies the owner-only Daily Advisor with reviewed facts and

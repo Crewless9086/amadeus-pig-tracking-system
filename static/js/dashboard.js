@@ -12,6 +12,7 @@ const state = {
     rootlineAdvisor: null,
     rootlineDailyPlan: null,
     rootlinePolicy: null,
+    rootlineWaterEnergy: null,
   farm: null,
   orders: null,
 };
@@ -253,6 +254,7 @@ function renderRootline() {
       `).join("")
       : `<div class="ops-empty-inline">No unresolved decisions reported.</div>`;
     renderRootlinePolicy();
+    renderRootlineWaterEnergy();
     const zones = brief.irrigation?.zones || [];
     const planPacket = state.rootlineDailyPlan || {};
     const plan = planPacket.daily_plan;
@@ -274,6 +276,49 @@ function renderRootline() {
   byId("rootline_decisions").innerHTML = decisions.length
     ? decisions.map(item => `<div class="ops-list-row"><span>${escapeHtml(item)}</span></div>`).join("")
     : `<div class="ops-empty-inline">No owner decision is currently supported.</div>`;
+}
+
+function renderRootlineWaterEnergy() {
+  const plan = state.rootlineWaterEnergy || {};
+  const reserve = plan.battery_reserve || {};
+  setText(
+    "rootline_water_energy_status",
+    plan.success === true
+      ? `${plan.plan_id} · Generation ${plan.generation ?? "Unavailable"} · Reserve ${reserve.governing_reserve_soc_pct ?? "Unavailable"}% · ${plan.executive_summary || ""}`
+      : plan.owner_message || "Current advisory plan Unavailable."
+  );
+  const power = plan.current_power || {};
+  const forecast = plan.forecast || {};
+  const rain = plan.rain_capture || {};
+  const tanks = plan.tank_evidence || {};
+  const grid = plan.estimated_grid_exposure || {};
+  byId("rootline_water_energy_evidence").innerHTML = `
+    <div class="ops-list-row"><strong>Power: ${escapeHtml(power.status || "Unavailable")}</strong><span>SOC ${escapeHtml(power.battery_soc_pct ?? "Unavailable")}%; ${escapeHtml(power.age_minutes ?? "Unavailable")} min old</span></div>
+    <div class="ops-list-row"><strong>Forecast: ${escapeHtml(forecast.status || "Unavailable")}</strong><span>${escapeHtml(forecast.solar_profile || "uncertain")}; confidence ${escapeHtml(forecast.confidence || "Unavailable")}</span></div>
+    <div class="ops-list-row"><strong>Rain: ${escapeHtml(rain.current_rain_status || "Needs Data")}</strong><span>${escapeHtml(rain.fresh_rain_rate_mm_h ?? "Unavailable")} mm/h; forecast ${escapeHtml(rain.forecast_replenishment_effect || "Unavailable")}</span></div>
+    <div class="ops-list-row"><strong>Tanks: ${escapeHtml(tanks.status || "Unavailable")}</strong><span>Storage ${escapeHtml(tanks.storage_reported_count ?? "Unavailable")}/5 (${escapeHtml(tanks.storage_state || "Unknown")}); reservoir ${escapeHtml(tanks.reservoir_reported_count ?? "Unavailable")}/12 (${escapeHtml(tanks.reservoir_state || "Unknown")}); ${escapeHtml(tanks.age_minutes ?? "Unavailable")} min old</span></div>
+    <div class="ops-list-row"><strong>Grid exposure: ${escapeHtml(grid.status || "Unavailable")}</strong><span>${escapeHtml(grid.estimated_kwh ?? "Unavailable")} kWh; R${escapeHtml(grid.estimated_cost_zar ?? "Unavailable")} at provisional R${escapeHtml(grid.tariff_zar_per_kwh ?? "Unavailable")}/kWh</span></div>
+    <div class="ops-list-row"><strong>Evidence outcomes remain separate</strong><span>Plan is not command acceptance, electrical operation, water flow or measured volume.</span></div>`;
+  const tasks = Array.isArray(plan.candidate_tasks) ? plan.candidate_tasks : [];
+  byId("rootline_water_energy_tasks").innerHTML = tasks.length
+    ? tasks.map(task => `
+      <div class="ops-list-row">
+        <strong>${escapeHtml(displayLabel(task.task_id, "Task"))} · ${escapeHtml(task.recommendation || "Needs Data")}</strong>
+        <span>${escapeHtml(task.reason || "Evidence unavailable.")} · Window ${escapeHtml(task.preferred_window || "Unavailable")}</span>
+      </div>
+    `).join("")
+    : `<div class="ops-empty-inline">Task recommendations Unavailable.</div>`;
+  const gaps = Array.isArray(plan.evidence_gaps) ? plan.evidence_gaps : [];
+  byId("rootline_water_energy_gaps").innerHTML = gaps.length
+    ? gaps.map(gap => `<div class="ops-list-row"><strong>Needs evidence</strong><span>${escapeHtml(gap)}</span></div>`).join("")
+    : `<div class="ops-empty-inline">No additional evidence gap reported.</div>`;
+  const authority = plan.authority || {};
+  setText(
+    "rootline_water_energy_authority",
+    authority.controls_hardware === false && authority.creates_command === false
+      ? "Advice only · no command, schedule, workflow, retry or hardware authority."
+      : "Authority evidence Unavailable."
+  );
 }
 
 function renderRootlinePolicy() {
@@ -379,6 +424,7 @@ async function loadDashboard() {
       ["rootlineAdvisor", `/api/telemetry/rootline/daily-advisor?date=${today}`, "rootline_panel"],
       ["rootlineDailyPlan", `/api/telemetry/rootline/daily-irrigation-plan?date=${today}`, "rootline_panel"],
       ["rootlinePolicy", "/api/telemetry/rootline/operating-policy", "rootline_panel"],
+      ["rootlineWaterEnergy", `/api/telemetry/rootline/water-energy-plan?date=${today}`, "rootline_panel"],
     ["farm", "/api/pig-weights/dashboard", "herd_panel"],
     ["orders", `/api/reports/daily-summary?date=${today}`, "orders_panel"],
   ];

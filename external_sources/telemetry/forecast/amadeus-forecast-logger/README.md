@@ -16,8 +16,9 @@ The legacy n8n workflow `2.1.1 - Amadeus Forecast Tool` should remain inactive.
 
 The free Open-Meteo endpoint can return HTTP 429 when its shared daily quota is
 exhausted. A daily-limit response preserves the existing forecast, emits a
-`provider_rate_limited` result, and exits without a traceback. Short-lived 429
-and 5xx responses are retried with bounded backoff.
+`provider_rate_limited` result, preserves history, and exits non-zero so a
+stale ingestion run cannot be reported as a successful cron execution.
+Short-lived 429 and 5xx responses are retried with bounded backoff.
 
 Optional paid Open-Meteo configuration:
 

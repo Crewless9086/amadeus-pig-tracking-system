@@ -239,7 +239,7 @@ def main():
             "existing_forecast_preserved": True,
             "error": str(exc),
         }))
-        return
+        raise SystemExit(2)
     rows = build_rows(data=data, lat=lat, lon=lon, tz=tz)
 
     google_sheets_written = False
