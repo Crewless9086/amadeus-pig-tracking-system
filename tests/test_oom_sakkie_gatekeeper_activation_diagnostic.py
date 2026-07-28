@@ -11,10 +11,98 @@ from scripts.oom_sakkie_gatekeeper_activation_diagnostic import (
     deterministic_request_identity,
     inert_rehearsal_report,
     response_shape,
+    telegram_shared_flag_authority_contract,
 )
 
 
 class GateKeeperActivationDiagnosticTests(unittest.TestCase):
+    def test_shared_direct_flags_are_legitimate_and_beacon_gate_stays_off(self):
+        contract = telegram_shared_flag_authority_contract(
+            {
+                "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "true",
+                "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "true",
+            }
+        )
+        self.assertTrue(contract["preactivation_ready"])
+        self.assertFalse(contract["beacon_media_intake"]["enabled"])
+        self.assertEqual(
+            contract["beacon_media_intake"]["required_state_before_activation"],
+            "disabled",
+        )
+        self.assertTrue(contract["oom_sakkie_direct"]["enabled"])
+        self.assertIn(
+            "sam_owner_callback_handling",
+            contract["oom_sakkie_direct"]["consumers"],
+        )
+        self.assertIn(
+            "ordinary_owner_text_handling",
+            contract["oom_sakkie_direct"]["consumers"],
+        )
+        self.assertIn(
+            "owner_telegram_replies",
+            contract["oom_sakkie_direct_send"]["consumers"],
+        )
+        self.assertFalse(contract["beacon_activation_changes_shared_flags"])
+
+    def test_absent_beacon_flag_is_fail_closed_disabled_not_misconfiguration(self):
+        contract = telegram_shared_flag_authority_contract(
+            {
+                "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+                "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+            }
+        )
+        self.assertEqual(
+            contract["status"],
+            "beacon_media_intake_disabled_shared_routes_preserved",
+        )
+        self.assertTrue(contract["preactivation_ready"])
+
+    def test_beacon_enabled_before_activation_fails_preflight(self):
+        contract = telegram_shared_flag_authority_contract(
+            {
+                "BEACON_TELEGRAM_MEDIA_INTAKE_ENABLED": "true",
+                "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "true",
+                "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "true",
+            }
+        )
+        self.assertFalse(contract["preactivation_ready"])
+        self.assertEqual(contract["status"], "beacon_media_intake_already_enabled")
+
+    def test_disabling_either_shared_flag_is_not_beacon_containment(self):
+        for key in (
+            "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED",
+            "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED",
+        ):
+            with self.subTest(key=key):
+                source = {
+                    "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "true",
+                    "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "true",
+                }
+                source[key] = "false"
+                contract = telegram_shared_flag_authority_contract(source)
+                self.assertFalse(contract["preactivation_ready"])
+                self.assertEqual(
+                    contract["status"],
+                    "shared_oom_sakkie_direct_contract_unavailable",
+                )
+
+    def test_shared_flag_contract_grants_no_new_authority(self):
+        contract = telegram_shared_flag_authority_contract(
+            {
+                "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "true",
+                "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "true",
+            }
+        )
+        for key in (
+            "customer_messaging_authority",
+            "publication_authority",
+            "meta_authority",
+            "advertising_authority",
+            "boost_authority",
+            "spend_authority",
+        ):
+            self.assertFalse(contract[key])
+
     def test_inert_rehearsal_records_every_stage_in_order(self):
         report = inert_rehearsal_report("PACKET-1")
         completed = [
