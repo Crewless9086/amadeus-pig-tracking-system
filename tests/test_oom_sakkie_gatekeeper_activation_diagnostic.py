@@ -12,6 +12,7 @@ from scripts.oom_sakkie_gatekeeper_activation_diagnostic import (
     deterministic_request_identity,
     inert_rehearsal_report,
     response_shape,
+    safe_workflow_rejection_evidence,
     telegram_shared_flag_authority_contract,
 )
 
@@ -52,6 +53,62 @@ class GateKeeperActivationDiagnosticTests(unittest.TestCase):
         self.assertEqual(evidence["outcome"], "rejected_not_persisted")
         self.assertNotIn("provider detail", json.dumps(evidence))
         self.assertFalse(evidence["proceed"])
+
+    def test_http_400_records_actionable_safe_n8n_settings_mismatch(self):
+        evidence = administrative_write_stage_evidence(
+            stage="workflow_update_request",
+            http_status=400,
+            response={
+                "message": "request/body/settings must NOT have additional properties"
+            },
+            authoritative_readback="missing",
+            request_payload={
+                "name": "GateKeeper",
+                "nodes": [],
+                "connections": {},
+                "settings": {
+                    "binaryMode": "default",
+                    "executionOrder": "v1",
+                },
+            },
+        )
+        rejection = evidence["rejection_evidence"]
+        self.assertEqual(
+            rejection["provider_message_code"],
+            "n8n_settings_additional_property",
+        )
+        self.assertEqual(
+            rejection["field_contract_mismatch"],
+            "settings_contains_unsupported_field",
+        )
+        self.assertEqual(rejection["response_top_level_keys"], ["message"])
+        self.assertEqual(
+            rejection["request_top_level_keys"],
+            ["connections", "name", "nodes", "settings"],
+        )
+        self.assertEqual(
+            rejection["settings_keys"], ["binaryMode", "executionOrder"]
+        )
+        self.assertNotIn("GateKeeper", json.dumps(rejection))
+        self.assertFalse(rejection["raw_response_retained"])
+
+    def test_unknown_provider_message_is_not_retained(self):
+        rejection = safe_workflow_rejection_evidence(
+            {
+                "message": "secret owner identity and token must never survive",
+                "unsafe-provider-key": "private",
+            },
+            {"name": "private workflow", "nodes": [], "connections": {}, "settings": {}},
+        )
+        serialized = json.dumps(rejection)
+        self.assertEqual(
+            rejection["provider_message_code"],
+            "provider_rejection_unclassified",
+        )
+        self.assertEqual(rejection["response_top_level_keys"], ["message"])
+        self.assertNotIn("secret owner", serialized)
+        self.assertNotIn("private workflow", serialized)
+        self.assertNotIn("unsafe-provider-key", serialized)
 
     def test_accepted_workflow_update_requires_exact_hash_readback(self):
         accepted = administrative_write_stage_evidence(

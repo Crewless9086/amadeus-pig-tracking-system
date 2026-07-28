@@ -163,12 +163,66 @@ def response_shape(value: Any) -> str:
     return "unsupported"
 
 
+def safe_workflow_rejection_evidence(
+    response: Any,
+    request_payload: Any,
+) -> dict[str, Any]:
+    """Classify only known-safe n8n schema errors and payload structure."""
+    response_keys = []
+    message_code = "provider_rejection_unclassified"
+    mismatch = "undetermined"
+    if isinstance(response, dict):
+        response_keys = sorted(
+            key
+            for key in response
+            if key in {"code", "error", "message"}
+        )
+        message = response.get("message")
+        if isinstance(message, str):
+            if message == "request/body/settings must NOT have additional properties":
+                message_code = "n8n_settings_additional_property"
+                mismatch = "settings_contains_unsupported_field"
+            elif message == "request/body must have required property 'settings'":
+                message_code = "n8n_settings_required"
+                mismatch = "settings_missing"
+    payload = request_payload if isinstance(request_payload, dict) else {}
+    settings = payload.get("settings")
+    return {
+        "provider_error_category": "request_schema_rejected",
+        "provider_message_code": message_code,
+        "response_top_level_keys": response_keys,
+        "request_top_level_keys": sorted(
+            key for key in payload if key in {"connections", "name", "nodes", "settings"}
+        ),
+        "request_field_types": {
+            key: type(payload[key]).__name__
+            for key in sorted(payload)
+            if key in {"connections", "name", "nodes", "settings"}
+        },
+        "settings_present": "settings" in payload,
+        "settings_type": type(settings).__name__ if "settings" in payload else "missing",
+        "settings_keys": (
+            sorted(
+                key
+                for key in settings
+                if key in {"binaryMode", "executionOrder"}
+            )
+            if isinstance(settings, dict)
+            else []
+        ),
+        "field_contract_mismatch": mismatch,
+        "raw_response_retained": False,
+        "protected_values_retained": False,
+    }
+
+
 def administrative_write_stage_evidence(
     *,
     stage: str,
     http_status: int | None,
     response: Any,
     authoritative_readback: str,
+    request_payload: Any = None,
 ) -> dict[str, Any]:
     """Classify an administrative write without retaining provider content."""
     if stage not in {
@@ -211,7 +265,7 @@ def administrative_write_stage_evidence(
         outcome = "ambiguous_unverified"
     else:
         outcome = "rejected_not_persisted"
-    return {
+    result = {
         "stage": stage,
         "http_status": http_status,
         "response_shape": response_shape(response),
@@ -228,6 +282,11 @@ def administrative_write_stage_evidence(
         "raw_response_retained": False,
         "protected_values_retained": False,
     }
+    if stage == "workflow_update_request" and http_status == 400:
+        result["rejection_evidence"] = safe_workflow_rejection_evidence(
+            response, request_payload
+        )
+    return result
 
 
 def deterministic_request_identity(stage: str, safe_identity: dict[str, Any]) -> str:
