@@ -111,11 +111,14 @@ def test_conversation_67_phonetic_context_extracts_female_quantity_and_no_catego
         "present_matching_category_counts_and_prices_then_offer_quote"
     )
     assert packet["general_information_fallback_blocked"] is True
-    assert "10 female live pigs" in packet["recommendation"]
-    assert "Young piglets: 1 currently eligible" in packet["recommendation"]
-    assert "Weaners: 1 currently eligible" in packet["recommendation"]
-    assert "Growers: 1 currently eligible" in packet["recommendation"]
-    assert "prepare a quote for 10" in packet["recommendation"]
+    reply = packet["recommendation"]
+    assert "no single category currently has all 10" in reply
+    assert "1 Young Piglet at R350 to R400 each" in reply
+    assert "1 Weaner Piglet at R450 to R600 each" in reply
+    assert "1 Grower Pig at R800 to R1,800 each" in reply
+    assert "split across categories" not in reply
+    assert "check again when more eligible animals become available" in reply
+    assert "does not reserve the animals" in reply
     assert "PRIVATE-" not in json.dumps(packet)
     assert packet["sends_customer_message"] is False
     assert packet["creates_quote"] is False
@@ -148,8 +151,8 @@ def test_conversation_2054_answers_direct_question_then_asks_quantity_and_sex():
     }
     reply = packet["recommendation"]
     assert reply.startswith("Hi Fanie, Yes, we do sell piglets.")
-    assert "Young piglets: 1 currently eligible; R350-R400" in reply
-    assert "Weaners: 1 currently eligible; R450-R600" in reply
+    assert "Young piglets: 1 currently eligible; R350 to R400 each" in reply
+    assert "Weaners: 1 currently eligible; R450 to R600 each" in reply
     assert "Growers" not in reply
     assert "How many are you looking for" in reply
     assert "males, females, or a mixture" in reply
@@ -496,7 +499,7 @@ def test_mixture_excludes_unknown_sex_stock_and_uses_both_sex_prices():
     assert option["excluded_count"] == 1
 
 
-def test_known_piglet_quantity_and_sex_asks_only_for_category():
+def test_known_piglet_quantity_and_sex_explains_evidenced_shortage_and_split():
     packet = build_contextual_sales_recommendation(
         inbound("I want to buy 10 female piglets"),
         {}, [], availability(
@@ -509,7 +512,109 @@ def test_known_piglet_quantity_and_sex_asks_only_for_category():
     reply = packet["recommendation"]
     assert "How many" not in reply
     assert "males, females, or a mixture" not in reply
-    assert "Young Piglets or Weaners" in reply
+    assert "no single category currently has all 10" in reply
+    assert "1 Young Piglet at R350 to R400 each" in reply
+    assert "1 Weaner Piglet at R450 to R600 each" in reply
+    assert "split across categories" not in reply
+    assert "check again when more eligible animals become available" in reply
+    assert "does not reserve the animals" in reply
+
+
+def test_production_shaped_shortage_uses_dynamic_counts_prices_and_exact_meaning():
+    evidence = availability()
+    evidence["customer_category_counts"].update({
+        "Young Piglets": {"all": 12, "female": 9, "male": 3, "unknown": 0},
+        "Weaner Piglets": {"all": 22, "female": 7, "male": 15, "unknown": 0},
+        "Grower Pigs": {"all": 6, "female": 1, "male": 5, "unknown": 0},
+    })
+    packet = build_contextual_sales_recommendation(
+        inbound("Soggies to bay 10", name="Lionel", conversation_id="67"),
+        {},
+        [{"speaker": "customer", "content": "I want to buy live pigs."}],
+        evidence,
+        price_loader=prices("Young Piglets", "Weaner Piglets", "Grower Pigs"),
+        now=NOW,
+    )
+    assert packet["recommendation"] == (
+        "Hi Lionel, yes, we currently have female pigs available, but no single "
+        "category currently has all 10. We have 9 Young Piglets at R350 to R400 "
+        "each, 7 Weaner Piglets at R450 to R600 each, and 1 Grower Pig at R800 "
+        "to R1,800 each. Please let me know whether you prefer one of these "
+        "available category quantities or would like us to consider a split "
+        "across categories. Choosing an option does not reserve the animals; "
+        "availability would still need to be confirmed when we prepare the quote."
+    )
+    assert packet["sends_customer_message"] is False
+    assert packet["creates_quote"] is False
+    assert packet["reserves_stock"] is False
+    assert packet["allocates_stock"] is False
+
+
+def test_shortage_rendering_is_not_bound_to_lionel_counts_or_prices():
+    evidence = availability()
+    evidence["customer_category_counts"].update({
+        "Young Piglets": {"all": 3, "female": 3, "male": 0, "unknown": 0},
+        "Weaner Piglets": {"all": 4, "female": 4, "male": 0, "unknown": 0},
+    })
+    dynamic_prices = lambda **_: ({
+        "success": True, "configured": True, "source": "supabase",
+        "price_entries": [
+            {
+                "sale_category": category, "weight_band": "current",
+                "unit_price": amount, "active": True,
+                "effective_from": "2026-07-01T00:00:00Z", "effective_to": "",
+            }
+            for category, amount in (
+                ("Young Piglets", 375), ("Weaner Piglets", 575)
+            )
+        ],
+    }, 200)
+    packet = build_contextual_sales_recommendation(
+        inbound("I want 8 female piglets", name="Customer", conversation_id="future"),
+        {}, [], evidence, price_loader=dynamic_prices, now=NOW,
+    )
+    reply = packet["recommendation"]
+    assert "all 8" in reply
+    assert "3 Young Piglets at R375 each" in reply
+    assert "4 Weaner Piglets at R575 each" in reply
+    assert "Lionel" not in reply
+    assert "R350" not in reply
+    assert "split across categories" not in reply
+
+
+def test_infeasible_combined_counts_do_not_offer_a_supported_split():
+    evidence = availability()
+    evidence["customer_category_counts"].update({
+        "Young Piglets": {"all": 2, "female": 2, "male": 0, "unknown": 0},
+        "Weaner Piglets": {"all": 3, "female": 3, "male": 0, "unknown": 0},
+    })
+    packet = build_contextual_sales_recommendation(
+        inbound("I want 10 female piglets"),
+        {}, [], evidence,
+        price_loader=prices("Young Piglets", "Weaner Piglets"),
+        now=NOW,
+    )
+    reply = packet["recommendation"]
+    assert "split across categories" not in reply
+    assert "check again when more eligible animals become available" in reply
+
+
+def test_explicit_category_shortage_is_clear_and_non_reserving():
+    evidence = availability()
+    evidence["customer_category_counts"]["Young Piglets"] = {
+        "all": 3, "female": 3, "male": 0, "unknown": 0,
+    }
+    packet = build_contextual_sales_recommendation(
+        inbound("I want 10 female young piglets"),
+        {}, [], evidence,
+        price_loader=prices("Young Piglets"),
+        now=NOW,
+    )
+    reply = packet["recommendation"]
+    assert "requested Young Piglets category does not currently have all 10" in reply
+    assert "3 Young Piglets at R350 to R400 each" in reply
+    assert "available quantity from this category" in reply
+    assert "does not reserve the animals" in reply
 
 
 def test_commercial_followup_uses_prior_customer_context_and_blocks_fallback():

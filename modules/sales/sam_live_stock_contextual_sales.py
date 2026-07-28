@@ -551,10 +551,10 @@ def _recommendation(interpretation: Mapping[str, Any], aggregate: Mapping[str, A
         price = option["price_range"]
         price_label = _money(price["minimum"])
         if price["maximum"] != price["minimum"]:
-            price_label = f"{price_label}-{_money(price['maximum'])}"
+            price_label = f"{price_label} to {_money(price['maximum'])}"
         lines.append(
             f"- {option['label']}: {option['eligible_count']} currently "
-            f"eligible; {price_label}"
+            f"eligible; {price_label} each"
         )
     greeting = f"Hi {name}," if name else "Hi,"
     if not aggregate.get("options"):
@@ -562,6 +562,69 @@ def _recommendation(interpretation: Mapping[str, Any], aggregate: Mapping[str, A
             f"{greeting} I don't currently have an eligible option in the "
             "relevant livestock categories to offer. I can check again when "
             "new stock becomes eligible."
+        )
+    options = aggregate.get("options") or []
+    if (
+        isinstance(quantity, int)
+        and quantity > 0
+        and max(option["eligible_count"] for option in options) < quantity
+    ):
+        sex_label = (
+            "female pigs" if sex == "female"
+            else "male pigs" if sex == "male"
+            else "pigs"
+        )
+        clauses = []
+        for option in options:
+            count = option["eligible_count"]
+            category = option["category"]
+            label = category
+            if count == 1:
+                label = {
+                    "Young Piglets": "Young Piglet",
+                    "Weaner Piglets": "Weaner Piglet",
+                    "Grower Pigs": "Grower Pig",
+                    "Finisher Pigs": "Finisher Pig",
+                    "Ready for Slaughter": "ready-for-slaughter live pig",
+                }.get(category, category.rstrip("s"))
+            price = option["price_range"]
+            price_label = _money(price["minimum"])
+            if price["maximum"] != price["minimum"]:
+                price_label = f"{price_label} to {_money(price['maximum'])}"
+            clauses.append(f"{count} {label} at {price_label} each")
+        available = _join_commercial_clauses(clauses)
+        requested_category = interpretation.get("category")
+        total_available = sum(option["eligible_count"] for option in options)
+        if requested_category:
+            shortage = (
+                f"the requested {requested_category} category does not "
+                f"currently have all {quantity}"
+            )
+            choice = (
+                "Please let me know whether you would like the available "
+                "quantity from this category or want to consider other "
+                "supported categories."
+            )
+        elif total_available >= quantity:
+            shortage = f"no single category currently has all {quantity}"
+            choice = (
+                "Please let me know whether you prefer one of these available "
+                "category quantities or would like us to consider a "
+                "split across categories."
+            )
+        else:
+            shortage = f"no single category currently has all {quantity}"
+            choice = (
+                "Please let me know whether you prefer one of these available "
+                "category quantities or would like us to check again when "
+                "more eligible animals become available."
+            )
+        return (
+            f"{greeting} yes, we currently have {sex_label} available, but "
+            f"{shortage}. We have {available}. {choice} "
+            "Choosing an option does not reserve the animals; "
+            "availability would still need to be confirmed when we prepare "
+            "the quote."
         )
     return "\n".join([
         f"{greeting} {opening}",
@@ -572,6 +635,14 @@ def _recommendation(interpretation: Mapping[str, Any], aggregate: Mapping[str, A
         "",
         ask,
     ])
+
+
+def _join_commercial_clauses(clauses: list[str]) -> str:
+    if len(clauses) == 1:
+        return clauses[0]
+    if len(clauses) == 2:
+        return f"{clauses[0]} and {clauses[1]}"
+    return f"{', '.join(clauses[:-1])}, and {clauses[-1]}"
 
 
 def _commercial_intent(text: str) -> bool:
