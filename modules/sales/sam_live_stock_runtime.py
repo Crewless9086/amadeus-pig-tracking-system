@@ -27,6 +27,7 @@ from modules.sales.sam_sales_autonomy import (
     bind_authoritative_conversation_evidence,
     evaluate_level1_authority,
     supporting_claims_are_evidence_backed,
+    sales_autonomy_level1_policy,
 )
 from modules.sales.sam_conversation_state import plan_live_stock_next_action
 from modules.sales.sam_live_stock_understanding import (
@@ -109,8 +110,10 @@ def sam_live_stock_webhook_policy(environ=None):
     source = environ if environ is not None else os.environ
     token = str(source.get(WEBHOOK_TOKEN_ENV, "") or "").strip()
     llm_configured = bool(str(source.get(OPENAI_API_KEY_ENV, "") or "").strip() and _configured_model(source))
+    level1_policy = sales_autonomy_level1_policy(source)
     return {
         "mode": "backend_native_sam_live_stock_chatwoot_read_only",
+        "sales_autonomy_level1": level1_policy,
         "runtime_version": RUNTIME_VERSION,
         "enabled": _truthy(source.get(WEBHOOK_ENABLED_ENV)),
         "token_configured": len(token) >= MIN_TOKEN_CHARS,

@@ -5,6 +5,7 @@ from modules.sales.sam_sales_autonomy import (
     bind_authoritative_conversation_evidence,
     evaluate_level1_authority,
     supporting_claims_are_evidence_backed,
+    sales_autonomy_level1_policy,
 )
 from modules.sales import sam_live_stock_runtime, sam_meat_runtime
 
@@ -383,6 +384,28 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         })
         self.assertEqual(parsed["inbox_id"], "96568")
 
+
+    def test_policy_is_sanitized_and_default_disabled(self):
+        self.assertFalse(sales_autonomy_level1_policy({})["dispatch_gate_configured"])
+        configured = sales_autonomy_level1_policy({
+            "SAM_SALES_AUTONOMY_LEVEL": "1", "SAM_SALES_LEVEL1_MEAT_ENABLED": "1",
+            "SAM_SALES_LEVEL1_COHORT_ENABLED": "1", "SAM_SALES_LEVEL1_COHORT_BINDINGS": "2033:M-1",
+        })
+        self.assertTrue(configured["dispatch_gate_configured"])
+        self.assertEqual(configured["cohort_configured_count"], 1)
+        self.assertFalse(configured["contains_identity_values"])
+        self.assertNotIn("2033", str(configured))
+        self.assertFalse(configured["protected_actions_authorized"])
+
+    def test_specialist_policies_report_level1_without_exposing_bindings(self):
+        env = {"SAM_SALES_AUTONOMY_LEVEL": "1", "SAM_SALES_LEVEL1_MEAT_ENABLED": "1",
+               "SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED": "1", "SAM_SALES_LEVEL1_COHORT_ENABLED": "1",
+               "SAM_SALES_LEVEL1_COHORT_BINDINGS": "2033:M-1"}
+        for policy in (sam_meat_runtime.sam_meat_webhook_policy(env),
+                       sam_live_stock_runtime.sam_live_stock_webhook_policy(env)):
+            with self.subTest(mode=policy["mode"]):
+                self.assertTrue(policy["sales_autonomy_level1"]["dispatch_gate_configured"])
+                self.assertNotIn("2033", str(policy["sales_autonomy_level1"]))
 
 if __name__ == "__main__":
     unittest.main()
