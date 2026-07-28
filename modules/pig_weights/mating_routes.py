@@ -13,6 +13,9 @@ from modules.pig_weights.herdmaster_breeding_attention_service import (
     build_bounded_family_evidence,
     build_breeding_attention,
 )
+from modules.pig_weights.herdmaster_breeding_operating_loop import (
+    build_breeding_operating_loop,
+)
 from modules.pig_weights.farm_supabase_read_service import (
     build_breeding_analytics_from_evidence,
     get_breeding_attention_source_snapshot,
@@ -262,6 +265,13 @@ def _build_breeding_attention_packets(proposed_observation=None):
             litters=litters,
             family_trees=family_evidence,
             observations=observations,
+        )
+        packet["operating_loop"] = build_breeding_operating_loop(
+            packet,
+            readiness=readiness,
+            matings=mating_rows,
+            litters=litters["litters"],
+            observations=snapshot["observation_rows"],
         )
         packet["source_read_progress"] = {
             **snapshot["read_progress"],
