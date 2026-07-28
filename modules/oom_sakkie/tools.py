@@ -1415,12 +1415,14 @@ def herdmaster_weight_preview_handler(args):
     )
     if preview.get("success"):
         summary = (
-            "Preview only: {tag} weighed {weight:g} kg on {date}. "
+            "Preview only: {tag} ({pig_id}) weighed {weight:g} kg on {date}. "
             "Observation time remains Unknown. No weight was recorded. "
             "Preview reference: {preview_id}. The existing governed weight-entry "
-            "process remains required; this Telegram preview cannot record it."
+            "process remains required; this Telegram preview cannot record it. "
+            "Please confirm or correct this preview."
         ).format(
             tag=preview["tag_number"],
+            pig_id=preview["pig_id"],
             weight=preview["weight_kg"],
             date=preview["weight_date"],
             preview_id=preview["preview_id"],
