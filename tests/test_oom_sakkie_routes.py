@@ -370,6 +370,95 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["sends_telegram"])
         self.assertFalse(data["writes"])
 
+    @patch("modules.oom_sakkie.routes.handle_telegram_direct_webhook")
+    def test_telegram_direct_route_rejects_missing_json_content_type_before_handler(
+        self, mock_handler
+    ):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            data='{"update_id":101}',
+            content_type="text/plain",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 415)
+        self.assertEqual(data["status"], "telegram_json_content_type_required")
+        self.assertEqual(data["expected_content_type"], "application/json")
+        self.assertFalse(data["download_attempted"])
+        self.assertFalse(data["persistence_attempted"])
+        mock_handler.assert_not_called()
+
+    @patch("modules.oom_sakkie.routes.handle_telegram_direct_webhook")
+    def test_telegram_direct_route_rejects_malformed_or_empty_json_before_handler(
+        self, mock_handler
+    ):
+        malformed = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            data="{not-json",
+            content_type="application/json",
+        )
+        empty = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json={},
+        )
+
+        for response in (malformed, empty):
+            with self.subTest(status=response.status_code):
+                data = response.get_json()
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(data["status"], "telegram_json_object_required")
+                self.assertFalse(data["download_attempted"])
+                self.assertFalse(data["persistence_attempted"])
+        mock_handler.assert_not_called()
+
+    @patch("modules.oom_sakkie.routes.handle_telegram_direct_webhook")
+    def test_telegram_direct_route_passes_exact_json_object_to_handler(
+        self, mock_handler
+    ):
+        payload = {
+            "update_id": 101,
+            "message": {
+                "message_id": 22,
+                "from": {"id": 12345},
+                "chat": {"id": 12345, "type": "private"},
+                "photo": [
+                    {
+                        "file_id": "protected-test-file",
+                        "file_unique_id": "stable-test-file",
+                        "width": 1280,
+                        "height": 960,
+                    }
+                ],
+            },
+        }
+        mock_handler.return_value = (
+            {
+                "success": True,
+                "status": "media_intake_received",
+                "download_attempted": False,
+                "persistence_attempted": False,
+            },
+            200,
+        )
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json=payload,
+            headers={
+                "X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_handler.assert_called_once()
+        self.assertEqual(mock_handler.call_args.args[0], payload)
+        self.assertEqual(
+            mock_handler.call_args.kwargs["headers"].get(
+                "X-Telegram-Bot-Api-Secret-Token"
+            ),
+            TELEGRAM_DIRECT_SECRET,
+        )
+
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
         "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",

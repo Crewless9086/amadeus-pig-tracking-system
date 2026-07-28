@@ -256,7 +256,26 @@ def oom_sakkie_telegram_message():
 
 @oom_sakkie_bp.route("/oom-sakkie/channels/telegram/direct-webhook", methods=["POST"])
 def oom_sakkie_telegram_direct_webhook():
-    payload = request.get_json(silent=True) or {}
+    if not request.is_json:
+        return jsonify({
+            "success": False,
+            "status": "telegram_json_content_type_required",
+            "expected_content_type": "application/json",
+            "download_attempted": False,
+            "persistence_attempted": False,
+            "sends_telegram": False,
+            "writes": False,
+        }), 415
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not payload:
+        return jsonify({
+            "success": False,
+            "status": "telegram_json_object_required",
+            "download_attempted": False,
+            "persistence_attempted": False,
+            "sends_telegram": False,
+            "writes": False,
+        }), 400
     result, status_code = handle_telegram_direct_webhook(payload, headers=request.headers)
     return jsonify(result), status_code
 
