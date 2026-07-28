@@ -76,10 +76,67 @@ FORBIDDEN_KEYS = {
     "headers",
     "body",
 }
+BEACON_MEDIA_INTAKE_ENABLED_ENV = "BEACON_TELEGRAM_MEDIA_INTAKE_ENABLED"
+OOM_SAKKIE_DIRECT_ENABLED_ENV = "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED"
+OOM_SAKKIE_DIRECT_SEND_ENABLED_ENV = "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED"
 
 
 class AmbiguousTransportError(RuntimeError):
     """The request may have reached the provider but no response was proven."""
+
+
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def telegram_shared_flag_authority_contract(environ: dict[str, Any]) -> dict[str, Any]:
+    """Classify shared OOM SAKKIE gates separately from BEACON's intake gate."""
+    source = environ if isinstance(environ, dict) else {}
+    beacon_enabled = _truthy(source.get(BEACON_MEDIA_INTAKE_ENABLED_ENV))
+    direct_enabled = _truthy(source.get(OOM_SAKKIE_DIRECT_ENABLED_ENV))
+    direct_send_enabled = _truthy(source.get(OOM_SAKKIE_DIRECT_SEND_ENABLED_ENV))
+    shared_direct_ready = direct_enabled and direct_send_enabled
+    preactivation_ready = not beacon_enabled and shared_direct_ready
+    if beacon_enabled:
+        status = "beacon_media_intake_already_enabled"
+    elif not shared_direct_ready:
+        status = "shared_oom_sakkie_direct_contract_unavailable"
+    else:
+        status = "beacon_media_intake_disabled_shared_routes_preserved"
+    return {
+        "status": status,
+        "preactivation_ready": preactivation_ready,
+        "beacon_media_intake": {
+            "enabled": beacon_enabled,
+            "required_state_before_activation": "disabled",
+            "consumer": "beacon_media_intake_only",
+        },
+        "oom_sakkie_direct": {
+            "enabled": direct_enabled,
+            "required_shared_state": True,
+            "consumers": [
+                "direct_webhook_authentication_and_routing",
+                "sam_owner_callback_handling",
+                "ordinary_owner_text_handling",
+            ],
+        },
+        "oom_sakkie_direct_send": {
+            "enabled": direct_send_enabled,
+            "required_shared_state": True,
+            "consumers": [
+                "owner_telegram_replies",
+                "telegram_callback_acknowledgements",
+                "bounded_beacon_owner_receipt_when_separately_enabled",
+            ],
+        },
+        "beacon_activation_changes_shared_flags": False,
+        "customer_messaging_authority": False,
+        "publication_authority": False,
+        "meta_authority": False,
+        "advertising_authority": False,
+        "boost_authority": False,
+        "spend_authority": False,
+    }
 
 
 def canonical_sha256(value: Any) -> str:
