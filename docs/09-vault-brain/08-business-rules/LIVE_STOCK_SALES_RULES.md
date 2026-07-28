@@ -40,6 +40,17 @@ Status: Current authority for SAM Live Stock Sales.
   claim-free clarification remains eligible under the ordinary Level 1 rail.
 - Intake/category defaults must never manufacture weight, sex, or handover
   preferences.
+- A customer display name is presentation-only. Safe Unicode, punctuation,
+  spacing and emoji may be normalized for a greeting; it never replaces or
+  modifies the exact numeric/provider identity binding. Controls, markup,
+  unreasonable length and disguised commercial claims fail closed.
+- Always-on Livestock Level 1 authority comes only from the latest current
+  append-only isolated control event and the exact current inbound evidence.
+  Missing storage, a disabled/killed/expired state, a pre-cutoff historical
+  event not explicitly carried, or any identity mismatch authorizes no send.
+- Always-on activation never grants Meat, retry, quote, negotiation, delivery
+  promise, reservation, allocation, order, payment, ownership, animal, stock
+  or farm authority.
 
 ## Product Categories
 

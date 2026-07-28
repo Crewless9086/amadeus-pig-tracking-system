@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Mapping
 
@@ -21,6 +22,7 @@ COHORT_STOPPED_ENV = "SAM_SALES_LEVEL1_COHORT_STOPPED"
 MEAT_ENABLED_ENV = "SAM_SALES_LEVEL1_MEAT_ENABLED"
 LIVE_STOCK_ENABLED_ENV = "SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED"
 CONTRACT_VERSION = "sam_sales_autonomy_level_1_v1"
+MAX_DISPLAY_NAME_CHARS = 80
 SYSTEMIC_COHORT_STOP_REASONS = {
     "systemic_provider_outage",
     "claim_rail_corrupted",
@@ -226,6 +228,7 @@ def evaluate_level1_authority(
     review: Mapping | None,
     evidence: Mapping | None = None,
     environ: Mapping | None = None,
+    isolated_runtime: Mapping | None = None,
 ) -> dict:
     """Return a fail-closed Tier 1 decision without performing any action."""
     inbound = dict(inbound or {})
@@ -233,6 +236,7 @@ def evaluate_level1_authority(
     review = dict(review or {})
     evidence = dict(evidence or {})
     source = dict(environ or {})
+    isolated = dict(isolated_runtime or {})
     reply = _text(decision.get("suggested_reply_text") or decision.get("reply_text"), 1800)
     identity = {
         key: _text(inbound.get(key), 120)
@@ -260,7 +264,10 @@ def evaluate_level1_authority(
     unsupported_availability = bool(
         not availability_current
         and _affirmative_availability_claim(reply)
-        and not _is_canonical_claim_free_customer_guidance(reply)
+        and not _is_canonical_claim_free_customer_guidance(
+            reply,
+            authoritative_customer_name=inbound.get("customer_name"),
+        )
     )
     availability_required = _availability_question(inbound.get("content"))
     supported_partial = bool(
@@ -272,11 +279,23 @@ def evaluate_level1_authority(
         source.get(COHORT_BINDINGS_ENV)
     )
     conversation_id = identity["conversation_id"]
+    isolated_enabled = bool(
+        isolated.get("allowed") is True
+        and lane == "live_stock"
+        and isolated.get("control_event_id")
+    )
     checks = {
-        "level_1_enabled": _text(source.get(LEVEL_ENV), 20) == "1",
-        "lane_enabled": _truthy(source.get(
-            MEAT_ENABLED_ENV if lane == "meat" else LIVE_STOCK_ENABLED_ENV
-        )),
+        "level_1_enabled": (
+            isolated_enabled or _text(source.get(LEVEL_ENV), 20) == "1"
+        ),
+        "lane_enabled": (
+            isolated_enabled
+            or _truthy(source.get(
+                MEAT_ENABLED_ENV
+                if lane == "meat"
+                else LIVE_STOCK_ENABLED_ENV
+            ))
+        ),
         "cohort_not_stopped": not _truthy(source.get(COHORT_STOPPED_ENV)),
         "identity_complete": bool(inbound_id and all(identity.values())),
         "chronology_current": (
@@ -314,9 +333,12 @@ def evaluate_level1_authority(
     broad_enabled = _truthy(source.get(BROAD_DISPATCH_ENV))
     cohort_config_safe = cohort_bindings_valid and 0 < len(cohort_bindings) <= 5
     cohort_member = (conversation_id, inbound_id) in cohort_bindings
+    isolated_dispatch = isolated_enabled
     dispatch_authorized = bool(
         eligible
         and (
+            isolated_dispatch
+            or
             broad_enabled
             or (cohort_enabled and cohort_config_safe and cohort_member)
         )
@@ -340,6 +362,18 @@ def evaluate_level1_authority(
             "broad_dispatch_enabled": broad_enabled,
             "stopped": _truthy(source.get(COHORT_STOPPED_ENV)),
             "maximum_first_cohort": 5,
+            "contains_identity_values": False,
+        },
+        "isolated_runtime": {
+            "enabled": isolated_dispatch,
+            "control_event_id": (
+                isolated.get("control_event_id", "")
+                if isolated_dispatch
+                else ""
+            ),
+            "blockers": list(isolated.get("blockers") or []),
+            "new_event": isolated.get("new_event") is True,
+            "carried_followup": isolated.get("carried_followup") is True,
             "contains_identity_values": False,
         },
         "owner_decision": _owner_decision_card(decision, classification, protected),
@@ -395,7 +429,7 @@ def bind_authoritative_conversation_evidence(
         "chronology_current": current,
         "whatsapp_window_state": window.get("window_state", "unavailable"),
         "whatsapp_window_evidence_authoritative": True,
-        "latest_observed_at": window.get("evaluated_at_utc") or "",
+        "latest_observed_at": window.get("latest_inbound_at_utc") or "",
         "reply_window_evidence": window,
         "level1_evidence_status": (
             "current_authoritative_evidence"
@@ -410,6 +444,7 @@ def supporting_claims_are_evidence_backed(
     decision: Mapping | None,
     *,
     review_evidence_ready: bool,
+    authoritative_customer_name=None,
 ) -> bool:
     """Verify price and availability claims without authorizing a mutation."""
     row = dict(decision or {})
@@ -432,7 +467,10 @@ def supporting_claims_are_evidence_backed(
             and guidance.get("claim_types") == []
             and reply
             and reply == guidance_reply
-            and _is_canonical_claim_free_customer_guidance(reply)
+            and _is_canonical_claim_free_customer_guidance(
+                reply,
+                authoritative_customer_name=authoritative_customer_name,
+            )
         )
     price_claim = bool(re.search(r"(?:R\s?\d|\d[\d ,.]*\s*(?:rand|zar))", reply, re.I))
     count_claim = bool(re.search(
@@ -466,16 +504,44 @@ def supporting_claims_are_evidence_backed(
     return True
 
 
-def _is_canonical_claim_free_customer_guidance(reply: str) -> bool:
+def _is_canonical_claim_free_customer_guidance(
+    reply: str,
+    *,
+    authoritative_customer_name=None,
+) -> bool:
     """Accept only text the deterministic, claim-free size guide can render."""
     text = _text(reply, 1800)
-    greeting_match = re.match(
-        r"^(Hi(?: [A-Za-zÀ-ÖØ-öø-ÿ'’-]{1,40})?, thanks for your message\.)",
-        text,
-    )
-    if not greeting_match:
+    greeting_end = ", thanks for your message."
+    greeting_prefix, separator, _ = text.partition(greeting_end)
+    if not separator:
         return False
-    greeting = greeting_match.group(1)
+    authoritative_name = normalize_customer_display_name(
+        authoritative_customer_name
+    )
+    authoritative_first = (
+        authoritative_name.split()[0] if authoritative_name else ""
+    )
+    if greeting_prefix == "Hi":
+        if authoritative_first:
+            return False
+    elif greeting_prefix.startswith("Hi "):
+        presented_name = greeting_prefix[3:]
+        if (
+            not presented_name
+            or normalize_customer_display_name(presented_name) != presented_name
+            or presented_name != authoritative_first
+            or any(character.isspace() for character in presented_name)
+            or re.search(
+                r"\d|\b(?:available|price|deliver|shipping|nationwide|free|"
+                r"reserve|pig|female|male)\b",
+                presented_name,
+                re.I,
+            )
+        ):
+            return False
+    else:
+        return False
+    greeting = greeting_prefix + greeting_end
     option_lines = (
         "- Small piglets: approximately 2 to 6 kg",
         "- Weaned piglets: approximately 7 to 19 kg",
@@ -524,6 +590,24 @@ def _is_canonical_claim_free_customer_guidance(reply: str) -> bool:
             if text == _text("\n".join(expected), 1800):
                 return True
     return False
+
+
+def normalize_customer_display_name(value, limit=MAX_DISPLAY_NAME_CHARS) -> str:
+    """Normalize untrusted presentation text without deriving identity from it."""
+    if not isinstance(value, str):
+        return ""
+    normalized = unicodedata.normalize("NFKC", value)
+    safe = []
+    for character in normalized:
+        if unicodedata.category(character).startswith("C"):
+            continue
+        if character in "<>&`":
+            continue
+        safe.append(" " if character.isspace() else character)
+    text = " ".join("".join(safe).split())
+    if not text or len(text) > int(limit):
+        return ""
+    return text
 
 
 def _infer_tier1_action(decision):

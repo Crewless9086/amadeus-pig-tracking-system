@@ -146,6 +146,24 @@ A systemic provider outage, corrupted claim rail, cross-binding identity or
 chronology collision, or authority breach stops the complete cohort.
 Chatwoot acceptance alone never counts as provider-confirmed delivery.
 
+## Isolated Always-On Level 1
+
+GateKeeper and the existing backend inbound route remain the single event
+path. The append-only Livestock control event supplies the policy state,
+activation cutoff, exact carried follow-ups, expiry, owner principal, and kill
+state without changing shared Render environment keys. Each inbound is
+independently reclassified against current chronology, the provider window,
+ordinary Livestock intent, evidence-backed claims, and the durable
+claim-before-send rail.
+
+Safe qualification and intake progression may continue when a count or price
+is unavailable, provided the reply omits that unsupported claim. Binding
+quotes, negotiated terms, delivery promises, reservations, allocations,
+orders, payments, ownership, and farm or animal writes remain prohibited.
+Provider ambiguity quarantines only the exact attempt and never retries.
+Systemic provider, identity, claim-rail, isolation, or authority failure
+requires an append-only killed control event.
+
 All normal, owner-approved, Telegram-assisted, and future automatic replies use
 the shared
 [`OUTBOUND_DELIVERY_TRUTH_STANDARD.md`](../07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md).
