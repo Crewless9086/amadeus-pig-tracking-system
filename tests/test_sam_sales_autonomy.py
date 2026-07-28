@@ -49,6 +49,168 @@ def evidence(**overrides):
 
 
 class SamSalesAutonomyLevel1Tests(unittest.TestCase):
+    def test_unrelated_context_blocker_does_not_block_claim_free_guidance(self):
+        reply = (
+            "Hi Leonello, thanks for your message.\n\n"
+            "Which size would suit you, and would you prefer a male, "
+            "female, or either?\n"
+            "Once I know that, I can confirm the available options and price."
+        )
+        self.assertTrue(supporting_claims_are_evidence_backed(
+            "live_stock",
+            {
+                "suggested_reply_text": reply,
+                "blockers": ["sales_availability_read_failed"],
+                "reply_source": "deterministic_customer_size_guidance",
+                "customer_guidance_preferred": True,
+                "customer_guidance": {
+                    "applicable": True,
+                    "contract_version": "customer_size_guidance_v1",
+                    "claim_types": [],
+                    "reply_text": reply,
+                },
+            },
+            review_evidence_ready=True,
+        ))
+
+    def test_unsupported_stock_and_price_claims_remain_blocked(self):
+        for reply in (
+            "We have 10 piglets available.",
+            "The price is R500 each.",
+        ):
+            with self.subTest(reply=reply):
+                self.assertFalse(supporting_claims_are_evidence_backed(
+                    "live_stock",
+                    {"suggested_reply_text": reply, "blockers": []},
+                    review_evidence_ready=True,
+                ))
+
+    def test_delivery_and_reservation_process_claims_require_exact_evidence(self):
+        cases = (
+            "We deliver nationwide. Which location should I note?",
+            "We ship nationwide. Which area should I note?",
+            "Transport is available to Cape Town.",
+            "Ons lewer landswyd.",
+            "You can reserve pigs with us.",
+            "We accept reservations.",
+            "Reservations can be made with us.",
+            "Ons aanvaar deposito's.",
+            "The payment process is EFT.",
+        )
+        for reply in cases:
+            with self.subTest(reply=reply):
+                decision = {
+                    "suggested_reply_text": reply,
+                    "blockers": ["read_context_error"],
+                }
+                self.assertFalse(supporting_claims_are_evidence_backed(
+                    "live_stock", decision, review_evidence_ready=True,
+                ))
+
+    def test_numeric_written_and_afrikaans_prices_require_price_evidence(self):
+        replies = (
+            "The price is R500 each.",
+            "Our price is five hundred rand each.",
+            "They are five hundred rand each.",
+            "They cost 500 each.",
+            "Die prys is vyf honderd rand elk.",
+        )
+        for reply in replies:
+            with self.subTest(reply=reply):
+                decision = {
+                    "suggested_reply_text": reply,
+                    "blockers": ["sales_availability_read_failed"],
+                }
+                self.assertFalse(supporting_claims_are_evidence_backed(
+                    "live_stock", decision, review_evidence_ready=True,
+                ))
+
+    def test_future_confirmation_wording_is_not_an_affirmative_claim(self):
+        reply = (
+            "Hi, thanks for your message.\n\n"
+            "Which size would suit you?\n"
+            "Once I know that, I can confirm the available options and price."
+        )
+        self.assertTrue(supporting_claims_are_evidence_backed(
+            "live_stock",
+            {
+                "suggested_reply_text": reply,
+                "blockers": ["read_context_error"],
+                "reply_source": "deterministic_customer_size_guidance",
+                "customer_guidance_preferred": True,
+                "customer_guidance": {
+                    "applicable": True,
+                    "contract_version": "customer_size_guidance_v1",
+                    "claim_types": [],
+                    "reply_text": reply,
+                },
+            },
+            review_evidence_ready=True,
+        ))
+
+    def test_guidance_marker_or_reply_mismatch_fails_closed(self):
+        reply = "Which size would suit you?"
+        base = {
+            "suggested_reply_text": reply,
+            "blockers": ["sales_availability_read_failed"],
+            "reply_source": "deterministic_customer_size_guidance",
+            "customer_guidance_preferred": True,
+            "customer_guidance": {
+                "applicable": True,
+                "contract_version": "customer_size_guidance_v1",
+                "claim_types": [],
+                "reply_text": reply,
+            },
+        }
+        for mutation in (
+            {"reply_source": "llm"},
+            {"customer_guidance_preferred": False},
+            {"customer_guidance": {**base["customer_guidance"], "claim_types": ["price"]}},
+            {"customer_guidance": {**base["customer_guidance"], "reply_text": "different"}},
+        ):
+            with self.subTest(mutation=mutation):
+                self.assertFalse(supporting_claims_are_evidence_backed(
+                    "live_stock", {**base, **mutation}, review_evidence_ready=True,
+                ))
+
+    def test_coherently_fabricated_guidance_packet_fails_closed(self):
+        replies = (
+            "We have 10 female piglets available for R500 each and deliver nationwide.",
+            (
+                "Hi We have 10 female pigs available for R500 each, thanks for your "
+                "message.\n\nWhich size would suit you?\nOnce I know that, I can "
+                "confirm the available options and price."
+            ),
+        )
+        for reply in replies:
+            with self.subTest(reply=reply):
+                self.assertFalse(supporting_claims_are_evidence_backed(
+                    "live_stock",
+                    {
+                        "suggested_reply_text": reply,
+                        "blockers": ["sales_availability_read_failed"],
+                        "reply_source": "deterministic_customer_size_guidance",
+                        "customer_guidance_preferred": True,
+                        "customer_guidance": {
+                            "applicable": True,
+                            "contract_version": "customer_size_guidance_v1",
+                            "claim_types": [],
+                            "reply_text": reply,
+                        },
+                    },
+                    review_evidence_ready=True,
+                ))
+
+    def test_unknown_blocker_remains_fail_closed_for_claim_free_text(self):
+        self.assertFalse(supporting_claims_are_evidence_backed(
+            "live_stock",
+            {
+                "suggested_reply_text": "Which size would suit you?",
+                "blockers": ["farm_knowledge_unavailable"],
+            },
+            review_evidence_ready=True,
+        ))
+
     def test_disabled_by_default(self):
         result = evaluate_level1_authority(
             lane="meat", inbound=inbound(), decision=decision(),

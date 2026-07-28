@@ -1962,8 +1962,21 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         price_loader=list_live_stock_price_entries,
         database_url=(environ or {}).get("DATABASE_URL"),
     )
+    customer_guidance = build_live_stock_customer_guidance(inbound, facts)
+    customer_guidance_preferred = bool(
+        customer_guidance.get("applicable") is True
+        and not facts.get("information_scope")
+        and contextual_sales.get("status") == "commercial_evidence_unavailable"
+        and information_reply.get("status") not in {
+            "availability_and_pricing_verified",
+            "price_only_verified",
+        }
+        and price_answer_packet.get("can_answer_price") is not True
+    )
     fallback_reply = (
-        contextual_sales.get("recommendation")
+        customer_guidance.get("reply_text")
+        if customer_guidance_preferred
+        else contextual_sales.get("recommendation")
         if contextual_sales.get("applicable") is True
         else information_reply.get("reply_text") or _safe_reply_draft(
             facts,
@@ -1978,11 +1991,18 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     llm_draft = (
         {
             "used": False,
-            "status": "commercial_general_information_fallback_blocked",
+            "status": (
+                "deterministic_customer_size_guidance"
+                if customer_guidance_preferred
+                else "commercial_general_information_fallback_blocked"
+            ),
             "reply_text": "",
             "reply_source": "",
         }
-        if contextual_sales.get("general_information_fallback_blocked") is True
+        if (
+            customer_guidance_preferred
+            or contextual_sales.get("general_information_fallback_blocked") is True
+        )
         else _build_llm_reply_draft_if_enabled(
             inbound,
             facts,
@@ -2009,7 +2029,9 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         }
     reply = llm_draft.get("reply_text") if llm_draft.get("used") else fallback_reply
     reply_source = (
-        "contextual_sales_source_backed_owner_draft"
+        "deterministic_customer_size_guidance"
+        if customer_guidance_preferred
+        else "contextual_sales_source_backed_owner_draft"
         if contextual_sales.get("applicable") is True
         else llm_draft.get("reply_source")
         if llm_draft.get("used")
@@ -2047,6 +2069,8 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "price_answer_packet": price_answer_packet,
         "information_response": information_reply,
         "contextual_sales": contextual_sales,
+        "customer_guidance": customer_guidance,
+        "customer_guidance_preferred": customer_guidance_preferred,
         "agent_evidence": agent_evidence,
         "owner_action_packet": owner_action_packet,
         "owner_correction_examples": owner_correction_examples,
@@ -3585,6 +3609,155 @@ def _price_answer_reply(facts, packet):
     return "\n".join(lines)
 
 
+CUSTOMER_LIVE_STOCK_SIZE_OPTIONS = (
+    {
+        "customer_label": "Small piglets",
+        "weight_text": "approximately 2 to 6 kg",
+        "canonical_category": "Young Piglets",
+        "minimum_kg": 2,
+        "maximum_kg": 6,
+    },
+    {
+        "customer_label": "Weaned piglets",
+        "weight_text": "approximately 7 to 19 kg",
+        "canonical_category": "Weaner Piglets",
+        "minimum_kg": 7,
+        "maximum_kg": 19,
+    },
+    {
+        "customer_label": "Growing pigs",
+        "weight_text": "approximately 20 to 49 kg",
+        "canonical_category": "Grower Pigs",
+        "minimum_kg": 20,
+        "maximum_kg": 49,
+    },
+    {
+        "customer_label": "Larger pigs",
+        "weight_text": "approximately 50 to 79 kg",
+        "canonical_category": "Finisher Pigs",
+        "minimum_kg": 50,
+        "maximum_kg": 79,
+    },
+    {
+        "customer_label": "Slaughter-size pigs",
+        "weight_text": "approximately 80 kg and above",
+        "canonical_category": "Ready for Slaughter",
+        "minimum_kg": 80,
+        "maximum_kg": None,
+    },
+)
+
+
+def build_live_stock_customer_guidance(inbound, facts):
+    """Explain customer-facing sizes while keeping taxonomy mapping internal."""
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    category = _normal_category(facts.get("category"))
+    weight_range = _clean(facts.get("weight_range"), 80)
+    customer_text = _normal_text(
+        inbound.get("content") or facts.get("latest_customer_message")
+    )
+    explanation_requested = any(
+        marker in customer_text
+        for marker in ("what is", "what does", "mean", "understand", "which category")
+    )
+    vague_all = category in {"", "live pig", "live_pig"}
+    vague_piglet = category == "piglet" and not weight_range
+    needs_sex = _blank(facts.get("sex"))
+    needs_quantity = _quantity_number(facts.get("quantity")) <= 0
+    if not (
+        vague_all or vague_piglet or explanation_requested
+        or needs_sex or needs_quantity
+    ):
+        return {
+            "applicable": False,
+            "reply_text": "",
+            "options": [],
+            "canonical_mapping": {},
+            "customer_send_allowed": False,
+            "guidance_scope": "",
+        }
+    options = (
+        CUSTOMER_LIVE_STOCK_SIZE_OPTIONS
+        if vague_all
+        else CUSTOMER_LIVE_STOCK_SIZE_OPTIONS[:2]
+        if vague_piglet
+        else tuple(
+            option for option in CUSTOMER_LIVE_STOCK_SIZE_OPTIONS
+            if option["canonical_category"] == {
+                "piglet": "Young Piglets",
+                "weaner": "Weaner Piglets",
+                "grower": "Grower Pigs",
+                "finisher": "Finisher Pigs",
+                "ready_for_slaughter": "Ready for Slaughter",
+            }.get(category)
+        )
+        if explanation_requested
+        else ()
+    )
+    name = _first_name(inbound.get("customer_name") or facts.get("customer_name"))
+    greeting = f"Hi {name}, thanks for your message." if name else "Hi, thanks for your message."
+    lines = [greeting]
+    questions = []
+    if options:
+        lines[0] += " We offer pigs in different sizes:"
+        lines.append("")
+        lines.extend(
+            f"- {option['customer_label']}: {option['weight_text']}"
+            for option in options
+        )
+        if vague_all or vague_piglet:
+            questions.append("Which size would suit you")
+    if needs_sex:
+        questions.append("would you prefer a male, female, or either")
+    if needs_quantity:
+        questions.append("how many do you need")
+    lines.extend(["", _joined_customer_questions(questions)])
+    lines.append(
+        "Once I know that, I can confirm the available options and price."
+    )
+    return {
+        "contract_version": "customer_size_guidance_v1",
+        "claim_types": [],
+        "applicable": True,
+        "reply_text": "\n".join(lines),
+        "options": [
+            {
+                "customer_label": option["customer_label"],
+                "weight_text": option["weight_text"],
+            }
+            for option in options
+        ],
+        "canonical_mapping": {
+            option["customer_label"]: {
+                "category": option["canonical_category"],
+                "minimum_kg": option["minimum_kg"],
+                "maximum_kg": option["maximum_kg"],
+            }
+            for option in options
+        },
+        "questions_asked": questions,
+        "guidance_scope": (
+            "all_sizes" if vague_all
+            else "piglet_sizes" if vague_piglet
+            else "category_explanation" if explanation_requested
+            else "qualification_only"
+        ),
+        "availability_claimed": False,
+        "price_claimed": False,
+        "customer_send_allowed": False,
+    }
+
+
+def _joined_customer_questions(questions):
+    questions = [str(question).strip() for question in questions if str(question).strip()]
+    if not questions:
+        return ""
+    if len(questions) == 1:
+        return questions[0] + "?"
+    return ", ".join(questions[:-1]) + ", and " + questions[-1] + "?"
+
+
 def _build_llm_reply_draft_if_enabled(
     inbound,
     facts,
@@ -4113,15 +4286,17 @@ def _prior_context_from_intake(intake):
 def _extract_category(text):
     if re.search(r"\b\d{1,2}\s*(?:week|weeks|wk|wks)\s+old\b", text):
         return "piglet"
-    if _has_any(text, ("piglet", "piglets")):
+    if _has_any(text, ("weaned piglet", "weaned piglets")):
+        return "weaner"
+    if _has_any(text, ("small piglet", "small piglets", "piglet", "piglets")):
         return "piglet"
     if _has_any(text, ("weaner", "weaners")):
         return "weaner"
-    if _has_any(text, ("grower", "growers")):
+    if _has_any(text, ("growing pig", "growing pigs", "grower", "growers")):
         return "grower"
-    if _has_any(text, ("finisher", "finishers")):
+    if _has_any(text, ("larger pig", "larger pigs", "finisher", "finishers")):
         return "finisher"
-    if _has_any(text, ("ready for slaughter", "slaughter pig", "80kg", "85kg", "90kg")):
+    if _has_any(text, ("slaughter-size pig", "slaughter-size pigs", "ready for slaughter", "slaughter pig", "80kg", "85kg", "90kg")):
         return "ready_for_slaughter"
     if _asks_about_big_live_pigs(text):
         return "live_pig"
@@ -4333,13 +4508,13 @@ def _category_from_weight_range(weight_range):
     weight = _representative_weight(weight_range)
     if not weight:
         return ""
-    if weight < 10:
+    if weight < 7:
         return "piglet"
-    if weight < 25:
+    if weight < 20:
         return "weaner"
     if weight < 50:
         return "grower"
-    if weight < 75:
+    if weight < 80:
         return "finisher"
     return "ready_for_slaughter"
 

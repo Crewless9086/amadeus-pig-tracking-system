@@ -271,8 +271,26 @@ def supporting_claims_are_evidence_backed(
     """Verify price and availability claims without authorizing a mutation."""
     row = dict(decision or {})
     reply = _text(row.get("suggested_reply_text") or row.get("reply_text"), 1800)
-    if not review_evidence_ready or list(row.get("blockers") or []):
+    if not review_evidence_ready:
         return False
+    blockers = list(row.get("blockers") or [])
+    if blockers:
+        guidance = (
+            row.get("customer_guidance")
+            if isinstance(row.get("customer_guidance"), Mapping)
+            else {}
+        )
+        guidance_reply = _text(guidance.get("reply_text"), 1800)
+        return bool(
+            row.get("reply_source") == "deterministic_customer_size_guidance"
+            and row.get("customer_guidance_preferred") is True
+            and guidance.get("applicable") is True
+            and guidance.get("contract_version") == "customer_size_guidance_v1"
+            and guidance.get("claim_types") == []
+            and reply
+            and reply == guidance_reply
+            and _is_canonical_claim_free_customer_guidance(reply)
+        )
     price_claim = bool(re.search(r"(?:R\s?\d|\d[\d ,.]*\s*(?:rand|zar))", reply, re.I))
     count_claim = bool(re.search(
         r"\b\d+\s+(?:female|male|available|in stock|pigs?|piglets?|weaners?|"
@@ -303,6 +321,63 @@ def supporting_claims_are_evidence_backed(
     ):
         return False
     return True
+
+
+def _is_canonical_claim_free_customer_guidance(reply: str) -> bool:
+    """Accept only text the deterministic, claim-free size guide can render."""
+    text = _text(reply, 1800)
+    greeting_match = re.match(
+        r"^(Hi(?: [A-Za-zÀ-ÖØ-öø-ÿ'’-]{1,40})?, thanks for your message\.)",
+        text,
+    )
+    if not greeting_match:
+        return False
+    greeting = greeting_match.group(1)
+    option_lines = (
+        "- Small piglets: approximately 2 to 6 kg",
+        "- Weaned piglets: approximately 7 to 19 kg",
+        "- Growing pigs: approximately 20 to 49 kg",
+        "- Larger pigs: approximately 50 to 79 kg",
+        "- Slaughter-size pigs: approximately 80 kg and above",
+    )
+    question_parts = (
+        "Which size would suit you",
+        "would you prefer a male, female, or either",
+        "how many do you need",
+    )
+    possible_questions = set()
+    for mask in range(1, 1 << len(question_parts)):
+        selected = [
+            question_parts[index]
+            for index in range(len(question_parts))
+            if mask & (1 << index)
+        ]
+        possible_questions.add(
+            selected[0] + "?"
+            if len(selected) == 1
+            else ", ".join(selected[:-1]) + ", and " + selected[-1] + "?"
+    )
+    option_sets = (
+        (),
+        option_lines[:2],
+        option_lines,
+        *((line,) for line in option_lines),
+    )
+    for options in option_sets:
+        for question in possible_questions:
+            expected = [greeting + (
+                " We offer pigs in different sizes:" if options else ""
+            )]
+            if options:
+                expected.extend(["", *options])
+            expected.extend([
+                "",
+                question,
+                "Once I know that, I can confirm the available options and price.",
+            ])
+            if text == _text("\n".join(expected), 1800):
+                return True
+    return False
 
 
 def _infer_tier1_action(decision):
