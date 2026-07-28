@@ -300,6 +300,21 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
             payload["connections"]["Relay SAM Callback to Backend"],
             live["connections"]["Relay SAM Callback to Backend"],
         )
+        live_sam = next(
+            node for node in live["nodes"] if node["name"] == SAM_NODE
+        )
+        payload_sam = by_name[SAM_NODE]
+        self.assertEqual(payload_sam["id"], live_sam["id"])
+        self.assertEqual(payload_sam["position"], live_sam["position"])
+        self.assertEqual(payload_sam["parameters"]["contentType"], "json")
+        self.assertEqual(payload_sam["parameters"]["specifyBody"], "json")
+        self.assertEqual(
+            payload_sam["parameters"]["jsonBody"], "={{ $json.raw_update }}"
+        )
+        self.assertNotIn("rawContent", payload_sam["parameters"])
+        for key, value in live_sam["parameters"].items():
+            if key not in {"contentType", "rawContent"}:
+                self.assertEqual(payload_sam["parameters"][key], value)
 
     def test_repository_only_execution_settings_are_not_sent(self):
         live = self._production_live()
