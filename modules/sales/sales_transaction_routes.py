@@ -482,6 +482,7 @@ def sam_meat_chatwoot_inbound():
             payload,
             routine_delivery_claim=_claim_sam_meat_routine_delivery,
             routine_delivery_evidence_recorder=_record_sam_live_stock_delivery_outcome,
+            conversation_history_loader=load_chatwoot_conversation_history,
         )
         if result.get("status") == "sam_meat_live_stock_handoff" and _valid_sam_live_stock_handoff_packet(result):
             live_result, live_status_code = handle_sam_live_stock_chatwoot_inbound(payload)

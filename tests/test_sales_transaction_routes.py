@@ -2116,6 +2116,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             {"event": "message_created"},
             routine_delivery_claim=sales_transaction_routes._claim_sam_meat_routine_delivery,
             routine_delivery_evidence_recorder=sales_transaction_routes._record_sam_live_stock_delivery_outcome,
+            conversation_history_loader=sales_transaction_routes.load_chatwoot_conversation_history,
         )
 
     def test_sam_meat_backend_routes_live_stock_handoff_to_live_runtime(self):

@@ -1927,6 +1927,52 @@ class SamMeatRuntimeTests(unittest.TestCase):
         sender.assert_not_called()
 
 
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_level1_authoritative_history_dispatches_through_existing_rail(self, record_lead):
+        record_lead.return_value = ({"success": True, "lead_id": "MEAT-L1-1"}, 201)
+        order = []
+        payload = inbound_payload(id="M-L1-1", created_at="2026-07-28T10:00:00+00:00",
+            content="I want a half carcass, Set A.", conversation={"id": 2033,
+            "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"}},
+            sender={"id": 699428938, "name": "Test customer"})
+        history = [{"id": "M-L1-1", "message_type": 0, "private": False,
+                    "created_at": "2026-07-28T10:00:00+00:00"}]
+        packet = {"success": True, "availability": {"status": "Unavailable", "evidence_complete": False,
+                  "verified_zero": False, "freshness": "Unavailable"},
+                  "review_event": {"event_id": "SAM-MEAT-L1-REVIEW-1"}, "owner_packet": {}}
+        result, status = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            payload, environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0", "SAM_SALES_AUTONOMY_LEVEL": "1",
+                "SAM_SALES_LEVEL1_MEAT_ENABLED": "1", "SAM_SALES_LEVEL1_COHORT_ENABLED": "1",
+                "SAM_SALES_LEVEL1_COHORT_BINDINGS": "2033:M-L1-1"},
+            conversation_history_loader=lambda *_args, **_kwargs: history,
+            launch_packet_builder=Mock(return_value=packet),
+            launch_evidence_recorder=lambda *_args: (order.append("review") or {"success": True, "persisted": True}, 200),
+            routine_delivery_claim=lambda *_args: (order.append("claim") or {"success": True, "created": True}),
+            routine_delivery_evidence_recorder=lambda *_args: (order.append("accepted") or {"success": True, "created": True}),
+            chatwoot_sender=lambda *_args: (order.append("dispatch") or {"status_code": 200, "body": {"id": "OUT-L1-1", "status": "sent"}}))
+        self.assertEqual(status, 200)
+        self.assertTrue(result["sales_autonomy_level1"]["dispatch_authorized"])
+        self.assertEqual(order, ["review", "claim", "dispatch", "accepted"])
+        self.assertEqual(result["send_status"], "chatwoot_accepted_unverified")
+        self.assertFalse(result["routine_reply_delivery"]["customer_send_confirmed"])
+
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_level1_authoritative_history_failure_sends_nothing(self, record_lead):
+        record_lead.return_value = ({"success": True, "lead_id": "MEAT-L1-2"}, 201)
+        claim, sender = Mock(), Mock()
+        result, _status = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(id="M-L1-2", conversation={"id": 2034, "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"}}),
+            environ={"SAM_SALES_AUTONOMY_LEVEL": "1", "SAM_SALES_LEVEL1_MEAT_ENABLED": "1",
+                     "SAM_SALES_LEVEL1_COHORT_ENABLED": "1", "SAM_SALES_LEVEL1_COHORT_BINDINGS": "2034:M-L1-2"},
+            conversation_history_loader=Mock(side_effect=RuntimeError("unavailable")),
+            launch_packet_builder=Mock(return_value={"success": True, "availability": {}, "review_event": {"event_id": "R-2"}, "owner_packet": {}}),
+            launch_evidence_recorder=Mock(return_value=({"success": True, "persisted": True}, 200)),
+            routine_delivery_claim=claim, routine_delivery_evidence_recorder=Mock(), chatwoot_sender=sender)
+        self.assertFalse(result["sales_autonomy_level1"]["dispatch_authorized"])
+        self.assertIn("chronology_current", result["sales_autonomy_level1"]["blockers"])
+        claim.assert_not_called()
+        sender.assert_not_called()
+
 if __name__ == "__main__":
 
     unittest.main()

@@ -59,6 +59,7 @@ from modules.sales.sam_sales_router import LANE_LIVE_STOCK, LANE_MEAT, classify_
 from modules.sales.sam_sales_autonomy import (
     bind_authoritative_conversation_evidence,
     evaluate_level1_authority,
+    sales_autonomy_level1_policy,
     supporting_claims_are_evidence_backed,
 )
 from modules.sales.sam_meat_commercial_standard import COLLECTIONS, collection_description
@@ -105,8 +106,10 @@ def sam_meat_webhook_policy(environ=None):
     agent_v3_enabled = _truthy(source.get(AGENT_V3_ENABLED_ENV))
     hygiene_enabled = _truthy(source.get(HYGIENE_ENABLED_ENV))
     llm_configured = bool(_configured_llm_model(source) and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip())
+    level1_policy = sales_autonomy_level1_policy(source)
     return {
         "enabled": enabled,
+        "sales_autonomy_level1": level1_policy,
         "token_configured": len(token) >= MIN_TOKEN_CHARS,
         "autoreply_enabled": autoreply_enabled,
         "chatwoot_hygiene_enabled": hygiene_enabled,

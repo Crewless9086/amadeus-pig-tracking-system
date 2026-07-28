@@ -52,6 +52,31 @@ OWNER_EXCEPTION_TEXT = re.compile(
 )
 
 
+def sales_autonomy_level1_policy(environ: Mapping | None = None) -> dict:
+    """Expose sanitized configuration state; configured identity is never evidence."""
+    source = dict(environ or {})
+    bindings, valid = _cohort_bindings(source.get(COHORT_BINDINGS_ENV))
+    selected = _text(source.get(LEVEL_ENV), 20) == "1"
+    stopped = _truthy(source.get(COHORT_STOPPED_ENV))
+    cohort = _truthy(source.get(COHORT_ENABLED_ENV))
+    broad = _truthy(source.get(BROAD_DISPATCH_ENV))
+    cohort_safe = valid and 0 < len(bindings) <= 5
+    return {
+        "version": CONTRACT_VERSION,
+        "selected": selected,
+        "meat_enabled": _truthy(source.get(MEAT_ENABLED_ENV)),
+        "live_stock_enabled": _truthy(source.get(LIVE_STOCK_ENABLED_ENV)),
+        "cohort_enabled": cohort,
+        "cohort_configured_count": len(bindings),
+        "cohort_configuration_safe": cohort_safe,
+        "broad_dispatch_enabled": broad,
+        "stopped": stopped,
+        "dispatch_gate_configured": selected and not stopped and (broad or (cohort and cohort_safe)),
+        "contains_identity_values": False,
+        "protected_actions_authorized": False,
+        "automatic_retry_authorized": False,
+    }
+
 def evaluate_level1_authority(
     *,
     lane: str,
