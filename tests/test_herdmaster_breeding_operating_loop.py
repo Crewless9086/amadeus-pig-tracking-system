@@ -249,6 +249,7 @@ def test_stale_heat_and_body_condition_never_suppress_current_checks():
     assert case["classification"]["current_heat"] == "unknown"
     assert result["tasks"][0]["task_group"] == "inspect for breeding readiness"
     assert "body condition" in result["tasks"][0]["required_checks"]
+    assert "movement" in result["tasks"][0]["required_checks"]
 
 
 def test_reported_male_exposure_is_not_a_canonical_mating():
@@ -372,6 +373,19 @@ def test_monday_worklist_is_deterministic_and_idempotent():
     assert first["tasks"][0]["notification"]["deduplication_key"] == (
         second["tasks"][0]["notification"]["deduplication_key"]
     )
+
+
+def test_oom_summary_uses_ordinary_farm_language():
+    summary = oom_sakkie_worklist_summary(build(female(
+        withdrawal_evidence_state="",
+        mother_id="",
+        father_id="",
+        available_for_breeding="",
+    )))
+    assert "canonical" not in summary.lower()
+    assert "provisional" not in summary.lower()
+    assert "withdrawal evidence" not in summary.lower()
+    assert "family-tree evidence" not in summary.lower()
 
 
 def test_approval_identity_is_stable_and_changes_with_exact_evidence_or_male():
