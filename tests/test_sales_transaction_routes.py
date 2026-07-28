@@ -2402,6 +2402,78 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertFalse(response.get_json()["sends_customer_message"])
         decide.assert_called_once()
 
+    def test_level1_control_uses_server_derived_owner_and_sends_nothing(self):
+        current = {
+            "success": True,
+            "status": "level1_control_not_configured",
+            "event": {},
+        }
+        event = {
+            "control_event_id": "SAM-L1-CONTROL-1",
+            "state": "enabled",
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "require_strict_owner_admin_access",
+            return_value=None,
+        ), patch.object(
+            sales_transaction_routes,
+            "strict_owner_admin_principal",
+            return_value="owner-admin:stable",
+        ), patch.object(
+            sales_transaction_routes,
+            "load_current_level1_control",
+            return_value=(current, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "build_level1_control_event",
+            return_value=event,
+        ) as build, patch.object(
+            sales_transaction_routes,
+            "append_level1_control_event",
+            return_value=({
+                "success": True,
+                "status": "level1_control_event_recorded",
+                "sends_customer_message": False,
+                "mutates_business_state": False,
+            }, 201),
+        ) as append:
+            response = self.client.post(
+                "/api/sales/live-stock-level1/control",
+                json={
+                    "state": "enabled",
+                    "reason": "standing owner authority",
+                    "actor_id": "browser-forged",
+                },
+            )
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.get_json()["sends_customer_message"])
+        self.assertEqual(
+            build.call_args.kwargs["actor_id"],
+            "owner-admin:stable",
+        )
+        append.assert_called_once_with(event)
+
+    def test_level1_control_rejects_missing_strict_owner_principal(self):
+        with patch.object(
+            sales_transaction_routes,
+            "require_strict_owner_admin_access",
+            return_value=None,
+        ), patch.object(
+            sales_transaction_routes,
+            "strict_owner_admin_principal",
+            return_value="",
+        ), patch.object(
+            sales_transaction_routes,
+            "append_level1_control_event",
+        ) as append:
+            response = self.client.post(
+                "/api/sales/live-stock-level1/control",
+                json={"state": "enabled", "reason": "forged"},
+            )
+        self.assertEqual(response.status_code, 403)
+        append.assert_not_called()
+
     def test_owner_read_session_cannot_append_authority_decision(self):
         with patch.object(
             sales_transaction_routes,

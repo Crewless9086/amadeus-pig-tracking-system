@@ -35,6 +35,24 @@ identity/chronology collision, or authority breach. Provider delivered/read
 evidence remains mandatory before counting a customer as delivered. Broad
 dispatch remains a separate explicit gate.
 
+After supervised acceptance, Livestock may use the isolated append-only
+`sam_live_stock_level1_control_events` contract instead of rewriting shared
+Render environment keys for each cohort. The latest event is the kill switch:
+`enabled` permits only Livestock ordinary Level 1, while `disabled`, `killed`,
+missing, malformed, stale, or unavailable control evidence permits no
+dispatch. Activation applies only to authoritative inbound observations at or
+after its UTC cutoff plus explicitly listed current follow-up bindings; it
+never replays the historical inbox. The control is owner-admin authenticated
+with a server-derived principal, contains no customer content, and grants no
+Meat or protected authority. GateKeeper remains the sole inbound owner.
+
+Display names are untrusted presentation text. Safe Unicode, spacing,
+punctuation, and emoji may be normalized for a greeting, but account, inbox,
+conversation, contact, inbound, attempt, chronology, and provider identities
+alone bind authority. Control characters, markup, unreasonable length, or
+commercial claims disguised as a name are removed or rejected and are never
+placed in credentials, headers, commands, or provider identity fields.
+
 The reviewed runtime controls are default disabled:
 
 - `SAM_SALES_AUTONOMY_LEVEL=1` selects this contract;

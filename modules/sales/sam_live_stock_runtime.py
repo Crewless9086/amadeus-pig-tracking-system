@@ -27,6 +27,7 @@ from modules.sales.sam_sales_router import LANE_FARM_GENERAL, LANE_LIVE_STOCK, L
 from modules.sales.sam_sales_autonomy import (
     bind_authoritative_conversation_evidence,
     evaluate_level1_authority,
+    normalize_customer_display_name,
     supporting_claims_are_evidence_backed,
     sales_autonomy_level1_policy,
 )
@@ -41,6 +42,10 @@ from modules.sales.sam_live_stock_contextual_sales import (
 )
 from modules.sales.sam_live_stock_availability_observation import (
     resolve_authoritative_availability,
+)
+from modules.sales.sam_live_stock_level1_control import (
+    load_current_level1_control,
+    resolve_level1_runtime_control,
 )
 from modules.sales.sam_live_stock_media import classify_chatwoot_image, media_policy, transcribe_chatwoot_voice
 from modules.sales.sam_delivery_truth import (
@@ -359,6 +364,26 @@ def handle_sam_live_stock_chatwoot_inbound(
         inbound,
         context_packet.get("chatwoot_authority_messages") or [],
     )
+    try:
+        loaded_level1_control, loaded_level1_status = (
+            load_current_level1_control()
+        )
+    except Exception:
+        loaded_level1_control, loaded_level1_status = {
+            "status": "level1_control_storage_unavailable",
+            "event": {},
+        }, 503
+    isolated_level1_runtime = resolve_level1_runtime_control(
+        level1_inbound,
+        loaded=(
+            loaded_level1_control
+            if loaded_level1_status < 400
+            else {
+                "status": "level1_control_storage_unavailable",
+                "event": {},
+            }
+        ),
+    )
     if _explicit_new_request(inbound.get("content")):
         context_packet["prior_context"] = {}
         context_packet["chatwoot_history_messages"] = []
@@ -450,6 +475,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         decision,
         source,
         intake_writer=intake_writer,
+        isolated_runtime=isolated_level1_runtime,
     )
     if intake_write.get("attempted"):
         decision["intake_write"] = intake_write
@@ -487,6 +513,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         chatwoot_sender=chatwoot_sender,
         delivery_claim=routine_delivery_claim,
         delivery_evidence_recorder=routine_delivery_evidence_recorder,
+        isolated_runtime=isolated_level1_runtime,
     )
     decision["routine_reply_delivery"] = routine_delivery
     decision["customer_send_authorized"] = routine_delivery.get("canary", {}).get("allowed") is True
@@ -506,7 +533,17 @@ def handle_sam_live_stock_chatwoot_inbound(
     }, 200
 
 
-def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, environ=None, chatwoot_sender=None, delivery_claim=None, delivery_evidence_recorder=None):
+def deliver_sam_live_stock_routine_reply_if_enabled(
+    inbound,
+    decision,
+    review,
+    environ=None,
+    chatwoot_sender=None,
+    delivery_claim=None,
+    delivery_evidence_recorder=None,
+    level1_control_loader=None,
+    isolated_runtime=None,
+):
     source = environ if environ is not None else os.environ
     inbound = inbound if isinstance(inbound, dict) else {}
     decision = decision if isinstance(decision, dict) else {}
@@ -537,6 +574,42 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
         if decision.get("conversation_ownership") == AUTO_GENERAL
         else _autoreply_canary_evaluation(inbound, decision, review, source)
     )
+    if not isinstance(isolated_runtime, dict):
+        loader = level1_control_loader or load_current_level1_control
+        try:
+            loaded_control, loaded_status = loader()
+        except Exception:
+            loaded_control, loaded_status = {
+                "status": "level1_control_storage_unavailable",
+                "event": {},
+            }, 503
+        isolated_runtime = resolve_level1_runtime_control(
+            (
+                decision.get("sales_autonomy_level1_inbound_evidence")
+                if isinstance(
+                    decision.get("sales_autonomy_level1_inbound_evidence"),
+                    dict,
+                )
+                else inbound
+            ),
+            loaded=(
+                loaded_control
+                if loaded_status < 400
+                else {
+                    "status": "level1_control_storage_unavailable",
+                    "event": {},
+                }
+            ),
+        )
+    if not (
+        decision.get("specialist_lane_selected") is True
+        and decision.get("sales_lane") == LANE_LIVE_STOCK
+    ):
+        isolated_runtime = {
+            "allowed": False,
+            "control_event_id": "",
+            "blockers": ["live_stock_specialist_lane_required"],
+        }
     level1 = evaluate_level1_authority(
         lane="live_stock",
         inbound=(
@@ -554,6 +627,7 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
                     review.get("safe_to_send") is True
                     and delivery_claim is not None
                 ),
+                authoritative_customer_name=inbound.get("customer_name"),
             ),
             "delivery_rail_available": (
                 delivery_claim is not None and delivery_evidence_recorder is not None
@@ -566,6 +640,7 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
             ),
         },
         environ=source,
+        isolated_runtime=isolated_runtime,
     )
     decision["sales_autonomy_level1"] = level1
     canary = (
@@ -2346,9 +2421,24 @@ def validate_live_stock_intake_payload(payload):
     }
 
 
-def write_live_stock_intake_if_enabled(inbound, facts, decision, environ=None, intake_writer=None):
+def write_live_stock_intake_if_enabled(
+    inbound,
+    facts,
+    decision,
+    environ=None,
+    intake_writer=None,
+    isolated_runtime=None,
+):
     source = environ if environ is not None else os.environ
-    if not _truthy(source.get(INTAKE_WRITE_ENABLED_ENV)):
+    isolated_intake = bool(
+        isinstance(isolated_runtime, dict)
+        and isolated_runtime.get("allowed") is True
+        and isolated_runtime.get("intake_write_authorized") is True
+    )
+    if not (
+        _truthy(source.get(INTAKE_WRITE_ENABLED_ENV))
+        or isolated_intake
+    ):
         return {"attempted": False, "success": False, "status": "sam_live_stock_intake_write_disabled"}
     if (decision or {}).get("sales_lane") != LANE_LIVE_STOCK:
         return {"attempted": False, "success": False, "status": "sam_live_stock_intake_wrong_lane"}
@@ -4447,7 +4537,7 @@ def _quantity_label(value):
 
 
 def _first_name(value):
-    text = _clean(value, 80)
+    text = normalize_customer_display_name(value)
     return _sentence_case(text.split()[0]) if text else ""
 
 

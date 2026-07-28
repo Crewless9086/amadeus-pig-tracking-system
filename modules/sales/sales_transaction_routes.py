@@ -8,6 +8,8 @@ from modules.auth.owner_access import (
     owner_session_is_valid,
     require_owner_admin_access,
     require_owner_read_access,
+    require_strict_owner_admin_access,
+    strict_owner_admin_principal,
 )
 from modules.beacon.campaign_calendar import (
     approve_rule_version,
@@ -113,6 +115,11 @@ from modules.sales.sam_live_stock_availability_observation import (
     append_availability_observation,
     build_availability_observation_preview,
     resolve_authoritative_availability,
+)
+from modules.sales.sam_live_stock_level1_control import (
+    append_level1_control_event,
+    build_level1_control_event,
+    load_current_level1_control,
 )
 from modules.sales.sam_live_stock_launch_control import (
     _telegram_send_message,
@@ -2075,6 +2082,52 @@ def live_stock_response_class_authority():
     return jsonify(authority_visibility_report(
         evidence.get("events", []), latest_events=latest.get("events", [])
     )), 200
+
+
+@sales_bp.route("/sales/live-stock-level1/control", methods=["GET", "POST"])
+def live_stock_level1_control():
+    if request.method == "GET":
+        guard = require_owner_read_access()
+        if guard:
+            return guard
+        result, status_code = load_current_level1_control()
+        return jsonify(result), status_code
+    guard = require_strict_owner_admin_access()
+    if guard:
+        return guard
+    principal = strict_owner_admin_principal()
+    if not principal:
+        return jsonify({
+            "success": False,
+            "status": "server_derived_owner_admin_required",
+            "sends_customer_message": False,
+            "mutates_business_state": False,
+        }), 403
+    payload = request.get_json(silent=True) or {}
+    current, current_status = load_current_level1_control()
+    if current_status >= 400:
+        return jsonify(current), current_status
+    try:
+        event = build_level1_control_event(
+            payload.get("state"),
+            actor_id=principal,
+            reason=payload.get("reason"),
+            prior_event=current.get("event") or None,
+            carried_bindings=payload.get("carried_bindings") or [],
+            intake_write_authorized=(
+                payload.get("intake_write_authorized") is True
+            ),
+            lifetime_days=payload.get("lifetime_days", 30),
+        )
+    except (TypeError, ValueError) as exc:
+        return jsonify({
+            "success": False,
+            "status": str(exc),
+            "sends_customer_message": False,
+            "mutates_business_state": False,
+        }), 400
+    result, status_code = append_level1_control_event(event)
+    return jsonify(result), status_code
 
 
 @sales_bp.route("/sales/live-stock-learning/authority/evaluate", methods=["POST"])

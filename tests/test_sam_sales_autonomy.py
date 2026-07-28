@@ -5,6 +5,7 @@ from modules.sales.sam_sales_autonomy import (
     bind_authoritative_conversation_evidence,
     classify_level1_cohort_delivery_outcome,
     evaluate_level1_authority,
+    normalize_customer_display_name,
     supporting_claims_are_evidence_backed,
     sales_autonomy_level1_policy,
 )
@@ -15,6 +16,7 @@ def inbound(**overrides):
     row = {
         "account_id": "147387", "conversation_id": "2033",
         "contact_id": "C-1", "inbox_id": "96568", "message_id": "M-1",
+        "customer_name": "Leonello",
         "processable": True, "message_type": "incoming",
         "chronology_current": True,
         "latest_observed_at": "2026-07-28T08:00:00Z",
@@ -50,6 +52,73 @@ def evidence(**overrides):
 
 
 class SamSalesAutonomyLevel1Tests(unittest.TestCase):
+    def test_decorated_and_punctuated_display_name_shapes_are_safe(self):
+        for name in ("😎Customer🔥", "Surname,Name"):
+            with self.subTest(name=name):
+                normalized = normalize_customer_display_name(name)
+                self.assertEqual(normalized, name)
+                reply = (
+                    f"Hi {normalized}, thanks for your message.\n\n"
+                    "Which size would suit you?\n"
+                    "Once I know that, I can confirm the available options and price."
+                )
+                self.assertTrue(supporting_claims_are_evidence_backed(
+                    "live_stock",
+                    {
+                        "suggested_reply_text": reply,
+                        "blockers": ["sales_availability_read_failed"],
+                        "reply_source": "deterministic_customer_size_guidance",
+                        "customer_guidance_preferred": True,
+                        "customer_guidance": {
+                            "applicable": True,
+                            "contract_version": "customer_size_guidance_v1",
+                            "claim_types": [],
+                            "reply_text": reply,
+                        },
+                    },
+                    review_evidence_ready=True,
+                    authoritative_customer_name=name,
+                ))
+
+    def test_display_name_normalization_removes_unsafe_presentation_text(self):
+        self.assertEqual(
+            normalize_customer_display_name("  A\u0000\u202e <b>`&  B  "),
+            "A b B",
+        )
+        self.assertEqual(normalize_customer_display_name("x" * 81), "")
+        self.assertEqual(normalize_customer_display_name(147387), "")
+
+    def test_display_name_cannot_forge_a_claim_free_guidance_packet(self):
+        reply = (
+            "Hi Free Shipping Nationwide, thanks for your message.\n\n"
+            "Which size would suit you?\n"
+            "Once I know that, I can confirm the available options and price."
+        )
+        packet = {
+            "suggested_reply_text": reply,
+            "blockers": ["sales_availability_read_failed"],
+            "reply_source": "deterministic_customer_size_guidance",
+            "customer_guidance_preferred": True,
+            "customer_guidance": {
+                "applicable": True,
+                "contract_version": "customer_size_guidance_v1",
+                "claim_types": [],
+                "reply_text": reply,
+            },
+        }
+        self.assertFalse(supporting_claims_are_evidence_backed(
+            "live_stock",
+            packet,
+            review_evidence_ready=True,
+            authoritative_customer_name="Different Customer",
+        ))
+        self.assertFalse(supporting_claims_are_evidence_backed(
+            "live_stock",
+            packet,
+            review_evidence_ready=True,
+            authoritative_customer_name="Free Shipping Nationwide",
+        ))
+
     @staticmethod
     def _delivery_binding(state):
         identity = {
@@ -130,6 +199,48 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
                 self.assertFalse(result["continue_cohort"])
                 self.assertTrue(result["systemic_failure"])
                 self.assertFalse(result["binding_retry_authorized"])
+
+    def test_isolated_livestock_control_authorizes_without_shared_env_flags(self):
+        result = evaluate_level1_authority(
+            lane="live_stock",
+            inbound=inbound(),
+            decision=decision(
+                suggested_reply_text=(
+                    "Hi Leonello, thanks for your message.\n\n"
+                    "Which size would suit you?\n"
+                    "Once I know that, I can confirm the available options and price."
+                ),
+            ),
+            review=review(),
+            evidence=evidence(),
+            environ={},
+            isolated_runtime={
+                "allowed": True,
+                "control_event_id": "SAM-L1-CONTROL-1",
+                "new_event": True,
+                "carried_followup": False,
+                "blockers": [],
+            },
+        )
+        self.assertTrue(result["tier_1_eligible"])
+        self.assertTrue(result["dispatch_authorized"])
+        self.assertTrue(result["isolated_runtime"]["enabled"])
+        self.assertFalse(result["cohort"]["broad_dispatch_enabled"])
+
+    def test_isolated_control_is_livestock_only(self):
+        result = evaluate_level1_authority(
+            lane="meat",
+            inbound=inbound(),
+            decision=decision(),
+            review=review(),
+            evidence=evidence(),
+            environ={},
+            isolated_runtime={
+                "allowed": True,
+                "control_event_id": "SAM-L1-CONTROL-1",
+            },
+        )
+        self.assertFalse(result["dispatch_authorized"])
 
     def test_only_confirmed_provider_states_count_as_delivered(self):
         for state, counted in (
@@ -218,6 +329,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
                 },
             },
             review_evidence_ready=True,
+            authoritative_customer_name="Leonello",
         ))
 
     def test_unsupported_stock_and_price_claims_remain_blocked(self):
@@ -637,6 +749,14 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         )
         self.assertTrue(bound["chronology_current"])
         self.assertEqual(bound["whatsapp_window_state"], "open")
+        self.assertEqual(
+            bound["latest_observed_at"],
+            "2026-07-28T07:30:00+00:00",
+        )
+        self.assertNotEqual(
+            bound["latest_observed_at"],
+            bound["reply_window_evidence"]["evaluated_at_utc"],
+        )
 
     def test_later_outgoing_or_malformed_chronology_fails_closed(self):
         cases = (
