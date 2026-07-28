@@ -1,0 +1,173 @@
+"""Deterministic owner-only preview for conversational herd weight facts."""
+
+import hashlib
+import re
+from datetime import datetime
+
+
+CONTRACT_VERSION = "herdmaster_telegram_weight_preview_v1"
+_WEIGHT_FACT = re.compile(
+    r"^\s*(?P<animal>.+?)\s+weighed\s+"
+    r"(?P<weight>\d+(?:[.,]\d+)?)\s*kg\s+on\s+"
+    r"(?P<date>.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def preview_herd_weight_fact(owner_words, readiness, preflight):
+    parsed = _parse_weight_fact(owner_words)
+    if not parsed["success"]:
+        return parsed
+
+    if not isinstance(readiness, dict):
+        return _failure(
+            "canonical_herd_identity_unavailable",
+            "I received the weight update, but canonical herd identity is unavailable. Nothing was recorded.",
+        )
+    pigs = readiness.get("pigs")
+    if (
+        readiness.get("success") is not True
+        or not isinstance(pigs, list)
+        or any(not isinstance(pig, dict) for pig in pigs)
+    ):
+        return _failure(
+            "canonical_herd_identity_unavailable",
+            "I received the weight update, but canonical herd identity is unavailable. Nothing was recorded.",
+        )
+    matches = [
+        pig for pig in pigs
+        if _identity_values(pig) & {parsed["animal"].casefold()}
+    ]
+    if len(matches) != 1:
+        status = "animal_identity_ambiguous" if matches else "animal_identity_not_found"
+        wording = (
+            "More than one current animal matches that name. Please use the exact tag."
+            if matches else
+            "I could not match that name to one current active/on-farm animal."
+        )
+        return _failure(status, wording)
+
+    pig = matches[0]
+    if (
+        str(pig.get("status") or pig.get("lifecycle_status") or "").casefold()
+        != "active"
+        or str(pig.get("on_farm") or "").casefold() not in {"yes", "true", "1"}
+    ):
+        return _failure(
+            "animal_not_active_on_farm",
+            "That animal is not confirmed active and on-farm. Nothing was recorded.",
+        )
+
+    pig_id = str(pig.get("pig_id") or "").strip()
+    tag = str(pig.get("tag_number") or pig.get("name") or "").strip()
+    check, status_code = preflight({
+        "weight_date": parsed["weight_date"],
+        "weighed_by": "Authenticated owner via Oom Sakkie",
+        "rows": [{
+            "pig_id": pig_id,
+            "tag_number": tag,
+            "weight_kg": parsed["weight_kg"],
+        }],
+    })
+    if status_code != 200 or check.get("accepted_count") != 1:
+        return _failure(
+            str(check.get("status") or check.get("error") or "weight_preflight_blocked"),
+            "The canonical weight preflight did not accept this fact. Nothing was recorded.",
+        )
+
+    identity_basis = "|".join([
+        CONTRACT_VERSION,
+        pig_id,
+        parsed["weight_date"],
+        _canonical_weight(parsed["weight_kg"]),
+    ])
+    preview_id = "HERD-WEIGHT-PREVIEW-" + hashlib.sha256(
+        identity_basis.encode("utf-8")
+    ).hexdigest()[:24].upper()
+    return {
+        "success": True,
+        "status": "weight_preview_ready",
+        "contract_version": CONTRACT_VERSION,
+        "preview_id": preview_id,
+        "pig_id": pig_id,
+        "tag_number": tag,
+        "weight_kg": parsed["weight_kg"],
+        "weight_date": parsed["weight_date"],
+        "observation_time": None,
+        "observation_time_state": "Unknown",
+        "confirmation_required": True,
+        "writes_performed": False,
+        "protected_actions_performed": False,
+    }
+
+
+def _parse_weight_fact(owner_words):
+    text = " ".join(str(owner_words or "").split())
+    match = _WEIGHT_FACT.fullmatch(text)
+    if not match:
+        return _failure(
+            "weight_fact_needs_clarification",
+            "Please state one animal, weight in kg, and the observation date.",
+        )
+    animal = match.group("animal").strip()
+    try:
+        weight = float(match.group("weight").replace(",", "."))
+    except ValueError:
+        weight = 0
+    if weight <= 0:
+        return _failure("weight_invalid", "Weight must be greater than zero.")
+    supplied_weekday = None
+    weekday_match = re.match(
+        r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+",
+        match.group("date").strip(),
+        flags=re.IGNORECASE,
+    )
+    if weekday_match:
+        supplied_weekday = weekday_match.group(1).casefold()
+    date_text = re.sub(
+        r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+",
+        "",
+        match.group("date").strip(),
+        flags=re.IGNORECASE,
+    )
+    date_text = re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", date_text, flags=re.I)
+    try:
+        parsed_date = datetime.strptime(date_text, "%d %B %Y").date()
+    except ValueError:
+        return _failure(
+            "weight_date_needs_clarification",
+            "I could not interpret the weight date safely. Nothing was recorded.",
+        )
+    if supplied_weekday and parsed_date.strftime("%A").casefold() != supplied_weekday:
+        return _failure(
+            "weight_date_weekday_conflict",
+            "The stated weekday does not match the calendar date. Please correct the date before previewing it.",
+        )
+    return {
+        "success": True,
+        "animal": animal,
+        "weight_kg": weight,
+        "weight_date": parsed_date.isoformat(),
+    }
+
+
+def _identity_values(pig):
+    return {
+        str(pig.get(key) or "").strip().casefold()
+        for key in ("tag_number", "name", "pig_name")
+        if str(pig.get(key) or "").strip()
+    }
+
+
+def _canonical_weight(value):
+    return ("%.3f" % float(value)).rstrip("0").rstrip(".")
+
+
+def _failure(status, clarification):
+    return {
+        "success": False,
+        "status": status,
+        "clarification": clarification,
+        "writes_performed": False,
+        "protected_actions_performed": False,
+    }

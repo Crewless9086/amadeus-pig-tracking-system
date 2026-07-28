@@ -45,6 +45,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_sales_dashboard_data,
     get_pig_allocation_readiness_data,
     get_meat_planning_data,
+    preview_bulk_weight_entries,
 )
 from modules.telemetry.power_service import get_current_power_state
 from modules.telemetry.power_service import get_recent_power_profile
@@ -61,6 +62,9 @@ from modules.auth.owner_access import owner_session_is_valid
 from modules.pig_weights.herdmaster_breeding_operating_loop import (
     oom_sakkie_worklist_summary,
     preview_conversational_inspection,
+)
+from modules.oom_sakkie.herdmaster_weight_preview import (
+    preview_herd_weight_fact,
 )
 
 
@@ -1388,6 +1392,49 @@ def herdmaster_breeding_observation_preview_handler(args):
         "stale_warnings": list(preview.get("missing_after_preview") or []),
         "safety_notes": [
             "Preview only; no observation, mating, pregnancy, fertility, clearance or suitability was recorded or inferred."
+        ],
+        "raw": preview,
+    }
+
+
+def herdmaster_weight_preview_handler(args):
+    if not owner_session_is_valid("admin"):
+        return {
+            "success": False,
+            "status": "owner_authentication_required",
+            "summary": "Weight preview requires the authenticated owner.",
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": ["No protected animal evidence was disclosed."],
+            "raw": {},
+        }
+    preview = preview_herd_weight_fact(
+        (args or {}).get("owner_words") or (args or {}).get("user_text"),
+        get_pig_allocation_readiness_data(),
+        preview_bulk_weight_entries,
+    )
+    if preview.get("success"):
+        summary = (
+            "Preview only: {tag} weighed {weight:g} kg on {date}. "
+            "Observation time remains Unknown. No weight was recorded. "
+            "Preview reference: {preview_id}. The existing governed weight-entry "
+            "process remains required; this Telegram preview cannot record it."
+        ).format(
+            tag=preview["tag_number"],
+            weight=preview["weight_kg"],
+            date=preview["weight_date"],
+            preview_id=preview["preview_id"],
+        )
+    else:
+        summary = str(preview.get("clarification") or "Weight preview is unavailable.")
+    return {
+        "success": preview.get("success") is True,
+        "status": str(preview.get("status") or "weight_preview_unavailable"),
+        "summary": summary,
+        "links": [{"label": "Pig Allocation", "href": "/pig-allocation"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Preview only; no weight, movement, medical, lifecycle, mating or other farm record was created."
         ],
         "raw": preview,
     }
@@ -3239,6 +3286,20 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=herdmaster_breeding_observation_preview_handler,
         description="Preview directly stated owner inspection facts against one current breeding task. Never records or infers facts.",
+    ),
+    "herdmaster_weight_preview": OomSakkieTool(
+        name="herdmaster_weight_preview",
+        input_schema={
+            "type": "object",
+            "required": ["owner_words"],
+            "properties": {"owner_words": {"type": "string", "minLength": 1}},
+            "additionalProperties": False,
+        },
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=herdmaster_weight_preview_handler,
+        description="Owner-only canonical preview of one conversational herd weight fact. Never records a weight or other farm change.",
     ),
     "weather_today": OomSakkieTool(
         name="weather_today",
