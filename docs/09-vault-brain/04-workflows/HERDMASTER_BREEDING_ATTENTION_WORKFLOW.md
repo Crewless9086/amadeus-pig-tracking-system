@@ -86,11 +86,19 @@ Herdmaster may rank evidence-qualified pairings using:
 
 Each recommendation must name supporting evidence, exclusions, uncertainty, and the owner decision required. Herdmaster must not infer heat, pregnancy, fertility, soundness, genetics, or physical suitability from missing evidence.
 
-## Phase 4 - Agentic operating loop
+## Agentic operating loop — primary owner workflow
 
-After the owner workflow is proven, CORE may schedule read-only Herdmaster observation and escalation:
+OOM SAKKIE is the primary owner interface for ordinary breeding work.
+Breeding Attention is the matching evidence, audit and recovery surface; it is
+not a separate workflow Charl must manually operate.
 
-- daily breeding-attention digest;
+Each Monday, HERDMASTER reconciles current canonical evidence and presents only
+females requiring attention. It groups physical work, asks only for facts not
+already answered by fresh immutable evidence, reassesses readiness, and
+prepares a fail-closed male recommendation and plan-only owner decision packet.
+Current agentic functions include:
+
+- Monday actionable breeding worklist;
 - overdue pregnancy checks;
 - eligible but unmated females;
 - expected farrowings;
@@ -98,7 +106,12 @@ After the owner workflow is proven, CORE may schedule read-only Herdmaster obser
 - repeat-service, replacement, or retirement review;
 - owner decisions waiting.
 
-CORE is not a prerequisite for Phases 1-3. CORE later provides continuous observation and delivery; it does not replace the Herdmaster business capability.
+Observation recording, mating execution and reminder delivery remain separate
+governed actions. The deployed OOM exchange previews directly stated physical
+facts but does not yet append them. A mating may be created only after one
+exact owner approval bound to the female, male, evidence generation and mating
+date. CORE may later provide scheduling and delivery, but is not the owner of
+breeding reasoning and is not a prerequisite for the HERDMASTER workflow.
 
 ## Authority and safety
 
@@ -121,7 +134,8 @@ Actual farm-record changes require a separately reviewed backend action and expl
 5. Run one supervised sow observation canary without creating a mating.
 6. Verify the observation changes Herdmaster's explanation while leaving farm records unchanged.
 7. Prepare one separately authorized mating-record canary only after the recommendation and owner decision are proven.
-8. Add recurring CORE observation only after the owner workflow is operational.
+8. Add recurring delivery only after the OOM-first workflow is operational and
+   deduplication/no-spam evidence is proven.
 
 The first operational acceptance requires a real owner-recorded observation, an explained updated recommendation, zero unintended farm mutations, and a clear worklist Charl and his father can use without reading technical evidence.
 
@@ -156,3 +170,43 @@ should record one factual sow observation, then verify read-only that the
 explanation changes while mating, pregnancy, medical, lifecycle, purpose,
 movement, availability, retirement, customer, notification and farm state
 remain unchanged.
+
+## OOM SAKKIE Monday loop operational result — 2026-07-28
+
+The proactive worklist was introduced by PR #581 and its independent-review
+correction was integrated by PR #582 as
+`bc035f304f4ffd10e08dd8222216baa0c5347e84`. Render deployment
+`dep-d9kf41hsrm7s73883kl0` serves that exact revision and `/health` returned
+HTTP 200. Exact-merge CHARLIE CORE, disposable-PostgreSQL audit rails and
+Playwright gates passed.
+
+The single owner-authenticated, GET-only operational proof completed in 3.89
+seconds:
+
+- authoritative current sow/gilt inventory: 18, complete;
+- actionable Monday tasks: 7;
+- pregnancy checks due: Baby, Mona and Mysikind;
+- post-litter recovery checks: Teena and Waki;
+- weight/readiness checks: Linda and Ms Piggy;
+- supporting evidence status: partial;
+- counts reconciled to the complete inventory;
+- observation recording, mating execution and reminder delivery: disabled;
+- writes and protected actions: none.
+
+Baby is the first actionable current candidate because a canonical mating is
+70 days old and governed pregnancy evidence is due. This is a request for a
+truthful physical/governed pregnancy check, not an assertion that she is
+pregnant or not pregnant.
+
+The current safety correction requires fresh canonical observation projections
+(48 hours for heat; 30 days for body condition and physical facts), complete
+bounded family expansion for both female and male, and stable exact-evidence
+task/approval identities. Incomplete, cyclic, ancestor/descendant or
+shared-ancestor evidence fails closed. Protected animal worklist tools are
+deterministic-only and never send raw exact-animal context to an external
+answer composer.
+
+The next supervised operating proof may collect one truthful factual inspection
+through an exact owner-approved append-only action, then reassess the same
+task. It must not create a mating, reminder or farm-state change. A later
+separate approval is required for an exact female/male mating packet.
