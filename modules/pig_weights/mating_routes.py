@@ -88,8 +88,9 @@ def _project_breeding_observations(rows, now=None):
             observed_at = row.get("observed_at")
             raw_category = row.get("observation_category")
             measurements = row.get("measurements_json")
+            event_id = row.get("observation_event_id")
         else:
-            raw_pig_id, observed_at, raw_category, measurements, _event_id = row
+            raw_pig_id, observed_at, raw_category, measurements, event_id = row
         pig_id, category = str(raw_pig_id), str(raw_category)
         measurements = measurements if isinstance(measurements, dict) else {}
         age_seconds = (now - observed_at).total_seconds() if isinstance(observed_at, datetime) else float("inf")
@@ -113,9 +114,12 @@ def _project_breeding_observations(rows, now=None):
             )
             if (category == "behaviour" or is_breeding_observation) and heat_value != "not_recorded":
                 seen_heat.add(pig_id)
-                if heat_value == "observed" and 0 <= age_seconds <= 172800:
-                    item["heat_state"] = "standing"
+                if 0 <= age_seconds <= 172800:
+                    item["heat_state"] = (
+                        "standing" if heat_value == "observed" else heat_value
+                    )
                     item["heat_observed_at"] = observed_at.isoformat()
+                    item["heat_observation_event_id"] = str(event_id or "")
         score = measurements.get("body_condition_score")
         if (
             pig_id not in seen_body_condition
@@ -130,6 +134,23 @@ def _project_breeding_observations(rows, now=None):
             seen_body_condition.add(pig_id)
             item["body_condition_score"] = score
             item["body_condition_observed_at"] = observed_at.isoformat()
+            item["body_condition_observation_event_id"] = str(event_id or "")
+        if is_breeding_observation and 0 <= age_seconds <= 2592000:
+            physical = item.setdefault("fresh_physical_facts", {})
+            for key in (
+                "visible_build", "feet_legs_movement", "visible_injury",
+                "temperament", "suitability_concern",
+            ):
+                value = measurements.get(key)
+                if (
+                    key not in physical
+                    and value not in (None, "", "not_recorded")
+                ):
+                    physical[key] = {
+                        "value": value,
+                        "observed_at": observed_at.isoformat(),
+                        "observation_event_id": str(event_id or ""),
+                    }
     return by_pig
 
 
@@ -245,16 +266,22 @@ def _build_breeding_attention_packets(proposed_observation=None):
         for row in readiness.get("pigs", []):
             source = master.get(str(row.get("pig_id") or ""), {})
             row["available_for_breeding"] = source.get("Available_For_Breeding")
-        female_ids = [
+        breeding_ids = [
             str(row.get("pig_id") or "")
             for row in readiness.get("pigs", [])
-            if str(row.get("sex") or "").lower() == "female"
-            and str(row.get("animal_type") or "").lower() in {"sow", "gilt"}
+            if (
+                (
+                    str(row.get("sex") or "").lower() == "female"
+                    and str(row.get("animal_type") or "").lower()
+                    in {"sow", "gilt"}
+                )
+                or str(row.get("sex") or "").lower() == "male"
+            )
             and str(row.get("status") or "").lower() == "active"
             and str(row.get("on_farm") or "").lower() in {"yes", "true", "1"}
         ]
-        family_evidence = build_bounded_family_evidence(master_rows, female_ids)
-        _route_stage(route_progress, "family_expansion", stage_started, monotonic(), len(female_ids), started)
+        family_evidence = build_bounded_family_evidence(master_rows, breeding_ids)
+        _route_stage(route_progress, "family_expansion", stage_started, monotonic(), len(breeding_ids), started)
         _require_route_deadline(started)
 
         stage_started = monotonic()
@@ -272,6 +299,8 @@ def _build_breeding_attention_packets(proposed_observation=None):
             matings=mating_rows,
             litters=litters["litters"],
             observations=snapshot["observation_rows"],
+            projected_observations=observations["by_pig"],
+            family_trees=family_evidence,
         )
         packet["source_read_progress"] = {
             **snapshot["read_progress"],

@@ -111,6 +111,7 @@ def build_bounded_family_evidence(
             "lineage_status": "complete" if not reasons else "partial",
             "lineage_depth_limit": max_depth,
             "lineage_node_count": len(visited),
+            "ancestor_ids": sorted(visited - {root_id}),
             "missing_links": sorted(missing),
             "cycle_nodes": sorted(cycles),
             "malformed_links": sorted(malformed),

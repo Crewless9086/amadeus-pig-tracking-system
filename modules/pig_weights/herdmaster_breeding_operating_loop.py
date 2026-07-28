@@ -26,6 +26,8 @@ def build_breeding_operating_loop(
     matings,
     litters,
     observations,
+    projected_observations=None,
+    family_trees=None,
     generated_at=None,
     today=None,
 ):
@@ -38,6 +40,14 @@ def build_breeding_operating_loop(
     mating_by_female = _group(matings, "sow_pig_id", "mating_date")
     litter_by_female = _group(litters, "sow_pig_id", "farrowing_date")
     observations_by_pig = _group_observations(observations)
+    projected_observations = (
+        projected_observations
+        if isinstance(projected_observations, dict) else {}
+    )
+    family_trees = (
+        family_trees.get("by_pig", {})
+        if isinstance(family_trees, dict) else {}
+    )
     readiness_by_pig = {
         _text(row.get("pig_id")): row for row in readiness["pigs"]
         if isinstance(row, dict)
@@ -62,9 +72,10 @@ def build_breeding_operating_loop(
         classification = _classify(
             attention_row, readiness_row, female_matings, female_litters,
             female_observations, today,
+            projected_observations.get(pig_id, {}),
         )
         male_recommendation = _rank_males(
-            readiness_row, male_rows, matings, classification
+            readiness_row, male_rows, matings, classification, family_trees
         )
         task = _task(
             attention_row, readiness_row, classification,
@@ -227,18 +238,42 @@ def oom_sakkie_worklist_summary(loop):
         return "No breeding animals require owner attention in the current evidence cut."
     lines = [f"Monday breeding round: {len(tasks)} animal(s) need attention."]
     for task in tasks[:8]:
-        checks = ", ".join(task["required_checks"]) or "owner review"
+        checks = ", ".join(
+            _owner_words(item) for item in task["required_checks"]
+        ) or "owner review"
         lines.append(
-            f"{task['tag_number']}: {task['why']}. Check {checks}. "
-            f"Provisional: {task['provisional_recommendation']}. "
-            f"Delay: {task['delay_consequence']}."
+            f"{task['tag_number']}: {_owner_words(task['why'])}. "
+            f"Check {checks}. Current view: "
+            f"{_owner_words(task['provisional_recommendation'])}. "
+            f"If delayed: {_owner_words(task['delay_consequence'])}."
         )
     if len(tasks) > 8:
         lines.append(f"{len(tasks) - 8} more task(s) remain on the owner board.")
     return "\n".join(lines)
 
 
-def _classify(attention, readiness, matings, litters, observations, today):
+def _owner_words(value):
+    text = _text(value)
+    replacements = {
+        "canonical ": "",
+        "Canonical ": "",
+        "withdrawal evidence": "medicine waiting-period record",
+        "family-tree evidence": "family relationship records",
+        "family-tree constraints": "family relationship checks",
+        "breeding availability": "whether she is available for breeding",
+        "unsupported conclusion": "breeding decision",
+        "evidence": "records",
+        "Needs Data": "More information needed",
+    }
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    return text
+
+
+def _classify(
+    attention, readiness, matings, litters, observations, today,
+    projected_observation,
+):
     latest_mating = matings[0] if matings else {}
     latest_litter = litters[0] if litters else {}
     unsuccessful = [
@@ -257,16 +292,21 @@ def _classify(attention, readiness, matings, litters, observations, today):
         else None
     )
     pregnancy = _norm(latest_mating.get("pregnancy_check_result"))
-    latest_heat = _latest_measurement(observations, "standing_heat")
-    latest_bcs = _latest_measurement(observations, "body_condition_score")
+    projected_observation = (
+        projected_observation
+        if isinstance(projected_observation, dict) else {}
+    )
+    latest_heat = projected_observation.get("heat_state")
+    latest_bcs = projected_observation.get("body_condition_score")
+    physical = projected_observation.get("fresh_physical_facts") or {}
     observed_checks = {
         "body condition": latest_bcs is not None,
         "movement": _latest_measurement(
             observations, "feet_legs_movement"
-        ) is not None,
+        ) is not None and "feet_legs_movement" in physical,
         "visible concerns": _latest_measurement(
             observations, "visible_injury"
-        ) is not None,
+        ) is not None and "visible_injury" in physical,
         "heat signs": latest_heat is not None,
     }
     medical = _norm(
@@ -367,7 +407,7 @@ def _classify(attention, readiness, matings, litters, observations, today):
             "Needs Data", "resolve evidence before mating review", 22
         )
         reason = "Missing: " + ", ".join(hold_reasons) + "."
-    elif latest_heat == "observed":
+    elif latest_heat in {"observed", "standing"}:
         state, action, priority = (
             "Ready for mating review", "prepare for mating", 28
         )
@@ -424,6 +464,7 @@ def _classify(attention, readiness, matings, litters, observations, today):
         "missing": list(attention.get("missing_facts") or []),
         "conflicting": list(attention.get("conflicting_facts") or []),
         "confidence": attention.get("confidence") or "Limited",
+        "projected_observation": projected_observation,
     }
 
 
@@ -462,6 +503,12 @@ def _task(
         "latest_mating_date": classification["latest_mating_date"],
         "latest_litter_date": classification["latest_litter_date"],
         "male_recommendation_state": male_recommendation["status"],
+        "male_recommendation": male_recommendation,
+        "observations": [{
+            "event_id": row.get("observation_event_id"),
+            "observed_at": row.get("observed_at"),
+            "measurements": row.get("measurements"),
+        } for row in observations],
     }
     task_id = _stable_id(
         "HERD-TASK", week_start.isoformat(), attention.get("pig_id"), evidence
@@ -495,7 +542,9 @@ def _task(
     }
 
 
-def _rank_males(female, males, all_matings, classification):
+def _rank_males(
+    female, males, all_matings, classification, family_trees
+):
     if classification["state"] != "Ready for mating review":
         return {
             "status": "Not yet applicable",
@@ -504,11 +553,11 @@ def _rank_males(female, males, all_matings, classification):
             "blockers": ["Female readiness review is incomplete."],
         }
     ranked = []
-    female_parents = {
-        _text(female.get("mother_id")), _text(female.get("father_id"))
-    } - {""}
+    female_tree = family_trees.get(_text(female.get("pig_id")), {})
+    female_ancestors = set(female_tree.get("ancestor_ids") or [])
     for male in males:
         blockers = []
+        male_tree = family_trees.get(_text(male.get("pig_id")), {})
         if _norm(male.get("purpose")) != "breeding":
             blockers.append("purpose is not affirmatively Breeding")
         if _norm(male.get("medical_status") or male.get("health_status")) not in {
@@ -523,13 +572,20 @@ def _rank_males(female, males, all_matings, classification):
             "available", "yes", "true",
         }:
             blockers.append("breeding availability is not affirmative")
-        male_parents = {
-            _text(male.get("mother_id")), _text(male.get("father_id"))
-        } - {""}
-        if not female_parents or not male_parents:
+        male_ancestors = set(male_tree.get("ancestor_ids") or [])
+        if (
+            female_tree.get("lineage_status") != "complete"
+            or male_tree.get("lineage_status") != "complete"
+            or not female_ancestors
+            or not male_ancestors
+        ):
             blockers.append("family-tree comparison is incomplete")
-        elif female_parents & male_parents:
-            blockers.append("shared parent evidence")
+        elif (
+            _text(male.get("pig_id")) in female_ancestors
+            or _text(female.get("pig_id")) in male_ancestors
+            or female_ancestors & male_ancestors
+        ):
+            blockers.append("bounded family relationship conflict")
         prior_pairings = sum(
             1 for row in all_matings
             if _text(row.get("sow_pig_id")) == _text(female.get("pig_id"))
@@ -544,7 +600,7 @@ def _rank_males(female, males, all_matings, classification):
                 "reasoning": [
                     "Active breeding-purpose male.",
                     "Medical and withdrawal evidence are affirmative.",
-                    "No shared parent is present in the bounded comparison.",
+                    "No bounded ancestor or shared-ancestor conflict is present.",
                     f"Previous pairing count: {prior_pairings}.",
                 ],
             })
@@ -582,6 +638,10 @@ def _approval_packet(
             "approval_required": True,
             "execution_enabled": False,
         }
+    evidence = {
+        "classification": classification,
+        "male_recommendation": male_recommendation,
+    }
     proposed = {
         "female_pig_id": _text(female.get("pig_id")),
         "female_tag": _text(female.get("tag_number")),
@@ -589,12 +649,13 @@ def _approval_packet(
         "male_tag": male["tag_number"],
         "proposed_mating_date": today.isoformat(),
         "mating_method": "Natural",
-        "evidence_generation": generated_at,
+        "evidence_digest": _digest(evidence),
         "recommendation_state": classification["state"],
     }
     return {
         "status": "Awaiting explicit owner decision",
         "approval_packet_id": _stable_id("HERD-MATING-PLAN", proposed),
+        "evidence_generation": generated_at,
         "proposed_record": proposed,
         "existing_governed_writer": "save_new_mating",
         "known_fields_autofilled": True,

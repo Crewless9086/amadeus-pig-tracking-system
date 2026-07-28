@@ -405,6 +405,40 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["raw"]["facts"]["body_condition_score"], 3.0)
         self.assertEqual(result["raw"]["facts"]["standing_heat"], "not_observed")
         self.assertFalse(result["raw"]["writes_performed"])
+
+    @patch("modules.oom_sakkie.service.write_trace")
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm")
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    def test_herdmaster_exact_animal_tools_never_use_external_composer(
+        self, current_loop, _owner, composer, write_trace_mock
+    ):
+        current_loop.return_value = {
+            "success": True,
+            "week_start": "2026-07-27",
+            "task_count": 1,
+            "tasks": [{
+                "task_id": "HERD-TASK-1",
+                "pig_id": "PIG-MS",
+                "tag_number": "Ms Piggy",
+                "why": "Current records are incomplete.",
+                "required_checks": ["heat signs"],
+                "provisional_recommendation": "Needs Data",
+                "delay_consequence": "The decision remains blocked.",
+            }],
+            "limitations": [],
+        }
+        write_trace_mock.return_value = {"stored": False}
+        result, status = handle_message({
+            "text": "Give me the Monday breeding worklist",
+            "channel": "kiosk",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(result["tool_used"], "herdmaster_breeding_worklist")
+        composer.assert_not_called()
+        trace = write_trace_mock.call_args.args[0]
+        self.assertNotIn("raw", trace)
+        self.assertNotIn("PIG-MS", str(trace))
         catalog = list_tool_catalog()
         ledger = next(item for item in catalog if item["name"] == "ledger_sales_agent")
         self.assertEqual(ledger["risk_level"], 1)

@@ -65,9 +65,52 @@ def obs(pig_id="PIG-MS", when="2026-07-28T14:19:00+00:00", **facts):
 
 def build(
     female_row=None, *, attention_row=None, males=None, matings=None,
-    litters=None, observations=None,
+    litters=None, observations=None, projected_observations=None,
+    family_trees=None,
 ):
     female_row = female_row or female()
+    male_rows = males or [male()]
+    observation_rows = observations or []
+    if projected_observations is None:
+        projected_observations = {}
+        for row in observation_rows:
+            facts = row.get("measurements_json") or {}
+            projected = projected_observations.setdefault(row["pig_id"], {})
+            heat = facts.get("standing_heat")
+            if heat not in (None, "", "not_recorded"):
+                projected["heat_state"] = (
+                    "standing" if heat == "observed" else heat
+                )
+                projected["heat_observed_at"] = row["observed_at"].isoformat()
+                projected["heat_observation_event_id"] = row[
+                    "observation_event_id"
+                ]
+            if facts.get("body_condition_score") is not None:
+                projected["body_condition_score"] = facts[
+                    "body_condition_score"
+                ]
+            physical = projected.setdefault("fresh_physical_facts", {})
+            for key in ("visible_build", "feet_legs_movement", "visible_injury"):
+                if facts.get(key) not in (None, "", "not_recorded"):
+                    physical[key] = {
+                        "value": facts[key],
+                        "observed_at": row["observed_at"].isoformat(),
+                        "observation_event_id": row["observation_event_id"],
+                    }
+    if family_trees is None:
+        rows = [female_row, *male_rows]
+        family_trees = {
+            "success": True,
+            "by_pig": {
+                row["pig_id"]: {
+                    "lineage_status": "complete",
+                    "ancestor_ids": [
+                        row["mother_id"], row["father_id"],
+                    ],
+                }
+                for row in rows
+            },
+        }
     return build_breeding_operating_loop(
         {
             "success": True,
@@ -75,11 +118,13 @@ def build(
         },
         readiness={
             "success": True,
-            "pigs": [female_row, *(males or [male()])],
+            "pigs": [female_row, *male_rows],
         },
         matings=matings or [],
         litters=litters or [],
-        observations=observations or [],
+        observations=observation_rows,
+        projected_observations=projected_observations,
+        family_trees=family_trees,
         generated_at="2026-07-28T15:00:00+00:00",
         today=TODAY,
     )
@@ -188,6 +233,24 @@ def test_not_observed_heat_never_becomes_ready():
     assert result["task_count"] == 0
 
 
+def test_stale_heat_and_body_condition_never_suppress_current_checks():
+    stale = obs(
+        when="2026-05-01T10:00:00+00:00",
+        body_condition_score=3,
+        standing_heat="observed",
+        feet_legs_movement="no_visible_concern",
+    )
+    result = build(
+        observations=[stale],
+        projected_observations={},
+    )
+    case = result["cases"][0]
+    assert case["classification"]["readiness"] == "Needs Data"
+    assert case["classification"]["current_heat"] == "unknown"
+    assert result["tasks"][0]["task_group"] == "inspect for breeding readiness"
+    assert "body condition" in result["tasks"][0]["required_checks"]
+
+
 def test_reported_male_exposure_is_not_a_canonical_mating():
     result = build(observations=[obs(
         body_condition_score=3, reported_male_exposure={
@@ -257,6 +320,40 @@ def test_family_conflict_excludes_male():
     assert recommendation["recommended"] is None
 
 
+def test_father_daughter_and_incomplete_lineage_fail_closed():
+    sire = male(pig_id="SIRE-MS", tag="Sire")
+    trees = {
+        "success": True,
+        "by_pig": {
+            "PIG-MS": {
+                "lineage_status": "complete",
+                "ancestor_ids": ["DAM-MS", "SIRE-MS"],
+            },
+            "SIRE-MS": {
+                "lineage_status": "complete",
+                "ancestor_ids": ["DAM-SIRE", "SIRE-SIRE"],
+            },
+        },
+    }
+    result = build(
+        observations=[obs(body_condition_score=3, standing_heat="observed")],
+        males=[sire],
+        family_trees=trees,
+    )
+    assert result["tasks"][0]["male_recommendation"]["status"] == "Unavailable"
+    trees["by_pig"]["SIRE-MS"] = {
+        "lineage_status": "partial",
+        "ancestor_ids": [],
+        "cycle_nodes": ["SIRE-MS"],
+    }
+    partial = build(
+        observations=[obs(body_condition_score=3, standing_heat="observed")],
+        males=[sire],
+        family_trees=trees,
+    )
+    assert partial["tasks"][0]["male_recommendation"]["status"] == "Unavailable"
+
+
 def test_equal_male_evidence_requires_owner_choice():
     result = build(
         observations=[obs(body_condition_score=3, standing_heat="observed")],
@@ -274,6 +371,32 @@ def test_monday_worklist_is_deterministic_and_idempotent():
     assert first["tasks"][0]["task_id"] == second["tasks"][0]["task_id"]
     assert first["tasks"][0]["notification"]["deduplication_key"] == (
         second["tasks"][0]["notification"]["deduplication_key"]
+    )
+
+
+def test_approval_identity_is_stable_and_changes_with_exact_evidence_or_male():
+    first = build(observations=[obs(
+        body_condition_score=3, standing_heat="observed"
+    )])
+    second = build(observations=[obs(
+        body_condition_score=3, standing_heat="observed"
+    )])
+    first_packet = first["cases"][0]["approval_packet"]
+    assert first_packet["approval_packet_id"] == (
+        second["cases"][0]["approval_packet"]["approval_packet_id"]
+    )
+    changed = build(observations=[obs(
+        body_condition_score=3.5, standing_heat="observed"
+    )])
+    assert first_packet["approval_packet_id"] != (
+        changed["cases"][0]["approval_packet"]["approval_packet_id"]
+    )
+    changed_male = build(
+        observations=[obs(body_condition_score=3, standing_heat="observed")],
+        males=[male("BOAR-2", "Duke")],
+    )
+    assert first_packet["approval_packet_id"] != (
+        changed_male["cases"][0]["approval_packet"]["approval_packet_id"]
     )
 
 
