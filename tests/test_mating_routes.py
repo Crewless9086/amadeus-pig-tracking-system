@@ -239,7 +239,7 @@ class MatingRoutesTests(unittest.TestCase):
             ("PIG-1", now - timedelta(days=10), "body_condition", {"body_condition_score": 1}, "OBS-BCS-OLD"),
         ]
         projected = _project_breeding_observations(rows, now=now)
-        self.assertNotIn("heat_state", projected["PIG-1"])
+        self.assertEqual(projected["PIG-1"]["heat_state"], "not_observed")
         self.assertEqual(projected["PIG-1"]["body_condition_score"], 3)
 
     def test_stale_heat_observation_never_becomes_current_heat(self):

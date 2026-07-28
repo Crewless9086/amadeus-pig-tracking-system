@@ -1365,7 +1365,8 @@ def herdmaster_breeding_observation_preview_handler(args):
         preview = {"success": False, "status": "breeding_worklist_unavailable"}
     success = preview.get("success") is True
     summary = (
-        "I found these directly stated facts for {}: {}. Confirm to record this factual observation once."
+        "Preview only for {}: {}. Recording through this Oom Sakkie exchange "
+        "is disabled in this release; no observation was recorded."
         .format(
             preview.get("tag_number"),
             ", ".join(

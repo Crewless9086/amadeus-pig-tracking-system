@@ -11,6 +11,10 @@ from modules.oom_sakkie.trace_store import build_trace_id, hash_tool_result, wri
 CONFIDENCE_FLOOR = 0.65
 MAX_USER_TEXT_CHARS = 2000
 DETERMINISTIC_ONLY_CHANNELS = {"telegram_read_only"}
+DETERMINISTIC_ONLY_TOOLS = {
+    "herdmaster_breeding_worklist",
+    "herdmaster_breeding_observation_preview",
+}
 
 
 ACTION_GUARD_PATTERN = re.compile(
@@ -492,7 +496,7 @@ def handle_message(payload):
         safety_notes.append("I treated this as a read-only check. No write, message, control, or physical action was performed.")
     deterministic_answer = build_answer(tool_result, stale_warnings, safety_notes)
     composed_answer = None
-    if llm_allowed:
+    if llm_allowed and tool.name not in DETERMINISTIC_ONLY_TOOLS:
         composed_answer = compose_answer_with_llm(
             user_text=text,
             tool_name=tool.name,
