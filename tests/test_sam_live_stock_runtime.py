@@ -1338,7 +1338,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(bundle["label"], "Prepare draft order, then quote")
         self.assertTrue(bundle["draft_order_ready"])
 
-    def test_created_draft_order_refreshes_owner_action_bundle_to_quote_prepare(self):
+    @patch(
+        "modules.sales.sam_live_stock_runtime.load_current_level1_control",
+        return_value=({"status": "level1_control_not_configured", "event": {}}, 200),
+    )
+    def test_created_draft_order_refreshes_owner_action_bundle_to_quote_prepare(self, _control):
         writes = []
 
         def creator(_order_data, _sync_data):
@@ -1387,7 +1391,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(writes[0]["patch"]["draft_order_id"], "ORD-2026-12BCCC")
         self.assertTrue(writes[0]["patch"]["quote_requested"])
 
-    def test_created_non_quote_draft_order_refreshes_to_sync_lines(self):
+    @patch(
+        "modules.sales.sam_live_stock_runtime.load_current_level1_control",
+        return_value=({"status": "level1_control_not_configured", "event": {}}, 200),
+    )
+    def test_created_non_quote_draft_order_refreshes_to_sync_lines(self, _control):
         writes = []
 
         result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
@@ -1430,7 +1438,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(writes[0]["patch"]["draft_order_id"], "ORD-2026-NOQUOTE")
         self.assertNotIn("quote_requested", writes[0]["patch"])
 
-    def test_existing_draft_order_is_synced_and_quote_packet_prepared_without_duplicate_create(self):
+    @patch(
+        "modules.sales.sam_live_stock_runtime.load_current_level1_control",
+        return_value=({"status": "level1_control_not_configured", "event": {}}, 200),
+    )
+    def test_existing_draft_order_is_synced_and_quote_packet_prepared_without_duplicate_create(self, _control):
         creates = []
         syncs = []
         writes = []
@@ -1500,7 +1512,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["sends_customer_message"])
         self.assertFalse(result["reserves_stock"])
 
-    def test_existing_draft_order_partial_sync_blocks_quote_packet_prepare(self):
+    @patch(
+        "modules.sales.sam_live_stock_runtime.load_current_level1_control",
+        return_value=({"status": "level1_control_not_configured", "event": {}}, 200),
+    )
+    def test_existing_draft_order_partial_sync_blocks_quote_packet_prepare(self, _control):
         creates = []
         syncs = []
         writes = []
@@ -2344,7 +2360,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(cleaned["items"][0]["weight_range"], "10_to_14_Kg")
         self.assertEqual(cleaned["items"][0]["sex"], "Female")
 
-    def test_handle_inbound_with_intake_write_enabled_reports_intake_write_only(self):
+    @patch(
+        "modules.sales.sam_live_stock_runtime.load_current_level1_control",
+        return_value=({"status": "level1_control_not_configured", "event": {}}, 200),
+    )
+    def test_handle_inbound_with_intake_write_enabled_reports_intake_write_only(self, _control):
         writes = []
 
         def writer(cleaned):
@@ -2368,7 +2388,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(len(writes), 1)
         self.assertEqual(result["sam_decision"]["intake_write"]["status"], "sam_live_stock_intake_written")
 
-    def test_intake_write_preserves_prior_quote_request_on_followup(self):
+    @patch(
+        "modules.sales.sam_live_stock_runtime.load_current_level1_control",
+        return_value=({"status": "level1_control_not_configured", "event": {}}, 200),
+    )
+    def test_intake_write_preserves_prior_quote_request_on_followup(self, _control):
         writes = []
 
         def writer(cleaned):

@@ -283,6 +283,9 @@ def resolve_level1_runtime_control(inbound, *, loaded=None, now=None):
             observed is not None and cutoff is not None and observed >= cutoff
         ),
         "carried_followup": carried,
+        "legacy_fallback_permitted": (
+            loaded.get("status") == "level1_control_not_configured"
+        ),
         "intake_write_authorized": bool(
             not blockers and event.get("intake_write_authorized") is True
         ),

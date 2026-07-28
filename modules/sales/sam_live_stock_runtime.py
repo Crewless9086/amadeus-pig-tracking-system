@@ -489,6 +489,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         source,
         draft_order_creator=draft_order_creator,
         draft_order_syncer=draft_order_syncer,
+        isolated_runtime=isolated_level1_runtime,
     )
     if draft_order.get("attempted"):
         decision["draft_order"] = draft_order
@@ -2430,14 +2431,27 @@ def write_live_stock_intake_if_enabled(
     isolated_runtime=None,
 ):
     source = environ if environ is not None else os.environ
-    isolated_intake = bool(
+    isolated_control_present = bool(
         isinstance(isolated_runtime, dict)
+        and isolated_runtime.get("control_event_id")
+    )
+    legacy_intake_permitted = bool(
+        isinstance(isolated_runtime, dict)
+        and isolated_runtime.get("legacy_fallback_permitted") is True
+    )
+    isolated_intake = bool(
+        isolated_control_present
         and isolated_runtime.get("allowed") is True
         and isolated_runtime.get("intake_write_authorized") is True
     )
     if not (
-        _truthy(source.get(INTAKE_WRITE_ENABLED_ENV))
-        or isolated_intake
+        isolated_intake
+        if isolated_control_present
+        else (
+            _truthy(source.get(INTAKE_WRITE_ENABLED_ENV))
+            if isolated_runtime is None or legacy_intake_permitted
+            else False
+        )
     ):
         return {"attempted": False, "success": False, "status": "sam_live_stock_intake_write_disabled"}
     if (decision or {}).get("sales_lane") != LANE_LIVE_STOCK:
@@ -3066,8 +3080,29 @@ def create_live_stock_draft_order_if_enabled(
     environ=None,
     draft_order_creator=None,
     draft_order_syncer=None,
+    isolated_runtime=None,
 ):
     source = environ if environ is not None else os.environ
+    isolated_control_present = bool(
+        isinstance(isolated_runtime, dict)
+        and isolated_runtime.get("control_event_id")
+    )
+    legacy_order_permitted = bool(
+        isinstance(isolated_runtime, dict)
+        and isolated_runtime.get("legacy_fallback_permitted") is True
+    )
+    if isolated_control_present:
+        return {
+            "attempted": False,
+            "success": False,
+            "status": "sam_live_stock_draft_order_isolated_level1_prohibited",
+        }
+    if isinstance(isolated_runtime, dict) and not legacy_order_permitted:
+        return {
+            "attempted": False,
+            "success": False,
+            "status": "sam_live_stock_draft_order_control_unavailable",
+        }
     if not _truthy(source.get(DRAFT_ORDER_CREATE_ENABLED_ENV)):
         return {"attempted": False, "success": False, "status": "sam_live_stock_draft_order_create_disabled"}
     if (decision or {}).get("sales_lane") != LANE_LIVE_STOCK:
