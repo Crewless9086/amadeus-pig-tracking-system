@@ -174,6 +174,18 @@ def build_n8n_workflow_update(
     live_normalize.setdefault("parameters", {})["jsCode"] = reviewed_normalize[
         "parameters"
     ]["jsCode"]
+    reviewed_sam_params = reviewed_by_name[SAM_NODE].get("parameters", {})
+    if (
+        reviewed_sam_params.get("contentType") != "json"
+        or reviewed_sam_params.get("specifyBody") != "json"
+        or reviewed_sam_params.get("jsonBody") != "={{ $json.raw_update }}"
+        or "rawContent" in reviewed_sam_params
+    ):
+        raise ValueError("reviewed_sam_json_transport_invalid")
+    merged_sam_params = merged_by_name[SAM_NODE].setdefault("parameters", {})
+    merged_sam_params.pop("rawContent", None)
+    for key in ("contentType", "specifyBody", "jsonBody"):
+        merged_sam_params[key] = reviewed_sam_params[key]
     for node in reviewed_nodes:
         if node.get("name") in BEACON_ADDED_NODES:
             merged_nodes.append(copy.deepcopy(node))
@@ -252,6 +264,15 @@ def validate_n8n_workflow_update(
             ]["parameters"]["jsCode"]
             if payload_by_name.get(name) != expected:
                 raise ValueError("workflow_update_normalizer_drift")
+        elif name == SAM_NODE:
+            expected = copy.deepcopy(live_node)
+            expected_params = expected.setdefault("parameters", {})
+            reviewed_params = reviewed_by_name[SAM_NODE].get("parameters", {})
+            expected_params.pop("rawContent", None)
+            for key in ("contentType", "specifyBody", "jsonBody"):
+                expected_params[key] = reviewed_params[key]
+            if payload_by_name.get(name) != expected:
+                raise ValueError("workflow_update_sam_json_transport_drift")
         elif payload_by_name.get(name) != live_node:
             raise ValueError("workflow_update_live_node_drift")
     for name in BEACON_ADDED_NODES:
