@@ -277,6 +277,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "rootline_water_energy_plan",
                 "herdmaster_breeding_worklist",
                 "herdmaster_breeding_observation_preview",
+                "herdmaster_weight_preview",
                 "weather_now",
                 "weather_today",
                 "weather_forecast",

@@ -14,6 +14,7 @@ DETERMINISTIC_ONLY_CHANNELS = {"telegram_read_only"}
 DETERMINISTIC_ONLY_TOOLS = {
     "herdmaster_breeding_worklist",
     "herdmaster_breeding_observation_preview",
+    "herdmaster_weight_preview",
 }
 
 
@@ -43,6 +44,18 @@ class IntentMatch:
 
 
 RULES = [
+    (
+        re.compile(
+            r"^\s*.+?\s+weighed\s+\d+(?:[.,]\d+)?\s*kg\s+on\s+.+$",
+            re.I,
+        ),
+        IntentMatch(
+            "herdmaster_weight_preview",
+            "herdmaster_weight_preview",
+            0.99,
+            "rule:herdmaster_weight_preview",
+        ),
+    ),
     (
         re.compile(
             r"\b("
