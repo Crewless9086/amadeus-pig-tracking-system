@@ -19,12 +19,41 @@
     <div id="attention_message" class="message-box hidden"></div>
     <div class="simple-table-wrap">
       <table class="simple-table breeding-analytics-table">
-        <thead><tr><th>Animal</th><th>Current explained state</th><th>Evidence dates</th><th>Freshness</th><th>Confidence</th><th>Missing/conflicting facts</th><th>Human action</th></tr></thead>
-        <tbody id="attention_body"><tr><td colspan="7" class="table-empty">Loading breeding attention…</td></tr></tbody>
+        <thead><tr><th>Animal</th><th>Current explained state</th><th>Evidence dates</th><th>Freshness</th><th>Confidence</th><th>Missing/conflicting facts</th><th>Human action</th><th>Review</th></tr></thead>
+        <tbody id="attention_body"><tr><td colspan="8" class="table-empty">Loading breeding attention…</td></tr></tbody>
       </table>
     </div>
-    <p class="field-hint">Advisory only. This view cannot record heat, mating, pregnancy, medical, lifecycle, purpose, availability, or farm changes.</p>
+    <section id="observation_panel" class="page-card hidden" aria-live="polite">
+      <div class="page-header"><div><h2 id="observation_heading">Factual observation</h2><p id="observation_context" class="field-hint"></p></div>
+        <button id="observation_close" type="button" class="secondary-button">Close</button></div>
+      <div id="observation_history" class="message-box">Loading history…</div>
+      <form id="observation_form">
+        <div class="form-grid">
+          <label>Observed at<input id="obs_time" type="datetime-local" required></label>
+          <label>Body condition (1–5)<input id="obs_bcs" type="number" min="1" max="5" step="0.5"></label>
+          <label>Visible build<select id="obs_build"><option value="not_recorded">Not recorded</option><option value="even">Even</option><option value="lean">Lean</option><option value="heavy">Heavy</option><option value="concern">Concern observed</option></select></label>
+          <label>Feet, legs and movement<select id="obs_legs"><option value="not_recorded">Not recorded</option><option value="no_visible_concern">No visible concern at inspection</option><option value="concern">Concern observed</option></select></label>
+          <label>Visible injury<select id="obs_injury"><option value="not_recorded">Not recorded</option><option value="none_observed">None observed at inspection</option><option value="concern">Concern observed</option></select></label>
+          <label>Standing-heat signs<select id="obs_heat"><option value="not_recorded">Not recorded</option><option value="observed">Actually observed</option><option value="not_observed">Not observed at inspection</option></select></label>
+          <label>Temperament / handling<select id="obs_temperament"><option value="not_recorded">Not recorded</option><option value="calm">Calm</option><option value="watchful">Watchful</option><option value="difficult">Difficult to handle</option><option value="concern">Concern observed</option></select></label>
+          <label>Suitability concern<select id="obs_suitability"><option value="not_recorded">Not recorded</option><option value="none_observed">None observed at inspection</option><option value="concern">Concern observed</option></select></label>
+        </div>
+        <label>Factual note<textarea id="obs_note" maxlength="1000" required placeholder="Describe only what was seen or measured."></textarea></label>
+        <label>Necessary follow-up<textarea id="obs_follow_up" maxlength="500" placeholder="Optional physical recheck or owner review."></textarea></label>
+        <div class="button-row"><button id="obs_preview" type="button" class="secondary-button">Preview evidence effect</button>
+          <button id="obs_record" type="submit" disabled>Record observation</button></div>
+      </form>
+      <div id="observation_preview" class="message-box hidden"></div>
+      <p class="field-hint">Observed fact, owner interpretation and Herdmaster recommendation remain separate. Recording cannot assert heat or pregnancy or change protected farm state.</p>
+    </section>
+    <p class="field-hint">Advisory only. Observations append factual evidence; they cannot record a mating or change protected farm state.</p>
   </div></div>
+  <style>
+    #observation_panel{margin-top:1rem}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
+    #observation_panel label{display:flex;flex-direction:column;gap:.3rem;margin:.5rem 0}
+    #observation_panel textarea{min-height:4.5rem}.button-row{display:flex;gap:.5rem;flex-wrap:wrap;margin:.75rem 0}
+    @media(max-width:720px){.form-grid{grid-template-columns:1fr}}
+  </style>
   <script src="{{ url_for('static', filename='js/breedingAttention.js') }}"></script>
 </body>
 </html>
