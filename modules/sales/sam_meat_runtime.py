@@ -56,6 +56,11 @@ from modules.sales.sam_farm_knowledge import (
 )
 from modules.sales.sam_shared_context import build_sam_v3_context_packet
 from modules.sales.sam_sales_router import LANE_LIVE_STOCK, LANE_MEAT, classify_sam_sales_lane
+from modules.sales.sam_sales_autonomy import (
+    bind_authoritative_conversation_evidence,
+    evaluate_level1_authority,
+    supporting_claims_are_evidence_backed,
+)
 from modules.sales.sam_meat_commercial_standard import COLLECTIONS, collection_description
 
 
@@ -188,6 +193,7 @@ def handle_sam_meat_chatwoot_inbound(
     launch_truth_readers=None,
     routine_delivery_claim=None,
     routine_delivery_evidence_recorder=None,
+    conversation_history_loader=None,
 ):
     source = environ if environ is not None else os.environ
     control_policy = sam_meat_control_policy()
@@ -450,6 +456,43 @@ def handle_sam_meat_chatwoot_inbound(
         launch_evidence_recorder=launch_evidence_recorder,
         launch_truth_readers=launch_truth_readers,
     )
+    level1_messages = list(inbound.get("recent_messages") or [])
+    if conversation_history_loader is not None:
+        try:
+            loaded_history = conversation_history_loader(
+                inbound.get("conversation_id"), source, limit=200
+            )
+            if isinstance(loaded_history, list):
+                level1_messages = loaded_history
+            elif isinstance(loaded_history, dict):
+                level1_messages = list(loaded_history.get("messages") or [])
+        except Exception:
+            level1_messages = []
+    level1_inbound = bind_authoritative_conversation_evidence(
+        inbound,
+        level1_messages,
+    )
+    level1_authority = evaluate_level1_authority(
+        lane="meat",
+        inbound=level1_inbound,
+        decision={**decision, "suggested_reply_text": decision.get("reply_text", "")},
+        review=response_review,
+        evidence={
+            "supporting_evidence_valid": supporting_claims_are_evidence_backed(
+                "meat",
+                decision,
+                review_evidence_ready=launch_evidence.get("persisted") is True,
+            ),
+            "delivery_rail_available": (
+                routine_delivery_claim is not None
+                and routine_delivery_evidence_recorder is not None
+            ),
+            "automatic_retry": False,
+            "availability": launch_packet.get("availability") or {},
+        },
+        environ=source,
+    )
+    decision["sales_autonomy_level1"] = level1_authority
     send_result = {}
     delivery_claim = {}
     delivery_outcome = {}
@@ -458,10 +501,12 @@ def handle_sam_meat_chatwoot_inbound(
     document_sent = False
     send_status = "autoreply_not_enabled"
     document_send_status = "not_requested"
-    send_enabled = (
-        decision["should_reply"]
-        and _truthy(source.get(AUTOREPLY_ENABLED_ENV))
-        and control_policy["customer_public_output_enabled"]
+    send_enabled = decision["should_reply"] and (
+        (
+            _truthy(source.get(AUTOREPLY_ENABLED_ENV))
+            and control_policy["customer_public_output_enabled"]
+        )
+        or level1_authority.get("dispatch_authorized") is True
     )
     if send_enabled:
         if inbound["whatsapp_window_state"] != "open":
@@ -542,6 +587,7 @@ def handle_sam_meat_chatwoot_inbound(
             "handled_autonomously": delivery_outcome.get("handled_autonomously") is True,
             "automatic_retry_prohibited": bool(delivery_claim),
         },
+        "sales_autonomy_level1": level1_authority,
         "document_sent": document_sent,
         "document_send_status": document_send_status,
         "document_send": document_send_result,
@@ -668,6 +714,16 @@ def parse_chatwoot_inbound(payload):
         "conversation_id": conversation_id,
         "contact_id": _clean(payload.get("contact_id") or sender.get("id") or contact.get("id"), 100),
         "account_id": _clean(payload.get("account_id") or account.get("id"), 100),
+        "inbox_id": _clean(
+            payload.get("inbox_id")
+            or conversation.get("inbox_id")
+            or (
+                conversation.get("inbox", {}).get("id")
+                if isinstance(conversation.get("inbox"), dict)
+                else ""
+            ),
+            100,
+        ),
         "customer_name": customer_name or "Chatwoot customer",
         "customer_phone": _clean(sender.get("phone_number") or contact.get("phone_number"), 80),
         "channel": channel,
