@@ -57,6 +57,16 @@ def proposal_payload(key="proposal-1", policy=None):
     }
 
 
+def approved_dry_release():
+    return {
+        "dry_interval_minutes": 30,
+        "dry_rain_rate_mm_per_hour": 0.0,
+        "minimum_fresh_station_readings": 2,
+        "visible_rain_confirmation_required": True,
+        "owner_review_required": True,
+    }
+
+
 class RootlineOperatingPolicyTests(unittest.TestCase):
     def setUp(self):
         self.store = InMemoryPolicyStore()
@@ -106,6 +116,47 @@ class RootlineOperatingPolicyTests(unittest.TestCase):
         rule = normalize_policy_snapshot(payload)["live_rain_hold"]
         self.assertFalse(0.2 > rule["threshold_mm_per_hour"])
         self.assertTrue(0.21 > rule["threshold_mm_per_hour"])
+
+    def test_owner_confirmed_dry_release_contract_is_exact(self):
+        payload = unknown_policy()
+        payload["live_rain_hold"] = {
+            "evidence_field": "current_rain_rate_mm_per_hour",
+            "threshold_mm_per_hour": 0.2,
+            "comparison": "greater_than",
+            "release_policy": approved_dry_release(),
+        }
+        normalized = normalize_policy_snapshot(payload)
+        self.assertEqual(
+            normalized["live_rain_hold"]["release_policy"],
+            approved_dry_release(),
+        )
+        preview, status = preview_policy_effect(payload, {"status": "hold"})
+        self.assertEqual(status, 200)
+        self.assertTrue(preview["proposal_can_be_recorded"])
+        self.assertIn("live_rain_hold", preview["resolved_policy_inputs"])
+        self.assertEqual(preview["eligibility_after_preview"], "Needs Data")
+
+    def test_dry_release_contract_variants_fail_closed(self):
+        mutations = (
+            ("dry_interval_minutes", 29),
+            ("dry_rain_rate_mm_per_hour", 0.1),
+            ("minimum_fresh_station_readings", 1),
+            ("visible_rain_confirmation_required", False),
+            ("owner_review_required", False),
+        )
+        for key, value in mutations:
+            with self.subTest(key=key, value=value):
+                release = approved_dry_release()
+                release[key] = value
+                payload = unknown_policy()
+                payload["live_rain_hold"] = {
+                    "evidence_field": "current_rain_rate_mm_per_hour",
+                    "threshold_mm_per_hour": 0.2,
+                    "comparison": "greater_than",
+                    "release_policy": release,
+                }
+                with self.assertRaises(PolicyValidationError):
+                    normalize_policy_snapshot(payload)
 
     def test_unconfirmed_live_rain_thresholds_are_rejected(self):
         for threshold in (0, 0.19, 0.21, 0.3, 100):

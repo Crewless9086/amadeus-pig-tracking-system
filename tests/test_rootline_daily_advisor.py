@@ -1,5 +1,6 @@
 import os
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -12,6 +13,7 @@ from modules.telemetry.rootline_daily_advisor import (
     canonical_canary_envelope_sha256,
     canonical_canary_sha256,
     classify_canary_evidence_append,
+    get_rootline_daily_advisor,
 )
 
 
@@ -56,6 +58,71 @@ def daily_brief(**overrides):
     return brief
 
 
+def active_policy_v2():
+    return {
+        "proposal_id": "ROOTLINE-POLICY-222222222222222222222222",
+        "version": 2,
+        "policy": {
+            "seasonal_boundaries": "Unknown",
+            "zones": {
+                zone_id: {
+                    "crop_use": crop,
+                    "daylight_window": "Unknown",
+                    "minimum_useful_runtime_minutes": "Unknown",
+                    "maximum_continuous_runtime_minutes": "Unknown",
+                }
+                for zone_id, crop in (
+                    ("B12345", "lucerne"),
+                    ("C12345", "vegetables"),
+                )
+            },
+            "forecast_rain": "Unknown",
+            "live_rain_hold": {
+                "evidence_field": "current_rain_rate_mm_per_hour",
+                "threshold_mm_per_hour": 0.2,
+                "comparison": "greater_than",
+                "release_policy": {
+                    "dry_interval_minutes": 30,
+                    "dry_rain_rate_mm_per_hour": 0.0,
+                    "minimum_fresh_station_readings": 2,
+                    "visible_rain_confirmation_required": True,
+                    "owner_review_required": True,
+                },
+            },
+            "temperature_limits": "Unknown",
+            "crop_need_bands": {"B12345": "Unknown", "C12345": "Unknown"},
+            "controller_power_loss": "Unknown",
+            "residual_drainage": "Unknown",
+        },
+    }
+
+
+def complete_dry_release_evidence():
+    return {
+        "availability": "Available",
+        "conflicting": False,
+        "continuous_zero_rain_confirmed": True,
+        "interval_start_at": "2026-07-27T14:00:18+00:00",
+        "interval_end_at": "2026-07-27T14:30:18+00:00",
+        "station_readings": [
+            {
+                "observed_at": "2026-07-27T14:00:18+00:00",
+                "rain_rate_mm_h": 0.0,
+                "freshness": "fresh",
+            },
+            {
+                "observed_at": "2026-07-27T14:30:18+00:00",
+                "rain_rate_mm_h": 0.0,
+                "freshness": "fresh",
+            },
+        ],
+        "no_visible_rain_confirmed": True,
+        "visible_rain_confirmed_at": "2026-07-27T14:30:18+00:00",
+        "owner_review_confirmed": True,
+        "owner_reviewed_at": "2026-07-27T14:30:18+00:00",
+    }
+
+
 def rehash_canary_record(record):
     record["persistence_provenance"]["operator_observations"] = record["physical"]
     record["persistence_provenance"]["transport_observations"] = record["transport"]
@@ -67,7 +134,9 @@ def rehash_canary_record(record):
 class RootlineDailyAdvisorTests(unittest.TestCase):
     def build(self, **overrides):
         return build_rootline_daily_advisor(
-            daily_brief(**overrides), "2026-07-27"
+            daily_brief(**overrides),
+            "2026-07-27",
+            active_policy=active_policy_v2(),
         )
 
     def test_register_contains_only_known_zones_and_owner_baseline(self):
@@ -80,12 +149,20 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         self.assertFalse(register["approved_policy"]["simultaneous_zones"])
         self.assertEqual(register["approved_policy"]["seasonal_boundaries"], "Unknown")
         self.assertEqual(register["approved_policy"]["owner_hold_expiry"], "none_explicit_release_required")
+        self.assertEqual(
+            register["approved_policy"]["live_rain"],
+            "active_versioned_policy_is_authoritative",
+        )
+        self.assertIn(
+            "history_not_runtime_policy",
+            register["approved_policy"]["historical_live_rain_baseline"],
+        )
 
     def test_unknown_numeric_policy_suppresses_runtime_and_eligibility(self):
         result = self.build()
         for zone in result["zones"]:
-            self.assertEqual(zone["recommendation"], "Needs Data")
-            self.assertEqual(zone["eligibility_today"], "Needs Data")
+            self.assertEqual(zone["recommendation"], "Hold")
+            self.assertEqual(zone["eligibility_today"], "Hold")
             self.assertIsNone(zone["proposed_runtime_minutes"])
             self.assertEqual(zone["proposed_runtime_status"], "Unavailable")
             self.assertIn("maximum_runtime_unknown", zone["runtime_suppressed_by"])
@@ -93,7 +170,9 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
     def test_fresh_live_rain_holds_both_zones(self):
         brief = daily_brief()
         brief["current_conditions"]["rain_rate_mm_h"] = 0.4
-        result = build_rootline_daily_advisor(brief, "2026-07-27")
+        result = build_rootline_daily_advisor(
+            brief, "2026-07-27", active_policy=active_policy_v2()
+        )
         self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
         self.assertTrue(all(zone["eligibility_today"] == "Hold" for zone in result["zones"]))
 
@@ -102,17 +181,191 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         brief["current_conditions"]["freshness"] = "stale"
         brief["current_conditions"]["rain_rate_mm_h"] = 2
         brief["forecast"]["freshness"] = "stale"
-        result = build_rootline_daily_advisor(brief, "2026-07-27")
+        result = build_rootline_daily_advisor(
+            brief, "2026-07-27", active_policy=active_policy_v2()
+        )
         for zone in result["zones"]:
-            self.assertEqual(zone["recommendation"], "Needs Data")
+            self.assertEqual(zone["recommendation"], "Hold")
             self.assertTrue(any("Fresh current weather" in reason for reason in zone["reasoning"]))
             self.assertTrue(any("fresh forecast" in reason for reason in zone["reasoning"]))
+
+    def test_strict_threshold_and_release_evidence_matrix(self):
+        for rain_rate in (0.21, 0.4):
+            brief = daily_brief()
+            brief["current_conditions"]["rain_rate_mm_h"] = rain_rate
+            result = build_rootline_daily_advisor(
+                brief, "2026-07-27", active_policy=active_policy_v2()
+            )
+            self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
+
+        for rain_rate in (0.2, 0.1, 0.0):
+            brief = daily_brief()
+            brief["current_conditions"]["rain_rate_mm_h"] = rain_rate
+            result = build_rootline_daily_advisor(
+                brief, "2026-07-27", active_policy=active_policy_v2()
+            )
+            self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
+            self.assertTrue(
+                all(
+                    "threshold is not exceeded" in " ".join(zone["reasoning"])
+                    for zone in result["zones"]
+                )
+            )
+
+        brief = daily_brief()
+        brief["current_conditions"]["rain_rate_mm_h"] = 0.0
+        brief["rain_release_evidence"] = complete_dry_release_evidence()
+        result = build_rootline_daily_advisor(
+            brief, "2026-07-27", active_policy=active_policy_v2()
+        )
+        self.assertTrue(all(zone["recommendation"] == "Needs Data" for zone in result["zones"]))
+        self.assertTrue(all(zone["eligibility_today"] == "Needs Data" for zone in result["zones"]))
+        self.assertTrue(
+            all(zone["proposed_runtime_status"] == "Unavailable" for zone in result["zones"])
+        )
+
+        brief["current_conditions"]["rain_rate_mm_h"] = 0.2
+        result = build_rootline_daily_advisor(
+            brief, "2026-07-27", active_policy=active_policy_v2()
+        )
+        self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
+
+    def test_incomplete_or_conflicting_release_evidence_retains_hold(self):
+        cases = []
+        incomplete = complete_dry_release_evidence()
+        incomplete["interval_end_at"] = "2026-07-27T14:30:17+00:00"
+        cases.append(incomplete)
+        one_reading = complete_dry_release_evidence()
+        one_reading["station_readings"] = one_reading["station_readings"][:1]
+        cases.append(one_reading)
+        missing_readings = complete_dry_release_evidence()
+        missing_readings["station_readings"] = []
+        cases.append(missing_readings)
+        stale_readings = complete_dry_release_evidence()
+        stale_readings["station_readings"][0]["freshness"] = "stale"
+        cases.append(stale_readings)
+        nonzero_midpoint = complete_dry_release_evidence()
+        nonzero_midpoint["station_readings"].insert(
+            1,
+            {
+                "observed_at": "2026-07-27T14:15:00+00:00",
+                "rain_rate_mm_h": 0.4,
+                "freshness": "fresh",
+            },
+        )
+        cases.append(nonzero_midpoint)
+        boolean_reading = complete_dry_release_evidence()
+        boolean_reading["station_readings"][0]["rain_rate_mm_h"] = False
+        cases.append(boolean_reading)
+        no_visual = complete_dry_release_evidence()
+        no_visual["no_visible_rain_confirmed"] = False
+        cases.append(no_visual)
+        not_continuous = complete_dry_release_evidence()
+        not_continuous["continuous_zero_rain_confirmed"] = False
+        cases.append(not_continuous)
+        no_owner_review = complete_dry_release_evidence()
+        no_owner_review["owner_review_confirmed"] = False
+        cases.append(no_owner_review)
+        conflicting = complete_dry_release_evidence()
+        conflicting["conflicting"] = True
+        cases.append(conflicting)
+
+        for evidence in cases:
+            brief = daily_brief()
+            brief["current_conditions"]["rain_rate_mm_h"] = 0.0
+            brief["rain_release_evidence"] = evidence
+            result = build_rootline_daily_advisor(
+                brief, "2026-07-27", active_policy=active_policy_v2()
+            )
+            self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
+
+    def test_release_evidence_is_bound_to_current_observation_date_and_time(self):
+        brief = daily_brief()
+        brief["current_conditions"]["rain_rate_mm_h"] = 0.0
+        brief["rain_release_evidence"] = complete_dry_release_evidence()
+
+        wrong_date = build_rootline_daily_advisor(
+            brief, "2026-07-28", active_policy=active_policy_v2()
+        )
+        self.assertTrue(
+            all(zone["recommendation"] == "Hold" for zone in wrong_date["zones"])
+        )
+
+        future_evidence = build_rootline_daily_advisor(
+            brief,
+            "2026-07-27",
+            active_policy=active_policy_v2(),
+            now=datetime(2026, 7, 27, 13, 0, tzinfo=timezone.utc),
+        )
+        self.assertTrue(
+            all(zone["recommendation"] == "Hold" for zone in future_evidence["zones"])
+        )
+
+        brief["current_conditions"]["rain_rate_mm_h"] = False
+        boolean_current = build_rootline_daily_advisor(
+            brief, "2026-07-27", active_policy=active_policy_v2()
+        )
+        self.assertTrue(
+            all(zone["recommendation"] == "Hold" for zone in boolean_current["zones"])
+        )
+
+    def test_malformed_active_policy_fails_closed_without_exception(self):
+        malformed = active_policy_v2()
+        malformed["policy"]["live_rain_hold"] = {
+            "evidence_field": "current_rain_rate_mm_per_hour",
+            "threshold_mm_per_hour": 99,
+            "comparison": "less_than",
+            "release_policy": {
+                "dry_interval_minutes": 1,
+            },
+        }
+        brief = daily_brief()
+        brief["current_conditions"]["rain_rate_mm_h"] = 0.0
+        brief["rain_release_evidence"] = complete_dry_release_evidence()
+        result = build_rootline_daily_advisor(
+            brief, "2026-07-27", active_policy=malformed
+        )
+        self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
+        self.assertEqual(result["active_advice_policy"]["status"], "Unavailable")
+
+    def test_missing_active_policy_never_falls_back_to_any_positive_rain_rule(self):
+        brief = daily_brief()
+        brief["current_conditions"]["rain_rate_mm_h"] = 0.1
+        result = build_rootline_daily_advisor(brief, "2026-07-27")
+        self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
+        self.assertTrue(
+            all(
+                "active authoritative live-rain policy" in " ".join(zone["reasoning"])
+                for zone in result["zones"]
+            )
+        )
+
+    def test_service_reads_only_the_active_versioned_policy(self):
+        result, status = get_rootline_daily_advisor(
+            "2026-07-27",
+            brief_reader=lambda: (daily_brief(), 200),
+            policy_reader=lambda: (
+                {
+                    "success": True,
+                    "active_policy": active_policy_v2(),
+                    "proposals": [],
+                },
+                200,
+            ),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["active_advice_policy"]["version"], 2)
+        self.assertEqual(
+            result["active_advice_policy"]["proposal_id"],
+            "ROOTLINE-POLICY-222222222222222222222222",
+        )
+        self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
 
     def test_missing_daily_brief_remains_understandable_and_fail_closed(self):
         result = build_rootline_daily_advisor(None, "2026-07-27")
         self.assertIn("Evidence still missing", result["executive_summary"])
         self.assertEqual(result["weather"]["current_status"], "Unavailable")
-        self.assertTrue(all(zone["recommendation"] == "Needs Data" for zone in result["zones"]))
+        self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
 
     def test_legacy_plans_never_become_verified_watering(self):
         result = self.build()

@@ -1,12 +1,12 @@
 """Command-inert ROOTLINE operating knowledge and daily advice.
 
-This module reads the existing owner Daily Brief and explains the approved
-operating policy. It has no persistence, transport, scheduler, retry, n8n,
-IFTTT, credential, command, or hardware dependency.
+This module reads the existing owner Daily Brief and the immutable active
+Operating Knowledge policy. It has no write, transport, scheduler, retry, n8n,
+IFTTT, credential, command, or hardware authority.
 """
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from hashlib import sha256
 import json
 import math
@@ -14,6 +14,10 @@ import re
 from zoneinfo import ZoneInfo
 
 from modules.telemetry.rootline_daily_brief import get_rootline_daily_brief
+from modules.telemetry.rootline_operating_policy import (
+    list_policy_review,
+    normalize_policy_snapshot,
+)
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
@@ -75,7 +79,10 @@ OPERATING_KNOWLEDGE = {
         "repeat_same_day": "fresh_owner_review_required",
         "simultaneous_zones": False,
         "forecast_rain_thresholds": UNKNOWN,
-        "live_rain": "hold_until_rain_stops_evidence_refreshes_and_owner_reviews",
+        "live_rain": "active_versioned_policy_is_authoritative",
+        "historical_live_rain_baseline": (
+            "any_positive_rain_hold_preserved_as_history_not_runtime_policy"
+        ),
         "temperature": "informational_until_limits_are_approved",
         "wind": "informational_for_drip_unless_physical_safety_concern",
         "crop_need_bands": UNKNOWN,
@@ -137,20 +144,37 @@ _C12345_CANARY_RECORD = {
 C12345_CANARY_SHA256 = "ef388830f14056bf7baea2915950a655ae77c8f7c058b8e1f9f1c92638d028ab"
 
 
-def get_rootline_daily_advisor(advisor_date=None, brief_reader=None, now=None):
+def get_rootline_daily_advisor(
+    advisor_date=None, brief_reader=None, policy_reader=None, now=None
+):
     selected_date = str(
         advisor_date or (now or datetime.now(ZA_TZ)).astimezone(ZA_TZ).date().isoformat()
     )[:10]
     reader = brief_reader or (lambda: get_rootline_daily_brief(selected_date))
     brief = _safe_read(reader)
-    return build_rootline_daily_advisor(brief, selected_date, now=now), 200
+    policy_packet = _safe_read_policy(policy_reader or list_policy_review)
+    active_policy = (
+        policy_packet.get("active_policy")
+        if isinstance(policy_packet, dict)
+        else None
+    )
+    return build_rootline_daily_advisor(
+        brief, selected_date, active_policy=active_policy, now=now
+    ), 200
 
 
-def build_rootline_daily_advisor(brief, advisor_date, now=None):
+def build_rootline_daily_advisor(brief, advisor_date, active_policy=None, now=None):
     brief = brief if isinstance(brief, dict) and brief.get("success") is True else None
     weather = brief.get("current_conditions", {}) if brief else {}
     forecast = brief.get("forecast", {}) if brief else {}
     irrigation = brief.get("irrigation", {}) if brief else {}
+    release_evidence = (
+        brief.get("rain_release_evidence")
+        if brief and isinstance(brief.get("rain_release_evidence"), dict)
+        else None
+    )
+    active_snapshot = _active_policy_snapshot(active_policy)
+    evaluated_at = (now or datetime.now(ZA_TZ)).astimezone(ZA_TZ)
     legacy_zones = {
         str(item.get("zone_id") or ""): item
         for item in irrigation.get("zones", [])
@@ -166,12 +190,16 @@ def build_rootline_daily_advisor(brief, advisor_date, now=None):
                 weather,
                 forecast,
                 irrigation,
+                active_snapshot,
+                release_evidence,
+                advisor_date,
+                evaluated_at,
             )
         )
 
     unresolved = _unresolved_owner_decisions()
     status = "hold" if any(zone["recommendation"] == "Hold" for zone in zones) else "needs_data"
-    generated_at = (now or datetime.now(ZA_TZ)).astimezone(ZA_TZ).isoformat()
+    generated_at = evaluated_at.isoformat()
     return {
         "success": True,
         "status": status,
@@ -194,6 +222,21 @@ def build_rootline_daily_advisor(brief, advisor_date, now=None):
         },
         "zones": zones,
         "operating_knowledge": deepcopy(OPERATING_KNOWLEDGE),
+        "active_advice_policy": {
+            "status": "Available" if active_snapshot else UNAVAILABLE,
+            "proposal_id": (
+                active_policy.get("proposal_id")
+                if isinstance(active_policy, dict) else None
+            ),
+            "version": (
+                active_policy.get("version")
+                if isinstance(active_policy, dict) else None
+            ),
+            "live_rain_hold": (
+                deepcopy(active_snapshot.get("live_rain_hold"))
+                if active_snapshot else UNAVAILABLE
+            ),
+        },
         "physical_identity_evidence": {
             "C12345": {
                 "status": "proven_once_supervised",
@@ -449,7 +492,17 @@ def _timezone_aware_iso(value):
     return parsed.tzinfo is not None and parsed.utcoffset() is not None
 
 
-def _advise_zone(knowledge, legacy, weather, forecast, irrigation):
+def _advise_zone(
+    knowledge,
+    legacy,
+    weather,
+    forecast,
+    irrigation,
+    active_policy,
+    release_evidence,
+    advisor_date,
+    evaluated_at,
+):
     reasons = []
     recommendation = "Needs Data"
     eligibility = "Needs Data"
@@ -460,17 +513,50 @@ def _advise_zone(knowledge, legacy, weather, forecast, irrigation):
         forecast.get("availability") == "Available" and forecast.get("freshness") == "fresh"
     )
     rain_rate = _number_or_none(weather.get("rain_rate_mm_h"))
+    live_rain_rule = (
+        active_policy.get("live_rain_hold")
+        if isinstance(active_policy, dict)
+        and isinstance(active_policy.get("live_rain_hold"), dict)
+        else None
+    )
     if not weather_fresh:
         reasons.append("Fresh current weather is required.")
     if not forecast_fresh:
         reasons.append("A fresh forecast is required.")
-    if weather_fresh and rain_rate is not None and rain_rate > 0:
+    if live_rain_rule is None:
         recommendation = "Hold"
         eligibility = "Hold"
-        reasons.append("Fresh live rain requires Hold until rain stops, evidence refreshes, and the owner reviews.")
+        reasons.append("An active authoritative live-rain policy is required.")
+    elif not weather_fresh or rain_rate is None:
+        recommendation = "Hold"
+        eligibility = "Hold"
+        reasons.append("Live-rain evidence is missing or stale; Hold remains fail-closed.")
+    elif rain_rate > live_rain_rule["threshold_mm_per_hour"]:
+        recommendation = "Hold"
+        eligibility = "Hold"
+        reasons.append(
+            "Fresh live rain is strictly above 0.2 mm/hour; the active policy requires Hold."
+        )
+    elif not _dry_release_proven(
+        release_evidence,
+        live_rain_rule.get("release_policy"),
+        rain_rate,
+        weather.get("last_reading_at"),
+        advisor_date,
+        evaluated_at,
+    ):
+        recommendation = "Hold"
+        eligibility = "Hold"
+        reasons.append(
+            "The live-rain threshold is not exceeded. Release requires the current "
+            "reading and every reading across 30 continuous minutes to be exactly "
+            "0.0 mm/hour, at least two fresh boundary readings, confirmed absence "
+            "of visible rain, and explicit owner review; that evidence is not proven."
+        )
     else:
         reasons.extend(
             [
+                "The active live-rain Hold is released; this does not prove irrigation eligibility.",
                 "Eligibility is manual-advisory only.",
                 "The exact daylight operating window is Unknown.",
                 "Forecast-rain thresholds are Unknown.",
@@ -529,17 +615,18 @@ def _unresolved_owner_decisions():
 
 
 def _executive_summary(zones, weather, forecast):
-    if any(zone["recommendation"] == "Hold" for zone in zones):
-        return (
-            "ROOTLINE is holding both known drip zones because fresh live rain is present. "
-            "No runtime is proposed and no action is authorized."
-        )
     missing = []
     if not weather or weather.get("availability") != "Available":
         missing.append("current weather")
     if not forecast or forecast.get("availability") != "Available":
         missing.append("forecast")
     suffix = f" Evidence still missing: {', '.join(missing)}." if missing else ""
+    if any(zone["recommendation"] == "Hold" for zone in zones):
+        return (
+            "ROOTLINE is holding both known drip zones because the active live-rain "
+            "or dry-release evidence gate is not safely cleared. No runtime is proposed "
+            f"and no action is authorized.{suffix}"
+        )
     return (
         "B12345 and C12345 remain manual-advisory only. Unknown operating windows, "
         "runtime limits, crop-need bands, and forecast-rain policy prevent an Irrigate "
@@ -558,12 +645,123 @@ def _safe_read(reader):
         return None
 
 
+def _safe_read_policy(reader):
+    payload = _safe_read(reader)
+    return payload if isinstance(payload, dict) and payload.get("success") is True else None
+
+
+def _active_policy_snapshot(active_policy):
+    if not isinstance(active_policy, dict):
+        return None
+    policy = active_policy.get("policy")
+    if not isinstance(policy, dict):
+        return None
+    candidate = deepcopy(policy)
+    zones = candidate.get("zones")
+    if not isinstance(zones, dict) or set(zones) != set(OPERATING_KNOWLEDGE["zones"]):
+        return None
+    for zone_id, zone in zones.items():
+        if (
+            not isinstance(zone, dict)
+            or zone.get("crop_use")
+            != OPERATING_KNOWLEDGE["zones"][zone_id]["crop_use"]
+        ):
+            return None
+        zone.pop("crop_use", None)
+    try:
+        return normalize_policy_snapshot(candidate)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dry_release_proven(
+    evidence,
+    release_policy,
+    current_rain_rate,
+    current_observed_at,
+    advisor_date,
+    evaluated_at,
+):
+    if not isinstance(release_policy, dict) or not isinstance(evidence, dict):
+        return False
+    if current_rain_rate != release_policy["dry_rain_rate_mm_per_hour"]:
+        return False
+    if evidence.get("availability") != "Available":
+        return False
+    if evidence.get("conflicting") is not False:
+        return False
+    if evidence.get("continuous_zero_rain_confirmed") is not True:
+        return False
+    if evidence.get("no_visible_rain_confirmed") is not True:
+        return False
+    if evidence.get("owner_review_confirmed") is not True:
+        return False
+    start = _aware_datetime(evidence.get("interval_start_at"))
+    end = _aware_datetime(evidence.get("interval_end_at"))
+    current_observed = _aware_datetime(current_observed_at)
+    if start is None or end is None or end - start < timedelta(
+        minutes=release_policy["dry_interval_minutes"]
+    ):
+        return False
+    if (
+        current_observed is None
+        or current_observed != end
+        or end.astimezone(ZA_TZ).date().isoformat() != advisor_date
+    ):
+        return False
+    visible_confirmed_at = _aware_datetime(evidence.get("visible_rain_confirmed_at"))
+    owner_reviewed_at = _aware_datetime(evidence.get("owner_reviewed_at"))
+    if (
+        visible_confirmed_at is None
+        or owner_reviewed_at is None
+        or visible_confirmed_at < end
+        or owner_reviewed_at < end
+        or visible_confirmed_at > evaluated_at
+        or owner_reviewed_at > evaluated_at
+    ):
+        return False
+    readings = evidence.get("station_readings")
+    if not isinstance(readings, list):
+        return False
+    fresh_zero_readings = set()
+    for reading in readings:
+        if not isinstance(reading, dict) or reading.get("freshness") != "fresh":
+            return False
+        observed_at = _aware_datetime(reading.get("observed_at"))
+        rain_rate = _number_or_none(reading.get("rain_rate_mm_h"))
+        if (
+            observed_at is None
+            or not start <= observed_at <= end
+            or rain_rate != release_policy["dry_rain_rate_mm_per_hour"]
+        ):
+            return False
+        fresh_zero_readings.add(observed_at)
+    return (
+        len(fresh_zero_readings)
+        >= release_policy["minimum_fresh_station_readings"]
+        and min(fresh_zero_readings) == start
+        and max(fresh_zero_readings) == end
+    )
+
+
+def _aware_datetime(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed
+
+
 def _evidence_status(value):
     return value.get("availability", UNAVAILABLE) if isinstance(value, dict) else UNAVAILABLE
 
 
 def _number_or_none(value):
-    if value is None or value == "":
+    if value is None or value == "" or isinstance(value, bool):
         return None
     try:
         return float(value)
