@@ -10,6 +10,13 @@ from modules.telemetry.irrigation_service import get_irrigation_status
 from modules.telemetry.rollup_service import get_daily_rollup_compare
 from modules.telemetry.rootline_daily_brief import get_rootline_daily_brief
 from modules.telemetry.rootline_daily_advisor import get_rootline_daily_advisor
+from modules.telemetry.rootline_water_energy_plan import (
+    append_water_energy_plan,
+    build_current_water_energy_plan,
+    get_current_water_energy_plan,
+    get_oom_sakkie_water_energy_summary,
+    record_tank_observation,
+)
 from modules.telemetry.rootline_operating_policy import (
     activate_policy,
     list_policy_review,
@@ -148,6 +155,49 @@ def telemetry_rootline_daily_advisor():
     if guard:
         return guard
     result, status_code = get_rootline_daily_advisor(request.args.get("date"))
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/water-energy-plan", methods=["GET"])
+def telemetry_rootline_water_energy_plan():
+    guard = require_strict_owner_read_access()
+    if guard:
+        return guard
+    result, status_code = get_current_water_energy_plan(request.args.get("date"))
+    result["owner_can_administer"] = owner_session_is_valid("admin")
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/water-energy-summary", methods=["GET"])
+def telemetry_rootline_water_energy_summary():
+    guard = require_strict_owner_read_access()
+    if guard:
+        return guard
+    result, status_code = get_oom_sakkie_water_energy_summary(request.args.get("date"))
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/water-energy-plan/refresh", methods=["POST"])
+def telemetry_rootline_water_energy_plan_refresh():
+    guard = require_strict_owner_admin_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    candidate = build_current_water_energy_plan(payload.get("date"))
+    result, status_code = append_water_energy_plan(
+        candidate, strict_owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/tank-observations", methods=["POST"])
+def telemetry_rootline_tank_observation():
+    guard = require_strict_owner_admin_access()
+    if guard:
+        return guard
+    result, status_code = record_tank_observation(
+        request.get_json(silent=True) or {}, strict_owner_admin_principal()
+    )
     return jsonify(result), status_code
 
 

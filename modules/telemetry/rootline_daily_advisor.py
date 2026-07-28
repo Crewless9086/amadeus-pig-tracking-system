@@ -98,6 +98,37 @@ OPERATING_KNOWLEDGE = {
         "owner_hold_expiry": "none_explicit_release_required",
         "controller_power_loss_behavior": UNKNOWN,
     },
+    "water_energy_phase1": {
+        "absolute_discretionary_battery_floor_soc_pct": 40,
+        "approximate_inverter_grid_support_soc_pct": 30,
+        "provisional_working_reserve_soc_pct": 50,
+        "candidate_dynamic_reserves_soc_pct": {
+            "sunny": 63,
+            "mixed": 67,
+            "poor_or_uncertain": 70,
+        },
+        "grid_policy": "minimum_avoidable_cost_not_absolute_prohibition",
+        "owner_provisional_tariff_zar_per_kwh": 9,
+        "storage_tanks": {"count": 5, "litres_each": 5500},
+        "reservoir_tanks": {"count": 12, "litres_each": 5500},
+        "tank_volume_may_be_inferred_from_counts": False,
+        "borehole_integration": "SmartLife_identity_Unknown",
+        "solar_transfer_pump_control_identity": UNKNOWN,
+        "fertilizer_controller": {
+            "manufacturer": "SONOFF",
+            "model": "4CHPRO R3",
+            "device_id": "100204d497",
+            "name": "Controller (1) Right",
+            "channel_1": "Kunsmis In",
+            "channel_2": "Kunsmis Meng",
+            "channels_3_4": "unused",
+            "minimum_preflow_minutes": 10,
+            "maximum_injection_pulse_seconds": 60,
+            "minimum_pulse_spacing_minutes": 10,
+            "clean_water_flush_required": True,
+            "actuation_authorized": False,
+        },
+    },
 }
 
 _C12345_CANARY_RECORD = {

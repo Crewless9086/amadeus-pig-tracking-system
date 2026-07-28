@@ -176,6 +176,9 @@ jobs:
       - name: Run ROOTLINE Operating Knowledge policy-review permission gates
         run: ROOTLINE_POLICY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_operating_policy_postgres
 
+      - name: Run ROOTLINE Water and Energy Plan permission gates
+        run: ROOTLINE_WATER_ENERGY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_water_energy_plan_postgres
+
       - name: Run SAM Meat PostgreSQL deadline gates without skips
         env:
           SAM_MEAT_DEADLINE_POSTGRES_URL: ${{ env.DATABASE_URL }}

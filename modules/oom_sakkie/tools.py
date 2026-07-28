@@ -54,6 +54,10 @@ from modules.telemetry.weather_service import (
     get_weather_today_summary,
 )
 from modules.telemetry.irrigation_service import get_irrigation_status
+from modules.telemetry.rootline_water_energy_plan import (
+    get_oom_sakkie_water_energy_summary,
+)
+from modules.auth.owner_access import owner_session_is_valid
 
 
 class RiskLevel(IntEnum):
@@ -1260,6 +1264,33 @@ def weather_now_handler(_args):
         "links": [{"label": "Dashboard Weather", "href": "/#weather_panel"}],
         "stale_warnings": stale_warnings,
         "safety_notes": [],
+        "raw": result,
+    }
+
+
+def rootline_water_energy_plan_handler(args):
+    if not owner_session_is_valid("read"):
+        return {
+            "success": False,
+            "status": "owner_authentication_required",
+            "summary": "Protected Water and Energy Plan is unavailable without an owner session.",
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": ["No protected plan evidence was disclosed."],
+            "raw": {},
+        }
+    result, status_code = get_oom_sakkie_water_energy_summary(
+        (args or {}).get("date")
+    )
+    return {
+        "success": bool(result.get("success", False)),
+        "status": str(result.get("status") or status_code),
+        "summary": result.get("summary") or "Water and Energy Plan is Unavailable.",
+        "links": [{"label": "ROOTLINE Water & Energy Plan", "href": "/#rootline_panel"}],
+        "stale_warnings": list(result.get("evidence_gaps") or []),
+        "safety_notes": [
+            "Read-only advice; no command, schedule, workflow or hardware authority."
+        ],
         "raw": result,
     }
 
@@ -3074,6 +3105,19 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=weather_now_handler,
         description="Read-only current weather state.",
+    ),
+    "rootline_water_energy_plan": OomSakkieTool(
+        name="rootline_water_energy_plan",
+        input_schema={
+            "type": "object",
+            "properties": {"date": {"type": "string", "format": "date"}},
+            "additionalProperties": False,
+        },
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=rootline_water_energy_plan_handler,
+        description="Read-only canonical ROOTLINE Water and Energy Plan summary.",
     ),
     "weather_today": OomSakkieTool(
         name="weather_today",

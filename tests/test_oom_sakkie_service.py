@@ -196,7 +196,12 @@ from modules.oom_sakkie.trace_store import (
     record_trace_feedback,
     write_trace,
 )
-from modules.oom_sakkie.tools import RiskLevel, TOOL_REGISTRY, list_tool_catalog
+from modules.oom_sakkie.tools import (
+    RiskLevel,
+    TOOL_REGISTRY,
+    list_tool_catalog,
+    rootline_water_energy_plan_handler,
+)
 
 
 TELEGRAM_TEST_TOKEN = "test-telegram-token-32-chars-minimum"
@@ -267,6 +272,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
+                "rootline_water_energy_plan",
                 "weather_now",
                 "weather_today",
                 "weather_forecast",
@@ -297,6 +303,17 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(irrigation["requires_confirmation"])
         self.assertIn("Never starts or stops irrigation", irrigation["description"])
         self.assertEqual(irrigation["input_schema"]["additionalProperties"], False)
+
+    @patch("modules.oom_sakkie.tools.get_oom_sakkie_water_energy_summary")
+    def test_rootline_plan_tool_denies_anonymous_default_context(self, protected_read):
+        from app import app
+        with app.test_request_context("/api/oom-sakkie/message"):
+            result = rootline_water_energy_plan_handler({})
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "owner_authentication_required")
+        self.assertEqual(result["raw"], {})
+        protected_read.assert_not_called()
+        catalog = list_tool_catalog()
         draft = next(item for item in catalog if item["name"] == "sales_customer_draft")
         self.assertEqual(draft["risk_level"], 1)
         self.assertEqual(draft["risk_label"], "DRAFT_ONLY")
