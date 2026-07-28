@@ -518,9 +518,9 @@ def _read_historical_context(database_url):
         return {
             "status": "Available" if days else UNAVAILABLE,
             "daily_rollup_count": days,
-            "average_coverage_pct": coverage,
-            "estimated_grid_import_kwh": grid_kwh,
-            "estimated_grid_cost_at_schema_tariff_zar": schema_cost,
+            "average_coverage_pct": _number(coverage),
+            "estimated_grid_import_kwh": _number(grid_kwh),
+            "estimated_grid_cost_at_schema_tariff_zar": _number(schema_cost),
             "owner_provisional_tariff_zar_per_kwh": 9.0,
             "overnight_soc_depletion_median_points": 27,
             "overnight_soc_depletion_p25_p75_points": [22.8, 30.0],

@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime
+from decimal import Decimal
 from unittest import mock
 
 from modules.telemetry.rootline_water_energy_plan import (
@@ -8,6 +9,7 @@ from modules.telemetry.rootline_water_energy_plan import (
     build_water_energy_plan,
     append_water_energy_plan,
     _normalize_forecast,
+    _read_historical_context,
 )
 
 
@@ -258,6 +260,30 @@ class WaterEnergyPlanTests(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertEqual(result["status"], "water_energy_plan_append_failed")
         self.assertEqual(result["authority"], AUTHORITY)
+
+    def test_postgres_decimal_history_is_json_serializable(self):
+        import json
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = (
+            7, Decimal("96.5"), Decimal("12.34"), Decimal("111.06")
+        )
+        with mock.patch("psycopg.connect") as connect:
+            connect.return_value.__enter__.return_value = connection
+            history = _read_historical_context("postgresql://production-shaped")
+        self.assertEqual(history["average_coverage_pct"], 96.5)
+        self.assertEqual(history["estimated_grid_import_kwh"], 12.34)
+        self.assertEqual(
+            history["estimated_grid_cost_at_schema_tariff_zar"], 111.06
+        )
+        json.dumps(history)
+
+        cursor.fetchone.return_value = (0, None, None, None)
+        with mock.patch("psycopg.connect") as connect:
+            connect.return_value.__enter__.return_value = connection
+            empty = _read_historical_context("postgresql://production-shaped")
+        self.assertIsNone(empty["average_coverage_pct"])
+        json.dumps(empty)
 
 
 if __name__ == "__main__":
