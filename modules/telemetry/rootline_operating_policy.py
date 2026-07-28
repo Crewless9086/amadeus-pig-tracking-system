@@ -67,12 +67,14 @@ DECISION_GUIDANCE = [
         "key": "live_rain_hold",
         "question": "At what current rain rate must ROOTLINE place advice on Hold?",
         "recommendation": (
-            "Use Charl's confirmed greater-than 0.2 mm/hour threshold; keep "
-            "the rain-release interval Unknown."
+            "Use Charl's confirmed greater-than 0.2 mm/hour threshold and the "
+            "owner-approved evidence-gated 30-minute dry-release rule."
         ),
         "consequence": (
             "Fresh current rain above 0.2 mm/hour produces Hold. Exactly "
-            "0.2 mm/hour does not exceed the threshold."
+            "0.2 mm/hour does not exceed the threshold, but release still "
+            "requires 30 continuous minutes at 0.0, two fresh readings, no "
+            "visible rain and explicit owner review."
         ),
         "applies_to": "both zones",
     },
@@ -737,15 +739,48 @@ def _live_rain_hold(value):
         raise PolicyValidationError("invalid_live_rain_evidence_field")
     if value["comparison"] != "greater_than":
         raise PolicyValidationError("invalid_live_rain_comparison")
-    if value["release_policy"] != UNKNOWN:
-        raise PolicyValidationError("live_rain_release_policy_must_remain_unknown")
+    release_policy = _live_rain_release_policy(value["release_policy"])
     return {
         "evidence_field": "current_rain_rate_mm_per_hour",
         "threshold_mm_per_hour": _confirmed_live_rain_threshold(
             value["threshold_mm_per_hour"]
         ),
         "comparison": "greater_than",
-        "release_policy": UNKNOWN,
+        "release_policy": release_policy,
+    }
+
+
+def _live_rain_release_policy(value):
+    if value == UNKNOWN:
+        return UNKNOWN
+    expected = {
+        "dry_interval_minutes",
+        "dry_rain_rate_mm_per_hour",
+        "minimum_fresh_station_readings",
+        "visible_rain_confirmation_required",
+        "owner_review_required",
+    }
+    if not isinstance(value, dict) or set(value) != expected:
+        raise PolicyValidationError("invalid_live_rain_release_policy")
+    if value["dry_interval_minutes"] != 30:
+        raise PolicyValidationError("dry_release_interval_not_owner_confirmed")
+    if (
+        isinstance(value["dry_rain_rate_mm_per_hour"], bool)
+        or value["dry_rain_rate_mm_per_hour"] != 0
+    ):
+        raise PolicyValidationError("dry_release_requires_exact_zero_rain")
+    if value["minimum_fresh_station_readings"] != 2:
+        raise PolicyValidationError("dry_release_reading_count_not_owner_confirmed")
+    if value["visible_rain_confirmation_required"] is not True:
+        raise PolicyValidationError("dry_release_visible_confirmation_required")
+    if value["owner_review_required"] is not True:
+        raise PolicyValidationError("dry_release_owner_review_required")
+    return {
+        "dry_interval_minutes": 30,
+        "dry_rain_rate_mm_per_hour": 0.0,
+        "minimum_fresh_station_readings": 2,
+        "visible_rain_confirmation_required": True,
+        "owner_review_required": True,
     }
 
 
