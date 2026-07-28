@@ -163,6 +163,73 @@ def response_shape(value: Any) -> str:
     return "unsupported"
 
 
+def administrative_write_stage_evidence(
+    *,
+    stage: str,
+    http_status: int | None,
+    response: Any,
+    authoritative_readback: str,
+) -> dict[str, Any]:
+    """Classify an administrative write without retaining provider content."""
+    if stage not in {
+        "owner_projection_create_response",
+        "private_chat_projection_create_response",
+        "workflow_update_request",
+    }:
+        raise ValueError("unsupported_administrative_stage")
+    if http_status is not None and not 100 <= http_status <= 599:
+        raise ValueError("unsafe_http_status")
+    if authoritative_readback not in {
+        "verified",
+        "matched",
+        "missing",
+        "conflict",
+        "unavailable",
+        "not_run",
+    }:
+        raise ValueError("unsafe_authoritative_readback")
+    accepted = http_status in {200, 201, 202, 204}
+    required_readback = (
+        "matched"
+        if stage == "workflow_update_request"
+        else "verified"
+    )
+    proven = authoritative_readback == required_readback
+    persisted_without_accepted_response = not accepted and proven
+    if accepted and proven:
+        outcome = "persisted_verified"
+    elif persisted_without_accepted_response:
+        outcome = "persisted_after_rejected_or_ambiguous_response"
+    elif authoritative_readback == "conflict" or authoritative_readback in {
+        "verified",
+        "matched",
+    }:
+        outcome = "conflict"
+    elif authoritative_readback in {"unavailable", "not_run"}:
+        outcome = "ambiguous_unverified"
+    elif accepted and authoritative_readback == "missing":
+        outcome = "ambiguous_unverified"
+    else:
+        outcome = "rejected_not_persisted"
+    return {
+        "stage": stage,
+        "http_status": http_status,
+        "response_shape": response_shape(response),
+        "authoritative_readback": authoritative_readback,
+        "outcome": outcome,
+        "proceed": outcome == "persisted_verified",
+        "rollback_required": outcome
+        in {
+            "persisted_verified",
+            "persisted_after_rejected_or_ambiguous_response",
+            "ambiguous_unverified",
+            "conflict",
+        },
+        "raw_response_retained": False,
+        "protected_values_retained": False,
+    }
+
+
 def deterministic_request_identity(stage: str, safe_identity: dict[str, Any]) -> str:
     return "BEACON-GK-DIAG-" + canonical_sha256(
         {"version": 1, "stage": stage, "identity": safe_identity}

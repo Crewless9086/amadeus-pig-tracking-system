@@ -8,6 +8,7 @@ from scripts.oom_sakkie_gatekeeper_activation_diagnostic import (
     AmbiguousTransportError,
     InertDiagnosticAdapter,
     StageEvidence,
+    administrative_write_stage_evidence,
     deterministic_request_identity,
     inert_rehearsal_report,
     response_shape,
@@ -16,6 +17,112 @@ from scripts.oom_sakkie_gatekeeper_activation_diagnostic import (
 
 
 class GateKeeperActivationDiagnosticTests(unittest.TestCase):
+    def test_empty_201_projection_response_requires_and_accepts_verified_readback(self):
+        evidence = administrative_write_stage_evidence(
+            stage="owner_projection_create_response",
+            http_status=201,
+            response=None,
+            authoritative_readback="verified",
+        )
+        self.assertEqual(evidence["response_shape"], "empty")
+        self.assertEqual(evidence["outcome"], "persisted_verified")
+        self.assertTrue(evidence["proceed"])
+        self.assertFalse(evidence["raw_response_retained"])
+
+    def test_empty_201_without_projection_readback_is_ambiguous(self):
+        evidence = administrative_write_stage_evidence(
+            stage="private_chat_projection_create_response",
+            http_status=201,
+            response=None,
+            authoritative_readback="missing",
+        )
+        self.assertEqual(evidence["outcome"], "ambiguous_unverified")
+        self.assertFalse(evidence["proceed"])
+        self.assertTrue(evidence["rollback_required"])
+
+    def test_rejected_workflow_update_records_safe_status_and_shape(self):
+        evidence = administrative_write_stage_evidence(
+            stage="workflow_update_request",
+            http_status=400,
+            response={"message": "provider detail must not be retained"},
+            authoritative_readback="missing",
+        )
+        self.assertEqual(evidence["http_status"], 400)
+        self.assertEqual(evidence["response_shape"], "object:1")
+        self.assertEqual(evidence["outcome"], "rejected_not_persisted")
+        self.assertNotIn("provider detail", json.dumps(evidence))
+        self.assertFalse(evidence["proceed"])
+
+    def test_accepted_workflow_update_requires_exact_hash_readback(self):
+        accepted = administrative_write_stage_evidence(
+            stage="workflow_update_request",
+            http_status=200,
+            response={},
+            authoritative_readback="matched",
+        )
+        ambiguous = administrative_write_stage_evidence(
+            stage="workflow_update_request",
+            http_status=200,
+            response={},
+            authoritative_readback="unavailable",
+        )
+        self.assertTrue(accepted["proceed"])
+        self.assertFalse(ambiguous["proceed"])
+
+    def test_rejected_response_with_verified_persistence_requires_rollback(self):
+        evidence = administrative_write_stage_evidence(
+            stage="owner_projection_create_response",
+            http_status=409,
+            response={"message": "conflict"},
+            authoritative_readback="verified",
+        )
+        self.assertEqual(
+            evidence["outcome"],
+            "persisted_after_rejected_or_ambiguous_response",
+        )
+        self.assertFalse(evidence["proceed"])
+        self.assertTrue(evidence["rollback_required"])
+
+    def test_workflow_verified_is_not_exact_hash_match_and_cannot_proceed(self):
+        evidence = administrative_write_stage_evidence(
+            stage="workflow_update_request",
+            http_status=200,
+            response={},
+            authoritative_readback="verified",
+        )
+        self.assertEqual(evidence["outcome"], "conflict")
+        self.assertFalse(evidence["proceed"])
+
+    def test_projection_matched_is_not_verified_and_cannot_proceed(self):
+        evidence = administrative_write_stage_evidence(
+            stage="owner_projection_create_response",
+            http_status=201,
+            response=None,
+            authoritative_readback="matched",
+        )
+        self.assertEqual(evidence["outcome"], "conflict")
+        self.assertFalse(evidence["proceed"])
+
+    def test_rejected_http_with_unavailable_readback_remains_ambiguous(self):
+        evidence = administrative_write_stage_evidence(
+            stage="workflow_update_request",
+            http_status=400,
+            response={},
+            authoritative_readback="unavailable",
+        )
+        self.assertEqual(evidence["outcome"], "ambiguous_unverified")
+        self.assertTrue(evidence["rollback_required"])
+
+    def test_missing_http_with_no_readback_remains_ambiguous(self):
+        evidence = administrative_write_stage_evidence(
+            stage="private_chat_projection_create_response",
+            http_status=None,
+            response=None,
+            authoritative_readback="not_run",
+        )
+        self.assertEqual(evidence["outcome"], "ambiguous_unverified")
+        self.assertTrue(evidence["rollback_required"])
+
     def test_shared_direct_flags_are_legitimate_and_beacon_gate_stays_off(self):
         contract = telegram_shared_flag_authority_contract(
             {
