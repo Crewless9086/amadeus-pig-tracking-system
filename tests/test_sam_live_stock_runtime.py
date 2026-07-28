@@ -854,7 +854,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
 
         self.assertEqual(facts["sales_lane"], "live_stock_sales")
-        self.assertEqual(facts["category"], "piglet")
+        self.assertEqual(facts["category"], "weaner")
         self.assertEqual(facts["weight_range"], "7-9 kg")
         self.assertEqual(facts["quantity"], 3)
         self.assertEqual(facts["sex"], "split")
