@@ -174,7 +174,7 @@ def build_rootline_daily_advisor(brief, advisor_date, active_policy=None, now=No
         else None
     )
     active_snapshot = _active_policy_snapshot(active_policy)
-    evaluated_at = (now or datetime.now(ZA_TZ)).astimezone(ZA_TZ)
+    evaluated_at = _evaluation_time(now)
     legacy_zones = {
         str(item.get("zone_id") or ""): item
         for item in irrigation.get("zones", [])
@@ -194,12 +194,13 @@ def build_rootline_daily_advisor(brief, advisor_date, active_policy=None, now=No
                 release_evidence,
                 advisor_date,
                 evaluated_at,
+                now is not None,
             )
         )
 
-    unresolved = _unresolved_owner_decisions()
+    unresolved = _unresolved_owner_decisions(active_snapshot)
     status = "hold" if any(zone["recommendation"] == "Hold" for zone in zones) else "needs_data"
-    generated_at = evaluated_at.isoformat()
+    generated_at = evaluated_at.isoformat() if evaluated_at else None
     return {
         "success": True,
         "status": status,
@@ -234,6 +235,13 @@ def build_rootline_daily_advisor(brief, advisor_date, active_policy=None, now=No
             ),
             "live_rain_hold": (
                 deepcopy(active_snapshot.get("live_rain_hold"))
+                if active_snapshot else UNAVAILABLE
+            ),
+            "daylight_windows": (
+                {
+                    zone_id: deepcopy(zone.get("daylight_window", UNKNOWN))
+                    for zone_id, zone in active_snapshot.get("zones", {}).items()
+                }
                 if active_snapshot else UNAVAILABLE
             ),
         },
@@ -502,6 +510,7 @@ def _advise_zone(
     release_evidence,
     advisor_date,
     evaluated_at,
+    advice_time_explicit,
 ):
     reasons = []
     recommendation = "Needs Data"
@@ -518,6 +527,13 @@ def _advise_zone(
         if isinstance(active_policy, dict)
         and isinstance(active_policy.get("live_rain_hold"), dict)
         else None
+    )
+    daylight_window = (
+        active_policy.get("zones", {})
+        .get(knowledge["zone_id"], {})
+        .get("daylight_window", UNKNOWN)
+        if isinstance(active_policy, dict)
+        else UNKNOWN
     )
     if not weather_fresh:
         reasons.append("Fresh current weather is required.")
@@ -537,6 +553,15 @@ def _advise_zone(
         reasons.append(
             "Fresh live rain is strictly above 0.2 mm/hour; the active policy requires Hold."
         )
+    elif not _advice_time_is_authoritative(
+        evaluated_at, advisor_date, advice_time_explicit
+    ):
+        recommendation = "Needs Data"
+        eligibility = "Needs Data"
+        reasons.append(
+            "Current advice time is missing, malformed or conflicts with the "
+            "operating date; the daylight gate is Needs Data."
+        )
     elif not _dry_release_proven(
         release_evidence,
         live_rain_rule.get("release_policy"),
@@ -554,11 +579,17 @@ def _advise_zone(
             "of visible rain, and explicit owner review; that evidence is not proven."
         )
     else:
+        time_gate, time_reason = _daylight_gate(
+            daylight_window, evaluated_at, advisor_date
+        )
+        recommendation = "Hold" if time_gate == "outside" else "Needs Data"
+        eligibility = recommendation
         reasons.extend(
             [
                 "The active live-rain Hold is released; this does not prove irrigation eligibility.",
+                time_reason,
+                "Passing the daylight gate does not prove irrigation eligibility or runtime.",
                 "Eligibility is manual-advisory only.",
-                "The exact daylight operating window is Unknown.",
                 "Forecast-rain thresholds are Unknown.",
             ]
         )
@@ -578,12 +609,17 @@ def _advise_zone(
         "proposed_runtime_status": UNAVAILABLE,
         "runtime_suppressed_by": [
             "seasonal_boundaries_unknown",
-            "allowed_window_unknown",
             "minimum_runtime_unknown",
             "maximum_runtime_unknown",
             "crop_need_band_unknown",
             "forecast_rain_threshold_unknown",
-        ],
+        ]
+        + (
+            ["allowed_window_unknown"]
+            if _daylight_gate(daylight_window, evaluated_at, advisor_date)[0]
+            == "needs_data"
+            else []
+        ),
         "reasoning": list(dict.fromkeys(reasons)),
         "previous_activity": {
             "legacy_planned_minutes": legacy_planned,
@@ -600,10 +636,9 @@ def _advise_zone(
     }
 
 
-def _unresolved_owner_decisions():
-    return [
+def _unresolved_owner_decisions(active_policy=None):
+    decisions = [
         {"decision": "seasonal_boundaries", "current_value": UNKNOWN},
-        {"decision": "exact_daylight_windows_per_zone", "current_value": UNKNOWN},
         {"decision": "minimum_runtime_per_zone", "current_value": UNKNOWN},
         {"decision": "maximum_runtime_per_zone", "current_value": UNKNOWN},
         {"decision": "forecast_rain_thresholds", "current_value": UNKNOWN},
@@ -612,6 +647,19 @@ def _unresolved_owner_decisions():
         {"decision": "controller_power_loss_behavior", "current_value": UNKNOWN},
         {"decision": "residual_drainage_decay_seconds", "current_value": UNAVAILABLE},
     ]
+    zones = active_policy.get("zones") if isinstance(active_policy, dict) else None
+    if (
+        not isinstance(zones, dict)
+        or any(
+            not isinstance(zone, dict) or zone.get("daylight_window") == UNKNOWN
+            for zone in zones.values()
+        )
+    ):
+        decisions.insert(
+            1,
+            {"decision": "exact_daylight_windows_per_zone", "current_value": UNKNOWN},
+        )
+    return decisions
 
 
 def _executive_summary(zones, weather, forecast):
@@ -623,9 +671,9 @@ def _executive_summary(zones, weather, forecast):
     suffix = f" Evidence still missing: {', '.join(missing)}." if missing else ""
     if any(zone["recommendation"] == "Hold" for zone in zones):
         return (
-            "ROOTLINE is holding both known drip zones because the active live-rain "
-            "or dry-release evidence gate is not safely cleared. No runtime is proposed "
-            f"and no action is authorized.{suffix}"
+            "ROOTLINE is holding one or both known drip zones because an active "
+            "weather, dry-release or daylight evidence gate is not safely cleared. "
+            f"No runtime is proposed and no action is authorized.{suffix}"
         )
     return (
         "B12345 and C12345 remain manual-advisory only. Unknown operating windows, "
@@ -668,10 +716,89 @@ def _active_policy_snapshot(active_policy):
         ):
             return None
         zone.pop("crop_use", None)
+        window = zone.get("daylight_window")
+        if isinstance(window, dict):
+            if window.get("timezone") != "Africa/Johannesburg":
+                return None
+            window.pop("timezone", None)
     try:
         return normalize_policy_snapshot(candidate)
     except (TypeError, ValueError):
         return None
+
+
+def _evaluation_time(value):
+    if value is None:
+        return datetime.now(ZA_TZ)
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() is None
+    ):
+        return None
+    return value.astimezone(ZA_TZ)
+
+
+def _advice_time_is_authoritative(
+    evaluated_at, advisor_date, enforce_operating_date
+):
+    return (
+        isinstance(evaluated_at, datetime)
+        and evaluated_at.tzinfo is not None
+        and evaluated_at.utcoffset() is not None
+        and (
+            not enforce_operating_date
+            or (
+                isinstance(advisor_date, str)
+                and evaluated_at.astimezone(ZA_TZ).date().isoformat()
+                == advisor_date
+            )
+        )
+    )
+
+
+def _daylight_gate(window, evaluated_at, advisor_date=None):
+    if (
+        evaluated_at is None
+        or not isinstance(window, dict)
+        or set(window) != {"start", "end", "timezone"}
+        or window.get("timezone") != "Africa/Johannesburg"
+    ):
+        return "needs_data", (
+            "The daylight window or current advice time is missing, malformed or "
+            "conflicting; the time gate is Needs Data."
+        )
+    if (
+        not isinstance(advisor_date, str)
+        or evaluated_at.astimezone(ZA_TZ).date().isoformat() != advisor_date
+    ):
+        return "needs_data", (
+            "The daylight window or current advice time is missing, malformed or "
+            "conflicting; the time gate is Needs Data."
+        )
+    try:
+        start = datetime.strptime(window["start"], "%H:%M").time()
+        end = datetime.strptime(window["end"], "%H:%M").time()
+    except (TypeError, ValueError):
+        return "needs_data", (
+            "The daylight window or current advice time is missing, malformed or "
+            "conflicting; the time gate is Needs Data."
+        )
+    if start >= end:
+        return "needs_data", (
+            "The daylight window or current advice time is missing, malformed or "
+            "conflicting; the time gate is Needs Data."
+        )
+    current = evaluated_at.astimezone(ZA_TZ).time().replace(tzinfo=None)
+    if start <= current < end:
+        return "inside", (
+            "Current Johannesburg advice time is inside the owner-approved "
+            "start-inclusive, end-exclusive daylight window."
+        )
+    return "outside", (
+        "Current Johannesburg advice time is outside the owner-approved "
+        "daylight window; advice is Hold."
+    )
 
 
 def _dry_release_proven(

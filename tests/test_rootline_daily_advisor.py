@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -97,6 +97,19 @@ def active_policy_v2():
     }
 
 
+def active_policy_v3():
+    result = active_policy_v2()
+    result["proposal_id"] = "ROOTLINE-POLICY-333333333333333333333333"
+    result["version"] = 3
+    for zone in result["policy"]["zones"].values():
+        zone["daylight_window"] = {
+            "start": "08:00",
+            "end": "17:00",
+            "timezone": "Africa/Johannesburg",
+        }
+    return result
+
+
 def complete_dry_release_evidence():
     return {
         "availability": "Available",
@@ -121,6 +134,38 @@ def complete_dry_release_evidence():
         "owner_review_confirmed": True,
         "owner_reviewed_at": "2026-07-27T14:30:18+00:00",
     }
+
+
+def dry_brief_at(local_time):
+    observed_at = local_time.astimezone(timezone.utc)
+    interval_start = observed_at - timedelta(minutes=30)
+    brief = daily_brief()
+    brief["current_conditions"]["rain_rate_mm_h"] = 0.0
+    brief["current_conditions"]["last_reading_at"] = observed_at.isoformat()
+    brief["rain_release_evidence"] = {
+        "availability": "Available",
+        "conflicting": False,
+        "continuous_zero_rain_confirmed": True,
+        "interval_start_at": interval_start.isoformat(),
+        "interval_end_at": observed_at.isoformat(),
+        "station_readings": [
+            {
+                "observed_at": interval_start.isoformat(),
+                "rain_rate_mm_h": 0.0,
+                "freshness": "fresh",
+            },
+            {
+                "observed_at": observed_at.isoformat(),
+                "rain_rate_mm_h": 0.0,
+                "freshness": "fresh",
+            },
+        ],
+        "no_visible_rain_confirmed": True,
+        "visible_rain_confirmed_at": observed_at.isoformat(),
+        "owner_review_confirmed": True,
+        "owner_reviewed_at": observed_at.isoformat(),
+    }
+    return brief
 
 
 def rehash_canary_record(record):
@@ -229,6 +274,97 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
             brief, "2026-07-27", active_policy=active_policy_v2()
         )
         self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
+
+    def test_daylight_window_is_start_inclusive_and_end_exclusive_in_sast(self):
+        sast = timezone(timedelta(hours=2))
+        cases = (
+            ("07:59:59", "Hold", "outside"),
+            ("08:00:00", "Needs Data", "inside"),
+            ("16:59:59", "Needs Data", "inside"),
+            ("17:00:00", "Hold", "outside"),
+        )
+        for clock, expected, phrase in cases:
+            with self.subTest(clock=clock):
+                local_time = datetime.fromisoformat(
+                    f"2026-07-28T{clock}+02:00"
+                ).astimezone(sast)
+                result = build_rootline_daily_advisor(
+                    dry_brief_at(local_time),
+                    "2026-07-28",
+                    active_policy=active_policy_v3(),
+                    now=local_time,
+                )
+                for zone in result["zones"]:
+                    self.assertEqual(zone["recommendation"], expected)
+                    self.assertEqual(zone["eligibility_today"], expected)
+                    self.assertIn(phrase, " ".join(zone["reasoning"]).lower())
+                    self.assertIsNone(zone["proposed_runtime_minutes"])
+                    self.assertEqual(
+                        zone["proposed_runtime_status"], "Unavailable"
+                    )
+                    self.assertNotIn(
+                        "allowed_window_unknown", zone["runtime_suppressed_by"]
+                    )
+
+    def test_missing_malformed_or_conflicting_advice_time_is_needs_data(self):
+        local_time = datetime.fromisoformat("2026-07-28T10:00:00+02:00")
+        brief = dry_brief_at(local_time)
+        for advisor_date, now in (
+            ("2026-07-28", "malformed"),
+            ("2026-07-29", local_time),
+            ("2026-07-28", datetime(2026, 7, 28, 10, 0)),
+        ):
+            with self.subTest(advisor_date=advisor_date, now=now):
+                result = build_rootline_daily_advisor(
+                    brief,
+                    advisor_date,
+                    active_policy=active_policy_v3(),
+                    now=now,
+                )
+                self.assertTrue(
+                    all(
+                        zone["recommendation"] == "Needs Data"
+                        and zone["eligibility_today"] == "Needs Data"
+                        for zone in result["zones"]
+                    )
+                )
+
+    def test_version_3_preserves_rain_release_and_never_invents_runtime(self):
+        local_time = datetime.fromisoformat("2026-07-28T10:00:00+02:00")
+        brief = dry_brief_at(local_time)
+        brief["current_conditions"]["rain_rate_mm_h"] = 0.21
+        result = build_rootline_daily_advisor(
+            brief,
+            "2026-07-28",
+            active_policy=active_policy_v3(),
+            now=local_time,
+        )
+        self.assertTrue(
+            all(zone["recommendation"] == "Hold" for zone in result["zones"])
+        )
+
+        brief = dry_brief_at(local_time)
+        result = build_rootline_daily_advisor(
+            brief,
+            "2026-07-28",
+            active_policy=active_policy_v3(),
+            now=local_time,
+        )
+        self.assertTrue(
+            all(
+                zone["recommendation"] == "Needs Data"
+                and zone["proposed_runtime_minutes"] is None
+                and zone["proposed_runtime_status"] == "Unavailable"
+                for zone in result["zones"]
+            )
+        )
+        self.assertNotIn(
+            "exact_daylight_windows_per_zone",
+            {
+                item["decision"]
+                for item in result["unresolved_owner_decisions"]
+            },
+        )
 
     def test_incomplete_or_conflicting_release_evidence_retains_hold(self):
         cases = []
