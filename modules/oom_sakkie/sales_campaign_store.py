@@ -137,7 +137,7 @@ DEFAULT_MEAT_PRICE_BOOK = [
         "currency": "ZAR",
         "deposit_rule": "50% deposit to confirm",
         "balance_rule": "Balance due before delivery",
-        "yield_basis": "Estimated packed full-carcass weight from 60kg live pig: 38-42kg; final amount uses actual packed weight.",
+        "yield_basis": "Estimated packed full-carcass weight from 60kg live pig: 38–42 kg; final amount uses actual packed weight.",
         "effective_from": "2026-06-16T00:00:00+02:00",
         "active": True,
         "notes": "Code fallback standard full-carcass rule.",
@@ -3287,7 +3287,7 @@ def _meat_yield_estimate(product_type, live_weight):
     elif product_type == "full_carcass":
         min_kg = full_min
         max_kg = full_max
-        display = f"estimated {min_kg:g}-{max_kg:g}kg packed full carcass"
+        display = f"estimated {min_kg:g}\u2013{max_kg:g} kg packed full carcass"
     elif product_type == "custom_cut":
         min_kg = full_min
         max_kg = full_max
@@ -3405,7 +3405,7 @@ def _default_yield_basis(product_type):
     if product_type == "half_carcass":
         return "Estimated packed half-carcass weight from 60kg live pig: 19-21kg; final amount uses actual packed weight."
     if product_type == "full_carcass":
-        return "Estimated packed full-carcass weight from 60kg live pig: 38-42kg; final amount uses actual packed weight."
+        return "Estimated packed full-carcass weight from 60kg live pig: 38–42 kg; final amount uses actual packed weight."
     if product_type == "custom_cut":
         return "Custom cut yield is estimated before slaughter and finalized from actual packed weight."
     return "No packed-weight estimate."

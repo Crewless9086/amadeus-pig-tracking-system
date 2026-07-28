@@ -188,7 +188,7 @@ Yield estimates:
 | --- | ---: |
 | Live weight | 60 kg |
 | Carcass yield | 43-45 kg |
-| Packed usable meat | 38-42 kg |
+| Packed usable meat | 38–42 kg |
 
 Current planning assumption:
 

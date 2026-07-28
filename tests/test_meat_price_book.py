@@ -53,6 +53,7 @@ class MeatPriceBookTests(unittest.TestCase):
             DEFAULT_MEAT_PRICE_BOOK,
         )
         self.assertEqual(estimate["recommended_owner_approval"]["delivery_or_collection"], "delivery")
+        self.assertIn("38–42 kg", estimate["recommended_owner_approval"]["estimated_weight_or_size"])
 
 
     def test_estimate_uses_selected_pig_live_weight_when_available(self):

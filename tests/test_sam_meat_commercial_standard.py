@@ -31,7 +31,7 @@ class SamMeatCommercialStandardTests(unittest.TestCase):
     def test_maggy_production_shaped_packet_is_prepare_only(self):
         readers = {
             "catalogue": truth_reader("catalogue", {"products": ["full carcass"], "packs": ["Set A", "Set B", "Set C"]}),
-            "pricing": truth_reader("pricing", {"entries": [{"product_type": "full_carcass", "cut_set": "Set C", "price_amount": 130, "price_unit": "kg", "status": "active", "effective_from": "2026-07-01T00:00:00Z", "price_book_id": "PRICE-BOOK-FULL", "yield_basis": "Estimated packed full-carcass weight: 38-42kg"}]}),
+            "pricing": truth_reader("pricing", {"entries": [{"product_type": "full_carcass", "cut_set": "Set C", "price_amount": 130, "price_unit": "kg", "status": "active", "effective_from": "2026-07-01T00:00:00Z", "price_book_id": "PRICE-BOOK-FULL", "yield_basis": "Estimated packed full-carcass weight: 38–42 kg"}]}),
             "availability": truth_reader("availability"),
             "fulfilment": truth_reader("fulfilment"),
             "butcher": truth_reader("butcher"),
@@ -46,7 +46,9 @@ class SamMeatCommercialStandardTests(unittest.TestCase):
         self.assertEqual(packet["estimated_quote_preview"]["estimated_total_range"], [4940.0, 5460.0])
         self.assertEqual(packet["next_missing_field"], "full_carcass_choices_and_town")
         self.assertIn("R130/kg including VAT", packet["prepared_reply"])
-        self.assertIn("R4,940-R5,460", packet["prepared_reply"])
+        self.assertIn("Based on the current approved packed-weight estimate of 38–42 kg for a full carcass", packet["prepared_reply"])
+        self.assertIn("R4,940–R5,460", packet["prepared_reply"])
+        self.assertIn("R2,470–R2,730", packet["prepared_reply"])
         self.assertIn("both halves", packet["prepared_reply"])
         self.assertIn("Delivery fee and timing still need confirmation", packet["prepared_reply"])
         self.assertTrue(all(value is False for value in commercial_authority().values()))
@@ -67,6 +69,9 @@ class SamMeatCommercialStandardTests(unittest.TestCase):
         preview = build_estimated_quote_preview(packed_weight_kg="38-42kg", weight_evidence_id="PRICE-BOOK-FULL")
         self.assertEqual(preview["estimated_total_range"], [4940.0, 5460.0])
         self.assertEqual(preview["estimated_deposit_range"], [2470.0, 2730.0])
+        self.assertEqual(preview["packed_weight_range_label"], "38–42 kg")
+        self.assertEqual(preview["estimated_total_range_label"], "R4,940–R5,460")
+        self.assertEqual(preview["estimated_deposit_range_label"], "R2,470–R2,730")
         self.assertIsNone(preview["final_total"])
     def test_live_weight_reference_is_not_misread_as_packed_weight(self):
         preview = build_estimated_quote_preview(

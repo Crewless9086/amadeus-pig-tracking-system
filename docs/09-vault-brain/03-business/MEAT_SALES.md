@@ -75,7 +75,7 @@ Preferred meat model slaughter target:
 
 - around `60 kg` live weight;
 - estimated carcass yield `43-45 kg`;
-- estimated saleable packed meat `38-42 kg`;
+- estimated saleable packed meat `38–42 kg`;
 - current planning assumption: `42 kg` saleable carcass weight per `60 kg` pig until farm data replaces it.
 
 At `R130/kg`, the planning example is:

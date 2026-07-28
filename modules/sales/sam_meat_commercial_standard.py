@@ -48,13 +48,22 @@ def build_estimated_quote_preview(*, packed_weight_kg, weight_evidence_id):
         "status": "estimated_owner_review_only", "estimate_available": True,
         "packed_weight_kg": float(weights[0]) if len(weights) == 1 else None,
         "packed_weight_range_kg": [float(value) for value in weights] if len(weights) == 2 else [],
+        "packed_weight_range_label": (
+            f"{weights[0]:g}\u2013{weights[1]:g} kg" if len(weights) == 2 else ""
+        ),
         "packed_weight_evidence_id": evidence_id,
         "price_per_kg": float(PRICE_PER_KG_INCLUDING_VAT), "vat_included": True,
         "estimated_total": float(totals[0]) if len(totals) == 1 else None,
         "estimated_total_range": [float(value) for value in totals] if len(totals) == 2 else [],
+        "estimated_total_range_label": (
+            f"R{totals[0]:,.0f}\u2013R{totals[1]:,.0f}" if len(totals) == 2 else ""
+        ),
         "deposit_percent": float(DEPOSIT_PERCENT),
         "estimated_deposit": float(deposits[0]) if len(deposits) == 1 else None,
         "estimated_deposit_range": [float(value) for value in deposits] if len(deposits) == 2 else [],
+        "estimated_deposit_range_label": (
+            f"R{deposits[0]:,.0f}\u2013R{deposits[1]:,.0f}" if len(deposits) == 2 else ""
+        ),
         "final_total": None, "final_billing_basis": "butcher_confirmed_final_packed_weight",
         "delivery_fee": None, "delivery_timing": None, "binding_quote_created": False,
     }

@@ -446,9 +446,14 @@ def _reply(language, question, truth, catalogue, price, protected, facts=None, q
     if language == "en" and facts.get("product_type") == "full_carcass" and facts.get("cut_set") == "Set C":
         summary = COLLECTIONS["Set C"]["summary"]
         if quote.get("estimated_total_range"):
-            low, high = quote["estimated_total_range"]
-            dep_low, dep_high = quote["estimated_deposit_range"]
-            estimate = f"Based on the current packed-weight evidence, the estimated total is R{low:,.0f}-R{high:,.0f}, with a 50% estimated deposit of R{dep_low:,.0f}-R{dep_high:,.0f}."
+            weight_range = quote.get("packed_weight_range_label") or "Unavailable"
+            total_range = quote.get("estimated_total_range_label") or "Unavailable"
+            deposit_range = quote.get("estimated_deposit_range_label") or "Unavailable"
+            estimate = (
+                "Based on the current approved packed-weight estimate of "
+                f"{weight_range} for a full carcass, the estimated total is "
+                f"{total_range}, and the 50% estimated deposit is {deposit_range}."
+            )
         elif quote.get("estimated_total") is not None:
             estimate = f"Based on the current packed-weight evidence, the estimated total is R{quote['estimated_total']:,.0f}, with a 50% estimated deposit of R{quote['estimated_deposit']:,.0f}."
         else:

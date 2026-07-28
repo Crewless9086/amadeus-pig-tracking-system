@@ -32,6 +32,13 @@ class SamMeatCommercialFrontendTests(unittest.TestCase):
         self.assertIn("both halves may use the same or different collections", template)
         self.assertIn("Balance must clear before delivery", template)
 
+    def test_owner_panel_preserves_prepared_reply_as_plain_text(self):
+        template = Path("templates/meat-sales-leads.html").read_text(encoding="utf-8")
+        script = Path("static/js/meatSalesLeads.js").read_text(encoding="utf-8")
+        self.assertIn('id="sam_meat_launch_reply"', template)
+        self.assertIn("elements.launchReply.textContent = available", script)
+        self.assertNotIn("elements.launchReply.innerHTML", script)
+
     def test_runtime_menu_is_sourced_from_current_commercial_standard(self):
         runtime = Path("modules/sales/sam_meat_runtime.py").read_text(encoding="utf-8")
         self.assertIn(
