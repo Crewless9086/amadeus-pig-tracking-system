@@ -354,11 +354,14 @@ def _is_canonical_claim_free_customer_guidance(reply: str) -> bool:
             for index in range(len(question_parts))
             if mask & (1 << index)
         ]
-        possible_questions.add(
-            selected[0] + "?"
-            if len(selected) == 1
-            else ", ".join(selected[:-1]) + ", and " + selected[-1] + "?"
-    )
+        if len(selected) == 1:
+            question = selected[0] + "?"
+            possible_questions.add(question)
+            possible_questions.add(question[:1].upper() + question[1:])
+        else:
+            possible_questions.add(
+                ", ".join(selected[:-1]) + ", and " + selected[-1] + "?"
+            )
     option_sets = (
         (),
         option_lines[:2],
