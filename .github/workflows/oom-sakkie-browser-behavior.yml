@@ -53,3 +53,4 @@ jobs:
           npm run test:oom-sakkie:browser
           npx playwright test tests/riversdale_auction_list_visual_proof.spec.js
           npx playwright test tests/breeding_attention_phase2_visual_proof.spec.js
+          npx playwright test tests/litter_weaning_day_browser.spec.js

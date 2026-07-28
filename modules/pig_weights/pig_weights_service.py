@@ -2233,7 +2233,31 @@ def process_litter_weaning_day(
         return {"success": False, "errors": ["No active on-farm piglets were found for this litter."]}, 409
 
     validation_errors = []
-    tag_plan = _weaning_day_tag_plan(assignments)
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    current_by_id = {
+        to_clean_string(row.get(columns["pig_id"], "")): row
+        for row in active_rows
+    }
+    requested_tags = {
+        to_clean_string(row.get("pig_id")): to_clean_string(row.get("tag_number"))
+        for row in assignments if isinstance(row, dict)
+        and to_clean_string(row.get("pig_id"))
+        and to_clean_string(row.get("tag_number"))
+    }
+    new_tag_assignments = []
+    for pig_id, requested_tag in requested_tags.items():
+        current_tag = to_clean_string(
+            (current_by_id.get(pig_id) or {}).get("Tag_Number", "")
+        )
+        if current_tag and current_tag != requested_tag:
+            validation_errors.append(
+                f"Piglet {pig_id} already has conflicting tag {current_tag}."
+            )
+        elif not current_tag:
+            new_tag_assignments.append({
+                "pig_id": pig_id, "tag_number": requested_tag,
+            })
+    tag_plan = {"assignments": new_tag_assignments}
     health_requested = any(to_clean_string(medicine.get(key, "")) for key in (
         "antiparasitic_product_id",
         "deworming_product_id",
@@ -2313,6 +2337,108 @@ def process_litter_weaning_day(
             changed_by=changed_by,
         ), 200
 
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        assignment_by_id = {
+            to_clean_string(row.get("pig_id")): row
+            for row in assignments if isinstance(row, dict)
+        }
+        movement_by_id = {
+            to_clean_string(row.get("pig_id")): row
+            for row in movement_plan.get("planned_movements", [])
+        }
+        piglets = []
+        for row in active_rows:
+            pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+            assignment = assignment_by_id.get(pig_id, {})
+            movement = movement_by_id.get(pig_id, {})
+            current_pen = to_clean_string(
+                row.get(columns["current_pen_id"], "")
+            )
+            piglets.append({
+                "pig_id": pig_id,
+                "tag_number": (
+                    to_clean_string(assignment.get("tag_number"))
+                    or to_clean_string(row.get("Tag_Number", ""))
+                ),
+                "weight_kg": wean_weights[pig_id],
+                "from_pen_id": movement.get("from_pen_id", current_pen),
+                "to_pen_id": movement.get(
+                    "to_pen_id", target_pen_id or current_pen
+                ),
+                "notes": notes,
+            })
+        try:
+            atomic = farm_supabase_write_service.apply_litter_weaning_day_packet({
+                "litter_id": litter_id,
+                "wean_date": action_date,
+                "changed_by": changed_by,
+                "piglets": piglets,
+                "treatment_rows": health_preview.get(
+                    "planned_treatment_rows", []
+                ),
+            })
+        except Exception as exc:
+            return {
+                "success": False,
+                "status": "weaning_day_transaction_failed",
+                "errors": [
+                    "The canonical Weaning Day transaction did not commit. "
+                    "Reload the litter before deciding whether to retry."
+                ],
+                "error_type": type(exc).__name__,
+                "dry_run": False,
+                "litter_id": litter_id,
+                "operation_committed": None,
+                "operation_state": "unknown_verify_before_retry",
+                "writes_to_sheets": False,
+                "writes_to_supabase": None,
+            }, 503
+        result = _weaning_day_result(
+            litter_id=litter_id,
+            dry_run=False,
+            action_date=action_date,
+            active_count=len(active_rows),
+            tag_result={
+                **tag_preview,
+                "rows_updated": atomic["tags_created"],
+            },
+            health_result={
+                **health_preview,
+                "treatment_rows_created": atomic["treatments_created"],
+            },
+            movement_result={
+                **movement_plan,
+                "movement_count": atomic["movements_created"],
+            },
+            wean_result={
+                **wean_preview,
+                "pig_rows_updated": atomic["piglets_updated"],
+                "litter_row_updated": atomic["litter_updated"],
+            },
+            weight_result={
+                "success": True,
+                "weight_count": atomic["weights_created"],
+                "errors": [],
+            },
+            changed_by=changed_by,
+        )
+        result.update({
+            "status": atomic["status"],
+            "operation_id": atomic["operation_id"],
+            "operation_committed": True,
+            "replay_withheld": (
+                atomic["status"] == "weaning_day_replayed_withheld"
+            ),
+            "atomic_counts": atomic,
+        })
+        result["source"] = {
+            "writes_to_sheets": False,
+            "writes_to_supabase": True,
+        }
+        return result, 200
+
+    # Preserve the established Google Sheets fallback when canonical
+    # Supabase writes are unavailable.
     applied = {}
     if tag_plan["assignments"]:
         applied["tags"], tag_status = assign_litter_piglet_tag_numbers(
@@ -3389,9 +3515,10 @@ def record_litter_newborn_health(
             pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
             if pig_rows_updated is None:
                 pig_rows_updated = 0
-            for row_values in treatment_rows:
-                farm_supabase_write_service.insert_medical_event_from_sheet_row(row_values)
-                treatment_rows_created += 1
+            treatment_result = farm_supabase_write_service.insert_missing_medical_events_from_sheet_rows(
+                treatment_rows
+            )
+            treatment_rows_created = treatment_result["created"]
             writes_to_supabase = True
         else:
             pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0

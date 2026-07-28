@@ -349,7 +349,13 @@ def mark_litter_weaned_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/weaning-day", methods=["POST"])
 def litter_weaning_day_route(litter_id):
-    payload = request.get_json(silent=True) or {}
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    payload = dict(request.get_json(silent=True) or {})
+    # Audit identity is always derived from the authenticated server session.
+    # A browser-supplied changed_by value has no authority.
+    payload["changed_by"] = owner_admin_principal()
     try:
         result, status_code = process_litter_profile_weaning_day(litter_id, payload)
         return jsonify(result), status_code
@@ -357,10 +363,17 @@ def litter_weaning_day_route(litter_id):
         current_app.logger.exception("Weaning day workflow failed for litter %s", litter_id)
         return jsonify({
             "success": False,
-            "errors": [f"Weaning day workflow failed: {exc}"],
+            "status": "weaning_day_unexpected_failure",
+            "errors": [
+                "The Weaning Day request could not be completed. Reload the "
+                "litter to verify its current state before any retry."
+            ],
+            "error_type": type(exc).__name__,
             "litter_id": litter_id,
-            "writes_to_sheets": False,
-            "writes_to_supabase": False,
+            "operation_committed": None,
+            "operation_state": "unknown_verify_before_retry",
+            "writes_to_sheets": None,
+            "writes_to_supabase": None,
         }), 500
 
 

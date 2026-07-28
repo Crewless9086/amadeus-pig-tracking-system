@@ -95,6 +95,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202605210001_foundation_migration_log.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606280001_create_bulk_weight_batch_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606290001_create_farm_canonical_tables.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606290003_add_litter_lifecycle_fields.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060001_create_oom_sakkie_traces.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060002_create_oom_sakkie_trace_feedback.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060003_add_oom_sakkie_safety_notes.sql
@@ -159,6 +160,9 @@ jobs:
 
       - name: Run pig observation privilege gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_observation_event_postgres tests.test_herdmaster_breeding_observation_postgres
+
+      - name: Run Herdmaster Weaning Day atomic transaction gates
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
 
       - name: Run Riversdale auction disposable-Postgres integration tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_riversdale_auction_postgres
