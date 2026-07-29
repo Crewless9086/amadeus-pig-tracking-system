@@ -407,6 +407,49 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
             )
         self.assertEqual(calls, [])
 
+    def test_exact_candidate_claims_are_loaded_in_one_batch(self):
+        rows = [self.row("1"), self.row("2")]
+        for index, row in enumerate(rows, start=1):
+            row["last_non_activity_message"] = {
+                "id": 920000 + index,
+                "created_at": 100 + index,
+                "message_type": 0,
+                "private": False,
+            }
+        batches = []
+        histories = []
+        calls = []
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page(rows),
+            history_loader=lambda cid, _env: (
+                histories.append(cid)
+                or self.history(
+                    str(920000 + int(cid)), "I want weaned piglets"
+                ),
+                200,
+            ),
+            claim_exists=lambda cid, mid: self.fail(
+                "provider latest claims must use the batch loader"
+            ),
+            claimed_inbound_loader=lambda identities: (
+                batches.append(list(identities))
+                or {("1", "920001")}
+            ),
+            inbound_processor=lambda payload: (
+                calls.append(str(payload["conversation"]["id"]))
+                or {"sam_decision": {}}
+            ),
+        )
+        self.assertEqual(
+            batches, [[("1", "920001"), ("2", "920002")]]
+        )
+        self.assertEqual(histories, ["2"])
+        self.assertEqual(calls, ["2"])
+        self.assertEqual(
+            packet["dispositions"][0]["disposition"], "already_claimed"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

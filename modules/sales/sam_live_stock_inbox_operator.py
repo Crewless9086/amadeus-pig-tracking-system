@@ -28,6 +28,7 @@ def operate_livestock_inbox(
     history_loader: Callable,
     inbound_processor: Callable,
     claim_exists: Callable,
+    claimed_inbound_loader: Callable | None = None,
     now=None,
 ) -> dict:
     """Process every independently eligible current inbound exactly once."""
@@ -77,6 +78,7 @@ def operate_livestock_inbox(
 
     candidate_rows = []
     claim_cache = {}
+    candidate_keys = []
     for row in rows:
         latest = (
             row.get("last_non_activity_message")
@@ -90,7 +92,31 @@ def operate_livestock_inbox(
         )
         if row.get("can_reply") is True and inbound_id:
             key = (str(row.get("id") or ""), inbound_id)
-            claim_cache[key] = bool(claim_exists(*key))
+            candidate_keys.append(key)
+    if claimed_inbound_loader and candidate_keys:
+        claimed = {
+            (str(conversation_id), str(inbound_id))
+            for conversation_id, inbound_id
+            in (claimed_inbound_loader(candidate_keys) or set())
+        }
+        claim_cache = {key: key in claimed for key in candidate_keys}
+    else:
+        claim_cache = {
+            key: bool(claim_exists(*key)) for key in candidate_keys
+        }
+    for row in rows:
+        latest = (
+            row.get("last_non_activity_message")
+            if isinstance(row.get("last_non_activity_message"), Mapping)
+            else {}
+        )
+        inbound_id = (
+            str(latest.get("id") or "")
+            if latest.get("message_type") in (0, "incoming")
+            else ""
+        )
+        if row.get("can_reply") is True and inbound_id:
+            key = (str(row.get("id") or ""), inbound_id)
             if not claim_cache[key]:
                 candidate_rows.append(row)
 
