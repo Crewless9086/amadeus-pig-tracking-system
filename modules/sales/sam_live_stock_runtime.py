@@ -2596,6 +2596,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         price_answer_packet=price_answer_packet,
         information_scope=facts.get("information_scope"),
         sales_lane=facts.get("sales_lane"),
+        latest_customer_text=inbound.get("content"),
     )
     fallback_reply = (
         customer_guidance.get("reply_text")
@@ -4183,6 +4184,20 @@ def _asks_location_question(text):
     )
 
 
+def _asks_availability_question(text):
+    return _has_any(
+        _normal_text(text),
+        ("available", "availability", "in stock", "on hand"),
+    )
+
+
+def _asks_delivery_question(text):
+    return _has_any(
+        _normal_text(text),
+        ("deliver", "delivery", "transport", "courier"),
+    )
+
+
 def _asks_about_business(text):
     return _has_any(
         text,
@@ -4413,14 +4428,10 @@ def build_live_stock_customer_guidance(inbound, facts):
         )
         if vague_all or vague_piglet:
             questions.append("Which size would suit you")
-    if needs_sex:
-        questions.append(
-            "Would you prefer a male, female, or either"
-            if not options
-            else "would you prefer a male, female, or either"
-        )
-    if needs_quantity:
+    if needs_quantity and not options:
         questions.append("how many do you need")
+    elif needs_sex and not options:
+        questions.append("Would you prefer a male, female, or either")
     lines.extend(["", _joined_customer_questions(questions)])
     lines.append(
         "Price and current availability still need to be confirmed separately."
@@ -4534,8 +4545,10 @@ def _prefer_customer_size_guidance(
     price_answer_packet,
     information_scope,
     sales_lane,
+    latest_customer_text="",
 ):
     """Prefer safe guidance only when no stronger source-backed answer exists."""
+    latest_customer_text = _normal_text(latest_customer_text)
     return bool(
         customer_guidance.get("applicable") is True
         and sales_lane == LANE_LIVE_STOCK
@@ -4546,12 +4559,15 @@ def _prefer_customer_size_guidance(
                 and customer_guidance.get("questions_asked")
                 == ["how many do you need"]
                 and bool(customer_guidance.get("canonical_mapping") == {})
-                and not information_scope
-                and information_reply.get("status") not in {
-                    "availability_and_pricing_verified",
-                    "price_only_verified",
-                }
-                and price_answer_packet.get("can_answer_price") is not True
+                and not _asks_price_question(latest_customer_text)
+                and not _asks_quote(latest_customer_text)
+                and not (
+                    _asks_availability_question(latest_customer_text)
+                    and information_reply.get("status")
+                    == "availability_and_pricing_verified"
+                )
+                and not _asks_location_question(latest_customer_text)
+                and not _asks_delivery_question(latest_customer_text)
             )
             or (
                 not information_scope
@@ -5222,10 +5238,18 @@ def _extract_quantity(text):
             int(value) if value.isdigit() else number_words[value]
             for value in split_counts.groups()
         )
-    match = re.search(r"\b(?:buy|purchase|koop)\s+(\d{1,3})\b", text)
+    match = re.search(
+        r"\b(?:buy|purchase|koop)\s+(\d{1,3})(?!\d)"
+        r"(?!\s*(?:kg|kilograms?)\b)",
+        text,
+    )
     if match:
         return int(match.group(1))
-    match = re.search(r"\b(?:for|need|want)\s+(\d{1,3})\b", text)
+    match = re.search(
+        r"\b(?:for|need|want)\s+(\d{1,3})(?!\d)"
+        r"(?!\s*(?:kg|kilograms?)\b)",
+        text,
+    )
     if match:
         return int(match.group(1))
     match = re.search(
@@ -5299,7 +5323,12 @@ def _extract_sex(text):
 
 
 def _extract_weight_range(text):
-    range_match = re.search(r"\b(\d{1,3})\s*(?:kg)?\s*(?:-|to|and)\s*(\d{1,3})\s*kg\b", text)
+    unit = r"(?:kg|kilograms?)"
+    range_match = re.search(
+        rf"\b(\d{{1,3}})\s*(?:{unit})?\s*(?:-|to|and)\s*"
+        rf"(\d{{1,3}})\s*{unit}\b",
+        text,
+    )
     if range_match:
         low, high = int(range_match.group(1)), int(range_match.group(2))
         if low > high:
@@ -5313,7 +5342,10 @@ def _extract_weight_range(text):
     if known_range:
         low, high = re.findall(r"\d{1,3}", known_range.group(1))
         return f"{int(low)}-{int(high)} kg"
-    single = re.search(r"\b(?:around|about|roughly|\+-)?\s*(\d{1,3})\s*kg\b", text)
+    single = re.search(
+        rf"\b(?:around|about|roughly|\+-)?\s*(\d{{1,3}})\s*{unit}\b",
+        text,
+    )
     if single:
         weight = int(single.group(1))
         return f"around {weight} kg"
