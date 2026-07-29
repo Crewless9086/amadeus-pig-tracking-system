@@ -91,7 +91,12 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
             claim_exists=lambda cid, mid: mid == "101",
             inbound_processor=lambda payload: (
                 calls.append(str(payload["conversation"]["id"]))
-                or {"sam_decision": {}}
+                or {
+                    "processed": True,
+                    "sent": True,
+                    "_operation_status_code": 200,
+                    "sam_decision": {},
+                }
             ),
         )
         self.assertEqual(calls, ["2"])
@@ -449,6 +454,140 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         self.assertEqual(
             packet["dispositions"][0]["disposition"], "already_claimed"
         )
+
+    def test_bounded_cycle_processes_one_and_defers_other_eligible_work(self):
+        rows = [self.row("1"), self.row("2")]
+        for index, row in enumerate(rows, start=1):
+            row["last_non_activity_message"] = {
+                "id": 930000 + index,
+                "created_at": 100 + index,
+                "message_type": 0,
+                "private": False,
+            }
+        calls = []
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page(rows),
+            history_loader=lambda cid, _env: (
+                self.history(
+                    str(930000 + int(cid)), "I want weaned piglets"
+                ),
+                200,
+            ),
+            claim_exists=lambda cid, mid: False,
+            claimed_inbound_loader=lambda identities: set(),
+            max_process_count=1,
+            inbound_processor=lambda payload: (
+                calls.append(str(payload["conversation"]["id"]))
+                or {
+                    "processed": True,
+                    "sent": True,
+                    "_operation_status_code": 200,
+                    "sam_decision": {},
+                }
+            ),
+        )
+        self.assertEqual(calls, ["1"])
+        self.assertEqual(
+            [row["disposition"] for row in packet["dispositions"]],
+            ["processed", "deferred_to_next_autonomous_cycle"],
+        )
+
+    def test_oldest_eligible_is_selected_then_claim_advances_next_cycle(self):
+        newer = self.row("2")
+        older = self.row("1")
+        newer["last_non_activity_message"] = {
+            "id": 940002,
+            "created_at": 200,
+            "message_type": 0,
+            "private": False,
+        }
+        older["last_non_activity_message"] = {
+            "id": 940001,
+            "created_at": 100,
+            "message_type": 0,
+            "private": False,
+        }
+        claims = set()
+        calls = []
+
+        def run():
+            return operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: self.page(
+                    [newer, older]
+                ),
+                history_loader=lambda cid, _env: (
+                    self.history(
+                        str(940000 + int(cid)), "I want weaned piglets"
+                    ),
+                    200,
+                ),
+                claim_exists=lambda cid, mid: (cid, mid) in claims,
+                claimed_inbound_loader=lambda identities: claims,
+                max_process_count=1,
+                inbound_processor=lambda payload: (
+                    calls.append(str(payload["conversation"]["id"]))
+                    or claims.add(
+                        (
+                            str(payload["conversation"]["id"]),
+                            str(payload["id"]),
+                        )
+                    )
+                    or {
+                        "processed": True,
+                        "sent": True,
+                        "_operation_status_code": 200,
+                        "sam_decision": {},
+                    }
+                ),
+            )
+
+        first = run()
+        self.assertEqual(calls, ["1"])
+        self.assertEqual(
+            [row["conversation_id"] for row in first["dispositions"][:2]],
+            ["1", "2"],
+        )
+        run()
+        self.assertEqual(calls, ["1", "2"])
+
+    def test_failed_oldest_candidate_stops_lane_without_false_progress(self):
+        rows = [self.row("1"), self.row("2")]
+        for index, row in enumerate(rows, start=1):
+            row["last_non_activity_message"] = {
+                "id": 950000 + index,
+                "created_at": 100 + index,
+                "message_type": 0,
+                "private": False,
+            }
+        calls = []
+        with self.assertRaisesRegex(
+            RuntimeError, "sam_selected_candidate_without_durable_disposition"
+        ):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: self.page(rows),
+                history_loader=lambda cid, _env: (
+                    self.history(
+                        str(950000 + int(cid)), "I want weaned piglets"
+                    ),
+                    200,
+                ),
+                claim_exists=lambda cid, mid: False,
+                claimed_inbound_loader=lambda identities: set(),
+                max_process_count=1,
+                inbound_processor=lambda payload: (
+                    calls.append(str(payload["conversation"]["id"]))
+                    or {
+                        "processed": False,
+                        "sent": False,
+                        "_operation_status_code": 503,
+                        "sam_decision": {},
+                    }
+                ),
+            )
+        self.assertEqual(calls, ["1"])
 
 
 if __name__ == "__main__":

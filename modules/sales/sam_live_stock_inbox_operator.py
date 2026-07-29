@@ -29,6 +29,7 @@ def operate_livestock_inbox(
     inbound_processor: Callable,
     claim_exists: Callable,
     claimed_inbound_loader: Callable | None = None,
+    max_process_count: int | None = None,
     now=None,
 ) -> dict:
     """Process every independently eligible current inbound exactly once."""
@@ -60,7 +61,7 @@ def operate_livestock_inbox(
 
     loaded = {}
     if page_count > 1:
-        with ThreadPoolExecutor(max_workers=min(12, page_count - 1)) as pool:
+        with ThreadPoolExecutor(max_workers=min(24, page_count - 1)) as pool:
             futures = [
                 pool.submit(load_page, page)
                 for page in range(2, page_count + 1)
@@ -122,7 +123,7 @@ def operate_livestock_inbox(
 
     history_cache = {}
     if candidate_rows:
-        with ThreadPoolExecutor(max_workers=min(12, len(candidate_rows))) as pool:
+        with ThreadPoolExecutor(max_workers=min(16, len(candidate_rows))) as pool:
             futures = {
                 pool.submit(
                     history_loader, str(row.get("id") or ""), source
@@ -157,15 +158,25 @@ def operate_livestock_inbox(
         return history_loader(key, source)
 
     dispositions = []
-    for row in rows:
+    processed_count = 0
+    operation_rows = sorted(rows, key=_autonomous_priority)
+    for row in operation_rows:
+        can_process = bool(
+            max_process_count is None
+            or processed_count < max(0, int(max_process_count))
+        )
         disposition = _inspect_and_operate(
             row,
             source=source,
             history_loader=cached_history_loader,
             inbound_processor=inbound_processor,
             claim_exists=cached_claim_exists,
+            can_process=can_process,
+            require_durable_result=max_process_count is not None,
             now=clock,
         )
+        if disposition.get("selected_for_processing") is True:
+            processed_count += 1
         if disposition["queue_relevant"]:
             dispositions.append(disposition)
     summary = build_sam_status_summary(dispositions, observed_at=clock)
@@ -193,6 +204,25 @@ def operate_livestock_inbox(
     }
 
 
+def _autonomous_priority(row):
+    latest = (
+        row.get("last_non_activity_message")
+        if isinstance(row.get("last_non_activity_message"), Mapping)
+        else {}
+    )
+    replyable_inbound = bool(
+        row.get("can_reply") is True
+        and latest.get("message_type") in (0, "incoming")
+        and str(latest.get("id") or "")
+    )
+    return (
+        0 if replyable_inbound else 1,
+        int(latest.get("created_at") or 0) if replyable_inbound else 0,
+        str(row.get("id") or ""),
+        str(latest.get("id") or ""),
+    )
+
+
 def _inspect_and_operate(
     row,
     *,
@@ -200,6 +230,8 @@ def _inspect_and_operate(
     history_loader,
     inbound_processor,
     claim_exists,
+    can_process,
+    require_durable_result,
     now,
 ):
     conversation_id = str(row.get("id") or "")
@@ -340,19 +372,45 @@ def _inspect_and_operate(
         and open_window
         and not exact_claim
     )
-    result = inbound_processor(payload) if eligible else {}
+    selected_for_processing = bool(eligible and can_process)
+    result = inbound_processor(payload) if selected_for_processing else {}
     decision = result.get("sam_decision") if isinstance(result.get("sam_decision"), Mapping) else {}
     delivery = decision.get("routine_reply_delivery") if isinstance(decision.get("routine_reply_delivery"), Mapping) else {}
     outcome = delivery.get("delivery_outcome") if isinstance(delivery.get("delivery_outcome"), Mapping) else {}
     provider_state = str(outcome.get("delivery_state") or "")
+    if selected_for_processing and require_durable_result:
+        durable_result = bool(
+            result.get("sent") is True
+            or decision.get("reason") in {
+                "routine_reply_confirmed_delivered",
+                "routine_reply_delivery_ambiguous",
+            }
+            or provider_state in {
+                "provider_delivered",
+                "provider_read",
+                "provider_outcome_ambiguous",
+            }
+        )
+        if (
+            int(result.get("_operation_status_code") or 500) >= 400
+            or result.get("processed") is not True
+            or not durable_result
+        ):
+            raise RuntimeError(
+                "sam_selected_candidate_without_durable_disposition:"
+                + conversation_id
+            )
     queue_relevant = bool(livestock or exact_claim)
     return {
         "conversation_id": conversation_id,
         "inbound_message_id": inbound_id,
         "queue_relevant": queue_relevant,
         "eligible": eligible,
+        "selected_for_processing": selected_for_processing,
         "disposition": (
             "processed"
+            if selected_for_processing
+            else "deferred_to_next_autonomous_cycle"
             if eligible
             else "already_claimed"
             if exact_claim
