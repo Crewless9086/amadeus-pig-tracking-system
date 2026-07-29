@@ -111,6 +111,13 @@ from modules.sales.sam_live_stock_runtime import (
 from modules.sales.sam_live_stock_contextual_sales import (
     build_contextual_sales_recommendation,
 )
+from modules.sales.sam_live_stock_inbox_operator import (
+    operate_livestock_inbox,
+)
+from modules.sales.sam_chatwoot_state_writer import (
+    apply_delivery_state as apply_sam_chatwoot_delivery_state,
+    apply_new_inbound_state as apply_sam_chatwoot_new_inbound_state,
+)
 from modules.sales.sam_live_stock_availability_observation import (
     append_availability_observation,
     build_availability_observation_preview,
@@ -953,7 +960,149 @@ def sam_live_stock_chatwoot_inbound():
         }, 500
     if result.get("processed") and isinstance(result.get("sam_decision"), dict):
         _attach_sam_live_stock_review_event(result, payload)
+        result["chatwoot_operational_state"] = (
+            _apply_sam_live_stock_operational_state(result, payload)
+        )
     return jsonify(result), status_code
+
+
+@sales_bp.route(
+    "/sales/channels/chatwoot/sam-live-stock/reconcile",
+    methods=["POST"],
+)
+def sam_live_stock_chatwoot_reconcile():
+    allowed, denied = authorize_sam_live_stock_webhook(
+        request.headers, request.args
+    )
+    if not allowed:
+        status_code = (
+            403
+            if denied.get("status")
+            == "sam_live_stock_backend_webhook_auth_denied"
+            else 503
+        )
+        return jsonify(denied), status_code
+    try:
+        packet = operate_livestock_inbox(
+            environ=os.environ,
+            history_loader=lambda conversation_id, environ: (
+                load_chatwoot_conversation_history(
+                    conversation_id, environ, limit=200
+                ),
+                200,
+            ),
+            claim_exists=_sam_live_stock_inbound_claim_exists,
+            inbound_processor=_operate_sam_live_stock_exact_payload,
+        )
+        return jsonify(packet), 200
+    except Exception as exc:
+        return jsonify(
+            {
+                "status": "sam_live_stock_inbox_operation_failed",
+                "error_type": exc.__class__.__name__,
+                "lane_stopped": True,
+                "automatic_retry_authorized": False,
+                "protected_authority": False,
+            }
+        ), 503
+
+
+def _operate_sam_live_stock_exact_payload(payload):
+    result, _status = handle_sam_live_stock_chatwoot_inbound(
+        payload,
+        routine_delivery_claim=_claim_sam_live_stock_routine_delivery,
+        routine_delivery_evidence_recorder=(
+            _record_sam_live_stock_delivery_outcome
+        ),
+    )
+    if result.get("processed") and isinstance(
+        result.get("sam_decision"), dict
+    ):
+        _attach_sam_live_stock_review_event(result, payload)
+        result["chatwoot_operational_state"] = (
+            _apply_sam_live_stock_operational_state(result, payload)
+        )
+    return result
+
+
+def _sam_live_stock_inbound_claim_exists(conversation_id, inbound_id):
+    import psycopg
+
+    with psycopg.connect(
+        os.environ["DATABASE_URL"],
+        connect_timeout=10,
+        options=(
+            "-c default_transaction_read_only=on "
+            "-c statement_timeout=10000"
+        ),
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select 1
+                  from public.sam_live_stock_conversation_review_events
+                 where chatwoot_conversation_id = %s
+                   and event_source =
+                       'sam_outbound_delivery_attempt_claim'
+                   and coalesce(
+                         review_json->>'inbound_message_id',
+                         review_json->>'bound_inbound_message_id',
+                         ''
+                       ) = %s
+                 limit 1
+                """,
+                (str(conversation_id), str(inbound_id)),
+            )
+            return cursor.fetchone() is not None
+
+
+def _apply_sam_live_stock_operational_state(result, payload):
+    decision = result.get("sam_decision") or {}
+    if (
+        decision.get("specialist_lane_selected") is not True
+        or decision.get("sales_lane") != "live_stock_sales"
+    ):
+        return {"applied": False, "status": "non_livestock_untouched"}
+    inbound = decision.get("inbound")
+    if not isinstance(inbound, dict):
+        inbound = parse_sam_live_stock_chatwoot_inbound(payload)
+    try:
+        history = load_chatwoot_conversation_history(
+            inbound.get("conversation_id"), os.environ, limit=200
+        )
+        incoming = [
+            row
+            for row in (history.get("messages") or [])
+            if isinstance(row, dict)
+            and row.get("message_type") in (0, "incoming")
+            and not bool(row.get("private"))
+        ]
+        incoming.sort(
+            key=lambda row: (
+                int(row.get("created_at") or 0),
+                int(row.get("id") or 0),
+            )
+        )
+        latest_inbound_id = (
+            str(incoming[-1].get("id") or "") if incoming else ""
+        )
+        delivery = decision.get("routine_reply_delivery") or {}
+        outcome = delivery.get("delivery_outcome") or {}
+        provider_state = str(outcome.get("delivery_state") or "")
+        if provider_state:
+            return apply_sam_chatwoot_delivery_state(
+                inbound,
+                decision,
+                provider_state,
+                authoritative_latest_inbound_id=latest_inbound_id,
+            )
+        return apply_sam_chatwoot_new_inbound_state(inbound)
+    except Exception as exc:
+        return {
+            "applied": False,
+            "status": "chatwoot_state_reconciliation_failed",
+            "error_type": exc.__class__.__name__,
+        }
 
 
 @sales_bp.route(

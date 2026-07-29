@@ -13,10 +13,13 @@ QUARANTINED_PROVIDER_STATES = {
     "provider_outcome_ambiguous",
 }
 SAM_STATE_LABELS = {
+    "new_customer_inbound",
     "awaiting_customer",
     "qualification_in_progress",
     "owner_decision_required",
     "delivery_quarantined_do_not_retry",
+    "closed_window_reengagement_required",
+    "handled",
 }
 
 
@@ -134,6 +137,7 @@ def build_new_inbound_reactivation_plan(*, inbound: Mapping, prior_labels) -> di
     inbound_message_id = _clean(inbound.get("message_id"))
     labels = {str(value).strip() for value in (prior_labels or []) if str(value).strip()}
     preserved = labels - SAM_STATE_LABELS
+    preserved.add("new_customer_inbound")
     return {
         "version": CONTRACT_VERSION,
         "allowed": bool(conversation_id and inbound_message_id),
