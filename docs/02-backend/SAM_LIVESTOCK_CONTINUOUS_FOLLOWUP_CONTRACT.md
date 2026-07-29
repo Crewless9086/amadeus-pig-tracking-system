@@ -38,6 +38,10 @@ ambiguous attempts remain quarantined and are never replayed.
 
 Production activation requires the serialized runtime owner to:
 
+- configure protected n8n Variables
+  `SAM_LIVE_STOCK_CHATWOOT_WEBHOOK_TOKEN`,
+  `SAM_LIVE_STOCK_BACKEND_WEBHOOK_TOKEN` and `AMADEUS_BACKEND_URL`; n8n Cloud
+  denies Code-node environment access, so the workflow uses `$vars`;
 - import and activate only the narrow workflow;
 - register one Chatwoot account webhook for `message_created` to its production
   webhook URL with the dedicated token query parameter;

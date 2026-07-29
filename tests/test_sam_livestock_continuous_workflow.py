@@ -41,6 +41,7 @@ class SamLivestockContinuousWorkflowTests(unittest.TestCase):
             "SAM_LIVE_STOCK_CHATWOOT_WEBHOOK_TOKEN",
             code,
         )
+        self.assertIn("$vars.SAM_LIVE_STOCK_CHATWOOT_WEBHOOK_TOKEN", code)
         self.assertIn("expectedToken.length >= 32", code)
 
     def test_relay_uses_backend_auth_without_embedding_secret(self):
@@ -50,6 +51,9 @@ class SamLivestockContinuousWorkflowTests(unittest.TestCase):
         )
         encoded = json.dumps(relay)
         self.assertIn("SAM_LIVE_STOCK_BACKEND_WEBHOOK_TOKEN", encoded)
+        self.assertIn("$vars.SAM_LIVE_STOCK_BACKEND_WEBHOOK_TOKEN", encoded)
+        self.assertIn("$vars.AMADEUS_BACKEND_URL", encoded)
+        self.assertNotIn("$env.", json.dumps(self.workflow))
         self.assertIn(
             "/api/sales/channels/chatwoot/sam-live-stock/inbound",
             encoded,
