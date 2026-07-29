@@ -159,6 +159,63 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
             packet["dispositions"][0]["final_route"], "AUTO_SPECIALIST"
         )
 
+    def test_provider_row_prefilter_avoids_history_for_noncandidate_pages(self):
+        rows = []
+        for value in range(25):
+            row = self.row(str(value), can_reply=False)
+            row["last_non_activity_message"] = {
+                "id": 1000 + value,
+                "created_at": 100,
+                "message_type": 1,
+                "private": False,
+            }
+            rows.append(row)
+        loaded_pages = []
+        histories = []
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: (
+                loaded_pages.append(page) or self.page(rows)
+            ),
+            history_loader=lambda cid, _env: (
+                histories.append(cid) or ({}, 500)
+            ),
+            claim_exists=lambda cid, mid: False,
+            inbound_processor=lambda payload: self.fail(
+                "noncandidate must never process"
+            ),
+        )
+        self.assertEqual(loaded_pages, [1])
+        self.assertEqual(histories, [])
+        self.assertEqual(packet["inventory_scope"], "recent_open_window_boundary")
+
+    def test_provider_latest_exact_claim_skips_history_and_never_retries(self):
+        row = self.row("2102")
+        row["last_non_activity_message"] = {
+            "id": 766572767,
+            "created_at": 1785356464,
+            "message_type": 0,
+            "private": False,
+        }
+        histories = []
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page([row]),
+            history_loader=lambda cid, _env: (
+                histories.append(cid) or ({}, 500)
+            ),
+            claim_exists=lambda cid, mid: (
+                cid == "2102" and mid == "766572767"
+            ),
+            inbound_processor=lambda payload: self.fail(
+                "claimed inbound must never process"
+            ),
+        )
+        self.assertEqual(histories, [])
+        self.assertEqual(
+            packet["dispositions"][0]["disposition"], "already_claimed"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

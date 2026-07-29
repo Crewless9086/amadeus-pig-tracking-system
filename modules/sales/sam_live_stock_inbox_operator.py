@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import os
 import urllib.parse
 import urllib.request
@@ -37,17 +36,29 @@ def operate_livestock_inbox(
     )
     first = page_loader(1)
     meta = (first.get("data") or {}).get("meta") or {}
-    expected = int(meta.get("all_count") or 0)
-    pages = max(1, math.ceil(expected / 25))
+    provider_total = int(meta.get("all_count") or 0)
     rows = list((first.get("data") or {}).get("payload") or [])
-    for page in range(2, pages + 1):
+    page = 1
+    while (
+        len(rows[-25:]) == 25
+        and any(row.get("can_reply") is True for row in rows[-25:])
+        and page < 10
+    ):
+        page += 1
         body = page_loader(page)
-        current = (body.get("data") or {}).get("meta") or {}
-        if int(current.get("all_count") or -1) != expected:
-            raise RuntimeError("chatwoot_inventory_changed")
-        rows.extend((body.get("data") or {}).get("payload") or [])
-    if len({str(row.get("id") or "") for row in rows}) != expected:
-        raise RuntimeError("chatwoot_inventory_incomplete")
+        current = list((body.get("data") or {}).get("payload") or [])
+        rows.extend(current)
+        if len(current) < 25:
+            break
+    if (
+        page == 10
+        and len(rows[-25:]) == 25
+        and any(row.get("can_reply") is True for row in rows[-25:])
+    ):
+        raise RuntimeError("chatwoot_open_window_inventory_boundary_unproven")
+    identities = [str(row.get("id") or "") for row in rows]
+    if not all(identities) or len(set(identities)) != len(identities):
+        raise RuntimeError("chatwoot_inventory_identity_conflict")
 
     dispositions = []
     for row in rows:
@@ -64,7 +75,9 @@ def operate_livestock_inbox(
     summary = build_sam_status_summary(dispositions, observed_at=clock)
     return {
         "status": "sam_live_stock_inbox_operated",
-        "inventory_count": expected,
+        "inventory_count": len(rows),
+        "provider_conversation_count": provider_total,
+        "inventory_scope": "recent_open_window_boundary",
         "dispositions": dispositions,
         "customers_answered": sum(
             item.get("provider_confirmed") is True for item in dispositions
@@ -94,6 +107,61 @@ def _inspect_and_operate(
     now,
 ):
     conversation_id = str(row.get("id") or "")
+    provider_latest = (
+        row.get("last_non_activity_message")
+        if isinstance(row.get("last_non_activity_message"), Mapping)
+        else {}
+    )
+    provider_incoming = provider_latest.get("message_type") in (0, "incoming")
+    provider_inbound_id = (
+        str(provider_latest.get("id") or "") if provider_incoming else ""
+    )
+    if (
+        provider_latest
+        and (
+            row.get("can_reply") is not True
+            or not provider_incoming
+            or not provider_inbound_id
+        )
+    ):
+        return {
+            "conversation_id": conversation_id,
+            "inbound_message_id": provider_inbound_id,
+            "queue_relevant": False,
+            "eligible": False,
+            "disposition": (
+                "closed_window_reengagement_required"
+                if row.get("can_reply") is not True
+                else "awaiting_customer"
+            ),
+            "final_route": "",
+            "provider_state": "",
+            "provider_confirmed": False,
+            "owner_decision_required": False,
+            "reply": "",
+            "latest_inbound_at": int(
+                provider_latest.get("created_at") or 0
+            ),
+        }
+    if (
+        provider_inbound_id
+        and claim_exists(conversation_id, provider_inbound_id)
+    ):
+        return {
+            "conversation_id": conversation_id,
+            "inbound_message_id": provider_inbound_id,
+            "queue_relevant": True,
+            "eligible": False,
+            "disposition": "already_claimed",
+            "final_route": "AUTO_SPECIALIST",
+            "provider_state": "",
+            "provider_confirmed": False,
+            "owner_decision_required": False,
+            "reply": "",
+            "latest_inbound_at": int(
+                provider_latest.get("created_at") or 0
+            ),
+        }
     history, status = history_loader(conversation_id, source)
     messages = [
         item
@@ -295,7 +363,7 @@ def _conversation_page(page, environ):
     account = str(environ.get("CHATWOOT_ACCOUNT_ID") or "147387")
     inbox = str(environ.get("SAM_LIVE_STOCK_CHATWOOT_INBOX_ID") or "96568")
     query = urllib.parse.urlencode(
-        {"inbox_id": inbox, "status": "all", "page": page}
+        {"inbox_id": inbox, "status": "open", "page": page}
     )
     return _request(
         f"/api/v1/accounts/{account}/conversations?{query}", environ
