@@ -3265,6 +3265,545 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["creates_order"])
         self.assertFalse(result["reserves_stock"])
 
+    def test_context_resolved_livestock_terse_followup_stays_specialist(self):
+        current_at = 1785313934
+        payload = inbound_payload(
+            id=765363539,
+            created_at=current_at,
+            content="Both",
+            conversation={
+                "id": 1577,
+                "inbox": {
+                    "id": 96568,
+                    "channel_type": "Channel::Whatsapp",
+                },
+                "meta": {"sender": {"id": 787172447}},
+            },
+            sender={"id": 787172447, "name": "Customer"},
+        )
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": "765300001",
+                    "message_type": 0,
+                    "private": False,
+                    "created_at": current_at - 120,
+                    "content": (
+                        "I need a female piglet between 10 and 14 kg. "
+                        "What is the price?"
+                    ),
+                },
+                {
+                    "id": "765300002",
+                    "message_type": 1,
+                    "private": False,
+                    "created_at": current_at - 60,
+                    "content": "How many do you need?",
+                },
+                {
+                    "id": "765363539",
+                    "message_type": 0,
+                    "private": False,
+                    "created_at": current_at,
+                    "content": "Both",
+                },
+            ],
+        }
+        result, status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                payload,
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {},
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: history,
+                conversation_identity_loader=lambda *_args: {
+                    "success": True,
+                    "status": "loaded",
+                    "account_id": "147387",
+                    "conversation_id": "1577",
+                    "contact_id": "787172447",
+                    "inbox_id": "96568",
+                },
+                availability_loader=lambda: [],
+            )
+        )
+        decision = result["sam_decision"]
+        self.assertEqual(status, 200)
+        self.assertEqual(decision["conversation_ownership"], "AUTO_SPECIALIST")
+        self.assertTrue(decision["specialist_lane_selected"])
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertEqual(
+            decision["contextual_sales_route"]["status"],
+            "authoritative_live_stock_context_preserved",
+        )
+        self.assertTrue(
+            decision["contextual_sales_route"]["checks"]["identity_bound"]
+        )
+        self.assertTrue(
+            decision["contextual_sales_route"]["checks"]["fresh"]
+        )
+
+    def test_contextual_route_preserves_terse_followup_but_not_lane_change_or_mixed(self):
+        inbound = {
+            "account_id": "147387",
+            "conversation_id": "1577",
+            "contact_id": "787172447",
+            "inbox_id": "96568",
+            "last_inbound_at": 1785313934,
+            "identity_provenance": {
+                "status": "identity_verified",
+                "authoritative_conversation_lookup": {
+                    "success": True,
+                    "identity_complete": True,
+                    "account_id_matches": True,
+                    "field_matches": {
+                        "conversation_id": True,
+                        "contact_id": True,
+                        "inbox_id": True,
+                    },
+                },
+            },
+        }
+        prior = {
+            "interest": {
+                "sales_lane": "live_stock_sales",
+                "lane_confidence": 0.9,
+                "category": "piglet",
+            },
+            "source": "chatwoot_conversation_history",
+            "evidence_complete": True,
+            "latest_context_at": 1785313874,
+            "conversation_id": "1577",
+            "contact_id": "787172447",
+            "inbox_id": "96568",
+            "account_id": "147387",
+        }
+        cases = (
+            (
+                "Both",
+                True,
+                "authoritative_live_stock_context_preserved",
+            ),
+            (
+                "I want half a carcass, Set A.",
+                False,
+                "affirmative_lane_change_preserved",
+            ),
+            (
+                "I want live piglets and half a carcass.",
+                False,
+                "mixed_intent_requires_clarification",
+            ),
+            (
+                "Tell me more about your farm.",
+                True,
+                "authoritative_live_stock_context_preserved",
+            ),
+            (
+                "Where are you located?",
+                True,
+                "authoritative_live_stock_context_preserved",
+            ),
+            (
+                "Location",
+                True,
+                "authoritative_live_stock_context_preserved",
+            ),
+            (
+                "This is a new request. Tell me about farm visits.",
+                False,
+                "explicit_context_reset",
+            ),
+        )
+        for content, preserve, status in cases:
+            with self.subTest(content=content):
+                packet = sam_live_stock_runtime.resolve_contextual_sales_route(
+                    {**inbound, "content": content},
+                    {},
+                    prior,
+                )
+                self.assertEqual(
+                    packet["preserve_live_stock_lane"], preserve
+                )
+                self.assertEqual(packet["status"], status)
+
+    def test_contextual_route_rejects_stale_or_identity_mismatched_context(self):
+        inbound = {
+            "content": "Both",
+            "account_id": "147387",
+            "conversation_id": "1577",
+            "contact_id": "787172447",
+            "inbox_id": "96568",
+            "last_inbound_at": 1785313934,
+            "identity_provenance": {
+                "status": "identity_verified",
+                "authoritative_conversation_lookup": {
+                    "success": True,
+                    "identity_complete": True,
+                    "account_id_matches": True,
+                    "field_matches": {
+                        "conversation_id": True,
+                        "contact_id": True,
+                        "inbox_id": True,
+                    },
+                },
+            },
+        }
+        base = {
+            "interest": {
+                "sales_lane": "live_stock_sales",
+                "lane_confidence": 0.9,
+            },
+            "evidence_complete": True,
+            "latest_context_at": 1785313874,
+            "conversation_id": "1577",
+            "contact_id": "787172447",
+            "inbox_id": "96568",
+            "account_id": "147387",
+        }
+        cases = (
+            ({**base, "latest_context_at": 1785313934 - 31 * 86400}, "fresh"),
+            ({**base, "conversation_id": "other"}, "identity_bound"),
+            ({**base, "contact_id": "other"}, "identity_bound"),
+            ({**base, "inbox_id": "other"}, "identity_bound"),
+        )
+        for prior, failed_check in cases:
+            with self.subTest(failed_check=failed_check):
+                packet = sam_live_stock_runtime.resolve_contextual_sales_route(
+                    inbound, {}, prior
+                )
+                self.assertFalse(packet["preserve_live_stock_lane"])
+                self.assertFalse(packet["checks"][failed_check])
+                self.assertEqual(
+                    packet["status"], "prior_context_not_authoritative"
+                )
+
+    def test_provider_identity_conflict_blocks_contextual_specialist_route(self):
+        current_at = 1785313934
+        payload = inbound_payload(
+            id="current",
+            created_at=current_at,
+            content="Both",
+            conversation={
+                "id": 1577,
+                "inbox": {
+                    "id": 96568,
+                    "channel_type": "Channel::Whatsapp",
+                },
+                "meta": {"sender": {"id": 787172447}},
+            },
+            sender={"id": 787172447, "name": "Customer"},
+        )
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": "prior",
+                    "message_type": 0,
+                    "created_at": current_at - 60,
+                    "content": "I need two female piglets.",
+                },
+                {
+                    "id": "current",
+                    "message_type": 0,
+                    "created_at": current_at,
+                    "content": "Both",
+                },
+            ],
+        }
+        result, status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                payload,
+                environ={},
+                conversation_history_loader=lambda *_args: history,
+                conversation_identity_loader=lambda *_args: {
+                    "success": True,
+                    "status": "loaded",
+                    "account_id": "147387",
+                    "conversation_id": "1577",
+                    "contact_id": "different-contact",
+                    "inbox_id": "96568",
+                },
+                availability_loader=lambda: self.fail(
+                    "identity conflict called Livestock availability"
+                ),
+                intake_context_loader=lambda *_args: self.fail(
+                    "identity conflict called Livestock intake"
+                ),
+            )
+        )
+        decision = result["sam_decision"]
+        self.assertEqual(status, 200)
+        self.assertEqual(decision["conversation_ownership"], "AUTO_GENERAL")
+        self.assertFalse(
+            decision["contextual_sales_route"][
+                "preserve_live_stock_lane"
+            ]
+        )
+        self.assertFalse(
+            decision["contextual_sales_route"]["checks"]["identity_bound"]
+        )
+        self.assertFalse(result["sent"])
+
+    def test_incomplete_provider_identity_blocks_contextual_specialist_route(self):
+        current_at = 1785313934
+        payload = inbound_payload(
+            id="current",
+            created_at=current_at,
+            content="Both",
+            conversation={
+                "id": 1577,
+                "inbox": {
+                    "id": 96568,
+                    "channel_type": "Channel::Whatsapp",
+                },
+                "meta": {"sender": {"id": 787172447}},
+            },
+            sender={"id": 787172447, "name": "Customer"},
+        )
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": "prior",
+                    "message_type": 0,
+                    "created_at": current_at - 60,
+                    "content": "I need two female piglets.",
+                },
+                {
+                    "id": "current",
+                    "message_type": 0,
+                    "created_at": current_at,
+                    "content": "Both",
+                },
+            ],
+        }
+        authoritative_identity = {
+            "success": True,
+            "status": "loaded",
+            "account_id": "147387",
+            "conversation_id": "1577",
+            "contact_id": "787172447",
+            "inbox_id": "96568",
+        }
+        for missing_field in (
+            "conversation_id",
+            "contact_id",
+            "inbox_id",
+        ):
+            with self.subTest(missing_field=missing_field):
+                provider_identity = {
+                    key: value
+                    for key, value in authoritative_identity.items()
+                    if key != missing_field
+                }
+                result, status = (
+                    sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                        payload,
+                        environ={},
+                        conversation_history_loader=lambda *_args: history,
+                        conversation_identity_loader=lambda *_args, identity=provider_identity: identity,
+                        availability_loader=lambda: self.fail(
+                            "incomplete provider identity called Livestock availability"
+                        ),
+                        intake_context_loader=lambda *_args: self.fail(
+                            "incomplete provider identity called Livestock intake"
+                        ),
+                    )
+                )
+                decision = result["sam_decision"]
+                lookup = decision["inbound"]["identity_provenance"][
+                    "authoritative_conversation_lookup"
+                ]
+                self.assertEqual(status, 200)
+                self.assertFalse(lookup["identity_complete"])
+                self.assertFalse(lookup["field_matches"][missing_field])
+                self.assertEqual(
+                    decision["conversation_ownership"], "AUTO_GENERAL"
+                )
+                self.assertFalse(
+                    decision["contextual_sales_route"][
+                        "preserve_live_stock_lane"
+                    ]
+                )
+                self.assertFalse(result["sent"])
+
+    def test_prior_livestock_lane_survives_multiple_terse_followups(self):
+        inbound = {
+            "message_id": "current",
+            "account_id": "147387",
+            "conversation_id": "1577",
+            "contact_id": "787172447",
+            "inbox_id": "96568",
+        }
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": "one",
+                    "message_type": 0,
+                    "created_at": 1785313600,
+                    "content": (
+                        "I need a female piglet between 10 and 14 kg. "
+                        "What is the price?"
+                    ),
+                },
+                {
+                    "id": "two",
+                    "message_type": 0,
+                    "created_at": 1785313700,
+                    "content": "Both",
+                },
+                {
+                    "id": "three",
+                    "message_type": 0,
+                    "created_at": 1785313800,
+                    "content": "Next week",
+                },
+            ],
+        }
+        prior = sam_live_stock_runtime._prior_context_from_chatwoot_history(
+            history, inbound
+        )
+        self.assertEqual(
+            prior["interest"]["sales_lane"], "live_stock_sales"
+        )
+        self.assertGreaterEqual(
+            prior["interest"]["lane_confidence"], 0.9
+        )
+        self.assertEqual(prior["latest_context_at"], 1785313800)
+
+    def test_auto_general_unsupported_availability_wording_is_never_authorized(self):
+        inbound = {
+            "content": "Both",
+            "conversation_id": "1577",
+            "contact_id": "787172447",
+            "inbox_id": "96568",
+            "identity_provenance": {"status": "identity_verified"},
+        }
+        decision = {
+            "conversation_ownership": "AUTO_GENERAL",
+            "specialist_lane_selected": False,
+            "owner_escalation_required": False,
+            "specialist_tools_called": [],
+            "clarification_asked": True,
+            "reply_source": "llm_auto_general_reply_draft",
+            "suggested_reply_text": (
+                "We have both male and female piglets around 10 to 14 kg. "
+                "Which do you prefer?"
+            ),
+            "llm_draft": {"used": True, "confidence": 0.99},
+        }
+        source = {
+            "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+            "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+            "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "1577",
+            "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "787172447",
+            "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "96568",
+        }
+        packet = sam_live_stock_runtime._auto_general_canary_evaluation(
+            inbound,
+            decision,
+            {"safe_to_send": True, "escalation_required": False},
+            source,
+        )
+        self.assertFalse(packet["allowed"])
+        self.assertFalse(packet["checks"]["claim_free_reply"])
+        self.assertEqual(
+            packet["status"], "auto_general_canary_factual_claim_blocked"
+        )
+
+    def test_auto_general_equivalent_commercial_claims_are_blocked(self):
+        claims = (
+            "Piglets are on hand.",
+            "They are ready for pickup.",
+            "You can collect tomorrow.",
+            "We are based in Riversdale.",
+            "We can arrange transport.",
+            "Transport is available.",
+        )
+        for reply in claims:
+            with self.subTest(reply=reply):
+                self.assertTrue(
+                    sam_live_stock_runtime
+                    ._auto_general_reply_has_factual_or_commercial_claim(reply)
+                )
+
+    def test_mixed_current_intent_uses_claim_free_clarification(self):
+        current_at = 1785313934
+        payload = inbound_payload(
+            id="current",
+            created_at=current_at,
+            content="I want live piglets and half a carcass.",
+            conversation={
+                "id": 1577,
+                "inbox": {
+                    "id": 96568,
+                    "channel_type": "Channel::Whatsapp",
+                },
+                "meta": {"sender": {"id": 787172447}},
+            },
+            sender={"id": 787172447, "name": "Customer"},
+        )
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": "prior",
+                    "message_type": 0,
+                    "created_at": current_at - 60,
+                    "content": "I need two female piglets.",
+                },
+                {
+                    "id": "current",
+                    "message_type": 0,
+                    "created_at": current_at,
+                    "content": "I want live piglets and half a carcass.",
+                },
+            ],
+        }
+        result, status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                payload,
+                environ={},
+                conversation_history_loader=lambda *_args: history,
+                conversation_identity_loader=lambda *_args: {
+                    "success": True,
+                    "status": "loaded",
+                    "account_id": "147387",
+                    "conversation_id": "1577",
+                    "contact_id": "787172447",
+                    "inbox_id": "96568",
+                },
+                availability_loader=lambda: self.fail(
+                    "mixed intent called Livestock availability"
+                ),
+                intake_context_loader=lambda *_args: self.fail(
+                    "mixed intent called Livestock intake"
+                ),
+            )
+        )
+        decision = result["sam_decision"]
+        self.assertEqual(status, 200)
+        self.assertEqual(decision["conversation_ownership"], "AUTO_GENERAL")
+        self.assertEqual(
+            decision["contextual_sales_route"]["status"],
+            "mixed_intent_requires_clarification",
+        )
+        self.assertIn("live pigs, pork or meat, or both", decision[
+            "suggested_reply_text"
+        ])
+        self.assertFalse(
+            sam_live_stock_runtime
+            ._auto_general_reply_has_factual_or_commercial_claim(
+                decision["suggested_reply_text"]
+            )
+        )
+
     def test_missing_referral_uses_exact_one_question_general_draft(self):
         result, _status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(

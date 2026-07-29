@@ -251,18 +251,46 @@ def handle_sam_live_stock_chatwoot_inbound(
             "policy": policy,
             **_authority_flags(),
         }, 200
+    inbound = resolve_sam_general_inbound_identity(
+        inbound,
+        payload,
+        environ=source,
+        conversation_identity_loader=(
+            conversation_identity_loader
+            or load_chatwoot_conversation_identity
+        ),
+    )
     general_context = load_sam_general_context(
         inbound,
         conversation_history_loader=conversation_history_loader,
         environ=source,
     )
-    if _should_use_auto_general_path(inbound, facts, general_context):
-        inbound = resolve_sam_general_inbound_identity(
-            inbound,
-            payload,
-            environ=source,
-            conversation_identity_loader=conversation_identity_loader,
+    contextual_route = resolve_contextual_sales_route(
+        inbound,
+        facts,
+        general_context.get("prior_sales_context"),
+    )
+    general_context["contextual_sales_route"] = contextual_route
+    if contextual_route.get("preserve_live_stock_lane") is True:
+        facts = merge_prior_live_stock_context(
+            facts,
+            general_context.get("prior_sales_context") or {},
         )
+        facts["sales_lane"] = LANE_LIVE_STOCK
+        facts["lane_confidence"] = max(
+            float(facts.get("lane_confidence") or 0),
+            float(contextual_route.get("confidence") or 0),
+        )
+        reasons = (
+            facts.get("lane_reasons")
+            if isinstance(facts.get("lane_reasons"), list)
+            else []
+        )
+        facts["lane_reasons"] = [
+            *reasons,
+            "live_stock_context:authoritative_contextual_route",
+        ]
+    if _should_use_auto_general_path(inbound, facts, general_context):
         decision = (
             build_sam_live_stock_decision(
                 inbound,
@@ -282,6 +310,7 @@ def handle_sam_live_stock_chatwoot_inbound(
             )
         )
         decision["normalized_identity_evidence"] = inbound.get("identity_provenance") or {}
+        decision["contextual_sales_route"] = contextual_route
         if isinstance(decision.get("inbound"), dict):
             decision["inbound"] = {
                 **decision["inbound"],
@@ -407,6 +436,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         owner_example_loader=owner_example_loader,
     )
     decision["sales_autonomy_level1_inbound_evidence"] = level1_inbound
+    decision["contextual_sales_route"] = contextual_route
     decision["conversation_ownership"] = AUTO_SPECIALIST
     decision["specialist_lane_selected"] = True
     decision["specialist_tools_called"] = sorted(
@@ -1021,16 +1051,47 @@ def resolve_sam_general_inbound_identity(
                     evidence["sources"][key].append(
                         {"source": "chatwoot_conversation_record." + key, "value": value}
                     )
+    inbound_account = _clean(inbound.get("account_id"), 100)
+    authoritative_account = _clean(authoritative.get("account_id"), 100)
+    authoritative_field_matches = {
+        key: bool(
+            authoritative.get("success") is True
+            and _clean(authoritative.get(key), 100)
+            and _clean(authoritative.get(key), 100)
+            == _clean(evidence["normalized"].get(key), 100)
+        )
+        for key in ("conversation_id", "contact_id", "inbox_id")
+    }
+    authoritative_identity_complete = bool(
+        authoritative.get("success") is True
+        and authoritative_account
+        and all(_clean(authoritative.get(key), 100) for key in authoritative_field_matches)
+    )
+    account_matches = bool(
+        authoritative.get("success") is True
+        and inbound_account
+        and authoritative_account
+        and inbound_account == authoritative_account
+    )
+    account_conflict = bool(
+        authoritative.get("success") is True
+        and inbound_account
+        and authoritative_account
+        and inbound_account != authoritative_account
+    )
     evidence["authoritative_conversation_lookup"] = {
         "attempted": bool(authoritative.get("attempted")),
         "status": _clean(authoritative.get("status"), 120),
         "success": authoritative.get("success") is True,
+        "identity_complete": authoritative_identity_complete,
+        "account_id_matches": account_matches,
+        "field_matches": authoritative_field_matches,
     }
     for key in ("conversation_id", "contact_id", "inbox_id"):
         values = sorted({row["value"] for row in evidence["sources"][key] if row.get("value")})
         evidence["conflicts"][key] = len(values) > 1
         evidence["normalized"][key] = values[0] if len(values) == 1 else ""
-    conflict = any(evidence["conflicts"].values())
+    conflict = any(evidence["conflicts"].values()) or account_conflict
     complete = all(evidence["normalized"].get(key) for key in ("conversation_id", "contact_id", "inbox_id"))
     evidence["status"] = (
         "identity_conflict"
@@ -1192,6 +1253,9 @@ def load_sam_general_context(inbound, *, conversation_history_loader=None, envir
     current_context = inbound.get("message_context") if isinstance(inbound.get("message_context"), dict) else {}
     recovered_reference = _recover_general_reference(current_context, history)
     compact_history = _compact_chatwoot_history(history)
+    prior_sales_context = _prior_context_from_chatwoot_history(
+        history, inbound
+    )
     if (
         history.get("success")
         and compact_history.get("chronology_evidence_complete") is False
@@ -1205,6 +1269,7 @@ def load_sam_general_context(inbound, *, conversation_history_loader=None, envir
         "read_only": True,
         "current_message_context": current_context,
         "recovered_reference": recovered_reference,
+        "prior_sales_context": prior_sales_context,
         "chatwoot_history": compact_history,
         "chatwoot_history_messages": _compact_chatwoot_history_messages(
             history,
@@ -1317,6 +1382,16 @@ def _should_use_auto_general_path(inbound, facts, context_packet=None):
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
     text = _normal_text(inbound.get("content"))
+    contextual_route = (
+        context_packet.get("contextual_sales_route")
+        if isinstance(context_packet, dict)
+        and isinstance(context_packet.get("contextual_sales_route"), dict)
+        else {}
+    )
+    if contextual_route.get("preserve_live_stock_lane") is True:
+        return False
+    if contextual_route.get("status") == "mixed_intent_requires_clarification":
+        return True
     if _current_message_requires_specialist(inbound, facts):
         return False
     if _looks_like_customer_qualification_answer(
@@ -1330,6 +1405,171 @@ def _should_use_auto_general_path(inbound, facts, context_packet=None):
     if _natural_close_signal(text):
         return True
     return facts.get("sales_lane") in {"", "unclear", "owner_handoff", LANE_LIVE_STOCK}
+
+
+def resolve_contextual_sales_route(
+    inbound,
+    current_facts,
+    prior_context,
+    *,
+    max_age_seconds=30 * 24 * 60 * 60,
+):
+    """Preserve a proven Livestock lane without masking genuine lane changes."""
+    inbound = inbound if isinstance(inbound, dict) else {}
+    current_facts = current_facts if isinstance(current_facts, dict) else {}
+    prior_context = prior_context if isinstance(prior_context, dict) else {}
+    interest = (
+        prior_context.get("interest")
+        if isinstance(prior_context.get("interest"), dict)
+        else {}
+    )
+    current_route = classify_sam_sales_lane(inbound.get("content"))
+    current_reasons = list(current_route.get("reasons") or [])
+    mixed = "mixed_sales_intent" in current_reasons
+    prior_confidence = float(
+        interest.get("lane_confidence")
+        or prior_context.get("lane_confidence")
+        or 0
+    )
+    current_instant = _chatwoot_history_instant(
+        inbound.get("last_inbound_at")
+    )
+    prior_instant = _chatwoot_history_instant(
+        prior_context.get("latest_context_at")
+    )
+    identity_provenance = (
+        inbound.get("identity_provenance")
+        if isinstance(inbound.get("identity_provenance"), dict)
+        else {}
+    )
+    provenance_normalized = (
+        identity_provenance.get("normalized")
+        if isinstance(identity_provenance.get("normalized"), dict)
+        else {}
+    )
+    provenance_conflicts = (
+        identity_provenance.get("conflicts")
+        if isinstance(identity_provenance.get("conflicts"), dict)
+        else {}
+    )
+    authoritative_lookup = (
+        identity_provenance.get("authoritative_conversation_lookup")
+        if isinstance(
+            identity_provenance.get("authoritative_conversation_lookup"),
+            dict,
+        )
+        else {}
+    )
+    provenance_complete = all(
+        _clean(
+            provenance_normalized.get(key) or inbound.get(key),
+            100,
+        )
+        for key in ("conversation_id", "contact_id", "inbox_id")
+    )
+    identities_match = bool(
+        identity_provenance.get("status") in {
+            "identity_verified",
+            "webhook_identity_normalized",
+        }
+        and authoritative_lookup.get("success") is True
+        and authoritative_lookup.get("identity_complete") is True
+        and authoritative_lookup.get("account_id_matches") is True
+        and all(
+            authoritative_lookup.get("field_matches", {}).get(key) is True
+            for key in ("conversation_id", "contact_id", "inbox_id")
+        )
+        and provenance_complete
+        and not any(provenance_conflicts.values())
+        and
+        _clean(prior_context.get("conversation_id"), 100)
+        == _clean(inbound.get("conversation_id"), 100)
+        and _clean(prior_context.get("contact_id"), 100)
+        == _clean(inbound.get("contact_id"), 100)
+        and _clean(prior_context.get("inbox_id"), 100)
+        == _clean(inbound.get("inbox_id"), 100)
+        and _clean(prior_context.get("account_id"), 100)
+        == _clean(inbound.get("account_id"), 100)
+        and all(
+            _clean(inbound.get(key), 100)
+            for key in (
+                "account_id", "conversation_id", "contact_id", "inbox_id"
+            )
+        )
+    )
+    fresh = bool(
+        current_instant is not None
+        and prior_instant is not None
+        and 0 <= current_instant - prior_instant <= max_age_seconds
+    )
+    prior_valid = bool(
+        prior_context.get("evidence_complete") is True
+        and interest.get("sales_lane") == LANE_LIVE_STOCK
+        and prior_confidence >= 0.9
+        and identities_match
+        and fresh
+    )
+    text = _normal_text(inbound.get("content"))
+    explicit_change = current_route.get("lane") in {
+        LANE_MEAT,
+        "slaughter_abattoir_sales",
+    }
+    preserve = bool(
+        prior_valid
+        and not _explicit_new_request(text)
+        and not _natural_close_signal(text)
+        and not mixed
+        and current_route.get("lane") != "owner_handoff"
+        and not explicit_change
+    )
+    if preserve:
+        status = "authoritative_live_stock_context_preserved"
+    elif not prior_valid:
+        status = "prior_context_not_authoritative"
+    elif mixed:
+        status = "mixed_intent_requires_clarification"
+    elif explicit_change:
+        status = "affirmative_lane_change_preserved"
+    elif current_route.get("lane") == "owner_handoff":
+        status = "owner_handoff_preserved"
+    elif _natural_close_signal(text):
+        status = "acknowledgement_or_close_not_reopened"
+    else:
+        status = "explicit_context_reset"
+    return {
+        "version": "sam_contextual_sales_route_v1",
+        "status": status,
+        "preserve_live_stock_lane": preserve,
+        "final_route": (
+            LANE_LIVE_STOCK if preserve else current_route.get("lane")
+        ),
+        "confidence": prior_confidence if preserve else current_route.get(
+            "confidence", 0
+        ),
+        "checks": {
+            "prior_evidence_complete": (
+                prior_context.get("evidence_complete") is True
+            ),
+            "prior_live_stock_lane": (
+                interest.get("sales_lane") == LANE_LIVE_STOCK
+            ),
+            "prior_high_confidence": prior_confidence >= 0.9,
+            "identity_bound": identities_match,
+            "fresh": fresh,
+            "mixed_intent_absent": not mixed,
+            "affirmative_lane_change_absent": not explicit_change,
+            "owner_handoff_absent": (
+                current_route.get("lane") != "owner_handoff"
+            ),
+        },
+        "current_route": {
+            "lane": current_route.get("lane"),
+            "confidence": current_route.get("confidence"),
+            "reasons": current_reasons,
+        },
+        "writes_performed": False,
+        "sends_customer_message": False,
+    }
 
 
 def _looks_like_customer_qualification_answer(text, facts, context_packet=None):
@@ -1407,7 +1647,11 @@ def build_sam_general_decision(inbound, facts, context_packet, environ=None, llm
     source = environ if isinstance(environ, Mapping) else {}
     reference = context_packet.get("recovered_reference") if isinstance(context_packet.get("recovered_reference"), dict) else {}
     facts["sales_lane"] = "unclear"
-    fallback = _auto_general_fallback_reply(inbound, reference)
+    fallback = _auto_general_fallback_reply(
+        inbound,
+        reference,
+        contextual_route=context_packet.get("contextual_sales_route"),
+    )
     llm = _build_auto_general_llm_reply_if_enabled(
         inbound,
         facts,
@@ -1482,18 +1726,31 @@ def build_sam_general_decision(inbound, facts, context_packet, environ=None, llm
     }
 
 
-def _auto_general_fallback_reply(inbound, reference):
+def _auto_general_fallback_reply(
+    inbound,
+    reference,
+    *,
+    contextual_route=None,
+):
     inbound = inbound if isinstance(inbound, dict) else {}
     reference = reference if isinstance(reference, dict) else {}
     name = _first_name(inbound.get("customer_name"))
     greeting = f"Hi {name}!" if name else "Hi!"
     text = _normal_text(inbound.get("content"))
+    contextual_route = (
+        contextual_route if isinstance(contextual_route, dict) else {}
+    )
     headline = _clean(reference.get("headline") or reference.get("subject"), 300)
     body = _clean_multiline(reference.get("body"), 1200)
     if _general_greeting_only(text):
         return f"{greeting} How can I help you today?"
     if _explicit_human_request(text):
         return f"{greeting} Of course. I will ask Charl to help you."
+    if contextual_route.get("status") == "mixed_intent_requires_clarification":
+        return (
+            f"{greeting} Are you asking about live pigs, pork or meat, "
+            "or both?"
+        )
     if "still just looking" in text or "just looking for now" in text:
         return f"{greeting} No problem at all. Take your time - I am here if anything catches your eye."
     if reference.get("status") == "resolved":
@@ -1918,6 +2175,11 @@ def _prior_context_from_chatwoot_history(history, inbound):
             _clean(message.get("id"), 100),
         ),
     )
+    latest_context_at = (
+        ordered_messages[-1].get("created_at")
+        if ordered_messages
+        else None
+    )
     for message in ordered_messages:
         content = _clean_multiline(message.get("content"), 500)
         if content:
@@ -1937,10 +2199,31 @@ def _prior_context_from_chatwoot_history(history, inbound):
     facts = {}
     for text in incoming_texts[-8:]:
         extracted = extract_live_stock_facts(text, inbound or {})
+        extracted_lane = extracted.get("sales_lane")
+        extracted_confidence = float(
+            extracted.get("lane_confidence") or 0
+        )
+        extracted_reasons = list(extracted.get("lane_reasons") or [])
+        if (
+            extracted_lane == LANE_LIVE_STOCK
+            and extracted_confidence >= 0.9
+        ):
+            facts["sales_lane"] = extracted_lane
+            facts["lane_confidence"] = extracted_confidence
+            facts["lane_reasons"] = extracted_reasons
+        elif (
+            extracted_lane in {
+                LANE_MEAT,
+                "slaughter_abattoir_sales",
+            }
+            and extracted_confidence >= 0.8
+        ) or "mixed_sales_intent" in extracted_reasons:
+            # An affirmative change or genuinely mixed request supersedes the
+            # older lane; unclear/terse qualification answers do not.
+            facts["sales_lane"] = extracted_lane
+            facts["lane_confidence"] = extracted_confidence
+            facts["lane_reasons"] = extracted_reasons
         for key in (
-            "sales_lane",
-            "lane_confidence",
-            "lane_reasons",
             "quantity",
             "category",
             "sex",
@@ -1956,6 +2239,11 @@ def _prior_context_from_chatwoot_history(history, inbound):
                 facts[key] = True
     interest = {
         "sales_lane": facts.get("sales_lane") if facts.get("sales_lane") == LANE_LIVE_STOCK else "",
+        "lane_confidence": (
+            float(facts.get("lane_confidence") or 0)
+            if facts.get("sales_lane") == LANE_LIVE_STOCK
+            else 0
+        ),
         "quantity": facts.get("quantity") or "",
         "category": facts.get("category") or "",
         "sex": facts.get("sex") or "",
@@ -1970,6 +2258,11 @@ def _prior_context_from_chatwoot_history(history, inbound):
         "interest": interest,
         "source": "chatwoot_conversation_history",
         "evidence_complete": True,
+        "latest_context_at": latest_context_at,
+        "conversation_id": _clean((inbound or {}).get("conversation_id"), 100),
+        "contact_id": _clean((inbound or {}).get("contact_id"), 100),
+        "inbox_id": _clean((inbound or {}).get("inbox_id"), 100),
+        "account_id": _clean((inbound or {}).get("account_id"), 100),
     } if any(interest.values()) else {}
 
 
@@ -5311,6 +5604,22 @@ def _auto_general_reply_has_factual_or_commercial_claim(reply):
     if not text:
         return True
     if re.search(r"\bR\s?\d|\b\d+(?:[.,]\d+)?\s?(?:kg|g|km|days?|weeks?|months?|years?)\b", text, re.IGNORECASE):
+        return True
+    if re.search(
+        r"\b(?:piglets?|pigs?|stock)\s+(?:are|is)\s+"
+        r"(?:on hand|ready|available)\b|"
+        r"\b(?:on hand|in stock|ready to go)\b|"
+        r"\b(?:ready|available)\s+for\s+(?:collection|pickup|delivery)\b|"
+        r"\byou\s+can\s+(?:collect|pick\s*up)\b|"
+        r"\b(?:collect|pick\s*up)\s+from\b|"
+        r"\b(?:we|we're|we are|our farm is)\s+"
+        r"(?:based|located)\s+(?:in|near|at)\b|"
+        r"\b(?:we|we can|we're able to)\s+"
+        r"(?:arrange|offer|provide)\s+(?:transport|delivery)\b|"
+        r"\btransport\s+(?:is\s+)?available\b",
+        text,
+        re.IGNORECASE,
+    ):
         return True
     prohibited = (
         "available",
