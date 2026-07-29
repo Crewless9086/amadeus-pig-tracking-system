@@ -17,6 +17,26 @@ an explicit explanation that availability is not reserved. Missing or stale
 availability must omit counts, answer supported parts, say availability is
 being confirmed and ask one useful question.
 
+## Response-usefulness authority
+
+Transport safety is necessary but not sufficient for Level 1 authority. Before
+claiming or sending, SAM builds a deterministic response-usefulness contract
+from the exact latest inbound, relevant chronology, supported evidence,
+missing facts and prohibited commitments.
+
+The gate requires every material supported question to be answered or
+truthfully qualified, relevant customer-friendly guidance to be included, and
+the next genuinely missing qualification fact to be requested. A reply that
+only says availability or pricing will be checked is ineligible when supported
+size, location, collection or process guidance could advance the customer.
+Natural wording is permitted; semantic coverage and evidence provenance are
+the contract.
+
+Provider delivery proves transport only. Customer advancement additionally
+requires a passed usefulness contract and actual qualification progress.
+Ambiguous delivery remains quarantined, and an intake write alone never proves
+that the customer advanced.
+
 Binding quotes, discounts, delivery promises, orders, money, refunds,
 reservations, allocations, carcass commitment, slaughter booking, farm writes,
 complaints and exceptional terms remain owner exceptions. The contract

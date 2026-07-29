@@ -160,6 +160,21 @@ Safe qualification and intake progression may continue when a count or price
 is unavailable, provided the reply omits that unsupported claim. Binding
 quotes, negotiated terms, delivery promises, reservations, allocations,
 orders, payments, ownership, and farm or animal writes remain prohibited.
+
+For ordinary pig enquiries, SAM explains relevant choices in customer
+language: small piglets are approximately 2–6 kg, weaned piglets 7–19 kg,
+growing pigs 20–49 kg, larger pigs 50–79 kg, and slaughter-size pigs 80 kg and
+above. Internal categories may supplement but never replace that explanation.
+Supported Riversdale/Western Cape or collection-process guidance must answer a
+direct location or handover question. Unknown availability or price is
+explicitly qualified and omitted; it does not justify withholding another
+supported answer.
+
+The pre-send usefulness gate rejects pure deferrals, vague questions where
+specific choices exist, repeated questions, omitted supported direct answers,
+unsupported commercial claims, and replies that claim progress without a
+useful next step. Wording may vary naturally when semantic coverage,
+provenance and authority remain equivalent.
 Provider ambiguity quarantines only the exact attempt and never retries.
 Systemic provider, identity, claim-rail, isolation, or authority failure
 requires an append-only killed control event.
