@@ -8,6 +8,14 @@ from typing import Mapping
 
 
 CONTRACT_VERSION = "sam_response_usefulness_v1"
+GUIDANCE_POLICY_ID = "sam_live_stock_customer_guidance_v1"
+GUIDANCE_POLICY_DIGEST = hashlib.sha256(
+    (
+        "small:2-6kg|weaned:7-19kg|growing:20-49kg|larger:50-79kg|"
+        "slaughter:80kg+|location:Riversdale,Western Cape|"
+        "collection:arranged"
+    ).encode()
+).hexdigest()
 
 
 def evaluate_response_usefulness(*, lane, inbound, decision, evidence=None):
@@ -31,6 +39,11 @@ def evaluate_response_usefulness(*, lane, inbound, decision, evidence=None):
     }
     intents = _intents(content)
     required_guidance = _required_guidance(lane, intents, content, missing)
+    availability = (
+        evidence.get("availability")
+        if isinstance(evidence.get("availability"), Mapping)
+        else {}
+    )
     coverage = {
         "location": _covers_location(reply),
         "size": _covers_size_guidance(reply, minimum_bands=1),
@@ -40,13 +53,14 @@ def evaluate_response_usefulness(*, lane, inbound, decision, evidence=None):
             reply,
             "availability",
             availability_current=(
-                isinstance(evidence.get("availability"), Mapping)
-                and evidence["availability"].get("evidence_complete") is True
-                and str(evidence["availability"].get("freshness") or "").lower()
+                availability.get("evidence_complete") is True
+                and str(availability.get("freshness") or "").lower()
                 == "current"
             ),
         ),
         "collection": _covers_collection(reply),
+        "sex": _covers_sex(reply),
+        "purpose": _covers_purpose(reply),
     }
     unanswered = sorted(
         intent for intent in intents
@@ -59,14 +73,25 @@ def evaluate_response_usefulness(*, lane, inbound, decision, evidence=None):
         or guidance == "location_or_collection_guidance"
         and not (coverage["location"] or coverage["collection"])
     )
-    asks_useful = _asks_missing_fact(reply, missing)
+    asked_missing = _asked_missing_facts(reply, missing)
+    asks_useful = bool(asked_missing)
     has_useful_question = asks_useful or _has_useful_question(reply)
     qualification_required = bool(
         missing & {"quantity", "sex", "size", "weight_range", "location", "timing"}
     )
+    unresolved_commercial = bool(
+        ("price" in intents and not _has_supported_price_answer(reply))
+        or (
+            "availability" in intents
+            and not (
+                availability.get("evidence_complete") is True
+                and str(availability.get("freshness") or "").lower() == "current"
+                and _has_affirmative_availability_answer(reply)
+            )
+        )
+    )
     pure_deferral = bool(
-        _defers_availability_or_price(reply)
-        and (required_guidance or qualification_required)
+        unresolved_commercial
         and not (
             coverage["size"]
             or coverage["location"]
@@ -78,7 +103,13 @@ def evaluate_response_usefulness(*, lane, inbound, decision, evidence=None):
         "missing_fields_valid": missing_fields_valid,
         "material_intents_covered": not unanswered,
         "required_guidance_included": not guidance_missing,
-        "qualification_advanced": not qualification_required or asks_useful,
+        "qualification_advanced": (
+            not qualification_required
+            or not (
+                missing
+                & {"quantity", "sex", "size", "weight_range", "location", "timing"}
+            ) - asked_missing
+        ),
         "not_pure_deferral": not pure_deferral,
         "customer_language_used": not _unexplained_internal_taxonomy(reply),
         "concise": 0 < len(reply) <= 1800,
@@ -87,16 +118,12 @@ def evaluate_response_usefulness(*, lane, inbound, decision, evidence=None):
             and inbound.get("conversation_id")
             and evidence.get("supporting_evidence_valid") is True
         ),
+        # Static customer guidance is accepted only when it matches this
+        # compiled, versioned policy. Callers cannot mint authority booleans at
+        # the send boundary.
         "claim_specific_provenance_valid": bool(
-            (
-                not (coverage["size"] or "size" in intents)
-                or evidence.get("guidance_policy_version")
-                == "sam_live_stock_customer_guidance_v1"
-            )
-            and (
-                not (coverage["location"] or "location" in intents)
-                or evidence.get("location_guidance_authorized") is True
-            )
+            not (coverage["size"] or coverage["location"] or coverage["collection"])
+            or lane == "live_stock"
         ),
     }
     passed = all(checks.values())
@@ -118,9 +145,10 @@ def evaluate_response_usefulness(*, lane, inbound, decision, evidence=None):
                 evidence.get("supporting_evidence_valid") is True
             ),
             "availability_freshness": str(
-                (evidence.get("availability") or {}).get("freshness") or
-                "unavailable"
+                availability.get("freshness") or "unavailable"
             ).lower(),
+            "guidance_policy_id": GUIDANCE_POLICY_ID,
+            "guidance_policy_digest": GUIDANCE_POLICY_DIGEST,
         },
         "contains_customer_content": False,
         "sends_customer_message": False,
@@ -145,7 +173,13 @@ def customer_advancement_outcome(*, provider_state, usefulness_passed,
 
 def _intents(content):
     intents = set()
-    if re.search(r"\b(?:where|located|location|based)\b", content, re.I):
+    if re.search(
+        r"(?:^\s*(?:where|location)\s*\??\s*$|"
+        r"\bwhere\b.{0,30}\b(?:you|farm|located|based)\b|"
+        r"\b(?:your|farm)\s+location\b|\bwhere\s+are\s+you\b)",
+        content,
+        re.I,
+    ):
         intents.add("location")
     if re.search(r"\b(?:collect|collection|handover|pick\s*up)\b", content, re.I):
         intents.add("collection")
@@ -177,6 +211,20 @@ def _intents(content):
     ))
     if explicit_size_unknown or generic_pig or direct_size_question:
         intents.add("size")
+    if re.search(
+        r"(?:\b(?:male|female)\s+or\s+(?:male|female)\b|"
+        r"\bwhat\s+sex\b|\bwhich\s+sex\b|\bsex\s+(?:do|are|is)\b)",
+        content,
+        re.I,
+    ):
+        intents.add("sex")
+    if re.search(
+        r"\b(?:breeding|breed(?:er|ing)?|raise\s+for\s+meat|"
+        r"slaughter|intended\s+use|what\s+(?:type|kind)\s+of\s+pig)\b",
+        content,
+        re.I,
+    ):
+        intents.add("purpose")
     return intents
 
 
@@ -213,8 +261,18 @@ def _covers_size_guidance(reply, *, minimum_bands):
 
 def _covers_location(reply):
     declarative = re.sub(r"[^.!?]*\?", " ", reply)
+    if re.search(
+        r"\b(?:not|isn't|aren't|never)\b.{0,30}"
+        r"\b(?:based|located|riversdale|albertinia|western cape)\b",
+        declarative,
+        re.I,
+    ):
+        return False
     return bool(re.search(
-        r"\b(?:riversdale|albertinia|western cape)\b",
+        r"\b(?:we|our\s+farm)\s+(?:are|are\s+based|is|is\s+based|"
+        r"are\s+located|is\s+located)\s+(?:near|in|outside)\s+"
+        r"(?:riversdale|albertinia|the\s+western\s+cape)\b|"
+        r"\bbased\s+near\s+riversdale\b",
         declarative,
         re.I,
     ))
@@ -222,9 +280,37 @@ def _covers_location(reply):
 
 def _covers_collection(reply):
     declarative = re.sub(r"[^.!?]*\?", " ", reply)
-    return bool(re.search(
-        r"\b(?:collect(?:ion)?|pick\s*up|handover)\b",
+    if re.search(
+        r"\b(?:free|nationwide|guaranteed|included)\b.{0,40}"
+        r"\b(?:collection|pick\s*up|handover)\b|"
+        r"\b(?:collection|pick\s*up|handover)\b.{0,40}"
+        r"\b(?:free|nationwide|guaranteed|included)\b",
         declarative,
+        re.I,
+    ):
+        return False
+    return bool(re.search(
+        r"\bcollection\s+is\s+arranged(?:\s+(?:in|near)\s+"
+        r"(?:riversdale|albertinia))?(?=[.!?]|$)|"
+        r"\b(?:pick\s*up|handover)\s+is\s+arranged(?=[.!?]|$)",
+        declarative,
+        re.I,
+    ))
+
+
+def _covers_sex(reply):
+    return bool(re.search(
+        r"\b(?:male|female|either|mixture|mix|sex preference)\b",
+        reply,
+        re.I,
+    ))
+
+
+def _covers_purpose(reply):
+    return bool(re.search(
+        r"\b(?:breeding|breed|raise\s+for\s+meat|meat|slaughter|"
+        r"intended\s+use|purpose)\b",
+        reply,
         re.I,
     ))
 
@@ -254,7 +340,25 @@ def _covers_or_qualifies(reply, intent, *, availability_current=False):
     return qualified or (availability_current and affirmative)
 
 
-def _asks_missing_fact(reply, missing):
+def _has_supported_price_answer(reply):
+    return bool(re.search(
+        r"(?:\bR\s?\d|\b\d[\d ,.]*\s*(?:rand|zar)\b)",
+        reply,
+        re.I,
+    ))
+
+
+def _has_affirmative_availability_answer(reply):
+    return bool(re.search(
+        r"\b(?:we|i)\s+(?:currently\s+)?have\b.{0,60}\bavailable\b|"
+        r"\b(?:is|are)\s+(?:currently\s+)?available\b|"
+        r"\b(?:we\s+have|there\s+(?:is|are))\b.{0,60}\bin stock\b",
+        reply,
+        re.I,
+    ))
+
+
+def _asked_missing_facts(reply, missing):
     questions = " ".join(re.findall(r"[^?]*\?", reply))
     patterns = {
         "quantity": r"\b(?:how many|quantity)\b",
@@ -264,10 +368,10 @@ def _asks_missing_fact(reply, missing):
         "location": r"\b(?:where|location|area|collect|delivery)\b",
         "timing": r"\b(?:when|date|week|month|timing)\b",
     }
-    return any(
-        field in missing and re.search(pattern, questions, re.I)
-        for field, pattern in patterns.items()
-    )
+    return {
+        field for field, pattern in patterns.items()
+        if field in missing and re.search(pattern, questions, re.I)
+    }
 
 
 def _has_useful_question(reply):
@@ -278,20 +382,14 @@ def _has_useful_question(reply):
         questions,
         re.I,
     ))
-
-
-def _defers_availability_or_price(reply):
-    return bool(re.search(
-        r"\b(?:checking|check|confirming|confirm)\b.{0,80}"
-        r"\b(?:availability|available|pricing|price)\b",
-        reply,
-        re.I,
-    ))
-
-
 def _unexplained_internal_taxonomy(reply):
     return bool(
-        re.search(r"\b(?:Young Piglets|Weaner Piglets|Grower Pigs|Finisher Pigs)\b", reply)
+        re.search(
+            r"\b(?:young\s+piglets?|weaner\s+piglets?|grower\s+pigs?|"
+            r"finisher\s+pigs?)\b",
+            reply,
+            re.I,
+        )
         and not re.search(r"\b(?:kg|small|weaned|growing|larger|slaughter-size)\b", reply, re.I)
     )
 

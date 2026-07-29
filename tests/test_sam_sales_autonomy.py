@@ -157,6 +157,24 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         )
         self.assertTrue(packet["passed"])
 
+    def test_partial_missing_fact_question_does_not_count_as_advancement(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="I need pigs but do not know the size."),
+            decision=decision(
+                suggested_reply_text=(
+                    "Small piglets are approximately 2 to 6 kg and weaned "
+                    "piglets 7 to 19 kg. How many do you need?"
+                ),
+                missing_fields=[
+                    "item.category", "item.quantity", "item.sex", "item.location"
+                ],
+            ),
+            evidence=evidence(),
+        )
+        self.assertFalse(packet["passed"])
+        self.assertIn("qualification_advanced", packet["blockers"])
+
     def test_unknown_availability_does_not_block_supported_guidance(self):
         packet = evaluate_response_usefulness(
             lane="live_stock",
@@ -192,7 +210,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         self.assertNotIn("size", packet["intents"])
         self.assertNotIn("sex", packet["missing_facts"])
 
-    def test_specific_weaner_enquiry_does_not_require_size_menu(self):
+    def test_specific_weaner_enquiry_cannot_pass_as_pure_deferral(self):
         packet = evaluate_response_usefulness(
             lane="live_stock",
             inbound=inbound(content="Do you have 3 female weaners available?"),
@@ -205,7 +223,8 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
             ),
             evidence=evidence(),
         )
-        self.assertTrue(packet["passed"])
+        self.assertFalse(packet["passed"])
+        self.assertIn("not_pure_deferral", packet["blockers"])
         self.assertNotIn("size", packet["intents"])
 
     def test_direct_weaner_definition_accepts_one_relevant_band(self):
@@ -265,7 +284,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         self.assertFalse(packet["passed"])
         self.assertIn("collection", packet["unanswered_intents"])
 
-    def test_location_and_size_claims_require_specific_provenance(self):
+    def test_location_and_size_guidance_has_compiled_policy_provenance(self):
         packet = evaluate_response_usefulness(
             lane="live_stock",
             inbound=inbound(content="Where are you based and what pig sizes do you sell?"),
@@ -284,8 +303,152 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
                 },
             },
         )
+        self.assertTrue(packet["passed"])
+        self.assertEqual(
+            packet["evidence_provenance"]["guidance_policy_id"],
+            "sam_live_stock_customer_guidance_v1",
+        )
+        self.assertEqual(
+            len(packet["evidence_provenance"]["guidance_policy_digest"]), 64
+        )
+
+    def test_forged_guidance_flags_do_not_create_non_livestock_authority(self):
+        packet = evaluate_response_usefulness(
+            lane="meat",
+            inbound=inbound(content="Where are you based?"),
+            decision=decision(
+                suggested_reply_text="We are based near Riversdale.",
+                missing_fields=[],
+            ),
+            evidence={
+                "supporting_evidence_valid": True,
+                "guidance_policy_version": "sam_live_stock_customer_guidance_v1",
+                "location_guidance_authorized": True,
+            },
+        )
         self.assertFalse(packet["passed"])
         self.assertIn("claim_specific_provenance_valid", packet["blockers"])
+
+    def test_direct_sex_and_breeding_use_must_be_addressed(self):
+        cases = (
+            "Do you sell male or female pigs?",
+            "I need a pig for breeding.",
+        )
+        for content in cases:
+            with self.subTest(content=content):
+                packet = evaluate_response_usefulness(
+                    lane="live_stock",
+                    inbound=inbound(content=content),
+                    decision=decision(
+                        suggested_reply_text=(
+                            "Small piglets are approximately 2 to 6 kg and "
+                            "weaned piglets 7 to 19 kg. Which size suits you?"
+                        ),
+                        missing_fields=["item.category"],
+                    ),
+                    evidence=evidence(),
+                )
+                self.assertFalse(packet["passed"])
+
+    def test_customer_location_statement_is_not_our_location_question(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="I am based in Cape Town and need a weaner."),
+            decision=decision(
+                suggested_reply_text=(
+                    "How many weaned piglets do you need, and would you prefer "
+                    "male, female, or either?"
+                ),
+                missing_fields=["item.quantity", "item.sex"],
+            ),
+            evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"])
+        self.assertNotIn("location", packet["intents"])
+
+    def test_terse_location_questions_require_a_location_answer(self):
+        for content in ("Location?", "Where?"):
+            with self.subTest(content=content):
+                packet = evaluate_response_usefulness(
+                    lane="live_stock",
+                    inbound=inbound(content=content),
+                    decision=decision(
+                        suggested_reply_text="How many pigs do you need?",
+                        missing_fields=[],
+                    ),
+                    evidence=evidence(),
+                )
+                self.assertFalse(packet["passed"])
+                self.assertIn("location", packet["unanswered_intents"])
+
+    def test_lowercase_internal_taxonomy_without_explanation_is_blocked(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="What pig sizes do you sell?"),
+            decision=decision(
+                suggested_reply_text="We sell weaner piglets and grower pigs.",
+                missing_fields=[],
+            ),
+            evidence=evidence(),
+        )
+        self.assertFalse(packet["passed"])
+        self.assertIn("customer_language_used", packet["blockers"])
+
+    def test_cannot_confirm_price_or_availability_is_not_useful(self):
+        for content, reply in (
+            ("What is the price?", "I cannot confirm the price."),
+            ("Are weaners available?", "I cannot confirm availability."),
+            ("What is the price?", "The price needs confirmation."),
+            ("Are weaners available?", "Availability needs confirmation."),
+            ("What is the price?", "The price is not currently available."),
+            ("What is the price?", "The price has not been confirmed yet."),
+            ("What is the price?", "Price pending confirmation."),
+            ("Are weaners available?", "Availability awaiting confirmation."),
+        ):
+            with self.subTest(content=content):
+                packet = evaluate_response_usefulness(
+                    lane="live_stock",
+                    inbound=inbound(content=content),
+                    decision=decision(
+                        suggested_reply_text=reply,
+                        missing_fields=[],
+                    ),
+                    evidence=evidence(),
+                )
+                self.assertFalse(packet["passed"])
+                self.assertIn("not_pure_deferral", packet["blockers"])
+
+    def test_negated_location_and_unsupported_collection_claims_are_blocked(self):
+        for content, reply in (
+            ("Where are you based?", "We are not based in Riversdale."),
+            ("Where can I collect?", "Collection is free nationwide."),
+            ("Where can I collect?", "Collection is arranged tomorrow."),
+        ):
+            with self.subTest(reply=reply):
+                packet = evaluate_response_usefulness(
+                    lane="live_stock",
+                    inbound=inbound(content=content),
+                    decision=decision(
+                        suggested_reply_text=reply,
+                        missing_fields=[],
+                    ),
+                    evidence=evidence(),
+                )
+                self.assertFalse(packet["passed"])
+
+    def test_malformed_availability_evidence_fails_without_exception(self):
+        for malformed in ("bad", [], 42):
+            with self.subTest(malformed=malformed):
+                packet = evaluate_response_usefulness(
+                    lane="live_stock",
+                    inbound=inbound(content="Are weaners available?"),
+                    decision=decision(
+                        suggested_reply_text="I cannot confirm availability.",
+                        missing_fields=[],
+                    ),
+                    evidence=evidence(availability=malformed),
+                )
+                self.assertFalse(packet["passed"])
 
     def test_malformed_missing_fields_fails_closed(self):
         packet = evaluate_response_usefulness(
