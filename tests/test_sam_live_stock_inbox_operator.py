@@ -26,7 +26,8 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
 
     def history(self, message_id, content, incoming=True):
         return {
-            "evidence_complete": True,
+            "success": True,
+            "status": "chatwoot_conversation_history_loaded",
             "messages": [
                 {
                     "id": message_id,
@@ -103,6 +104,59 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         self.assertEqual(
             packet["dispositions"][0]["disposition"],
             "closed_window_reengagement_required",
+        )
+
+    def test_real_loader_shape_is_eligible_without_synthetic_evidence_flag(self):
+        calls = []
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page([self.row("1")]),
+            history_loader=lambda cid, _env: (
+                self.history("101", "I want five weaned piglets"),
+                200,
+            ),
+            claim_exists=lambda cid, mid: False,
+            inbound_processor=lambda payload: (
+                calls.append(payload["id"]) or {"sam_decision": {}}
+            ),
+        )
+        self.assertEqual(calls, ["101"])
+        self.assertTrue(packet["dispositions"][0]["eligible"])
+
+    def test_authoritative_livestock_context_preserves_terse_followup(self):
+        history = {
+            "success": True,
+            "status": "chatwoot_conversation_history_loaded",
+            "messages": [
+                {
+                    "id": 100,
+                    "created_at": 100,
+                    "message_type": 0,
+                    "private": False,
+                    "content": "I want five weaned piglets",
+                },
+                {
+                    "id": 101,
+                    "created_at": 101,
+                    "message_type": 0,
+                    "private": False,
+                    "content": "Riversdale",
+                },
+            ],
+        }
+        calls = []
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page([self.row("1")]),
+            history_loader=lambda cid, _env: (history, 200),
+            claim_exists=lambda cid, mid: False,
+            inbound_processor=lambda payload: (
+                calls.append(payload["id"]) or {"sam_decision": {}}
+            ),
+        )
+        self.assertEqual(calls, [101])
+        self.assertEqual(
+            packet["dispositions"][0]["final_route"], "AUTO_SPECIALIST"
         )
 
 

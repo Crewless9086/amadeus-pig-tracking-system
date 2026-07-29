@@ -78,6 +78,40 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_quantity_only_is_preferred_when_it_is_the_sole_missing_field(self):
+        self.assertTrue(
+            sam_live_stock_runtime._prefer_customer_size_guidance(
+                customer_guidance={
+                    "applicable": True,
+                    "guidance_scope": "qualification_only",
+                    "questions_asked": ["how many do you need"],
+                    "canonical_mapping": {},
+                },
+                contextual_sales={"status": "commercial_evidence_unavailable"},
+                information_reply={"status": "not_requested"},
+                price_answer_packet={"can_answer_price": False},
+                information_scope="",
+                sales_lane="live_stock_sales",
+            )
+        )
+
+    def test_quantity_only_never_suppresses_a_supported_price_answer(self):
+        self.assertFalse(
+            sam_live_stock_runtime._prefer_customer_size_guidance(
+                customer_guidance={
+                    "applicable": True,
+                    "guidance_scope": "qualification_only",
+                    "questions_asked": ["how many do you need"],
+                    "canonical_mapping": {},
+                },
+                contextual_sales={"status": "commercial_evidence_unavailable"},
+                information_reply={"status": "price_only_verified"},
+                price_answer_packet={"can_answer_price": True},
+                information_scope="price",
+                sales_lane="live_stock_sales",
+            )
+        )
+
     def test_availability_observation_uses_oldest_counted_row_and_rejects_malformed(self):
         fresh = exact_eligible_row(
             pig_id="FRESH", eligibility_observed_at="2026-07-27T11:00:00Z"

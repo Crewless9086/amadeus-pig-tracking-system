@@ -4546,6 +4546,12 @@ def _prefer_customer_size_guidance(
                 and customer_guidance.get("questions_asked")
                 == ["how many do you need"]
                 and bool(customer_guidance.get("canonical_mapping") == {})
+                and not information_scope
+                and information_reply.get("status") not in {
+                    "availability_and_pricing_verified",
+                    "price_only_verified",
+                }
+                and price_answer_packet.get("can_answer_price") is not True
             )
             or (
                 not information_scope

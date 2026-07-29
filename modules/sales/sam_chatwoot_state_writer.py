@@ -51,6 +51,7 @@ def apply_delivery_state(
     authoritative_latest_inbound_id: str,
     environ=None,
     conversation_loader: Callable | None = None,
+    chronology_loader: Callable | None = None,
     label_writer: Callable | None = None,
     last_seen_writer: Callable | None = None,
 ) -> dict:
@@ -68,6 +69,18 @@ def apply_delivery_state(
     )
     if not plan["allowed"]:
         return {**plan, "applied": False}
+    conversation_id = plan["identity"]["conversation_id"]
+    if not _exact_latest_inbound(
+        conversation_id,
+        authoritative_latest_inbound_id,
+        source,
+        chronology_loader,
+    ):
+        return {
+            **plan,
+            "applied": False,
+            "status": "chronology_changed_before_label_write",
+        }
     labels = sorted(
         (set(existing) - SAM_STATE_LABELS)
         | set(plan["replace_sam_state_labels"])
@@ -77,9 +90,22 @@ def apply_delivery_state(
             conversation_id, values, source
         )
     )
-    label_result = writer(plan["identity"]["conversation_id"], labels)
+    label_result = writer(conversation_id, labels)
     seen_result = {"success": False, "skipped": True}
     if plan["mark_exact_inbound_seen"]:
+        if not _exact_latest_inbound(
+            conversation_id,
+            authoritative_latest_inbound_id,
+            source,
+            chronology_loader,
+        ):
+            return {
+                **plan,
+                "applied": False,
+                "status": "chronology_changed_before_last_seen",
+                "labels_after": labels,
+                "last_seen_applied": False,
+            }
         seen = last_seen_writer or (
             lambda conversation_id: _update_last_seen(
                 conversation_id, source
@@ -99,6 +125,44 @@ def apply_delivery_state(
         "labels_after": labels,
         "last_seen_applied": seen_result.get("success") is True,
     }
+
+
+def _exact_latest_inbound(
+    conversation_id, expected_inbound_id, environ, chronology_loader=None
+):
+    loader = chronology_loader or (
+        lambda cid: _request(
+            "GET",
+            f"/api/v1/accounts/{_account(environ)}/conversations/{cid}/messages",
+            environ,
+        )
+    )
+    packet = loader(conversation_id) or {}
+    messages = packet.get("messages") if isinstance(packet, Mapping) else None
+    if not isinstance(messages, list):
+        return False
+    public = [
+        item for item in messages
+        if isinstance(item, Mapping)
+        and not bool(item.get("private"))
+        and item.get("message_type") in (0, 1, "incoming", "outgoing")
+    ]
+    try:
+        public.sort(
+            key=lambda item: (
+                int(item.get("created_at") or 0),
+                int(item.get("id") or 0),
+            )
+        )
+    except (TypeError, ValueError):
+        return False
+    incoming = [
+        item for item in public
+        if item.get("message_type") in (0, "incoming")
+    ]
+    if not incoming:
+        return False
+    return str(incoming[-1].get("id") or "") == str(expected_inbound_id or "")
 
 
 def _load_conversation(inbound, environ, *, conversation_loader=None):

@@ -15,6 +15,7 @@ from modules.sales.sam_live_stock_runtime import (
     load_sam_general_context,
     parse_chatwoot_inbound,
     resolve_contextual_sales_route,
+    resolve_sam_general_inbound_identity,
 )
 from modules.sales.sam_sales_router import classify_sam_sales_lane
 
@@ -126,6 +127,20 @@ def _inspect_and_operate(
         "sender": {"id": sender.get("id"), "name": sender.get("name")},
     }
     parsed = parse_chatwoot_inbound(payload) if latest_incoming else {}
+    if parsed:
+        parsed = resolve_sam_general_inbound_identity(
+            parsed,
+            payload,
+            environ=source,
+            conversation_identity_loader=lambda _cid, _env=None: {
+                "success": True,
+                "status": "provider_inventory_identity_verified",
+                "account_id": str(row.get("account_id") or "147387"),
+                "conversation_id": conversation_id,
+                "contact_id": str(sender.get("id") or ""),
+                "inbox_id": str(row.get("inbox_id") or ""),
+            },
+        )
     facts = extract_live_stock_facts(parsed.get("content"), parsed) if parsed else {}
     raw_route = classify_sam_sales_lane(parsed.get("content") or "") if parsed else {}
     context = (
@@ -154,7 +169,7 @@ def _inspect_and_operate(
     open_window = bool(row.get("can_reply") is True)
     eligible = bool(
         status == 200
-        and history.get("evidence_complete") is True
+        and _history_is_complete(history)
         and latest_incoming
         and inbound_id
         and livestock
@@ -183,7 +198,11 @@ def _inspect_and_operate(
             if livestock and not open_window
             else "not_livestock"
         ),
-        "final_route": contextual.get("final_route") or raw_route.get("lane"),
+        "final_route": (
+            "AUTO_SPECIALIST"
+            if livestock
+            else contextual.get("final_route") or raw_route.get("lane")
+        ),
         "provider_state": provider_state,
         "provider_confirmed": provider_state in {
             "provider_delivered", "provider_read"
@@ -195,6 +214,29 @@ def _inspect_and_operate(
         "reply": decision.get("suggested_reply_text") or "",
         "latest_inbound_at": int(latest.get("created_at") or 0),
     }
+
+
+def _history_is_complete(history):
+    """Accept the real Chatwoot history shape only when chronology is auditable."""
+    if not isinstance(history, Mapping) or history.get("success") is False:
+        return False
+    messages = history.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return False
+    public = [
+        item for item in messages
+        if isinstance(item, Mapping) and not bool(item.get("private"))
+    ]
+    if not public:
+        return False
+    try:
+        return all(
+            str(item.get("id") or "").strip()
+            and int(item.get("created_at")) >= 0
+            for item in public
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 def build_sam_status_summary(dispositions, *, observed_at=None):
