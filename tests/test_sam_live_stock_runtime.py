@@ -78,6 +78,64 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_weight_after_want_is_not_misread_as_quantity(self):
+        for message in (
+            "I want 19 kg ones",
+            "I want 19kg ones",
+            "I want 19 kilogram ones",
+            "I want 19 kilograms ones",
+        ):
+            with self.subTest(message=message):
+                facts = sam_live_stock_runtime.extract_live_stock_facts(
+                    message
+                )
+                self.assertEqual(facts["quantity"], "")
+                self.assertEqual(facts["weight_range"], "around 19 kg")
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I want 19 kg ones"
+        )
+        guidance = sam_live_stock_runtime.build_live_stock_customer_guidance(
+            {"content": "I want 19 kg ones"},
+            facts,
+        )
+        self.assertEqual(guidance["questions_asked"], ["how many do you need"])
+        self.assertNotIn("male, female", guidance["reply_text"])
+
+    def test_quantity_guidance_does_not_suppress_availability_request(self):
+        base = {
+            "customer_guidance": {
+                "applicable": True,
+                "guidance_scope": "qualification_only",
+                "questions_asked": ["how many do you need"],
+                "canonical_mapping": {},
+            },
+            "contextual_sales": {
+                "status": "commercial_evidence_unavailable"
+            },
+            "price_answer_packet": {"can_answer_price": False},
+            "information_scope": "",
+            "sales_lane": "live_stock_sales",
+            "latest_customer_text": (
+                "I want 19 kg ones. Are they available?"
+            ),
+        }
+        self.assertFalse(
+            sam_live_stock_runtime._prefer_customer_size_guidance(
+                **base,
+                information_reply={
+                    "status": "availability_and_pricing_verified"
+                },
+            )
+        )
+        self.assertTrue(
+            sam_live_stock_runtime._prefer_customer_size_guidance(
+                **base,
+                information_reply={
+                    "status": "authoritative_category_evidence_unavailable"
+                },
+            )
+        )
+
     def test_quantity_only_is_preferred_when_it_is_the_sole_missing_field(self):
         self.assertTrue(
             sam_live_stock_runtime._prefer_customer_size_guidance(
@@ -92,6 +150,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 price_answer_packet={"can_answer_price": False},
                 information_scope="",
                 sales_lane="live_stock_sales",
+                latest_customer_text="I want 19 kg ones",
             )
         )
 
@@ -109,6 +168,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 price_answer_packet={"can_answer_price": True},
                 information_scope="price",
                 sales_lane="live_stock_sales",
+                latest_customer_text="How much are they?",
             )
         )
 
