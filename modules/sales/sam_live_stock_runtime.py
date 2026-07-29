@@ -4539,16 +4539,33 @@ def _prefer_customer_size_guidance(
     return bool(
         customer_guidance.get("applicable") is True
         and sales_lane == LANE_LIVE_STOCK
-        and not information_scope
-        and contextual_sales.get("status") in {
-            "commercial_evidence_unavailable",
-            "not_commercial_livestock",
-        }
-        and information_reply.get("status") not in {
-            "availability_and_pricing_verified",
-            "price_only_verified",
-        }
-        and price_answer_packet.get("can_answer_price") is not True
+        and (
+            (
+                customer_guidance.get("guidance_scope")
+                == "qualification_only"
+                and customer_guidance.get("questions_asked")
+                == ["how many do you need"]
+                and bool(customer_guidance.get("canonical_mapping") == {})
+                and not information_scope
+                and information_reply.get("status") not in {
+                    "availability_and_pricing_verified",
+                    "price_only_verified",
+                }
+                and price_answer_packet.get("can_answer_price") is not True
+            )
+            or (
+                not information_scope
+                and contextual_sales.get("status") in {
+                    "commercial_evidence_unavailable",
+                    "not_commercial_livestock",
+                }
+                and information_reply.get("status") not in {
+                    "availability_and_pricing_verified",
+                    "price_only_verified",
+                }
+                and price_answer_packet.get("can_answer_price") is not True
+            )
+        )
     )
 
 

@@ -23,6 +23,17 @@ class SamLiveStockContinuousFollowupTests(unittest.TestCase):
         self.assertNotIn("Which size", guidance["reply_text"])
         self.assertIn("Price and current availability still need", guidance["reply_text"])
 
+    def test_known_weight_and_sex_asks_only_quantity_even_with_other_missing_fields(self):
+        facts = extract_live_stock_facts("Female and male 7 to 19")
+        guidance = build_live_stock_customer_guidance(
+            {"customer_name": "Misokuhle", "content": "Female and male 7 to 19"},
+            facts,
+        )
+        self.assertEqual(guidance["guidance_scope"], "qualification_only")
+        self.assertEqual(guidance["questions_asked"], ["how many do you need"])
+        self.assertNotIn("location", guidance["reply_text"].lower())
+        self.assertNotIn("collect", guidance["reply_text"].lower())
+
     def test_split_sex_quantities_are_summed(self):
         facts = extract_live_stock_facts(
             "I want weaned piglets. I would like 4 females and one male."

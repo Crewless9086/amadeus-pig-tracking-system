@@ -95,7 +95,10 @@ class SamChatwootInboxStateTests(unittest.TestCase):
             ],
         )
         self.assertTrue(plan["allowed"])
-        self.assertEqual(plan["replace_sam_state_labels"], ["vip"])
+        self.assertEqual(
+            plan["replace_sam_state_labels"],
+            ["new_customer_inbound", "vip"],
+        )
         self.assertFalse(plan["mark_seen"])
         self.assertTrue(plan["preserve_assignment"])
 
