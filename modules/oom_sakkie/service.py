@@ -14,6 +14,7 @@ DETERMINISTIC_ONLY_CHANNELS = {"telegram_read_only"}
 TELEGRAM_OWNER_AUTHORITY = object()
 DETERMINISTIC_ONLY_TOOLS = {
     "herdmaster_breeding_worklist",
+    "herdmaster_herd_question",
     "herdmaster_breeding_observation_preview",
     "herdmaster_weight_preview",
 }
@@ -45,6 +46,22 @@ class IntentMatch:
 
 
 RULES = [
+    (
+        re.compile(
+            r"\b(?:"
+            r"what (?:do you|does oom sakkie) (?:currently )?know about|"
+            r"latest recorded weight|breeding status|"
+            r"next recommended action"
+            r")\b",
+            re.I,
+        ),
+        IntentMatch(
+            "herdmaster_herd_question",
+            "herdmaster_herd_question",
+            0.99,
+            "rule:herdmaster_herd_question",
+        ),
+    ),
     (
         re.compile(
             r"^\s*.+?\s+weighed\s+\d+(?:[.,]\d+)?\s*kg\s+on\s+.+$",
@@ -517,7 +534,11 @@ def handle_message(payload):
     links = list(tool_result.get("links") or [])
     if is_unsupported_action_request(text):
         safety_notes.append("I treated this as a read-only check. No write, message, control, or physical action was performed.")
-    deterministic_answer = build_answer(tool_result, stale_warnings, safety_notes)
+    deterministic_answer = (
+        str(tool_result.get("summary") or "")
+        if tool.name == "herdmaster_herd_question"
+        else build_answer(tool_result, stale_warnings, safety_notes)
+    )
     composed_answer = None
     if llm_allowed and tool.name not in DETERMINISTIC_ONLY_TOOLS:
         composed_answer = compose_answer_with_llm(
@@ -552,8 +573,13 @@ def handle_message(payload):
     )
     trace_status = write_trace(trace)
 
+    herd_question_succeeded = (
+        tool_result.get("success") is True
+        if tool.name == "herdmaster_herd_question"
+        else True
+    )
     return {
-        "success": True,
+        "success": herd_question_succeeded,
         "answer": answer,
         "tool_used": tool.name,
         "trace_id": trace_id,
@@ -561,7 +587,7 @@ def handle_message(payload):
         "links": links,
         "stale_warnings": stale_warnings,
         "safety_notes": safety_notes,
-        "needs_clarification": False,
+        "needs_clarification": not herd_question_succeeded,
         "pipeline": _pipeline(
             route_source=_route_source(match),
             answer_source=answer_source,
