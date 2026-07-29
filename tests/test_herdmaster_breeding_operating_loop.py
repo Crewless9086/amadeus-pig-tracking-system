@@ -286,6 +286,43 @@ def test_due_pregnancy_check_is_worklist_attention():
     assert result["tasks"][0]["task_group"] == "pregnancy check due"
 
 
+def test_current_confirmed_pregnancy_is_not_labelled_pending():
+    result = build(matings=[{
+        "mating_id": "MAT-1", "sow_pig_id": "PIG-MS",
+        "mating_date": "2026-06-01", "mating_status": "Confirmed_Pregnant",
+        "pregnancy_check_date": "2026-06-24",
+        "pregnancy_check_result": "Pregnant",
+        "expected_farrowing_date": "2026-09-23",
+    }])
+    classification = result["cases"][0]["classification"]
+    assert classification["state"] == "Confirmed pregnant"
+    assert classification["task_group"] == (
+        "monitor pregnancy and farrowing milestones"
+    )
+    assert classification["pregnancy_evidence"]["currently_applicable"] is True
+    assert result["task_count"] == 0
+    assert result["writes_performed"] is False
+
+
+def test_historical_pregnancy_result_requires_current_status_review():
+    result = build(matings=[{
+        "mating_id": "MAT-OLD", "sow_pig_id": "PIG-MS",
+        "mating_date": "2026-01-12", "mating_status": "Confirmed_Pregnant",
+        "pregnancy_check_date": "2026-02-03",
+        "pregnancy_check_result": "Pregnant",
+        "expected_farrowing_date": "2026-05-06",
+    }])
+    classification = result["cases"][0]["classification"]
+    assert classification["state"] == (
+        "Historical pregnancy result; current status Unknown"
+    )
+    assert classification["task_group"] == (
+        "review current reproductive status before a breeding decision"
+    )
+    assert classification["pregnancy_evidence"]["freshness"] == "stale"
+    assert "Confirmed pregnant" not in classification["state"]
+
+
 def test_repeat_service_requires_decision_but_never_disposition():
     result = build(matings=[
         {
