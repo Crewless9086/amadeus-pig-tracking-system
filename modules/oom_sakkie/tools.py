@@ -1398,7 +1398,10 @@ def herdmaster_breeding_observation_preview_handler(args):
 
 
 def herdmaster_weight_preview_handler(args):
-    if not owner_session_is_valid("admin"):
+    if not (
+        (args or {}).get("authenticated_owner") is True
+        or owner_session_is_valid("admin")
+    ):
         return {
             "success": False,
             "status": "owner_authentication_required",
