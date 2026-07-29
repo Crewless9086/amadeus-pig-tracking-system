@@ -203,6 +203,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     routine_delivery_claim=None,
     routine_delivery_evidence_recorder=None,
     allow_provider_current_backlog=False,
+    preclaim_chronology_verifier=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -569,6 +570,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         delivery_claim=routine_delivery_claim,
         delivery_evidence_recorder=routine_delivery_evidence_recorder,
         isolated_runtime=isolated_level1_runtime,
+        preclaim_chronology_verifier=preclaim_chronology_verifier,
     )
     decision["routine_reply_delivery"] = routine_delivery
     decision["chatwoot_inbox_state_plan"] = build_chatwoot_inbox_state_plan(
@@ -608,6 +610,7 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
     delivery_evidence_recorder=None,
     level1_control_loader=None,
     isolated_runtime=None,
+    preclaim_chronology_verifier=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = inbound if isinstance(inbound, dict) else {}
@@ -735,6 +738,17 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
     conversation_id = _clean(inbound.get("conversation_id"), 100)
     if not conversation_id:
         return {"attempted": False, "sent": False, "status": "routine_reply_conversation_id_missing"}
+    if preclaim_chronology_verifier is not None:
+        try:
+            chronology = preclaim_chronology_verifier(inbound, source)
+        except Exception:
+            chronology = {"allowed": False}
+        if not isinstance(chronology, dict) or chronology.get("allowed") is not True:
+            return {
+                "attempted": False,
+                "sent": False,
+                "status": "routine_reply_preclaim_chronology_changed",
+            }
     if delivery_claim is None:
         return {"attempted": False, "sent": False, "status": "routine_reply_idempotency_claim_unavailable", "canary": canary}
     claim = delivery_claim(inbound, decision, review)
@@ -2187,6 +2201,13 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
     meta = conversation.get("meta") if isinstance(conversation.get("meta"), dict) else {}
     sender = meta.get("sender") if isinstance(meta.get("sender"), dict) else {}
     contact = conversation.get("contact") if isinstance(conversation.get("contact"), dict) else {}
+    latest = (
+        conversation.get("last_non_activity_message")
+        if isinstance(
+            conversation.get("last_non_activity_message"), dict
+        )
+        else {}
+    )
     return {
         "success": True,
         "status": "chatwoot_conversation_identity_loaded",
@@ -2194,7 +2215,49 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
         "conversation_id": _clean(conversation.get("id") or conversation_id, 100),
         "contact_id": _clean(sender.get("id") or contact.get("id"), 100),
         "inbox_id": _clean(conversation.get("inbox_id") or inbox.get("id"), 100),
+        "can_reply": conversation.get("can_reply") is True,
+        "latest_message_id": _clean(latest.get("id"), 100),
+        "latest_message_type": latest.get("message_type"),
         "contains_secret_values": False,
+    }
+
+
+def verify_chatwoot_current_inbound(inbound, environ=None):
+    """Recheck exact provider chronology immediately before durable claim."""
+    inbound = inbound if isinstance(inbound, dict) else {}
+    identity = load_chatwoot_conversation_identity(
+        inbound.get("conversation_id"), environ
+    )
+    expected = {
+        "account_id": _clean(inbound.get("account_id"), 100),
+        "conversation_id": _clean(inbound.get("conversation_id"), 100),
+        "contact_id": _clean(inbound.get("contact_id"), 100),
+        "inbox_id": _clean(inbound.get("inbox_id"), 100),
+    }
+    exact_identity = bool(
+        identity.get("success") is True
+        and all(expected.values())
+        and all(
+            _clean(identity.get(key), 100) == value
+            for key, value in expected.items()
+        )
+    )
+    latest_matches = bool(
+        _clean(identity.get("latest_message_id"), 100)
+        == _clean(inbound.get("message_id"), 100)
+        and identity.get("latest_message_type") in (0, "incoming")
+    )
+    return {
+        "allowed": bool(
+            exact_identity
+            and latest_matches
+            and identity.get("can_reply") is True
+        ),
+        "identity_exact": exact_identity,
+        "latest_inbound_exact": latest_matches,
+        "reply_window_open": identity.get("can_reply") is True,
+        "contains_identity_values": False,
+        "writes_performed": False,
     }
 
 
