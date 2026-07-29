@@ -105,6 +105,18 @@ def operate_livestock_inbox(
             }
             for future in as_completed(futures):
                 history_cache[futures[future]] = future.result()
+    for conversation_id, result in history_cache.items():
+        history, status = result
+        if (
+            status != 200
+            or not isinstance(history, Mapping)
+            or history.get("success") is not True
+            or not _history_is_complete(history)
+        ):
+            raise RuntimeError(
+                "chatwoot_candidate_history_unavailable:"
+                + conversation_id
+            )
 
     def cached_claim_exists(conversation_id, inbound_id):
         key = (str(conversation_id), str(inbound_id))

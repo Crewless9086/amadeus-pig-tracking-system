@@ -373,6 +373,40 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         )
         self.assertEqual(sorted(calls), ["1", "2"])
 
+    def test_one_candidate_history_failure_stops_before_any_processing(self):
+        rows = [self.row("1"), self.row("2")]
+        for index, row in enumerate(rows, start=1):
+            row["last_non_activity_message"] = {
+                "id": 910000 + index,
+                "created_at": 100 + index,
+                "message_type": 0,
+                "private": False,
+            }
+        calls = []
+
+        def history(cid, _env):
+            if cid == "2":
+                return {
+                    "success": False,
+                    "status": "chatwoot_history_http_503",
+                    "messages": [],
+                }, 200
+            return self.history(
+                str(910000 + int(cid)), "I want weaned piglets"
+            ), 200
+
+        with self.assertRaisesRegex(
+            RuntimeError, "chatwoot_candidate_history_unavailable"
+        ):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: self.page(rows),
+                history_loader=history,
+                claim_exists=lambda cid, mid: False,
+                inbound_processor=lambda payload: calls.append(payload),
+            )
+        self.assertEqual(calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()
