@@ -131,6 +131,29 @@ class SamChatwootStateWriterTests(unittest.TestCase):
         self.assertTrue(any(row[0] == "labels" for row in writes))
         self.assertFalse(any(row[0] == "seen" for row in writes))
 
+    def test_raw_chatwoot_payload_shape_is_rechecked_before_both_writes(self):
+        writes = []
+        raw = {"payload": self.chronology()["messages"]}
+        result = apply_delivery_state(
+            self.inbound(),
+            self.decision(),
+            "provider_delivered",
+            authoritative_latest_inbound_id="766412831",
+            conversation_loader=lambda _cid: {"labels": ["vip"]},
+            chronology_loader=lambda _cid: raw,
+            label_writer=lambda cid, labels: (
+                writes.append(("labels", cid, labels))
+                or {"success": True}
+            ),
+            last_seen_writer=lambda cid: (
+                writes.append(("seen", cid)) or {"success": True}
+            ),
+        )
+        self.assertTrue(result["applied"])
+        self.assertEqual(
+            [row[0] for row in writes], ["labels", "seen"]
+        )
+
     def test_new_inbound_reactivates_exact_conversation_without_seen(self):
         writes = []
         result = apply_new_inbound_state(

@@ -138,7 +138,11 @@ def _exact_latest_inbound(
         )
     )
     packet = loader(conversation_id) or {}
-    messages = packet.get("messages") if isinstance(packet, Mapping) else None
+    messages = (
+        packet.get("messages") or packet.get("payload")
+        if isinstance(packet, Mapping)
+        else None
+    )
     if not isinstance(messages, list):
         return False
     public = [
