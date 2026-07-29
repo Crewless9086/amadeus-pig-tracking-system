@@ -1,4 +1,19 @@
 # Vault Brain Changelog
+## 2026-07-28 - SAM customer guidance made canonical and executable
+
+- Recorded the owner decision that customers must not be expected to know
+  internal livestock categories.
+- Standardized the customer-facing choices as small piglets (2 to 6 kg),
+  weaned piglets (7 to 19 kg), growing pigs (20 to 49 kg), larger pigs
+  (50 to 79 kg), and slaughter-size pigs (80 kg and above).
+- Made evidence checks claim-scoped so unrelated missing evidence no longer
+  suppresses a claim-free clarification.
+- Bound the rule across the contextual workflow, Level 1 authority contract,
+  human playbook, gold-standard replies, runtime helpers, tests, active
+  priority queue and implementation source map.
+- This change does not itself send a customer message, claim availability,
+  create a quote/order, reserve stock, accept money, or mutate farm state.
+
 ## 2026-07-27 - SAM Meat owner-assisted launch truth reconciled
 
 - Replaced the retired four-set new-sales menu with Amadeus Signature, Ember and Grand Cut while preserving Set D as historical evidence only.

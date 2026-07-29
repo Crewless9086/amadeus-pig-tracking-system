@@ -1,6 +1,27 @@
 # Next Steps
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
+
+## P0 SAM Customer-Guidance And Claim-Scoped Evidence
+
+SAM Livestock and SAM Meat becoming useful with real customers is the current
+business priority. A vague livestock buyer must receive understandable size
+choices and advance toward price/availability confirmation without Charl
+rewriting the reply.
+
+Standing rule: customers do not know Amadeus's internal animal categories.
+SAM must explain small piglets (approximately 2 to 6 kg), weaned piglets
+(7 to 19 kg), growing pigs (20 to 49 kg), larger pigs (50 to 79 kg), and
+slaughter-size pigs (80 kg and above), then ask for the buyer's suitable size,
+followed by only the smallest genuinely missing qualification fact. SAM must
+not repeat quantity, sex or other facts already known. Missing evidence blocks
+only the unsupported claim; it must not block a claim-free clarification.
+
+Completion requires the rule to be tracked in Vault doctrine, enforced in the
+runtime, protected by production-shaped tests, integrated and deployed, then
+proven on the next genuinely unanswered Tier 1 livestock lead. Historical
+conversations already answered remain regression evidence only.
+
 ## SAM-MEAT-LAUNCH-READINESS-1
 
 Complete the owner-assisted meat launch slice before any customer-send canary:

@@ -2,6 +2,23 @@
 
 Status: owner-reviewed governance decisions captured on 2026-07-02.
 
+## SAM Customer Guidance And Evidence Scope - 2026-07-28
+
+Customers are not expected to know Amadeus's internal livestock categories.
+For vague live-pig enquiries, SAM must explain the available choices in
+ordinary language with approximate weight ranges before asking the buyer to
+choose. The standard customer groups are small piglets (2 to 6 kg), weaned
+piglets (7 to 19 kg), growing pigs (20 to 49 kg), larger pigs (50 to 79 kg),
+and slaughter-size pigs (80 kg and above).
+
+Missing evidence is claim-scoped. Missing price, availability, delivery or
+exact-animal evidence blocks only that unsupported claim. It does not block a
+claim-free clarification, supported product guidance, or useful qualification
+question. After explaining the choices, SAM asks only the smallest genuinely
+missing fact and never repeats a fact already known. Existing authority
+boundaries for customer sends, prices, stock, reservations, money, delivery
+promises and farm mutations remain unchanged.
+
 ## Herdmaster Breeding Observation Boundary - 2026-07-27
 
 Charl authorized an owner-only, append-only factual observation workflow for

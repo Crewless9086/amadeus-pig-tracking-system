@@ -870,6 +870,35 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["category"], "piglet")
         self.assertTrue(facts["quote_requested"])
 
+    def test_missing_category_question_explains_customer_choices_and_weight_ranges(self):
+        reply = sam_live_stock_runtime._question_for_missing("category")
+
+        for expected in (
+            "small piglets",
+            "2 to 6 kg",
+            "weaned piglets",
+            "7 to 19 kg",
+            "growing pigs",
+            "20 to 49 kg",
+            "larger pigs",
+            "50 to 79 kg",
+            "slaughter-size pigs",
+            "80 kg and above",
+        ):
+            self.assertIn(expected, reply)
+        self.assertEqual(reply.count("?"), 1)
+        self.assertNotIn("What size or type are you looking for", reply)
+
+    def test_price_fallback_guides_buyer_instead_of_exposing_internal_taxonomy(self):
+        reply = sam_live_stock_runtime._price_answer_reply(
+            {"category": ""},
+            {"can_answer_price": False},
+        )
+
+        self.assertEqual(reply, sam_live_stock_runtime._customer_livestock_choice_guide())
+        self.assertIn("Which size would suit you", reply)
+        self.assertNotIn("weaners, growers, finishers", reply)
+
     def test_extract_live_stock_facts_recognises_port_elizabeth_context(self):
         facts = sam_live_stock_runtime.extract_live_stock_facts(
             "I'm in Eastern Cape Port Elizabeth and I can collect",

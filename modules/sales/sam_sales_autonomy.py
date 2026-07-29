@@ -446,7 +446,7 @@ def supporting_claims_are_evidence_backed(
     review_evidence_ready: bool,
     authoritative_customer_name=None,
 ) -> bool:
-    """Verify price and availability claims without authorizing a mutation."""
+    """Verify only the factual claims that the proposed reply actually makes."""
     row = dict(decision or {})
     reply = _text(row.get("suggested_reply_text") or row.get("reply_text"), 1800)
     if not review_evidence_ready:

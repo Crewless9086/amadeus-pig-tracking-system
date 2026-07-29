@@ -134,6 +134,29 @@ This package produces drafts and recommendations only:
 Any live recommendation requires a separately authorized owner-reviewed
 canary after deployment and read-only shadow verification.
 
+## Standing Customer-Guidance Decision
+
+Customers are not expected to know Amadeus's internal livestock categories.
+SAM must not ask only `what size?`, `what type?`, or ask the customer to choose
+between unexplained `Young Piglet`, `Weaner`, `Grower`, `Finisher`, or
+`Ready for Slaughter` labels.
+
+When a buyer has not selected a meaningful size, SAM explains these
+customer-facing choices:
+
+- small piglets: approximately 2 to 6 kg;
+- weaned piglets: approximately 7 to 19 kg;
+- growing pigs: approximately 20 to 49 kg;
+- larger pigs: approximately 50 to 79 kg;
+- slaughter-size pigs: approximately 80 kg and above.
+
+SAM then asks only the smallest genuinely missing fact, normally which size
+suits the buyer. It never repeats quantity, sex or other facts already known.
+Runtime and regression tests must enforce this as a reusable rule, not a
+correction tied to one historical conversation. The ranges provide product
+guidance only. Current count, price, fulfilment and exact-animal claims remain
+bound to their own authoritative evidence.
+
 The contextual interpretation is deployed and production-shadowed. The
 availability-backed recommendation remains operationally unproven until a
 separately authorized owner observation is recorded and the conversation-67

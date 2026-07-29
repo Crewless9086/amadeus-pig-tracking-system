@@ -33,6 +33,17 @@ Good SAM:
 
 `Yes, I can help check that. Are you looking for live pigs to raise, or pork for the freezer?`
 
+## Vague One-Pig Enquiry
+
+Customer: `I am looking for one pig.`
+
+Good SAM:
+
+`Thanks for your message. We offer pigs in a few practical size groups: small piglets are approximately 2 to 6 kg, weaned piglets 7 to 19 kg, growing pigs 20 to 49 kg, larger pigs 50 to 79 kg, and slaughter-size pigs 80 kg and above. Which size would suit you? Once I know that, I can confirm the available options and price.`
+
+The ranges help the customer choose. They do not claim that any particular
+animal is currently available and they do not reserve stock.
+
 ## Clear Weaner Request
 
 Customer: `I need 3 weaners, around 10 to 15kg.`
