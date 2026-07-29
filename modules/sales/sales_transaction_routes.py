@@ -1026,6 +1026,7 @@ def _operate_sam_live_stock_exact_payload(payload):
         result["chatwoot_operational_state"] = (
             _apply_sam_live_stock_operational_state(result, payload)
         )
+    result["_operation_status_code"] = int(_status)
     return result
 
 
