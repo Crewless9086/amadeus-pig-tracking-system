@@ -450,6 +450,39 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
             packet["dispositions"][0]["disposition"], "already_claimed"
         )
 
+    def test_bounded_cycle_processes_one_and_defers_other_eligible_work(self):
+        rows = [self.row("1"), self.row("2")]
+        for index, row in enumerate(rows, start=1):
+            row["last_non_activity_message"] = {
+                "id": 930000 + index,
+                "created_at": 100 + index,
+                "message_type": 0,
+                "private": False,
+            }
+        calls = []
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page(rows),
+            history_loader=lambda cid, _env: (
+                self.history(
+                    str(930000 + int(cid)), "I want weaned piglets"
+                ),
+                200,
+            ),
+            claim_exists=lambda cid, mid: False,
+            claimed_inbound_loader=lambda identities: set(),
+            max_process_count=1,
+            inbound_processor=lambda payload: (
+                calls.append(str(payload["conversation"]["id"]))
+                or {"sam_decision": {}}
+            ),
+        )
+        self.assertEqual(calls, ["1"])
+        self.assertEqual(
+            [row["disposition"] for row in packet["dispositions"]],
+            ["processed", "deferred_to_next_autonomous_cycle"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

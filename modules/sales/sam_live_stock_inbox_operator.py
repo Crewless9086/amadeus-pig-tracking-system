@@ -29,6 +29,7 @@ def operate_livestock_inbox(
     inbound_processor: Callable,
     claim_exists: Callable,
     claimed_inbound_loader: Callable | None = None,
+    max_process_count: int | None = None,
     now=None,
 ) -> dict:
     """Process every independently eligible current inbound exactly once."""
@@ -60,7 +61,7 @@ def operate_livestock_inbox(
 
     loaded = {}
     if page_count > 1:
-        with ThreadPoolExecutor(max_workers=min(12, page_count - 1)) as pool:
+        with ThreadPoolExecutor(max_workers=min(24, page_count - 1)) as pool:
             futures = [
                 pool.submit(load_page, page)
                 for page in range(2, page_count + 1)
@@ -122,7 +123,7 @@ def operate_livestock_inbox(
 
     history_cache = {}
     if candidate_rows:
-        with ThreadPoolExecutor(max_workers=min(12, len(candidate_rows))) as pool:
+        with ThreadPoolExecutor(max_workers=min(16, len(candidate_rows))) as pool:
             futures = {
                 pool.submit(
                     history_loader, str(row.get("id") or ""), source
@@ -157,15 +158,23 @@ def operate_livestock_inbox(
         return history_loader(key, source)
 
     dispositions = []
+    processed_count = 0
     for row in rows:
+        can_process = bool(
+            max_process_count is None
+            or processed_count < max(0, int(max_process_count))
+        )
         disposition = _inspect_and_operate(
             row,
             source=source,
             history_loader=cached_history_loader,
             inbound_processor=inbound_processor,
             claim_exists=cached_claim_exists,
+            can_process=can_process,
             now=clock,
         )
+        if disposition.get("selected_for_processing") is True:
+            processed_count += 1
         if disposition["queue_relevant"]:
             dispositions.append(disposition)
     summary = build_sam_status_summary(dispositions, observed_at=clock)
@@ -200,6 +209,7 @@ def _inspect_and_operate(
     history_loader,
     inbound_processor,
     claim_exists,
+    can_process,
     now,
 ):
     conversation_id = str(row.get("id") or "")
@@ -340,7 +350,8 @@ def _inspect_and_operate(
         and open_window
         and not exact_claim
     )
-    result = inbound_processor(payload) if eligible else {}
+    selected_for_processing = bool(eligible and can_process)
+    result = inbound_processor(payload) if selected_for_processing else {}
     decision = result.get("sam_decision") if isinstance(result.get("sam_decision"), Mapping) else {}
     delivery = decision.get("routine_reply_delivery") if isinstance(decision.get("routine_reply_delivery"), Mapping) else {}
     outcome = delivery.get("delivery_outcome") if isinstance(delivery.get("delivery_outcome"), Mapping) else {}
@@ -351,8 +362,11 @@ def _inspect_and_operate(
         "inbound_message_id": inbound_id,
         "queue_relevant": queue_relevant,
         "eligible": eligible,
+        "selected_for_processing": selected_for_processing,
         "disposition": (
             "processed"
+            if selected_for_processing
+            else "deferred_to_next_autonomous_cycle"
             if eligible
             else "already_claimed"
             if exact_claim

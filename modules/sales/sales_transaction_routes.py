@@ -995,6 +995,7 @@ def sam_live_stock_chatwoot_reconcile():
             claimed_inbound_loader=(
                 _sam_live_stock_existing_inbound_claims
             ),
+            max_process_count=1,
             inbound_processor=_operate_sam_live_stock_exact_payload,
         )
         return jsonify(packet), 200
