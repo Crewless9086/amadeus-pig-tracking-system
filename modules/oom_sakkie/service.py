@@ -585,7 +585,7 @@ def handle_message(payload):
         safety_notes=safety_notes,
         links=links,
     )
-    trace_status = write_trace(trace)
+    trace_status = _write_tool_trace(tool.name, trace)
 
     herd_question_succeeded = (
         tool_result.get("success") is True
@@ -648,6 +648,15 @@ def build_answer(tool_result, stale_warnings, safety_notes=None):
     if safety_notes:
         return f"{summary} Note: {safety_notes[0]}"
     return summary
+
+
+def _write_tool_trace(tool_name, trace):
+    if tool_name == "rootline_water_energy_plan":
+        return {
+            "stored": False,
+            "status": "not_stored_rootline_zero_write",
+        }
+    return write_trace(trace)
 
 
 def _route_source(match):
