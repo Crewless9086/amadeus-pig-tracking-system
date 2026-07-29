@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from modules.sales import sam_meat_runtime
@@ -1931,12 +1932,13 @@ class SamMeatRuntimeTests(unittest.TestCase):
     def test_level1_authoritative_history_dispatches_through_existing_rail(self, record_lead):
         record_lead.return_value = ({"success": True, "lead_id": "MEAT-L1-1"}, 201)
         order = []
-        payload = inbound_payload(id="M-L1-1", created_at="2026-07-28T10:00:00+00:00",
+        observed_at = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        payload = inbound_payload(id="M-L1-1", created_at=observed_at,
             content="I want a half carcass, Set A.", conversation={"id": 2033,
             "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"}},
             sender={"id": 699428938, "name": "Test customer"})
         history = [{"id": "M-L1-1", "message_type": 0, "private": False,
-                    "created_at": "2026-07-28T10:00:00+00:00"}]
+                    "created_at": observed_at}]
         packet = {"success": True, "availability": {"status": "Unavailable", "evidence_complete": False,
                   "verified_zero": False, "freshness": "Unavailable"},
                   "review_event": {"event_id": "SAM-MEAT-L1-REVIEW-1"}, "owner_packet": {}}
