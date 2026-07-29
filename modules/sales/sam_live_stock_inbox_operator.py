@@ -363,7 +363,7 @@ def _conversation_page(page, environ):
     account = str(environ.get("CHATWOOT_ACCOUNT_ID") or "147387")
     inbox = str(environ.get("SAM_LIVE_STOCK_CHATWOOT_INBOX_ID") or "96568")
     query = urllib.parse.urlencode(
-        {"inbox_id": inbox, "status": "open", "page": page}
+        {"inbox_id": inbox, "status": "all", "page": page}
     )
     return _request(
         f"/api/v1/accounts/{account}/conversations?{query}", environ

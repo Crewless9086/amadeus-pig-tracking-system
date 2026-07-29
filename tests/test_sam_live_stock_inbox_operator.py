@@ -216,6 +216,31 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
             packet["dispositions"][0]["disposition"], "already_claimed"
         )
 
+    def test_replyable_pending_livestock_conversation_remains_eligible(self):
+        row = self.row("2200")
+        row["status"] = "pending"
+        row["last_non_activity_message"] = {
+            "id": 800001,
+            "created_at": 1785357000,
+            "message_type": 0,
+            "private": False,
+        }
+        calls = []
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page([row]),
+            history_loader=lambda cid, _env: (
+                self.history("800001", "I want five weaned piglets"),
+                200,
+            ),
+            claim_exists=lambda cid, mid: False,
+            inbound_processor=lambda payload: (
+                calls.append(payload["id"]) or {"sam_decision": {}}
+            ),
+        )
+        self.assertEqual(calls, ["800001"])
+        self.assertTrue(packet["dispositions"][0]["eligible"])
+
 
 if __name__ == "__main__":
     unittest.main()
