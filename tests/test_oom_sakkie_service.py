@@ -437,6 +437,45 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(classify_intent("check the pump").tool_name, "irrigation_status")
         self.assertEqual(classify_intent("battery status").tool_name, "power_current")
 
+    @patch("modules.oom_sakkie.service.write_trace")
+    @patch("modules.oom_sakkie.service.get_tool")
+    def test_rootline_message_pipeline_does_not_write_trace(
+        self, get_tool, write_trace_record
+    ):
+        tool = Mock()
+        tool.name = "rootline_water_energy_plan"
+        tool.risk_level = RiskLevel.READ_ONLY
+        tool.handler.return_value = {
+            "success": True,
+            "status": "Recommend",
+            "summary": "ROOTLINE current read-only answer.",
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": ["No write or hardware authority."],
+            "raw": {
+                "authority": {
+                    "command_authority": False,
+                    "hardware_control": False,
+                    "writes_performed": False,
+                }
+            },
+        }
+        get_tool.return_value = tool
+
+        result, status = handle_message({
+            "text": "What should we do about water and power today?",
+            "channel": "kiosk",
+            "session_id": "rootline-zero-write-proof",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["tool_used"], "rootline_water_energy_plan")
+        self.assertEqual(
+            result["trace_store"]["status"],
+            "not_stored_rootline_zero_write",
+        )
+        write_trace_record.assert_not_called()
+
     @patch("modules.oom_sakkie.tools.get_mating_overview")
     @patch("modules.oom_sakkie.tools.get_pig_allocation_readiness_data")
     @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
