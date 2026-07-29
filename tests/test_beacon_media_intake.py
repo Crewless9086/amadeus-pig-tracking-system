@@ -24,6 +24,8 @@ from modules.beacon.media_intake import (
 
 ENV = {
     "BEACON_TELEGRAM_MEDIA_INTAKE_ENABLED": "true",
+    "BEACON_TELEGRAM_MEDIA_REQUEST_NOT_BEFORE_UTC": "2026-07-26T10:00:00Z",
+    "BEACON_TELEGRAM_MEDIA_RETIRED_SHA256": "0" * 64,
     "BEACON_TELEGRAM_MEDIA_ALLOWED_CHAT_IDS": "200",
     "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "100",
     "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": "not-used-test-token",
@@ -76,12 +78,20 @@ class FakeStore:
             return {"status": "exact_intake_replay_withheld", "replayed": True}, 200
         return {"status": "media_intake_pending_created", "replayed": False}, 201
 
+    def source_status(self, _envelope, _identity):
+        if self.replay:
+            return {"status": "exact_intake_replay_withheld", "replayed": True}, 200
+        return {"status": "media_intake_source_is_fresh", "replayed": False}, 200
+
     def event(self, _identity, event_type, evidence):
         self.events.append((event_type, evidence))
         return True
 
     def existing_binary(self, _content_sha256):
         return self.existing
+
+    def existing_asset_hash(self, _content_sha256):
+        return False
 
     def finalize(self, _envelope, identity, media):
         if self.finalize_status >= 400:
@@ -93,6 +103,8 @@ class FakeStore:
             "binary_asset_id": media["binary_asset_id"],
             "beacon_asset_id": "BEACON-ASSET-TEST",
             "exact_duplicate": False,
+            "classification": media["classification"],
+            "observation_event_id": "BEACON-UNDERSTANDING-TEST",
         }, 201
 
     def offer_album_completion(self, identity):
@@ -209,6 +221,16 @@ class BeaconMediaIntakeTests(unittest.TestCase):
         self.assertEqual((status, result["status"]), (200, "exact_intake_replay_withheld"))
         self.assertEqual(fetch_calls, [])
 
+    def test_photo_before_fresh_ready_request_is_withheld_before_download(self):
+        env = {**ENV, "BEACON_TELEGRAM_MEDIA_REQUEST_NOT_BEFORE_UTC": "2026-07-27T00:00:00Z"}
+        result, status = handle_telegram_media_intake(
+            telegram_photo(), environ=env,
+            fetcher=lambda *_: self.fail("must not download a pre-request photo"),
+        )
+        self.assertEqual((status, result["status"]), (
+            409, "telegram_media_predates_fresh_owner_request"
+        ))
+
     def test_valid_image_stream_is_hashed_uploaded_verified_and_not_public(self):
         path = image_temp()
         original = Path(path).read_bytes()
@@ -225,6 +247,8 @@ class BeaconMediaIntakeTests(unittest.TestCase):
         self.assertEqual(result["status"], "media_intake_stored_private_review_pending")
         self.assertEqual(storage.put_count, 2)
         self.assertTrue(result["receipt_sent"])
+        self.assertEqual(result["classification"]["classification"], "private_farm_photo")
+        self.assertFalse(result["classification"]["public_use_approved"])
         self.assertTrue(all(result[key] is False for key in AUTHORITY))
         self.assertNotIn("chat_id", result)
         self.assertNotIn("owner_user_id", result)
@@ -247,7 +271,7 @@ class BeaconMediaIntakeTests(unittest.TestCase):
         self.assertIn("/beacon-complete ABC123", receipts[0][1])
         self.assertNotIn("album-1", receipts[0][1])
 
-    def test_exact_bytes_under_another_filename_reuse_binary_without_upload(self):
+    def test_exact_bytes_under_another_source_are_retired_without_finalization(self):
         path = image_temp()
         evidence = _validate_streamed_image(path, "image/jpeg", {})
         FakeStore.existing = {
@@ -278,8 +302,8 @@ class BeaconMediaIntakeTests(unittest.TestCase):
                 fetcher=lambda *_: (path, {"returned_mime_type": "image/jpeg"}),
                 storage=storage,
             )
-        self.assertEqual(status, 201)
-        self.assertEqual(result["binary_asset_id"], "BEACON-BINARY-EXISTING")
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "retired_or_previously_ingested_photo_withheld")
         self.assertEqual(storage.put_count, 0)
 
     def test_existing_binary_requires_private_storage_hash_readback(self):
@@ -304,9 +328,7 @@ class BeaconMediaIntakeTests(unittest.TestCase):
                 storage=storage,
             )
         self.assertEqual(status, 409)
-        self.assertEqual(
-            result["status"], "canonical_binary_storage_reconciliation_required"
-        )
+        self.assertEqual(result["status"], "retired_or_previously_ingested_photo_withheld")
 
     def test_storage_provider_failure_is_sanitized(self):
         path = image_temp()
