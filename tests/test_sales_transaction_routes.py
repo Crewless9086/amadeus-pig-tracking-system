@@ -19,6 +19,21 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.owner_money_path_guard.start()
         self.addCleanup(self.owner_money_path_guard.stop)
 
+    def test_inbox_operator_admits_only_provider_current_backlog_path(self):
+        with patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=({"processed": False}, 200),
+        ) as handle:
+            result = (
+                sales_transaction_routes
+                ._operate_sam_live_stock_exact_payload({"id": "INBOUND"})
+            )
+        self.assertEqual(result["_operation_status_code"], 200)
+        self.assertTrue(
+            handle.call_args.kwargs["allow_provider_current_backlog"]
+        )
+
     def test_sam_owner_inbox_read_and_reconciliation_authorities_are_separate(self):
         loaded = {
             "success": True, "status": "owner_work_items_loaded", "items": [],

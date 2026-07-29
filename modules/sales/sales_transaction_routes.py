@@ -1017,6 +1017,7 @@ def sam_live_stock_chatwoot_reconcile():
 def _operate_sam_live_stock_exact_payload(payload):
     result, _status = handle_sam_live_stock_chatwoot_inbound(
         payload,
+        allow_provider_current_backlog=True,
         routine_delivery_claim=_claim_sam_live_stock_routine_delivery,
         routine_delivery_evidence_recorder=(
             _record_sam_live_stock_delivery_outcome

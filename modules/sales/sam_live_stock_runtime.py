@@ -202,6 +202,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     chatwoot_sender=None,
     routine_delivery_claim=None,
     routine_delivery_evidence_recorder=None,
+    allow_provider_current_backlog=False,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -418,6 +419,7 @@ def handle_sam_live_stock_chatwoot_inbound(
                 "event": {},
             }
         ),
+        allow_provider_current_backlog=allow_provider_current_backlog,
     )
     if _explicit_new_request(inbound.get("content")):
         context_packet["prior_context"] = {}
