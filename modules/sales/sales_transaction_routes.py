@@ -992,6 +992,9 @@ def sam_live_stock_chatwoot_reconcile():
                 200,
             ),
             claim_exists=_sam_live_stock_inbound_claim_exists,
+            claimed_inbound_loader=(
+                _sam_live_stock_existing_inbound_claims
+            ),
             inbound_processor=_operate_sam_live_stock_exact_payload,
         )
         return jsonify(packet), 200
@@ -1054,6 +1057,56 @@ def _sam_live_stock_inbound_claim_exists(conversation_id, inbound_id):
                 (str(conversation_id), str(inbound_id)),
             )
             return cursor.fetchone() is not None
+
+
+def _sam_live_stock_existing_inbound_claims(identities):
+    import psycopg
+
+    pairs = [
+        (str(conversation_id), str(inbound_id))
+        for conversation_id, inbound_id in identities
+        if str(conversation_id) and str(inbound_id)
+    ]
+    if not pairs:
+        return set()
+    conversations = [row[0] for row in pairs]
+    inbounds = [row[1] for row in pairs]
+    with psycopg.connect(
+        os.environ["DATABASE_URL"],
+        connect_timeout=10,
+        options=(
+            "-c default_transaction_read_only=on "
+            "-c statement_timeout=10000"
+        ),
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                with candidate(conversation_id, inbound_id) as (
+                    select *
+                      from unnest(%s::text[], %s::text[])
+                )
+                select distinct
+                       candidate.conversation_id,
+                       candidate.inbound_id
+                  from candidate
+                  join public.sam_live_stock_conversation_review_events event
+                    on event.chatwoot_conversation_id =
+                       candidate.conversation_id
+                   and coalesce(
+                         event.review_json->>'inbound_message_id',
+                         event.review_json->>'bound_inbound_message_id',
+                         ''
+                       ) = candidate.inbound_id
+                 where event.event_source =
+                       'sam_outbound_delivery_attempt_claim'
+                """,
+                (conversations, inbounds),
+            )
+            return {
+                (str(conversation_id), str(inbound_id))
+                for conversation_id, inbound_id in cursor.fetchall()
+            }
 
 
 def _apply_sam_live_stock_operational_state(result, payload):
