@@ -120,7 +120,8 @@ class HerdmasterTelegramWeightPreviewTests(TestCase):
         self.assertIn("No weight was recorded", result["summary"])
         self.assertIn("cannot record it", result["summary"])
         self.assertIn("HERD-WEIGHT-PREVIEW-", result["summary"])
-        self.assertNotIn("PIG-2026-34BF", result["summary"])
+        self.assertIn("PIG-2026-34BF", result["summary"])
+        self.assertIn("Please confirm or correct", result["summary"])
         self.assertFalse(result["raw"]["writes_performed"])
 
     @patch("modules.oom_sakkie.tools.get_pig_allocation_readiness_data")
@@ -150,9 +151,10 @@ class HerdmasterTelegramWeightPreviewTests(TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["tool_used"], "herdmaster_weight_preview")
         self.assertIn("Shupe", result["answer"])
+        self.assertIn("PIG-2026-34BF", result["answer"])
         self.assertIn("72.2 kg", result["answer"])
         self.assertIn("2026-07-20", result["answer"])
-        self.assertNotIn("PIG-2026-34BF", result["answer"])
+        self.assertIn("Please confirm or correct", result["answer"])
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
 
     def test_weekday_date_conflict_fails_closed(self):
