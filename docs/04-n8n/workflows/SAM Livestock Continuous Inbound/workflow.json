@@ -32,7 +32,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "const envelope = $json;\nconst p = envelope.body || envelope;\nconst c = p.conversation || {};\nconst inbox = c.inbox || {};\nconst account = p.account || {};\nconst sender = p.sender || {};\nconst presentedToken = String((envelope.query || {}).token || '');\nconst expectedToken = String($env.SAM_LIVE_STOCK_CHATWOOT_WEBHOOK_TOKEN || '');\nconst authenticated = expectedToken.length >= 32 && presentedToken === expectedToken;\nconst messageType = String(p.message_type ?? '').toLowerCase();\nconst accepted = authenticated && p.event === 'message_created' && (messageType === '0' || messageType === 'incoming') && p.private !== true && String(account.id || p.account_id || '') === '147387' && String(inbox.id || c.inbox_id || '') === '96568' && ['Channel::Whatsapp', 'Channel::WhatsappCloud'].includes(String(inbox.channel_type || '')) && Boolean(p.id && c.id && sender.id);\nreturn [{json: {accepted, authenticated, payload: p, identity: {account_id: String(account.id || p.account_id || ''), inbox_id: String(inbox.id || c.inbox_id || ''), conversation_id: String(c.id || ''), contact_id: String(sender.id || ''), inbound_message_id: String(p.id || '')}, automatic_retry_authorized: false, secret_values_exposed: false}}];"
+        "jsCode": "const envelope = $json;\nconst p = envelope.body || envelope;\nconst c = p.conversation || {};\nconst inbox = c.inbox || {};\nconst account = p.account || {};\nconst sender = p.sender || {};\nconst presentedToken = String((envelope.query || {}).token || '');\nconst expectedToken = String($vars.SAM_LIVE_STOCK_CHATWOOT_WEBHOOK_TOKEN || '');\nconst authenticated = expectedToken.length >= 32 && presentedToken === expectedToken;\nconst messageType = String(p.message_type ?? '').toLowerCase();\nconst accepted = authenticated && p.event === 'message_created' && (messageType === '0' || messageType === 'incoming') && p.private !== true && String(account.id || p.account_id || '') === '147387' && String(inbox.id || c.inbox_id || '') === '96568' && ['Channel::Whatsapp', 'Channel::WhatsappCloud'].includes(String(inbox.channel_type || '')) && Boolean(p.id && c.id && sender.id);\nreturn [{json: {accepted, authenticated, payload: p, identity: {account_id: String(account.id || p.account_id || ''), inbox_id: String(inbox.id || c.inbox_id || ''), conversation_id: String(c.id || ''), contact_id: String(sender.id || ''), inbound_message_id: String(p.id || '')}, automatic_retry_authorized: false, secret_values_exposed: false}}];"
       }
     },
     {
@@ -77,13 +77,13 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.AMADEUS_BACKEND_URL + '/api/sales/channels/chatwoot/sam-live-stock/inbound' }}",
+        "url": "={{ $vars.AMADEUS_BACKEND_URL + '/api/sales/channels/chatwoot/sam-live-stock/inbound' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.SAM_LIVE_STOCK_BACKEND_WEBHOOK_TOKEN }}"
+              "value": "={{ 'Bearer ' + $vars.SAM_LIVE_STOCK_BACKEND_WEBHOOK_TOKEN }}"
             },
             {
               "name": "Content-Type",
