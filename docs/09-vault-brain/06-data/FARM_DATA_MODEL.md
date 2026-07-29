@@ -41,6 +41,14 @@ Farm record writes require approved backend paths and audit evidence.
 - The effective timestamp cannot be later than the recorded timestamp. RLS is enabled and no browser policy or writer integration is introduced by this migration.
 - A future protected lifecycle-write rail must emit this evidence through its approved, owner-gated backend path. Canonical detail/history reads and frontend visibility are separate dependent work.
 
+## Lifecycle Read And Reconciliation Contract
+
+The canonical pig detail projection returns the current lifecycle snapshot from `pigs`: wean date/weight and exit date/reason/order/carcass fields. The default pig list remains active and on-farm only; the explicit `archived` scope returns only terminal, off-farm pigs, preserving retained-history discoverability without mixing it into operational stock.
+
+- Snapshot fields are mutable current-state facts, not an immutable audit-event timeline. Until the unapplied `pig_lifecycle_events` rail is approved and exposed, detail reads must explicitly say that separate audit events are unavailable rather than inventing history.
+- The owner-read reconciliation report audits `Sold`, `Slaughtered`, `Dead`, and `Died` records for blank exit date and/or reason. It is read-only, returns the actual blank fields, and never derives missing values from a status, note, or neighbouring record.
+- Any historical correction remains a separately owner-authorized, auditable lifecycle action. This read contract does not apply a migration or mutate farm records.
+
 ## Pig Purpose Correction Batch Contract
 
 `pig_purpose_correction_batches` is an additive, unapplied protected batch rail for owner-approved purpose corrections. A batch stores its decision snapshot, decision hash, caller idempotency key, creator, owner-approval identity/time, and execution identity/time. Only a persisted `owner_approved` batch may execute. Execution rechecks the canonical active/on-farm state and latest weight at runtime; missing or stale weight blocks every correction in the batch. Each permitted mutable `pigs.purpose` update and its `operational_events` audit event occur in one transaction, and there is no Google Sheets fallback. Applying the migration remains owner-gated.

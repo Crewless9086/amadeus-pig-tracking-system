@@ -99,6 +99,50 @@ function renderLifecycleHistory(pig) {
   );
 }
 
+function lifecycleEventLabel(event) {
+  return event.event_type || event.lifecycle_event_type || "Lifecycle event";
+}
+
+function lifecycleEventDateLabel(event) {
+  return event.effective_at || event.effective_date || event.recorded_at || "Unknown date";
+}
+
+function lifecycleEventDetail(event) {
+  const payload = event.payload || event.event_payload || {};
+  return event.summary || payload.summary || payload.reason || event.reason || "No additional detail recorded.";
+}
+
+function renderLifecycleAuditHistory(pig) {
+  const container = document.getElementById("lifecycle_audit_history");
+  if (!container) return;
+  const audit = pig.lifecycle_audit || {};
+  const events = Array.isArray(audit.events) ? audit.events : [];
+  container.innerHTML = "";
+
+  if (!audit.available) {
+    container.innerHTML = '<div class="lifecycle-audit-empty">No separate lifecycle event history is available for this record yet. The current snapshot above remains the canonical state.</div>';
+    return;
+  }
+  if (!events.length) {
+    container.innerHTML = '<div class="lifecycle-audit-empty">No lifecycle audit events were returned for this pig.</div>';
+    return;
+  }
+
+  events.forEach((event) => {
+    const item = document.createElement("article");
+    item.className = "lifecycle-audit-item";
+    const heading = document.createElement("strong");
+    heading.textContent = lifecycleEventLabel(event);
+    const date = document.createElement("span");
+    date.className = "lifecycle-audit-date";
+    date.textContent = lifecycleEventDateLabel(event);
+    const detail = document.createElement("p");
+    detail.textContent = lifecycleEventDetail(event);
+    item.append(heading, date, detail);
+    container.appendChild(item);
+  });
+}
+
 async function loadPigDetail() {
   const pigId = getPigIdFromUrl();
 
@@ -170,6 +214,7 @@ async function loadPigDetail() {
 
     setText("detail_notes", pig.general_notes);
     renderLifecycleHistory(pig);
+    renderLifecycleAuditHistory(pig);
     updateLifecyclePanel(pig);
   } catch (error) {
     showMessage("Something went wrong while loading pig detail.", "error");

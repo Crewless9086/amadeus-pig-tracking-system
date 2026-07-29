@@ -12,7 +12,7 @@
       <div class="page-header page-header-with-link">
         <div>
           <h1>Amadeus Pig List</h1>
-          <p>Scan the active herd by pen, weight status, and profile detail.</p>
+          <p id="pig_list_description">Scan the active on-farm herd by pen, weight status, and profile detail.</p>
         </div>
         <div class="detail-actions compact-actions">
           <a href="/" class="button-link button-link-secondary">Dashboard</a>
@@ -21,9 +21,17 @@
         </div>
       </div>
 
+      <nav class="pig-list-view-tabs" aria-label="Pig record view">
+        <a id="pig_active_view" href="/pigs" class="pig-list-view-tab">On-farm herd</a>
+        <a id="pig_archive_view" href="/pigs?view=archive" class="pig-list-view-tab">Retained history</a>
+      </nav>
+      <p id="pig_list_scope_notice" class="pig-list-scope-notice">
+        On-farm herd is the default operational view. Retained history is kept separately so exited animals remain discoverable without appearing in the working herd list.
+      </p>
+
       <div class="pig-list-summary" aria-label="Pig list totals">
         <div class="pig-list-summary-card">
-          <span>Total Active</span>
+          <span id="pig_total_label">Total Active</span>
           <strong id="pig_total_count">0</strong>
         </div>
         <div class="pig-list-summary-card">
