@@ -1,4 +1,5 @@
 import unittest
+import threading
 from datetime import datetime, timezone
 
 from modules.sales.sam_live_stock_inbox_operator import (
@@ -341,6 +342,70 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         )
         self.assertEqual(calls, ["800001"])
         self.assertEqual(packet["inventory_count"], 26)
+
+    def test_candidate_histories_are_prefetched_concurrently(self):
+        rows = [self.row("1"), self.row("2")]
+        for index, row in enumerate(rows, start=1):
+            row["last_non_activity_message"] = {
+                "id": 900000 + index,
+                "created_at": 100 + index,
+                "message_type": 0,
+                "private": False,
+            }
+        barrier = threading.Barrier(2, timeout=2)
+
+        def history(cid, _env):
+            barrier.wait()
+            return self.history(
+                str(900000 + int(cid)), "I want weaned piglets"
+            ), 200
+
+        calls = []
+        operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page(rows),
+            history_loader=history,
+            claim_exists=lambda cid, mid: False,
+            inbound_processor=lambda payload: (
+                calls.append(str(payload["conversation"]["id"]))
+                or {"sam_decision": {}}
+            ),
+        )
+        self.assertEqual(sorted(calls), ["1", "2"])
+
+    def test_one_candidate_history_failure_stops_before_any_processing(self):
+        rows = [self.row("1"), self.row("2")]
+        for index, row in enumerate(rows, start=1):
+            row["last_non_activity_message"] = {
+                "id": 910000 + index,
+                "created_at": 100 + index,
+                "message_type": 0,
+                "private": False,
+            }
+        calls = []
+
+        def history(cid, _env):
+            if cid == "2":
+                return {
+                    "success": False,
+                    "status": "chatwoot_history_http_503",
+                    "messages": [],
+                }, 200
+            return self.history(
+                str(910000 + int(cid)), "I want weaned piglets"
+            ), 200
+
+        with self.assertRaisesRegex(
+            RuntimeError, "chatwoot_candidate_history_unavailable"
+        ):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: self.page(rows),
+                history_loader=history,
+                claim_exists=lambda cid, mid: False,
+                inbound_processor=lambda payload: calls.append(payload),
+            )
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":
