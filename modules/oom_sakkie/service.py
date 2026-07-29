@@ -247,6 +247,20 @@ RULES = [
         IntentMatch("business_growth_brief", "business_growth_brief", 0.95, "rule:business_growth_brief"),
     ),
     (
+        re.compile(
+            r"\b(rootline|water[- ]and[- ]power|water and (power|energy)|"
+            r"(power|energy).{0,30}water|water.{0,30}(power|energy)|"
+            r"borehole.{0,30}(battery|solar|grid))\b",
+            re.I,
+        ),
+        IntentMatch(
+            "rootline_water_energy",
+            "rootline_water_energy_plan",
+            0.98,
+            "rule:rootline_water_energy",
+        ),
+    ),
+    (
         re.compile(r"\b(irrigation|irrigate|water zone|water zones|watering|water anything|need to water|do we need to water|sprinkler|sprinklers|pump)\b", re.I),
         IntentMatch("irrigation_status", "irrigation_status", 0.95, "rule:irrigation_status"),
     ),

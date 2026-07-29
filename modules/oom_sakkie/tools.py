@@ -55,8 +55,8 @@ from modules.telemetry.weather_service import (
     get_weather_today_summary,
 )
 from modules.telemetry.irrigation_service import get_irrigation_status
-from modules.telemetry.rootline_water_energy_plan import (
-    get_oom_sakkie_water_energy_summary,
+from modules.telemetry.rootline_specialist_result import (
+    build_current_rootline_specialist_result,
 )
 from modules.auth.owner_access import owner_session_is_valid
 from modules.pig_weights.herdmaster_breeding_operating_loop import (
@@ -1289,20 +1289,110 @@ def rootline_water_energy_plan_handler(args):
             "safety_notes": ["No protected plan evidence was disclosed."],
             "raw": {},
         }
-    result, status_code = get_oom_sakkie_water_energy_summary(
-        (args or {}).get("date")
+    result = build_current_rootline_specialist_result(
+        operating_date=(args or {}).get("date")
     )
+    freshness = (result.get("evidence") or {}).get("freshness") or {}
+    stale_warnings = [
+        f"{name}: {status}"
+        for name, status in freshness.items()
+        if str(status).lower() not in {"fresh", "aging"}
+    ]
     return {
         "success": bool(result.get("success", False)),
-        "status": str(result.get("status") or status_code),
-        "summary": result.get("summary") or "Water and Energy Plan is Unavailable.",
+        "status": str(result.get("overall_status") or result.get("reason") or "Needs Data"),
+        "summary": _rootline_family_answer(result),
         "links": [{"label": "ROOTLINE Water & Energy Plan", "href": "/#rootline_panel"}],
-        "stale_warnings": list(result.get("evidence_gaps") or []),
+        "stale_warnings": stale_warnings,
         "safety_notes": [
-            "Read-only advice; no command, schedule, workflow or hardware authority."
+            "Read-only ROOTLINE advice; no database or farm write, plan, command, "
+            "schedule, workflow, Telegram send, or hardware authority."
         ],
         "raw": result,
+        "llm_context": result,
     }
+
+
+def _rootline_family_answer(result):
+    if result.get("success") is not True:
+        return "ROOTLINE's current water-and-power evidence is unavailable."
+    power = result.get("current_power") or {}
+    reserve = result.get("battery_policy") or {}
+    weather = result.get("current_local_weather") or {}
+    forecast = result.get("forecast") or {}
+    brief = result.get("owner_brief") or {}
+    recommendations = [
+        f"{item.get('subject')}: {item.get('status')}"
+        for item in result.get("recommendations") or []
+        if isinstance(item, dict)
+    ]
+    reasons = [
+        str(item) for item in brief.get("why") or [] if str(item).strip()
+    ]
+    question = str(brief.get("family_fact_needed") or "").strip()
+    return " ".join(
+        part for part in (
+            f"ROOTLINE recommends now: {brief.get('recommend_now') or 'Needs Data'}.",
+            (
+                "Power: SOC {}; solar {}; load {}; grid {}. Governing reserve {} "
+                "(40% absolute discretionary floor; approximately 50% normal "
+                "provisional reserve)."
+            ).format(
+                _rootline_display_value(power.get("battery_soc_pct"), "%"),
+                _rootline_display_value(power.get("solar_power_w"), " W"),
+                _rootline_display_value(power.get("load_power_w"), " W"),
+                _rootline_display_value(power.get("grid_power_w"), " W"),
+                _rootline_display_value(
+                    reserve.get("governing_reserve_soc_pct"), "%"
+                ),
+            ),
+            (
+                "Reserve reason: "
+                + str(
+                    reserve.get("governing_reason")
+                    or "current reserve reason is Unavailable"
+                )
+                + "."
+            ),
+            (
+                "Current local weather ({status}, observed {observed}): rain rate "
+                "{rain}; rain today {today}."
+            ).format(
+                status=weather.get("status") or "Unavailable",
+                observed=weather.get("observed_at") or "Unavailable",
+                rain=_rootline_display_value(
+                    weather.get("rain_rate_mm_h"), " mm/h"
+                ),
+                today=_rootline_display_value(
+                    weather.get("rain_today_mm"), " mm"
+                ),
+            ),
+            (
+                "Forecast ({status}, confidence {confidence}, run {observed}): "
+                "{profile}; {uncertainty}"
+            ).format(
+                status=forecast.get("status") or "Unavailable",
+                confidence=forecast.get("confidence") or "Unavailable",
+                observed=forecast.get("observed_at") or "Unavailable",
+                profile=forecast.get("solar_profile") or "uncertain",
+                uncertainty=forecast.get("uncertainty")
+                or "Forecast is not observed weather or captured water.",
+            ),
+            "Current task eligibility: " + "; ".join(recommendations) + ".",
+            (
+                "Solar transfer: the independent pump runs only when solar "
+                "permits; it is monitor-only, not controllable by ROOTLINE, "
+                "and this is not an instruction to run it."
+            ),
+            "Why: " + "; ".join(reasons) + "." if reasons else "",
+            f"Reassess: {brief.get('reassess') or 'when canonical evidence changes'}.",
+            f"Family fact needed: {question}" if question else "",
+        ) if part
+    )
+
+
+def _rootline_display_value(value, unit=""):
+    return "Unavailable" if value is None else f"{value}{unit}"
 
 
 def _current_herdmaster_breeding_loop():
@@ -3320,7 +3410,12 @@ TOOL_REGISTRY = {
         risk_level=RiskLevel.READ_ONLY,
         requires_confirmation=False,
         handler=rootline_water_energy_plan_handler,
-        description="Read-only canonical ROOTLINE Water and Energy Plan summary.",
+        description=(
+            "Owner-only current ROOTLINE water-and-energy specialist result with "
+            "separate local weather and forecast, power reserve, supported task "
+            "recommendations, uncertainty, reassessment, and at most one genuine "
+            "family question. Never writes or controls hardware."
+        ),
     ),
     "herdmaster_breeding_worklist": OomSakkieTool(
         name="herdmaster_breeding_worklist",
