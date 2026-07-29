@@ -92,7 +92,7 @@ def operate_livestock_inbox(
         "status": "sam_live_stock_inbox_operated",
         "inventory_count": len(rows),
         "provider_conversation_count": provider_total,
-        "inventory_scope": "recent_open_window_boundary",
+        "inventory_scope": "full_provider_conversation_inventory",
         "dispositions": dispositions,
         "customers_answered": sum(
             item.get("provider_confirmed") is True for item in dispositions

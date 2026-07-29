@@ -195,7 +195,9 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         )
         self.assertEqual(loaded_pages, [1])
         self.assertEqual(histories, [])
-        self.assertEqual(packet["inventory_scope"], "recent_open_window_boundary")
+        self.assertEqual(
+            packet["inventory_scope"], "full_provider_conversation_inventory"
+        )
 
     def test_provider_latest_exact_claim_skips_history_and_never_retries(self):
         row = self.row("2102")
