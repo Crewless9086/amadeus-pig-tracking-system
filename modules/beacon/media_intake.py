@@ -31,6 +31,8 @@ ENABLED_ENV = "BEACON_TELEGRAM_MEDIA_INTAKE_ENABLED"
 ALLOWED_CHAT_IDS_ENV = "BEACON_TELEGRAM_MEDIA_ALLOWED_CHAT_IDS"
 BOT_TOKEN_ENV = "OOM_SAKKIE_TELEGRAM_BOT_TOKEN"
 ALLOWED_USER_IDS_ENV = "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS"
+REQUEST_NOT_BEFORE_ENV = "BEACON_TELEGRAM_MEDIA_REQUEST_NOT_BEFORE_UTC"
+RETIRED_SHA256_ENV = "BEACON_TELEGRAM_MEDIA_RETIRED_SHA256"
 SIGNING_SECRET_ENVS = ("OWNER_SESSION_SECRET", "SECRET_KEY")
 CONTRACT_VERSION = "beacon_media_intake_v1"
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -64,6 +66,8 @@ def media_intake_policy(environ=None):
     user_ids = _csv(source.get(ALLOWED_USER_IDS_ENV))
     stable_secret = _secret(source)
     explicitly_enabled = _truthy(source.get(ENABLED_ENV))
+    request_not_before = _utc_datetime(source.get(REQUEST_NOT_BEFORE_ENV))
+    retired_hashes = _sha256_set(source.get(RETIRED_SHA256_ENV))
     bot_configured = bool(str(source.get(BOT_TOKEN_ENV) or "").strip())
     database_configured = bool(str(source.get(DATABASE_URL_ENV) or "").strip())
     storage_configured = bool(
@@ -71,7 +75,8 @@ def media_intake_policy(environ=None):
         and str(source.get(SUPABASE_SERVICE_ROLE_KEY_ENV) or "").strip()
     )
     enabled = bool(
-        explicitly_enabled and chat_ids and user_ids and stable_secret
+        explicitly_enabled and request_not_before and retired_hashes
+        and chat_ids and user_ids and stable_secret
         and bot_configured and database_configured and storage_configured
     )
     return {
@@ -79,6 +84,8 @@ def media_intake_policy(environ=None):
         "mode": CONTRACT_VERSION,
         "enabled": enabled,
         "explicitly_enabled": explicitly_enabled,
+        "fresh_request_bound": bool(request_not_before),
+        "retired_hash_registry_configured": bool(retired_hashes),
         "allowed_private_chat_configured": bool(chat_ids),
         "allowed_private_chat_count": len(chat_ids),
         "allowed_owner_user_configured": bool(user_ids),
@@ -173,6 +180,10 @@ def handle_telegram_media_intake(
         return _result(False, "telegram_source_identity_incomplete", policy), 400
     if not envelope["source_message_at"]:
         return _result(False, "telegram_source_message_time_required", policy), 400
+    request_not_before = _utc_datetime(source.get(REQUEST_NOT_BEFORE_ENV))
+    source_message_at = _utc_datetime(envelope["source_message_at"])
+    if not request_not_before or not source_message_at or source_message_at < request_not_before:
+        return _result(False, "telegram_media_predates_fresh_owner_request", policy), 409
     if envelope["media_kind"] == "video":
         receipt = receipt_sender(
             envelope["chat_id"],
@@ -187,9 +198,12 @@ def handle_telegram_media_intake(
 
     identity = _identities(envelope, source)
     store = IntakeStore(database_url)
-    prepared, prepare_status = store.prepare(envelope, identity)
-    if prepare_status >= 400 or prepared.get("replayed"):
-        return {**_result(prepare_status < 400, prepared["status"], policy), **prepared}, prepare_status
+    source_state, source_status = store.source_status(envelope, identity)
+    if source_status >= 400 or source_state.get("replayed"):
+        return {
+            **_result(source_status < 400, source_state["status"], policy),
+            **source_state,
+        }, source_status
 
     fetch_fn = fetcher or _download_telegram_file
     storage_adapter = storage or SupabasePrivateStorage(source)
@@ -205,31 +219,24 @@ def handle_telegram_media_intake(
         validated = _validate_streamed_image(
             temp_path, envelope["declared_mime_type"], download_meta
         )
+        existing = store.existing_binary(validated["content_sha256"])
+        if (
+            validated["content_sha256"] in _sha256_set(source.get(RETIRED_SHA256_ENV))
+            or existing
+            or store.existing_asset_hash(validated["content_sha256"])
+        ):
+            raise IntakeFailure("retired_or_previously_ingested_photo_withheld", 409)
+
+        prepared, prepare_status = store.prepare(envelope, identity)
+        if prepare_status >= 400 or prepared.get("replayed"):
+            return {
+                **_result(prepare_status < 400, prepared["status"], policy),
+                **prepared,
+            }, prepare_status
+
         if not store.event(identity, "stream_validated", validated):
             raise IntakeFailure("stream_validation_evidence_failed", 500)
-
-        existing = store.existing_binary(validated["content_sha256"])
-        if existing:
-            if any(existing[key] != validated[key] for key in (
-                "observed_mime_type", "byte_size", "width", "height",
-            )):
-                raise IntakeFailure("canonical_binary_evidence_conflict", 409)
-            canonical = storage_adapter.get(existing["storage_path"], MAX_IMAGE_BYTES)
-            thumbnail = storage_adapter.get(
-                existing["thumbnail_storage_path"], MAX_THUMBNAIL_BYTES
-            )
-            if (
-                hashlib.sha256(canonical).hexdigest() != validated["content_sha256"]
-                or hashlib.sha256(thumbnail).hexdigest() != existing["thumbnail_sha256"]
-            ):
-                raise IntakeFailure(
-                    "canonical_binary_storage_reconciliation_required", 409
-                )
-            binary_id = existing["binary_asset_id"]
-            storage_path = existing["storage_path"]
-            thumbnail_path = existing["thumbnail_storage_path"]
-            thumbnail_sha = existing["thumbnail_sha256"]
-        else:
+        if not existing:
             binary_id = "BEACON-BINARY-" + validated["content_sha256"][:24].upper()
             extension = ".jpg" if validated["observed_mime_type"] == "image/jpeg" else ".png"
             storage_path = f"telegram/{validated['content_sha256'][:2]}/{validated['content_sha256']}{extension}"
@@ -254,6 +261,20 @@ def handle_telegram_media_intake(
                 "content_sha256": validated["content_sha256"],
             }):
                 raise IntakeFailure("storage_verification_evidence_failed", 500)
+        classification = {
+            "classification": "private_farm_photo",
+            "media_type": "image",
+            "mime_type": validated["observed_mime_type"],
+            "orientation": (
+                "landscape" if validated["width"] > validated["height"]
+                else "portrait" if validated["height"] > validated["width"]
+                else "square"
+            ),
+            "width": validated["width"],
+            "height": validated["height"],
+            "owner_context": envelope["owner_explanation"],
+            "public_use_approved": False,
+        }
         finalized, finalize_status = store.finalize(
             envelope,
             identity,
@@ -263,6 +284,7 @@ def handle_telegram_media_intake(
                 "storage_path": storage_path,
                 "thumbnail_storage_path": thumbnail_path,
                 "thumbnail_sha256": thumbnail_sha,
+                "classification": classification,
             },
         )
         if finalize_status >= 400:
@@ -425,6 +447,39 @@ class IntakeStore:
             raise IntakeFailure("media_intake_postgres_dependency_missing", 500) from exc
         return psycopg.connect(self.database_url, connect_timeout=10)
 
+    def source_status(self, envelope, identity):
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute(
+                    """select intake_item_id,source_identity_sha256,telegram_file_id,
+                              coalesce(telegram_file_unique_id,'')
+                       from public.beacon_media_intake_items
+                       where intake_item_id=%s or source_identity_sha256=%s
+                          or (private_chat_identity_hmac=%s and telegram_update_id=%s)
+                          or (private_chat_identity_hmac=%s and telegram_message_id=%s)
+                       limit 1""",
+                    (
+                        identity["item_id"], identity["source_sha256"],
+                        identity["chat_hmac"], envelope["update_id"],
+                        identity["chat_hmac"], envelope["message_id"],
+                    ),
+                )
+                prior = cursor.fetchone()
+        except Exception as exc:
+            return {
+                "status": "media_intake_source_check_failed",
+                "replayed": False,
+                "error_type": exc.__class__.__name__,
+            }, 500
+        if not prior:
+            return {"status": "media_intake_source_is_fresh", "replayed": False}, 200
+        if prior == (
+            identity["item_id"], identity["source_sha256"],
+            envelope["file_id"], envelope["file_unique_id"],
+        ):
+            return {"status": "exact_intake_replay_withheld", "replayed": True}, 200
+        return {"status": "intake_identity_conflict", "replayed": False}, 409
+
     def prepare(self, envelope, identity):
         evidence = _canonical_sha({
             "group": identity["group_id"], "item": identity["item_id"],
@@ -528,6 +583,18 @@ class IntakeStore:
             "thumbnail_sha256": row[7],
         }
 
+    def existing_asset_hash(self, content_sha256):
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute(
+                    """select 1 from public.beacon_media_assets
+                       where content_sha256=%s limit 1""",
+                    (content_sha256,),
+                )
+                return cursor.fetchone() is not None
+        except Exception:
+            return True
+
     def _event_cursor(self, cursor, identity, event_type, evidence):
         evidence_sha = _canonical_sha(evidence)
         event_id = _stable_id(
@@ -608,6 +675,25 @@ class IntakeStore:
                     "content_sha256": media["content_sha256"],
                     "exact_duplicate": bool(duplicate),
                 })
+                classification = media["classification"]
+                observation_id = _stable_id(
+                    "BEACON-UNDERSTANDING",
+                    _canonical_sha([binary_id, "server_private_classification_v1"]),
+                )
+                cursor.execute(
+                    """insert into public.beacon_media_understanding_events
+                       (observation_event_id,binary_asset_id,asset_sha256,source_type,
+                        observer_identity,observer_version,confidence_state,
+                        observation_json,observed_at)
+                       values (%s,%s,%s,'model_observation','beacon-server',
+                               'server_private_classification_v1','evidence_supported',
+                               %s::jsonb,now())
+                       on conflict (observation_event_id) do nothing""",
+                    (
+                        observation_id, binary_id, media["content_sha256"],
+                        json.dumps(classification, sort_keys=True),
+                    ),
+                )
                 if not envelope["media_group_id"]:
                     cursor.execute(
                         """insert into public.beacon_media_intake_album_members
@@ -623,6 +709,8 @@ class IntakeStore:
                 "binary_asset_id": binary_id,
                 "beacon_asset_id": asset_id,
                 "exact_duplicate": bool(duplicate),
+                "classification": classification,
+                "observation_event_id": observation_id,
                 **AUTHORITY,
             }, 201
         except Exception as exc:
@@ -1390,6 +1478,15 @@ def _truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _sha256_set(value):
+    return {
+        item.strip().lower()
+        for item in str(value or "").split(",")
+        if len(item.strip()) == 64
+        and all(character in "0123456789abcdefABCDEF" for character in item.strip())
+    }
+
+
 def _integer(value, allow_zero=False):
     try:
         result = int(value)
@@ -1408,6 +1505,22 @@ def _telegram_time(value):
         return datetime.fromtimestamp(int(value), timezone.utc)
     except (TypeError, ValueError, OSError):
         return None
+
+
+def _utc_datetime(value):
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _iso(value):

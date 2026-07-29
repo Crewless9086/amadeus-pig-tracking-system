@@ -160,9 +160,10 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         return _direct_result(False, "telegram_direct_webhook_secret_too_short", policy, 503)
     if not policy["allowed_user_ids_configured"]:
         return _direct_result(False, "telegram_direct_allowed_user_ids_required", policy, 503)
-    if policy["auth_rate_limit"]["locked"]:
+    authenticated = _secret_matches(headers or {}, environ=environ)
+    if not authenticated and policy["auth_rate_limit"]["locked"]:
         return _direct_result(False, "telegram_direct_auth_rate_limited", policy, 429)
-    if not _secret_matches(headers or {}, environ=environ):
+    if not authenticated:
         _record_auth_failure()
         return _direct_result(False, "telegram_direct_auth_denied", policy, 403)
 
