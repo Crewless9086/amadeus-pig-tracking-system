@@ -712,11 +712,17 @@ def _sam_live_stock_owner_review_notification_needed(event):
     reply = str(event.get("sam_reply_excerpt") or "").strip()
     action = str(event.get("recommended_action") or "").strip()
     review = event.get("review_json") if isinstance(event.get("review_json"), dict) else {}
+    decision = (
+        event.get("decision_json")
+        if isinstance(event.get("decision_json"), dict)
+        else {}
+    )
     return bool(
         reply
         and (
             action == "owner_review_send_candidate"
             or review.get("owner_authority_required") is True
+            or decision.get("protected_owner_exception_required") is True
         )
     )
 

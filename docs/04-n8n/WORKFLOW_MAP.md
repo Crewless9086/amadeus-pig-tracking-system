@@ -19,6 +19,7 @@ flowchart TD
   backend --> sheets["Google Sheets"]
   clarifyPath --> salesAgent["AI Sales Agent Reply"]
   salesAgent --> chatwootReply["Chatwoot Reply"]
+  chatwootContinuous["SAM Livestock Continuous Chatwoot Inbound"] --> salesAgent
   escalatePath --> handoffSheet["Escalation Sheet"]
   escalatePath --> telegramAlert["Telegram Alert"]
   telegramAlert --> wf11["1.1 Telegram Human Reply"]

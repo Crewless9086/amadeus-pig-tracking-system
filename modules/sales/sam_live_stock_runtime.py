@@ -47,6 +47,12 @@ from modules.sales.sam_live_stock_level1_control import (
     load_current_level1_control,
     resolve_level1_runtime_control,
 )
+from modules.sales.sam_chatwoot_inbox_state import (
+    build_chatwoot_inbox_state_plan,
+)
+from modules.sales.sam_live_stock_continuous_dispatch import (
+    build_delivery_owner_exception,
+)
 from modules.sales.sam_live_stock_media import classify_chatwoot_image, media_policy, transcribe_chatwoot_voice
 from modules.sales.sam_delivery_truth import (
     CHATWOOT_ACCEPTED_UNVERIFIED,
@@ -439,6 +445,22 @@ def handle_sam_live_stock_chatwoot_inbound(
     decision["contextual_sales_route"] = contextual_route
     decision["conversation_ownership"] = AUTO_SPECIALIST
     decision["specialist_lane_selected"] = True
+    delivery_owner_exception = build_delivery_owner_exception(
+        inbound=inbound,
+        facts=facts,
+    )
+    if delivery_owner_exception.get("eligible") is True:
+        decision["delivery_owner_exception"] = delivery_owner_exception
+        decision["protected_owner_exception_required"] = True
+        if _blank(facts.get("timing")):
+            location = _clean(facts.get("location"), 120)
+            decision["suggested_reply_text"] = (
+                f"Thanks, I’ve noted {location}. Delivery still needs owner "
+                "confirmation and is not promised. When would you need them?"
+            )
+            decision["reply_source"] = (
+                "deterministic_delivery_qualification_with_owner_exception"
+            )
     decision["specialist_tools_called"] = sorted(
         name
         for name in (decision.get("agent_evidence") or context_packet.get("agent_evidence") or {})
@@ -547,6 +569,16 @@ def handle_sam_live_stock_chatwoot_inbound(
         isolated_runtime=isolated_level1_runtime,
     )
     decision["routine_reply_delivery"] = routine_delivery
+    decision["chatwoot_inbox_state_plan"] = build_chatwoot_inbox_state_plan(
+        inbound=inbound,
+        decision=decision,
+        provider_state=str(
+            (routine_delivery.get("delivery_outcome") or {}).get(
+                "delivery_state"
+            )
+            or ""
+        ),
+    )
     decision["customer_send_authorized"] = routine_delivery.get("canary", {}).get("allowed") is True
     return {
         "success": True,
@@ -2554,6 +2586,9 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         database_url=(environ or {}).get("DATABASE_URL"),
     )
     customer_guidance = build_live_stock_customer_guidance(inbound, facts)
+    qualification_followup = build_live_stock_qualification_followup(
+        inbound, facts, missing
+    )
     customer_guidance_preferred = _prefer_customer_size_guidance(
         customer_guidance=customer_guidance,
         contextual_sales=contextual_sales,
@@ -2565,6 +2600,8 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     fallback_reply = (
         customer_guidance.get("reply_text")
         if customer_guidance_preferred
+        else qualification_followup.get("reply_text")
+        if qualification_followup.get("applicable") is True
         else contextual_sales.get("recommendation")
         if contextual_sales.get("applicable") is True
         else information_reply.get("reply_text") or _safe_reply_draft(
@@ -2590,6 +2627,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         }
         if (
             customer_guidance_preferred
+            or qualification_followup.get("applicable") is True
             or contextual_sales.get("general_information_fallback_blocked") is True
         )
         else _build_llm_reply_draft_if_enabled(
@@ -2620,6 +2658,8 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     reply_source = (
         "deterministic_customer_size_guidance"
         if customer_guidance_preferred
+        else "deterministic_supported_qualification_followup"
+        if qualification_followup.get("applicable") is True
         else "contextual_sales_source_backed_owner_draft"
         if contextual_sales.get("applicable") is True
         else llm_draft.get("reply_source")
@@ -2659,6 +2699,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "information_response": information_reply,
         "contextual_sales": contextual_sales,
         "customer_guidance": customer_guidance,
+        "qualification_followup": qualification_followup,
         "customer_guidance_preferred": customer_guidance_preferred,
         "agent_evidence": agent_evidence,
         "owner_action_packet": owner_action_packet,
@@ -4417,6 +4458,74 @@ def build_live_stock_customer_guidance(inbound, facts):
     }
 
 
+def build_live_stock_qualification_followup(inbound, facts, missing):
+    """Advance known Livestock interest while protected facts stay pending."""
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    fields = {
+        str(value).split(".")[-1].strip().lower()
+        for value in (missing or [])
+        if isinstance(value, str)
+    }
+    questions = []
+    if "quantity" in fields and _quantity_number(facts.get("quantity")) <= 0:
+        questions.append("how many do you need")
+    if "location" in fields and _blank(facts.get("location")):
+        questions.append("what town or area are you in")
+    if (
+        not questions
+        and "timing" in fields
+        and _blank(facts.get("timing"))
+    ):
+        questions.append("when would you need them")
+    if not questions:
+        return {
+            "applicable": False,
+            "reply_text": "",
+            "questions_asked": [],
+            "customer_send_allowed": False,
+        }
+    current_text = _normal_text(inbound.get("content"))
+    known_selection = bool(
+        not _blank(facts.get("category"))
+        and _quantity_number(facts.get("quantity")) > 0
+        and not _blank(facts.get("sex"))
+        and fields
+        and fields <= {"location", "timing"}
+        and _has_any(current_text, ("weaned piglets", "weaner piglets"))
+        and _has_any(current_text, ("male", "males"))
+        and _has_any(current_text, ("female", "females"))
+        and not facts.get("reservation_requested")
+        and not facts.get("breeding_interest")
+    )
+    if not known_selection:
+        return {
+            "applicable": False,
+            "reply_text": "",
+            "questions_asked": [],
+            "customer_send_allowed": False,
+        }
+    name = _first_name(
+        inbound.get("customer_name") or facts.get("customer_name")
+    )
+    greeting = f"Hi {name}, thanks" if name else "Thanks"
+    reply = (
+        f"{greeting} — I have noted the livestock details so far. "
+        f"{_sentence_case(_joined_customer_questions(questions))} "
+        "Price and current availability still need to be confirmed separately."
+    )
+    return {
+        "contract_version": "supported_qualification_followup_v1",
+        "applicable": True,
+        "reply_text": reply,
+        "questions_asked": questions,
+        "availability_claimed": False,
+        "price_claimed": False,
+        "delivery_promised": False,
+        "customer_send_allowed": False,
+    }
+
+
 def _prefer_customer_size_guidance(
     *,
     customer_guidance,
@@ -5079,6 +5188,23 @@ def _has_live_stock_followup_signal(text):
 
 
 def _extract_quantity(text):
+    split_counts = re.search(
+        r"\b(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)"
+        r"\s+(?:x\s+)?(?:males?|females?|boars?|gilts?|sows?)"
+        r"\s+and\s+"
+        r"(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)"
+        r"\s+(?:x\s+)?(?:males?|females?|boars?|gilts?|sows?)\b",
+        text,
+    )
+    if split_counts:
+        number_words = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        }
+        return sum(
+            int(value) if value.isdigit() else number_words[value]
+            for value in split_counts.groups()
+        )
     match = re.search(r"\b(?:buy|purchase|koop)\s+(\d{1,3})\b", text)
     if match:
         return int(match.group(1))
@@ -5162,6 +5288,14 @@ def _extract_weight_range(text):
         if low > high:
             low, high = high, low
         return f"{low}-{high} kg"
+    known_range = re.search(
+        r"\b(2\s*(?:-|to)\s*6|7\s*(?:-|to)\s*19|"
+        r"20\s*(?:-|to)\s*49|50\s*(?:-|to)\s*79)\b",
+        text,
+    )
+    if known_range:
+        low, high = re.findall(r"\d{1,3}", known_range.group(1))
+        return f"{int(low)}-{int(high)} kg"
     single = re.search(r"\b(?:around|about|roughly|\+-)?\s*(\d{1,3})\s*kg\b", text)
     if single:
         weight = int(single.group(1))
