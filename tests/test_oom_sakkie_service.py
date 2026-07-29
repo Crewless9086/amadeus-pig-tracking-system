@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
+from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY
 from modules.oom_sakkie.voice_stt import (
     backend_voice_stt_policy,
     transcribe_oom_sakkie_voice_audio,
@@ -790,6 +791,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             "text": "what needs attention today",
             "channel": "telegram_read_only",
             "session_id": "telegram-67890",
+            "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
         })
 
     @patch.dict(os.environ, {

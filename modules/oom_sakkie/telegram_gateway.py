@@ -2,7 +2,7 @@ import hmac
 import os
 import time
 
-from modules.oom_sakkie.service import handle_message
+from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY, handle_message
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -145,6 +145,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         "text": parsed["text"],
         "channel": "telegram_read_only",
         "session_id": parsed["session_id"],
+        "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
     })
     body, _ = _gateway_result(bool(message_result.get("success")), "answered", policy, message_status)
     body.update({

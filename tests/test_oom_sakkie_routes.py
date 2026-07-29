@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from app import app
 from modules.oom_sakkie.access import is_review_request_allowed
+from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY
 from modules.oom_sakkie.telegram_direct import _reset_direct_auth_rate_limit_for_tests
 from modules.oom_sakkie.telegram_gateway import _reset_auth_rate_limit_for_tests
 
@@ -282,6 +283,7 @@ class OomSakkieRouteTests(unittest.TestCase):
             "text": "what needs attention today",
             "channel": "telegram_read_only",
             "session_id": "telegram-67890",
+            "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
         })
 
     @patch.dict(os.environ, {

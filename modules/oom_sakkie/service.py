@@ -11,6 +11,7 @@ from modules.oom_sakkie.trace_store import build_trace_id, hash_tool_result, wri
 CONFIDENCE_FLOOR = 0.65
 MAX_USER_TEXT_CHARS = 2000
 DETERMINISTIC_ONLY_CHANNELS = {"telegram_read_only"}
+TELEGRAM_OWNER_AUTHORITY = object()
 DETERMINISTIC_ONLY_TOOLS = {
     "herdmaster_breeding_worklist",
     "herdmaster_breeding_observation_preview",
@@ -280,6 +281,11 @@ def handle_message(payload):
     channel = str((payload or {}).get("channel") or "kiosk").strip()[:40]
     session_id = str((payload or {}).get("session_id") or "").strip()[:120]
     allow_specialist_llm = (payload or {}).get("allow_specialist_llm") is True
+    authenticated_owner = bool(
+        channel == "telegram_read_only"
+        and (payload or {}).get("authenticated_owner")
+        is TELEGRAM_OWNER_AUTHORITY
+    )
     llm_allowed = channel not in DETERMINISTIC_ONLY_CHANNELS
     trace_id = build_trace_id()
 
@@ -501,7 +507,11 @@ def handle_message(payload):
             "trace_store": trace_status,
         }, 500
 
-    tool_result = tool.handler({"user_text": text, "allow_specialist_llm": allow_specialist_llm})
+    tool_result = tool.handler({
+        "user_text": text,
+        "allow_specialist_llm": allow_specialist_llm,
+        "authenticated_owner": authenticated_owner,
+    })
     stale_warnings = list(tool_result.get("stale_warnings") or [])
     safety_notes = list(tool_result.get("safety_notes") or [])
     links = list(tool_result.get("links") or [])

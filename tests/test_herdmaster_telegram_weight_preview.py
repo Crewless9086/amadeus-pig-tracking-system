@@ -157,6 +157,20 @@ class HerdmasterTelegramWeightPreviewTests(TestCase):
         self.assertIn("Please confirm or correct", result["answer"])
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
 
+    @patch("modules.oom_sakkie.tools.get_pig_allocation_readiness_data")
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    def test_untrusted_telegram_read_only_call_cannot_claim_owner_authentication(
+        self, _owner, readiness
+    ):
+        result, status = handle_message({
+            "text": SHUPE_MESSAGE,
+            "channel": "telegram_read_only",
+            "session_id": "untrusted-session",
+        })
+        self.assertEqual(status, 200)
+        self.assertIn("authenticated owner", result["answer"])
+        readiness.assert_not_called()
+
     def test_weekday_date_conflict_fails_closed(self):
         result = preview_herd_weight_fact(
             "Shupe weighed 72.2kg on Monday 21st July 2026",
