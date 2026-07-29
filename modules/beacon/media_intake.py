@@ -675,7 +675,20 @@ class IntakeStore:
                     "content_sha256": media["content_sha256"],
                     "exact_duplicate": bool(duplicate),
                 })
-                classification = media["classification"]
+                classification = media.get("classification") or {
+                    "classification": "private_farm_photo",
+                    "media_type": "image",
+                    "mime_type": media["observed_mime_type"],
+                    "orientation": (
+                        "landscape" if media["width"] > media["height"]
+                        else "portrait" if media["height"] > media["width"]
+                        else "square"
+                    ),
+                    "width": media["width"],
+                    "height": media["height"],
+                    "owner_context": envelope.get("owner_explanation", ""),
+                    "public_use_approved": False,
+                }
                 observation_id = _stable_id(
                     "BEACON-UNDERSTANDING",
                     _canonical_sha([binary_id, "server_private_classification_v1"]),
