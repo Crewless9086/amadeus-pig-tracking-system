@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Mapping
 
 from modules.sales.sam_live_stock_runtime import (
@@ -41,18 +43,9 @@ def operate_livestock_inbox(
     if not isinstance(first_payload, list) or provider_total < len(first_payload):
         raise RuntimeError("chatwoot_inventory_page_invalid")
     rows = list(first_payload)
-    page = 1
-    current = first_payload
-    while True:
-        if len(current) < 25:
-            if len({str(row.get("id") or "") for row in rows}) != provider_total:
-                raise RuntimeError("chatwoot_inventory_short_page_unproven")
-            break
-        if not any(row.get("can_reply") is True for row in current):
-            break
-        if page >= 10:
-            raise RuntimeError("chatwoot_open_window_inventory_boundary_unproven")
-        page += 1
+    page_count = max(1, math.ceil(provider_total / 25))
+
+    def load_page(page):
         body = page_loader(page)
         data = body.get("data") if isinstance(body.get("data"), Mapping) else {}
         next_meta = data.get("meta") if isinstance(data.get("meta"), Mapping) else {}
@@ -62,11 +55,25 @@ def operate_livestock_inbox(
             or int(next_meta.get("all_count") or -1) != provider_total
         ):
             raise RuntimeError("chatwoot_inventory_changed")
-        current = list(next_payload)
-        rows.extend(current)
+        return page, list(next_payload)
+
+    loaded = {}
+    if page_count > 1:
+        with ThreadPoolExecutor(max_workers=min(12, page_count - 1)) as pool:
+            futures = [
+                pool.submit(load_page, page)
+                for page in range(2, page_count + 1)
+            ]
+            for future in as_completed(futures):
+                page, payload = future.result()
+                loaded[page] = payload
+    for page in range(2, page_count + 1):
+        rows.extend(loaded[page])
     identities = [str(row.get("id") or "") for row in rows]
     if not all(identities) or len(set(identities)) != len(identities):
         raise RuntimeError("chatwoot_inventory_identity_conflict")
+    if len(identities) != provider_total:
+        raise RuntimeError("chatwoot_inventory_incomplete")
 
     dispositions = []
     for row in rows:

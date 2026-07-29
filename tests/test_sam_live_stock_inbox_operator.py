@@ -251,12 +251,14 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
 
     def test_short_first_page_with_larger_total_fails_closed(self):
         with self.assertRaisesRegex(
-            RuntimeError, "chatwoot_inventory_short_page_unproven"
+            RuntimeError, "chatwoot_inventory_incomplete"
         ):
             operate_livestock_inbox(
                 environ={},
-                conversation_page_loader=lambda page: self.page_with_total(
-                    [self.row("1")], 2
+                conversation_page_loader=lambda page: (
+                    self.page_with_total([self.row("1")], 2)
+                    if page == 1
+                    else self.page_with_total([], 2)
                 ),
                 history_loader=lambda cid, _env: ({}, 500),
                 claim_exists=lambda cid, mid: False,
@@ -267,7 +269,7 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         first = [self.row(str(value)) for value in range(25)]
         later = [self.row("25")]
         with self.assertRaisesRegex(
-            RuntimeError, "chatwoot_inventory_short_page_unproven"
+            RuntimeError, "chatwoot_inventory_incomplete"
         ):
             operate_livestock_inbox(
                 environ={},
@@ -299,24 +301,44 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
                 inbound_processor=lambda payload: {},
             )
 
-    def test_ten_full_replyable_pages_fail_closed(self):
-        def load(page):
-            rows = [
-                self.row(str((page - 1) * 25 + value))
-                for value in range(25)
-            ]
-            return self.page_with_total(rows, 1000)
-
-        with self.assertRaisesRegex(
-            RuntimeError, "chatwoot_open_window_inventory_boundary_unproven"
-        ):
-            operate_livestock_inbox(
-                environ={},
-                conversation_page_loader=load,
-                history_loader=lambda cid, _env: ({}, 500),
-                claim_exists=lambda cid, mid: False,
-                inbound_processor=lambda payload: {},
-            )
+    def test_later_replyable_pending_row_survives_noncandidate_first_page(self):
+        first = []
+        for value in range(25):
+            row = self.row(str(value), can_reply=False)
+            row["last_non_activity_message"] = {
+                "id": 1000 + value,
+                "created_at": 200 - value,
+                "message_type": 1,
+                "private": False,
+            }
+            first.append(row)
+        pending = self.row("2200")
+        pending["status"] = "pending"
+        pending["last_non_activity_message"] = {
+            "id": 800001,
+            "created_at": 100,
+            "message_type": 0,
+            "private": False,
+        }
+        calls = []
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: (
+                self.page_with_total(first, 26)
+                if page == 1
+                else self.page_with_total([pending], 26)
+            ),
+            history_loader=lambda cid, _env: (
+                self.history("800001", "I want five weaned piglets"),
+                200,
+            ),
+            claim_exists=lambda cid, mid: False,
+            inbound_processor=lambda payload: (
+                calls.append(payload["id"]) or {"sam_decision": {}}
+            ),
+        )
+        self.assertEqual(calls, ["800001"])
+        self.assertEqual(packet["inventory_count"], 26)
 
 
 if __name__ == "__main__":
