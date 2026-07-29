@@ -77,6 +77,24 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         self.assertEqual(calls, ["1"])
         self.assertEqual(packet["customers_answered"], 1)
 
+    def test_selected_payload_reuses_exact_authoritative_history(self):
+        row = self.row("1")
+        history = self.history("101", "I want five weaned piglets")
+        captured = []
+        operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page([row]),
+            history_loader=lambda cid, _env: (history, 200),
+            claim_exists=lambda cid, mid: False,
+            inbound_processor=lambda payload: (
+                captured.append(payload)
+                or {"sam_decision": {}}
+            ),
+        )
+        self.assertIs(
+            captured[0]["_sam_authoritative_history"], history
+        )
+
     def test_exact_claim_suppresses_only_that_inbound(self):
         rows = [self.row("1"), self.row("2")]
         histories = {

@@ -78,6 +78,49 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    @patch.object(
+        sam_live_stock_runtime,
+        "load_chatwoot_conversation_identity",
+    )
+    def test_preclaim_provider_recheck_binds_exact_latest_inbound(
+        self, load_identity
+    ):
+        load_identity.return_value = {
+            "success": True,
+            "account_id": "147387",
+            "conversation_id": "2074",
+            "contact_id": "CONTACT",
+            "inbox_id": "96568",
+            "can_reply": True,
+            "latest_message_id": "INBOUND-A",
+            "latest_message_type": 0,
+        }
+        inbound = {
+            "account_id": "147387",
+            "conversation_id": "2074",
+            "contact_id": "CONTACT",
+            "inbox_id": "96568",
+            "message_id": "INBOUND-A",
+        }
+        self.assertTrue(
+            sam_live_stock_runtime.verify_chatwoot_current_inbound(
+                inbound
+            )["allowed"]
+        )
+        load_identity.return_value["latest_message_id"] = "INBOUND-B"
+        self.assertFalse(
+            sam_live_stock_runtime.verify_chatwoot_current_inbound(
+                inbound
+            )["allowed"]
+        )
+        load_identity.return_value["latest_message_id"] = "INBOUND-A"
+        load_identity.return_value["latest_message_type"] = 1
+        self.assertFalse(
+            sam_live_stock_runtime.verify_chatwoot_current_inbound(
+                inbound
+            )["allowed"]
+        )
+
     def test_weight_after_want_is_not_misread_as_quantity(self):
         for message in (
             "I want 19 kg ones",
@@ -4219,6 +4262,53 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             chatwoot_sender=lambda *_args: calls.append("send"),
         )
         self.assertEqual(delivery["status"], "routine_reply_idempotency_claim_failed")
+        self.assertEqual(calls, [])
+
+    def test_preclaim_chronology_change_blocks_claim_and_send(self):
+        calls = []
+        delivery = (
+            sam_live_stock_runtime
+            .deliver_sam_live_stock_routine_reply_if_enabled(
+                {
+                    "account_id": "147387",
+                    "conversation_id": "2013",
+                    "contact_id": "699428938",
+                    "inbox_id": "96568",
+                    "message_id": "INBOUND-A",
+                    "content": "Hi",
+                    "identity_provenance": verified_identity(
+                        "2013", "699428938", "96568"
+                    ),
+                },
+                {
+                    "conversation_ownership": "AUTO_GENERAL",
+                    "suggested_reply_text": "Hi! How can I help?",
+                    "reply_source": "llm_auto_general_reply_draft",
+                    "should_reply": True,
+                    "llm_draft": {"used": True, "confidence": 0.99},
+                    "specialist_lane_selected": False,
+                    "specialist_tools_called": [],
+                    "owner_escalation_required": False,
+                },
+                {"safe_to_send": True, "escalation_required": False},
+                {
+                    "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+                    "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+                    "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "2013",
+                    "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "699428938",
+                    "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "96568",
+                },
+                preclaim_chronology_verifier=(
+                    lambda *_args: {"allowed": False}
+                ),
+                delivery_claim=lambda *_args: calls.append("claim"),
+                chatwoot_sender=lambda *_args: calls.append("send"),
+            )
+        )
+        self.assertEqual(
+            delivery["status"],
+            "routine_reply_preclaim_chronology_changed",
+        )
         self.assertEqual(calls, [])
 
     def test_auto_general_invalid_chronology_blocks_before_claim_or_send(self):

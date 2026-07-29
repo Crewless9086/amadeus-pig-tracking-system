@@ -356,6 +356,7 @@ def _inspect_and_operate(
             },
         },
         "sender": {"id": sender.get("id"), "name": sender.get("name")},
+        "_sam_authoritative_history": history,
     }
     parsed = parse_chatwoot_inbound(payload) if latest_incoming else {}
     if parsed:

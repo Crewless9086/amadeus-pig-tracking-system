@@ -20,6 +20,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.addCleanup(self.owner_money_path_guard.stop)
 
     def test_inbox_operator_admits_only_provider_current_backlog_path(self):
+        history = {"success": True, "messages": [{"id": "INBOUND"}]}
         with patch.object(
             sales_transaction_routes,
             "handle_sam_live_stock_chatwoot_inbound",
@@ -27,11 +28,22 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         ) as handle:
             result = (
                 sales_transaction_routes
-                ._operate_sam_live_stock_exact_payload({"id": "INBOUND"})
+                ._operate_sam_live_stock_exact_payload({
+                    "id": "INBOUND",
+                    "_sam_authoritative_history": history,
+                })
             )
         self.assertEqual(result["_operation_status_code"], 200)
         self.assertTrue(
             handle.call_args.kwargs["allow_provider_current_backlog"]
+        )
+        self.assertIs(
+            handle.call_args.kwargs["conversation_history_loader"](),
+            history,
+        )
+        self.assertIs(
+            handle.call_args.kwargs["preclaim_chronology_verifier"],
+            sales_transaction_routes.verify_chatwoot_current_inbound,
         )
 
     def test_sam_owner_inbox_read_and_reconciliation_authorities_are_separate(self):

@@ -107,6 +107,7 @@ from modules.sales.sam_live_stock_runtime import (
     sam_live_stock_webhook_policy,
     send_owner_approved_live_stock_reply,
     summarize_live_stock_availability,
+    verify_chatwoot_current_inbound,
 )
 from modules.sales.sam_live_stock_contextual_sales import (
     build_contextual_sales_recommendation,
@@ -1015,9 +1016,18 @@ def sam_live_stock_chatwoot_reconcile():
 
 
 def _operate_sam_live_stock_exact_payload(payload):
+    authoritative_history = (
+        payload.get("_sam_authoritative_history")
+        if isinstance(payload.get("_sam_authoritative_history"), dict)
+        else {}
+    )
     result, _status = handle_sam_live_stock_chatwoot_inbound(
         payload,
         allow_provider_current_backlog=True,
+        conversation_history_loader=(
+            lambda *_args, **_kwargs: authoritative_history
+        ),
+        preclaim_chronology_verifier=verify_chatwoot_current_inbound,
         routine_delivery_claim=_claim_sam_live_stock_routine_delivery,
         routine_delivery_evidence_recorder=(
             _record_sam_live_stock_delivery_outcome
