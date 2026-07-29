@@ -1672,6 +1672,17 @@ def project_mating_overview(rows, state_rows, today=None):
             "expected_pregnancy_check_date": _date_text(expected_check),
             "pregnancy_check_date": _date_text(row.get("pregnancy_check_date")),
             "pregnancy_check_result": _text(row.get("pregnancy_check_result")),
+            "pregnancy_check_method": _text(
+                row.get("pregnancy_check_method")
+                or row.get("diagnostic_method")
+            ),
+            "pregnancy_check_assessor": _text(
+                row.get("pregnancy_check_assessor")
+                or row.get("assessor")
+                or row.get("checked_by")
+            ),
+            "pregnancy_check_time": _text(row.get("pregnancy_check_time")),
+            "pregnancy_checked_at": _text(row.get("pregnancy_checked_at")),
             "expected_farrowing_date": _date_text(expected_farrowing),
             "actual_farrowing_date": _date_text(row.get("farrowing_date")),
             "mating_status": status,
