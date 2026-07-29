@@ -455,6 +455,47 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
             packet["dispositions"][0]["disposition"], "already_claimed"
         )
 
+    def test_unresolved_ambiguous_attempt_quarantines_conversation(self):
+        rows = [self.row("1159"), self.row("2")]
+        for index, row in enumerate(rows, start=1):
+            row["last_non_activity_message"] = {
+                "id": 925000 + index,
+                "created_at": 100 + index,
+                "message_type": 0,
+                "private": False,
+            }
+        histories = []
+        calls = []
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page(rows),
+            history_loader=lambda cid, _env: (
+                histories.append(cid)
+                or self.history(
+                    str(925000 + (1 if cid == "1159" else 2)),
+                    "I want weaned piglets",
+                ),
+                200,
+            ),
+            claim_exists=lambda cid, mid: False,
+            claimed_inbound_loader=lambda identities: set(),
+            quarantined_conversation_loader=lambda identities: {"1159"},
+            inbound_processor=lambda payload: (
+                calls.append(str(payload["conversation"]["id"]))
+                or {"sam_decision": {}}
+            ),
+        )
+        self.assertEqual(histories, ["2"])
+        self.assertEqual(calls, ["2"])
+        quarantined = next(
+            row for row in packet["dispositions"]
+            if row["conversation_id"] == "1159"
+        )
+        self.assertEqual(
+            quarantined["disposition"],
+            "delivery_quarantined_do_not_retry",
+        )
+
     def test_bounded_cycle_processes_one_and_defers_other_eligible_work(self):
         rows = [self.row("1"), self.row("2")]
         for index, row in enumerate(rows, start=1):

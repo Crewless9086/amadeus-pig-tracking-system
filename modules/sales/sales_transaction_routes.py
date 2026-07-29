@@ -995,6 +995,9 @@ def sam_live_stock_chatwoot_reconcile():
             claimed_inbound_loader=(
                 _sam_live_stock_existing_inbound_claims
             ),
+            quarantined_conversation_loader=(
+                _sam_live_stock_unresolved_delivery_quarantines
+            ),
             max_process_count=1,
             inbound_processor=_operate_sam_live_stock_exact_payload,
         )
@@ -1108,6 +1111,57 @@ def _sam_live_stock_existing_inbound_claims(identities):
             return {
                 (str(conversation_id), str(inbound_id))
                 for conversation_id, inbound_id in cursor.fetchall()
+            }
+
+
+def _sam_live_stock_unresolved_delivery_quarantines(conversation_ids):
+    """Load only conversations whose latest attempt transition is ambiguous."""
+    import psycopg
+
+    identities = sorted(
+        {str(value) for value in conversation_ids if str(value)}
+    )
+    if not identities:
+        return set()
+    with psycopg.connect(
+        os.environ["DATABASE_URL"],
+        connect_timeout=10,
+        options=(
+            "-c default_transaction_read_only=on "
+            "-c statement_timeout=10000"
+        ),
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                with latest_attempt_transition as (
+                    select distinct on (
+                               chatwoot_conversation_id,
+                               review_json->>'delivery_attempt_id'
+                           )
+                           chatwoot_conversation_id,
+                           review_json->>'delivery_state' as delivery_state
+                      from public.sam_live_stock_conversation_review_events
+                     where chatwoot_conversation_id = any(%s::text[])
+                       and event_source =
+                           'sam_outbound_delivery_transition'
+                       and coalesce(
+                             review_json->>'delivery_attempt_id', ''
+                           ) <> ''
+                     order by chatwoot_conversation_id,
+                              review_json->>'delivery_attempt_id',
+                              created_at desc,
+                              review_event_id desc
+                )
+                select distinct chatwoot_conversation_id
+                  from latest_attempt_transition
+                 where delivery_state = 'provider_outcome_ambiguous'
+                """,
+                (identities,),
+            )
+            return {
+                str(conversation_id)
+                for (conversation_id,) in cursor.fetchall()
             }
 
 

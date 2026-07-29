@@ -29,6 +29,7 @@ def operate_livestock_inbox(
     inbound_processor: Callable,
     claim_exists: Callable,
     claimed_inbound_loader: Callable | None = None,
+    quarantined_conversation_loader: Callable | None = None,
     max_process_count: int | None = None,
     now=None,
 ) -> dict:
@@ -79,6 +80,7 @@ def operate_livestock_inbox(
 
     candidate_rows = []
     claim_cache = {}
+    quarantined_conversations = set()
     candidate_keys = []
     for row in rows:
         latest = (
@@ -105,6 +107,16 @@ def operate_livestock_inbox(
         claim_cache = {
             key: bool(claim_exists(*key)) for key in candidate_keys
         }
+    if quarantined_conversation_loader and candidate_keys:
+        quarantined_conversations = {
+            str(conversation_id)
+            for conversation_id in (
+                quarantined_conversation_loader(
+                    sorted({key[0] for key in candidate_keys})
+                )
+                or set()
+            )
+        }
     for row in rows:
         latest = (
             row.get("last_non_activity_message")
@@ -118,7 +130,10 @@ def operate_livestock_inbox(
         )
         if row.get("can_reply") is True and inbound_id:
             key = (str(row.get("id") or ""), inbound_id)
-            if not claim_cache[key]:
+            if (
+                not claim_cache[key]
+                and key[0] not in quarantined_conversations
+            ):
                 candidate_rows.append(row)
 
     history_cache = {}
@@ -171,6 +186,9 @@ def operate_livestock_inbox(
             history_loader=cached_history_loader,
             inbound_processor=inbound_processor,
             claim_exists=cached_claim_exists,
+            conversation_quarantined=(
+                str(row.get("id") or "") in quarantined_conversations
+            ),
             can_process=can_process,
             require_durable_result=max_process_count is not None,
             now=clock,
@@ -230,6 +248,7 @@ def _inspect_and_operate(
     history_loader,
     inbound_processor,
     claim_exists,
+    conversation_quarantined,
     can_process,
     require_durable_result,
     now,
@@ -244,6 +263,22 @@ def _inspect_and_operate(
     provider_inbound_id = (
         str(provider_latest.get("id") or "") if provider_incoming else ""
     )
+    if conversation_quarantined:
+        return {
+            "conversation_id": conversation_id,
+            "inbound_message_id": provider_inbound_id,
+            "queue_relevant": True,
+            "eligible": False,
+            "disposition": "delivery_quarantined_do_not_retry",
+            "final_route": "AUTO_SPECIALIST",
+            "provider_state": "provider_outcome_ambiguous",
+            "provider_confirmed": False,
+            "owner_decision_required": False,
+            "reply": "",
+            "latest_inbound_at": int(
+                provider_latest.get("created_at") or 0
+            ),
+        }
     if (
         provider_latest
         and (
