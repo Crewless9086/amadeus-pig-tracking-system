@@ -59,6 +59,9 @@ from modules.telemetry.rootline_specialist_result import (
     build_current_rootline_specialist_result,
 )
 from modules.auth.owner_access import owner_session_is_valid
+from modules.oom_sakkie.gateway_authority import (
+    validates_rootline_gateway_authority,
+)
 from modules.pig_weights.herdmaster_breeding_operating_loop import (
     oom_sakkie_worklist_summary,
     preview_conversational_inspection,
@@ -1279,7 +1282,10 @@ def weather_now_handler(_args):
 
 
 def rootline_water_energy_plan_handler(args):
-    if not owner_session_is_valid("read"):
+    gateway_authorized = validates_rootline_gateway_authority(
+        (args or {}).get("gateway_authority")
+    )
+    if not gateway_authorized and not owner_session_is_valid("read"):
         return {
             "success": False,
             "status": "owner_authentication_required",

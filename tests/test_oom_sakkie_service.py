@@ -2,13 +2,18 @@ import unittest
 import os
 import json
 import tempfile
+from dataclasses import replace
 from urllib import error as urllib_error
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY
+from modules.oom_sakkie.gateway_authority import (
+    bind_gateway_owner_authority,
+    issue_gateway_owner_authority,
+)
 from modules.oom_sakkie.voice_stt import (
     backend_voice_stt_policy,
     transcribe_oom_sakkie_voice_audio,
@@ -437,6 +442,148 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(classify_intent("check the pump").tool_name, "irrigation_status")
         self.assertEqual(classify_intent("battery status").tool_name, "power_current")
 
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.service.write_trace")
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_owner_authenticated_gateway_reaches_rootline_without_flask_session(
+        self, protected_read, _owner_session, write_trace_record
+    ):
+        protected_read.return_value = {
+            "success": True,
+            "overall_status": "Needs Data",
+            "current_power": {},
+            "battery_policy": {},
+            "current_local_weather": {},
+            "forecast": {},
+            "evidence": {"freshness": {}},
+            "recommendations": [],
+            "owner_brief": {
+                "recommend_now": "Needs Data",
+                "why": ["Only supported evidence is included."],
+                "reassess": "when canonical evidence changes",
+                "family_fact_needed": "Are the storage tanks LOW, OK or FULL?",
+            },
+            "authority": {
+                "command_authority": False,
+                "hardware_control": False,
+                "writes_performed": False,
+            },
+        }
+
+        result, status = handle_telegram_gateway_message(
+            {
+                "message": {
+                    "text": "What should we do about water and power today?",
+                    "from": {"id": 12345},
+                    "chat": {"id": 12345, "type": "private"},
+                },
+            },
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            result["message"]["tool_used"],
+            "rootline_water_energy_plan",
+        )
+        self.assertIn("ROOTLINE recommends now", result["answer"])
+        self.assertFalse(result["writes"])
+        self.assertFalse(result["physical_controls_enabled"])
+        self.assertEqual(
+            result["message"]["trace_store"]["status"],
+            "not_stored_rootline_zero_write",
+        )
+        protected_read.assert_called_once_with(operating_date=None)
+        write_trace_record.assert_not_called()
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_rootline_rejects_forged_stale_and_mismatched_gateway_authority(
+        self, protected_read, _owner_session
+    ):
+        issued = issue_gateway_owner_authority("12345", "12345")
+        invalid = (
+            {"service": "oom_sakkie_telegram_gateway"},
+            bind_gateway_owner_authority(issued, "power_current"),
+            replace(issued, service="wrong-service"),
+            replace(issued, owner_user_id="999"),
+            replace(issued, issued_monotonic=0),
+        )
+
+        for authority in invalid:
+            with self.subTest(authority=authority):
+                result = rootline_water_energy_plan_handler({
+                    "gateway_authority": authority,
+                })
+                self.assertFalse(result["success"])
+                self.assertEqual(
+                    result["status"],
+                    "owner_authentication_required",
+                )
+                self.assertEqual(result["raw"], {})
+                self.assertNotIn("SOC", result["summary"])
+        protected_read.assert_not_called()
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_direct_message_cannot_reuse_legacy_owner_flag_for_rootline(
+        self, protected_read, _owner_session
+    ):
+        result, status = handle_message({
+            "text": "What should we do about water and power today?",
+            "channel": "telegram_read_only",
+            "session_id": "forged-direct-call",
+            "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
+        })
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["success"])
+        self.assertTrue(result["needs_clarification"])
+        self.assertEqual(result["tool_context"], {})
+        self.assertNotIn("SOC", result["answer"])
+        protected_read.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_gateway_rejects_wrong_private_chat_without_protected_read(
+        self, protected_read, _owner_session
+    ):
+        result, status = handle_telegram_gateway_message(
+            {
+                "message": {
+                    "text": "What should we do about water and power today?",
+                    "from": {"id": 12345},
+                    "chat": {"id": 999, "type": "private"},
+                },
+            },
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
+        )
+
+        self.assertEqual(status, 403)
+        self.assertEqual(
+            result["status"],
+            "protected_reader_authentication_denied",
+        )
+        self.assertFalse(result["success"])
+        self.assertFalse(result["records_audit_trace"])
+        self.assertEqual(
+            result["audit_trace_status"],
+            "not_stored_rootline_zero_write",
+        )
+        self.assertNotIn("SOC", result["answer"])
+        protected_read.assert_not_called()
+
     @patch("modules.oom_sakkie.service.write_trace")
     @patch("modules.oom_sakkie.service.get_tool")
     def test_rootline_message_pipeline_does_not_write_trace(
@@ -856,7 +1003,13 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(policy["telegram_gateway"]["deterministic_only"])
         self.assertFalse(policy["telegram_gateway"]["can_trigger_outbound_llm"])
         self.assertFalse(policy["telegram_gateway"]["writes"])
-        self.assertTrue(policy["telegram_gateway"]["records_audit_trace"])
+        self.assertIsNone(
+            policy["telegram_gateway"]["records_audit_trace"]
+        )
+        self.assertEqual(
+            policy["telegram_gateway"]["audit_trace_mode"],
+            "tool_dependent",
+        )
         self.assertTrue(policy["telegram_gateway"]["token_meets_minimum_entropy"])
         self.assertTrue(policy["telegram_gateway"]["allowed_user_ids_required"])
         self.assertTrue(policy["telegram_gateway"]["allowed_user_ids_configured"])
@@ -936,13 +1089,14 @@ class OomSakkieServiceTests(unittest.TestCase):
             "message": {
                 "text": "what needs attention today",
                 "from": {"id": 12345},
-                "chat": {"id": 67890},
+                "chat": {"id": 67890, "type": "private"},
             },
         })
 
         self.assertEqual(parsed["text"], "what needs attention today")
         self.assertEqual(parsed["telegram_user_id"], "12345")
         self.assertEqual(parsed["telegram_chat_id"], "67890")
+        self.assertEqual(parsed["telegram_chat_type"], "private")
         self.assertEqual(parsed["session_id"], "telegram-67890")
 
     @patch.dict(os.environ, {}, clear=True)
@@ -1021,6 +1175,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             "risk_level": 0,
             "trace_id": "OSK-TRACE-TELEGRAM",
             "safety_notes": ["No write."],
+            "trace_store": {"stored": True, "status": "stored"},
         }, 200)
 
         result, status_code = handle_telegram_gateway_message(
@@ -1045,11 +1200,13 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["can_trigger_outbound_llm"])
         self.assertFalse(result["writes"])
         self.assertTrue(result["records_audit_trace"])
+        self.assertEqual(result["audit_trace_status"], "stored")
         mock_handle.assert_called_once_with({
             "text": "what needs attention today",
             "channel": "telegram_read_only",
             "session_id": "telegram-67890",
             "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
+            "gateway_authority": ANY,
         })
 
     @patch.dict(os.environ, {
@@ -1074,7 +1231,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "what needs attention today",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
@@ -1114,7 +1271,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "what needs attention today",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
@@ -1209,7 +1366,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(preflight["direct_bot_cutover_enabled"])
         self.assertFalse(preflight["can_trigger_outbound_llm"])
         self.assertFalse(preflight["writes"])
-        self.assertTrue(preflight["records_audit_trace"])
+        self.assertIsNone(preflight["records_audit_trace"])
+        self.assertEqual(preflight["audit_trace_mode"], "tool_dependent")
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
