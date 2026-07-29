@@ -4364,7 +4364,7 @@ def build_live_stock_customer_guidance(inbound, facts):
     lines = [greeting]
     questions = []
     if options:
-        lines[0] += " We offer pigs in different sizes:"
+        lines[0] += " Here are practical size ranges to choose from:"
         lines.append("")
         lines.extend(
             f"- {option['customer_label']}: {option['weight_text']}"
@@ -4382,7 +4382,7 @@ def build_live_stock_customer_guidance(inbound, facts):
         questions.append("how many do you need")
     lines.extend(["", _joined_customer_questions(questions)])
     lines.append(
-        "Once I know that, I can confirm the available options and price."
+        "Price and current availability still need to be confirmed separately."
     )
     return {
         "contract_version": "customer_size_guidance_v1",

@@ -3424,7 +3424,12 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 reply = decision["suggested_reply_text"].lower()
                 self.assertNotIn("we don\u2019t offer pork", reply)
                 self.assertNotIn("we do have piglets", reply)
+                self.assertNotIn("we offer pigs", reply)
                 self.assertIn("approximately", reply)
+                self.assertIn(
+                    "current availability still need to be confirmed",
+                    reply,
+                )
 
     def test_contextual_route_preserves_terse_followup_but_not_lane_change_or_mixed(self):
         inbound = {

@@ -157,7 +157,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         )
         self.assertTrue(packet["passed"])
 
-    def test_partial_missing_fact_question_does_not_count_as_advancement(self):
+    def test_smallest_useful_missing_fact_question_advances_qualification(self):
         packet = evaluate_response_usefulness(
             lane="live_stock",
             inbound=inbound(content="I need pigs but do not know the size."),
@@ -172,8 +172,8 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
             ),
             evidence=evidence(),
         )
-        self.assertFalse(packet["passed"])
-        self.assertIn("qualification_advanced", packet["blockers"])
+        self.assertTrue(packet["passed"])
+        self.assertTrue(packet["checks"]["qualification_advanced"])
 
     def test_unknown_availability_does_not_block_supported_guidance(self):
         packet = evaluate_response_usefulness(
