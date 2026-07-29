@@ -37,25 +37,33 @@ def operate_livestock_inbox(
     first = page_loader(1)
     meta = (first.get("data") or {}).get("meta") or {}
     provider_total = int(meta.get("all_count") or 0)
-    rows = list((first.get("data") or {}).get("payload") or [])
+    first_payload = (first.get("data") or {}).get("payload")
+    if not isinstance(first_payload, list) or provider_total < len(first_payload):
+        raise RuntimeError("chatwoot_inventory_page_invalid")
+    rows = list(first_payload)
     page = 1
-    while (
-        len(rows[-25:]) == 25
-        and any(row.get("can_reply") is True for row in rows[-25:])
-        and page < 10
-    ):
+    current = first_payload
+    while True:
+        if len(current) < 25:
+            if len({str(row.get("id") or "") for row in rows}) != provider_total:
+                raise RuntimeError("chatwoot_inventory_short_page_unproven")
+            break
+        if not any(row.get("can_reply") is True for row in current):
+            break
+        if page >= 10:
+            raise RuntimeError("chatwoot_open_window_inventory_boundary_unproven")
         page += 1
         body = page_loader(page)
-        current = list((body.get("data") or {}).get("payload") or [])
+        data = body.get("data") if isinstance(body.get("data"), Mapping) else {}
+        next_meta = data.get("meta") if isinstance(data.get("meta"), Mapping) else {}
+        next_payload = data.get("payload")
+        if (
+            not isinstance(next_payload, list)
+            or int(next_meta.get("all_count") or -1) != provider_total
+        ):
+            raise RuntimeError("chatwoot_inventory_changed")
+        current = list(next_payload)
         rows.extend(current)
-        if len(current) < 25:
-            break
-    if (
-        page == 10
-        and len(rows[-25:]) == 25
-        and any(row.get("can_reply") is True for row in rows[-25:])
-    ):
-        raise RuntimeError("chatwoot_open_window_inventory_boundary_unproven")
     identities = [str(row.get("id") or "") for row in rows]
     if not all(identities) or len(set(identities)) != len(identities):
         raise RuntimeError("chatwoot_inventory_identity_conflict")
@@ -363,7 +371,12 @@ def _conversation_page(page, environ):
     account = str(environ.get("CHATWOOT_ACCOUNT_ID") or "147387")
     inbox = str(environ.get("SAM_LIVE_STOCK_CHATWOOT_INBOX_ID") or "96568")
     query = urllib.parse.urlencode(
-        {"inbox_id": inbox, "status": "all", "page": page}
+        {
+            "inbox_id": inbox,
+            "status": "all",
+            "sort_by": "last_activity_at",
+            "page": page,
+        }
     )
     return _request(
         f"/api/v1/accounts/{account}/conversations?{query}", environ

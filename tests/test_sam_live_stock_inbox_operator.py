@@ -24,6 +24,14 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
             }
         }
 
+    def page_with_total(self, rows, total):
+        return {
+            "data": {
+                "meta": {"all_count": total},
+                "payload": rows,
+            }
+        }
+
     def history(self, message_id, content, incoming=True):
         return {
             "success": True,
@@ -240,6 +248,75 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         )
         self.assertEqual(calls, ["800001"])
         self.assertTrue(packet["dispositions"][0]["eligible"])
+
+    def test_short_first_page_with_larger_total_fails_closed(self):
+        with self.assertRaisesRegex(
+            RuntimeError, "chatwoot_inventory_short_page_unproven"
+        ):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: self.page_with_total(
+                    [self.row("1")], 2
+                ),
+                history_loader=lambda cid, _env: ({}, 500),
+                claim_exists=lambda cid, mid: False,
+                inbound_processor=lambda payload: {},
+            )
+
+    def test_short_later_page_with_remaining_total_fails_closed(self):
+        first = [self.row(str(value)) for value in range(25)]
+        later = [self.row("25")]
+        with self.assertRaisesRegex(
+            RuntimeError, "chatwoot_inventory_short_page_unproven"
+        ):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: (
+                    self.page_with_total(first, 50)
+                    if page == 1
+                    else self.page_with_total(later, 50)
+                ),
+                history_loader=lambda cid, _env: ({}, 500),
+                claim_exists=lambda cid, mid: False,
+                inbound_processor=lambda payload: {},
+            )
+
+    def test_provider_total_change_fails_closed(self):
+        first = [self.row(str(value)) for value in range(25)]
+        second = [self.row(str(25 + value)) for value in range(25)]
+        with self.assertRaisesRegex(
+            RuntimeError, "chatwoot_inventory_changed"
+        ):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: (
+                    self.page_with_total(first, 50)
+                    if page == 1
+                    else self.page_with_total(second, 51)
+                ),
+                history_loader=lambda cid, _env: ({}, 500),
+                claim_exists=lambda cid, mid: False,
+                inbound_processor=lambda payload: {},
+            )
+
+    def test_ten_full_replyable_pages_fail_closed(self):
+        def load(page):
+            rows = [
+                self.row(str((page - 1) * 25 + value))
+                for value in range(25)
+            ]
+            return self.page_with_total(rows, 1000)
+
+        with self.assertRaisesRegex(
+            RuntimeError, "chatwoot_open_window_inventory_boundary_unproven"
+        ):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=load,
+                history_loader=lambda cid, _env: ({}, 500),
+                claim_exists=lambda cid, mid: False,
+                inbound_processor=lambda payload: {},
+            )
 
 
 if __name__ == "__main__":
