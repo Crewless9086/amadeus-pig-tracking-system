@@ -1392,6 +1392,32 @@ def _should_use_auto_general_path(inbound, facts, context_packet=None):
         return False
     if contextual_route.get("status") == "mixed_intent_requires_clarification":
         return True
+    # The contextual router is the lane authority for the current provider-
+    # bound message as well as for preserved prior context. A confidently
+    # resolved Livestock route must never fall through to AUTO_GENERAL merely
+    # because the message contains only a price/quantity question.
+    current_route = (
+        contextual_route.get("current_route")
+        if isinstance(contextual_route.get("current_route"), dict)
+        else {}
+    )
+    topical_only_reasons = {
+        "live_stock_sales:pig",
+        "live_stock_sales:pigs",
+        "live_stock_sales:piglet",
+        "live_stock_sales:piglets",
+        "live_stock_sales:vark",
+        "live_stock_sales:varke",
+    }
+    current_reasons = {
+        str(reason) for reason in (current_route.get("reasons") or [])
+    }
+    if (
+        contextual_route.get("final_route") == LANE_LIVE_STOCK
+        and current_reasons
+        and not current_reasons.issubset(topical_only_reasons)
+    ):
+        return False
     if _current_message_requires_specialist(inbound, facts):
         return False
     if _looks_like_customer_qualification_answer(
@@ -4338,7 +4364,7 @@ def build_live_stock_customer_guidance(inbound, facts):
     lines = [greeting]
     questions = []
     if options:
-        lines[0] += " We offer pigs in different sizes:"
+        lines[0] += " Here are practical size ranges to choose from:"
         lines.append("")
         lines.extend(
             f"- {option['customer_label']}: {option['weight_text']}"
@@ -4356,7 +4382,7 @@ def build_live_stock_customer_guidance(inbound, facts):
         questions.append("how many do you need")
     lines.extend(["", _joined_customer_questions(questions)])
     lines.append(
-        "Once I know that, I can confirm the available options and price."
+        "Price and current availability still need to be confirmed separately."
     )
     return {
         "contract_version": "customer_size_guidance_v1",

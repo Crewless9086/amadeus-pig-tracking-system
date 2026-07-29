@@ -3347,6 +3347,90 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             decision["contextual_sales_route"]["checks"]["fresh"]
         )
 
+    def test_current_confident_livestock_route_cannot_fall_to_auto_general(self):
+        cases = (
+            ("Hoeveel kos 'n vark?", "Richard"),
+            ("Hoeveel is die piglets?", "Azulidgaf"),
+        )
+        for index, (content, name) in enumerate(cases, start=1):
+            with self.subTest(content=content):
+                payload = inbound_payload(
+                    id=f"current-livestock-{index}",
+                    created_at=1785342834 + index,
+                    content=content,
+                    conversation={
+                        "id": 2100 + index,
+                        "inbox": {
+                            "id": 96568,
+                            "channel_type": "Channel::Whatsapp",
+                        },
+                        "meta": {"sender": {"id": 987000000 + index}},
+                    },
+                    sender={
+                        "id": 987000000 + index,
+                        "name": name,
+                    },
+                )
+                history = {
+                    "success": True,
+                    "evidence_complete": True,
+                    "messages": [
+                        {
+                            "id": f"current-livestock-{index}",
+                            "message_type": 0,
+                            "private": False,
+                            "created_at": 1785342834 + index,
+                            "content": content,
+                        }
+                    ],
+                }
+                result, status = (
+                    sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                        payload,
+                        environ={
+                            "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "0",
+                        },
+                        intake_context_loader=lambda *_args: {
+                            "success": True,
+                            "known_fields": {},
+                            "items": [],
+                        },
+                        conversation_history_loader=lambda *_args: history,
+                        conversation_identity_loader=lambda *_args, i=index: {
+                            "success": True,
+                            "status": "loaded",
+                            "account_id": "147387",
+                            "conversation_id": str(2100 + i),
+                            "contact_id": str(987000000 + i),
+                            "inbox_id": "96568",
+                        },
+                        availability_loader=lambda: [],
+                    )
+                )
+                decision = result["sam_decision"]
+                self.assertEqual(status, 200)
+                self.assertEqual(
+                    decision["contextual_sales_route"]["final_route"],
+                    "live_stock_sales",
+                )
+                self.assertEqual(
+                    decision["conversation_ownership"], "AUTO_SPECIALIST"
+                )
+                self.assertTrue(decision["specialist_lane_selected"])
+                self.assertEqual(
+                    decision["reply_source"],
+                    "deterministic_customer_size_guidance",
+                )
+                reply = decision["suggested_reply_text"].lower()
+                self.assertNotIn("we don\u2019t offer pork", reply)
+                self.assertNotIn("we do have piglets", reply)
+                self.assertNotIn("we offer pigs", reply)
+                self.assertIn("approximately", reply)
+                self.assertIn(
+                    "current availability still need to be confirmed",
+                    reply,
+                )
+
     def test_contextual_route_preserves_terse_followup_but_not_lane_change_or_mixed(self):
         inbound = {
             "account_id": "147387",
