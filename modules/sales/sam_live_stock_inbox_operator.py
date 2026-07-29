@@ -75,14 +75,57 @@ def operate_livestock_inbox(
     if len(identities) != provider_total:
         raise RuntimeError("chatwoot_inventory_incomplete")
 
+    candidate_rows = []
+    claim_cache = {}
+    for row in rows:
+        latest = (
+            row.get("last_non_activity_message")
+            if isinstance(row.get("last_non_activity_message"), Mapping)
+            else {}
+        )
+        inbound_id = (
+            str(latest.get("id") or "")
+            if latest.get("message_type") in (0, "incoming")
+            else ""
+        )
+        if row.get("can_reply") is True and inbound_id:
+            key = (str(row.get("id") or ""), inbound_id)
+            claim_cache[key] = bool(claim_exists(*key))
+            if not claim_cache[key]:
+                candidate_rows.append(row)
+
+    history_cache = {}
+    if candidate_rows:
+        with ThreadPoolExecutor(max_workers=min(12, len(candidate_rows))) as pool:
+            futures = {
+                pool.submit(
+                    history_loader, str(row.get("id") or ""), source
+                ): str(row.get("id") or "")
+                for row in candidate_rows
+            }
+            for future in as_completed(futures):
+                history_cache[futures[future]] = future.result()
+
+    def cached_claim_exists(conversation_id, inbound_id):
+        key = (str(conversation_id), str(inbound_id))
+        if key in claim_cache:
+            return claim_cache[key]
+        return claim_exists(*key)
+
+    def cached_history_loader(conversation_id, _source):
+        key = str(conversation_id)
+        if key in history_cache:
+            return history_cache[key]
+        return history_loader(key, source)
+
     dispositions = []
     for row in rows:
         disposition = _inspect_and_operate(
             row,
             source=source,
-            history_loader=history_loader,
+            history_loader=cached_history_loader,
             inbound_processor=inbound_processor,
-            claim_exists=claim_exists,
+            claim_exists=cached_claim_exists,
             now=clock,
         )
         if disposition["queue_relevant"]:
