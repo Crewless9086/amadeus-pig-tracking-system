@@ -66,6 +66,8 @@ from modules.pig_weights.herdmaster_breeding_operating_loop import (
 from modules.oom_sakkie.herdmaster_weight_preview import (
     preview_herd_weight_fact,
 )
+from modules.oom_sakkie.herd_question import answer_herd_question
+from modules.pig_weights.farm_supabase_read_service import get_mating_overview
 
 
 class RiskLevel(IntEnum):
@@ -1345,6 +1347,57 @@ def herdmaster_breeding_worklist_handler(_args):
             "A mating requires one exact owner decision and a separate protected write.",
         ],
         "raw": loop if success else {},
+    }
+
+
+def herdmaster_herd_question_handler(args):
+    if not (
+        (args or {}).get("authenticated_owner") is True
+        or owner_session_is_valid("read")
+    ):
+        return {
+            "success": False,
+            "status": "owner_authentication_required",
+            "summary": "Protected herd facts require the authenticated owner.",
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": ["No protected animal evidence was disclosed."],
+            "raw": {},
+        }
+    try:
+        result = answer_herd_question(
+            (args or {}).get("user_text"),
+            readiness=get_pig_allocation_readiness_data(),
+            matings=get_mating_overview(),
+            worklist=_current_herdmaster_breeding_loop(),
+        )
+    except Exception:
+        result = {
+            "success": False,
+            "status": "canonical_herd_evidence_unavailable",
+            "clarification": (
+                "Canonical herd evidence is unavailable. No farm action was taken."
+            ),
+            "writes_performed": False,
+            "protected_actions_performed": False,
+        }
+    success = result.get("success") is True
+    return {
+        "success": success,
+        "status": str(result.get("status") or "herd_question_unavailable"),
+        "summary": str(
+            result.get("answer")
+            or result.get("clarification")
+            or "I could not safely answer that herd question."
+        ),
+        "links": [],
+        "stale_warnings": list(
+            result.get("missing_or_stale_evidence") or []
+        ) if success else [],
+        "safety_notes": [
+            "Read-only canonical answer; no farm record or protected state was changed."
+        ],
+        "raw": result,
     }
 
 
@@ -3277,6 +3330,24 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=herdmaster_breeding_worklist_handler,
         description="Owner-only canonical Monday breeding worklist and evidence-backed next decision. Never records an observation or mating.",
+    ),
+    "herdmaster_herd_question": OomSakkieTool(
+        name="herdmaster_herd_question",
+        input_schema={
+            "type": "object",
+            "required": ["user_text"],
+            "properties": {"user_text": {"type": "string", "minLength": 1}},
+            "additionalProperties": False,
+        },
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=herdmaster_herd_question_handler,
+        description=(
+            "Owner-only canonical answer about one pig: identity, latest dated "
+            "weight, mating chronology, breeding/readiness status, evidence "
+            "gaps, and the next HERDMASTER recommendation. Never writes."
+        ),
     ),
     "herdmaster_breeding_observation_preview": OomSakkieTool(
         name="herdmaster_breeding_observation_preview",

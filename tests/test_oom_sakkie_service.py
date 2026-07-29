@@ -201,6 +201,7 @@ from modules.oom_sakkie.tools import (
     RiskLevel,
     TOOL_REGISTRY,
     herdmaster_breeding_observation_preview_handler,
+    herdmaster_herd_question_handler,
     herdmaster_breeding_worklist_handler,
     list_tool_catalog,
     rootline_water_energy_plan_handler,
@@ -277,6 +278,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "power_recent",
                 "rootline_water_energy_plan",
                 "herdmaster_breeding_worklist",
+                "herdmaster_herd_question",
                 "herdmaster_breeding_observation_preview",
                 "herdmaster_weight_preview",
                 "weather_now",
@@ -327,6 +329,116 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(draft["risk_level"], 1)
         self.assertEqual(draft["risk_label"], "DRAFT_ONLY")
         self.assertFalse(draft["requires_confirmation"])
+
+    @patch("modules.oom_sakkie.tools.get_mating_overview")
+    @patch("modules.oom_sakkie.tools.get_pig_allocation_readiness_data")
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    def test_herd_question_denies_anonymous_without_reading_protected_facts(
+        self, _owner, worklist, readiness, matings
+    ):
+        from app import app
+        with app.test_request_context("/api/oom-sakkie/message"):
+            result = herdmaster_herd_question_handler({
+                "user_text": "What do you know about Shupe?"
+            })
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "owner_authentication_required")
+        self.assertEqual(result["raw"], {})
+        readiness.assert_not_called()
+        matings.assert_not_called()
+        worklist.assert_not_called()
+
+    @patch("modules.oom_sakkie.tools.get_mating_overview", return_value=[])
+    @patch(
+        "modules.oom_sakkie.tools.get_pig_allocation_readiness_data",
+        return_value={
+            "success": True,
+            "generated_date": "2026-07-29",
+            "pigs": [{
+                "pig_id": "PIG-2026-34BF",
+                "tag_number": "Shupe",
+                "status": "Active",
+                "on_farm": "Yes",
+                "sex": "Female",
+                "purpose": "Breeding",
+                "latest_weight_kg": 72.2,
+                "latest_weight_date": "2026-07-20",
+                "days_since_weight": 9,
+                "readiness_bucket": "Retain / Breeding Candidate",
+                "readiness_reason": "Current purpose is breeding.",
+                "recommended_action": "Review for retention.",
+            }],
+        },
+    )
+    @patch(
+        "modules.oom_sakkie.tools._current_herdmaster_breeding_loop",
+        return_value={"success": True, "tasks": [], "cases": []},
+    )
+    def test_authenticated_telegram_herd_question_is_read_only(
+        self, _worklist, _readiness, _matings
+    ):
+        result = herdmaster_herd_question_handler({
+            "authenticated_owner": True,
+            "user_text": "What do you currently know about Shupe?",
+        })
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "herd_question_answer_ready")
+        self.assertIn("Facts — Shupe", result["summary"])
+        self.assertFalse(result["raw"]["writes_performed"])
+        self.assertFalse(result["raw"]["protected_actions_performed"])
+
+    @patch(
+        "modules.oom_sakkie.service.write_trace",
+        return_value={"stored": False, "status": "test"},
+    )
+    @patch("modules.oom_sakkie.tools.get_mating_overview", return_value=[])
+    @patch(
+        "modules.oom_sakkie.tools.get_pig_allocation_readiness_data",
+        return_value={
+            "success": True,
+            "generated_date": "2026-07-29",
+            "pigs": [{
+                "pig_id": "PIG-2026-34BF",
+                "tag_number": "Shupe",
+                "status": "Active",
+                "on_farm": "Yes",
+                "sex": "Female",
+                "purpose": "Breeding",
+                "latest_weight_kg": 72.2,
+                "latest_weight_date": "2026-07-20",
+                "days_since_weight": 9,
+                "readiness_bucket": "Retain / Breeding Candidate",
+                "readiness_reason": "Current purpose is breeding.",
+                "recommended_action": "Review for retention.",
+            }],
+        },
+    )
+    @patch(
+        "modules.oom_sakkie.tools._current_herdmaster_breeding_loop",
+        return_value={"success": True, "tasks": [], "cases": []},
+    )
+    def test_original_telegram_question_returns_one_deterministic_answer(
+        self, _worklist, _readiness, _matings, _trace
+    ):
+        result, status = handle_message({
+            "text": (
+                "Oom Sakkie, what do you currently know about Shupe, what is "
+                "her latest recorded weight, what is her breeding status, "
+                "what evidence is still missing, and what is the next "
+                "recommended action?"
+            ),
+            "channel": "telegram_read_only",
+            "session_id": "telegram-test",
+            "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tool_used"], "herdmaster_herd_question")
+        self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
+        self.assertIn("72.2 kg", result["answer"])
+        self.assertIn("evidence date 2026-07-20", result["answer"])
+        self.assertIn("Recommendation", result["answer"])
 
     @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
     @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
