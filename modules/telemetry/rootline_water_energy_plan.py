@@ -274,6 +274,18 @@ def get_oom_sakkie_water_energy_summary(operating_date=None, database_url=None):
 
 def build_current_water_energy_plan(operating_date=None, database_url=None, now=None):
     """Read supported evidence and build an in-memory advisory candidate."""
+    evidence, selected, now = read_current_water_energy_evidence(
+        operating_date=operating_date,
+        database_url=database_url,
+        now=now,
+    )
+    return build_water_energy_plan(evidence, selected, now=now)
+
+
+def read_current_water_energy_evidence(
+    operating_date=None, database_url=None, now=None
+):
+    """Read canonical ROOTLINE evidence without persisting a plan or observation."""
     from modules.telemetry.power_service import get_current_power_state
     from modules.telemetry.weather_service import (
         get_current_weather_state,
@@ -300,7 +312,7 @@ def build_current_water_energy_plan(operating_date=None, database_url=None, now=
         "tanks": _read_latest_tank_observation(database_url),
         "water_demand": {"status": UNAVAILABLE},
     }
-    return build_water_energy_plan(evidence, selected, now=now)
+    return evidence, selected, now
 
 
 def append_water_energy_plan(plan, actor_identity, database_url=None):

@@ -201,6 +201,7 @@ from modules.oom_sakkie.tools import (
     RiskLevel,
     TOOL_REGISTRY,
     herdmaster_breeding_observation_preview_handler,
+    herdmaster_herd_question_handler,
     herdmaster_breeding_worklist_handler,
     list_tool_catalog,
     rootline_water_energy_plan_handler,
@@ -277,6 +278,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "power_recent",
                 "rootline_water_energy_plan",
                 "herdmaster_breeding_worklist",
+                "herdmaster_herd_question",
                 "herdmaster_breeding_observation_preview",
                 "herdmaster_weight_preview",
                 "weather_now",
@@ -313,7 +315,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Never starts or stops irrigation", irrigation["description"])
         self.assertEqual(irrigation["input_schema"]["additionalProperties"], False)
 
-    @patch("modules.oom_sakkie.tools.get_oom_sakkie_water_energy_summary")
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
     def test_rootline_plan_tool_denies_anonymous_default_context(self, protected_read):
         from app import app
         with app.test_request_context("/api/oom-sakkie/message"):
@@ -327,6 +329,223 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(draft["risk_level"], 1)
         self.assertEqual(draft["risk_label"], "DRAFT_ONLY")
         self.assertFalse(draft["requires_confirmation"])
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_rootline_specialist_result_returns_coherent_owner_brief(
+        self, build_result, _owner
+    ):
+        result = {
+            "success": True,
+            "overall_status": "Recommend",
+            "current_power": {
+                "battery_soc_pct": 74,
+                "solar_power_w": 3200,
+                "load_power_w": 850,
+                "grid_power_w": 0,
+            },
+            "battery_policy": {
+                "governing_reserve_soc_pct": 63,
+                "governing_reason": (
+                    "sunny forecast profile; protect historical overnight depletion"
+                ),
+            },
+            "current_local_weather": {
+                "status": "fresh",
+                "observed_at": "2026-07-29T18:00:00+02:00",
+                "rain_rate_mm_h": 0,
+                "rain_today_mm": 0,
+            },
+            "forecast": {
+                "status": "fresh",
+                "confidence": "medium",
+                "observed_at": "2026-07-29T16:00:00+02:00",
+                "solar_profile": "sunny",
+                "uncertainty": "Forecast rain is not observed rain or captured water.",
+            },
+            "evidence": {
+                "freshness": {
+                    "power": "fresh",
+                    "current_local_weather": "fresh",
+                    "forecast": "fresh",
+                    "water_observations": "Unavailable",
+                }
+            },
+            "recommendations": [
+                {
+                    "subject": "borehole",
+                    "status": "Recommend",
+                    "command_authority": False,
+                    "hardware_control": False,
+                },
+                {
+                    "subject": "solar_transfer_dependency",
+                    "status": "Hold",
+                    "command_authority": False,
+                    "hardware_control": False,
+                },
+            ],
+            "owner_questions": [
+                {"question": "Are the storage tanks LOW, OK or FULL?"}
+            ],
+            "owner_brief": {
+                "recommend_now": "borehole",
+                "why": ["borehole: Water continuity is needed."],
+                "reassess": "new_canonical_evidence at 2026-07-29T18:30:00+02:00",
+                "family_fact_needed": "Are the storage tanks LOW, OK or FULL?",
+            },
+            "authority": {
+                "command_authority": False,
+                "hardware_control": False,
+                "writes_performed": False,
+            },
+        }
+        build_result.return_value = result
+
+        response = rootline_water_energy_plan_handler({"date": "2026-07-29"})
+
+        self.assertTrue(response["success"])
+        self.assertIs(response["raw"], result)
+        self.assertIs(response["llm_context"], result)
+        self.assertIn("SOC 74%", response["summary"])
+        self.assertIn("40% absolute", response["summary"])
+        self.assertIn("Reserve reason: sunny forecast", response["summary"])
+        self.assertIn("Current local weather", response["summary"])
+        self.assertIn("Forecast", response["summary"])
+        self.assertIn("solar_transfer_dependency: Hold", response["summary"])
+        self.assertIn("monitor-only", response["summary"])
+        self.assertIn("not controllable by ROOTLINE", response["summary"])
+        self.assertIn("not an instruction to run", response["summary"])
+        self.assertIn("Reassess:", response["summary"])
+        self.assertEqual(response["summary"].count("Family fact needed:"), 1)
+        self.assertFalse(response["raw"]["authority"]["command_authority"])
+        self.assertFalse(response["raw"]["authority"]["hardware_control"])
+        self.assertFalse(response["raw"]["authority"]["writes_performed"])
+        self.assertEqual(
+            response["stale_warnings"],
+            ["water_observations: Unavailable"],
+        )
+        self.assertIn("no database or farm write", response["safety_notes"][0])
+        build_result.assert_called_once_with(operating_date="2026-07-29")
+
+    def test_combined_water_and_power_question_routes_to_rootline(self):
+        match = classify_intent(
+            "What should we do about water and power today, and when reassess?"
+        )
+        self.assertEqual(match.tool_name, "rootline_water_energy_plan")
+        self.assertEqual(match.reason, "rule:rootline_water_energy")
+        self.assertEqual(classify_intent("check the pump").tool_name, "irrigation_status")
+        self.assertEqual(classify_intent("battery status").tool_name, "power_current")
+
+    @patch("modules.oom_sakkie.tools.get_mating_overview")
+    @patch("modules.oom_sakkie.tools.get_pig_allocation_readiness_data")
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    def test_herd_question_denies_anonymous_without_reading_protected_facts(
+        self, _owner, worklist, readiness, matings
+    ):
+        from app import app
+        with app.test_request_context("/api/oom-sakkie/message"):
+            result = herdmaster_herd_question_handler({
+                "user_text": "What do you know about Shupe?"
+            })
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "owner_authentication_required")
+        self.assertEqual(result["raw"], {})
+        readiness.assert_not_called()
+        matings.assert_not_called()
+        worklist.assert_not_called()
+
+    @patch("modules.oom_sakkie.tools.get_mating_overview", return_value=[])
+    @patch(
+        "modules.oom_sakkie.tools.get_pig_allocation_readiness_data",
+        return_value={
+            "success": True,
+            "generated_date": "2026-07-29",
+            "pigs": [{
+                "pig_id": "PIG-2026-34BF",
+                "tag_number": "Shupe",
+                "status": "Active",
+                "on_farm": "Yes",
+                "sex": "Female",
+                "purpose": "Breeding",
+                "latest_weight_kg": 72.2,
+                "latest_weight_date": "2026-07-20",
+                "days_since_weight": 9,
+                "readiness_bucket": "Retain / Breeding Candidate",
+                "readiness_reason": "Current purpose is breeding.",
+                "recommended_action": "Review for retention.",
+            }],
+        },
+    )
+    @patch(
+        "modules.oom_sakkie.tools._current_herdmaster_breeding_loop",
+        return_value={"success": True, "tasks": [], "cases": []},
+    )
+    def test_authenticated_telegram_herd_question_is_read_only(
+        self, _worklist, _readiness, _matings
+    ):
+        result = herdmaster_herd_question_handler({
+            "authenticated_owner": True,
+            "user_text": "What do you currently know about Shupe?",
+        })
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "herd_question_answer_ready")
+        self.assertIn("Facts — Shupe", result["summary"])
+        self.assertFalse(result["raw"]["writes_performed"])
+        self.assertFalse(result["raw"]["protected_actions_performed"])
+
+    @patch(
+        "modules.oom_sakkie.service.write_trace",
+        return_value={"stored": False, "status": "test"},
+    )
+    @patch("modules.oom_sakkie.tools.get_mating_overview", return_value=[])
+    @patch(
+        "modules.oom_sakkie.tools.get_pig_allocation_readiness_data",
+        return_value={
+            "success": True,
+            "generated_date": "2026-07-29",
+            "pigs": [{
+                "pig_id": "PIG-2026-34BF",
+                "tag_number": "Shupe",
+                "status": "Active",
+                "on_farm": "Yes",
+                "sex": "Female",
+                "purpose": "Breeding",
+                "latest_weight_kg": 72.2,
+                "latest_weight_date": "2026-07-20",
+                "days_since_weight": 9,
+                "readiness_bucket": "Retain / Breeding Candidate",
+                "readiness_reason": "Current purpose is breeding.",
+                "recommended_action": "Review for retention.",
+            }],
+        },
+    )
+    @patch(
+        "modules.oom_sakkie.tools._current_herdmaster_breeding_loop",
+        return_value={"success": True, "tasks": [], "cases": []},
+    )
+    def test_original_telegram_question_returns_one_deterministic_answer(
+        self, _worklist, _readiness, _matings, _trace
+    ):
+        result, status = handle_message({
+            "text": (
+                "Oom Sakkie, what do you currently know about Shupe, what is "
+                "her latest recorded weight, what is her breeding status, "
+                "what evidence is still missing, and what is the next "
+                "recommended action?"
+            ),
+            "channel": "telegram_read_only",
+            "session_id": "telegram-test",
+            "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tool_used"], "herdmaster_herd_question")
+        self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
+        self.assertIn("72.2 kg", result["answer"])
+        self.assertIn("evidence date 2026-07-20", result["answer"])
+        self.assertIn("Recommendation", result["answer"])
 
     @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
     @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")

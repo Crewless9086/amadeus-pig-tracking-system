@@ -55,8 +55,8 @@ from modules.telemetry.weather_service import (
     get_weather_today_summary,
 )
 from modules.telemetry.irrigation_service import get_irrigation_status
-from modules.telemetry.rootline_water_energy_plan import (
-    get_oom_sakkie_water_energy_summary,
+from modules.telemetry.rootline_specialist_result import (
+    build_current_rootline_specialist_result,
 )
 from modules.auth.owner_access import owner_session_is_valid
 from modules.pig_weights.herdmaster_breeding_operating_loop import (
@@ -66,6 +66,8 @@ from modules.pig_weights.herdmaster_breeding_operating_loop import (
 from modules.oom_sakkie.herdmaster_weight_preview import (
     preview_herd_weight_fact,
 )
+from modules.oom_sakkie.herd_question import answer_herd_question
+from modules.pig_weights.farm_supabase_read_service import get_mating_overview
 
 
 class RiskLevel(IntEnum):
@@ -1287,20 +1289,110 @@ def rootline_water_energy_plan_handler(args):
             "safety_notes": ["No protected plan evidence was disclosed."],
             "raw": {},
         }
-    result, status_code = get_oom_sakkie_water_energy_summary(
-        (args or {}).get("date")
+    result = build_current_rootline_specialist_result(
+        operating_date=(args or {}).get("date")
     )
+    freshness = (result.get("evidence") or {}).get("freshness") or {}
+    stale_warnings = [
+        f"{name}: {status}"
+        for name, status in freshness.items()
+        if str(status).lower() not in {"fresh", "aging"}
+    ]
     return {
         "success": bool(result.get("success", False)),
-        "status": str(result.get("status") or status_code),
-        "summary": result.get("summary") or "Water and Energy Plan is Unavailable.",
+        "status": str(result.get("overall_status") or result.get("reason") or "Needs Data"),
+        "summary": _rootline_family_answer(result),
         "links": [{"label": "ROOTLINE Water & Energy Plan", "href": "/#rootline_panel"}],
-        "stale_warnings": list(result.get("evidence_gaps") or []),
+        "stale_warnings": stale_warnings,
         "safety_notes": [
-            "Read-only advice; no command, schedule, workflow or hardware authority."
+            "Read-only ROOTLINE advice; no database or farm write, plan, command, "
+            "schedule, workflow, Telegram send, or hardware authority."
         ],
         "raw": result,
+        "llm_context": result,
     }
+
+
+def _rootline_family_answer(result):
+    if result.get("success") is not True:
+        return "ROOTLINE's current water-and-power evidence is unavailable."
+    power = result.get("current_power") or {}
+    reserve = result.get("battery_policy") or {}
+    weather = result.get("current_local_weather") or {}
+    forecast = result.get("forecast") or {}
+    brief = result.get("owner_brief") or {}
+    recommendations = [
+        f"{item.get('subject')}: {item.get('status')}"
+        for item in result.get("recommendations") or []
+        if isinstance(item, dict)
+    ]
+    reasons = [
+        str(item) for item in brief.get("why") or [] if str(item).strip()
+    ]
+    question = str(brief.get("family_fact_needed") or "").strip()
+    return " ".join(
+        part for part in (
+            f"ROOTLINE recommends now: {brief.get('recommend_now') or 'Needs Data'}.",
+            (
+                "Power: SOC {}; solar {}; load {}; grid {}. Governing reserve {} "
+                "(40% absolute discretionary floor; approximately 50% normal "
+                "provisional reserve)."
+            ).format(
+                _rootline_display_value(power.get("battery_soc_pct"), "%"),
+                _rootline_display_value(power.get("solar_power_w"), " W"),
+                _rootline_display_value(power.get("load_power_w"), " W"),
+                _rootline_display_value(power.get("grid_power_w"), " W"),
+                _rootline_display_value(
+                    reserve.get("governing_reserve_soc_pct"), "%"
+                ),
+            ),
+            (
+                "Reserve reason: "
+                + str(
+                    reserve.get("governing_reason")
+                    or "current reserve reason is Unavailable"
+                )
+                + "."
+            ),
+            (
+                "Current local weather ({status}, observed {observed}): rain rate "
+                "{rain}; rain today {today}."
+            ).format(
+                status=weather.get("status") or "Unavailable",
+                observed=weather.get("observed_at") or "Unavailable",
+                rain=_rootline_display_value(
+                    weather.get("rain_rate_mm_h"), " mm/h"
+                ),
+                today=_rootline_display_value(
+                    weather.get("rain_today_mm"), " mm"
+                ),
+            ),
+            (
+                "Forecast ({status}, confidence {confidence}, run {observed}): "
+                "{profile}; {uncertainty}"
+            ).format(
+                status=forecast.get("status") or "Unavailable",
+                confidence=forecast.get("confidence") or "Unavailable",
+                observed=forecast.get("observed_at") or "Unavailable",
+                profile=forecast.get("solar_profile") or "uncertain",
+                uncertainty=forecast.get("uncertainty")
+                or "Forecast is not observed weather or captured water.",
+            ),
+            "Current task eligibility: " + "; ".join(recommendations) + ".",
+            (
+                "Solar transfer: the independent pump runs only when solar "
+                "permits; it is monitor-only, not controllable by ROOTLINE, "
+                "and this is not an instruction to run it."
+            ),
+            "Why: " + "; ".join(reasons) + "." if reasons else "",
+            f"Reassess: {brief.get('reassess') or 'when canonical evidence changes'}.",
+            f"Family fact needed: {question}" if question else "",
+        ) if part
+    )
+
+
+def _rootline_display_value(value, unit=""):
+    return "Unavailable" if value is None else f"{value}{unit}"
 
 
 def _current_herdmaster_breeding_loop():
@@ -1345,6 +1437,57 @@ def herdmaster_breeding_worklist_handler(_args):
             "A mating requires one exact owner decision and a separate protected write.",
         ],
         "raw": loop if success else {},
+    }
+
+
+def herdmaster_herd_question_handler(args):
+    if not (
+        (args or {}).get("authenticated_owner") is True
+        or owner_session_is_valid("read")
+    ):
+        return {
+            "success": False,
+            "status": "owner_authentication_required",
+            "summary": "Protected herd facts require the authenticated owner.",
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": ["No protected animal evidence was disclosed."],
+            "raw": {},
+        }
+    try:
+        result = answer_herd_question(
+            (args or {}).get("user_text"),
+            readiness=get_pig_allocation_readiness_data(),
+            matings=get_mating_overview(),
+            worklist=_current_herdmaster_breeding_loop(),
+        )
+    except Exception:
+        result = {
+            "success": False,
+            "status": "canonical_herd_evidence_unavailable",
+            "clarification": (
+                "Canonical herd evidence is unavailable. No farm action was taken."
+            ),
+            "writes_performed": False,
+            "protected_actions_performed": False,
+        }
+    success = result.get("success") is True
+    return {
+        "success": success,
+        "status": str(result.get("status") or "herd_question_unavailable"),
+        "summary": str(
+            result.get("answer")
+            or result.get("clarification")
+            or "I could not safely answer that herd question."
+        ),
+        "links": [],
+        "stale_warnings": list(
+            result.get("missing_or_stale_evidence") or []
+        ) if success else [],
+        "safety_notes": [
+            "Read-only canonical answer; no farm record or protected state was changed."
+        ],
+        "raw": result,
     }
 
 
@@ -3267,7 +3410,12 @@ TOOL_REGISTRY = {
         risk_level=RiskLevel.READ_ONLY,
         requires_confirmation=False,
         handler=rootline_water_energy_plan_handler,
-        description="Read-only canonical ROOTLINE Water and Energy Plan summary.",
+        description=(
+            "Owner-only current ROOTLINE water-and-energy specialist result with "
+            "separate local weather and forecast, power reserve, supported task "
+            "recommendations, uncertainty, reassessment, and at most one genuine "
+            "family question. Never writes or controls hardware."
+        ),
     ),
     "herdmaster_breeding_worklist": OomSakkieTool(
         name="herdmaster_breeding_worklist",
@@ -3277,6 +3425,24 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=herdmaster_breeding_worklist_handler,
         description="Owner-only canonical Monday breeding worklist and evidence-backed next decision. Never records an observation or mating.",
+    ),
+    "herdmaster_herd_question": OomSakkieTool(
+        name="herdmaster_herd_question",
+        input_schema={
+            "type": "object",
+            "required": ["user_text"],
+            "properties": {"user_text": {"type": "string", "minLength": 1}},
+            "additionalProperties": False,
+        },
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=herdmaster_herd_question_handler,
+        description=(
+            "Owner-only canonical answer about one pig: identity, latest dated "
+            "weight, mating chronology, breeding/readiness status, evidence "
+            "gaps, and the next HERDMASTER recommendation. Never writes."
+        ),
     ),
     "herdmaster_breeding_observation_preview": OomSakkieTool(
         name="herdmaster_breeding_observation_preview",
