@@ -1361,6 +1361,57 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["location"], "Riversdale")
         self.assertFalse(facts["llm_used"])
 
+    def test_extract_live_stock_facts_retains_requested_calendar_day(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "If we can have the piglets on the 10th please",
+            {"conversation_id": "1338"},
+        )
+
+        self.assertEqual(facts["timing"], "10th")
+
+    def test_extract_live_stock_facts_does_not_treat_quantity_or_weight_as_timing(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I need 5 pigs around 10 kg",
+            {"conversation_id": "date-retention-negative"},
+        )
+
+        self.assertEqual(facts["timing"], "")
+
+    def test_extract_live_stock_facts_separates_dates_from_quantity(self):
+        for message in ("For 10th August please", "I need 10 August"):
+            with self.subTest(message=message):
+                facts = sam_live_stock_runtime.extract_live_stock_facts(
+                    message,
+                    {"conversation_id": "date-retention-quantity"},
+                )
+                self.assertIn("10", facts["timing"])
+                self.assertEqual(facts["quantity"], "")
+                self.assertEqual(facts["weight_range"], "")
+
+        quantity = sam_live_stock_runtime.extract_live_stock_facts(
+            "I need 10 piglets",
+            {"conversation_id": "quantity-control"},
+        )
+        self.assertEqual(quantity["quantity"], 10)
+
+    def test_extract_live_stock_facts_rejects_ambiguous_or_invalid_date_tokens(self):
+        for message in (
+            "I want the 2nd option",
+            "the 3rd female",
+            "details on the 20 growers",
+            "I will go for the 2nd option",
+            "I am asking for the 3rd female",
+            "Please quote for the 2nd group",
+            "on the 99th",
+            "before the 32nd",
+        ):
+            with self.subTest(message=message):
+                facts = sam_live_stock_runtime.extract_live_stock_facts(
+                    message,
+                    {"conversation_id": "date-retention-negative"},
+                )
+                self.assertEqual(facts["timing"], "")
+
     def test_extract_live_stock_facts_infers_category_from_weight_band(self):
         facts = sam_live_stock_runtime.extract_live_stock_facts(
             "Can you send pics of the 7-9kg ones, I will take 3 female 1 male",
