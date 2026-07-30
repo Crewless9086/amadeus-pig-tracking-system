@@ -69,7 +69,7 @@ class Cursor:
             self.inserted += 1
 
     def fetchone(self):
-        if "from public.pigs pig" in self.query:
+        if "from public.current_canonical_pigs pig" in self.query:
             return ("SOW-1",) if self.current else None
         if "where idempotency_key" in self.query:
             return self.existing

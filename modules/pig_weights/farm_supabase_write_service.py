@@ -424,7 +424,7 @@ def get_current_pen_id(pig_id, connect_factory=None):
         with connection.cursor() as cursor:
             row = _fetch_one(
                 cursor,
-                "select current_pen_id from public.pig_current_state where pig_id = %s",
+                "select current_pen_id from public.current_canonical_pig_state where pig_id = %s",
                 (to_clean_string(pig_id),),
             )
     return to_clean_string((row or {}).get("current_pen_id"))
@@ -808,7 +808,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                 cursor.execute(
                     """
                     select current_pen_id
-                    from public.pig_current_state where pig_id=%s
+                    from public.current_canonical_pig_state where pig_id=%s
                     """,
                     (pig_id,),
                 )

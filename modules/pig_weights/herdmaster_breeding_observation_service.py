@@ -334,7 +334,7 @@ def record_observation(
                 )
                 cursor.execute("""
                     select pig.pig_id
-                    from public.pigs pig
+                    from public.current_canonical_pigs pig
                     where pig.pig_id=%s and pig.status='Active'
                       and pig.on_farm is true and pig.sex='Female'
                       and pig.animal_type in ('Sow','Gilt')

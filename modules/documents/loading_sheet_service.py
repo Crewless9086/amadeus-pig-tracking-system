@@ -407,7 +407,7 @@ def _pig_pen_lookup(pig_ids):
                 cursor.execute(
                     """
                     select pig_id, current_pen_id, current_pen_name
-                    from public.pig_current_state
+                    from public.current_canonical_pig_state
                     where pig_id = any(%s)
                     """,
                     (pig_ids,),
