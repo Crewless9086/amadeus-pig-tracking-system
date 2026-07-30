@@ -3,7 +3,8 @@
 Status: source-ready coordination kernel; not integrated, merged, deployed, or
 operationally proven.
 
-Evidence cut: 2026-07-29 repository truth only. No production service, farm
+Evidence cut: 2026-07-30 at `origin/main` revision `0ee4d7b8`. Repository truth
+only. No production service, farm
 data, Telegram, n8n, Render, customer channel, or hardware was read or changed.
 
 ## Governance note
@@ -20,10 +21,10 @@ before production integration; this slice does not recreate or guess it.
 
 | Specialist | Structured result Oom Sakkie can receive today | Understand / answer / recommend | Remember / follow up / escalate | Genuine Oom Sakkie integration gap |
 | --- | --- | --- | --- | --- |
-| SAM Livestock | SAM runtime, launch-control, evaluation, order-context, and Herdmaster exact-eligibility structures exist. | SAM can reason about supervised live-pig conversations and source-bound availability. Oom Sakkie's canonical shared agent does not consume these results. | SAM owns customer conversation evidence and protected send/order/reservation gates. Oom Sakkie has no durable cross-domain follow-up binding. | No normalized result adapter, farm-queue ingestion, supported-answer binding, or family brief integration. SAM owns its domain reasoning and serialized production lane. |
-| HERDMASTER | Canonical shared-agent result, daily brief, breeding, litter, growth, and exact-eligibility structures exist. | Canonical Oom Sakkie can delegate ordinary farm questions to Herdmaster and return its answer. The older local service has deterministic Herdmaster tools. | Specialist evidence includes missing facts and advisory actions; Oom Sakkie does not reconcile those with other domains or maintain promises. | This is the only canonical delegation currently wired. It remains a pass-through rather than farm management. |
-| ROOTLINE | Deployed owner-only structured Daily Brief and built read-only Daily Advisor structures exist. | Rootline can explain weather, water, irrigation, power, freshness, holds, and evidence gaps without commanding hardware. | Rootline can expose unresolved owner decisions, but Oom Sakkie does not collect or reassess them. | No Oom Sakkie result adapter, question-answer binding, queue ingestion, or water/energy versus weather/solar/grid reconciliation. |
-| BEACON | Structured media, opportunity, owner-review, publication-binding, learning, and performance evidence exists behind separate gates. | Beacon can recommend marketing work when fulfilment and approved usable media support it. Oom Sakkie cannot currently distinguish a usable request from premature media administration. | Beacon owns its evidence and publication gates; no Oom Sakkie follow-up linkage exists. | No normalized result adapter, usable-media condition, family assignment, or current-work suppression in Oom Sakkie. Media intake is built-only/default-disabled and is not integration proof. |
+| SAM Livestock | Current main contains the unified offer composition, Customer Front Door, protected continuous-follow-up and inbox-operator contracts. These remain SAM-owned integration work, not an Oom Sakkie input adapter. | SAM can reason about live-pig conversations, chronology and source-bound availability. Oom Sakkie's canonical shared agent does not consume these results. | SAM owns customer conversation evidence and protected send/order/reservation gates. The coordination kernel may rank a supplied SAM result but cannot invoke or advance the lane. | No normalized read-only family-manager adapter. SAM owns its domain reasoning and active serialized production lane. |
+| HERDMASTER | Canonical shared-agent results expose direct answers, facts, source authority, observed freshness and confidence. Ordinary herd questions now include bounded pregnancy-evidence freshness while remaining read-only. | Canonical Oom Sakkie can delegate ordinary farm questions to Herdmaster and return its answer. | Specialist evidence includes missing facts and advisory actions; the isolated kernel can assign and reassess supplied follow-ups without changing herd state. | This remains the only canonical delegation currently wired. The daily family brief is not wired. |
+| ROOTLINE | `rootline_specialist_result_v1` now exposes stable identity, evidence cutoff, per-source provenance/freshness, recommendations, next reassessment, at most one genuine question, and explicit zero-command authority. | Rootline can explain water continuity, weather versus forecast, solar reserve, grid cost, holds and evidence gaps without commanding hardware. | The isolated kernel can consume equivalent typed signals and prevents stale/unsupported ROOTLINE conclusions from suppressing supported sales, herd or marketing work. | No Oom Sakkie adapter is wired; the dedicated ROOTLINE contract explicitly defers shared integration until the serialized queue is released. |
+| BEACON | Structured media and marketing evidence remains behind separate gates. The latest activation handover records a contained timeout and explicitly confirms no READY, photo request, media ingestion, publication or spend outcome. | Beacon can recommend marketing only when current fulfilment and usable-media evidence support it. | Contained/disabled/missing BEACON state blocks only its own unsupported conclusion in the coordination kernel. | No normalized family-manager adapter. Activation, Telegram, Render and GateKeeper remain excluded. |
 | SAM Meat | Structured readiness, truth snapshot, commercial standard, matching, fulfilment, and reconciliation evidence exists in pilot rails. | SAM Meat can prepare owner-reviewable commercial evidence, while all sends, money, reservations, allocation, slaughter, and fulfilment commitments stay protected. | Specialist rails retain their own state; Oom Sakkie has no consolidated commercial follow-up view. | No normalized result adapter or deduplication with SAM Livestock/customer work. Include only when a current meat exception or high-value action exists. |
 
 Prepared/deployed specialist results are deliberately not labelled integrated.
@@ -37,6 +38,7 @@ Herdmaster and returns that specialist's answer.
 - provenance-bound specialist results, work items, supported answers, and
   promised follow-ups;
 - one deterministic cross-domain queue;
+- no more than three ranked actions per family member;
 - explicit urgent, due-today, planned, waiting-evidence, and protected-owner
   states;
 - suppression of completed, handled, stale, duplicated, and unusable-media
@@ -45,6 +47,9 @@ Herdmaster and returns that specialist's answer.
 - one relevant per-family view and at most one genuine question per person;
 - evidence-only conversational answers;
 - reassessment of promised follow-ups when a new structured result arrives;
+- explicit specialist availability (`available`, `stale`, `disabled`,
+  `missing`, `contained`) so a specialist gap blocks only conclusions that
+  depend on it;
 - automatic demotion of customer, money, farm-write, publication, and hardware
   actions to protected owner decisions;
 - no imports of database, route, network, filesystem, channel, or specialist
@@ -53,13 +58,21 @@ Herdmaster and returns that specialist's answer.
 `tests/test_oom_sakkie_farm_manager_loop.py` proves prioritisation,
 deduplication, specialist provenance, family relevance, supported and
 unsupported answers, minimal questions, protected boundaries, follow-up
-reassessment, and zero writes.
+reassessment, per-person action caps, partial specialist failure containment,
+and zero writes.
 
 Independent final review: product/farm-operations approved the bounded
 source-only target after transitive dependency propagation and provenanced
 multi-input water/energy coordination were added. Backend/security/privacy
 approved after future-evidence, resolution ownership, provenance, protected
 action, privacy, determinism, and zero-I/O boundaries were hardened.
+
+The 2026-07-30 continuation was independently re-reviewed and approved after
+adding the three-action family cap, single-render concise brief, typed
+specialist availability, AVAILABLE-only signal/resolution consumption,
+ROOTLINE-owned point-in-time coordination signals, future/stale containment,
+and regression proof that one unavailable specialist does not erase healthy
+work from other lanes.
 
 ## Shared-file integration handover
 
@@ -118,7 +131,7 @@ authorized:
 ## Mission stage and measurable outcome
 
 Stage: independently reviewed source coordination kernel and acceptance proof.
-Estimated mission completion: 78%. Remaining work is shared adapter
+Estimated mission completion: 86%. Remaining work is shared adapter
 integration after claim release and the production proof above.
 
 Expected family outcome: in the first supervised proof, one brief gives each of

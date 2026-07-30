@@ -35,6 +35,14 @@ class Authority(str, Enum):
     HARDWARE_COMMAND = "hardware_command"
 
 
+class SpecialistAvailability(str, Enum):
+    AVAILABLE = "available"
+    STALE = "stale"
+    DISABLED = "disabled"
+    MISSING = "missing"
+    CONTAINED = "contained"
+
+
 PROTECTED_AUTHORITIES = frozenset(
     {
         Authority.OWNER_DECISION,
@@ -47,6 +55,9 @@ PROTECTED_AUTHORITIES = frozenset(
 )
 
 FAMILY_MEMBERS = frozenset({"charl", "dad", "mom"})
+ROOTLINE_SIGNAL_TYPES = frozenset(
+    {"water_continuity", "forecast_rain", "solar_reserve", "grid_cost"}
+)
 
 
 @dataclass(frozen=True)
@@ -153,6 +164,7 @@ class SpecialistResult:
     specialist: str
     result_id: str
     observed_at: datetime
+    availability: SpecialistAvailability = SpecialistAvailability.AVAILABLE
     work_items: tuple[SpecialistWorkItem, ...] = ()
     supported_answers: tuple[SupportedAnswer, ...] = ()
     coordination_signals: tuple[CoordinationSignal, ...] = ()
@@ -161,6 +173,8 @@ class SpecialistResult:
     def __post_init__(self) -> None:
         if not self.specialist.strip() or not self.result_id.strip():
             raise ValueError("specialist result identity is required")
+        if not isinstance(self.availability, SpecialistAvailability):
+            raise ValueError("availability must use SpecialistAvailability")
         if self.observed_at.tzinfo is None:
             raise ValueError("observed_at must be timezone-aware")
         for item in self.work_items:
@@ -189,6 +203,10 @@ class SpecialistResult:
                 raise ValueError("coordination signal must bind to its specialist result")
             if not signal.signal_type.strip() or not signal.value.strip():
                 raise ValueError("coordination signal type and value are required")
+            if signal.provenance.observed_at > self.observed_at:
+                raise ValueError("coordination signal cannot postdate its result")
+            if self.specialist != "rootline" or signal.signal_type not in ROOTLINE_SIGNAL_TYPES:
+                raise ValueError("coordination signal is not owned by this specialist")
 
 
 @dataclass(frozen=True)
@@ -208,6 +226,7 @@ class FamilyBrief:
     by_family_member: Mapping[str, tuple[SpecialistWorkItem, ...]]
     questions: Mapping[str, tuple[str, ...]]
     suppressed: Mapping[str, tuple[str, ...]]
+    specialist_gaps: Mapping[str, str]
     follow_ups: tuple[FollowUp, ...]
     authority: str = "read_only_coordination"
     writes_performed: int = 0
@@ -240,50 +259,50 @@ def build_family_brief(
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
-    if any(result.observed_at > now for result in results):
-        raise ValueError("future-dated specialist result is not accepted")
-
     kept: dict[str, SpecialistWorkItem] = {}
     suppressed: dict[str, list[str]] = {
         "completed_or_handled": [],
         "stale_refreshed": [],
         "duplicate": [],
         "unusable_marketing_request": [],
+        "lower_ranked": [],
     }
+    specialist_gaps: dict[str, str] = {}
+    accepted_results: list[SpecialistResult] = []
 
-    for item in _all_items(results):
-        if item.provenance.observed_at > now:
-            raise ValueError("future-dated specialist evidence is not accepted")
-        if item.state in {WorkState.COMPLETED, WorkState.HANDLED}:
-            suppressed["completed_or_handled"].append(item.item_id)
+    for result in results:
+        if result.observed_at > now:
+            specialist_gaps[result.specialist] = "invalid_future_evidence"
             continue
-        if _is_stale(item, now):
-            item = _as_evidence_refresh(item)
-            suppressed["stale_refreshed"].append(item.item_id)
-        if (
-            item.domain == "marketing"
-            and item.metadata.get("requests_media")
-            and item.media_usable is not True
-        ):
-            suppressed["unusable_marketing_request"].append(item.item_id)
+        accepted_results.append(result)
+        if result.availability in {
+            SpecialistAvailability.DISABLED,
+            SpecialistAvailability.MISSING,
+            SpecialistAvailability.CONTAINED,
+        }:
+            specialist_gaps[result.specialist] = result.availability.value
             continue
-        prior = kept.get(item.dedupe_key)
-        if prior is None:
-            kept[item.dedupe_key] = item
-            continue
-        winner, loser = _prefer(prior, item)
-        kept[item.dedupe_key] = winner
-        suppressed["duplicate"].append(loser.item_id)
+        for item in result.work_items:
+            _consider_item(item, result, now, kept, suppressed)
 
     queue = _reconcile_cross_domain(
-        tuple(sorted(kept.values(), key=_priority_key)), results
+        tuple(sorted(kept.values(), key=_priority_key)), accepted_results
     )
+    selected: list[SpecialistWorkItem] = []
+    counts = {member: 0 for member in FAMILY_MEMBERS}
+    for item in queue:
+        if counts[item.assignee] >= 3:
+            suppressed["lower_ranked"].append(item.item_id)
+            continue
+        counts[item.assignee] += 1
+        selected.append(item)
+    queue = tuple(selected)
     by_member = MappingProxyType({
         member: tuple(item for item in queue if item.assignee == member)
         for member in ("charl", "dad", "mom")
     })
     questions = _minimal_questions(queue)
-    follow_ups = _reassess_follow_ups(existing_follow_ups, results, queue)
+    follow_ups = _reassess_follow_ups(existing_follow_ups, accepted_results, queue)
     return FamilyBrief(
         generated_at=now,
         queue=queue,
@@ -292,8 +311,37 @@ def build_family_brief(
         suppressed=MappingProxyType(
             {key: tuple(sorted(value)) for key, value in suppressed.items()}
         ),
+        specialist_gaps=MappingProxyType(dict(sorted(specialist_gaps.items()))),
         follow_ups=follow_ups,
     )
+
+
+def _consider_item(item, result, now, kept, suppressed):
+    if item.state in {WorkState.COMPLETED, WorkState.HANDLED}:
+        suppressed["completed_or_handled"].append(item.item_id)
+        return
+    if result.availability is SpecialistAvailability.STALE:
+        item = _as_evidence_refresh(item)
+        suppressed["stale_refreshed"].append(item.item_id)
+    if item.provenance.observed_at > now:
+        raise ValueError("future-dated specialist evidence is not accepted")
+    if result.availability is not SpecialistAvailability.STALE and _is_stale(item, now):
+        item = _as_evidence_refresh(item)
+        suppressed["stale_refreshed"].append(item.item_id)
+    if (
+        item.domain == "marketing"
+        and item.metadata.get("requests_media")
+        and item.media_usable is not True
+    ):
+        suppressed["unusable_marketing_request"].append(item.item_id)
+        return
+    prior = kept.get(item.dedupe_key)
+    if prior is None:
+        kept[item.dedupe_key] = item
+        return
+    winner, loser = _prefer(prior, item)
+    kept[item.dedupe_key] = winner
+    suppressed["duplicate"].append(loser.item_id)
 
 
 def answer_supported_question(
@@ -310,6 +358,7 @@ def answer_supported_question(
     candidates = [
         answer
         for result in results
+        if result.availability is SpecialistAvailability.AVAILABLE
         for answer in result.supported_answers
         if answer.question_key == question_key
         and result.observed_at <= now
@@ -388,14 +437,28 @@ def render_consolidated_brief(brief: FamilyBrief) -> str:
             f"- {item.title} ({item.assignee}, {item.state.value}): {item.why} "
             f"Next: {action}. [{item.provenance.specialist}/{item.provenance.result_id}]"
         )
-    sections.append("")
-    for member in ("charl", "dad", "mom"):
-        sections.extend((render_family_brief(brief, member), ""))
+    selected_question = next(
+        (
+            (member, brief.questions[member][0])
+            for member in ("charl", "dad", "mom")
+            if brief.questions[member]
+        ),
+        None,
+    )
+    if selected_question:
+        member, question = selected_question
+        sections.extend(("", f"One family question for {member.title()}: {question}"))
     return "\n".join(sections).strip()
 
 
 def _all_items(results: Iterable[SpecialistResult]) -> Iterable[SpecialistWorkItem]:
     for result in results:
+        if result.availability in {
+            SpecialistAvailability.DISABLED,
+            SpecialistAvailability.MISSING,
+            SpecialistAvailability.CONTAINED,
+        }:
+            continue
         yield from result.work_items
 
 
@@ -461,6 +524,8 @@ def _reassess_follow_ups(
     evidence_by_key: dict[str, list[str]] = {}
     resolution_by_key: dict[str, list[str]] = {}
     for result in results:
+        if result.availability is not SpecialistAvailability.AVAILABLE:
+            continue
         for key in result.resolved_dedupe_keys:
             resolution_by_key.setdefault(key, []).append(
                 f"{result.specialist}:{result.result_id}"
@@ -558,14 +623,24 @@ def _balance_water_energy(
 ) -> SpecialistWorkItem:
     if item.domain != "water_energy" or item.state is WorkState.WAITING_EVIDENCE:
         return item
-    signals = {
-        signal.signal_type: signal
-        for result in results
-        for signal in result.coordination_signals
-    }
     required = {"water_continuity", "forecast_rain", "solar_reserve", "grid_cost"}
-    if not required.issubset(signals):
+    complete_results = []
+    for result in results:
+        if (
+            result.availability is SpecialistAvailability.AVAILABLE
+            and result.specialist == "rootline"
+        ):
+            signal_map = {
+                signal.signal_type: signal for signal in result.coordination_signals
+            }
+            if required.issubset(signal_map):
+                complete_results.append((result, signal_map))
+    if not complete_results:
         return item
+    _, signals = max(
+        complete_results,
+        key=lambda pair: (pair[0].observed_at, pair[0].result_id),
+    )
     values = {key: signals[key].value for key in required}
     if (
         values["water_continuity"] == "needs_water"

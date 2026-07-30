@@ -7,6 +7,7 @@ from modules.oom_sakkie.farm_manager_loop import (
     CoordinationSignal,
     FollowUp,
     Provenance,
+    SpecialistAvailability,
     SpecialistResult,
     SpecialistWorkItem,
     SupportedAnswer,
@@ -148,6 +149,7 @@ def test_suppresses_completed_stale_duplicate_and_unusable_marketing_work():
         "stale_refreshed": ("stale",),
         "duplicate": ("duplicate",),
         "unusable_marketing_request": ("unusable",),
+        "lower_ranked": (),
     }
 
 
@@ -407,19 +409,250 @@ def test_dependency_waiting_propagates_transitively():
     }
 
 
-def test_future_resolution_result_is_rejected():
+def test_future_resolution_result_is_isolated():
     future = SpecialistResult(
         specialist="rootline",
         result_id="future-resolution",
         observed_at=NOW + timedelta(minutes=1),
         resolved_dedupe_keys=("tank-check",),
     )
+    supported = _item(
+        "herdmaster", "herd-future-isolation", "herd-safe", "herd-safe",
+        "herd", WorkState.DUE_TODAY, "dad",
+    )
+    brief = build_family_brief(
+        [_result("herdmaster", "herd-future-isolation", supported), future],
+        now=NOW,
+        existing_follow_ups=(
+            FollowUp("future-fu", "tank-check", "dad", "promised", "rootline"),
+        ),
+    )
+    assert [item.item_id for item in brief.queue] == ["herd-safe"]
+    assert brief.specialist_gaps["rootline"] == "invalid_future_evidence"
+    assert brief.follow_ups[0].status == "promised"
+
+
+def test_ranks_no_more_than_three_actions_per_family_member():
+    items = tuple(
+        _item(
+            "herdmaster",
+            "herd-cap",
+            f"herd-{index}",
+            f"herd-{index}",
+            "herd",
+            WorkState.PLANNED,
+            "dad",
+            value=100 - index,
+        )
+        for index in range(5)
+    )
+    brief = build_family_brief(
+        [_result("herdmaster", "herd-cap", *items)], now=NOW
+    )
+    assert [item.item_id for item in brief.by_family_member["dad"]] == [
+        "herd-0",
+        "herd-1",
+        "herd-2",
+    ]
+    assert brief.suppressed["lower_ranked"] == ("herd-3", "herd-4")
+
+
+def test_unavailable_specialist_blocks_only_its_unsupported_conclusion():
+    supported_sales = _item(
+        "sam_livestock",
+        "sam-supported",
+        "sales-supported",
+        "sales-supported",
+        "sales",
+        WorkState.DUE_TODAY,
+        "charl",
+        value=100,
+        metadata={"customer_or_exception": True},
+    )
+    for availability in (
+        SpecialistAvailability.DISABLED,
+        SpecialistAvailability.MISSING,
+        SpecialistAvailability.CONTAINED,
+    ):
+        unavailable = SpecialistResult(
+            specialist="beacon",
+            result_id=f"beacon-{availability.value}",
+            observed_at=NOW,
+            availability=availability,
+        )
+        brief = build_family_brief(
+            [
+                _result("sam_livestock", "sam-supported", supported_sales),
+                unavailable,
+            ],
+            now=NOW,
+        )
+        assert [item.item_id for item in brief.queue] == ["sales-supported"]
+        assert brief.specialist_gaps == {"beacon": availability.value}
+
+
+def test_stale_specialist_blocks_only_its_conclusion_and_keeps_other_work():
+    sales = _item(
+        "sam_livestock",
+        "sam-current",
+        "sales-current",
+        "sales-current",
+        "sales",
+        WorkState.DUE_TODAY,
+        "charl",
+    )
+    water = _item(
+        "rootline",
+        "root-stale",
+        "water-stale",
+        "water-stale",
+        "water_energy",
+        WorkState.URGENT,
+        "dad",
+    )
+    stale_rootline = SpecialistResult(
+        specialist="rootline",
+        result_id="root-stale",
+        observed_at=NOW,
+        availability=SpecialistAvailability.STALE,
+        work_items=(water,),
+    )
+    brief = build_family_brief(
+        [_result("sam_livestock", "sam-current", sales), stale_rootline], now=NOW
+    )
+    by_id = {item.item_id: item for item in brief.queue}
+    assert by_id["sales-current"].state is WorkState.DUE_TODAY
+    assert by_id["water-stale"].state is WorkState.WAITING_EVIDENCE
+
+
+def test_unavailable_signals_cannot_change_supported_water_recommendation():
+    water = _item(
+        "rootline", "root-current", "water-current", "water-current",
+        "water_energy", WorkState.DUE_TODAY, "dad",
+    )
+    current = _result("rootline", "root-current", water)
+    contained_provenance = _provenance("rootline", "root-contained")
+    contained = SpecialistResult(
+        specialist="rootline",
+        result_id="root-contained",
+        observed_at=NOW,
+        availability=SpecialistAvailability.CONTAINED,
+        coordination_signals=tuple(
+            CoordinationSignal(kind, value, contained_provenance)
+            for kind, value in (
+                ("water_continuity", "needs_water"),
+                ("forecast_rain", "none_material"),
+                ("solar_reserve", "sufficient"),
+                ("grid_cost", "peak"),
+            )
+        ),
+    )
+    brief = build_family_brief([current, contained], now=NOW)
+    assert brief.queue[0].next_action == "review water_energy evidence"
+
+
+def test_stale_or_contained_result_cannot_close_follow_up():
+    follow_up = FollowUp("fu-contained", "tank-check", "dad", "promised", "rootline")
+    for availability in (
+        SpecialistAvailability.STALE,
+        SpecialistAvailability.CONTAINED,
+    ):
+        result = SpecialistResult(
+            specialist="rootline",
+            result_id=f"root-{availability.value}",
+            observed_at=NOW,
+            availability=availability,
+            resolved_dedupe_keys=("tank-check",),
+        )
+        brief = build_family_brief(
+            [result], now=NOW, existing_follow_ups=(follow_up,)
+        )
+        assert brief.follow_ups[0].status == "promised"
+
+
+def test_signal_cannot_postdate_its_result():
+    future_signal = CoordinationSignal(
+        "grid_cost",
+        "peak",
+        Provenance(
+            specialist="rootline",
+            result_id="root-signal-time",
+            source_refs=("rootline:signal",),
+            observed_at=NOW + timedelta(minutes=1),
+            confidence=0.96,
+        ),
+    )
     try:
-        build_family_brief([future], now=NOW)
+        SpecialistResult(
+            specialist="rootline",
+            result_id="root-signal-time",
+            observed_at=NOW,
+            coordination_signals=(future_signal,),
+        )
     except ValueError as exc:
-        assert "future-dated specialist result" in str(exc)
+        assert "coordination signal cannot postdate" in str(exc)
     else:
-        raise AssertionError("future resolution was accepted")
+        raise AssertionError("future coordination signal was accepted")
+
+
+def test_consolidated_renderer_lists_each_action_once():
+    item = _item(
+        "herdmaster", "herd-render", "render-once", "render-once", "herd",
+        WorkState.DUE_TODAY, "dad",
+    )
+    brief = build_family_brief(
+        [_result("herdmaster", "herd-render", item)], now=NOW
+    )
+    rendered = render_consolidated_brief(brief)
+    assert rendered.count("herd priority") == 1
+
+
+def test_stale_completed_work_is_not_resurrected():
+    completed = _item(
+        "rootline", "root-stale-done", "stale-done", "stale-done",
+        "water_energy", WorkState.COMPLETED, "dad",
+    )
+    result = SpecialistResult(
+        specialist="rootline",
+        result_id="root-stale-done",
+        observed_at=NOW,
+        availability=SpecialistAvailability.STALE,
+        work_items=(completed,),
+    )
+    brief = build_family_brief([result], now=NOW)
+    assert brief.queue == ()
+    assert brief.suppressed["completed_or_handled"] == ("stale-done",)
+
+
+def test_string_availability_is_rejected():
+    try:
+        SpecialistResult(
+            specialist="beacon",
+            result_id="beacon-string-state",
+            observed_at=NOW,
+            availability="contained",
+        )
+    except ValueError as exc:
+        assert "SpecialistAvailability" in str(exc)
+    else:
+        raise AssertionError("string availability bypassed the typed contract")
+
+
+def test_non_rootline_specialist_cannot_inject_water_energy_signal():
+    signal = CoordinationSignal(
+        "grid_cost", "peak", _provenance("beacon", "beacon-signal")
+    )
+    try:
+        SpecialistResult(
+            specialist="beacon",
+            result_id="beacon-signal",
+            observed_at=NOW,
+            coordination_signals=(signal,),
+        )
+    except ValueError as exc:
+        assert "not owned" in str(exc)
+    else:
+        raise AssertionError("BEACON injected a ROOTLINE coordination signal")
 
 
 def test_coordination_kernel_has_no_io_network_database_or_specialist_calls():
