@@ -78,6 +78,57 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_decision_retains_exact_operational_identity_for_post_send_state(
+        self,
+    ):
+        result, status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(
+                    id="INBOUND-EXACT",
+                    conversation={
+                        "id": 2401,
+                        "inbox": {
+                            "id": 96568,
+                            "channel_type": "Channel::Whatsapp",
+                        },
+                    },
+                ),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {},
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [],
+                },
+                availability_loader=lambda: [],
+            )
+        )
+        self.assertEqual(status, 200)
+        operational = result["sam_decision"]["inbound"]
+        self.assertEqual(
+            {
+                key: str(operational.get(key) or "")
+                for key in (
+                    "account_id",
+                    "conversation_id",
+                    "contact_id",
+                    "inbox_id",
+                    "message_id",
+                )
+            },
+            {
+                "account_id": "147387",
+                "conversation_id": "2401",
+                "contact_id": "99",
+                "inbox_id": "96568",
+                "message_id": "INBOUND-EXACT",
+            },
+        )
+        self.assertTrue(operational.get("identity_provenance"))
+
     @patch.object(
         sam_live_stock_runtime,
         "load_chatwoot_conversation_identity",

@@ -322,9 +322,27 @@ def handle_sam_live_stock_chatwoot_inbound(
         if isinstance(decision.get("inbound"), dict):
             decision["inbound"] = {
                 **decision["inbound"],
+                "account_id": inbound.get("account_id") or "",
                 "conversation_id": inbound.get("conversation_id") or "",
                 "contact_id": inbound.get("contact_id") or "",
                 "inbox_id": inbound.get("inbox_id") or "",
+                "message_id": inbound.get("message_id") or "",
+                "last_inbound_at": inbound.get("last_inbound_at") or "",
+                "chronology_current": (
+                    inbound.get("chronology_current") is True
+                ),
+                "whatsapp_window_state": (
+                    inbound.get("whatsapp_window_state") or ""
+                ),
+                "whatsapp_window_evidence_authoritative": (
+                    inbound.get(
+                        "whatsapp_window_evidence_authoritative"
+                    )
+                    is True
+                ),
+                "latest_observed_at": (
+                    inbound.get("latest_observed_at") or ""
+                ),
                 "identity_provenance": inbound.get("identity_provenance") or {},
             }
         decision["conversation_ownership"] = AUTO_GENERAL
@@ -2548,12 +2566,19 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
             "agent": "sam_live_stock_backend",
             "mode": "read_only_stage_3",
             "inbound": {
+                "account_id": inbound.get("account_id") or "",
                 "conversation_id": inbound.get("conversation_id") or "",
+                "contact_id": inbound.get("contact_id") or "",
+                "inbox_id": inbound.get("inbox_id") or "",
                 "message_id": inbound.get("message_id") or "",
+                "last_inbound_at": inbound.get("last_inbound_at") or "",
                 "customer_name": inbound.get("customer_name") or "",
                 "customer_phone": inbound.get("customer_phone") or "",
                 "channel": inbound.get("channel") or "",
                 "content": inbound.get("content") or "",
+                "identity_provenance": (
+                    inbound.get("identity_provenance") or {}
+                ),
             },
             "sales_lane": LANE_FARM_GENERAL,
             "lane_confidence": route["confidence"],
@@ -2737,12 +2762,17 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "agent": "sam_live_stock_backend",
         "mode": "read_only_stage_3",
         "inbound": {
+            "account_id": inbound.get("account_id") or "",
             "conversation_id": inbound.get("conversation_id") or "",
+            "contact_id": inbound.get("contact_id") or "",
+            "inbox_id": inbound.get("inbox_id") or "",
             "message_id": inbound.get("message_id") or "",
+            "last_inbound_at": inbound.get("last_inbound_at") or "",
             "customer_name": inbound.get("customer_name") or "",
             "customer_phone": inbound.get("customer_phone") or "",
             "channel": inbound.get("channel") or "",
             "content": inbound.get("content") or "",
+            "identity_provenance": inbound.get("identity_provenance") or {},
         },
         "sales_lane": route["lane"],
         "lane_confidence": route["confidence"],
