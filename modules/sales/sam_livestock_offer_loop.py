@@ -155,6 +155,7 @@ def build_canonical_livestock_offer(
             facts,
             reassessment_date,
             match_packet,
+            availability,
         )
     elif (
         facts.get("quantity")
@@ -213,6 +214,12 @@ def build_canonical_livestock_offer(
         customer_reply = ""
         response_kind = "composition_authority_blocked"
         evidence_errors.extend(authority["blockers"])
+    selected_alternatives = _selected_alternative_evidence(
+        match_packet,
+        int(facts.get("quantity") or 0),
+        facts,
+        availability,
+    )
 
     return {
         "contract_version": CONTRACT_VERSION,
@@ -227,6 +234,7 @@ def build_canonical_livestock_offer(
         "retained_facts": facts,
         "availability_evidence": dict(availability or {}),
         "match_evidence": dict(match_packet or {}),
+        "selected_alternative_evidence": selected_alternatives,
         "price_evidence": dict(price_packet or {}),
         "protected_decisions": protected,
         "returning_customer_context": dict(
@@ -371,7 +379,7 @@ def _offer_reply(*, facts, availability, match_packet, price_packet):
         )
         option_question = (
             "Would this lighter option work for you?"
-            if difference.startswith("This proposed combination is lighter")
+            if "proposed combination is lighter" in difference
             else "Would that option work for you?"
         )
         return (
@@ -402,7 +410,7 @@ def _alternatives(match_packet, quantity, facts=None, availability=None):
     availability = availability if isinstance(availability, Mapping) else {}
     rows = [
         row for row in rows
-        if _alternative_row_current(row, availability)
+        if _alternative_row_offerable(row, availability)
     ]
     if not rows:
         return ""
@@ -440,7 +448,7 @@ def _alternatives(match_packet, quantity, facts=None, availability=None):
     return f"{joined}; total {_money(total)}" if priced else joined
 
 
-def _weekly_reassessment_reply(facts, reassessment_date, match_packet):
+def _weekly_reassessment_reply(facts, reassessment_date, match_packet, availability=None):
     quantity = int(facts.get("quantity") or 0)
     split = facts.get("sex_split") if isinstance(facts.get("sex_split"), Mapping) else {}
     sex = (
@@ -457,7 +465,16 @@ def _weekly_reassessment_reply(facts, reassessment_date, match_packet):
         timing = f"the {timing}"
     recorded = _alternatives(match_packet, quantity, facts)
     current = (
-        f" The closest recorded options are {recorded}."
+        (
+            " "
+            + _alternative_difference(
+                facts,
+                match_packet,
+                quantity,
+                availability or {},
+            )
+            + f"The closest recorded options are {recorded}."
+        )
         if recorded
         else ""
     )
@@ -687,9 +704,6 @@ def _select_alternative_rows(rows, quantity, facts):
     male_count = int(split.get("male") or 0)
     if female_count + male_count != quantity:
         return rows[:quantity]
-    approved_split = _approved_approx_19_split(rows, facts, female_count, male_count)
-    if approved_split:
-        return approved_split
     selected = []
     used_ids = set()
     for wanted_sex, count in (("female", female_count), ("male", male_count)):
@@ -707,36 +721,6 @@ def _select_alternative_rows(rows, quantity, facts):
         )
     selected = selected[:quantity]
     selected.sort(key=lambda row: (int(row["alternative_rank"]), str(row.get("pig_id") or "")))
-    return selected
-
-
-def _approved_approx_19_split(rows, facts, female_count, male_count):
-    """Apply the reusable owner-approved 19 kg split-alternative journey."""
-    midpoint = _weight_midpoint(facts.get("weight_range"))
-    if (
-        midpoint is None
-        or not 18 <= midpoint <= 20
-        or female_count != 4
-        or male_count != 1
-    ):
-        return []
-    by_band_and_sex = {}
-    for row in rows:
-        key = (
-            str(row.get("sex") or "").strip().casefold(),
-            _normal_weight_band(row.get("weight_band")),
-        )
-        by_band_and_sex.setdefault(key, []).append(row)
-    selected = [
-        *by_band_and_sex.get(("female", "35-39"), [])[:3],
-        *by_band_and_sex.get(("female", "40-44"), [])[:1],
-        *by_band_and_sex.get(("male", "15-19"), [])[:1],
-    ]
-    if len(selected) != 5:
-        return []
-    selected.sort(
-        key=lambda row: (int(row["alternative_rank"]), str(row.get("pig_id") or ""))
-    )
     return selected
 
 
@@ -789,26 +773,60 @@ def _alternative_row_current(row, availability):
     )
 
 
+def _alternative_row_offerable(row, availability):
+    pricing = row.get("pricing") if isinstance(row.get("pricing"), Mapping) else {}
+    return bool(
+        _alternative_row_current(row, availability)
+        and pricing.get("pricing_id")
+        and pricing.get("source")
+        and pricing.get("unit_price") not in ("", None)
+    )
+
+
+def _selected_alternative_evidence(match_packet, quantity, facts, availability):
+    if quantity <= 0 or match_packet.get("complete_fulfillment") is True:
+        return []
+    rows = [
+        row
+        for row in match_packet.get("considered_sample") or []
+        if (
+            isinstance(row, Mapping)
+            and row.get("live_stock_sale_eligible") is True
+            and row.get("alternative_rank") not in ("", None)
+            and _alternative_row_offerable(row, availability)
+        )
+    ]
+    rows.sort(
+        key=lambda row: (int(row["alternative_rank"]), str(row.get("pig_id") or ""))
+    )
+    return [
+        {
+            "pig_id": str(row.get("pig_id") or ""),
+            "sex": str(row.get("sex") or ""),
+            "current_weight_kg": row.get("current_weight_kg"),
+            "target_weight_kg": row.get("target_weight_kg"),
+            "weight_distance_kg": row.get("weight_distance_kg"),
+            "latest_weight_date": str(row.get("latest_weight_date") or ""),
+            "days_since_weight": row.get("days_since_weight"),
+            "weight_band": str(row.get("weight_band") or ""),
+            "pricing_id": str((row.get("pricing") or {}).get("pricing_id") or ""),
+            "unit_price": (row.get("pricing") or {}).get("unit_price"),
+            "price_source": str((row.get("pricing") or {}).get("source") or ""),
+            "ranking_basis": str(row.get("alternative_ranking_basis") or ""),
+        }
+        for row in _select_alternative_rows(rows, quantity, facts)
+    ]
+
+
 def _alternative_difference(facts, match_packet, quantity, availability):
     split = facts.get("sex_split") if isinstance(facts.get("sex_split"), Mapping) else {}
-    if _approved_split_explanation_supported(
-        facts,
-        match_packet,
-        quantity,
-        availability,
-    ):
-        return (
-            f"The requested {int(split['female'])}-female/"
-            f"{int(split['male'])}-male split is preserved, but some pigs are "
-            "in different weight bands from the requested size. "
-        )
     rows = [
         row for row in match_packet.get("considered_sample") or []
         if (
             isinstance(row, Mapping)
             and row.get("live_stock_sale_eligible") is True
             and row.get("alternative_rank") not in ("", None)
-            and _alternative_row_current(row, availability)
+            and _alternative_row_offerable(row, availability)
         )
     ]
     rows.sort(
@@ -817,32 +835,100 @@ def _alternative_difference(facts, match_packet, quantity, availability):
     selected = _select_alternative_rows(rows, quantity, facts)
     requested_weight = _weight_midpoint(facts.get("weight_range"))
     selected_weights = [
-        _weight_midpoint(row.get("weight_band"))
+        (
+            _numeric_weight(row.get("current_weight_kg"))
+            if _numeric_weight(row.get("current_weight_kg")) is not None
+            else _weight_midpoint(row.get("weight_band"))
+        )
         for row in selected
     ]
+    requested_weight_label = _requested_weight_label(facts.get("weight_range"))
+    split_preserved = _requested_split_explanation_supported(
+        facts,
+        match_packet,
+        quantity,
+        availability,
+    )
     if (
         requested_weight is not None
         and selected_weights
         and all(weight is not None and weight < requested_weight for weight in selected_weights)
     ):
+        if split_preserved:
+            return (
+                f"The requested {int(split['female'])}-female/"
+                f"{int(split['male'])}-male split is preserved, but this "
+                "proposed combination is lighter than your requested "
+                f"{requested_weight_label} group. "
+            )
         return (
             "This proposed combination is lighter than your requested "
-            "approximately-19 kg group. "
+            f"{requested_weight_label} group. "
+        )
+    if requested_weight is not None and selected_weights:
+        lighter = [
+            row for row, weight in zip(selected, selected_weights)
+            if weight is not None and weight < requested_weight
+        ]
+        heavier = [
+            row for row, weight in zip(selected, selected_weights)
+            if weight is not None and weight > requested_weight
+        ]
+        if lighter and heavier:
+            lighter_sexes = {
+                str(row.get("sex") or "").strip().casefold() for row in lighter
+            }
+            heavier_sexes = {
+                str(row.get("sex") or "").strip().casefold() for row in heavier
+            }
+            if len(lighter_sexes) == 1 and len(heavier_sexes) == 1:
+                lighter_sex = next(iter(lighter_sexes))
+                heavier_sex = next(iter(heavier_sexes))
+                split_prefix = (
+                    f"The requested {int(split['female'])}-female/"
+                    f"{int(split['male'])}-male split is preserved. "
+                    if split_preserved
+                    else ""
+                )
+                return (
+                    f"{split_prefix}The {len(lighter)} "
+                    f"{_sex_option_label(lighter_sex, len(lighter))} "
+                    f"{'is' if len(lighter) == 1 else 'are'} lighter than your "
+                    f"requested {requested_weight_label}, "
+                    f"while the {len(heavier)} "
+                    f"{_sex_option_label(heavier_sex, len(heavier))} "
+                    f"{'is' if len(heavier) == 1 else 'are'} heavier. "
+                )
+            return (
+                f"Some options are lighter and some are heavier than your "
+                f"requested {requested_weight_label}. "
+            )
+    if split_preserved:
+        return (
+            f"The requested {int(split['female'])}-female/"
+            f"{int(split['male'])}-male split is preserved, but some pigs are "
+            "in different weight bands from the requested size. "
         )
     return (
         ""
     )
 
 
-def _approved_split_explanation_supported(
+def _sex_option_label(sex, count):
+    if sex == "female":
+        return "female option" if count == 1 else "female options"
+    if sex == "male":
+        return "male option" if count == 1 else "male options"
+    return "option" if count == 1 else "options"
+
+
+def _requested_split_explanation_supported(
     facts, match_packet, quantity, availability
 ):
     split = facts.get("sex_split") if isinstance(facts.get("sex_split"), Mapping) else {}
-    if (
-        int(split.get("female") or 0) != 4
-        or int(split.get("male") or 0) != 1
-        or quantity != 5
-    ):
+    female_count = int(split.get("female") or 0)
+    male_count = int(split.get("male") or 0)
+    if quantity <= 0 or female_count + male_count != quantity:
         return False
     rows = [
         row for row in match_packet.get("considered_sample") or []
@@ -850,27 +936,48 @@ def _approved_split_explanation_supported(
             isinstance(row, Mapping)
             and row.get("live_stock_sale_eligible") is True
             and row.get("alternative_rank") not in ("", None)
-            and _alternative_row_current(row, availability)
+            and _alternative_row_offerable(row, availability)
         )
     ]
     rows.sort(
         key=lambda row: (int(row["alternative_rank"]), str(row.get("pig_id") or ""))
     )
-    selected = _approved_approx_19_split(rows, facts, 4, 1)
-    if len(selected) != 5:
+    selected = _select_alternative_rows(rows, quantity, facts)
+    if len(selected) != quantity:
         return False
     return (
         sum(
             str(row.get("sex") or "").strip().casefold() == "female"
             for row in selected
         )
-        == 4
+        == female_count
         and sum(
             str(row.get("sex") or "").strip().casefold() == "male"
             for row in selected
         )
-        == 1
+        == male_count
     )
+
+
+def _numeric_weight(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _requested_weight_label(value):
+    text = " ".join(str(value or "").replace("_", " ").split())
+    if not text:
+        return "preferred-weight"
+    match = re.fullmatch(
+        r"(?:around|approximately|about)\s+(\d+(?:\.\d+)?)\s*kg",
+        text,
+        re.I,
+    )
+    if match:
+        return f"approximately {match.group(1)} kg"
+    return _human_weight_band(text)
 
 
 def _human_weight_band(value):

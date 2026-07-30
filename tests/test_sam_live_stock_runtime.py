@@ -348,7 +348,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(rows[0]["pricing"]["pricing_id"], "PRICE-35-39 kg")
         self.assertEqual(rows[0]["pricing"]["source"], "active_price_ledger")
 
-    def test_requested_weight_band_ranks_before_nearer_out_of_band_animal(self):
+    def test_absolute_weight_distance_ranks_before_requested_band_membership(self):
         facts = {
             "sales_lane": "live_stock_sales",
             "quantity": 1,
@@ -392,7 +392,60 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 facts, availability
             )
 
-        self.assertEqual(packet["considered_sample"][0]["pig_id"], "IN-BAND")
+        self.assertEqual(packet["considered_sample"][0]["pig_id"], "OUT-OF-BAND")
+        self.assertEqual(packet["considered_sample"][0]["weight_distance_kg"], 1.0)
+        self.assertEqual(packet["considered_sample"][1]["weight_distance_kg"], 2.0)
+
+    def test_alternative_ranking_changes_with_current_inventory_and_not_a_golden_total(self):
+        facts = {
+            "sales_lane": "live_stock_sales",
+            "quantity": 1,
+            "category": "weaner",
+            "weight_range": "around 19 kg",
+            "sex": "female",
+        }
+
+        def packet_for(rows):
+            with patch.object(
+                sam_live_stock_runtime,
+                "resolve_live_stock_price_rule",
+                side_effect=lambda _category, band, _sex: {
+                    "found": True,
+                    "pricing_id": f"PRICE-{band}",
+                    "source": "supabase",
+                    "unit_price": 500,
+                },
+            ):
+                return sam_live_stock_runtime.build_live_stock_match_packet(
+                    facts,
+                    {
+                        "success": True,
+                        "matched_count": 0,
+                        "eligible_projection": rows,
+                    },
+                )
+
+        farther = exact_eligible_row(
+            pig_id="F-14.8",
+            sex="Female",
+            current_weight_kg=14.8,
+            weight_band="10_to_14_Kg",
+        )
+        closer = exact_eligible_row(
+            pig_id="F-18.2",
+            sex="Female",
+            current_weight_kg=18.2,
+            weight_band="15_to_19_Kg",
+        )
+        first = packet_for([farther])
+        changed = packet_for([farther, closer])
+
+        self.assertEqual(first["considered_sample"][0]["pig_id"], "F-14.8")
+        self.assertEqual(changed["considered_sample"][0]["pig_id"], "F-18.2")
+        self.assertEqual(changed["considered_sample"][0]["weight_distance_kg"], 0.8)
+        self.assertEqual(
+            changed["considered_sample"][0]["pricing"]["source"], "supabase"
+        )
 
     def test_canonical_availability_question_uses_retained_constraints(self):
         question = sam_live_stock_runtime._canonical_availability_question(

@@ -3755,10 +3755,6 @@ def _rank_and_price_live_stock_alternatives(facts, rows):
     facts = facts if isinstance(facts, dict) else {}
     wanted_sex = _normal_text(facts.get("sex"))
     wanted_weight = _weight_midpoint(facts.get("weight_range"))
-    wanted_band = _normal_intake_weight_range(
-        facts.get("weight_range"),
-        _normal_intake_category(facts.get("category")),
-    )
     eligible = [
         dict(row)
         for row in rows
@@ -3767,17 +3763,6 @@ def _rank_and_price_live_stock_alternatives(facts, rows):
 
     def rank_key(row):
         weight = _safe_float(row.get("current_weight_kg"))
-        band_penalty = (
-            0
-            if (
-                _normal_text(row.get("weight_band")).replace(" ", "_")
-                == _normal_text(wanted_band).replace(" ", "_")
-                or _row_matches_requested_weight(
-                    row, facts.get("weight_range") or ""
-                )
-            )
-            else 1
-        )
         distance = (
             abs(weight - wanted_weight)
             if weight is not None and wanted_weight is not None
@@ -3792,7 +3777,6 @@ def _rank_and_price_live_stock_alternatives(facts, rows):
         freshness = int(row.get("days_since_weight") or 999999)
         return (
             sex_penalty,
-            band_penalty,
             distance,
             freshness,
             str(row.get("pig_id") or ""),
@@ -3815,6 +3799,16 @@ def _rank_and_price_live_stock_alternatives(facts, rows):
             price_cache[cache_key] = resolve_live_stock_price_rule(*cache_key)
         pricing = price_cache[cache_key]
         row["alternative_rank"] = index
+        row["target_weight_kg"] = wanted_weight
+        row["weight_distance_kg"] = (
+            round(abs(float(row["current_weight_kg"]) - wanted_weight), 3)
+            if wanted_weight is not None
+            and _safe_float(row.get("current_weight_kg")) is not None
+            else None
+        )
+        row["alternative_ranking_basis"] = (
+            "requested_sex_then_absolute_weight_distance_then_weight_freshness_then_pig_id"
+        )
         row["pricing"] = dict(pricing) if pricing.get("found") is True else {}
     return eligible
 
