@@ -1603,8 +1603,14 @@ def handle_sam_live_stock_delivery_status_webhook(
     if _clean(attempt.get("conversation_id"), 120) != conversation_id or _clean(attempt.get("chatwoot_outgoing_message_id"), 120) != outgoing_id:
         return {"success": False, "status": "sam_delivery_webhook_identity_mismatch", "processed": False}, 409
     configured_account = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV), 120)
+    attempt_account = _clean(attempt.get("account_id"), 120)
     if (
         normalized.get("conflict")
+        or (
+            configured_account
+            and attempt_account
+            and attempt_account != configured_account
+        )
         or (normalized.get("inbox_id") and _clean(normalized.get("inbox_id"), 120) != _clean(attempt.get("inbox_id"), 120))
         or (normalized.get("account_id") and configured_account and _clean(normalized.get("account_id"), 120) != configured_account)
     ):
@@ -1709,10 +1715,21 @@ def handle_sam_live_stock_delivery_status_webhook(
             "processed": False,
             "delivery_state": outcome.get("delivery_state"),
             "automatic_retry_prohibited": True,
+            "operational_state": _delivery_operational_state_packet(
+                attempt, outcome
+            ),
         }, 200
     action_id = _clean(attempt.get("owner_action_identity"), 120)
     if not action_id:
-        return {"success": True, "status": "sam_delivery_non_owner_attempt_reconciled", "processed": True, "delivery_state": outcome.get("delivery_state")}, 200
+        return {
+            "success": True,
+            "status": "sam_delivery_non_owner_attempt_reconciled",
+            "processed": True,
+            "delivery_state": outcome.get("delivery_state"),
+            "operational_state": _delivery_operational_state_packet(
+                attempt, outcome
+            ),
+        }, 200
     action_result, action_status = (review_event_loader or get_sam_live_stock_review_event)(action_id)
     action_event = action_result.get("event") if isinstance(action_result.get("event"), dict) else {}
     action_json = _json_value(action_event.get("review_json"))
@@ -1761,6 +1778,39 @@ def handle_sam_live_stock_delivery_status_webhook(
         edited, _ = _edit_owner_card_state(expected, label, _open_chatwoot_keyboard(action_id, conversation_id, source), source, telegram_editor)
         return {"success": True, "status": "sam_delivery_exception_card_retained", "processed": True, "delivery_state": state, "customer_send_confirmed": False, "card_retained": True, "telegram": edited}, 200
     return {"success": True, "status": "sam_delivery_accepted_card_retained", "processed": True, "delivery_state": state, "customer_send_confirmed": False, "card_retained": True}, 200
+
+
+def _delivery_operational_state_packet(attempt, outcome):
+    """Project only exact claim-bound state needed by the Chatwoot writer."""
+    return {
+        "inbound": {
+            "account_id": _clean(attempt.get("account_id"), 120),
+            "conversation_id": _clean(
+                attempt.get("conversation_id"), 120
+            ),
+            "contact_id": _clean(attempt.get("contact_id"), 120),
+            "inbox_id": _clean(attempt.get("inbox_id"), 120),
+            "message_id": _clean(
+                attempt.get("inbound_message_id"), 120
+            ),
+        },
+        "decision": {
+            "sales_lane": "live_stock_sales",
+            "specialist_lane_selected": True,
+            "missing_fields": list(attempt.get("missing_fields") or []),
+            "owner_gate_required": (
+                attempt.get("owner_decision_required") is True
+            ),
+        },
+        "provider_state": _clean(
+            outcome.get("delivery_state"), 80
+        ),
+        "delivery_attempt_id": _clean(
+            attempt.get("delivery_attempt_id"), 120
+        ),
+        "automatic_retry_prohibited": True,
+        "contains_private_message_content": False,
+    }
 
 
 def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, telegram_editor=None, chatwoot_writer=None, review_event_loader=None, active_card_loader=None, chronology_loader=None, sales_pack_preparer=None, evidence_recorder=None):

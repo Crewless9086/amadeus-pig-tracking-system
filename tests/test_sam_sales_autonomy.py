@@ -58,6 +58,28 @@ def evidence(**overrides):
 
 
 class SamSalesAutonomyLevel1Tests(unittest.TestCase):
+    def test_approaching_expiry_still_has_ordinary_reply_authority(self):
+        result = evaluate_level1_authority(
+            lane="live_stock",
+            inbound=inbound(
+                content="Tomorrow is fine.",
+                whatsapp_window_state="approaching_expiry",
+            ),
+            decision=decision(
+                suggested_reply_text="How many do you need?",
+                missing_fields=["quantity"],
+            ),
+            review=review(),
+            evidence=evidence(),
+            environ={
+                "SAM_SALES_AUTONOMY_LEVEL": "1",
+                "SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED": "1",
+                "SAM_SALES_LEVEL1_BROAD_DISPATCH_ENABLED": "1",
+            },
+        )
+        self.assertTrue(result["checks"]["channel_authorized"])
+        self.assertTrue(result["dispatch_authorized"], result)
+
     def test_production_shaped_2070_deferral_fails_usefulness_before_dispatch(self):
         result = evaluate_level1_authority(
             lane="live_stock",
@@ -157,7 +179,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         )
         self.assertTrue(packet["passed"])
 
-    def test_partial_missing_fact_question_does_not_count_as_advancement(self):
+    def test_smallest_useful_missing_fact_question_advances_qualification(self):
         packet = evaluate_response_usefulness(
             lane="live_stock",
             inbound=inbound(content="I need pigs but do not know the size."),
@@ -172,8 +194,20 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
             ),
             evidence=evidence(),
         )
-        self.assertFalse(packet["passed"])
-        self.assertIn("qualification_advanced", packet["blockers"])
+        self.assertTrue(packet["passed"])
+        self.assertTrue(packet["checks"]["qualification_advanced"])
+
+    def test_collection_location_alias_is_a_useful_location_question(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="Five is right."),
+            decision=decision(
+                suggested_reply_text="What town or area are you in?",
+                missing_fields=["collection_location"],
+            ),
+            evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"], packet)
 
     def test_unknown_availability_does_not_block_supported_guidance(self):
         packet = evaluate_response_usefulness(
@@ -1286,7 +1320,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         self.assertFalse(result["dispatch_authorized"])
         self.assertIn("cohort_not_stopped", result["blockers"])
 
-    def test_livestock_context_preserves_authority_metadata_without_content(self):
+    def test_livestock_context_preserves_content_for_canonical_chronology(self):
         packet = sam_live_stock_runtime.load_live_stock_read_context(
             {"conversation_id": "2033", "message_id": "M-1", "content": "price"},
             {"sales_lane": "live_stock"},
@@ -1305,7 +1339,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         )
         rows = packet["chatwoot_authority_messages"]
         self.assertEqual(rows[0]["id"], "M-1")
-        self.assertNotIn("content", rows[0])
+        self.assertEqual(rows[0]["content"], "redacted from authority shape")
 
     def test_livestock_authority_preserves_attachment_evidence(self):
         for attachments in ([{"id": "ATT-1"}], {"malformed": True}):

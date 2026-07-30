@@ -75,6 +75,39 @@ class SamLiveStockLevel1ControlTests(unittest.TestCase):
         self.assertTrue(carried["allowed"])
         self.assertTrue(carried["carried_followup"])
 
+    def test_provider_current_backlog_requires_an_enabled_current_control(self):
+        old = inbound(
+            latest_observed_at=(NOW - timedelta(minutes=1)).isoformat()
+        )
+        admitted = resolve_level1_runtime_control(
+            old,
+            loaded={
+                "status": "level1_control_loaded",
+                "event": self.event(),
+            },
+            now=NOW + timedelta(minutes=1),
+            allow_provider_current_backlog=True,
+        )
+        self.assertTrue(admitted["allowed"])
+        self.assertTrue(admitted["provider_current_backlog"])
+        self.assertFalse(admitted["new_event"])
+        self.assertFalse(admitted["carried_followup"])
+
+        killed = resolve_level1_runtime_control(
+            old,
+            loaded={
+                "status": "level1_control_loaded",
+                "event": self.event("killed"),
+            },
+            now=NOW + timedelta(minutes=1),
+            allow_provider_current_backlog=True,
+        )
+        self.assertFalse(killed["allowed"])
+        self.assertFalse(killed["provider_current_backlog"])
+        self.assertIn(
+            "kill_switch_or_control_disabled", killed["blockers"]
+        )
+
     def test_kill_disabled_expired_or_missing_storage_fails_closed(self):
         cases = (
             (

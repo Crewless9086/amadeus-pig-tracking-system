@@ -335,7 +335,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("hmac.compare_digest", telegram_gateway)
         self.assertIn("MIN_TOKEN_CHARS = 32", telegram_gateway)
         self.assertIn('"allowed_user_ids_required": True', telegram_gateway)
-        self.assertIn('"records_audit_trace": True', telegram_gateway)
+        self.assertIn('"audit_trace_mode": "tool_dependent"', telegram_gateway)
         self.assertIn("AUTH_FAILURE_LIMIT", telegram_gateway)
         self.assertIn("telegram_gateway_exposure_preflight", telegram_gateway)
         self.assertIn("OOM_SAKKIE_TELEGRAM_TLS_CONFIRMED", telegram_gateway)

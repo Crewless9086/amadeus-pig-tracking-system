@@ -14,7 +14,13 @@ import re
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
-CONTRACT_VERSION = "herdmaster_breeding_operating_loop_v1"
+from modules.pig_weights.pregnancy_evidence import (
+    pregnancy_recommendation,
+    resolve_pregnancy_evidence,
+)
+
+
+CONTRACT_VERSION = "herdmaster_breeding_operating_loop_v2"
 REPEAT_SERVICE_REVIEW_COUNT = 2
 WEIGHT_FRESH_DAYS = 30
 
@@ -291,7 +297,7 @@ def _classify(
         (today - mating_date).days if mating_date and today >= mating_date
         else None
     )
-    pregnancy = _norm(latest_mating.get("pregnancy_check_result"))
+    pregnancy = resolve_pregnancy_evidence(matings, today=today)
     projected_observation = (
         projected_observation
         if isinstance(projected_observation, dict) else {}
@@ -347,6 +353,37 @@ def _classify(
             "review medical or withdrawal hold", 5,
         )
         reason = "A current medical, withdrawal or availability hold is evidenced."
+    elif pregnancy["state"] == "pregnant":
+        state, action, priority = (
+            pregnancy["derived_status"],
+            pregnancy_recommendation(pregnancy), 35,
+        )
+        reason = (
+            "A current governed pregnancy result is present and applicable "
+            "to the latest mating."
+        )
+    elif pregnancy["state"] == "conflicting":
+        state, action, priority = (
+            pregnancy["derived_status"],
+            pregnancy_recommendation(pregnancy), 8,
+        )
+        reason = "Canonical pregnancy evidence conflicts for the latest mating."
+    elif pregnancy["state"] in {"historical", "unattributed"}:
+        state, action, priority = (
+            pregnancy["derived_status"],
+            pregnancy_recommendation(pregnancy), 18,
+        )
+        reason = (
+            "The recorded pregnancy result does not establish current "
+            "pregnancy status."
+        )
+    elif mating_date and pregnancy["state"] == "not_pregnant":
+        state, action, priority = (
+            pregnancy["derived_status"],
+            pregnancy_recommendation(pregnancy)
+            or "observe for standing heat", 15
+        )
+        reason = "Not-pregnant or repeat-service evidence follows a canonical mating."
     elif len(unsuccessful) >= REPEAT_SERVICE_REVIEW_COUNT:
         state, action, priority = (
             "Repeat-service decision required", "repeat-service review", 10
@@ -355,21 +392,6 @@ def _classify(
             f"{len(unsuccessful)} canonical unsuccessful/repeat-service "
             "events require an owner decision."
         )
-    elif pregnancy in {"pregnant", "confirmed", "confirmed_pregnant"}:
-        state, action, priority = (
-            "Pregnancy evidence pending" if days_since_mating is None
-            else "Pregnancy evidence pending",
-            "monitor pregnancy and farrowing milestones", 35,
-        )
-        reason = "Canonical pregnancy evidence is present."
-    elif mating_date and (
-        pregnancy in {"not_pregnant", "negative"}
-        or _norm(latest_mating.get("mating_status")) == "repeat_service"
-    ):
-        state, action, priority = (
-            "Possible return to heat", "observe for standing heat", 15
-        )
-        reason = "Not-pregnant or repeat-service evidence follows a canonical mating."
     elif mating_date and (
         _norm(latest_mating.get("is_overdue_check")) == "yes"
         or (days_since_mating is not None and days_since_mating >= 28)
@@ -454,6 +476,7 @@ def _classify(
         "expected_farrowing": _text(
             latest_mating.get("expected_farrowing_date")
         ) or None,
+        "pregnancy_evidence": pregnancy,
         "latest_litter_date": _date_text(litter_date),
         "days_since_litter": days_since_litter,
         "unsuccessful_service_count": len(unsuccessful),
@@ -475,7 +498,7 @@ def _task(
     if classification["task_group"] == "monitor next milestone":
         return None
     if (
-        classification["state"] == "Pregnancy evidence pending"
+        classification["state"] == "Confirmed pregnant"
         and classification["task_group"]
         == "monitor pregnancy and farrowing milestones"
     ):

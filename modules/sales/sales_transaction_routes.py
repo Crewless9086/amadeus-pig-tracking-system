@@ -107,9 +107,17 @@ from modules.sales.sam_live_stock_runtime import (
     sam_live_stock_webhook_policy,
     send_owner_approved_live_stock_reply,
     summarize_live_stock_availability,
+    verify_chatwoot_current_inbound,
 )
 from modules.sales.sam_live_stock_contextual_sales import (
     build_contextual_sales_recommendation,
+)
+from modules.sales.sam_live_stock_inbox_operator import (
+    operate_livestock_inbox,
+)
+from modules.sales.sam_chatwoot_state_writer import (
+    apply_delivery_state as apply_sam_chatwoot_delivery_state,
+    apply_new_inbound_state as apply_sam_chatwoot_new_inbound_state,
 )
 from modules.sales.sam_live_stock_availability_observation import (
     append_availability_observation,
@@ -493,7 +501,11 @@ def sam_meat_chatwoot_inbound():
         )
         if result.get("status") == "sam_meat_live_stock_handoff" and _valid_sam_live_stock_handoff_packet(result):
             live_result, live_status_code = handle_sam_live_stock_chatwoot_inbound(payload)
-            _attach_sam_live_stock_review_event(live_result, payload, event_source="sam_meat_internal_live_stock_handoff")
+            _attach_sam_live_stock_review_event_safely(
+                live_result,
+                payload,
+                event_source="sam_meat_internal_live_stock_handoff",
+            )
             result["sam_live_stock_handoff"] = {
                 "status_code": live_status_code,
                 "status": live_result.get("status"),
@@ -640,6 +652,79 @@ def _attach_sam_live_stock_review_event(result, raw_payload, *, event_source="sa
     }
 
 
+def _attach_sam_live_stock_review_event_safely(
+    result,
+    raw_payload,
+    *,
+    event_source="sam_live_stock_direct_inbound",
+):
+    """Isolate an adjunct failure after the durable customer outcome."""
+    delivery = (
+        (result.get("sam_decision") or {}).get("routine_reply_delivery")
+        or {}
+    )
+    claim = (
+        delivery.get("claim")
+        if isinstance(delivery.get("claim"), dict)
+        else {}
+    )
+    outcome = (
+        delivery.get("delivery_outcome")
+        if isinstance(delivery.get("delivery_outcome"), dict)
+        else {}
+    )
+    try:
+        _attach_sam_live_stock_review_event(
+            result,
+            raw_payload,
+            event_source=event_source,
+        )
+        return {
+            "success": True,
+            "status": "post_send_review_adjunct_completed",
+        }
+    except Exception as exc:
+        outcome = (
+            delivery.get("delivery_outcome")
+            if isinstance(delivery.get("delivery_outcome"), dict)
+            else {}
+        )
+        durable_attempt = bool(
+            claim.get("success") is True
+            and claim.get("created") is True
+            and str(claim.get("delivery_attempt_id") or "").strip()
+            and str(outcome.get("delivery_state") or "")
+            in {
+                "chatwoot_accepted_unverified",
+                "provider_delivered",
+                "provider_read",
+                "provider_outcome_ambiguous",
+            }
+        )
+        if not durable_attempt:
+            raise
+        result["conversation_review_event"] = {
+            "status": "post_send_review_adjunct_failed_isolated",
+            "recorded": False,
+            "error_type": exc.__class__.__name__,
+            "automatic_retry_authorized": False,
+            "durable_customer_outcome_preserved": (
+                str(outcome.get("delivery_state") or "")
+                in {"provider_delivered", "provider_read"}
+            ),
+            "durable_exact_attempt_preserved": True,
+            "adjunct_side_effects_known": False,
+            "review_recording_state": "unknown_after_exception",
+            "owner_work_state": "unknown_after_exception",
+            "telegram_notification_state": "unknown_after_exception",
+        }
+        return {
+            "success": False,
+            "status": "post_send_review_adjunct_failed_isolated",
+            "error_type": exc.__class__.__name__,
+        }
+
+
 def _send_sam_live_stock_owner_notification_if_needed(event, learning_result):
     if not learning_result.get("success"):
         return {"attempted": False, "status": "review_event_not_recorded"}
@@ -712,11 +797,17 @@ def _sam_live_stock_owner_review_notification_needed(event):
     reply = str(event.get("sam_reply_excerpt") or "").strip()
     action = str(event.get("recommended_action") or "").strip()
     review = event.get("review_json") if isinstance(event.get("review_json"), dict) else {}
+    decision = (
+        event.get("decision_json")
+        if isinstance(event.get("decision_json"), dict)
+        else {}
+    )
     return bool(
         reply
         and (
             action == "owner_review_send_candidate"
             or review.get("owner_authority_required") is True
+            or decision.get("protected_owner_exception_required") is True
         )
     )
 
@@ -946,8 +1037,269 @@ def sam_live_stock_chatwoot_inbound():
             "reserves_stock": False,
         }, 500
     if result.get("processed") and isinstance(result.get("sam_decision"), dict):
-        _attach_sam_live_stock_review_event(result, payload)
+        _attach_sam_live_stock_review_event_safely(result, payload)
+        result["chatwoot_operational_state"] = (
+            _apply_sam_live_stock_operational_state(result, payload)
+        )
     return jsonify(result), status_code
+
+
+@sales_bp.route(
+    "/sales/channels/chatwoot/sam-live-stock/reconcile",
+    methods=["POST"],
+)
+def sam_live_stock_chatwoot_reconcile():
+    allowed, denied = authorize_sam_live_stock_webhook(
+        request.headers, request.args
+    )
+    if not allowed:
+        status_code = (
+            403
+            if denied.get("status")
+            == "sam_live_stock_backend_webhook_auth_denied"
+            else 503
+        )
+        return jsonify(denied), status_code
+    try:
+        packet = operate_livestock_inbox(
+            environ=os.environ,
+            history_loader=lambda conversation_id, environ: (
+                load_chatwoot_conversation_history(
+                    conversation_id, environ, limit=200
+                ),
+                200,
+            ),
+            claim_exists=_sam_live_stock_inbound_claim_exists,
+            claimed_inbound_loader=(
+                _sam_live_stock_existing_inbound_claims
+            ),
+            quarantined_conversation_loader=(
+                _sam_live_stock_unresolved_delivery_quarantines
+            ),
+            max_process_count=1,
+            inbound_processor=_operate_sam_live_stock_exact_payload,
+        )
+        return jsonify(packet), 200
+    except Exception as exc:
+        return jsonify(
+            {
+                "status": "sam_live_stock_inbox_operation_failed",
+                "error_type": exc.__class__.__name__,
+                "lane_stopped": True,
+                "automatic_retry_authorized": False,
+                "protected_authority": False,
+            }
+        ), 503
+
+
+def _operate_sam_live_stock_exact_payload(payload):
+    authoritative_history = (
+        payload.get("_sam_authoritative_history")
+        if isinstance(payload.get("_sam_authoritative_history"), dict)
+        else {}
+    )
+    result, _status = handle_sam_live_stock_chatwoot_inbound(
+        payload,
+        allow_provider_current_backlog=True,
+        conversation_history_loader=(
+            lambda *_args, **_kwargs: authoritative_history
+        ),
+        preclaim_chronology_verifier=verify_chatwoot_current_inbound,
+        routine_delivery_claim=_claim_sam_live_stock_routine_delivery,
+        routine_delivery_evidence_recorder=(
+            _record_sam_live_stock_delivery_outcome
+        ),
+    )
+    if result.get("processed") and isinstance(
+        result.get("sam_decision"), dict
+    ):
+        _attach_sam_live_stock_review_event_safely(result, payload)
+        result["chatwoot_operational_state"] = (
+            _apply_sam_live_stock_operational_state(result, payload)
+        )
+    result["_operation_status_code"] = int(_status)
+    return result
+
+
+def _sam_live_stock_inbound_claim_exists(conversation_id, inbound_id):
+    import psycopg
+
+    with psycopg.connect(
+        os.environ["DATABASE_URL"],
+        connect_timeout=10,
+        options=(
+            "-c default_transaction_read_only=on "
+            "-c statement_timeout=10000"
+        ),
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select 1
+                  from public.sam_live_stock_conversation_review_events
+                 where chatwoot_conversation_id = %s
+                   and event_source =
+                       'sam_outbound_delivery_attempt_claim'
+                   and coalesce(
+                         review_json->>'inbound_message_id',
+                         review_json->>'bound_inbound_message_id',
+                         ''
+                       ) = %s
+                 limit 1
+                """,
+                (str(conversation_id), str(inbound_id)),
+            )
+            return cursor.fetchone() is not None
+
+
+def _sam_live_stock_existing_inbound_claims(identities):
+    import psycopg
+
+    pairs = [
+        (str(conversation_id), str(inbound_id))
+        for conversation_id, inbound_id in identities
+        if str(conversation_id) and str(inbound_id)
+    ]
+    if not pairs:
+        return set()
+    conversations = [row[0] for row in pairs]
+    inbounds = [row[1] for row in pairs]
+    with psycopg.connect(
+        os.environ["DATABASE_URL"],
+        connect_timeout=10,
+        options=(
+            "-c default_transaction_read_only=on "
+            "-c statement_timeout=10000"
+        ),
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                with candidate(conversation_id, inbound_id) as (
+                    select *
+                      from unnest(%s::text[], %s::text[])
+                )
+                select distinct
+                       candidate.conversation_id,
+                       candidate.inbound_id
+                  from candidate
+                  join public.sam_live_stock_conversation_review_events event
+                    on event.chatwoot_conversation_id =
+                       candidate.conversation_id
+                   and coalesce(
+                         event.review_json->>'inbound_message_id',
+                         event.review_json->>'bound_inbound_message_id',
+                         ''
+                       ) = candidate.inbound_id
+                 where event.event_source =
+                       'sam_outbound_delivery_attempt_claim'
+                """,
+                (conversations, inbounds),
+            )
+            return {
+                (str(conversation_id), str(inbound_id))
+                for conversation_id, inbound_id in cursor.fetchall()
+            }
+
+
+def _sam_live_stock_unresolved_delivery_quarantines(conversation_ids):
+    """Load only conversations whose latest attempt transition is ambiguous."""
+    import psycopg
+
+    identities = sorted(
+        {str(value) for value in conversation_ids if str(value)}
+    )
+    if not identities:
+        return set()
+    with psycopg.connect(
+        os.environ["DATABASE_URL"],
+        connect_timeout=10,
+        options=(
+            "-c default_transaction_read_only=on "
+            "-c statement_timeout=10000"
+        ),
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                with latest_attempt_transition as (
+                    select distinct on (
+                               chatwoot_conversation_id,
+                               review_json->>'delivery_attempt_id'
+                           )
+                           chatwoot_conversation_id,
+                           review_json->>'delivery_state' as delivery_state
+                      from public.sam_live_stock_conversation_review_events
+                     where chatwoot_conversation_id = any(%s::text[])
+                       and event_source =
+                           'sam_outbound_delivery_transition'
+                       and coalesce(
+                             review_json->>'delivery_attempt_id', ''
+                           ) <> ''
+                     order by chatwoot_conversation_id,
+                              review_json->>'delivery_attempt_id',
+                              created_at desc,
+                              review_event_id desc
+                )
+                select distinct chatwoot_conversation_id
+                  from latest_attempt_transition
+                 where delivery_state = 'provider_outcome_ambiguous'
+                """,
+                (identities,),
+            )
+            return {
+                str(conversation_id)
+                for (conversation_id,) in cursor.fetchall()
+            }
+
+
+def _apply_sam_live_stock_operational_state(result, payload):
+    decision = result.get("sam_decision") or {}
+    if (
+        decision.get("specialist_lane_selected") is not True
+        or decision.get("sales_lane") != "live_stock_sales"
+    ):
+        return {"applied": False, "status": "non_livestock_untouched"}
+    inbound = decision.get("inbound")
+    if not isinstance(inbound, dict):
+        inbound = parse_sam_live_stock_chatwoot_inbound(payload)
+    try:
+        history = load_chatwoot_conversation_history(
+            inbound.get("conversation_id"), os.environ, limit=200
+        )
+        incoming = [
+            row
+            for row in (history.get("messages") or [])
+            if isinstance(row, dict)
+            and row.get("message_type") in (0, "incoming")
+            and not bool(row.get("private"))
+        ]
+        incoming.sort(
+            key=lambda row: (
+                int(row.get("created_at") or 0),
+                int(row.get("id") or 0),
+            )
+        )
+        latest_inbound_id = (
+            str(incoming[-1].get("id") or "") if incoming else ""
+        )
+        delivery = decision.get("routine_reply_delivery") or {}
+        outcome = delivery.get("delivery_outcome") or {}
+        provider_state = str(outcome.get("delivery_state") or "")
+        if provider_state:
+            return apply_sam_chatwoot_delivery_state(
+                inbound,
+                decision,
+                provider_state,
+                authoritative_latest_inbound_id=latest_inbound_id,
+            )
+        return apply_sam_chatwoot_new_inbound_state(inbound)
+    except Exception as exc:
+        return {
+            "applied": False,
+            "status": "chatwoot_state_reconciliation_failed",
+            "error_type": exc.__class__.__name__,
+        }
 
 
 @sales_bp.route(
@@ -1533,6 +1885,32 @@ def meat_document_delivery_status_webhook():
         return jsonify(denied), status_code
     payload = request.get_json(silent=True) or {}
     sam_result, sam_status = handle_sam_live_stock_delivery_status_webhook(payload)
+    state_packet = (
+        sam_result.get("operational_state")
+        if isinstance(sam_result.get("operational_state"), dict)
+        else {}
+    )
+    if sam_status < 400 and state_packet:
+        inbound = state_packet.get("inbound") or {}
+        try:
+            sam_result["chatwoot_operational_state"] = (
+                apply_sam_chatwoot_delivery_state(
+                    inbound,
+                    state_packet.get("decision") or {},
+                    state_packet.get("provider_state") or "",
+                    authoritative_latest_inbound_id=(
+                        inbound.get("message_id") or ""
+                    ),
+                )
+            )
+        except Exception as exc:
+            sam_result["chatwoot_operational_state"] = {
+                "applied": False,
+                "status": "delivery_confirmed_state_reconciliation_failed",
+                "error_type": exc.__class__.__name__,
+                "automatic_retry_authorized": False,
+                "delivery_evidence_preserved": True,
+            }
     if sam_status < 400 and sam_result.get("processed") is True:
         try:
             run_bounded_authority_evaluation()

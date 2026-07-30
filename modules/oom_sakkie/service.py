@@ -2,6 +2,9 @@ import re
 from dataclasses import dataclass
 
 from modules.oom_sakkie.agent_runtime import build_agent_activity
+from modules.oom_sakkie.gateway_authority import (
+    bind_gateway_owner_authority,
+)
 from modules.oom_sakkie.llm_answer import compose_answer_with_llm
 from modules.oom_sakkie.llm_router import route_with_llm
 from modules.oom_sakkie.tools import RiskLevel, get_tool
@@ -247,6 +250,20 @@ RULES = [
         IntentMatch("business_growth_brief", "business_growth_brief", 0.95, "rule:business_growth_brief"),
     ),
     (
+        re.compile(
+            r"\b(rootline|water[- ]and[- ]power|water and (power|energy)|"
+            r"(power|energy).{0,30}water|water.{0,30}(power|energy)|"
+            r"borehole.{0,30}(battery|solar|grid))\b",
+            re.I,
+        ),
+        IntentMatch(
+            "rootline_water_energy",
+            "rootline_water_energy_plan",
+            0.98,
+            "rule:rootline_water_energy",
+        ),
+    ),
+    (
         re.compile(r"\b(irrigation|irrigate|water zone|water zones|watering|water anything|need to water|do we need to water|sprinkler|sprinklers|pump)\b", re.I),
         IntentMatch("irrigation_status", "irrigation_status", 0.95, "rule:irrigation_status"),
     ),
@@ -298,10 +315,15 @@ def handle_message(payload):
     channel = str((payload or {}).get("channel") or "kiosk").strip()[:40]
     session_id = str((payload or {}).get("session_id") or "").strip()[:120]
     allow_specialist_llm = (payload or {}).get("allow_specialist_llm") is True
-    authenticated_owner = bool(
+    legacy_authenticated_owner = bool(
         channel == "telegram_read_only"
         and (payload or {}).get("authenticated_owner")
         is TELEGRAM_OWNER_AUTHORITY
+    )
+    gateway_authority = (
+        (payload or {}).get("gateway_authority")
+        if channel == "telegram_read_only"
+        else None
     )
     llm_allowed = channel not in DETERMINISTIC_ONLY_CHANNELS
     trace_id = build_trace_id()
@@ -524,10 +546,15 @@ def handle_message(payload):
             "trace_store": trace_status,
         }, 500
 
+    bound_gateway_authority = bind_gateway_owner_authority(
+        gateway_authority,
+        tool.name,
+    )
     tool_result = tool.handler({
         "user_text": text,
         "allow_specialist_llm": allow_specialist_llm,
-        "authenticated_owner": authenticated_owner,
+        "authenticated_owner": legacy_authenticated_owner,
+        "gateway_authority": bound_gateway_authority,
     })
     stale_warnings = list(tool_result.get("stale_warnings") or [])
     safety_notes = list(tool_result.get("safety_notes") or [])
@@ -571,15 +598,18 @@ def handle_message(payload):
         safety_notes=safety_notes,
         links=links,
     )
-    trace_status = write_trace(trace)
+    trace_status = _write_tool_trace(tool.name, trace)
 
-    herd_question_succeeded = (
+    protected_tool_succeeded = (
         tool_result.get("success") is True
-        if tool.name == "herdmaster_herd_question"
+        if tool.name in {
+            "herdmaster_herd_question",
+            "rootline_water_energy_plan",
+        }
         else True
     )
     return {
-        "success": herd_question_succeeded,
+        "success": protected_tool_succeeded,
         "answer": answer,
         "tool_used": tool.name,
         "trace_id": trace_id,
@@ -587,7 +617,7 @@ def handle_message(payload):
         "links": links,
         "stale_warnings": stale_warnings,
         "safety_notes": safety_notes,
-        "needs_clarification": not herd_question_succeeded,
+        "needs_clarification": not protected_tool_succeeded,
         "pipeline": _pipeline(
             route_source=_route_source(match),
             answer_source=answer_source,
@@ -634,6 +664,15 @@ def build_answer(tool_result, stale_warnings, safety_notes=None):
     if safety_notes:
         return f"{summary} Note: {safety_notes[0]}"
     return summary
+
+
+def _write_tool_trace(tool_name, trace):
+    if tool_name == "rootline_water_energy_plan":
+        return {
+            "stored": False,
+            "status": "not_stored_rootline_zero_write",
+        }
+    return write_trace(trace)
 
 
 def _route_source(match):

@@ -37,6 +37,21 @@ def _pig(pig_id, tag, **overrides):
     return row
 
 
+def _mating(pig_id="PIG-SOW", **overrides):
+    row = {
+        "mating_id": "MAT-CURRENT",
+        "sow_pig_id": pig_id,
+        "mating_date": "2026-06-01",
+        "mating_status": "Open",
+        "pregnancy_check_date": "2026-06-24",
+        "pregnancy_check_result": "",
+        "expected_farrowing_date": "2026-09-23",
+        "is_open": "Yes",
+    }
+    row.update(overrides)
+    return row
+
+
 def test_ordinary_question_routes_to_deterministic_herd_tool():
     match = classify_intent(
         "Oom Sakkie, what do you currently know about Shupe, what is her "
@@ -235,6 +250,324 @@ def test_stale_or_absent_weight_is_explicit_and_never_inferred():
     assert "Latest weight date is Unknown." in (
         absent["missing_or_stale_evidence"]
     )
+
+
+def test_current_governed_pregnant_result_outranks_pending_case_status():
+    result = answer_herd_question(
+        "What do you know about Ada?",
+        readiness=_readiness(_pig("PIG-ADA", "Ada")),
+        matings=[_mating(
+            "PIG-ADA",
+            pregnancy_check_result="Pregnant",
+            pregnancy_check_method="Ultrasound",
+            pregnancy_check_assessor="Farm vet",
+            pregnancy_check_time="09:30",
+        )],
+        worklist={
+            "cases": [{
+                "pig_id": "PIG-ADA",
+                "classification": {
+                    "state": "Pregnancy evidence pending",
+                    "provisional_recommendation": "pregnancy check due",
+                },
+                "evidence": {
+                    "missing": [
+                        "pregnancy-check result",
+                        "body condition",
+                    ]
+                },
+            }],
+            "tasks": [],
+        },
+        today=date(2026, 7, 29),
+    )
+    breeding = result["facts"]["breeding"]
+    assert breeding["status"] == "Confirmed pregnant"
+    assert breeding["pregnancy_check_result"] == "Pregnant"
+    assert breeding["pregnancy_result_date"] == "2026-06-24"
+    assert breeding["pregnancy_currently_applicable"] is True
+    assert breeding["pregnancy_evidence_freshness"] == "current"
+    assert result["recommendation"]["action"] == (
+        "monitor pregnancy and farrowing milestones"
+    )
+    assert "Pregnancy evidence pending" not in result["answer"]
+    assert not any(
+        "pregnancy-check result" in item.casefold()
+        for item in result["missing_or_stale_evidence"]
+    )
+    assert "body condition is missing." in result[
+        "missing_or_stale_evidence"
+    ]
+
+
+def test_current_governed_not_pregnant_result_drives_repeat_service_followup():
+    result = answer_herd_question(
+        "What do you know about Bea?",
+        readiness=_readiness(_pig("PIG-BEA", "Bea")),
+        matings=[_mating(
+            "PIG-BEA",
+            pregnancy_check_result="Not Pregnant",
+            pregnancy_check_method="Ultrasound",
+            pregnancy_check_assessor="Farm vet",
+            pregnancy_check_time="10:00",
+        )],
+        today=date(2026, 7, 29),
+    )
+    breeding = result["facts"]["breeding"]
+    assert breeding["status"] == "Confirmed not pregnant for latest mating"
+    assert breeding["pregnancy_currently_applicable"] is True
+    assert result["recommendation"]["action"] == (
+        "review return-to-heat or repeat-service evidence"
+    )
+    assert "monitor pregnancy and farrowing" not in result["answer"]
+
+
+def test_no_governed_result_is_pending_and_elapsed_days_are_not_diagnosis():
+    result = answer_herd_question(
+        "What do you know about Cora?",
+        readiness=_readiness(_pig("PIG-CORA", "Cora")),
+        matings=[_mating(
+            "PIG-CORA",
+            mating_date="2026-06-01",
+            pregnancy_check_date="",
+            pregnancy_check_result="",
+        )],
+        today=date(2026, 7, 29),
+    )
+    breeding = result["facts"]["breeding"]
+    assert breeding["status"] == "Pregnancy evidence pending"
+    assert breeding["pregnancy_check_result"] == "Unknown"
+    assert breeding["pregnancy_currently_applicable"] is False
+    assert result["recommendation"]["action"] == "pregnancy check due"
+    assert "Confirmed pregnant" not in result["answer"]
+
+
+def test_historical_pregnant_result_does_not_claim_current_pregnancy():
+    result = answer_herd_question(
+        "What do you know about Dora?",
+        readiness=_readiness(_pig("PIG-DORA", "Dora")),
+        matings=[_mating(
+            "PIG-DORA",
+            mating_date="2026-01-12",
+            pregnancy_check_date="2026-02-03",
+            pregnancy_check_result="Pregnant",
+            expected_farrowing_date="2026-05-06",
+        )],
+        today=date(2026, 7, 29),
+    )
+    breeding = result["facts"]["breeding"]
+    assert breeding["status"] == (
+        "Historical pregnancy result; current status Unknown"
+    )
+    assert breeding["pregnancy_evidence_freshness"] == "stale"
+    assert breeding["pregnancy_currently_applicable"] is False
+    assert result["recommendation"]["action"] == (
+        "review current reproductive status before a breeding decision"
+    )
+
+
+def test_conflicting_results_fail_closed_to_conflict_followup():
+    result = answer_herd_question(
+        "What do you know about Ella?",
+        readiness=_readiness(_pig("PIG-ELLA", "Ella")),
+        matings=[
+            _mating("PIG-ELLA", pregnancy_check_result="Pregnant"),
+            _mating(
+                "PIG-ELLA",
+                pregnancy_check_result="Not Pregnant",
+                pregnancy_check_date="2026-06-25",
+            ),
+        ],
+        today=date(2026, 7, 29),
+    )
+    breeding = result["facts"]["breeding"]
+    assert breeding["status"] == "Conflicting pregnancy evidence"
+    assert breeding["pregnancy_check_result"] == "Conflicting"
+    assert breeding["pregnancy_currently_applicable"] is False
+    assert result["recommendation"]["action"] == (
+        "reconcile conflicting pregnancy results for the latest mating"
+    )
+
+
+def test_current_result_with_missing_support_names_only_specific_gaps():
+    result = answer_herd_question(
+        "What do you know about Faye?",
+        readiness=_readiness(_pig("PIG-FAYE", "Faye")),
+        matings=[_mating(
+            "PIG-FAYE",
+            pregnancy_check_result="Pregnant",
+            pregnancy_check_method="",
+            pregnancy_check_assessor="",
+            pregnancy_check_time="",
+        )],
+        today=date(2026, 7, 29),
+    )
+    breeding = result["facts"]["breeding"]
+    assert breeding["status"] == "Confirmed pregnant"
+    assert breeding["pregnancy_check_method"] == "Unknown"
+    assert breeding["pregnancy_check_assessor"] == "Unknown"
+    assert breeding["pregnancy_result_time"] == "Unknown"
+    assert "Pregnancy-check method is Unknown." in result[
+        "missing_or_stale_evidence"
+    ]
+    assert "Pregnancy-check assessor is Unknown." in result[
+        "missing_or_stale_evidence"
+    ]
+    assert "Pregnancy-check observation time is Unknown." in result[
+        "missing_or_stale_evidence"
+    ]
+    assert "Pregnancy-check result is Unknown." not in result[
+        "missing_or_stale_evidence"
+    ]
+
+
+def test_result_without_governed_date_is_unattributed_not_confirmed():
+    result = answer_herd_question(
+        "What do you know about Gia?",
+        readiness=_readiness(_pig("PIG-GIA", "Gia")),
+        matings=[_mating(
+            "PIG-GIA",
+            pregnancy_check_result="Pregnant",
+            pregnancy_check_date="",
+        )],
+        today=date(2026, 7, 29),
+    )
+    breeding = result["facts"]["breeding"]
+    assert breeding["status"] == "Pregnancy result is provisional or unattributed"
+    assert breeding["pregnancy_currently_applicable"] is False
+    assert "Pregnancy result date is Unknown." in result[
+        "missing_or_stale_evidence"
+    ]
+    assert result["recommendation"]["action"] == (
+        "review current reproductive status before a breeding decision"
+    )
+
+
+def test_pregnancy_precedence_preserves_zero_write_and_private_subject_scope():
+    result = answer_herd_question(
+        "What do you know about Hana?",
+        readiness=_readiness(
+            _pig("PIG-HANA", "Hana"),
+            _pig("PIG-OTHER", "Other Sow"),
+        ),
+        matings=[
+            _mating(
+                "PIG-HANA",
+                pregnancy_check_result="Pregnant",
+                pregnancy_check_method="Ultrasound",
+                pregnancy_check_assessor="Farm vet",
+                pregnancy_check_time="11:00",
+            ),
+            _mating(
+                "PIG-OTHER",
+                mating_id="MAT-OTHER",
+                pregnancy_check_result="Not Pregnant",
+            ),
+        ],
+        today=date(2026, 7, 29),
+    )
+    assert result["writes_performed"] is False
+    assert result["protected_actions_performed"] is False
+    assert "Other Sow" not in result["answer"]
+    assert "PIG-OTHER" not in result["answer"]
+
+
+def test_lifecycle_exclusion_outranks_stale_readiness_and_pregnancy_labels():
+    result = answer_herd_question(
+        "What do you know about Ivy?",
+        readiness=_readiness(_pig(
+            "PIG-IVY",
+            "Ivy",
+            status="Retired",
+            readiness_bucket="Retain / Breeding Candidate",
+        )),
+        matings=[_mating(
+            "PIG-IVY",
+            pregnancy_check_result="Pregnant",
+            pregnancy_check_method="Ultrasound",
+            pregnancy_check_assessor="Farm vet",
+            pregnancy_check_time="12:00",
+        )],
+        today=date(2026, 7, 29),
+    )
+    breeding = result["facts"]["breeding"]
+    assert breeding["status"] == (
+        "Not currently eligible for breeding: lifecycle excludes breeding"
+    )
+    assert breeding["readiness_bucket"] == "Retain / Breeding Candidate"
+    assert breeding["readiness_currently_applicable"] is False
+    assert result["recommendation"]["basis"] == (
+        "Canonical breeding exclusion precedence"
+    )
+    assert "monitor pregnancy and farrowing milestones" not in result["answer"]
+
+
+def test_future_dated_result_fails_closed_and_is_not_confirmed():
+    result = answer_herd_question(
+        "What do you know about June?",
+        readiness=_readiness(_pig("PIG-JUNE", "June")),
+        matings=[_mating(
+            "PIG-JUNE",
+            pregnancy_check_date="2026-08-01",
+            pregnancy_check_result="Pregnant",
+        )],
+        today=date(2026, 7, 29),
+    )
+    breeding = result["facts"]["breeding"]
+    assert breeding["status"] == (
+        "Pregnancy evidence is future-dated and not currently applicable"
+    )
+    assert breeding["pregnancy_currently_applicable"] is False
+    assert result["recommendation"]["action"] == (
+        "review and correct the future-dated reproductive chronology"
+    )
+
+
+def test_confirmed_pregnancy_names_missing_farrowing_milestone_date():
+    result = answer_herd_question(
+        "What do you know about Kira?",
+        readiness=_readiness(_pig("PIG-KIRA", "Kira")),
+        matings=[_mating(
+            "PIG-KIRA",
+            pregnancy_check_result="Pregnant",
+            expected_farrowing_date="",
+            pregnancy_check_method="Ultrasound",
+            pregnancy_check_assessor="Farm vet",
+            pregnancy_check_time="09:00",
+        )],
+        today=date(2026, 7, 29),
+    )
+    assert result["facts"]["breeding"]["status"] == "Confirmed pregnant"
+    assert "Expected farrowing date is Unknown." in result[
+        "missing_or_stale_evidence"
+    ]
+
+
+def test_boar_never_inherits_sows_pregnancy_result_or_recommendation():
+    result = answer_herd_question(
+        "What do you know about Leo?",
+        readiness=_readiness(_pig(
+            "PIG-LEO",
+            "Leo",
+            sex="Male",
+        )),
+        matings=[_mating(
+            "PIG-SOW",
+            boar_pig_id="PIG-LEO",
+            boar_tag_number="Leo",
+            pregnancy_check_result="Pregnant",
+            pregnancy_check_method="Ultrasound",
+            pregnancy_check_assessor="Farm vet",
+            pregnancy_check_time="09:00",
+        )],
+        today=date(2026, 7, 29),
+    )
+    breeding = result["facts"]["breeding"]
+    assert breeding["pregnancy_evidence_state"] == "not_applicable"
+    assert breeding["pregnancy_check_result"] == "Unknown"
+    assert breeding["status"] != "Confirmed pregnant"
+    assert "monitor pregnancy and farrowing milestones" not in result["answer"]
+    assert result["writes_performed"] is False
 
 
 def load_tests(_loader, _tests, _pattern):

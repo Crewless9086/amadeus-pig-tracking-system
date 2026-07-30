@@ -105,10 +105,7 @@ def evaluate_response_usefulness(*, lane, inbound, decision, evidence=None):
         "required_guidance_included": not guidance_missing,
         "qualification_advanced": (
             not qualification_required
-            or not (
-                missing
-                & {"quantity", "sex", "size", "weight_range", "location", "timing"}
-            ) - asked_missing
+            or asks_useful
         ),
         "not_pure_deferral": not pure_deferral,
         "customer_language_used": not _unexplained_internal_taxonomy(reply),
@@ -398,6 +395,8 @@ def _field_name(value):
     field = str(value or "").split(".")[-1].strip().lower()
     if field == "category":
         return "size"
+    if field == "collection_location":
+        return "location"
     return field
 
 

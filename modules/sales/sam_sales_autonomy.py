@@ -312,7 +312,8 @@ def evaluate_level1_authority(
             and _canonical_instant(inbound.get("latest_observed_at")) is not None
         ),
         "channel_authorized": (
-            inbound.get("whatsapp_window_state") == "open"
+            inbound.get("whatsapp_window_state")
+            in {"open", "approaching_expiry"}
             and inbound.get("whatsapp_window_evidence_authoritative") is True
         ),
         "specialist_lane": lane in {"meat", "live_stock"},

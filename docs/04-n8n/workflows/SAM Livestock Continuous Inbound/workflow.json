@@ -1,0 +1,193 @@
+{
+  "name": "SAM Livestock - Continuous Chatwoot Inbound",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "sam-livestock-chatwoot-webhook",
+      "name": "Chatwoot Message Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sam-livestock-continuous-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "a589c55d-c6f2-4d72-b267-1e2085f6df42"
+    },
+    {
+      "id": "sam-livestock-exact-inbound-gate",
+      "name": "Gate Exact Livestock Inbound",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const envelope = $json;\nconst p = envelope.body || envelope;\nconst c = p.conversation || {};\nconst inbox = c.inbox || {};\nconst account = p.account || {};\nconst sender = p.sender || {};\nconst presentedToken = String((envelope.query || {}).token || '');\nconst expectedToken = String($vars.SAM_LIVE_STOCK_CHATWOOT_WEBHOOK_TOKEN || '');\nconst authenticated = expectedToken.length >= 32 && presentedToken === expectedToken;\nconst messageType = String(p.message_type ?? '').toLowerCase();\nconst accepted = authenticated && p.event === 'message_created' && (messageType === '0' || messageType === 'incoming') && p.private !== true && String(account.id || p.account_id || '') === '147387' && String(inbox.id || c.inbox_id || '') === '96568' && ['Channel::Whatsapp', 'Channel::WhatsappCloud'].includes(String(inbox.channel_type || '')) && Boolean(p.id && c.id && sender.id);\nreturn [{json: {accepted, authenticated, payload: p, identity: {account_id: String(account.id || p.account_id || ''), inbox_id: String(inbox.id || c.inbox_id || ''), conversation_id: String(c.id || ''), contact_id: String(sender.id || ''), inbound_message_id: String(p.id || '')}, automatic_retry_authorized: false, secret_values_exposed: false}}];"
+      }
+    },
+    {
+      "id": "sam-livestock-relay-if",
+      "name": "If Exact Inbound",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.accepted }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "sam-livestock-backend-relay",
+      "name": "Relay to SAM Livestock Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        -80
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.AMADEUS_BACKEND_URL + '/api/sales/channels/chatwoot/sam-live-stock/inbound' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $vars.SAM_LIVE_STOCK_BACKEND_WEBHOOK_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "sam-livestock-processed-response",
+      "name": "Return SAM Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        -80
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "sam-livestock-ignored-response",
+      "name": "Ignore Non-target Event",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        720,
+        120
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {status: 'sam_livestock_event_ignored', processed: false, sent: false} }}",
+        "options": {
+          "responseCode": 202
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Chatwoot Message Webhook": {
+      "main": [
+        [
+          {
+            "node": "Gate Exact Livestock Inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate Exact Livestock Inbound": {
+      "main": [
+        [
+          {
+            "node": "If Exact Inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Exact Inbound": {
+      "main": [
+        [
+          {
+            "node": "Relay to SAM Livestock Backend",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ignore Non-target Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relay to SAM Livestock Backend": {
+      "main": [
+        [
+          {
+            "node": "Return SAM Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "tags": []
+}

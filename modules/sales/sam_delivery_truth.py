@@ -95,6 +95,11 @@ def build_delivery_attempt(inbound, decision, review, *, response_class="", atte
     if require_account_identity:
         identity_values.insert(0, account_id)
     attempt_id = _stable_id("SAM-DELIVERY-ATTEMPT", identity_values)
+    missing_fields = sorted({
+        _clean(str(value).split(".")[-1], 80).lower()
+        for value in (decision.get("missing_fields") or [])
+        if _clean(str(value).split(".")[-1], 80)
+    })
     return {
         "success": True,
         "status": ATTEMPT_CLAIMED,
@@ -110,6 +115,12 @@ def build_delivery_attempt(inbound, decision, review, *, response_class="", atte
         "reply_hash": reply_hash,
         "response_class": response_class,
         "attempt_generation": generation,
+        "missing_fields": missing_fields,
+        "owner_decision_required": bool(
+            decision.get("owner_gate_required")
+            or decision.get("protected_owner_exception_required")
+            or decision.get("owner_review_required")
+        ),
         "previous_delivery_state": PREPARED,
         "delivery_state": ATTEMPT_CLAIMED,
         "automatic_retry_prohibited": True,
@@ -509,7 +520,15 @@ def load_attempt_chain(database_url, conversation_id, attempt_id):
         return {"success": False, "status": "delivery_chain_identity_incomplete", "events": []}
     try:
         import psycopg
-        with psycopg.connect(str(database_url).strip(), connect_timeout=10) as connection:
+        with psycopg.connect(
+            str(database_url).strip(),
+            connect_timeout=1,
+            options=(
+                "-c default_transaction_read_only=on "
+                "-c statement_timeout=750 "
+                "-c lock_timeout=250"
+            ),
+        ) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -537,6 +556,7 @@ def load_attempt_chain(database_url, conversation_id, attempt_id):
     return {
         "success": bool(chain),
         "status": "delivery_chain_loaded" if chain else "delivery_chain_not_found",
+        "conversation_id": conversation_id,
         "delivery_attempt_id": attempt_id,
         "events": chain,
         "latest_delivery_state": latest.get("delivery_state", ""),
@@ -610,9 +630,11 @@ def load_delivery_attempt_for_outgoing_message(database_url, conversation_id, ou
         **{
             key: claim.get(key)
             for key in (
-                "delivery_contract_version", "conversation_id", "contact_id",
+                "delivery_contract_version", "account_id",
+                "conversation_id", "contact_id",
                 "inbox_id", "inbound_message_id", "review_id", "reply_hash",
                 "response_class", "attempt_generation", "owner_action_identity",
+                "missing_fields", "owner_decision_required",
             )
         },
         "chatwoot_outgoing_message_id": outgoing_message_id,
@@ -642,6 +664,10 @@ def _evidence(attempt, state):
         "reply_hash": attempt["reply_hash"],
         "response_class": attempt["response_class"],
         "attempt_generation": attempt["attempt_generation"],
+        "missing_fields": list(attempt.get("missing_fields") or []),
+        "owner_decision_required": (
+            attempt.get("owner_decision_required") is True
+        ),
         "delivery_state": state,
         "automatic_retry_prohibited": True,
         "customer_send_confirmed": state in CONFIRMED_STATES,

@@ -1,7 +1,7 @@
 from io import BytesIO
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from app import app
 from modules.oom_sakkie.access import is_review_request_allowed
@@ -254,6 +254,7 @@ class OomSakkieRouteTests(unittest.TestCase):
             "risk_level": 0,
             "trace_id": "OSK-TRACE-ROUTE",
             "safety_notes": ["No write."],
+            "trace_store": {"stored": True, "status": "stored"},
         }, 200)
 
         response = self.client.post(
@@ -278,12 +279,14 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["sends_telegram"])
         self.assertFalse(data["writes"])
         self.assertTrue(data["records_audit_trace"])
+        self.assertEqual(data["audit_trace_mode"], "tool_dependent")
         self.assertFalse(data["dispatch_enabled"])
         mock_handle.assert_called_once_with({
             "text": "what needs attention today",
             "channel": "telegram_read_only",
             "session_id": "telegram-67890",
             "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
+            "gateway_authority": ANY,
         })
 
     @patch.dict(os.environ, {
@@ -309,7 +312,7 @@ class OomSakkieRouteTests(unittest.TestCase):
                 "message": {
                     "text": "what needs attention today",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Oom-Sakkie-Telegram-Token": TELEGRAM_TEST_TOKEN},
@@ -345,7 +348,8 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["direct_bot_cutover_enabled"])
         self.assertFalse(data["can_trigger_outbound_llm"])
         self.assertFalse(data["writes"])
-        self.assertTrue(data["records_audit_trace"])
+        self.assertIsNone(data["records_audit_trace"])
+        self.assertEqual(data["audit_trace_mode"], "tool_dependent")
 
         denied = self.client.get(
             "/api/oom-sakkie/channels/telegram/exposure-preflight",
