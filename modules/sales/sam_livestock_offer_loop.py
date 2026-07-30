@@ -73,6 +73,10 @@ def build_canonical_livestock_offer(
     customer_reply = ""
     response_kind = "no_reply"
     owner_exception = None
+    reassessment_date = (
+        availability.get("next_weight_reassessment_date")
+        or _future_reassessment_date(facts)
+    )
 
     proposed_authority = validate_customer_livestock_reply(
         proposed_reply,
@@ -143,13 +147,13 @@ def build_canonical_livestock_offer(
         )
     elif (
         match_packet.get("complete_fulfillment") is not True
-        and availability.get("next_weight_reassessment_date")
+        and reassessment_date
         and not any(field in missing for field in ("category", "quantity", "sex"))
     ):
         response_kind = "weekly_weight_reassessment"
         customer_reply = _weekly_reassessment_reply(
             facts,
-            availability.get("next_weight_reassessment_date"),
+            reassessment_date,
             match_packet,
         )
     elif (
@@ -433,8 +437,16 @@ def _alternatives(match_packet, quantity, facts=None, availability=None):
 
 def _weekly_reassessment_reply(facts, reassessment_date, match_packet):
     quantity = int(facts.get("quantity") or 0)
-    sex = str(facts.get("sex") or "requested sex mix")
-    weight = str(facts.get("weight_range") or facts.get("category") or "preferred size")
+    split = facts.get("sex_split") if isinstance(facts.get("sex_split"), Mapping) else {}
+    sex = (
+        f"{int(split.get('female') or 0)} females and "
+        f"{int(split.get('male') or 0)} male"
+        if split.get("female") and split.get("male")
+        else str(facts.get("sex") or "requested sex mix")
+    )
+    weight = str(
+        facts.get("weight_range") or facts.get("category") or "preferred size"
+    )
     timing = str(facts.get("timing") or "the requested date")
     recorded = _alternatives(match_packet, quantity, facts)
     current = (
@@ -443,12 +455,38 @@ def _weekly_reassessment_reply(facts, reassessment_date, match_packet):
         else ""
     )
     return (
-        f"I have noted {quantity} pigs ({sex}), around {weight}, for {timing}. "
+        f"I have noted {quantity} pigs ({sex}), {weight}, for {timing}. "
         "We weigh the pigs weekly, so specific pigs cannot be confirmed this far "
         f"in advance.{current} We will reassess the updated weights on "
         f"{reassessment_date} and then confirm the best supported combination "
         "and current category prices. This does not reserve or promise future stock."
     )
+
+
+def _future_reassessment_date(facts, *, now=None):
+    """Derive the owner-approved five-day-before check for a dated request."""
+    timing = str(facts.get("timing") or "").strip()
+    match = re.fullmatch(r"(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?", timing, re.I)
+    if not match:
+        return ""
+    requested_day = int(match.group(1))
+    if not 1 <= requested_day <= 31:
+        return ""
+    today = (now or datetime.now(timezone.utc)).date()
+    year, month = today.year, today.month
+    for _ in range(2):
+        try:
+            requested = today.replace(year=year, month=month, day=requested_day)
+        except ValueError:
+            requested = None
+        if requested and requested > today:
+            reassess = max(requested - timedelta(days=5), today)
+            return f"{reassess.day} {reassess.strftime('%B')}"
+        month += 1
+        if month == 13:
+            month = 1
+            year += 1
+    return ""
 
 
 def _evidence_errors(inbound, chronology):

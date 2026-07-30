@@ -101,6 +101,26 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             }
             for index in range(12)
         )
+        rows.extend([
+            {
+                **exact_eligible_row(pig_id="UNKNOWN-INACTIVE"),
+                "status": "Inactive",
+                "live_stock_sale_eligible": False,
+                "withdrawal_evidence_state": "unknown",
+            },
+            {
+                **exact_eligible_row(pig_id="UNKNOWN-OFF-FARM"),
+                "on_farm": "No",
+                "live_stock_sale_eligible": False,
+                "withdrawal_evidence_state": "unknown",
+            },
+            {
+                **exact_eligible_row(pig_id="UNKNOWN-NON-SALE"),
+                "purpose": "Breeding",
+                "live_stock_sale_eligible": False,
+                "withdrawal_evidence_state": "unknown",
+            },
+        ])
         summary = sam_live_stock_runtime.summarize_live_stock_availability(
             rows,
             {
@@ -126,6 +146,16 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 row["withdrawal_evidence_state"] == "unknown"
                 for row in summary["withdrawal_unknown_exclusions"]
             )
+        )
+        excluded_ids = {
+            row["pig_id"] for row in summary["withdrawal_unknown_exclusions"]
+        }
+        self.assertTrue(
+            {
+                "UNKNOWN-INACTIVE",
+                "UNKNOWN-OFF-FARM",
+                "UNKNOWN-NON-SALE",
+            }.isdisjoint(excluded_ids)
         )
 
     def test_explicit_sex_split_is_retained_as_structured_customer_fact(self):
@@ -317,6 +347,120 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual([row["alternative_rank"] for row in rows], [1, 2])
         self.assertEqual(rows[0]["pricing"]["pricing_id"], "PRICE-35-39 kg")
         self.assertEqual(rows[0]["pricing"]["source"], "active_price_ledger")
+
+    def test_requested_weight_band_ranks_before_nearer_out_of_band_animal(self):
+        facts = {
+            "sales_lane": "live_stock_sales",
+            "quantity": 1,
+            "category": "weaner",
+            "weight_range": "around 19 kg",
+            "sex": "male",
+        }
+        availability = {
+            "success": True,
+            "matched_count": 0,
+            "considered_sample": [
+                {
+                    **exact_eligible_row(
+                        pig_id="OUT-OF-BAND",
+                        sex="Male",
+                        current_weight_kg=20,
+                        weight_band="20_to_24_Kg",
+                    ),
+                },
+                {
+                    **exact_eligible_row(
+                        pig_id="IN-BAND",
+                        sex="Male",
+                        current_weight_kg=17,
+                        weight_band="15_to_19_Kg",
+                    ),
+                },
+            ],
+        }
+        with patch.object(
+            sam_live_stock_runtime,
+            "resolve_live_stock_price_rule",
+            return_value={
+                "found": True,
+                "pricing_id": "PRICE",
+                "source": "supabase",
+                "unit_price": 600,
+            },
+        ):
+            packet = sam_live_stock_runtime.build_live_stock_match_packet(
+                facts, availability
+            )
+
+        self.assertEqual(packet["considered_sample"][0]["pig_id"], "IN-BAND")
+
+    def test_canonical_availability_question_uses_retained_constraints(self):
+        question = sam_live_stock_runtime._canonical_availability_question(
+            {
+                "category": "weaner",
+                "weight_range": "around 19 kg",
+                "quantity": 5,
+                "sex": "split",
+                "sex_split": {"female": 4, "male": 1},
+                "timing": "10th",
+                "location": "Riversdale",
+            },
+            "If we can have the piglets on the 10th please",
+        )
+
+        self.assertIn("weight: around 19 kg", question)
+        self.assertIn("quantity: 5", question)
+        self.assertIn("sex split: 4 female, 1 male", question)
+        self.assertIn("location: Riversdale", question)
+
+    def test_empty_agent_snapshot_reconciles_once_from_same_canonical_reader(self):
+        row = exact_eligible_row()
+        with (
+            patch.object(
+                sam_live_stock_runtime,
+                "delegate_to_agent",
+                return_value=({
+                    "success": True,
+                    "status": "agent_evidence_ready",
+                    "availability_rows": [],
+                }, 200),
+            ),
+            patch.object(
+                sam_live_stock_runtime,
+                "get_sales_availability",
+                return_value=[row],
+            ) as canonical_reader,
+        ):
+            packet = sam_live_stock_runtime.load_live_stock_read_context(
+                {},
+                {
+                    "sales_lane": "live_stock_sales",
+                    "category": "weaner",
+                    "quantity": 1,
+                    "sex": "female",
+                    "weight_range": "10-14 kg",
+                },
+                environ={},
+            )
+
+        canonical_reader.assert_called_once_with()
+        self.assertEqual(packet["availability"]["eligible_projection_count"], 1)
+        self.assertEqual(
+            packet["agent_evidence"]["herdmaster"]["status"],
+            "empty_agent_snapshot_reconciled_from_canonical_reader",
+        )
+        self.assertNotIn(
+            "availability_rows",
+            packet["agent_evidence"]["herdmaster"],
+        )
+        self.assertEqual(
+            packet["agent_evidence"]["herdmaster"]["canonical_row_count"],
+            1,
+        )
+        self.assertNotIn(
+            "tag_number",
+            json.dumps(packet["agent_evidence"]["herdmaster"]),
+        )
 
     def test_decision_retains_exact_operational_identity_for_post_send_state(
         self,

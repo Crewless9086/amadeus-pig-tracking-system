@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from modules.sales.sam_livestock_offer_loop import (
+    _future_reassessment_date,
     build_canonical_livestock_offer,
     validate_customer_livestock_reply,
 )
@@ -527,3 +528,52 @@ def test_owner_approved_future_date_becomes_weekly_reassessment_without_reasking
     assert "how many" not in result["customer_reply"].lower()
     assert "which town" not in result["customer_reply"].lower()
     assert "does not reserve or promise future stock" in result["customer_reply"]
+
+
+def test_tenth_request_derives_owner_approved_fifth_reassessment():
+    result = _packet(
+        "If we can have the piglets on the 10th please",
+        facts={
+            "sex": "split",
+            "sex_split": {"female": 4, "male": 1},
+            "weight_range": "around 19 kg",
+            "timing": "10th",
+        },
+        availability={
+            "success": True,
+            "evidence_complete": False,
+            "eligible_evidence_complete": True,
+            "weight_freshness_consistent": True,
+            "latest_weight_date": "2026-07-27",
+            "oldest_weight_age_days": 3,
+        },
+        match_packet={"complete_fulfillment": False, "considered_sample": []},
+    )
+
+    assert result["response_kind"] == "weekly_weight_reassessment"
+    assert "4 females and 1 male" in result["customer_reply"]
+    assert "around 19 kg" in result["customer_reply"]
+    assert "5 August" in result["customer_reply"]
+    assert "How many" not in result["customer_reply"]
+
+
+def test_reassessment_date_is_never_in_the_past():
+    facts = {"timing": "10th"}
+    assert _future_reassessment_date(
+        facts, now=datetime(2026, 7, 30, tzinfo=timezone.utc)
+    ) == "5 August"
+    assert _future_reassessment_date(
+        facts, now=datetime(2026, 8, 5, tzinfo=timezone.utc)
+    ) == "5 August"
+    for day in (6, 7, 8, 9):
+        assert _future_reassessment_date(
+            facts, now=datetime(2026, 8, day, tzinfo=timezone.utc)
+        ) == f"{day} August"
+    assert _future_reassessment_date(
+        {"timing": "2nd"},
+        now=datetime(2026, 12, 30, tzinfo=timezone.utc),
+    ) == "30 December"
+    assert _future_reassessment_date(
+        {"timing": "32nd"},
+        now=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    ) == ""

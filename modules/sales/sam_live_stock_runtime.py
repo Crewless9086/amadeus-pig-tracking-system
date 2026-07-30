@@ -2201,6 +2201,7 @@ def load_live_stock_read_context(
             context_errors.append(_integration_failure("chatwoot_conversation_history_read_failed", exc))
             chatwoot_history = {"success": False, "status": "read_failed", "messages": []}
     herdmaster_evidence = {}
+    availability_facts = merge_prior_live_stock_context(facts, prior_context)
     try:
         if availability_loader is not None:
             availability_rows = availability_loader()
@@ -2216,13 +2217,46 @@ def load_live_stock_read_context(
         else:
             herdmaster_evidence, herdmaster_status = delegate_to_agent("herdmaster", {
                 "goal": "Provide governed livestock sales candidates for SAM.",
-                "question": str(inbound.get("content") or "Current livestock sales availability"),
+                "question": _canonical_availability_question(
+                    availability_facts,
+                    inbound.get("content"),
+                ),
                 "capability": "sales_availability", "required_freshness": "live",
+                "known_context": {
+                    "category": availability_facts.get("category"),
+                    "weight_range": availability_facts.get("weight_range"),
+                    "quantity": availability_facts.get("quantity"),
+                    "sex": availability_facts.get("sex"),
+                    "sex_split": availability_facts.get("sex_split"),
+                    "timing": availability_facts.get("timing"),
+                    "location": availability_facts.get("location"),
+                },
             })
             if herdmaster_status >= 400:
                 raise RuntimeError(herdmaster_evidence.get("status") or "herdmaster_availability_failed")
             availability_rows = herdmaster_evidence.get("availability_rows") or []
-        availability_facts = merge_prior_live_stock_context(facts, prior_context)
+            if not availability_rows:
+                reconciled_rows = list(get_sales_availability() or [])
+                if reconciled_rows:
+                    availability_rows = reconciled_rows
+                    herdmaster_evidence = {
+                        **herdmaster_evidence,
+                        "status": "empty_agent_snapshot_reconciled_from_canonical_reader",
+                        "canonical_row_count": len(reconciled_rows),
+                        "summary": (
+                            "The initial read-only agent snapshot was empty; "
+                            "the same canonical sales-availability reader "
+                            f"returned {len(reconciled_rows)} rows."
+                        ),
+                    }
+            herdmaster_evidence = {
+                key: value
+                for key, value in herdmaster_evidence.items()
+                if key != "availability_rows"
+            }
+            herdmaster_evidence["canonical_row_count"] = len(
+                availability_rows
+            )
         availability = summarize_live_stock_availability(availability_rows, availability_facts)
         availability = resolve_authoritative_availability(
             availability_rows,
@@ -2414,13 +2448,44 @@ def summarize_live_stock_availability(rows, facts=None):
                 "eligibility_reason": row.get("eligibility_reason"),
             }
             for row in excluded
-            if row.get("withdrawal_evidence_state") == "unknown"
+            if (
+                row.get("withdrawal_evidence_state") == "unknown"
+                and _normal_text(row.get("purpose")) == "sale"
+                and _normal_text(row.get("status")) == "active"
+                and _normal_text(row.get("on_farm")) == "yes"
+            )
         ],
         "matching_gate": {
             "affirmative_specialist_intent": facts.get("sales_lane") == LANE_LIVE_STOCK,
             "minimum_usable_constraints": specialist_match_allowed,
         },
     }
+
+
+def _canonical_availability_question(facts, latest_customer_text):
+    """Query the existing HERDMASTER reader with retained customer constraints."""
+    facts = facts if isinstance(facts, dict) else {}
+    parts = ["Current sale-eligible live pigs"]
+    for label, key in (
+        ("category", "category"),
+        ("weight", "weight_range"),
+        ("quantity", "quantity"),
+        ("sex", "sex"),
+        ("timing", "timing"),
+        ("location", "location"),
+    ):
+        value = facts.get(key)
+        if not _blank(value):
+            parts.append(f"{label}: {value}")
+    split = facts.get("sex_split") if isinstance(facts.get("sex_split"), dict) else {}
+    if split:
+        parts.append(
+            f"sex split: {int(split.get('female') or 0)} female, "
+            f"{int(split.get('male') or 0)} male"
+        )
+    if len(parts) == 1 and latest_customer_text:
+        parts.append(f"customer request: {_clean(latest_customer_text, 300)}")
+    return "; ".join(parts)
 
 
 def _parse_aware_utc_timestamp(value):
@@ -3690,6 +3755,10 @@ def _rank_and_price_live_stock_alternatives(facts, rows):
     facts = facts if isinstance(facts, dict) else {}
     wanted_sex = _normal_text(facts.get("sex"))
     wanted_weight = _weight_midpoint(facts.get("weight_range"))
+    wanted_band = _normal_intake_weight_range(
+        facts.get("weight_range"),
+        _normal_intake_category(facts.get("category")),
+    )
     eligible = [
         dict(row)
         for row in rows
@@ -3698,6 +3767,17 @@ def _rank_and_price_live_stock_alternatives(facts, rows):
 
     def rank_key(row):
         weight = _safe_float(row.get("current_weight_kg"))
+        band_penalty = (
+            0
+            if (
+                _normal_text(row.get("weight_band")).replace(" ", "_")
+                == _normal_text(wanted_band).replace(" ", "_")
+                or _row_matches_requested_weight(
+                    row, facts.get("weight_range") or ""
+                )
+            )
+            else 1
+        )
         distance = (
             abs(weight - wanted_weight)
             if weight is not None and wanted_weight is not None
@@ -3710,7 +3790,13 @@ def _rank_and_price_live_stock_alternatives(facts, rows):
             or row_sex == wanted_sex
         ) else 1
         freshness = int(row.get("days_since_weight") or 999999)
-        return sex_penalty, distance, freshness, str(row.get("pig_id") or "")
+        return (
+            sex_penalty,
+            band_penalty,
+            distance,
+            freshness,
+            str(row.get("pig_id") or ""),
+        )
 
     eligible.sort(key=rank_key)
     price_cache = {}
