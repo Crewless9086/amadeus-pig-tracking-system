@@ -78,6 +78,58 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_runtime_alternatives_are_ranked_and_bind_active_price_provenance(self):
+        facts = {
+            "sales_lane": "live_stock_sales",
+            "quantity": 2,
+            "category": "grower",
+            "weight_range": "35-39 kg",
+            "sex": "female",
+        }
+        availability = {
+            "success": True,
+            "matched_count": 0,
+            "considered_count": 2,
+            "considered_sample": [
+                {
+                    "pig_id": "FAR",
+                    "sex": "Female",
+                    "current_weight_kg": 49,
+                    "days_since_weight": 1,
+                    "sale_category": "Grower",
+                    "weight_band": "45-49 kg",
+                    "live_stock_sale_eligible": True,
+                },
+                {
+                    "pig_id": "CLOSE",
+                    "sex": "Female",
+                    "current_weight_kg": 38,
+                    "days_since_weight": 2,
+                    "sale_category": "Grower",
+                    "weight_band": "35-39 kg",
+                    "live_stock_sale_eligible": True,
+                },
+            ],
+        }
+        with patch.object(
+            sam_live_stock_runtime,
+            "resolve_live_stock_price_rule",
+            side_effect=lambda category, band, sex: {
+                "found": True,
+                "pricing_id": f"PRICE-{band}",
+                "source": "active_price_ledger",
+                "unit_price": 1400 if band == "35-39 kg" else 1800,
+            },
+        ):
+            packet = sam_live_stock_runtime.build_live_stock_match_packet(
+                facts, availability
+            )
+        rows = packet["considered_sample"]
+        self.assertEqual([row["pig_id"] for row in rows], ["CLOSE", "FAR"])
+        self.assertEqual([row["alternative_rank"] for row in rows], [1, 2])
+        self.assertEqual(rows[0]["pricing"]["pricing_id"], "PRICE-35-39 kg")
+        self.assertEqual(rows[0]["pricing"]["source"], "active_price_ledger")
+
     def test_decision_retains_exact_operational_identity_for_post_send_state(
         self,
     ):
@@ -1100,7 +1152,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         decision = result["sam_decision"]
         self.assertEqual(decision["facts"]["customer_language"], "afrikaans")
         self.assertIn("Riversdal", decision["suggested_reply_text"])
-        self.assertIn("Afhaal", decision["suggested_reply_text"])
+        self.assertIn("Riversdal of Albertinia", decision["suggested_reply_text"])
+        self.assertNotIn("Afhaal", decision["suggested_reply_text"])
 
     def test_voice_note_transcript_drives_live_stock_understanding(self):
         payload = inbound_payload(content="", attachments=[{
@@ -2181,6 +2234,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
             {"conversation_id": "1826", "contact_id": "99", "inbox_id": "77"},
             {
+                "canonical_composition_authorized": True,
                 "should_reply": True,
                 "suggested_reply_text": "I can check the price and stock facts.",
                 "reply_source": "deterministic_read_only_guard",
@@ -2234,7 +2288,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(review["owner_authority_required"])
         self.assertIn("reservation_owner_authority", review["protected_action_reasons"])
         self.assertEqual(review["recommended_action"], "owner_authority_decision")
-        self.assertTrue(result["sent"])
+        self.assertFalse(result["sent"])
+        self.assertEqual(
+            decision["routine_reply_delivery"]["status"],
+            "routine_reply_canonical_composition_not_authorized",
+        )
         self.assertTrue(decision["owner_gate_required"])
         self.assertFalse(result["reserves_stock"])
         self.assertFalse(result["creates_order"])
@@ -2249,6 +2307,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         }
         base_inbound = {"conversation_id": "1826", "contact_id": "99", "inbox_id": "77"}
         base_decision = {
+            "canonical_composition_authorized": True,
             "should_reply": True,
             "suggested_reply_text": "How many growers do you need?",
             "reply_source": "llm_live_stock_reply_draft",
@@ -3588,7 +3647,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["creates_order"])
         self.assertFalse(result["reserves_stock"])
 
-    def test_conversation_1994_shape_recovers_referral_and_uses_zero_specialist_tools(self):
+    def test_conversation_1994_shape_transfers_campaign_context_to_livestock(self):
         calls = {"intake": 0, "availability": 0, "send": 0}
 
         def intake_loader(_conversation_id):
@@ -3623,32 +3682,41 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             ),
             environ={},
             intake_context_loader=intake_loader,
-            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [{
+                    "id": 759168596,
+                    "message_type": 0,
+                    "created_at": 1785313934,
+                    "content": "Hello! Can I get more info on this?",
+                }],
+            },
             availability_loader=availability_loader,
             chatwoot_sender=sender,
         )
 
         decision = result["sam_decision"]
         self.assertEqual(status_code, 200)
-        self.assertEqual(result["status"], "sam_auto_general_conversation_processed")
-        self.assertEqual(decision["conversation_ownership"], "AUTO_GENERAL")
-        self.assertEqual(decision["sales_lane"], "unclear")
-        self.assertEqual(decision["specialist_tools_called"], [])
-        self.assertEqual(decision["availability"]["matched_count"], 0)
-        self.assertEqual(decision["match_packet"], {})
-        self.assertEqual(calls, {"intake": 0, "availability": 0, "send": 0})
-        self.assertIn("Ms. Piggy", decision["suggested_reply_text"])
-        self.assertIn("litter of piglets", decision["suggested_reply_text"])
-        self.assertFalse(decision["handled_autonomously"])
-        self.assertFalse(decision["clarification_asked"])
-        self.assertFalse(decision["specialist_lane_selected"])
-        self.assertFalse(decision["owner_escalation_required"])
-        self.assertTrue(decision["owner_action_required"])
-        self.assertEqual(decision["reason"], "routine_reply_waiting_for_owner")
         self.assertEqual(
-            decision["transition_visibility"]["notification_class"],
-            "owner_review",
+            result["status"],
+            "sam_live_stock_conversation_processed",
+            decision.get("customer_front_door"),
         )
+        self.assertEqual(decision["conversation_ownership"], "AUTO_SPECIALIST")
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertTrue(decision["specialist_lane_selected"])
+        self.assertEqual(calls, {"intake": 1, "availability": 1, "send": 0})
+        self.assertTrue(decision["facts"]["front_door_context_transfer"])
+        self.assertTrue(
+            decision["customer_front_door"]["specialist_response_required"]
+        )
+        self.assertEqual(
+            decision["customer_front_door"]["next_specialist_recommendation"],
+            "livestock",
+        )
+        self.assertEqual(decision["facts"]["category"], "piglet")
+        self.assertIn("How many small piglets", decision["suggested_reply_text"])
+        self.assertNotIn("What size", decision["suggested_reply_text"])
         self.assertFalse(decision["customer_send_authorized"])
         self.assertFalse(result["sent"])
         self.assertFalse(result["creates_order"])
@@ -3808,17 +3876,16 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 self.assertTrue(decision["specialist_lane_selected"])
                 self.assertEqual(
                     decision["reply_source"],
-                    "deterministic_customer_size_guidance",
+                    "canonical_evidence_to_offer_loop",
                 )
+                self.assertTrue(decision["canonical_composition_authorized"])
                 reply = decision["suggested_reply_text"].lower()
                 self.assertNotIn("we don\u2019t offer pork", reply)
                 self.assertNotIn("we do have piglets", reply)
                 self.assertNotIn("we offer pigs", reply)
-                self.assertIn("approximately", reply)
-                self.assertIn(
-                    "current availability still need to be confirmed",
-                    reply,
-                )
+                self.assertIn("about", reply)
+                self.assertNotIn("available", reply)
+                self.assertNotIn("in stock", reply)
 
     def test_contextual_route_preserves_terse_followup_but_not_lane_change_or_mixed(self):
         inbound = {
@@ -4267,7 +4334,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             decision["contextual_sales_route"]["status"],
             "mixed_intent_requires_clarification",
         )
-        self.assertIn("live pigs, pork or meat, or both", decision[
+        self.assertIn("live pigs, pork, or both", decision[
             "suggested_reply_text"
         ])
         self.assertFalse(
@@ -4434,6 +4501,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         }
         decision = {
             "conversation_ownership": "AUTO_GENERAL",
+            "canonical_composition_authorized": True,
             "suggested_reply_text": "Hi! How can I help you today?",
             "reply_source": "llm_auto_general_reply_draft",
             "should_reply": True,
@@ -4494,6 +4562,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             },
             {
                 "conversation_ownership": "AUTO_GENERAL",
+                "canonical_composition_authorized": True,
                 "suggested_reply_text": "Hi Charl! How can I help you today?",
                 "reply_source": "llm_auto_general_reply_draft",
                 "should_reply": True,
@@ -4534,6 +4603,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 },
                 {
                     "conversation_ownership": "AUTO_GENERAL",
+                    "canonical_composition_authorized": True,
                     "suggested_reply_text": "Hi! How can I help?",
                     "reply_source": "llm_auto_general_reply_draft",
                     "should_reply": True,
@@ -4845,6 +4915,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         }
         decision = {
             "conversation_ownership": "AUTO_GENERAL",
+            "canonical_composition_authorized": True,
             "suggested_reply_text": "Hi Charl! How can I help you today?",
             "reply_source": "llm_auto_general_reply_draft",
             "should_reply": True,
@@ -4978,6 +5049,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
     def test_auto_general_authorized_send_replay_and_ambiguous_outcome_transitions(self):
         payload = inbound_payload(
+            id="GENERAL-INBOUND-2401",
             content="Hi",
             conversation={"id": 2401, "inbox": {"id": 77, "channel_type": "Channel::Whatsapp"}},
         )
@@ -5009,7 +5081,15 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 payload,
                 environ=source,
                 intake_context_loader=lambda *_args: self.fail("general greeting called intake"),
-                conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [{
+                        "id": "GENERAL-INBOUND-2401",
+                        "message_type": 0,
+                        "content": "Hi",
+                        "created_at": 1785402000,
+                    }],
+                },
                 availability_loader=lambda: self.fail("general greeting called availability"),
                 llm_drafter=lambda *_args: {
                     "reply_text": "Hi! How can I help you today?",
@@ -5024,7 +5104,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         result, _ = run(lambda *_args: sends.append("sent") or {"status_code": 200, "body": {"id": 1, "status": "delivered"}})
         decision = result["sam_decision"]
-        self.assertEqual(sends, ["sent"])
+        self.assertEqual(sends, ["sent"], decision)
         self.assertTrue(result["sent"])
         self.assertTrue(decision["handled_autonomously"])
         self.assertFalse(decision["owner_escalation_required"])
@@ -5151,7 +5231,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["facts"]["quantity"], 1)
         self.assertEqual(decision["facts"]["sex"], "")
         self.assertEqual(decision["facts"]["weight_range"], "")
-        self.assertIn("male, female, or either", decision["suggested_reply_text"])
+        self.assertIn("males, females, or a mixture", decision["suggested_reply_text"])
         self.assertNotIn("Which size", decision["suggested_reply_text"])
         self.assertNotIn("how many", decision["suggested_reply_text"])
         self.assertNotIn("checking the current livestock availability", decision["suggested_reply_text"])

@@ -24,12 +24,15 @@ class SamLiveStockDeliveryTests(unittest.TestCase):
         self.assertEqual(result["status"], "one_way_km_required")
         self.assertIsNone(result["estimated_delivery_charge_rands"])
 
-    def test_collection_first_and_safety_wording(self):
+    def test_handover_points_and_safety_wording_never_offer_farm_collection(self):
         policy = live_stock_delivery_policy()
         result = calculate_live_stock_delivery_option(customer_requested_delivery=False, one_way_km=10)
-        self.assertTrue(policy["collection_first"])
+        self.assertEqual(policy["normal_handover_points"], ["Riversdale", "Albertinia"])
+        self.assertFalse(policy["farm_collection_offered"])
         self.assertFalse(policy["openly_offer_delivery"])
-        self.assertEqual(result["status"], "collection_first_not_requested")
+        self.assertEqual(result["status"], "delivery_not_requested")
+        self.assertNotIn("collection", SAFE_CUSTOMER_WORDING.lower())
+        self.assertNotIn("farm", SAFE_CUSTOMER_WORDING.lower())
         self.assertIn("Because you asked about delivery", SAFE_CUSTOMER_WORDING)
         self.assertIn("owner approves", SAFE_CUSTOMER_WORDING)
         for key in ("sends_customer_message", "creates_quote", "reserves_stock", "writes_order", "writes_farm_data"):

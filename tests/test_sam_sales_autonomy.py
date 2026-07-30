@@ -1320,7 +1320,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         self.assertFalse(result["dispatch_authorized"])
         self.assertIn("cohort_not_stopped", result["blockers"])
 
-    def test_livestock_context_preserves_authority_metadata_without_content(self):
+    def test_livestock_context_preserves_content_for_canonical_chronology(self):
         packet = sam_live_stock_runtime.load_live_stock_read_context(
             {"conversation_id": "2033", "message_id": "M-1", "content": "price"},
             {"sales_lane": "live_stock"},
@@ -1339,7 +1339,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         )
         rows = packet["chatwoot_authority_messages"]
         self.assertEqual(rows[0]["id"], "M-1")
-        self.assertNotIn("content", rows[0])
+        self.assertEqual(rows[0]["content"], "redacted from authority shape")
 
     def test_livestock_authority_preserves_attachment_evidence(self):
         for attachments in ([{"id": "ATT-1"}], {"malformed": True}):

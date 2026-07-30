@@ -20,6 +20,7 @@ class SamLiveStockCanaryCorrectionTests(unittest.TestCase):
             "suggested_reply_text": "Yes. What quantity do you need?",
             "reply_source": "llm_live_stock_reply_draft",
             "llm_draft": {"used": True, "confidence": 0.99},
+            "canonical_composition_authorized": True,
             "facts": {"sales_lane": "live_stock_sales", "lane_confidence": 0.99, "message_intent": "stock_question", "media_review_required": False},
         }
         self.review = {"safe_to_send": True, "escalation_required": False}
