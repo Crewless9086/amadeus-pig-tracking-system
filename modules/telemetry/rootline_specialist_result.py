@@ -122,6 +122,67 @@ def build_current_rootline_specialist_result(
     )
 
 
+def reconsider_rootline_forecast_hold(
+    previous_result,
+    evidence,
+    operating_date=None,
+    now=None,
+    evidence_origin="caller_supplied_follow_up",
+):
+    """Recompose one prior forecast hold from a later read-only evidence snapshot.
+
+    The previous result supplies continuity only; every recommendation is
+    rebuilt from the later canonical-shaped evidence. No observation, plan,
+    schedule, command, workflow, or device action is recorded.
+    """
+    generated_at = _as_za(now or datetime.now(timezone.utc))
+    previous = previous_result if isinstance(previous_result, dict) else {}
+    result = build_rootline_specialist_result(
+        evidence,
+        operating_date=operating_date or previous.get("operating_date"),
+        now=generated_at,
+        evidence_origin=evidence_origin,
+    )
+    previous_borehole = _recommendation_for(previous, "borehole")
+    current_borehole = _recommendation_for(result, "borehole")
+    prior_forecast_hold = (
+        previous_borehole.get("status") == "Hold"
+        and (previous.get("next_reassessment") or {}).get("trigger")
+        == "bounded_forecast_rain_check"
+    )
+    observed_rain = _observed_local_rain(evidence, generated_at)
+    if prior_forecast_hold and observed_rain is False:
+        outcome = (
+            "released_no_observed_rain"
+            if current_borehole.get("status") == "Recommend"
+            else "reconsidered_no_observed_rain"
+        )
+    elif prior_forecast_hold and observed_rain is True:
+        outcome = "continued_with_observed_rain"
+    elif prior_forecast_hold:
+        outcome = "reconsidered_current_weather_unavailable"
+    else:
+        outcome = "no_prior_forecast_hold"
+    result["follow_up"] = {
+        "basis_result_id": previous.get("result_id") or UNAVAILABLE,
+        "prior_forecast_hold": prior_forecast_hold,
+        "previous_borehole_status": previous_borehole.get("status") or UNAVAILABLE,
+        "current_borehole_status": current_borehole.get("status") or UNAVAILABLE,
+        "current_local_weather_status": result["current_local_weather"]["status"],
+        "observed_rain_materialized": (
+            observed_rain if observed_rain is not None else UNAVAILABLE
+        ),
+        "outcome": outcome,
+    }
+    if prior_forecast_hold:
+        result["owner_brief"]["what_changed"] = (
+            "ROOTLINE reconsidered the prior forecast-rain hold using later "
+            "current local weather; forecast rain was not treated as observed "
+            "rain or captured water."
+        )
+    return result
+
+
 def project_water_energy_plan(plan, now=None):
     """Project an already composed canonical plan without any external reads."""
     generated_at = _as_za(now or datetime.now(timezone.utc))
@@ -293,17 +354,21 @@ def _borehole_after_forecast_delay(plan, evidence):
     demand = evidence.get("water_demand") if isinstance(
         evidence.get("water_demand"), dict
     ) else {}
-    if tanks.get("status") in {"Unavailable", "stale"}:
-        return "Needs Data", "A current storage observation is needed."
+    if demand.get("status") == "urgent":
+        return "Recommend", (
+            "Water continuity outranks grid avoidance; grid may be used only "
+            "when genuinely necessary."
+        )
     if tanks.get("storage_state") == "FULL" and demand.get("status") != "urgent":
         return "Do Not Run", "Storage was explicitly observed FULL."
-    if demand.get("status") == "urgent":
-        return "Recommend", "Water continuity outranks grid avoidance."
     if demand.get("status") == "needed":
         return "Recommend", (
-            "The forecast-only delay expired without observed rain or captured-water "
-            "evidence; reassess and recover the supported water work."
+            "The forecast-only delay expired without observed rain or "
+            "captured-water evidence; recover supported water-continuity work. "
+            "Grid may be used only when genuinely necessary."
         )
+    if tanks.get("status") in {"Unavailable", "stale"}:
+        return "Needs Data", "A current storage observation is needed."
     return "Hold", "Water need is not yet proven after the forecast-only delay."
 
 
@@ -664,6 +729,24 @@ def _number(value):
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _recommendation_for(result, subject):
+    for item in (result or {}).get("recommendations") or []:
+        if isinstance(item, dict) and item.get("subject") == subject:
+            return item
+    return {}
+
+
+def _observed_local_rain(evidence, now):
+    weather = evidence.get("weather") if isinstance(evidence, dict) else None
+    if _freshness(weather, now) != "fresh":
+        return None
+    rain_rate = _number(weather.get("rain_rate_mm_h"))
+    rain_today = _number(weather.get("rain_today_mm"))
+    if rain_rate is None and rain_today is None:
+        return None
+    return bool((rain_rate or 0) > 0.2 or (rain_today or 0) > 0.2)
 
 
 def _as_za(value):

@@ -45,6 +45,22 @@ reassessment using fresh local weather and any available owner tank
 observation. If rain has not materialized when the bound expires, forecast-only
 suppression is removed and supported water work is reconsidered.
 
+`reconsider_rootline_forecast_hold(previous_result, later_evidence, now=...)`
+is the reusable read-only follow-up boundary. It links the new result to the
+prior result identity, rebuilds every recommendation from the later canonical
+evidence snapshot, and records whether locally observed rain materialized.
+Before the deadline the bounded hold remains. At or after the deadline, fresh
+local evidence showing no rain removes forecast-only suppression and recovers
+supported water-continuity advice. A missing optional tank observation does
+not block that recovery when current water demand is explicitly `needed` or
+`urgent`; it remains `Unavailable` and blocks only claims that require a tank
+state. An explicit non-urgent `FULL` observation still prevents borehole
+advice.
+
+The follow-up function returns one specialist result. It does not persist a
+plan or observation, create a schedule, accept a command, activate a workflow,
+send Telegram, or call a device.
+
 ## Water and energy rules preserved
 
 Water continuity outranks strict grid avoidance. Grid may be recommended when
