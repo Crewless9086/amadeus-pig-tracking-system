@@ -52,7 +52,19 @@ prior result identity, rebuilds every recommendation from the later canonical
 evidence snapshot, and records whether locally observed rain materialized.
 Before the deadline the bounded hold remains. At or after the deadline, fresh
 local evidence showing no rain removes forecast-only suppression and recovers
-supported water-continuity advice. A refreshed forecast can update evidence
+supported water-continuity advice. Sensor evidence is sufficient for read-only
+reasoning when it is fresh and internally consistent, spans at least 30 dry
+minutes with at least two fresh readings, and shows both zero current rain and
+no increase in the rain total. Explicit owner review is not required merely to
+form that recommendation. Visible no-rain confirmation is an evidence fallback
+only when sensor evidence is missing, conflicting or materially uncertain.
+This pure caller-supplied composition boundary never authenticates or accepts
+such a confirmation directly. It remains Hold and records that a canonical
+authenticated observation is required. A future trusted boundary must validate
+the actor, source and timestamp and retain an auditable canonical observation
+identity; a client-supplied flag or self-attested authentication metadata can
+never release the hold.
+A refreshed forecast can update evidence
 and uncertainty but cannot move the prior result's 120-minute deadline. If
 current local weather is missing, stale or conflicting at expiry, the hold is
 reconsidered read-only but is not released until fresh local no-rain evidence
@@ -67,6 +79,12 @@ advice.
 The follow-up function returns one specialist result. It does not persist a
 plan or observation, create a schedule, accept a command, activate a workflow,
 send Telegram, or call a device.
+
+Recommendation authority remains separate from actuation authority. Even a
+supported `Recommend` result cannot authorize a pump, irrigation valve,
+fertilizer relay, schedule, workflow or device action. Owner authorization or
+an independently approved standing hardware policy remains mandatory before
+any such future actuation.
 
 ## Water and energy rules preserved
 

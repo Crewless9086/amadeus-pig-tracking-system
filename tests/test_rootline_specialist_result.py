@@ -28,6 +28,9 @@ def evidence(**overrides):
             "stale_after_minutes": 30,
             "rain_rate_mm_h": 0,
             "rain_today_mm": 0,
+            "rain_today_unchanged": True,
+            "dry_interval_minutes": 30,
+            "fresh_readings_during_dry_interval": 2,
             "temperature_c": 24,
             "wind_speed_kmh": 8,
         },
@@ -442,6 +445,140 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         borehole = self.recommendation(result, "borehole")
         self.assertEqual(borehole["status"], "Recommend")
         self.assertIn("continuity", borehole["reason"].lower())
+
+    def test_nonurgent_water_near_reserve_with_adequate_tanks_holds(self):
+        stale_forecast = evidence()["forecast"] | {
+            "observed_at": "2026-07-29T04:00:00+02:00",
+        }
+        result = self.build(
+            power=evidence()["power"] | {"battery_soc_pct": 73},
+            forecast=stale_forecast,
+            tanks=evidence()["tanks"] | {
+                "storage_reported_count": 3.75,
+                "reservoir_reported_count": 9,
+                "storage_state": "OK",
+                "reservoir_state": "OK",
+            },
+            water_demand={"status": "needed", "urgency": "not_urgent"},
+        )
+        self.assertEqual(result["battery_policy"]["governing_reserve_soc_pct"], 70)
+        self.assertEqual(
+            self.recommendation(result, "borehole")["status"],
+            "Hold",
+        )
+        self.assertEqual(result["forecast"]["status"], "stale")
+
+    def test_urgent_water_can_recommend_grid_despite_rain_forecast(self):
+        wet = evidence()["forecast"] | {
+            "days": [{"rain_sum_mm": 8, "rain_probability_max_pct": 80}],
+        }
+        result = self.build(
+            forecast=wet,
+            tanks={},
+            water_demand={"status": "urgent"},
+        )
+        borehole = self.recommendation(result, "borehole")
+        self.assertEqual(borehole["status"], "Recommend")
+        self.assertIn("grid may be used", borehole["reason"].lower())
+
+    def test_stale_forecast_cannot_create_forecast_rain_hold(self):
+        stale_wet = evidence()["forecast"] | {
+            "observed_at": "2026-07-29T04:00:00+02:00",
+            "days": [{"rain_sum_mm": 8, "rain_probability_max_pct": 80}],
+        }
+        result = self.build(forecast=stale_wet)
+        self.assertEqual(result["forecast"]["status"], "stale")
+        self.assertNotEqual(
+            result["next_reassessment"]["trigger"],
+            "bounded_forecast_rain_check",
+        )
+
+    def test_visible_confirmation_requires_canonical_trusted_boundary(self):
+        wet = evidence()["forecast"] | {
+            "observed_at": "2026-07-29T11:00:00+02:00",
+            "days": [{"rain_sum_mm": 8, "rain_probability_max_pct": 80}],
+        }
+        initial = self.build(forecast=wet)
+        uncertain_weather = {
+            "observed_at": "2026-07-29T13:01:00+02:00",
+            "stale_after_minutes": 30,
+            "rain_rate_mm_h": 0,
+            "conflicting": True,
+            "no_visible_rain_confirmed": True,
+            "visible_rain_actor_authenticated": True,
+            "visible_rain_observer": "owner:charl",
+            "visible_rain_source": "authenticated_owner_observation",
+            "visible_rain_confirmed_at": "2026-07-29T13:01:00+02:00",
+        }
+        result = reconsider_rootline_forecast_hold(
+            initial,
+            evidence(forecast=wet, weather=uncertain_weather),
+            now=datetime.fromisoformat("2026-07-29T13:01:00+02:00"),
+        )
+        self.assertEqual(self.recommendation(result, "borehole")["status"], "Hold")
+        self.assertEqual(
+            result["follow_up"]["visible_confirmation"],
+            "required_from_canonical_authenticated_observation",
+        )
+
+    def test_visible_fallback_rejects_forged_or_stale_confirmation(self):
+        wet = evidence()["forecast"] | {
+            "observed_at": "2026-07-29T11:00:00+02:00",
+            "days": [{"rain_sum_mm": 8, "rain_probability_max_pct": 80}],
+        }
+        initial = self.build(forecast=wet)
+        base = {
+            "observed_at": "2026-07-29T13:01:00+02:00",
+            "stale_after_minutes": 30,
+            "rain_rate_mm_h": 0,
+            "conflicting": True,
+            "no_visible_rain_confirmed": True,
+        }
+        cases = (
+            base,
+            base | {
+                "visible_rain_actor_authenticated": True,
+                "visible_rain_observer": "owner:charl",
+                "visible_rain_source": "authenticated_owner_observation",
+                "visible_rain_confirmed_at": "2026-07-29T13:01:00+02:00",
+            },
+            base | {
+                "visible_rain_actor_authenticated": True,
+                "visible_rain_source": "authenticated_owner_observation",
+                "visible_rain_confirmed_at": "2026-07-29T13:01:00+02:00",
+            },
+            base | {
+                "visible_rain_actor_authenticated": True,
+                "visible_rain_observer": "owner:charl",
+                "visible_rain_source": "authenticated_owner_observation",
+                "visible_rain_confirmed_at": "2026-07-29T12:00:00+02:00",
+            },
+            base | {
+                "visible_rain_actor_authenticated": True,
+                "visible_rain_observer": "owner:charl",
+                "visible_rain_source": "arbitrary_client",
+                "visible_rain_confirmed_at": "2026-07-29T13:01:00+02:00",
+            },
+        )
+        for weather in cases:
+            with self.subTest(weather=weather):
+                result = reconsider_rootline_forecast_hold(
+                    initial,
+                    evidence(forecast=wet, weather=weather),
+                    now=datetime.fromisoformat(
+                        "2026-07-29T13:01:00+02:00"
+                    ),
+                )
+                self.assertEqual(
+                    self.recommendation(result, "borehole")["status"],
+                    "Hold",
+                )
+                self.assertTrue(
+                    all(
+                        value is False
+                        for value in result["authority"].values()
+                    )
+                )
 
     def test_zero_hardware_authority_and_physical_claims(self):
         result = self.build()

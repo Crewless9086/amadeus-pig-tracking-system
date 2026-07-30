@@ -207,6 +207,11 @@ def reconsider_rootline_forecast_hold(
         "observed_rain_materialized": (
             observed_rain if observed_rain is not None else UNAVAILABLE
         ),
+        "visible_confirmation": (
+            "required_from_canonical_authenticated_observation"
+            if observed_rain is None
+            else "not_required"
+        ),
         "outcome": outcome,
     }
     if prior_forecast_hold:
@@ -315,6 +320,11 @@ def _recommendations(
         rain.get("forecast_replenishment_effect") == "meaningful_rain_candidate"
         and rain.get("current_rain_status") != "Hold"
     )
+    water_demand = (
+        evidence.get("water_demand")
+        if isinstance(evidence.get("water_demand"), dict)
+        else {}
+    )
     delay_deadline = _forecast_delay_deadline(
         evidence.get("forecast"),
         now,
@@ -338,7 +348,9 @@ def _recommendations(
         status = _public_status(task.get("recommendation"))
         reason = task.get("reason") or "Canonical task evidence is unavailable."
         if identity == "borehole" and forecast_only_delay:
-            if delay_active:
+            if water_demand.get("status") == "urgent":
+                status, reason = _borehole_after_forecast_delay(plan, evidence)
+            elif delay_active:
                 status = "Hold"
                 reason = (
                     "Forecast rain may justify only a bounded delay; it is not "
@@ -368,12 +380,9 @@ def _recommendations(
                 evidence.get("weather")
                 if isinstance(evidence.get("weather"), dict) else {}
             )
-            rain_rate = _number(weather.get("rain_rate_mm_h"))
             if (
                 _public_status(zone.get("recommendation")) == "Recommend"
-                and _freshness(weather, now) == "fresh"
-                and rain_rate is not None
-                and rain_rate <= 0.2
+                and _observed_local_rain(evidence, now) is False
             ):
                 status = "Recommend"
                 reason = (
@@ -811,13 +820,35 @@ def _recommendation_for(result, subject):
 
 def _observed_local_rain(evidence, now):
     weather = evidence.get("weather") if isinstance(evidence, dict) else None
-    if _freshness(weather, now) != "fresh":
+    freshness = _freshness(weather, now)
+    if freshness != "fresh":
         return None
     rain_rate = _number(weather.get("rain_rate_mm_h"))
-    rain_today = _number(weather.get("rain_today_mm"))
-    if rain_rate is None and rain_today is None:
-        return None
-    return bool((rain_rate or 0) > 0.2 or (rain_today or 0) > 0.2)
+    rain_total_delta = _number(weather.get("rain_total_delta_mm"))
+    if (rain_rate is not None and rain_rate > 0.2) or (
+        rain_total_delta is not None and rain_total_delta > 0.2
+    ):
+        return True
+
+    readings = _number(weather.get("fresh_readings_during_dry_interval"))
+    dry_minutes = _number(weather.get("dry_interval_minutes"))
+    total_unchanged = (
+        rain_total_delta == 0
+        or weather.get("rain_today_unchanged") is True
+    )
+    internally_consistent_dry = (
+        weather.get("conflicting") is not True
+        and rain_rate == 0
+        and readings is not None
+        and readings >= 2
+        and dry_minutes is not None
+        and dry_minutes >= 30
+        and total_unchanged
+    )
+    if internally_consistent_dry:
+        return False
+
+    return None
 
 
 def _as_za(value):
