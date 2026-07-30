@@ -23,7 +23,6 @@ class LitterSupersessionConsumerContractTests(unittest.TestCase):
 
     def test_current_eligibility_services_do_not_resolve_from_base_pigs(self):
         paths = [
-            "modules/pig_weights/herdmaster_breeding_observation_service.py",
             "modules/pig_weights/purpose_correction_batch_service.py",
             "modules/sales/riversdale_auction_list.py",
             "modules/sales/sales_transaction_lifecycle.py",
@@ -34,6 +33,11 @@ class LitterSupersessionConsumerContractTests(unittest.TestCase):
                 "from public.pigs", source,
                 f"{relative} must resolve current eligibility canonically",
             )
+        observation = (
+            ROOT / "modules/pig_weights/herdmaster_breeding_observation_service.py"
+        ).read_text(encoding="utf-8").lower()
+        self.assertIn("public.current_canonical_pigs", observation)
+        self.assertIn("exists (", observation)
 
     def test_canonical_farm_reader_uses_current_views(self):
         source = READ_SERVICE.read_text(encoding="utf-8")

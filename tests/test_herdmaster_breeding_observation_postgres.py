@@ -42,7 +42,10 @@ class BreedingObservationPostgresTests(unittest.TestCase):
                     alter table public.pigs add column if not exists on_farm boolean;
                     alter table public.pigs add column if not exists sex text;
                     alter table public.pigs add column if not exists animal_type text;
+                    create or replace view public.current_canonical_pigs as
+                      select * from public.pigs;
                     grant select, update on public.pigs to service_role;
+                    grant select on public.current_canonical_pigs to service_role;
                     delete from app_private.migration_log
                     where migration_id='202607200001_create_pig_observation_events';
                     drop table if exists public.pig_observation_events cascade;
@@ -64,6 +67,7 @@ class BreedingObservationPostgresTests(unittest.TestCase):
             with connection.cursor() as cursor:
                 cursor.execute("""
                     drop table if exists public.pig_observation_events cascade;
+                    drop view if exists public.current_canonical_pigs;
                     drop function if exists
                       public.pig_observation_events_validate_supersession();
                     drop function if exists
