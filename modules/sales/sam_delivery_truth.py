@@ -509,7 +509,15 @@ def load_attempt_chain(database_url, conversation_id, attempt_id):
         return {"success": False, "status": "delivery_chain_identity_incomplete", "events": []}
     try:
         import psycopg
-        with psycopg.connect(str(database_url).strip(), connect_timeout=10) as connection:
+        with psycopg.connect(
+            str(database_url).strip(),
+            connect_timeout=1,
+            options=(
+                "-c default_transaction_read_only=on "
+                "-c statement_timeout=750 "
+                "-c lock_timeout=250"
+            ),
+        ) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -537,6 +545,7 @@ def load_attempt_chain(database_url, conversation_id, attempt_id):
     return {
         "success": bool(chain),
         "status": "delivery_chain_loaded" if chain else "delivery_chain_not_found",
+        "conversation_id": conversation_id,
         "delivery_attempt_id": attempt_id,
         "events": chain,
         "latest_delivery_state": latest.get("delivery_state", ""),
