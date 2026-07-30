@@ -46,6 +46,149 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             sales_transaction_routes.verify_chatwoot_current_inbound,
         )
 
+    def test_operator_isolates_post_send_review_adjunct_failure(self):
+        result = {
+            "processed": True,
+            "sent": True,
+            "sam_decision": {
+                "sales_lane": "live_stock_sales",
+                "specialist_lane_selected": True,
+                "routine_reply_delivery": {
+                    "claim": {
+                        "success": True,
+                        "created": True,
+                        "delivery_attempt_id": "ATTEMPT-EXACT",
+                    },
+                    "delivery_outcome": {
+                        "delivery_state": "provider_delivered",
+                    },
+                },
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=(result, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "_attach_sam_live_stock_review_event",
+            side_effect=RuntimeError("post-send observer failed"),
+        ), patch.object(
+            sales_transaction_routes,
+            "_apply_sam_live_stock_operational_state",
+            return_value={
+                "applied": True,
+                "status": "awaiting_customer",
+            },
+        ) as apply_state:
+            operated = (
+                sales_transaction_routes
+                ._operate_sam_live_stock_exact_payload({
+                    "id": "INBOUND-EXACT",
+                    "_sam_authoritative_history": {
+                        "success": True,
+                        "messages": [{"id": "INBOUND-EXACT"}],
+                    },
+                })
+            )
+        self.assertEqual(operated["_operation_status_code"], 200)
+        self.assertTrue(operated["sent"])
+        self.assertEqual(
+            operated["conversation_review_event"]["status"],
+            "post_send_review_adjunct_failed_isolated",
+        )
+        self.assertFalse(
+            operated["conversation_review_event"][
+                "automatic_retry_authorized"
+            ]
+        )
+        self.assertFalse(
+            operated["conversation_review_event"][
+                "adjunct_side_effects_known"
+            ]
+        )
+        self.assertEqual(
+            operated["conversation_review_event"][
+                "telegram_notification_state"
+            ],
+            "unknown_after_exception",
+        )
+        self.assertTrue(operated["chatwoot_operational_state"]["applied"])
+        apply_state.assert_called_once()
+
+    def test_post_send_adjunct_failure_without_durable_outcome_fails_closed(
+        self,
+    ):
+        result = {
+            "processed": True,
+            "sent": False,
+            "sam_decision": {
+                "routine_reply_delivery": {
+                    "status": "routine_reply_review_blocked",
+                },
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "_attach_sam_live_stock_review_event",
+            side_effect=RuntimeError("audit unavailable"),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "audit unavailable"
+            ):
+                (
+                    sales_transaction_routes
+                    ._attach_sam_live_stock_review_event_safely(
+                        result,
+                        {"id": "INBOUND-NO-SEND"},
+                    )
+                )
+
+    def test_post_send_adjunct_partial_effects_are_reported_unknown(self):
+        result = {
+            "processed": True,
+            "sent": True,
+            "sam_decision": {
+                "routine_reply_delivery": {
+                    "claim": {
+                        "success": True,
+                        "created": True,
+                        "delivery_attempt_id": "ATTEMPT-PARTIAL",
+                    },
+                    "delivery_outcome": {
+                        "delivery_state": "provider_delivered",
+                    },
+                },
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "_attach_sam_live_stock_review_event",
+            side_effect=RuntimeError("telegram outcome unknown"),
+        ):
+            isolated = (
+                sales_transaction_routes
+                ._attach_sam_live_stock_review_event_safely(
+                    result,
+                    {"id": "INBOUND-PARTIAL"},
+                )
+            )
+        self.assertFalse(isolated["success"])
+        packet = result["conversation_review_event"]
+        self.assertFalse(packet["adjunct_side_effects_known"])
+        self.assertEqual(
+            packet["review_recording_state"],
+            "unknown_after_exception",
+        )
+        self.assertEqual(
+            packet["owner_work_state"],
+            "unknown_after_exception",
+        )
+        self.assertEqual(
+            packet["telegram_notification_state"],
+            "unknown_after_exception",
+        )
+
     def test_sam_owner_inbox_read_and_reconciliation_authorities_are_separate(self):
         loaded = {
             "success": True, "status": "owner_work_items_loaded", "items": [],

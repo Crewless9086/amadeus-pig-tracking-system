@@ -501,7 +501,11 @@ def sam_meat_chatwoot_inbound():
         )
         if result.get("status") == "sam_meat_live_stock_handoff" and _valid_sam_live_stock_handoff_packet(result):
             live_result, live_status_code = handle_sam_live_stock_chatwoot_inbound(payload)
-            _attach_sam_live_stock_review_event(live_result, payload, event_source="sam_meat_internal_live_stock_handoff")
+            _attach_sam_live_stock_review_event_safely(
+                live_result,
+                payload,
+                event_source="sam_meat_internal_live_stock_handoff",
+            )
             result["sam_live_stock_handoff"] = {
                 "status_code": live_status_code,
                 "status": live_result.get("status"),
@@ -646,6 +650,71 @@ def _attach_sam_live_stock_review_event(result, raw_payload, *, event_source="sa
         "conversation_event_count": learning_result.get("conversation_event_count"),
         "owner_notification": notification_result,
     }
+
+
+def _attach_sam_live_stock_review_event_safely(
+    result,
+    raw_payload,
+    *,
+    event_source="sam_live_stock_direct_inbound",
+):
+    """Isolate an adjunct failure after the durable customer outcome."""
+    try:
+        _attach_sam_live_stock_review_event(
+            result,
+            raw_payload,
+            event_source=event_source,
+        )
+        return {
+            "success": True,
+            "status": "post_send_review_adjunct_completed",
+        }
+    except Exception as exc:
+        delivery = (
+            (result.get("sam_decision") or {}).get(
+                "routine_reply_delivery"
+            )
+            or {}
+        )
+        claim = (
+            delivery.get("claim")
+            if isinstance(delivery.get("claim"), dict)
+            else {}
+        )
+        outcome = (
+            delivery.get("delivery_outcome")
+            if isinstance(delivery.get("delivery_outcome"), dict)
+            else {}
+        )
+        durable_attempt = bool(
+            claim.get("success") is True
+            and claim.get("created") is True
+            and str(claim.get("delivery_attempt_id") or "").strip()
+            and str(outcome.get("delivery_state") or "")
+            in {
+                "provider_delivered",
+                "provider_read",
+                "provider_outcome_ambiguous",
+            }
+        )
+        if not durable_attempt:
+            raise
+        result["conversation_review_event"] = {
+            "status": "post_send_review_adjunct_failed_isolated",
+            "recorded": False,
+            "error_type": exc.__class__.__name__,
+            "automatic_retry_authorized": False,
+            "durable_customer_outcome_preserved": True,
+            "adjunct_side_effects_known": False,
+            "review_recording_state": "unknown_after_exception",
+            "owner_work_state": "unknown_after_exception",
+            "telegram_notification_state": "unknown_after_exception",
+        }
+        return {
+            "success": False,
+            "status": "post_send_review_adjunct_failed_isolated",
+            "error_type": exc.__class__.__name__,
+        }
 
 
 def _send_sam_live_stock_owner_notification_if_needed(event, learning_result):
@@ -960,7 +1029,7 @@ def sam_live_stock_chatwoot_inbound():
             "reserves_stock": False,
         }, 500
     if result.get("processed") and isinstance(result.get("sam_decision"), dict):
-        _attach_sam_live_stock_review_event(result, payload)
+        _attach_sam_live_stock_review_event_safely(result, payload)
         result["chatwoot_operational_state"] = (
             _apply_sam_live_stock_operational_state(result, payload)
         )
@@ -1036,7 +1105,7 @@ def _operate_sam_live_stock_exact_payload(payload):
     if result.get("processed") and isinstance(
         result.get("sam_decision"), dict
     ):
-        _attach_sam_live_stock_review_event(result, payload)
+        _attach_sam_live_stock_review_event_safely(result, payload)
         result["chatwoot_operational_state"] = (
             _apply_sam_live_stock_operational_state(result, payload)
         )
