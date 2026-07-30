@@ -401,7 +401,7 @@ def test_generic_alternative_does_not_invent_which_constraint_differs():
     )
 
     assert result["response_kind"] == "closest_supported_alternatives"
-    assert "exact requested combination" in result["customer_reply"]
+    assert "The exact group is not fully matched" in result["customer_reply"]
     assert "differs from the requested weight" not in result["customer_reply"]
 
 
@@ -439,7 +439,7 @@ def test_insufficient_requested_sex_never_claims_split_is_preserved():
 
     assert result["response_kind"] == "closest_supported_alternatives"
     assert "split is preserved" not in result["customer_reply"]
-    assert "exact requested combination" in result["customer_reply"]
+    assert "The exact group is not fully matched" in result["customer_reply"]
 
 
 def test_direct_price_question_answers_supported_price_before_smallest_missing_question():
@@ -470,7 +470,7 @@ def test_direct_price_question_answers_supported_price_before_smallest_missing_q
     assert result["customer_reply"].startswith(
         "The current supported price for 5-6 kg live pigs is R400.00 each."
     )
-    assert "How many small piglets" in result["customer_reply"]
+    assert "How many 5-6 kg piglets would you like?" in result["customer_reply"]
     assert result["customer_reply"].count("?") == 1
     assert "Would you prefer" not in result["customer_reply"]
 
@@ -554,6 +554,7 @@ def test_calculated_alternative_uses_transport_safe_ranges_and_one_customer_ques
         facts={
             "sex": "split",
             "sex_split": {"female": 4, "male": 1},
+            "weight_range": "around 19 kg",
             "timing": "",
         },
         match_packet={
@@ -569,11 +570,15 @@ def test_calculated_alternative_uses_transport_safe_ranges_and_one_customer_ques
     )
 
     reply = result["customer_reply"]
-    assert "15-19 kg" in reply
-    assert "10-14 kg" in reply
-    assert "7-9 kg" in reply
-    assert "for owner review" not in reply.lower()
-    assert reply.endswith("Would that option work for you?")
+    assert reply == (
+        "The exact group is not fully matched on the current sale-eligible list. "
+        "This proposed combination is lighter than your requested approximately-19 kg group. "
+        "The closest supported option is 2 females in the 10-14 kg category "
+        "at R500.00 each (R1,000.00), 2 females in the 7-9 kg category "
+        "at R450.00 each (R900.00), 1 male in the 15-19 kg category "
+        "at R600.00 each (R600.00); total R2,500.00. "
+        "Would this lighter option work for you?"
+    )
     assert reply.count("?") == 1
     assert "When would" not in reply
 
@@ -609,6 +614,7 @@ def test_tenth_request_derives_owner_approved_fifth_reassessment():
     assert result["response_kind"] == "weekly_weight_reassessment"
     assert "4 females and 1 male" in result["customer_reply"]
     assert "around 19 kg" in result["customer_reply"]
+    assert "for the 10th, as requested." in result["customer_reply"]
     assert "5 August" in result["customer_reply"]
     assert "How many" not in result["customer_reply"]
 

@@ -369,11 +369,16 @@ def _offer_reply(*, facts, availability, match_packet, price_packet):
             quantity,
             availability,
         )
+        option_question = (
+            "Would this lighter option work for you?"
+            if difference.startswith("This proposed combination is lighter")
+            else "Would that option work for you?"
+        )
         return (
             "closest_supported_alternatives",
             f"{evidence_position}{difference}The closest supported option is "
             f"{alternatives}.{stale} "
-            "Would that option work for you?"
+            f"{option_question}"
         )
     return (
         "evidence_bounded_progression",
@@ -448,6 +453,8 @@ def _weekly_reassessment_reply(facts, reassessment_date, match_packet):
         facts.get("weight_range") or facts.get("category") or "preferred size"
     )
     timing = str(facts.get("timing") or "the requested date")
+    if re.fullmatch(r"\d{1,2}(?:st|nd|rd|th)", timing, re.I):
+        timing = f"the {timing}"
     recorded = _alternatives(match_packet, quantity, facts)
     current = (
         f" The closest recorded options are {recorded}."
@@ -455,7 +462,7 @@ def _weekly_reassessment_reply(facts, reassessment_date, match_packet):
         else ""
     )
     return (
-        f"I have noted {quantity} pigs ({sex}), {weight}, for {timing}. "
+        f"I have noted {quantity} pigs ({sex}), {weight}, for {timing}, as requested. "
         "We weigh the pigs weekly, so specific pigs cannot be confirmed this far "
         f"in advance.{current} We will reassess the updated weights on "
         f"{reassessment_date} and then confirm the best supported combination "
@@ -662,7 +669,10 @@ def _price_first_reply(*, facts, price_packet, next_missing):
     if quantity and total not in ("", None):
         reply += f" For {int(quantity)}, the price total is {_money(total)}."
     if next_missing:
-        reply += f" {_qualification_reply(next_missing, facts)}"
+        if next_missing == "quantity" and label:
+            reply += f" How many {label} piglets would you like?"
+        else:
+            reply += f" {_qualification_reply(next_missing, facts)}"
     else:
         reply += (
             " Riversdale or Albertinia can be used for handover; any delivery "
@@ -792,9 +802,35 @@ def _alternative_difference(facts, match_packet, quantity, availability):
             f"{int(split['male'])}-male split is preserved, but some pigs are "
             "in different weight bands from the requested size. "
         )
+    rows = [
+        row for row in match_packet.get("considered_sample") or []
+        if (
+            isinstance(row, Mapping)
+            and row.get("live_stock_sale_eligible") is True
+            and row.get("alternative_rank") not in ("", None)
+            and _alternative_row_current(row, availability)
+        )
+    ]
+    rows.sort(
+        key=lambda row: (int(row["alternative_rank"]), str(row.get("pig_id") or ""))
+    )
+    selected = _select_alternative_rows(rows, quantity, facts)
+    requested_weight = _weight_midpoint(facts.get("weight_range"))
+    selected_weights = [
+        _weight_midpoint(row.get("weight_band"))
+        for row in selected
+    ]
+    if (
+        requested_weight is not None
+        and selected_weights
+        and all(weight is not None and weight < requested_weight for weight in selected_weights)
+    ):
+        return (
+            "This proposed combination is lighter than your requested "
+            "approximately-19 kg group. "
+        )
     return (
-        "The exact requested combination is not fully represented in the "
-        "current evidence. "
+        ""
     )
 
 

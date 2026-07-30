@@ -4065,8 +4065,10 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 return b'{"id":12,"status":"sent"}'
 
         message = (
-            "Options: 15-19 kg, 10-14 kg, 7-9 kg, 5-6 kg and 2-6 kg. "
-            "Would that option work for you?"
+            "The current recorded list does not contain the exact requested group. "
+            "The proposed 15-19 kg, 10-14 kg and 7-9 kg combination is lighter "
+            "than the requested approximately-19 kg group; total R2,500.00. "
+            "Would this lighter option work for you?"
         )
         with patch.object(
             sam_live_stock_runtime.urllib_request,
