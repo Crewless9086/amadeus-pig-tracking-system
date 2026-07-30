@@ -49,6 +49,19 @@ def test_conversation_1338_regression_retains_all_known_facts_and_never_asks_gen
     assert "how many" not in result["customer_reply"].lower()
 
 
+def test_exact_content_binding_normalizes_provider_whitespace_only():
+    result = _packet(
+        "I need 4 females and one male.",
+        chronology=[{
+            "id": "inbound-1",
+            "message_type": 0,
+            "content": "I need 4 females\r\nand   one male.",
+        }],
+    )
+
+    assert "latest_inbound_content_mismatch" not in result["evidence_errors"]
+
+
 def test_quantity_is_the_only_question_when_only_quantity_is_missing():
     result = _packet(facts={"quantity": ""})
     assert result["response_kind"] == "qualification"
