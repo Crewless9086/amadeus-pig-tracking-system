@@ -106,7 +106,9 @@ def interpret_customer_front_door(
         errors.append("chronology_not_current_at_latest_inbound")
     if chronology and chronology[-1]["role"] not in {"customer", "incoming"}:
         errors.append("chronology_tail_not_inbound")
-    if chronology and chronology[-1]["content"] != latest["content"]:
+    if chronology and _canonical_message_text(
+        chronology[-1]["content"]
+    ) != _canonical_message_text(latest["content"]):
         errors.append("latest_inbound_content_mismatch")
     message_ids = [row["message_id"] for row in chronology]
     if any(not item for item in message_ids) or len(message_ids) != len(set(message_ids)):
@@ -555,3 +557,7 @@ def _json_safe(value: Any) -> Any:
 
 def _clean(value: Any, limit: int = 300) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
+
+
+def _canonical_message_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()

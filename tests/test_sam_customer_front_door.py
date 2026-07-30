@@ -173,6 +173,19 @@ class SamCustomerFrontDoorTests(unittest.TestCase):
         self.assertFalse(result["should_reply"])
         self.assertIn("chronology_not_current_at_latest_inbound", result["identity_errors"])
 
+    def test_content_binding_normalizes_provider_whitespace_only(self):
+        payload = evidence("I need 4 females and one male.")
+        payload["chronology"][-1]["content"] = (
+            "I need 4 females\r\nand   one male."
+        )
+
+        result = interpret_customer_front_door(payload, KNOWLEDGE)
+
+        self.assertNotIn(
+            "latest_inbound_content_mismatch",
+            result["identity_errors"],
+        )
+
     def test_contract_contains_no_io_and_serializes_cleanly(self):
         result = interpret_customer_front_door(evidence("What do you guys do?"), KNOWLEDGE)
         encoded = json.dumps(result, ensure_ascii=False)

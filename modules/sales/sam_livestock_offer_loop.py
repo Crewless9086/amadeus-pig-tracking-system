@@ -430,9 +430,15 @@ def _evidence_errors(inbound, chronology):
         errors.append("latest_inbound_not_bound_to_packet")
     if latest.get("message_type") not in (0, "incoming", "customer"):
         errors.append("chronology_tail_not_customer_inbound")
-    if str(latest.get("content") or "") != str(inbound.get("content") or ""):
+    if _canonical_message_text(latest.get("content")) != _canonical_message_text(
+        inbound.get("content")
+    ):
         errors.append("latest_inbound_content_mismatch")
     return errors
+
+
+def _canonical_message_text(value):
+    return " ".join(str(value or "").split())
 
 
 def _asked_fields(text):
