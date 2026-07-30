@@ -2652,7 +2652,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     )
     customer_guidance = build_live_stock_customer_guidance(inbound, facts)
     qualification_followup = build_live_stock_qualification_followup(
-        inbound, facts, missing
+        inbound, facts, missing, conversation_plan=conversation_plan
     )
     customer_guidance_preferred = _prefer_customer_size_guidance(
         customer_guidance=customer_guidance,
@@ -3210,6 +3210,11 @@ def _durable_live_stock_next_action(inbound, facts, route, missing, blockers, co
         return "prepare_draft_order"
     if internal_action == "sync_lines":
         return "update_draft_order"
+    # A known timing/collection acknowledgement must not displace a still
+    # missing ordinary qualification fact. Ask the smallest useful question
+    # before confirming a later-stage collection action.
+    if missing and internal_action == "confirm_collection":
+        return "ask_one_missing_detail"
     if internal_action in {
         "answer_location",
         "prepare_picture_response",
@@ -4534,19 +4539,31 @@ def build_live_stock_customer_guidance(inbound, facts):
     }
 
 
-def build_live_stock_qualification_followup(inbound, facts, missing):
+def build_live_stock_qualification_followup(
+    inbound, facts, missing, *, conversation_plan=None
+):
     """Advance known Livestock interest while protected facts stay pending."""
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
+    conversation_plan = (
+        conversation_plan
+        if isinstance(conversation_plan, dict)
+        else {}
+    )
     fields = {
-        str(value).split(".")[-1].strip().lower()
+        (
+            "location"
+            if str(value).split(".")[-1].strip().lower()
+            == "collection_location"
+            else str(value).split(".")[-1].strip().lower()
+        )
         for value in (missing or [])
         if isinstance(value, str)
     }
     questions = []
     if "quantity" in fields and _quantity_number(facts.get("quantity")) <= 0:
         questions.append("how many do you need")
-    if "location" in fields and _blank(facts.get("location")):
+    elif "location" in fields and _blank(facts.get("location")):
         questions.append("what town or area are you in")
     if (
         not questions
@@ -4571,10 +4588,34 @@ def build_live_stock_qualification_followup(inbound, facts, missing):
         and _has_any(current_text, ("weaned piglets", "weaner piglets"))
         and _has_any(current_text, ("male", "males"))
         and _has_any(current_text, ("female", "females"))
-        and not facts.get("reservation_requested")
-        and not facts.get("breeding_interest")
     )
-    if not known_selection:
+    timing_followup_missing_quantity = bool(
+        "quantity" in fields
+        and _quantity_number(facts.get("quantity")) <= 0
+        and not _blank(facts.get("timing"))
+        and (
+            not _blank(facts.get("category"))
+            or not _blank(facts.get("weight_range"))
+        )
+    )
+    collection_followup_missing_quantity = bool(
+        conversation_plan.get("next_action") == "confirm_collection"
+        and "quantity" in fields
+        and _quantity_number(facts.get("quantity")) <= 0
+        and (
+            not _blank(facts.get("category"))
+            or not _blank(facts.get("weight_range"))
+        )
+    )
+    if (
+        not (
+            known_selection
+            or timing_followup_missing_quantity
+            or collection_followup_missing_quantity
+        )
+        or facts.get("reservation_requested")
+        or facts.get("breeding_interest")
+    ):
         return {
             "applicable": False,
             "reply_text": "",

@@ -6,7 +6,7 @@ from modules.sales.sam_live_stock_runtime import (
     extract_live_stock_facts,
     review_sam_live_stock_conversation,
 )
-from modules.sales import sales_transaction_routes
+from modules.sales import sam_live_stock_runtime, sales_transaction_routes
 
 
 class SamLiveStockContinuousFollowupTests(unittest.TestCase):
@@ -70,6 +70,40 @@ class SamLiveStockContinuousFollowupTests(unittest.TestCase):
             followup["reply_text"],
         )
         self.assertFalse(followup["delivery_promised"])
+
+    def test_collection_acknowledgement_cannot_displace_missing_quantity(self):
+        followup = build_live_stock_qualification_followup(
+            {
+                "customer_name": "Customer",
+                "content": "Tomorrow is fine",
+            },
+            {
+                "category": "weaner",
+                "weight_range": "7-19 kg",
+                "quantity": "",
+                "timing": "tomorrow",
+                "location": "",
+            },
+            ["collection_location", "order_commitment", "quantity"],
+            conversation_plan={"next_action": "confirm_collection"},
+        )
+        self.assertTrue(followup["applicable"])
+        self.assertEqual(
+            followup["questions_asked"], ["how many do you need"]
+        )
+        self.assertNotIn("town or area", followup["reply_text"].lower())
+
+    def test_confirm_collection_yields_to_smallest_missing_fact(self):
+        action = sam_live_stock_runtime._durable_live_stock_next_action(
+            {"content": "Tomorrow is fine"},
+            {"timing": "tomorrow"},
+            {"lane": "live_stock_sales"},
+            ["quantity", "collection_location"],
+            [],
+            {"next_action": "confirm_collection"},
+            {"can_answer_price": False},
+        )
+        self.assertEqual(action, "ask_one_missing_detail")
 
     def test_known_riversdale_with_no_safe_question_is_not_customer_reply(self):
         followup = build_live_stock_qualification_followup(
