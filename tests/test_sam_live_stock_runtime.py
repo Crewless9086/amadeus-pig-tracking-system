@@ -48,7 +48,7 @@ def exact_eligible_row(**overrides):
         "calculated_stage": "Weaner",
         "sale_category": "Weaner",
         "current_weight_kg": 12,
-        "latest_weight_date": "2026-07-24",
+        "latest_weight_date": datetime.now(timezone.utc).date().isoformat(),
         "days_since_weight": 0,
     }
     row.update(overrides)
@@ -78,6 +78,158 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_complete_eligible_projection_is_not_truncated_before_composition(self):
+        rows = [
+            exact_eligible_row(
+                pig_id=f"PIG-{index:02d}",
+                sex="Female" if index % 2 else "Male",
+                current_weight_kg=2 + index,
+                latest_weight_date="2026-07-27",
+                days_since_weight=3,
+            )
+            for index in range(38)
+        ]
+        rows.extend(
+            {
+                **exact_eligible_row(pig_id=f"WITHDRAWAL-UNKNOWN-{index:02d}"),
+                "live_stock_sale_eligible": False,
+                "available_for_sale": "No",
+                "withdrawal_evidence_state": "unknown",
+                "withdrawal_clear": "",
+                "evidence_complete": False,
+                "live_stock_sale_reason": "withdrawal evidence unknown",
+            }
+            for index in range(12)
+        )
+        rows.extend([
+            {
+                **exact_eligible_row(pig_id="UNKNOWN-INACTIVE"),
+                "status": "Inactive",
+                "live_stock_sale_eligible": False,
+                "withdrawal_evidence_state": "unknown",
+            },
+            {
+                **exact_eligible_row(pig_id="UNKNOWN-OFF-FARM"),
+                "on_farm": "No",
+                "live_stock_sale_eligible": False,
+                "withdrawal_evidence_state": "unknown",
+            },
+            {
+                **exact_eligible_row(pig_id="UNKNOWN-NON-SALE"),
+                "purpose": "Breeding",
+                "live_stock_sale_eligible": False,
+                "withdrawal_evidence_state": "unknown",
+            },
+        ])
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            rows,
+            {
+                "sales_lane": "live_stock_sales",
+                "category": "weaner",
+                "quantity": 5,
+                "sex": "split",
+                "weight_range": "around 19 kg",
+            },
+        )
+
+        self.assertEqual(summary["eligible_projection_count"], 38)
+        self.assertEqual(len(summary["eligible_projection"]), 38)
+        self.assertEqual(
+            {row["pig_id"] for row in summary["eligible_projection"]},
+            {f"PIG-{index:02d}" for index in range(38)},
+        )
+        self.assertEqual(summary["latest_weight_date"], "2026-07-27")
+        self.assertEqual(summary["oldest_weight_age_days"], 3)
+        self.assertEqual(len(summary["withdrawal_unknown_exclusions"]), 12)
+        self.assertTrue(
+            all(
+                row["withdrawal_evidence_state"] == "unknown"
+                for row in summary["withdrawal_unknown_exclusions"]
+            )
+        )
+        excluded_ids = {
+            row["pig_id"] for row in summary["withdrawal_unknown_exclusions"]
+        }
+        self.assertTrue(
+            {
+                "UNKNOWN-INACTIVE",
+                "UNKNOWN-OFF-FARM",
+                "UNKNOWN-NON-SALE",
+            }.isdisjoint(excluded_ids)
+        )
+
+    def test_explicit_sex_split_is_retained_as_structured_customer_fact(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I need four females and one male around 19 kg."
+        )
+
+        self.assertEqual(facts["quantity"], 5)
+        self.assertEqual(facts["sex"], "split")
+        self.assertEqual(facts["sex_split"], {"female": 4, "male": 1})
+
+    def test_malformed_projection_weight_freshness_fails_closed_without_raising(self):
+        row = exact_eligible_row(
+            days_since_weight="unknown",
+            latest_weight_date="2026-07-27",
+        )
+
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            [row],
+            {
+                "sales_lane": "live_stock_sales",
+                "category": "weaner",
+                "quantity": 1,
+                "sex": "female",
+                "weight_range": "10-14 kg",
+            },
+        )
+
+        self.assertFalse(summary["eligible_evidence_complete"])
+        self.assertIsNone(summary["oldest_weight_age_days"])
+        self.assertEqual(summary["eligible_projection_count"], 1)
+
+    def test_weight_date_and_reported_age_must_be_consistent_and_nonfuture(self):
+        cases = (
+            ("2020-01-01", 3),
+            ("2099-01-01", 0),
+            ("not-a-date", 3),
+        )
+        for weight_date, reported_age in cases:
+            with self.subTest(weight_date=weight_date):
+                summary = sam_live_stock_runtime.summarize_live_stock_availability(
+                    [exact_eligible_row(
+                        latest_weight_date=weight_date,
+                        days_since_weight=reported_age,
+                    )],
+                    {
+                        "sales_lane": "live_stock_sales",
+                        "category": "weaner",
+                        "quantity": 1,
+                        "sex": "female",
+                        "weight_range": "10-14 kg",
+                    },
+                )
+                self.assertFalse(summary["eligible_evidence_complete"])
+                self.assertFalse(summary["weight_freshness_consistent"])
+                self.assertIsNone(summary["oldest_weight_age_days"])
+
+    def test_formal_quote_tokens_remain_distinct_from_price_only_questions(self):
+        self.assertTrue(
+            sam_live_stock_runtime._asks_formal_quote(
+                "Please quote the price for five piglets."
+            )
+        )
+        self.assertTrue(
+            sam_live_stock_runtime._asks_formal_quote(
+                "Can I get a quotation of the cost?"
+            )
+        )
+        self.assertFalse(
+            sam_live_stock_runtime._asks_formal_quote(
+                "How much are the 6 kg piglets?"
+            )
+        )
+
     def test_excluded_row_without_observation_does_not_erase_exact_match_freshness(self):
         now = datetime.now(timezone.utc).isoformat()
         rows = [
@@ -195,6 +347,173 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual([row["alternative_rank"] for row in rows], [1, 2])
         self.assertEqual(rows[0]["pricing"]["pricing_id"], "PRICE-35-39 kg")
         self.assertEqual(rows[0]["pricing"]["source"], "active_price_ledger")
+
+    def test_absolute_weight_distance_ranks_before_requested_band_membership(self):
+        facts = {
+            "sales_lane": "live_stock_sales",
+            "quantity": 1,
+            "category": "weaner",
+            "weight_range": "around 19 kg",
+            "sex": "male",
+        }
+        availability = {
+            "success": True,
+            "matched_count": 0,
+            "considered_sample": [
+                {
+                    **exact_eligible_row(
+                        pig_id="OUT-OF-BAND",
+                        sex="Male",
+                        current_weight_kg=20,
+                        weight_band="20_to_24_Kg",
+                    ),
+                },
+                {
+                    **exact_eligible_row(
+                        pig_id="IN-BAND",
+                        sex="Male",
+                        current_weight_kg=17,
+                        weight_band="15_to_19_Kg",
+                    ),
+                },
+            ],
+        }
+        with patch.object(
+            sam_live_stock_runtime,
+            "resolve_live_stock_price_rule",
+            return_value={
+                "found": True,
+                "pricing_id": "PRICE",
+                "source": "supabase",
+                "unit_price": 600,
+            },
+        ):
+            packet = sam_live_stock_runtime.build_live_stock_match_packet(
+                facts, availability
+            )
+
+        self.assertEqual(packet["considered_sample"][0]["pig_id"], "OUT-OF-BAND")
+        self.assertEqual(packet["considered_sample"][0]["weight_distance_kg"], 1.0)
+        self.assertEqual(packet["considered_sample"][1]["weight_distance_kg"], 2.0)
+
+    def test_alternative_ranking_changes_with_current_inventory_and_not_a_golden_total(self):
+        facts = {
+            "sales_lane": "live_stock_sales",
+            "quantity": 1,
+            "category": "weaner",
+            "weight_range": "around 19 kg",
+            "sex": "female",
+        }
+
+        def packet_for(rows):
+            with patch.object(
+                sam_live_stock_runtime,
+                "resolve_live_stock_price_rule",
+                side_effect=lambda _category, band, _sex: {
+                    "found": True,
+                    "pricing_id": f"PRICE-{band}",
+                    "source": "supabase",
+                    "unit_price": 500,
+                },
+            ):
+                return sam_live_stock_runtime.build_live_stock_match_packet(
+                    facts,
+                    {
+                        "success": True,
+                        "matched_count": 0,
+                        "eligible_projection": rows,
+                    },
+                )
+
+        farther = exact_eligible_row(
+            pig_id="F-14.8",
+            sex="Female",
+            current_weight_kg=14.8,
+            weight_band="10_to_14_Kg",
+        )
+        closer = exact_eligible_row(
+            pig_id="F-18.2",
+            sex="Female",
+            current_weight_kg=18.2,
+            weight_band="15_to_19_Kg",
+        )
+        first = packet_for([farther])
+        changed = packet_for([farther, closer])
+
+        self.assertEqual(first["considered_sample"][0]["pig_id"], "F-14.8")
+        self.assertEqual(changed["considered_sample"][0]["pig_id"], "F-18.2")
+        self.assertEqual(changed["considered_sample"][0]["weight_distance_kg"], 0.8)
+        self.assertEqual(
+            changed["considered_sample"][0]["pricing"]["source"], "supabase"
+        )
+
+    def test_canonical_availability_question_uses_retained_constraints(self):
+        question = sam_live_stock_runtime._canonical_availability_question(
+            {
+                "category": "weaner",
+                "weight_range": "around 19 kg",
+                "quantity": 5,
+                "sex": "split",
+                "sex_split": {"female": 4, "male": 1},
+                "timing": "10th",
+                "location": "Riversdale",
+            },
+            "If we can have the piglets on the 10th please",
+        )
+
+        self.assertIn("weight: around 19 kg", question)
+        self.assertIn("quantity: 5", question)
+        self.assertIn("sex split: 4 female, 1 male", question)
+        self.assertIn("location: Riversdale", question)
+
+    def test_empty_agent_snapshot_reconciles_once_from_same_canonical_reader(self):
+        row = exact_eligible_row()
+        with (
+            patch.object(
+                sam_live_stock_runtime,
+                "delegate_to_agent",
+                return_value=({
+                    "success": True,
+                    "status": "agent_evidence_ready",
+                    "availability_rows": [],
+                }, 200),
+            ),
+            patch.object(
+                sam_live_stock_runtime,
+                "get_sales_availability",
+                return_value=[row],
+            ) as canonical_reader,
+        ):
+            packet = sam_live_stock_runtime.load_live_stock_read_context(
+                {},
+                {
+                    "sales_lane": "live_stock_sales",
+                    "category": "weaner",
+                    "quantity": 1,
+                    "sex": "female",
+                    "weight_range": "10-14 kg",
+                },
+                environ={},
+            )
+
+        canonical_reader.assert_called_once_with()
+        self.assertEqual(packet["availability"]["eligible_projection_count"], 1)
+        self.assertEqual(
+            packet["agent_evidence"]["herdmaster"]["status"],
+            "empty_agent_snapshot_reconciled_from_canonical_reader",
+        )
+        self.assertNotIn(
+            "availability_rows",
+            packet["agent_evidence"]["herdmaster"],
+        )
+        self.assertEqual(
+            packet["agent_evidence"]["herdmaster"]["canonical_row_count"],
+            1,
+        )
+        self.assertNotIn(
+            "tag_number",
+            json.dumps(packet["agent_evidence"]["herdmaster"]),
+        )
 
     def test_decision_retains_exact_operational_identity_for_post_send_state(
         self,
@@ -3782,6 +4101,50 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertNotIn("source_id", body)
         self.assertEqual(body["content_attributes"]["amadeus_source"], "sam_live_stock_routine_reply")
         self.assertEqual(response["body"]["status"], "sent")
+
+    def test_chatwoot_payload_preserves_transport_safe_weight_ranges_exactly(self):
+        captured = []
+
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"id":12,"status":"sent"}'
+
+        message = (
+            "The current recorded list does not contain the exact requested group. "
+            "The proposed 15-19 kg, 10-14 kg and 7-9 kg combination is lighter "
+            "than the requested approximately-19 kg group; total R2,500.00. "
+            "Would this lighter option work for you?"
+        )
+        with patch.object(
+            sam_live_stock_runtime.urllib_request,
+            "urlopen",
+            side_effect=lambda request, timeout=0: captured.append(request) or Response(),
+        ):
+            sam_live_stock_runtime._send_chatwoot_message(
+                "2013",
+                message,
+                {
+                    "CHATWOOT_BASE_URL": "https://chatwoot.test",
+                    "CHATWOOT_ACCOUNT_ID": "147387",
+                    "CHATWOOT_API_ACCESS_TOKEN": "secret-token",
+                },
+                amadeus_source="sam_live_stock_routine_reply",
+            )
+
+        serialized = captured[0].data.decode("utf-8")
+        body = json.loads(serialized)
+        self.assertEqual(body["content"], message)
+        self.assertNotIn("\\u2013", serialized)
+        self.assertNotIn("owner review", body["content"].lower())
+        self.assertEqual(body["content"].count("?"), 1)
 
     def test_takeover_and_cleanup_packets_are_auditable(self):
         takeover = sam_live_stock_runtime.build_sam_live_stock_chatwoot_takeover_payload(

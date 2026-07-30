@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from modules.sales.sam_livestock_offer_loop import (
+    _future_reassessment_date,
     build_canonical_livestock_offer,
     validate_customer_livestock_reply,
 )
@@ -33,6 +34,8 @@ def _packet(content="I need pigs", facts=None, **overrides):
             "success": True,
             "evidence_complete": True,
             "observation_timestamp": datetime.now(timezone.utc).isoformat(),
+            "latest_weight_date": "2026-07-27",
+            "oldest_weight_age_days": 3,
         },
         "match_packet": {},
         "price_packet": {},
@@ -65,7 +68,7 @@ def test_exact_content_binding_normalizes_provider_whitespace_only():
 def test_quantity_is_the_only_question_when_only_quantity_is_missing():
     result = _packet(facts={"quantity": ""})
     assert result["response_kind"] == "qualification"
-    assert result["customer_reply"] == "How many weaned piglets (about 7–19 kg) would you like?"
+    assert result["customer_reply"] == "How many weaned piglets (about 7-19 kg) would you like?"
     assert result["authority"]["asked_fields"] == ["quantity"]
 
 
@@ -94,6 +97,7 @@ def test_exact_match_has_unit_price_subtotal_and_total_without_reservation():
             "can_answer_price": True,
             "unit_price": 600,
             "estimated_total": 3000,
+            "pricing": {"pricing_id": "P15", "source": "supabase"},
         },
     )
     assert result["response_kind"] == "exact_supported_offer"
@@ -113,6 +117,7 @@ def test_oversupplied_exact_match_uses_requested_selected_quantity():
             "can_answer_price": True,
             "unit_price": 600,
             "estimated_total": 3000,
+            "pricing": {"pricing_id": "P15", "source": "supabase"},
         },
     )
     assert result["response_kind"] == "exact_supported_offer"
@@ -141,6 +146,7 @@ def test_protected_quote_or_order_packet_cannot_authorize_ordinary_offer():
             "can_answer_price": True,
             "unit_price": 600,
             "estimated_total": 3000,
+            "pricing": {"pricing_id": "P15", "source": "supabase"},
         },
     )
     assert result["response_kind"] == "protected_owner_decision"
@@ -165,12 +171,18 @@ def test_closest_alternative_calculates_each_subtotal_and_total():
     rows = [
         {
             "live_stock_sale_eligible": True,
+            "evidence_complete": True,
+            "latest_weight_date": "2026-07-27",
+            "days_since_weight": 3,
             "alternative_rank": 1,
             "sale_category": "Weaner Piglets",
             "pricing": {"unit_price": 600, "pricing_id": "P1", "source": "supabase"},
         },
         {
             "live_stock_sale_eligible": True,
+            "evidence_complete": True,
+            "latest_weight_date": "2026-07-27",
+            "days_since_weight": 3,
             "alternative_rank": 2,
             "sale_category": "Grower Pigs",
             "pricing": {"unit_price": 900, "pricing_id": "P2", "source": "supabase"},
@@ -190,6 +202,9 @@ def test_stale_weight_evidence_is_disclosed_proportionally():
     rows = [
         {
             "live_stock_sale_eligible": True,
+            "evidence_complete": True,
+            "latest_weight_date": "2026-07-27",
+            "days_since_weight": 3,
             "alternative_rank": 1,
             "sale_category": "Weaner Piglets",
             "pricing": {"unit_price": 600, "pricing_id": "P1", "source": "supabase"},
@@ -224,6 +239,15 @@ def test_global_authority_rejects_farm_collection_generic_fallback_and_delivery_
         assert blocker in result["blockers"]
 
 
+def test_farm_collection_cannot_hide_inside_valid_handover_wording():
+    result = validate_customer_livestock_reply(
+        "Collection from the farm is available; handover is in Riversdale or Albertinia."
+    )
+
+    assert result["allowed"] is False
+    assert "collection_or_pickup_claim_prohibited" in result["blockers"]
+
+
 def test_identity_and_latest_inbound_are_bound_before_composition():
     result = _packet(
         chronology=[{"id": "different-inbound", "message_type": 0, "content": "new"}]
@@ -242,15 +266,19 @@ def test_identity_error_cannot_fall_back_to_valid_legacy_candidate():
     assert result["customer_reply"] == ""
 
 
-def test_owner_approved_exact_split_alternative_has_category_subtotals_and_total():
+def test_current_inventory_split_alternative_has_category_subtotals_and_total():
     rows = [
         *[
             {
                 "pig_id": f"F{index}",
                 "sex": "Female",
                 "live_stock_sale_eligible": True,
+                "evidence_complete": True,
+                "latest_weight_date": "2026-07-27",
+                "days_since_weight": 3,
                 "alternative_rank": index,
                 "sale_category": "Grower Pigs",
+                "weight_band": "35_to_39_Kg",
                 "pricing": {
                     "unit_price": 1400,
                     "pricing_id": "G35",
@@ -263,8 +291,12 @@ def test_owner_approved_exact_split_alternative_has_category_subtotals_and_total
             "pig_id": "F4",
             "sex": "Female",
             "live_stock_sale_eligible": True,
+            "evidence_complete": True,
+            "latest_weight_date": "2026-07-27",
+            "days_since_weight": 3,
             "alternative_rank": 4,
             "sale_category": "Finisher Pigs",
+            "weight_band": "40_to_44_Kg",
             "pricing": {
                 "unit_price": 1600,
                 "pricing_id": "F40",
@@ -275,8 +307,12 @@ def test_owner_approved_exact_split_alternative_has_category_subtotals_and_total
             "pig_id": "M1",
             "sex": "Male",
             "live_stock_sale_eligible": True,
+            "evidence_complete": True,
+            "latest_weight_date": "2026-07-27",
+            "days_since_weight": 3,
             "alternative_rank": 5,
             "sale_category": "Weaner Piglets",
+            "weight_band": "15_to_19_Kg",
             "pricing": {
                 "unit_price": 600,
                 "pricing_id": "W15",
@@ -285,14 +321,343 @@ def test_owner_approved_exact_split_alternative_has_category_subtotals_and_total
         },
     ]
     result = _packet(
+        facts={
+            "sex": "split",
+            "sex_split": {"female": 4, "male": 1},
+            "weight_range": "around 19 kg",
+        },
         match_packet={"complete_fulfillment": False, "considered_sample": rows}
     )
     assert result["response_kind"] == "closest_supported_alternatives"
-    assert "3 growing pigs" in result["customer_reply"]
+    assert "3 females in the 35-39 kg category" in result["customer_reply"]
     assert "R1,400.00 each (R4,200.00)" in result["customer_reply"]
+    assert "1 female in the 40-44 kg category" in result["customer_reply"]
     assert "R1,600.00 each (R1,600.00)" in result["customer_reply"]
+    assert "1 male in the 15-19 kg category" in result["customer_reply"]
     assert "R600.00 each (R600.00)" in result["customer_reply"]
     assert "total R6,400.00" in result["customer_reply"]
+    assert "4-female/1-male split is preserved" in result["customer_reply"]
+    assert "male option is lighter" in result["customer_reply"]
+    assert "female options are heavier" in result["customer_reply"]
+
+
+def test_closer_lighter_split_out_ranks_historical_heavier_golden_total():
+    def row(pig_id, sex, weight, band, price, rank):
+        return {
+            "pig_id": pig_id,
+            "sex": sex,
+            "current_weight_kg": weight,
+            "weight_distance_kg": abs(weight - 19),
+            "live_stock_sale_eligible": True,
+            "evidence_complete": True,
+            "latest_weight_date": "2026-07-27",
+            "days_since_weight": 3,
+            "alternative_rank": rank,
+            "sale_category": "Weaner Piglets",
+            "weight_band": band,
+            "pricing": {
+                "unit_price": price,
+                "pricing_id": f"PRICE-{pig_id}",
+                "source": "supabase",
+            },
+        }
+
+    rows = [
+        row("F-14.8", "Female", 14.8, "10_to_14_Kg", 500, 1),
+        row("M-16.0", "Male", 16.0, "15_to_19_Kg", 600, 2),
+        row("F-11.6", "Female", 11.6, "10_to_14_Kg", 500, 3),
+        row("F-9.2", "Female", 9.2, "7_to_9_Kg", 450, 4),
+        row("F-9.0", "Female", 9.0, "7_to_9_Kg", 450, 5),
+        row("F-36", "Female", 36, "35_to_39_Kg", 1400, 6),
+        row("F-41", "Female", 41, "40_to_44_Kg", 1600, 7),
+    ]
+    result = _packet(
+        facts={
+            "quantity": 5,
+            "sex": "split",
+            "sex_split": {"female": 4, "male": 1},
+            "weight_range": "around 19 kg",
+        },
+        match_packet={"complete_fulfillment": False, "considered_sample": rows},
+    )
+
+    reply = result["customer_reply"]
+    assert "2 females in the 10-14 kg category" in reply
+    assert "2 females in the 7-9 kg category" in reply
+    assert "1 male in the 15-19 kg category" in reply
+    assert "total R2,500.00" in reply
+    assert "R6,400.00" not in reply
+    assert "lighter than your requested approximately 19 kg group" in reply
+    assert "Would this lighter option work for you?" in reply
+    selected = result["selected_alternative_evidence"]
+    assert [row["pig_id"] for row in selected] == [
+        "F-14.8",
+        "M-16.0",
+        "F-11.6",
+        "F-9.2",
+        "F-9.0",
+    ]
+    assert all(row["pricing_id"] and row["price_source"] for row in selected)
+
+
+def test_unpriced_closer_animal_is_not_selected_for_a_priced_offer():
+    common = {
+        "sex": "Female",
+        "live_stock_sale_eligible": True,
+        "evidence_complete": True,
+        "latest_weight_date": "2026-07-27",
+        "days_since_weight": 3,
+        "sale_category": "Weaner Piglets",
+        "weight_band": "15_to_19_Kg",
+    }
+    result = _packet(
+        facts={"quantity": 1, "sex": "female", "weight_range": "around 19 kg"},
+        match_packet={
+            "complete_fulfillment": False,
+            "considered_sample": [
+                {
+                    **common,
+                    "pig_id": "UNPRICED-CLOSEST",
+                    "current_weight_kg": 18.9,
+                    "weight_distance_kg": 0.1,
+                    "alternative_rank": 1,
+                    "pricing": {},
+                },
+                {
+                    **common,
+                    "pig_id": "PRICED-NEXT",
+                    "current_weight_kg": 18.0,
+                    "weight_distance_kg": 1.0,
+                    "alternative_rank": 2,
+                    "pricing": {
+                        "unit_price": 600,
+                        "pricing_id": "PRICE-15-19",
+                        "source": "supabase",
+                    },
+                },
+            ],
+        },
+    )
+
+    assert [row["pig_id"] for row in result["selected_alternative_evidence"]] == [
+        "PRICED-NEXT"
+    ]
+    assert "R600.00" in result["customer_reply"]
+
+
+def test_non_19kg_non_4_1_split_renders_actual_request_and_preserved_split():
+    def row(pig_id, sex, weight, rank):
+        return {
+            "pig_id": pig_id,
+            "sex": sex,
+            "current_weight_kg": weight,
+            "live_stock_sale_eligible": True,
+            "evidence_complete": True,
+            "latest_weight_date": "2026-07-27",
+            "days_since_weight": 3,
+            "alternative_rank": rank,
+            "sale_category": "Grower Pigs",
+            "weight_band": "20_to_24_Kg",
+            "pricing": {
+                "unit_price": 900,
+                "pricing_id": f"PRICE-{pig_id}",
+                "source": "supabase",
+            },
+        }
+
+    result = _packet(
+        facts={
+            "quantity": 3,
+            "sex": "split",
+            "sex_split": {"female": 2, "male": 1},
+            "weight_range": "around 30 kg",
+        },
+        match_packet={
+            "complete_fulfillment": False,
+            "considered_sample": [
+                row("F-24", "Female", 24, 1),
+                row("M-23", "Male", 23, 2),
+                row("F-22", "Female", 22, 3),
+            ],
+        },
+    )
+
+    reply = result["customer_reply"]
+    assert "requested 2-female/1-male split is preserved" in reply
+    assert "lighter than your requested approximately 30 kg group" in reply
+    assert "19 kg" not in reply
+
+
+def test_fresh_match_timestamp_cannot_authorize_stale_alternative_rows():
+    result = _packet(
+        availability={
+            "success": True,
+            "evidence_complete": True,
+            "eligible_evidence_complete": False,
+            "observation_timestamp": datetime.now(timezone.utc).isoformat(),
+            "latest_weight_date": "2026-06-01",
+            "oldest_weight_age_days": 59,
+        },
+        match_packet={
+            "complete_fulfillment": False,
+            "considered_sample": [{
+                "pig_id": "STALE",
+                "sex": "Female",
+                "live_stock_sale_eligible": True,
+                "evidence_complete": True,
+                "latest_weight_date": "2026-06-01",
+                "days_since_weight": 59,
+                "alternative_rank": 1,
+                "sale_category": "Grower Pigs",
+                "weight_band": "35_to_39_Kg",
+                "pricing": {
+                    "unit_price": 1400,
+                    "pricing_id": "G35",
+                    "source": "supabase",
+                },
+            }],
+        },
+    )
+
+    assert result["response_kind"] == "evidence_bounded_progression"
+    assert "R1,400" not in result["customer_reply"]
+    assert "current sale-eligible" not in result["customer_reply"]
+
+
+def test_generic_alternative_does_not_invent_which_constraint_differs():
+    result = _packet(
+        facts={"quantity": 1, "sex": "female"},
+        match_packet={
+            "complete_fulfillment": False,
+            "considered_sample": [{
+                "pig_id": "MALE-SAME-BAND",
+                "sex": "Male",
+                "live_stock_sale_eligible": True,
+                "evidence_complete": True,
+                "latest_weight_date": "2026-07-27",
+                "days_since_weight": 3,
+                "alternative_rank": 1,
+                "sale_category": "Weaner Piglets",
+                "weight_band": "7_to_19_Kg",
+                "pricing": {
+                    "unit_price": 600,
+                    "pricing_id": "W7-19",
+                    "source": "supabase",
+                },
+            }],
+        },
+    )
+
+    assert result["response_kind"] == "closest_supported_alternatives"
+    assert "The exact group is not fully matched" in result["customer_reply"]
+    assert "differs from the requested weight" not in result["customer_reply"]
+
+
+def test_insufficient_requested_sex_never_claims_split_is_preserved():
+    rows = []
+    for pig_id, sex, rank in (
+        ("F1", "Female", 1),
+        ("M1", "Male", 2),
+        ("M2", "Male", 3),
+    ):
+        rows.append({
+            "pig_id": pig_id,
+            "sex": sex,
+            "live_stock_sale_eligible": True,
+            "evidence_complete": True,
+            "latest_weight_date": "2026-07-27",
+            "days_since_weight": 3,
+            "alternative_rank": rank,
+            "sale_category": "Grower Pigs",
+            "weight_band": "20_to_24_Kg",
+            "pricing": {
+                "unit_price": 800,
+                "pricing_id": "G20-24",
+                "source": "supabase",
+            },
+        })
+    result = _packet(
+        facts={
+            "quantity": 3,
+            "sex": "split",
+            "sex_split": {"female": 2, "male": 1},
+        },
+        match_packet={"complete_fulfillment": False, "considered_sample": rows},
+    )
+
+    assert result["response_kind"] == "closest_supported_alternatives"
+    assert "split is preserved" not in result["customer_reply"]
+    assert "The exact group is not fully matched" in result["customer_reply"]
+
+
+def test_direct_price_question_answers_supported_price_before_smallest_missing_question():
+    result = _packet(
+        "How much are the 5 to 6 kg piglets?",
+        facts={
+            "category": "Young Piglets",
+            "weight_range": "5_to_6_Kg",
+            "quantity": "",
+            "sex": "",
+            "timing": "",
+            "location": "",
+        },
+        price_packet={
+            "can_answer_price": True,
+            "unit_price": 400,
+            "estimated_total": "",
+            "requested_weight_range": "5_to_6_Kg",
+            "pricing": {
+                "pricing_id": "PRICE-5-6",
+                "source": "supabase",
+                "weight_band": "5_to_6_Kg",
+            },
+        },
+    )
+
+    assert result["response_kind"] == "supported_price_first"
+    assert result["customer_reply"].startswith(
+        "The current supported price for 5-6 kg live pigs is R400.00 each."
+    )
+    assert "How many 5-6 kg piglets would you like?" in result["customer_reply"]
+    assert result["customer_reply"].count("?") == 1
+    assert "Would you prefer" not in result["customer_reply"]
+
+
+def test_returning_customer_partial_availability_keeps_known_facts_and_advances_once():
+    rows = [{
+        "pig_id": "PIG-ALT-1",
+        "sex": "Female",
+        "live_stock_sale_eligible": True,
+        "evidence_complete": True,
+        "latest_weight_date": "2026-07-27",
+        "days_since_weight": 3,
+        "alternative_rank": 1,
+        "sale_category": "Grower Pigs",
+        "weight_band": "20_to_24_Kg",
+        "pricing": {
+            "unit_price": 900,
+            "pricing_id": "PRICE-20-24",
+            "source": "supabase",
+        },
+    }]
+    result = _packet(
+        "Please keep the same four females and one male for the 10th.",
+        facts={
+            "sex": "split",
+            "sex_split": {"female": 4, "male": 1},
+            "timing": "10 August",
+            "location": "Riversdale",
+        },
+        match_packet={"complete_fulfillment": False, "considered_sample": rows},
+    )
+
+    assert result["response_kind"] == "closest_supported_alternatives"
+    assert result["retained_facts"]["quantity"] == 5
+    assert result["retained_facts"]["sex_split"] == {"female": 4, "male": 1}
+    assert result["retained_facts"]["location"] == "Riversdale"
+    assert result["retained_facts"]["timing"] == "10 August"
+    assert "How many" not in result["customer_reply"]
+    assert "Which town" not in result["customer_reply"]
 
 
 def test_owner_approved_future_date_becomes_weekly_reassessment_without_reasking():
@@ -311,3 +676,115 @@ def test_owner_approved_future_date_becomes_weekly_reassessment_without_reasking
     assert "how many" not in result["customer_reply"].lower()
     assert "which town" not in result["customer_reply"].lower()
     assert "does not reserve or promise future stock" in result["customer_reply"]
+
+
+def test_calculated_alternative_uses_transport_safe_ranges_and_one_customer_question():
+    def row(pig_id, sex, band, price, rank):
+        return {
+            "pig_id": pig_id,
+            "sex": sex,
+            "live_stock_sale_eligible": True,
+            "evidence_complete": True,
+            "latest_weight_date": "2026-07-27",
+            "days_since_weight": 3,
+            "alternative_rank": rank,
+            "sale_category": "Weaner Piglets",
+            "weight_band": band,
+            "pricing": {
+                "unit_price": price,
+                "pricing_id": f"PRICE-{band}",
+                "source": "supabase",
+            },
+        }
+
+    result = _packet(
+        "I need four females and one male around 19 kg.",
+        facts={
+            "sex": "split",
+            "sex_split": {"female": 4, "male": 1},
+            "weight_range": "around 19 kg",
+            "timing": "",
+        },
+        match_packet={
+            "complete_fulfillment": False,
+            "considered_sample": [
+                row("F1", "Female", "10_to_14_Kg", 500, 1),
+                row("F2", "Female", "10_to_14_Kg", 500, 2),
+                row("F3", "Female", "7_to_9_Kg", 450, 3),
+                row("F4", "Female", "7_to_9_Kg", 450, 4),
+                row("M1", "Male", "15_to_19_Kg", 600, 5),
+            ],
+        },
+    )
+
+    reply = result["customer_reply"]
+    assert reply == (
+        "The exact group is not fully matched on the current sale-eligible list. "
+        "The requested 4-female/1-male split is preserved, but this proposed "
+        "combination is lighter than your requested approximately 19 kg group. "
+        "The closest supported option is 2 females in the 10-14 kg category "
+        "at R500.00 each (R1,000.00), 2 females in the 7-9 kg category "
+        "at R450.00 each (R900.00), 1 male in the 15-19 kg category "
+        "at R600.00 each (R600.00); total R2,500.00. "
+        "Would this lighter option work for you?"
+    )
+    assert reply.count("?") == 1
+    assert "When would" not in reply
+
+
+def test_all_customer_weight_choices_use_transport_safe_ascii_ranges():
+    result = _packet(facts={"category": "", "weight_range": ""})
+    reply = result["customer_reply"]
+    for expected in ("2-6 kg", "7-19 kg", "20-49 kg", "50-79 kg"):
+        assert expected in reply
+    assert "–" not in reply
+
+
+def test_tenth_request_derives_owner_approved_fifth_reassessment():
+    result = _packet(
+        "If we can have the piglets on the 10th please",
+        facts={
+            "sex": "split",
+            "sex_split": {"female": 4, "male": 1},
+            "weight_range": "around 19 kg",
+            "timing": "10th",
+        },
+        availability={
+            "success": True,
+            "evidence_complete": False,
+            "eligible_evidence_complete": True,
+            "weight_freshness_consistent": True,
+            "latest_weight_date": "2026-07-27",
+            "oldest_weight_age_days": 3,
+        },
+        match_packet={"complete_fulfillment": False, "considered_sample": []},
+    )
+
+    assert result["response_kind"] == "weekly_weight_reassessment"
+    assert "4 females and 1 male" in result["customer_reply"]
+    assert "around 19 kg" in result["customer_reply"]
+    assert "for the 10th, as requested." in result["customer_reply"]
+    assert "5 August" in result["customer_reply"]
+    assert "How many" not in result["customer_reply"]
+
+
+def test_reassessment_date_is_never_in_the_past():
+    facts = {"timing": "10th"}
+    assert _future_reassessment_date(
+        facts, now=datetime(2026, 7, 30, tzinfo=timezone.utc)
+    ) == "5 August"
+    assert _future_reassessment_date(
+        facts, now=datetime(2026, 8, 5, tzinfo=timezone.utc)
+    ) == "5 August"
+    for day in (6, 7, 8, 9):
+        assert _future_reassessment_date(
+            facts, now=datetime(2026, 8, day, tzinfo=timezone.utc)
+        ) == f"{day} August"
+    assert _future_reassessment_date(
+        {"timing": "2nd"},
+        now=datetime(2026, 12, 30, tzinfo=timezone.utc),
+    ) == "30 December"
+    assert _future_reassessment_date(
+        {"timing": "32nd"},
+        now=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    ) == ""

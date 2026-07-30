@@ -12,10 +12,10 @@ CONTRACT_VERSION = "sam_livestock_evidence_offer_v1"
 HANDOVER_POINTS = ("Riversdale", "Albertinia")
 QUALIFICATION_ORDER = ("category", "quantity", "sex", "timing", "location")
 WEIGHT_CHOICES = {
-    "Young Piglets": "small piglets (about 2–6 kg)",
-    "Weaner Piglets": "weaned piglets (about 7–19 kg)",
-    "Grower Pigs": "growing pigs (about 20–49 kg)",
-    "Finisher Pigs": "larger pigs (about 50–79 kg)",
+    "Young Piglets": "small piglets (about 2-6 kg)",
+    "Weaner Piglets": "weaned piglets (about 7-19 kg)",
+    "Grower Pigs": "growing pigs (about 20-49 kg)",
+    "Finisher Pigs": "larger pigs (about 50-79 kg)",
     "Ready for Slaughter": "slaughter-size pigs (80 kg and above)",
 }
 CATEGORY_ALIASES = {
@@ -73,6 +73,10 @@ def build_canonical_livestock_offer(
     customer_reply = ""
     response_kind = "no_reply"
     owner_exception = None
+    reassessment_date = (
+        availability.get("next_weight_reassessment_date")
+        or _future_reassessment_date(facts)
+    )
 
     proposed_authority = validate_customer_livestock_reply(
         proposed_reply,
@@ -124,9 +128,6 @@ def build_canonical_livestock_offer(
     ):
         response_kind = "warm_discovery"
         customer_reply = "Good day! How can I help with your live-pig enquiry?"
-    elif missing:
-        response_kind = "qualification"
-        customer_reply = _qualification_reply(missing[0], facts)
     elif protected:
         response_kind = "protected_owner_decision"
         owner_exception = {
@@ -137,16 +138,50 @@ def build_canonical_livestock_offer(
             ),
             "packets": protected,
         }
+    elif _direct_price_question(latest) and _price_provenanced(price_packet):
+        response_kind = "supported_price_first"
+        customer_reply = _price_first_reply(
+            facts=facts,
+            price_packet=price_packet,
+            next_missing=missing[0] if missing else "",
+        )
     elif (
         match_packet.get("complete_fulfillment") is not True
-        and availability.get("next_weight_reassessment_date")
+        and reassessment_date
+        and not any(field in missing for field in ("category", "quantity", "sex"))
     ):
         response_kind = "weekly_weight_reassessment"
         customer_reply = _weekly_reassessment_reply(
             facts,
-            availability.get("next_weight_reassessment_date"),
+            reassessment_date,
             match_packet,
+            availability,
         )
+    elif (
+        facts.get("quantity")
+        and not _blank(facts.get("category"))
+        and not _blank(facts.get("sex"))
+        and (
+            match_packet.get("complete_fulfillment") is True
+            or _alternatives(
+                match_packet,
+                int(facts.get("quantity") or 0),
+                facts,
+                availability,
+            )
+        )
+    ):
+        response_kind, customer_reply = _offer_reply(
+            facts=facts,
+            availability=availability,
+            match_packet=match_packet,
+            price_packet=price_packet,
+        )
+        if missing and customer_reply and "?" not in customer_reply:
+            customer_reply = f"{customer_reply} {_qualification_reply(missing[0], facts)}"
+    elif missing:
+        response_kind = "qualification"
+        customer_reply = _qualification_reply(missing[0], facts)
     else:
         response_kind, customer_reply = _offer_reply(
             facts=facts,
@@ -179,6 +214,12 @@ def build_canonical_livestock_offer(
         customer_reply = ""
         response_kind = "composition_authority_blocked"
         evidence_errors.extend(authority["blockers"])
+    selected_alternatives = _selected_alternative_evidence(
+        match_packet,
+        int(facts.get("quantity") or 0),
+        facts,
+        availability,
+    )
 
     return {
         "contract_version": CONTRACT_VERSION,
@@ -193,6 +234,7 @@ def build_canonical_livestock_offer(
         "retained_facts": facts,
         "availability_evidence": dict(availability or {}),
         "match_evidence": dict(match_packet or {}),
+        "selected_alternative_evidence": selected_alternatives,
         "price_evidence": dict(price_packet or {}),
         "protected_decisions": protected,
         "returning_customer_context": dict(
@@ -237,12 +279,7 @@ def validate_customer_livestock_reply(
     text = str(reply or "").strip()
     blockers = []
     collection = _COLLECTION_OR_PICKUP.search(text)
-    authorized_handover = bool(
-        re.search(r"\bhandover\b", text, re.I)
-        and re.search(r"\bRiversdale\b", text, re.I)
-        and re.search(r"\bAlbertinia\b", text, re.I)
-    )
-    if collection and not authorized_handover:
+    if collection:
         blockers.append("collection_or_pickup_claim_prohibited")
     if _GENERIC_DETAIL.search(text):
         blockers.append("context_blind_generic_question_prohibited")
@@ -275,9 +312,9 @@ def validate_customer_livestock_reply(
 def _qualification_reply(field: str, facts: Mapping[str, Any]) -> str:
     if field == "category":
         return (
-            "What size would suit you: small piglets (about 2–6 kg), weaned piglets "
-            "(about 7–19 kg), growing pigs (about 20–49 kg), larger pigs "
-            "(about 50–79 kg), or slaughter-size pigs (80 kg and above)?"
+            "What size would suit you: small piglets (about 2-6 kg), weaned piglets "
+            "(about 7-19 kg), growing pigs (about 20-49 kg), larger pigs "
+            "(about 50-79 kg), or slaughter-size pigs (80 kg and above)?"
         )
     if field == "quantity":
         descriptor = _plain_product(facts)
@@ -297,7 +334,11 @@ def _offer_reply(*, facts, availability, match_packet, price_packet):
     unit = price_packet.get("unit_price")
     total = price_packet.get("estimated_total")
     evidence_complete = _availability_current(availability)
-    observed = str(availability.get("observation_timestamp") or "")
+    observed = str(
+        availability.get("latest_weight_date")
+        or availability.get("observation_timestamp")
+        or ""
+    )
 
     exact_supported = bool(
         match_packet.get("complete_fulfillment") is True
@@ -305,7 +346,7 @@ def _offer_reply(*, facts, availability, match_packet, price_packet):
         and len(match_packet.get("matched_sample") or []) >= quantity
         and quantity > 0
         and evidence_complete
-        and price_packet.get("can_answer_price") is True
+        and _price_provenanced(price_packet)
         and unit not in ("", None)
         and total not in ("", None)
         and Decimal(str(total)) == Decimal(str(unit)) * quantity
@@ -316,9 +357,9 @@ def _offer_reply(*, facts, availability, match_packet, price_packet):
             f"The current sale-eligible list has {quantity} {label} matching your request "
             f"at {_money(unit)} each, giving a subtotal of {_money(total)}. "
             "This is a supported price summary, not a reservation or final commitment. "
-            "Would you like me to prepare it for owner review?"
+            "Would that option work for you?"
         )
-    alternatives = _alternatives(match_packet, quantity)
+    alternatives = _alternatives(match_packet, quantity, facts, availability)
     if alternatives:
         evidence_position = (
             "The exact group is not fully matched on the current sale-eligible list. "
@@ -330,20 +371,32 @@ def _offer_reply(*, facts, availability, match_packet, price_packet):
             if observed and not evidence_complete
             else ""
         )
+        difference = _alternative_difference(
+            facts,
+            match_packet,
+            quantity,
+            availability,
+        )
+        option_question = (
+            "Would this lighter option work for you?"
+            if "proposed combination is lighter" in difference
+            else "Would that option work for you?"
+        )
         return (
             "closest_supported_alternatives",
-            f"{evidence_position}The closest supported option is {alternatives}.{stale} "
-            "Would that option suit you for owner review?"
+            f"{evidence_position}{difference}The closest supported option is "
+            f"{alternatives}.{stale} "
+            f"{option_question}"
         )
     return (
         "evidence_bounded_progression",
-        "I cannot confirm current stock or price from the available evidence yet. "
+        "I cannot confirm current stock or price from the evidence I have yet. "
         "Your size, quantity, sex, timing and handover preference are recorded, "
         "so I can send the exact request for owner confirmation without asking you to repeat it."
     )
 
 
-def _alternatives(match_packet, quantity):
+def _alternatives(match_packet, quantity, facts=None, availability=None):
     rows = [
         row for row in match_packet.get("considered_sample") or []
         if (
@@ -354,51 +407,110 @@ def _alternatives(match_packet, quantity):
     ]
     if not rows:
         return ""
+    availability = availability if isinstance(availability, Mapping) else {}
+    rows = [
+        row for row in rows
+        if _alternative_row_offerable(row, availability)
+    ]
+    if not rows:
+        return ""
     rows.sort(key=lambda row: (int(row["alternative_rank"]), str(row.get("pig_id") or "")))
-    selected = rows[: max(quantity, 1)]
+    selected = _select_alternative_rows(rows, max(quantity, 1), facts or {})
     groups = {}
     for row in selected:
         category = str(row.get("sale_category") or row.get("suggested_price_category") or "nearby weight")
+        band = str(row.get("weight_band") or "")
+        sex = str(row.get("sex") or "").strip().casefold()
         pricing = row.get("pricing") if isinstance(row.get("pricing"), Mapping) else {}
         price = pricing.get("unit_price")
         if not pricing.get("pricing_id") or not pricing.get("source"):
             price = None
-        groups.setdefault((category, price), 0)
-        groups[(category, price)] += 1
+        groups.setdefault((sex, category, band, price), 0)
+        groups[(sex, category, band, price)] += 1
     clauses = []
     total = Decimal("0")
     priced = True
-    for (category, price), count in groups.items():
-        label = WEIGHT_CHOICES.get(category, category)
+    for (sex, category, band, price), count in groups.items():
+        label = _alternative_group_label(
+            sex=sex,
+            category=category,
+            weight_band=band,
+            count=count,
+        )
         if price in ("", None):
             priced = False
-            clauses.append(f"{count} {label}")
+            clauses.append(label)
         else:
             subtotal = Decimal(str(price)) * count
             total += subtotal
-            clauses.append(f"{count} {label} at {_money(price)} each ({_money(subtotal)})")
+            clauses.append(f"{label} at {_money(price)} each ({_money(subtotal)})")
     joined = ", ".join(clauses)
     return f"{joined}; total {_money(total)}" if priced else joined
 
 
-def _weekly_reassessment_reply(facts, reassessment_date, match_packet):
+def _weekly_reassessment_reply(facts, reassessment_date, match_packet, availability=None):
     quantity = int(facts.get("quantity") or 0)
-    sex = str(facts.get("sex") or "requested sex mix")
-    weight = str(facts.get("weight_range") or facts.get("category") or "preferred size")
+    split = facts.get("sex_split") if isinstance(facts.get("sex_split"), Mapping) else {}
+    sex = (
+        f"{int(split.get('female') or 0)} females and "
+        f"{int(split.get('male') or 0)} male"
+        if split.get("female") and split.get("male")
+        else str(facts.get("sex") or "requested sex mix")
+    )
+    weight = str(
+        facts.get("weight_range") or facts.get("category") or "preferred size"
+    )
     timing = str(facts.get("timing") or "the requested date")
-    recorded = _alternatives(match_packet, quantity)
+    if re.fullmatch(r"\d{1,2}(?:st|nd|rd|th)", timing, re.I):
+        timing = f"the {timing}"
+    recorded = _alternatives(match_packet, quantity, facts)
     current = (
-        f" The closest recorded options are {recorded}."
+        (
+            " "
+            + _alternative_difference(
+                facts,
+                match_packet,
+                quantity,
+                availability or {},
+            )
+            + f"The closest recorded options are {recorded}."
+        )
         if recorded
         else ""
     )
     return (
-        f"I have noted {quantity} pigs ({sex}), around {weight}, for {timing}. "
+        f"I have noted {quantity} pigs ({sex}), {weight}, for {timing}, as requested. "
         "We weigh the pigs weekly, so specific pigs cannot be confirmed this far "
         f"in advance.{current} We will reassess the updated weights on "
         f"{reassessment_date} and then confirm the best supported combination "
         "and current category prices. This does not reserve or promise future stock."
     )
+
+
+def _future_reassessment_date(facts, *, now=None):
+    """Derive the owner-approved five-day-before check for a dated request."""
+    timing = str(facts.get("timing") or "").strip()
+    match = re.fullmatch(r"(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?", timing, re.I)
+    if not match:
+        return ""
+    requested_day = int(match.group(1))
+    if not 1 <= requested_day <= 31:
+        return ""
+    today = (now or datetime.now(timezone.utc)).date()
+    year, month = today.year, today.month
+    for _ in range(2):
+        try:
+            requested = today.replace(year=year, month=month, day=requested_day)
+        except ValueError:
+            requested = None
+        if requested and requested > today:
+            reassess = max(requested - timedelta(days=5), today)
+            return f"{reassess.day} {reassess.strftime('%B')}"
+        month += 1
+        if month == 13:
+            month = 1
+            year += 1
+    return ""
 
 
 def _evidence_errors(inbound, chronology):
@@ -498,16 +610,389 @@ def _normal_category(value):
 
 
 def _availability_current(availability):
-    if availability.get("success") is not True or availability.get("evidence_complete") is not True:
+    if availability.get("success") is not True:
+        return False
+    if availability.get("observation_evidence_state") in {"stale", "conflicting"}:
+        return False
+    projection_complete = (
+        availability.get("eligible_evidence_complete") is True
+        or availability.get("evidence_complete") is True
+    )
+    if not projection_complete:
+        return False
+    if availability.get("weight_freshness_consistent") is False:
         return False
     raw = str(availability.get("observation_timestamp") or "")
-    if not raw:
+    observed_current = True
+    if raw:
+        try:
+            observed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if observed.tzinfo is None:
+                observed = observed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return False
+        age = datetime.now(timezone.utc) - observed.astimezone(timezone.utc)
+        observed_current = timedelta(0) <= age <= timedelta(days=7)
+        if not observed_current:
+            return False
+    # HERDMASTER can prove freshness from the canonical weekly weight
+    # projection even when the source has no time-of-day observation.
+    age_days = availability.get("oldest_weight_age_days")
+    evidence_date = str(availability.get("latest_weight_date") or "")
+    try:
+        weight_current = bool(evidence_date) and 0 <= float(age_days) <= 7
+        return observed_current and weight_current
+    except (TypeError, ValueError):
+        return False
+
+
+def _direct_price_question(text):
+    return bool(
+        re.search(r"\b(?:price|prices|cost|how much|prys)\b", str(text or ""), re.I)
+    )
+
+
+def _price_provenanced(price_packet):
+    pricing = (
+        price_packet.get("pricing")
+        if isinstance(price_packet.get("pricing"), Mapping)
+        else {}
+    )
+    return bool(
+        price_packet.get("can_answer_price") is True
+        and pricing.get("pricing_id")
+        and pricing.get("source")
+        and price_packet.get("unit_price") not in ("", None)
+    )
+
+
+def _price_first_reply(*, facts, price_packet, next_missing):
+    unit = price_packet.get("unit_price")
+    pricing = (
+        price_packet.get("pricing")
+        if isinstance(price_packet.get("pricing"), Mapping)
+        else {}
+    )
+    band = (
+        pricing.get("weight_band")
+        or price_packet.get("requested_weight_range")
+        or facts.get("weight_range")
+        or facts.get("category")
+    )
+    label = _human_weight_band(band)
+    reply = f"The current supported price for {label} live pigs is {_money(unit)} each."
+    quantity = facts.get("quantity")
+    total = price_packet.get("estimated_total")
+    if quantity and total not in ("", None):
+        reply += f" For {int(quantity)}, the price total is {_money(total)}."
+    if next_missing:
+        if next_missing == "quantity" and label:
+            reply += f" How many {label} piglets would you like?"
+        else:
+            reply += f" {_qualification_reply(next_missing, facts)}"
+    else:
+        reply += (
+            " Riversdale or Albertinia can be used for handover; any delivery "
+            "or different arrangement needs owner confirmation."
+        )
+    return reply
+
+
+def _select_alternative_rows(rows, quantity, facts):
+    split = facts.get("sex_split") if isinstance(facts.get("sex_split"), Mapping) else {}
+    female_count = int(split.get("female") or 0)
+    male_count = int(split.get("male") or 0)
+    if female_count + male_count != quantity:
+        return rows[:quantity]
+    selected = []
+    used_ids = set()
+    for wanted_sex, count in (("female", female_count), ("male", male_count)):
+        candidates = [
+            row for row in rows
+            if str(row.get("sex") or "").strip().casefold() == wanted_sex
+        ]
+        for row in candidates[:count]:
+            selected.append(row)
+            used_ids.add(str(row.get("pig_id") or id(row)))
+    if len(selected) < quantity:
+        selected.extend(
+            row for row in rows
+            if str(row.get("pig_id") or id(row)) not in used_ids
+        )
+    selected = selected[:quantity]
+    selected.sort(key=lambda row: (int(row["alternative_rank"]), str(row.get("pig_id") or "")))
+    return selected
+
+
+def _weight_midpoint(value):
+    numbers = [
+        float(item)
+        for item in re.findall(r"\d+(?:\.\d+)?", str(value or ""))
+    ]
+    if not numbers:
+        return None
+    return sum(numbers[:2]) / min(len(numbers), 2)
+
+
+def _normal_weight_band(value):
+    text = " ".join(str(value or "").replace("_", " ").split()).casefold()
+    numbers = re.findall(r"\d+(?:\.\d+)?", text)
+    return "-".join(numbers[:2]) if len(numbers) >= 2 else ""
+
+
+def _alternative_group_label(*, sex, category, weight_band, count):
+    sex_label = (
+        ("female" if count == 1 else "females")
+        if sex == "female"
+        else ("male" if count == 1 else "males")
+        if sex == "male"
+        else ("pig" if count == 1 else "pigs")
+    )
+    band = _human_weight_band(weight_band)
+    if band:
+        return f"{count} {sex_label} in the {band} category"
+    product = WEIGHT_CHOICES.get(category, category)
+    return f"{count} {sex_label} ({product})"
+
+
+def _alternative_row_current(row, availability):
+    if availability.get("observation_evidence_state") in {"stale", "conflicting"}:
+        return False
+    if row.get("evidence_complete") is not True:
+        return False
+    if row.get("weight_freshness_consistent") is False:
+        return False
+    if not str(row.get("latest_weight_date") or ""):
         return False
     try:
+        age = float(row.get("days_since_weight"))
+    except (TypeError, ValueError):
+        return False
+    return 0 <= age <= 7 and _weight_date_matches_age(
+        row.get("latest_weight_date"), age
+    )
+
+
+def _alternative_row_offerable(row, availability):
+    pricing = row.get("pricing") if isinstance(row.get("pricing"), Mapping) else {}
+    return bool(
+        _alternative_row_current(row, availability)
+        and pricing.get("pricing_id")
+        and pricing.get("source")
+        and pricing.get("unit_price") not in ("", None)
+    )
+
+
+def _selected_alternative_evidence(match_packet, quantity, facts, availability):
+    if quantity <= 0 or match_packet.get("complete_fulfillment") is True:
+        return []
+    rows = [
+        row
+        for row in match_packet.get("considered_sample") or []
+        if (
+            isinstance(row, Mapping)
+            and row.get("live_stock_sale_eligible") is True
+            and row.get("alternative_rank") not in ("", None)
+            and _alternative_row_offerable(row, availability)
+        )
+    ]
+    rows.sort(
+        key=lambda row: (int(row["alternative_rank"]), str(row.get("pig_id") or ""))
+    )
+    return [
+        {
+            "pig_id": str(row.get("pig_id") or ""),
+            "sex": str(row.get("sex") or ""),
+            "current_weight_kg": row.get("current_weight_kg"),
+            "target_weight_kg": row.get("target_weight_kg"),
+            "weight_distance_kg": row.get("weight_distance_kg"),
+            "latest_weight_date": str(row.get("latest_weight_date") or ""),
+            "days_since_weight": row.get("days_since_weight"),
+            "weight_band": str(row.get("weight_band") or ""),
+            "pricing_id": str((row.get("pricing") or {}).get("pricing_id") or ""),
+            "unit_price": (row.get("pricing") or {}).get("unit_price"),
+            "price_source": str((row.get("pricing") or {}).get("source") or ""),
+            "ranking_basis": str(row.get("alternative_ranking_basis") or ""),
+        }
+        for row in _select_alternative_rows(rows, quantity, facts)
+    ]
+
+
+def _alternative_difference(facts, match_packet, quantity, availability):
+    split = facts.get("sex_split") if isinstance(facts.get("sex_split"), Mapping) else {}
+    rows = [
+        row for row in match_packet.get("considered_sample") or []
+        if (
+            isinstance(row, Mapping)
+            and row.get("live_stock_sale_eligible") is True
+            and row.get("alternative_rank") not in ("", None)
+            and _alternative_row_offerable(row, availability)
+        )
+    ]
+    rows.sort(
+        key=lambda row: (int(row["alternative_rank"]), str(row.get("pig_id") or ""))
+    )
+    selected = _select_alternative_rows(rows, quantity, facts)
+    requested_weight = _weight_midpoint(facts.get("weight_range"))
+    selected_weights = [
+        (
+            _numeric_weight(row.get("current_weight_kg"))
+            if _numeric_weight(row.get("current_weight_kg")) is not None
+            else _weight_midpoint(row.get("weight_band"))
+        )
+        for row in selected
+    ]
+    requested_weight_label = _requested_weight_label(facts.get("weight_range"))
+    split_preserved = _requested_split_explanation_supported(
+        facts,
+        match_packet,
+        quantity,
+        availability,
+    )
+    if (
+        requested_weight is not None
+        and selected_weights
+        and all(weight is not None and weight < requested_weight for weight in selected_weights)
+    ):
+        if split_preserved:
+            return (
+                f"The requested {int(split['female'])}-female/"
+                f"{int(split['male'])}-male split is preserved, but this "
+                "proposed combination is lighter than your requested "
+                f"{requested_weight_label} group. "
+            )
+        return (
+            "This proposed combination is lighter than your requested "
+            f"{requested_weight_label} group. "
+        )
+    if requested_weight is not None and selected_weights:
+        lighter = [
+            row for row, weight in zip(selected, selected_weights)
+            if weight is not None and weight < requested_weight
+        ]
+        heavier = [
+            row for row, weight in zip(selected, selected_weights)
+            if weight is not None and weight > requested_weight
+        ]
+        if lighter and heavier:
+            lighter_sexes = {
+                str(row.get("sex") or "").strip().casefold() for row in lighter
+            }
+            heavier_sexes = {
+                str(row.get("sex") or "").strip().casefold() for row in heavier
+            }
+            if len(lighter_sexes) == 1 and len(heavier_sexes) == 1:
+                lighter_sex = next(iter(lighter_sexes))
+                heavier_sex = next(iter(heavier_sexes))
+                split_prefix = (
+                    f"The requested {int(split['female'])}-female/"
+                    f"{int(split['male'])}-male split is preserved. "
+                    if split_preserved
+                    else ""
+                )
+                return (
+                    f"{split_prefix}The {len(lighter)} "
+                    f"{_sex_option_label(lighter_sex, len(lighter))} "
+                    f"{'is' if len(lighter) == 1 else 'are'} lighter than your "
+                    f"requested {requested_weight_label}, "
+                    f"while the {len(heavier)} "
+                    f"{_sex_option_label(heavier_sex, len(heavier))} "
+                    f"{'is' if len(heavier) == 1 else 'are'} heavier. "
+                )
+            return (
+                f"Some options are lighter and some are heavier than your "
+                f"requested {requested_weight_label}. "
+            )
+    if split_preserved:
+        return (
+            f"The requested {int(split['female'])}-female/"
+            f"{int(split['male'])}-male split is preserved, but some pigs are "
+            "in different weight bands from the requested size. "
+        )
+    return (
+        ""
+    )
+
+
+def _sex_option_label(sex, count):
+    if sex == "female":
+        return "female option" if count == 1 else "female options"
+    if sex == "male":
+        return "male option" if count == 1 else "male options"
+    return "option" if count == 1 else "options"
+
+
+def _requested_split_explanation_supported(
+    facts, match_packet, quantity, availability
+):
+    split = facts.get("sex_split") if isinstance(facts.get("sex_split"), Mapping) else {}
+    female_count = int(split.get("female") or 0)
+    male_count = int(split.get("male") or 0)
+    if quantity <= 0 or female_count + male_count != quantity:
+        return False
+    rows = [
+        row for row in match_packet.get("considered_sample") or []
+        if (
+            isinstance(row, Mapping)
+            and row.get("live_stock_sale_eligible") is True
+            and row.get("alternative_rank") not in ("", None)
+            and _alternative_row_offerable(row, availability)
+        )
+    ]
+    rows.sort(
+        key=lambda row: (int(row["alternative_rank"]), str(row.get("pig_id") or ""))
+    )
+    selected = _select_alternative_rows(rows, quantity, facts)
+    if len(selected) != quantity:
+        return False
+    return (
+        sum(
+            str(row.get("sex") or "").strip().casefold() == "female"
+            for row in selected
+        )
+        == female_count
+        and sum(
+            str(row.get("sex") or "").strip().casefold() == "male"
+            for row in selected
+        )
+        == male_count
+    )
+
+
+def _numeric_weight(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _requested_weight_label(value):
+    text = " ".join(str(value or "").replace("_", " ").split())
+    if not text:
+        return "preferred-weight"
+    match = re.fullmatch(
+        r"(?:around|approximately|about)\s+(\d+(?:\.\d+)?)\s*kg",
+        text,
+        re.I,
+    )
+    if match:
+        return f"approximately {match.group(1)} kg"
+    return _human_weight_band(text)
+
+
+def _human_weight_band(value):
+    text = " ".join(str(value or "").replace("_", " ").split())
+    match = re.search(r"(\d+(?:\.\d+)?)\s+to\s+(\d+(?:\.\d+)?)", text, re.I)
+    if match:
+        return f"{match.group(1)}-{match.group(2)} kg"
+    return text
+
+
+def _weight_date_matches_age(value, reported_age):
+    raw = str(value or "").strip()
+    try:
         observed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        if observed.tzinfo is None:
-            observed = observed.replace(tzinfo=timezone.utc)
     except ValueError:
         return False
-    age = datetime.now(timezone.utc) - observed.astimezone(timezone.utc)
-    return timedelta(0) <= age <= timedelta(days=7)
+    actual_age = (datetime.now(timezone.utc).date() - observed.date()).days
+    return actual_age >= 0 and abs(actual_age - float(reported_age)) <= 1
