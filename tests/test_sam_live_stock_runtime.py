@@ -1424,6 +1424,63 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["quantity"], 3)
         self.assertEqual(facts["sex"], "split")
 
+    def test_generic_piglets_followup_retains_established_weaner_weight(self):
+        current = sam_live_stock_runtime.extract_live_stock_facts(
+            "If we can have the piglets on the 10th please",
+            {"conversation_id": "1338"},
+        )
+        merged = sam_live_stock_runtime.merge_prior_live_stock_context(
+            current,
+            {
+                "interest": {
+                    "sales_lane": "live_stock_sales",
+                    "category": "weaner",
+                    "weight_range": "around 19 kg",
+                    "quantity": 5,
+                    "sex": "split",
+                    "location": "Riversdale",
+                }
+            },
+        )
+
+        self.assertEqual(merged["category"], "weaner")
+        self.assertEqual(merged["weight_range"], "around 19 kg")
+        self.assertEqual(merged["timing"], "10th")
+
+    def test_explicit_piglet_change_does_not_inherit_prior_weaner_weight(self):
+        prior = {
+            "interest": {
+                "sales_lane": "live_stock_sales",
+                "category": "weaner",
+                "weight_range": "around 19 kg",
+            }
+        }
+        for message in (
+            "Actually I want small piglets instead",
+            "I want the 6 weeks old piglets",
+            "Now I need small piglets",
+            "Can I get 6 week old piglets instead?",
+            "Can we have the piglets at 6 weeks of age on the 10th?",
+            "Can we have the piglets at two months old on the 10th?",
+            "Can we have the piglets at 6-week-old on the 10th?",
+            "Can we have the piglets at six-weeks-old on the 10th?",
+            "Can we have the piglets at six-week-of-age on the 10th?",
+            "I want the piglets, not the weaners, on the 10th",
+            "The piglets, not weaners please, on the 10th",
+            "Do you have the piglets as well as weaners on the 10th?",
+        ):
+            with self.subTest(message=message):
+                current = sam_live_stock_runtime.extract_live_stock_facts(
+                    message,
+                    {"conversation_id": "category-change"},
+                )
+                merged = sam_live_stock_runtime.merge_prior_live_stock_context(
+                    current,
+                    prior,
+                )
+                self.assertEqual(merged["category"], "piglet")
+                self.assertEqual(merged["weight_range"], "")
+
     def test_extract_live_stock_facts_treats_six_week_old_pics_as_piglet_interest(self):
         facts = sam_live_stock_runtime.extract_live_stock_facts(
             "Morning how much is your 6 weeks old pics",
