@@ -1397,7 +1397,37 @@ def merge_prior_live_stock_context(facts, prior_context):
         ):
             prior_weight_category = _category_from_weight_range(prior_value)
             if prior_weight_category and prior_weight_category != current_category:
-                continue
+                if (
+                    current_category == "piglet"
+                    and prior_weight_category == "weaner"
+                    and _blank(facts.get("weight_range"))
+                    and not _blank(facts.get("timing"))
+                    and re.search(
+                        r"\bthe\s+piglets\b",
+                        _normal_text(facts.get("latest_customer_message")),
+                    )
+                    and not re.search(
+                        r"\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+                        r"\s*[- ]?\s*(?:days?|weeks?|months?)"
+                        r"(?:[\s-]+(?:old|of[\s-]+age))\b",
+                        _normal_text(facts.get("latest_customer_message")),
+                    )
+                    and not _has_any(
+                        _normal_text(facts.get("latest_customer_message")),
+                        (
+                            "small piglet", "weeks old", "week old", "instead",
+                            "actually", "weaner", "not ", "rather", "only",
+                            "as well",
+                        ),
+                    )
+                ):
+                    # Customers commonly continue to call already-qualified
+                    # weaners "piglets". A generic noun in a terse follow-up
+                    # must not erase the exact retained weight band.
+                    facts["category"] = prior_weight_category
+                    current_category = prior_weight_category
+                else:
+                    continue
         if _blank(facts.get(key)) and not _blank(prior_value):
             facts[key] = prior_value
     if _blank(facts.get("sales_lane")) and not _blank(interest.get("sales_lane")):
