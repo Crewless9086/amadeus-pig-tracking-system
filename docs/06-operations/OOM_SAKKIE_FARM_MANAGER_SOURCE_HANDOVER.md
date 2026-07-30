@@ -128,6 +128,84 @@ authorized:
    customer sends, money actions, animal/farm writes, public posts, migrations,
    n8n/Render invocations, and hardware commands.
 
+## Demand-to-weighing coordination packet
+
+Evidence cut: SAM release handover
+`C:/tmp/sam-pr623-shadow-release-20260730.md`, read on 2026-07-30.
+
+Current exact state:
+
+- real read-only customer chronology was evaluated in six shadow cases;
+- SAM proved that incomplete current sale-eligible inventory evidence blocked
+  availability-bearing reassessment and calculated alternatives;
+- the handover does not expose the individual customer requirements needed for
+  a family brief;
+- no forthcoming HERDMASTER sale-inventory reconciliation handover is present
+  in this worktree or the supplied `C:/tmp` handover set;
+- therefore usable inventory, exact animals to weigh, and customer opportunity
+  counts remain `Unavailable`; none are inferred from SAM examples or historical
+  animal files.
+
+`build_sales_weighing_packet()` is the prepared pure coordination seam. It
+accepts only:
+
+1. fresh, provenance-bound SAM demand evidence containing quantity, sex,
+   supported weight range, needed-by time and bounded commercial priority; and
+2. fresh, provenance-bound HERDMASTER inventory evidence stating whether an
+   opaque animal reference is usable now, blocked, or sale-eligible except for
+   a fresh weight, plus the demand identities it can potentially support.
+
+It then:
+
+- separates `usable inventory now`, `weigh next`, `customer opportunity
+  unlocked`, and protected decisions;
+- ranks at most three measurements by the sum of source-supplied commercial
+  value and time urgency across compatible current demands;
+- suppresses completed, stale, blocked, unmatched and lower-ranked work;
+- assigns weighing only to Dad in the prepared default family packet and
+  performs no animal write;
+- asks no family question when the missing item is specialist evidence rather
+  than a genuine family fact;
+- emits one automatic read-only follow-up instruction: after fresh measurements
+  return, HERDMASTER re-verifies eligibility and freshness, then only verified
+  inventory returns to SAM for offer reassessment.
+
+The follow-up instruction is descriptive coordination output. It does not
+dispatch HERDMASTER, call SAM, write weights, send a customer, reserve an
+animal, promise stock or approve an offer.
+
+Independent product/farm-operations and backend/security/privacy review
+approved this demand-to-weighing addition after evidence freshness,
+sex/weight compatibility, privacy-safe labels, duplicate containment,
+observation-versus-persistence wording, and quantity-aware matching were
+hardened. The final selector uses deterministic maximum-cardinality matching
+so flexible animals do not create unnecessary weighing when a less-flexible
+animal can satisfy the same remaining demand.
+
+### Finalization gate when HERDMASTER arrives
+
+Accept the handover only when:
+
+- its specialist/result identity is HERDMASTER-owned;
+- observation and weight timestamps are timezone-aware, non-future and inside
+  the agreed freshness window;
+- every opaque animal reference carries explicit `usable_now`,
+  `needs_fresh_weight` or `blocked` state;
+- `needs_fresh_weight` states affirm that other sale-eligibility evidence is
+  complete rather than treating missing evidence as clearance;
+- compatible demand identities bind to the fresh SAM packet;
+- completed or superseded work is explicit;
+- no raw customer identity, farm location, protected medical detail or
+  executable action is embedded.
+
+Until those checks pass, the exact concise brief is:
+
+> Usable inventory now: unavailable. Weigh next: no supported animal task yet.
+> Customer opportunity unlocked: awaiting matched fresh SAM demand and
+> HERDMASTER inventory evidence. Protected decisions: all customer sends,
+> reservations, orders and stock commitments remain with Charl and SAM's
+> governed rails.
+
 ## Mission stage and measurable outcome
 
 Stage: independently reviewed source coordination kernel and acceptance proof.

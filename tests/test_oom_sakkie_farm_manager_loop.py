@@ -5,17 +5,21 @@ from pathlib import Path
 from modules.oom_sakkie.farm_manager_loop import (
     Authority,
     CoordinationSignal,
+    CustomerDemandEvidence,
     FollowUp,
     Provenance,
     SpecialistAvailability,
     SpecialistResult,
     SpecialistWorkItem,
+    SaleInventoryEvidence,
     SupportedAnswer,
     WorkState,
     answer_supported_question,
     build_family_brief,
+    build_sales_weighing_packet,
     render_consolidated_brief,
     render_family_brief,
+    render_sales_weighing_packet,
 )
 
 
@@ -653,6 +657,356 @@ def test_non_rootline_specialist_cannot_inject_water_energy_signal():
         assert "not owned" in str(exc)
     else:
         raise AssertionError("BEACON injected a ROOTLINE coordination signal")
+
+
+def _demand(demand_id, *, value, needed_hours, completed=False, hours=1):
+    raw = "".join(ch for ch in demand_id.upper() if ch.isalnum()) or "A"
+    safe = raw if len(raw) <= 8 else raw[:5] + raw[-3:]
+    return CustomerDemandEvidence(
+        demand_id=demand_id,
+        family_label=f"Opportunity {safe}",
+        quantity=2,
+        sex="female",
+        minimum_weight_kg=10,
+        maximum_weight_kg=15,
+        needed_by=NOW + timedelta(hours=needed_hours),
+        commercial_value_score=value,
+        provenance=_provenance("sam_livestock", f"sam-{demand_id}", hours),
+        completed=completed,
+    )
+
+
+def _inventory(
+    animal_ref,
+    status,
+    demand_ids,
+    *,
+    weight=None,
+    eligible=True,
+    completed=False,
+    hours=1,
+):
+    raw = "".join(ch for ch in animal_ref.upper() if ch.isalnum()) or "A"
+    safe = raw if len(raw) <= 8 else raw[:5] + raw[-3:]
+    return SaleInventoryEvidence(
+        animal_ref=animal_ref,
+        family_label=f"Animal {safe}",
+        sex="female",
+        current_weight_kg=weight,
+        weight_observed_at=NOW - timedelta(hours=hours) if weight else None,
+        sale_eligible_without_weight=eligible,
+        status=status,
+        compatible_demand_ids=tuple(demand_ids),
+        provenance=_provenance("herdmaster", f"herd-{animal_ref}", hours),
+        completed=completed,
+    )
+
+
+def test_demand_to_weighing_ranks_measurements_by_supported_value_and_urgency():
+    demands = (
+        _demand("urgent-high", value=90, needed_hours=12),
+        _demand("later", value=40, needed_hours=120),
+    )
+    inventory = (
+        _inventory("A-opaque", "needs_fresh_weight", ("urgent-high", "later")),
+        _inventory("B-opaque", "needs_fresh_weight", ("later",)),
+        _inventory("C-opaque", "usable_now", ("urgent-high",), weight=12),
+    )
+    packet = build_sales_weighing_packet(demands, inventory, now=NOW)
+    assert packet.status == "ready"
+    assert [row["animal_ref"] for row in packet.weigh_next] == [
+        "A-opaque",
+        "B-opaque",
+    ]
+    assert packet.usable_inventory_now[0]["animal_ref"] == "C-opaque"
+    assert packet.family_actions["dad"][0].startswith(
+        "Observe the current weight for Animal AOPAQUE"
+    )
+    assert packet.family_question == ""
+    assert packet.writes_performed == 0
+
+
+def test_demand_to_weighing_suppresses_completed_stale_and_blocked_work():
+    demands = (
+        _demand("current", value=80, needed_hours=24),
+        _demand("completed", value=100, needed_hours=1, completed=True),
+        _demand("stale", value=100, needed_hours=1, hours=30),
+    )
+    inventory = (
+        _inventory("current-animal", "needs_fresh_weight", ("current",)),
+        _inventory(
+            "completed-animal",
+            "needs_fresh_weight",
+            ("current",),
+            completed=True,
+        ),
+        _inventory("blocked-animal", "blocked", ("current",), eligible=False),
+        _inventory("stale-animal", "needs_fresh_weight", ("current",), hours=30),
+    )
+    packet = build_sales_weighing_packet(demands, inventory, now=NOW)
+    assert [row["animal_ref"] for row in packet.weigh_next] == ["current-animal"]
+    assert [row["demand_id"] for row in packet.customer_opportunity_unlocked] == [
+        "current"
+    ]
+
+
+def test_demand_to_weighing_assigns_at_most_three_measurements():
+    base = _demand("cap", value=50, needed_hours=48)
+    demand = CustomerDemandEvidence(**{**base.__dict__, "quantity": 5})
+    inventory = tuple(
+        _inventory(f"animal-{index}", "needs_fresh_weight", ("cap",))
+        for index in range(5)
+    )
+    packet = build_sales_weighing_packet((demand,), inventory, now=NOW)
+    assert len(packet.weigh_next) == 3
+    assert len(packet.family_actions["dad"]) == 3
+    assert packet.family_actions["charl"] == ()
+    assert packet.family_actions["mom"] == ()
+
+
+def test_missing_herdmaster_handover_yields_narrow_waiting_packet():
+    packet = build_sales_weighing_packet(
+        (_demand("known-demand", value=80, needed_hours=24),),
+        (),
+        now=NOW,
+    )
+    assert packet.status == "waiting_for_evidence"
+    assert packet.evidence_gaps == (
+        "fresh_herdmaster_sale_inventory_reconciliation",
+    )
+    assert packet.weigh_next == ()
+    assert packet.family_question == ""
+    assert packet.automatic_follow_up_instruction["customer_send"] is False
+
+
+def test_weighing_brief_separates_inventory_work_opportunity_and_protection():
+    packet = build_sales_weighing_packet(
+        (_demand("brief-demand", value=80, needed_hours=24),),
+        (
+            _inventory(
+                "brief-animal",
+                "needs_fresh_weight",
+                ("brief-demand",),
+            ),
+        ),
+        now=NOW,
+    )
+    rendered = render_sales_weighing_packet(packet)
+    assert "Usable inventory now:" in rendered
+    assert "Weigh next:" in rendered
+    assert "Customer opportunity unlocked:" in rendered
+    assert "Protected decisions:" in rendered
+    assert "promise" not in rendered.casefold()
+
+
+def test_newer_completed_or_overlapping_evidence_suppresses_older_work():
+    older_demand = _demand("same-demand", value=90, needed_hours=12, hours=2)
+    newer_completed_demand = CustomerDemandEvidence(
+        **{
+            **older_demand.__dict__,
+            "provenance": _provenance(
+                "sam_livestock", "sam-same-demand-completed", 1
+            ),
+            "completed": True,
+        }
+    )
+    older_animal = _inventory(
+        "same-animal", "needs_fresh_weight", ("same-demand",), hours=2
+    )
+    newer_completed_animal = SaleInventoryEvidence(
+        **{
+            **older_animal.__dict__,
+            "provenance": _provenance(
+                "herdmaster", "herd-same-animal-completed", 1
+            ),
+            "completed": True,
+        }
+    )
+    packet = build_sales_weighing_packet(
+        (older_demand, newer_completed_demand),
+        (older_animal, newer_completed_animal),
+        now=NOW,
+    )
+    assert packet.weigh_next == ()
+    assert packet.customer_opportunity_unlocked == ()
+
+
+def test_missing_sam_evidence_is_not_turned_into_family_administration():
+    packet = build_sales_weighing_packet(
+        (),
+        (_inventory("waiting", "needs_fresh_weight", ("unknown-demand",)),),
+        now=NOW,
+    )
+    assert packet.status == "waiting_for_evidence"
+    assert packet.family_question == ""
+    assert packet.evidence_gaps == ("fresh_sam_customer_demand",)
+
+
+def test_usable_now_requires_fresh_matching_measurement():
+    demand = _demand("match", value=80, needed_hours=24)
+    stale = _inventory("stale-weight", "usable_now", ("match",), weight=12, hours=30)
+    wrong_weight = _inventory("wrong-weight", "usable_now", ("match",), weight=100)
+    wrong_sex = SaleInventoryEvidence(
+        **{
+            **_inventory(
+                "wrong-sex", "usable_now", ("match",), weight=12
+            ).__dict__,
+            "sex": "male",
+        }
+    )
+    packet = build_sales_weighing_packet(
+        (demand,), (stale, wrong_weight, wrong_sex), now=NOW
+    )
+    assert packet.usable_inventory_now == ()
+    assert packet.status == "no_action_supported"
+
+
+def test_invalid_or_future_usable_weight_is_rejected():
+    base = _inventory("invalid-weight", "usable_now", ("d",), weight=12)
+    for changes in (
+        {"current_weight_kg": -1},
+        {"current_weight_kg": float("nan")},
+        {"weight_observed_at": NOW},
+    ):
+        try:
+            SaleInventoryEvidence(**{**base.__dict__, **changes})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"invalid usable weight accepted: {changes}")
+
+
+def test_family_renderer_uses_safe_labels_not_internal_references():
+    demand = _demand("CUSTOMER-SECRET-123", value=80, needed_hours=24)
+    animal = _inventory(
+        "CANONICAL-PIG-ID-999",
+        "needs_fresh_weight",
+        ("CUSTOMER-SECRET-123",),
+    )
+    rendered = render_sales_weighing_packet(
+        build_sales_weighing_packet((demand,), (animal,), now=NOW)
+    )
+    assert "CUSTOMER-SECRET-123" not in rendered
+    assert "CANONICAL-PIG-ID-999" not in rendered
+    assert "Opportunity CUSTO123" in rendered
+    assert "Animal CANON999" in rendered
+
+
+def test_smallest_weighing_set_respects_remaining_demand_quantity():
+    quantity_one = CustomerDemandEvidence(
+        **{**_demand("one", value=80, needed_hours=24).__dict__, "quantity": 1}
+    )
+    candidates = tuple(
+        _inventory(f"candidate-{index}", "needs_fresh_weight", ("one",))
+        for index in range(5)
+    )
+    packet = build_sales_weighing_packet((quantity_one,), candidates, now=NOW)
+    assert len(packet.weigh_next) == 1
+
+    quantity_two = _demand("two", value=80, needed_hours=24)
+    usable = _inventory("usable-one", "usable_now", ("two",), weight=12)
+    candidates = tuple(
+        _inventory(f"remaining-{index}", "needs_fresh_weight", ("two",))
+        for index in range(3)
+    )
+    packet = build_sales_weighing_packet(
+        (quantity_two,), (usable, *candidates), now=NOW
+    )
+    assert len(packet.usable_inventory_now) == 1
+    assert len(packet.weigh_next) == 1
+
+
+def test_overlapping_demand_value_is_not_double_counted_per_animal():
+    first = CustomerDemandEvidence(
+        **{**_demand("first", value=90, needed_hours=12).__dict__, "quantity": 1}
+    )
+    second = CustomerDemandEvidence(
+        **{**_demand("second", value=80, needed_hours=12).__dict__, "quantity": 1}
+    )
+    shared = _inventory(
+        "shared", "needs_fresh_weight", ("first", "second", "first")
+    )
+    second_only = _inventory("second-only", "needs_fresh_weight", ("second",))
+    packet = build_sales_weighing_packet(
+        (first, second), (shared, second_only), now=NOW
+    )
+    assert [row["target_demand_id"] for row in packet.weigh_next] == [
+        "first",
+        "second",
+    ]
+    assert packet.weigh_next[0]["unlock_score"] == 190
+
+
+def test_family_safe_label_collisions_are_rejected():
+    first = _inventory("animal-one", "needs_fresh_weight", ("d",))
+    second = SaleInventoryEvidence(
+        **{
+            **_inventory("animal-two", "needs_fresh_weight", ("d",)).__dict__,
+            "family_label": first.family_label,
+        }
+    )
+    try:
+        build_sales_weighing_packet(
+            (_demand("d", value=50, needed_hours=24),),
+            (first, second),
+            now=NOW,
+        )
+    except ValueError as exc:
+        assert "duplicate family-safe animal label" in str(exc)
+    else:
+        raise AssertionError("ambiguous animal labels were accepted")
+
+
+def test_exact_provenance_duplicate_conflicts_are_rejected():
+    first = _demand("conflict", value=50, needed_hours=24)
+    second = CustomerDemandEvidence(
+        **{**first.__dict__, "commercial_value_score": 80}
+    )
+    try:
+        build_sales_weighing_packet((first, second), (), now=NOW)
+    except ValueError as exc:
+        assert "conflicting duplicate evidence identity" in str(exc)
+    else:
+        raise AssertionError("same-provenance conflict was input-order dependent")
+
+
+def test_asymmetric_usable_matching_avoids_unnecessary_weighing():
+    d1 = CustomerDemandEvidence(
+        **{**_demand("d1", value=90, needed_hours=12).__dict__, "quantity": 1}
+    )
+    d2 = CustomerDemandEvidence(
+        **{**_demand("d2", value=80, needed_hours=12).__dict__, "quantity": 1}
+    )
+    flexible = _inventory("a-flex", "usable_now", ("d1", "d2"), weight=12)
+    d1_only = _inventory("z-d1-only", "usable_now", ("d1",), weight=12)
+    d2_weigh = _inventory("d2-weigh", "needs_fresh_weight", ("d2",))
+    for rows in (
+        (flexible, d1_only, d2_weigh),
+        (d2_weigh, d1_only, flexible),
+    ):
+        packet = build_sales_weighing_packet((d1, d2), rows, now=NOW)
+        assert len(packet.usable_inventory_now) == 2
+        assert packet.weigh_next == ()
+
+
+def test_asymmetric_weighing_matching_covers_both_demands():
+    d1 = CustomerDemandEvidence(
+        **{**_demand("wd1", value=90, needed_hours=12).__dict__, "quantity": 1}
+    )
+    d2 = CustomerDemandEvidence(
+        **{**_demand("wd2", value=80, needed_hours=12).__dict__, "quantity": 1}
+    )
+    flexible = _inventory(
+        "a-weigh-flex", "needs_fresh_weight", ("wd1", "wd2")
+    )
+    d1_only = _inventory("z-weigh-d1", "needs_fresh_weight", ("wd1",))
+    for rows in ((flexible, d1_only), (d1_only, flexible)):
+        packet = build_sales_weighing_packet((d1, d2), rows, now=NOW)
+        assert len(packet.weigh_next) == 2
+        assert {row["target_demand_id"] for row in packet.weigh_next} == {
+            "wd1",
+            "wd2",
+        }
 
 
 def test_coordination_kernel_has_no_io_network_database_or_specialist_calls():

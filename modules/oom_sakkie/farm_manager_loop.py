@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+import math
+import re
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -232,6 +234,98 @@ class FamilyBrief:
     writes_performed: int = 0
 
 
+@dataclass(frozen=True)
+class CustomerDemandEvidence:
+    demand_id: str
+    family_label: str
+    quantity: int
+    sex: str
+    minimum_weight_kg: float
+    maximum_weight_kg: float
+    needed_by: datetime
+    commercial_value_score: int
+    provenance: Provenance
+    completed: bool = False
+
+    def __post_init__(self) -> None:
+        if self.provenance.specialist != "sam_livestock":
+            raise ValueError("customer demand must be owned by SAM Livestock")
+        if not self.demand_id.strip() or self.quantity <= 0:
+            raise ValueError("demand identity and positive quantity are required")
+        if not re.fullmatch(r"Opportunity [A-Z][A-Z0-9]{0,7}", self.family_label):
+            raise ValueError("family-safe demand label is required")
+        if self.sex not in {"male", "female", "either"}:
+            raise ValueError("demand sex must be male, female, or either")
+        if not 0 < self.minimum_weight_kg <= self.maximum_weight_kg:
+            raise ValueError("demand weight range is invalid")
+        if self.needed_by.tzinfo is None:
+            raise ValueError("needed_by must be timezone-aware")
+        if not 0 <= self.commercial_value_score <= 100:
+            raise ValueError("commercial value score must be between 0 and 100")
+
+
+@dataclass(frozen=True)
+class SaleInventoryEvidence:
+    animal_ref: str
+    family_label: str
+    sex: str
+    current_weight_kg: float | None
+    weight_observed_at: datetime | None
+    sale_eligible_without_weight: bool
+    status: str
+    compatible_demand_ids: tuple[str, ...]
+    provenance: Provenance
+    completed: bool = False
+
+    def __post_init__(self) -> None:
+        if self.provenance.specialist != "herdmaster":
+            raise ValueError("sale inventory must be owned by HERDMASTER")
+        if not self.animal_ref.strip():
+            raise ValueError("opaque animal_ref is required")
+        if not re.fullmatch(r"Animal [A-Z][A-Z0-9]{0,7}", self.family_label):
+            raise ValueError("family-safe animal label is required")
+        if self.sex not in {"male", "female", "unknown"}:
+            raise ValueError("inventory sex is invalid")
+        if self.status not in {"usable_now", "needs_fresh_weight", "blocked"}:
+            raise ValueError("inventory status is invalid")
+        if self.weight_observed_at is not None and self.weight_observed_at.tzinfo is None:
+            raise ValueError("weight_observed_at must be timezone-aware")
+        if self.status == "usable_now" and (
+            self.current_weight_kg is None or self.weight_observed_at is None
+        ):
+            raise ValueError("usable_now requires a measured weight and observation time")
+        if self.current_weight_kg is not None and (
+            not math.isfinite(self.current_weight_kg) or self.current_weight_kg <= 0
+        ):
+            raise ValueError("measured weight must be positive and finite")
+        if (
+            self.weight_observed_at is not None
+            and self.weight_observed_at > self.provenance.observed_at
+        ):
+            raise ValueError("weight observation cannot postdate inventory evidence")
+        if any(not demand_id.strip() for demand_id in self.compatible_demand_ids):
+            raise ValueError("compatible demand IDs cannot be blank")
+        object.__setattr__(
+            self,
+            "compatible_demand_ids",
+            tuple(sorted(set(self.compatible_demand_ids))),
+        )
+
+
+@dataclass(frozen=True)
+class SalesWeighingPacket:
+    status: str
+    usable_inventory_now: tuple[Mapping[str, Any], ...]
+    weigh_next: tuple[Mapping[str, Any], ...]
+    customer_opportunity_unlocked: tuple[Mapping[str, Any], ...]
+    protected_decisions: tuple[str, ...]
+    family_actions: Mapping[str, tuple[str, ...]]
+    family_question: str
+    automatic_follow_up_instruction: Mapping[str, Any]
+    evidence_gaps: tuple[str, ...]
+    writes_performed: int = 0
+
+
 _STATE_RANK = {
     WorkState.URGENT: 0,
     WorkState.DUE_TODAY: 1,
@@ -393,6 +487,390 @@ def answer_supported_question(
         },
         "writes_performed": 0,
     }
+
+
+def build_sales_weighing_packet(
+    demands: Sequence[CustomerDemandEvidence],
+    inventory: Sequence[SaleInventoryEvidence],
+    *,
+    now: datetime,
+    maximum_evidence_age_hours: int = 24,
+) -> SalesWeighingPacket:
+    """Connect SAM demand to the smallest valuable HERDMASTER weighing set."""
+
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    latest_demands = _latest_by_identity(
+        demands,
+        identity=lambda row: row.demand_id,
+    )
+    latest_inventory = _latest_by_identity(
+        inventory,
+        identity=lambda row: row.animal_ref,
+    )
+    fresh_demands = [
+        demand
+        for demand in latest_demands
+        if not demand.completed
+        and _fresh_enough(demand.provenance.observed_at, now, maximum_evidence_age_hours)
+    ]
+    fresh_inventory = [
+        animal
+        for animal in latest_inventory
+        if not animal.completed
+        and _fresh_enough(animal.provenance.observed_at, now, maximum_evidence_age_hours)
+    ]
+    _require_unique_family_labels(fresh_demands, "demand")
+    _require_unique_family_labels(fresh_inventory, "animal")
+    gaps = []
+    if not fresh_demands:
+        gaps.append("fresh_sam_customer_demand")
+    if not fresh_inventory:
+        gaps.append("fresh_herdmaster_sale_inventory_reconciliation")
+
+    demand_by_id = {demand.demand_id: demand for demand in fresh_demands}
+    usable = []
+    weigh_candidates = []
+    opportunities: dict[str, dict[str, Any]] = {}
+    for animal in fresh_inventory:
+        compatible = tuple(
+            demand_id
+            for demand_id in animal.compatible_demand_ids
+            if demand_id in demand_by_id
+        )
+        usable_measurement_fresh = (
+            animal.weight_observed_at is not None
+            and _fresh_enough(
+                animal.weight_observed_at, now, maximum_evidence_age_hours
+            )
+        )
+        if animal.status == "usable_now" and compatible and usable_measurement_fresh:
+            compatible = tuple(
+                demand_id
+                for demand_id in compatible
+                if _measurement_matches_demand(animal, demand_by_id[demand_id])
+            )
+        if animal.status == "usable_now" and compatible and usable_measurement_fresh:
+            usable.append(
+                MappingProxyType(
+                    {
+                        "animal_ref": animal.animal_ref,
+                        "family_label": animal.family_label,
+                        "compatible_demand_ids": compatible,
+                        "weight_kg": animal.current_weight_kg,
+                        "weight_observed_at": (
+                            animal.weight_observed_at.isoformat()
+                            if animal.weight_observed_at else ""
+                        ),
+                        "provenance": (
+                            animal.provenance.specialist,
+                            animal.provenance.result_id,
+                        ),
+                    }
+                )
+            )
+        if (
+            animal.status == "needs_fresh_weight"
+            and animal.sale_eligible_without_weight
+            and compatible
+        ):
+            linked = [demand_by_id[demand_id] for demand_id in compatible]
+            urgency = max(_demand_urgency(demand, now) for demand in linked)
+            value = sum(demand.commercial_value_score for demand in linked)
+            weigh_candidates.append(
+                (
+                    -(value + urgency),
+                    animal.animal_ref,
+                    MappingProxyType(
+                        {
+                            "animal_ref": animal.animal_ref,
+                            "family_label": animal.family_label,
+                            "compatible_demand_ids": compatible,
+                            "unlock_score": value + urgency,
+                            "reason": (
+                                "HERDMASTER says weight is the remaining inventory "
+                                "evidence; fresh measurement may support these SAM demands."
+                            ),
+                            "provenance": (
+                                animal.provenance.specialist,
+                                animal.provenance.result_id,
+                            ),
+                        }
+                    ),
+                )
+            )
+        for demand_id in compatible:
+            demand = demand_by_id[demand_id]
+            opportunity = opportunities.setdefault(
+                demand_id,
+                {
+                    "demand_id": demand_id,
+                    "family_label": demand.family_label,
+                    "quantity": demand.quantity,
+                    "needed_by": demand.needed_by.isoformat(),
+                    "commercial_value_score": demand.commercial_value_score,
+                    "usable_now_count": 0,
+                    "measurement_candidates": 0,
+                    "provenance": (
+                        demand.provenance.specialist,
+                        demand.provenance.result_id,
+                    ),
+                },
+            )
+            if animal.status == "usable_now" and usable_measurement_fresh:
+                opportunity["usable_now_count"] += 1
+            elif (
+                animal.status == "needs_fresh_weight"
+                and animal.sale_eligible_without_weight
+            ):
+                opportunity["measurement_candidates"] += 1
+
+    remaining = {
+        demand.demand_id: demand.quantity for demand in fresh_demands
+    }
+    for opportunity in opportunities.values():
+        opportunity["usable_now_count"] = 0
+        opportunity["measurement_candidates"] = 0
+
+    allocated_usable = []
+    for row, target in _match_rows_to_demand_slots(
+        usable, remaining, demand_by_id, now
+    ):
+        remaining[target] -= 1
+        opportunities[target]["usable_now_count"] += 1
+        allocated_usable.append(
+            MappingProxyType({**dict(row), "allocated_demand_id": target})
+        )
+    usable = allocated_usable
+
+    selected_weighing = []
+    candidate_rows = [row for _, _, row in weigh_candidates]
+    matched_candidates = _match_rows_to_demand_slots(
+        candidate_rows, remaining, demand_by_id, now
+    )
+    for row, target in matched_candidates[:3]:
+        selected_weighing.append(
+            MappingProxyType(
+                {
+                    **dict(row),
+                    "target_demand_id": target,
+                    "unlock_score": (
+                        demand_by_id[target].commercial_value_score
+                        + _demand_urgency(demand_by_id[target], now)
+                    ),
+                }
+            )
+        )
+        remaining[target] -= 1
+        opportunities[target]["measurement_candidates"] += 1
+    weigh_next = tuple(selected_weighing)
+    ranked_opportunities = tuple(
+        MappingProxyType(value)
+        for value in sorted(
+            opportunities.values(),
+            key=lambda row: (
+                -_demand_urgency(demand_by_id[row["demand_id"]], now),
+                -row["commercial_value_score"],
+                row["demand_id"],
+            ),
+        )
+    )
+    question = ""
+    actionable = bool(usable or weigh_next)
+    status = (
+        "waiting_for_evidence"
+        if gaps
+        else "ready"
+        if actionable
+        else "no_action_supported"
+    )
+    dad_actions = tuple(
+        f"Observe the current weight for {row['family_label']}; do not record "
+        "or persist it through this brief. Supply it only through the approved "
+        "HERDMASTER weight-evidence rail."
+        for row in weigh_next
+    )
+    return SalesWeighingPacket(
+        status=status,
+        usable_inventory_now=tuple(usable),
+        weigh_next=weigh_next,
+        customer_opportunity_unlocked=ranked_opportunities,
+        protected_decisions=(
+            "SAM must re-verify exact eligibility, current price and offer wording.",
+            "Charl retains every customer-send, reservation, order and commitment decision.",
+        ),
+        family_actions=MappingProxyType(
+            {"charl": (), "dad": dad_actions[:3], "mom": ()}
+        ),
+        family_question=question,
+        automatic_follow_up_instruction=MappingProxyType(
+            {
+                "trigger": "fresh_measurements_returned",
+                "owner": "oom_sakkie_coordination",
+                "instruction": (
+                    "When the approved HERDMASTER rail exposes fresh measurements, "
+                    "prepare a read-only HERDMASTER reconciliation. If eligibility "
+                    "is verified, prepare a provenance-bound inventory handoff for "
+                    "SAM's read-only offer reassessment; do not dispatch it here."
+                ),
+                "customer_send": False,
+                "farm_write": False,
+                "reservation": False,
+                "stock_promise": False,
+                "dispatch_performed": False,
+            }
+        ),
+        evidence_gaps=tuple(gaps),
+    )
+
+
+def render_sales_weighing_packet(packet: SalesWeighingPacket) -> str:
+    """Render the four required evidence sections without exposing private IDs."""
+
+    lines = ["OOM SAKKIE — DEMAND TO WEIGHING BRIEF"]
+    lines.append("Usable inventory now:")
+    lines.extend(
+        f"- {row['family_label']}: current supported measurement for "
+        f"{len(row['compatible_demand_ids'])} matched opportunity packet(s)."
+        for row in packet.usable_inventory_now
+    )
+    if not packet.usable_inventory_now:
+        lines.append("- None proven by the supplied fresh evidence.")
+    lines.append("Weigh next:")
+    lines.extend(
+        f"- {row['family_label']}: {row['reason']}"
+        for row in packet.weigh_next
+    )
+    if not packet.weigh_next:
+        lines.append("- No measurement task is supported yet.")
+    lines.append("Customer opportunity unlocked:")
+    lines.extend(
+        f"- {row['family_label']}: {row['usable_now_count']} usable now; "
+        f"{row['measurement_candidates']} potential candidate(s) pending fresh "
+        "measurement and HERDMASTER re-verification."
+        for row in packet.customer_opportunity_unlocked
+    )
+    if not packet.customer_opportunity_unlocked:
+        lines.append("- Waiting for matched SAM and HERDMASTER evidence.")
+    lines.append("Protected decisions:")
+    lines.extend(f"- {decision}" for decision in packet.protected_decisions)
+    if packet.family_question:
+        lines.append(f"One family question: {packet.family_question}")
+    return "\n".join(lines)
+
+
+def _fresh_enough(observed_at: datetime, now: datetime, maximum_hours: int) -> bool:
+    age = (now - observed_at).total_seconds() / 3600
+    return 0 <= age <= maximum_hours
+
+
+def _latest_by_identity(rows, *, identity):
+    selected = {}
+    for row in rows:
+        key = identity(row)
+        prior = selected.get(key)
+        candidate_order = (
+            row.provenance.observed_at,
+            row.provenance.result_id,
+            row.completed,
+        )
+        prior_order = (
+            prior.provenance.observed_at,
+            prior.provenance.result_id,
+            prior.completed,
+        ) if prior is not None else None
+        if prior is not None and candidate_order == prior_order and row != prior:
+            raise ValueError(f"conflicting duplicate evidence identity: {key}")
+        if prior is None or candidate_order > prior_order:
+            selected[key] = row
+    return tuple(selected[key] for key in sorted(selected))
+
+
+def _require_unique_family_labels(rows, kind):
+    seen = {}
+    for row in rows:
+        prior = seen.get(row.family_label)
+        identity = row.demand_id if kind == "demand" else row.animal_ref
+        if prior is not None and prior != identity:
+            raise ValueError(f"duplicate family-safe {kind} label")
+        seen[row.family_label] = identity
+
+
+def _match_rows_to_demand_slots(rows, remaining, demand_by_id, now):
+    """Maximum-cardinality deterministic matching for overlapping evidence."""
+
+    priority = lambda demand_id: (
+        -(
+            demand_by_id[demand_id].commercial_value_score
+            + _demand_urgency(demand_by_id[demand_id], now)
+        ),
+        demand_id,
+    )
+    slots = [
+        (demand_id, index)
+        for demand_id in sorted(demand_by_id, key=priority)
+        for index in range(max(remaining.get(demand_id, 0), 0))
+    ]
+    slot_owner = {}
+
+    def compatible_slots(row):
+        allowed = set(row["compatible_demand_ids"])
+        return [slot for slot in slots if slot[0] in allowed]
+
+    ordered_rows = sorted(
+        rows,
+        key=lambda row: (
+            len(compatible_slots(row)),
+            row["animal_ref"],
+        ),
+    )
+
+    def augment(row, visited):
+        for slot in compatible_slots(row):
+            if slot in visited:
+                continue
+            visited.add(slot)
+            owner = slot_owner.get(slot)
+            if owner is None or augment(owner, visited):
+                slot_owner[slot] = row
+                return True
+        return False
+
+    for row in ordered_rows:
+        augment(row, set())
+
+    pairs = [(row, slot[0]) for slot, row in slot_owner.items()]
+    return sorted(
+        pairs,
+        key=lambda pair: (
+            priority(pair[1]),
+            pair[0]["animal_ref"],
+        ),
+    )
+
+
+def _measurement_matches_demand(
+    animal: SaleInventoryEvidence, demand: CustomerDemandEvidence
+) -> bool:
+    if animal.current_weight_kg is None:
+        return False
+    return (
+        (demand.sex == "either" or animal.sex == demand.sex)
+        and demand.minimum_weight_kg
+        <= animal.current_weight_kg
+        <= demand.maximum_weight_kg
+    )
+
+
+def _demand_urgency(demand: CustomerDemandEvidence, now: datetime) -> int:
+    hours = (demand.needed_by - now).total_seconds() / 3600
+    if hours <= 24:
+        return 100
+    if hours <= 72:
+        return 60
+    if hours <= 168:
+        return 30
+    return 0
 
 
 def render_family_brief(brief: FamilyBrief, member: str) -> str:
