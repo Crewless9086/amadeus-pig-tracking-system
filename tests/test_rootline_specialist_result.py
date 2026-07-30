@@ -216,6 +216,120 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         )
         self.assertLessEqual(len(after_deadline["owner_questions"]), 1)
 
+    def test_follow_up_cannot_restart_expired_hold_with_new_forecast(self):
+        wet = evidence()["forecast"] | {
+            "observed_at": "2026-07-29T11:00:00+02:00",
+            "days": [{"rain_sum_mm": 8, "rain_probability_max_pct": 80}],
+        }
+        initial = self.build(forecast=wet)
+        refreshed_wet = wet | {
+            "observed_at": "2026-07-29T12:58:00+02:00",
+        }
+        follow_up = reconsider_rootline_forecast_hold(
+            initial,
+            evidence(
+                forecast=refreshed_wet,
+                weather=evidence()["weather"] | {
+                    "observed_at": "2026-07-29T13:01:00+02:00",
+                    "rain_rate_mm_h": 0,
+                    "rain_today_mm": 0,
+                },
+            ),
+            now=datetime.fromisoformat("2026-07-29T13:01:00+02:00"),
+        )
+        self.assertEqual(
+            self.recommendation(follow_up, "borehole")["status"],
+            "Recommend",
+        )
+        self.assertEqual(
+            follow_up["follow_up"]["outcome"],
+            "released_no_observed_rain",
+        )
+        self.assertNotEqual(
+            follow_up["next_reassessment"]["trigger"],
+            "bounded_forecast_rain_check",
+        )
+
+    def test_follow_up_requires_fresh_unconflicted_local_no_rain(self):
+        wet = evidence()["forecast"] | {
+            "observed_at": "2026-07-29T11:00:00+02:00",
+            "days": [{"rain_sum_mm": 8, "rain_probability_max_pct": 80}],
+        }
+        initial = self.build(forecast=wet)
+        cases = (
+            {},
+            evidence()["weather"] | {
+                "observed_at": "2026-07-29T11:00:00+02:00",
+            },
+            evidence()["weather"] | {
+                "observed_at": "2026-07-29T13:01:00+02:00",
+                "conflicting": True,
+            },
+        )
+        for weather in cases:
+            with self.subTest(weather=weather):
+                follow_up = reconsider_rootline_forecast_hold(
+                    initial,
+                    evidence(forecast=wet, weather=weather),
+                    now=datetime.fromisoformat(
+                        "2026-07-29T13:01:00+02:00"
+                    ),
+                )
+                borehole = self.recommendation(follow_up, "borehole")
+                self.assertEqual(borehole["status"], "Hold")
+                self.assertIn("fresh current local weather", borehole["reason"])
+                self.assertEqual(
+                    follow_up["follow_up"]["outcome"],
+                    "reconsidered_current_weather_unavailable",
+                )
+                self.assertNotEqual(
+                    follow_up["next_reassessment"]["trigger"],
+                    "bounded_forecast_rain_check",
+                )
+
+    def test_weather_wait_preserves_original_deadline_across_follow_ups(self):
+        wet = evidence()["forecast"] | {
+            "observed_at": "2026-07-29T11:00:00+02:00",
+            "days": [{"rain_sum_mm": 8, "rain_probability_max_pct": 80}],
+        }
+        initial = self.build(forecast=wet)
+        waiting_for_weather = reconsider_rootline_forecast_hold(
+            initial,
+            evidence(forecast=wet, weather={}),
+            now=datetime.fromisoformat("2026-07-29T13:01:00+02:00"),
+        )
+        self.assertEqual(
+            waiting_for_weather["follow_up"]["forecast_hold_deadline"],
+            "2026-07-29T13:00:00+02:00",
+        )
+        refreshed_wet = wet | {
+            "observed_at": "2026-07-29T13:09:00+02:00",
+        }
+        released = reconsider_rootline_forecast_hold(
+            waiting_for_weather,
+            evidence(
+                forecast=refreshed_wet,
+                weather=evidence()["weather"] | {
+                    "observed_at": "2026-07-29T13:10:00+02:00",
+                    "rain_rate_mm_h": 0,
+                    "rain_today_mm": 0,
+                },
+            ),
+            now=datetime.fromisoformat("2026-07-29T13:10:00+02:00"),
+        )
+        self.assertEqual(
+            self.recommendation(released, "borehole")["status"],
+            "Recommend",
+        )
+        self.assertEqual(
+            released["follow_up"]["forecast_hold_deadline"],
+            "2026-07-29T13:00:00+02:00",
+        )
+        self.assertEqual(
+            released["follow_up"]["outcome"],
+            "released_no_observed_rain",
+        )
+
     def test_adaptive_follow_up_keeps_observed_rain_separate_from_forecast(self):
         wet = evidence()["forecast"] | {
             "observed_at": "2026-07-29T11:00:00+02:00",
@@ -339,6 +453,8 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         for recommendation in result["recommendations"]:
             self.assertFalse(recommendation["command_authority"])
             self.assertFalse(recommendation["hardware_control"])
+            self.assertFalse(recommendation["schedule_mutation"])
+            self.assertFalse(recommendation["workflow_activation"])
 
     def test_owner_brief_has_action_reason_reassessment_and_one_fact(self):
         result = self.build(tanks={})

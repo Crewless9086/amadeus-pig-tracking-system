@@ -11,7 +11,8 @@ The source boundary is
 Phase 1 Water & Energy Plan and returns an in-memory result. It has no route,
 database append, migration, schedule, workflow, Telegram send, device client
 or hardware transport. Every result states `command_authority=false` and
-`hardware_control=false`.
+`hardware_control=false`; every recommendation also states those boundaries
+and `schedule_mutation=false` and `workflow_activation=false`.
 
 ## Contract
 
@@ -51,7 +52,13 @@ prior result identity, rebuilds every recommendation from the later canonical
 evidence snapshot, and records whether locally observed rain materialized.
 Before the deadline the bounded hold remains. At or after the deadline, fresh
 local evidence showing no rain removes forecast-only suppression and recovers
-supported water-continuity advice. A missing optional tank observation does
+supported water-continuity advice. A refreshed forecast can update evidence
+and uncertainty but cannot move the prior result's 120-minute deadline. If
+current local weather is missing, stale or conflicting at expiry, the hold is
+reconsidered read-only but is not released until fresh local no-rain evidence
+is available. That waiting result retains the original immutable deadline for
+every later follow-up, so repeated weather refreshes cannot restart the delay.
+A missing optional tank observation does
 not block that recovery when current water demand is explicitly `needed` or
 `urgent`; it remains `Unavailable` and blocks only claims that require a tank
 state. An explicit non-urgent `FULL` observation still prevents borehole
