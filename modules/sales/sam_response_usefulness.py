@@ -395,6 +395,8 @@ def _field_name(value):
     field = str(value or "").split(".")[-1].strip().lower()
     if field == "category":
         return "size"
+    if field == "collection_location":
+        return "location"
     return field
 
 
