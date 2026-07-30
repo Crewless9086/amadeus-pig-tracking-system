@@ -118,6 +118,31 @@ class SamDeliveryTruthTests(unittest.TestCase):
         self.assertEqual(owner["owner_action_identity"], "SAM-LIVE-CARD-SEND-EXACT")
         self.assertNotEqual(owner["delivery_attempt_id"], original["delivery_attempt_id"])
 
+    def test_claim_retains_only_workflow_state_projection_for_delivery_webhook(self):
+        projected = truth.build_delivery_attempt(
+            {
+                "account_id": "147387",
+                "conversation_id": "2100",
+                "contact_id": "CONTACT",
+                "inbox_id": "96568",
+                "message_id": "INBOUND",
+            },
+            {
+                "suggested_reply_text": "What area are you in?",
+                "missing_fields": ["qualification.location"],
+                "protected_owner_exception_required": True,
+            },
+            {"review_event_id": "REVIEW-EXACT"},
+        )
+        claim = truth.build_delivery_claim_event(projected)
+        self.assertEqual(
+            claim["review_json"]["missing_fields"], ["location"]
+        )
+        self.assertTrue(
+            claim["review_json"]["owner_decision_required"]
+        )
+        self.assertNotIn("What area", str(claim))
+
     def test_attempt_requires_complete_exact_identity(self):
         value = truth.build_delivery_attempt(
             {"conversation_id": "2013"},

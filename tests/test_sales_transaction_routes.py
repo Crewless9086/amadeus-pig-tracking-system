@@ -144,7 +144,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
                     )
                 )
 
-    def test_accepted_send_reconciles_exact_terminal_attempt_without_resend(self):
+    def test_accepted_send_adjunct_failure_preserves_exact_no_retry_attempt(self):
         result = {
             "processed": True,
             "sent": False,
@@ -163,90 +163,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
                 },
             },
         }
-        chains = [
-            {
-                "success": True,
-                "conversation_id": "2100",
-                "delivery_attempt_id": "ATTEMPT-2100",
-                "latest_delivery_state": "chatwoot_accepted_unverified",
-            },
-            {
-                "success": True,
-                "conversation_id": "2100",
-                "delivery_attempt_id": "ATTEMPT-2100",
-                "latest_delivery_state": "provider_delivered",
-                "customer_send_confirmed": True,
-            },
-        ]
-        calls = []
-        clock = [0.0]
-
-        def load_chain(database_url, conversation_id, attempt_id):
-            calls.append((conversation_id, attempt_id))
-            return chains.pop(0)
-
-        reconciled = (
-            sales_transaction_routes
-            ._reconcile_sam_live_stock_terminal_delivery(
-                result,
-                result["sam_decision"]["routine_reply_delivery"]["claim"],
-                timeout_seconds=1,
-                interval_seconds=0,
-                chain_loader=load_chain,
-                sleeper=lambda _seconds: clock.__setitem__(
-                    0, clock[0] + 0.1
-                ),
-                monotonic=lambda: clock[0],
-            )
-        )
-        self.assertTrue(reconciled)
-        self.assertEqual(
-            calls,
-            [("2100", "ATTEMPT-2100"), ("2100", "ATTEMPT-2100")],
-        )
-        self.assertTrue(result["sent"])
-        self.assertEqual(
-            result["sam_decision"]["reason"],
-            "routine_reply_confirmed_delivered",
-        )
-        self.assertEqual(
-            result["sam_decision"]["routine_reply_delivery"][
-                "delivery_outcome"
-            ]["delivery_state"],
-            "provider_delivered",
-        )
-
-    def test_accepted_send_reconciles_even_when_adjunct_succeeds(self):
-        result = {
-            "processed": True,
-            "sent": False,
-            "sam_decision": {
-                "routine_reply_delivery": {
-                    "claim": {
-                        "success": True,
-                        "created": True,
-                        "conversation_id": "2100",
-                        "delivery_attempt_id": "ATTEMPT-SUCCESSFUL-ADJUNCT",
-                    },
-                    "delivery_outcome": {
-                        "delivery_state": "chatwoot_accepted_unverified",
-                    },
-                },
-            },
-        }
         with patch.object(
             sales_transaction_routes,
-            "load_attempt_chain",
-            return_value={
-                "success": True,
-                "conversation_id": "2100",
-                "delivery_attempt_id": "ATTEMPT-SUCCESSFUL-ADJUNCT",
-                "latest_delivery_state": "provider_delivered",
-            },
-        ) as load_chain, patch.object(
-            sales_transaction_routes,
             "_attach_sam_live_stock_review_event",
-        ) as attach:
+            side_effect=RuntimeError("adjunct unavailable"),
+        ):
             packet = (
                 sales_transaction_routes
                 ._attach_sam_live_stock_review_event_safely(
@@ -254,143 +175,21 @@ class SalesTransactionRoutesTests(unittest.TestCase):
                     {"id": "INBOUND-EXACT"},
                 )
             )
-        self.assertTrue(packet["success"])
-        self.assertTrue(result["sent"])
-        load_chain.assert_called_once()
-        attach.assert_called_once()
-
-    def test_accepted_send_without_terminal_chain_stays_fail_closed(self):
-        result = {
-            "processed": True,
-            "sent": False,
-            "sam_decision": {
-                "routine_reply_delivery": {
-                    "claim": {
-                        "success": True,
-                        "created": True,
-                        "conversation_id": "2100",
-                        "delivery_attempt_id": "ATTEMPT-PENDING",
-                    },
-                    "delivery_outcome": {
-                        "delivery_state": "chatwoot_accepted_unverified",
-                    },
-                },
-            },
-        }
-        with patch.object(
-            sales_transaction_routes,
-            "_attach_sam_live_stock_review_event",
-            side_effect=RuntimeError("adjunct failed"),
-        ), patch.object(
-            sales_transaction_routes,
-            "load_attempt_chain",
-            return_value={
-                "success": True,
-                "conversation_id": "2100",
-                "delivery_attempt_id": "ATTEMPT-PENDING",
-                "latest_delivery_state": "chatwoot_accepted_unverified",
-            },
-        ), patch.object(
-            sales_transaction_routes.time,
-            "monotonic",
-            side_effect=[0.0, 6.0],
-        ), patch.object(sales_transaction_routes.time, "sleep"):
-            with self.assertRaisesRegex(RuntimeError, "adjunct failed"):
-                (
-                    sales_transaction_routes
-                    ._attach_sam_live_stock_review_event_safely(
-                        result,
-                        {"id": "INBOUND-PENDING"},
-                    )
-                )
-
-    def test_ambiguous_terminal_chain_is_quarantined_without_retry(self):
-        result = {
-            "processed": True,
-            "sent": False,
-            "sam_decision": {
-                "routine_reply_delivery": {
-                    "claim": {
-                        "success": True,
-                        "created": True,
-                        "conversation_id": "198",
-                        "delivery_attempt_id": "ATTEMPT-AMBIGUOUS",
-                    },
-                    "delivery_outcome": {
-                        "delivery_state": "chatwoot_accepted_unverified",
-                    },
-                },
-            },
-        }
-        reconciled = (
-            sales_transaction_routes
-            ._reconcile_sam_live_stock_terminal_delivery(
-                result,
-                result["sam_decision"]["routine_reply_delivery"]["claim"],
-                timeout_seconds=0,
-                interval_seconds=0,
-                chain_loader=lambda *_args: {
-                    "success": True,
-                    "conversation_id": "198",
-                    "delivery_attempt_id": "ATTEMPT-AMBIGUOUS",
-                    "latest_delivery_state": "provider_outcome_ambiguous",
-                },
-                sleeper=lambda _seconds: None,
-            )
-        )
-        self.assertTrue(reconciled)
+        self.assertFalse(packet["success"])
         self.assertFalse(result["sent"])
         self.assertEqual(
-            result["sam_decision"]["reason"],
-            "routine_reply_delivery_ambiguous",
+            result["conversation_review_event"]["status"],
+            "post_send_review_adjunct_failed_isolated",
         )
         self.assertTrue(
-            result["sam_decision"]["transition_visibility"][
-                "automatic_retry_prohibited"
+            result["conversation_review_event"][
+                "durable_exact_attempt_preserved"
             ]
         )
-
-    def test_terminal_chain_with_mismatched_identity_is_not_trusted(self):
-        result = {
-            "processed": True,
-            "sent": False,
-            "sam_decision": {
-                "routine_reply_delivery": {
-                    "claim": {
-                        "success": True,
-                        "created": True,
-                        "conversation_id": "2100",
-                        "delivery_attempt_id": "ATTEMPT-EXACT",
-                    },
-                    "delivery_outcome": {
-                        "delivery_state": "chatwoot_accepted_unverified",
-                    },
-                },
-            },
-        }
-        reconciled = (
-            sales_transaction_routes
-            ._reconcile_sam_live_stock_terminal_delivery(
-                result,
-                result["sam_decision"]["routine_reply_delivery"]["claim"],
-                timeout_seconds=0,
-                interval_seconds=0,
-                chain_loader=lambda *_args: {
-                    "success": True,
-                    "conversation_id": "OTHER",
-                    "delivery_attempt_id": "ATTEMPT-OTHER",
-                    "latest_delivery_state": "provider_delivered",
-                },
-                sleeper=lambda _seconds: None,
-            )
-        )
-        self.assertFalse(reconciled)
-        self.assertFalse(result["sent"])
-        self.assertEqual(
-            result["sam_decision"]["routine_reply_delivery"][
-                "delivery_outcome"
-            ]["delivery_state"],
-            "chatwoot_accepted_unverified",
+        self.assertFalse(
+            result["conversation_review_event"][
+                "durable_customer_outcome_preserved"
+            ]
         )
 
     def test_post_send_adjunct_partial_effects_are_reported_unknown(self):
@@ -1059,6 +858,55 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), sam_result)
         sam_handler.assert_called_once_with(payload)
         meat_handler.assert_not_called()
+
+    def test_delivery_webhook_applies_exact_provider_confirmed_state(self):
+        sam_result = {
+            "success": True,
+            "status": "sam_delivery_non_owner_attempt_reconciled",
+            "processed": True,
+            "operational_state": {
+                "inbound": {
+                    "account_id": "147387",
+                    "conversation_id": "2100",
+                    "contact_id": "CONTACT",
+                    "inbox_id": "96568",
+                    "message_id": "INBOUND",
+                },
+                "decision": {
+                    "sales_lane": "live_stock_sales",
+                    "specialist_lane_selected": True,
+                    "missing_fields": ["location"],
+                },
+                "provider_state": "provider_delivered",
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_meat_document_delivery_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_delivery_status_webhook",
+            return_value=(sam_result, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "apply_sam_chatwoot_delivery_state",
+            return_value={"applied": True, "status": "awaiting_customer"},
+        ) as apply_state:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/meat-documents/delivery-status",
+                json={"event": "message_updated", "message": {"id": 902}},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            response.get_json()["chatwoot_operational_state"]["applied"]
+        )
+        apply_state.assert_called_once_with(
+            sam_result["operational_state"]["inbound"],
+            sam_result["operational_state"]["decision"],
+            "provider_delivered",
+            authoritative_latest_inbound_id="INBOUND",
+        )
 
     def test_meat_whatsapp_templates_route_returns_pack(self):
         with patch.object(

@@ -1,6 +1,5 @@
 import ipaddress
 import os
-import time
 
 from flask import Blueprint, jsonify, render_template, request
 from modules.pig_weights.pig_weights_service import get_sales_availability
@@ -674,16 +673,6 @@ def _attach_sam_live_stock_review_event_safely(
         if isinstance(delivery.get("delivery_outcome"), dict)
         else {}
     )
-    if (
-        str(outcome.get("delivery_state") or "")
-        == "chatwoot_accepted_unverified"
-    ):
-        _reconcile_sam_live_stock_terminal_delivery(
-            result,
-            claim,
-            timeout_seconds=5.5,
-            interval_seconds=0.5,
-        )
     try:
         _attach_sam_live_stock_review_event(
             result,
@@ -706,6 +695,7 @@ def _attach_sam_live_stock_review_event_safely(
             and str(claim.get("delivery_attempt_id") or "").strip()
             and str(outcome.get("delivery_state") or "")
             in {
+                "chatwoot_accepted_unverified",
                 "provider_delivered",
                 "provider_read",
                 "provider_outcome_ambiguous",
@@ -718,7 +708,11 @@ def _attach_sam_live_stock_review_event_safely(
             "recorded": False,
             "error_type": exc.__class__.__name__,
             "automatic_retry_authorized": False,
-            "durable_customer_outcome_preserved": True,
+            "durable_customer_outcome_preserved": (
+                str(outcome.get("delivery_state") or "")
+                in {"provider_delivered", "provider_read"}
+            ),
+            "durable_exact_attempt_preserved": True,
             "adjunct_side_effects_known": False,
             "review_recording_state": "unknown_after_exception",
             "owner_work_state": "unknown_after_exception",
@@ -729,106 +723,6 @@ def _attach_sam_live_stock_review_event_safely(
             "status": "post_send_review_adjunct_failed_isolated",
             "error_type": exc.__class__.__name__,
         }
-
-
-def _reconcile_sam_live_stock_terminal_delivery(
-    result,
-    claim,
-    *,
-    timeout_seconds,
-    interval_seconds,
-    chain_loader=None,
-    sleeper=None,
-    monotonic=None,
-):
-    """Observe the exact durable attempt; never dispatch or create a claim."""
-    chain_loader = chain_loader or load_attempt_chain
-    sleeper = sleeper or time.sleep
-    monotonic = monotonic or time.monotonic
-    if not (
-        isinstance(claim, dict)
-        and claim.get("success") is True
-        and claim.get("created") is True
-    ):
-        return False
-    conversation_id = str(claim.get("conversation_id") or "").strip()
-    attempt_id = str(claim.get("delivery_attempt_id") or "").strip()
-    if not conversation_id or not attempt_id:
-        return False
-    terminal = {
-        "provider_delivered",
-        "provider_read",
-        "provider_outcome_ambiguous",
-    }
-    chain = {}
-    deadline = monotonic() + max(0, float(timeout_seconds or 0))
-    while True:
-        chain = chain_loader(
-            os.getenv("DATABASE_URL", ""),
-            conversation_id,
-            attempt_id,
-        )
-        if not (
-            isinstance(chain, dict)
-            and chain.get("success") is True
-            and str(chain.get("delivery_attempt_id") or "").strip()
-            == attempt_id
-            and str(chain.get("conversation_id") or "").strip()
-            == conversation_id
-        ):
-            state = ""
-        else:
-            state = str(chain.get("latest_delivery_state") or "")
-        if state in terminal:
-            _apply_reconciled_sam_live_stock_delivery(result, state, chain)
-            return True
-        remaining = deadline - monotonic()
-        if remaining <= 0:
-            return False
-        sleeper(min(max(0, float(interval_seconds or 0)), remaining))
-
-
-def _apply_reconciled_sam_live_stock_delivery(result, state, chain):
-    decision = result["sam_decision"]
-    delivery = decision["routine_reply_delivery"]
-    outcome = delivery["delivery_outcome"]
-    confirmed = state in {"provider_delivered", "provider_read"}
-    outcome["delivery_state"] = state
-    outcome["customer_send_confirmed"] = confirmed
-    outcome["handled_autonomously"] = confirmed
-    outcome["automatic_retry_prohibited"] = True
-    delivery["sent"] = confirmed
-    delivery["status"] = (
-        "sam_live_stock_routine_reply_confirmed_delivered"
-        if confirmed
-        else "sam_live_stock_routine_reply_outcome_ambiguous"
-    )
-    delivery["authoritative_reconciliation"] = {
-        "status": "terminal_delivery_chain_reconciled",
-        "delivery_attempt_id": str(
-            (chain or {}).get("delivery_attempt_id") or ""
-        ),
-        "delivery_state": state,
-        "customer_send_confirmed": confirmed,
-        "automatic_retry_prohibited": True,
-    }
-    result["sent"] = confirmed
-    transition_status = (
-        "routine_reply_confirmed_delivered"
-        if confirmed
-        else "routine_reply_delivery_ambiguous"
-    )
-    decision["reason"] = transition_status
-    decision["handled_autonomously"] = confirmed
-    decision["customer_send_confirmed"] = confirmed
-    decision["owner_action_required"] = not confirmed
-    decision["transition_visibility"] = {
-        "status": transition_status,
-        "notification_class": "none" if confirmed else "delivery_exception",
-        "owner_action_required": not confirmed,
-        "customer_send_confirmed": confirmed,
-        "automatic_retry_prohibited": True,
-    }
 
 
 def _send_sam_live_stock_owner_notification_if_needed(event, learning_result):
@@ -1991,6 +1885,32 @@ def meat_document_delivery_status_webhook():
         return jsonify(denied), status_code
     payload = request.get_json(silent=True) or {}
     sam_result, sam_status = handle_sam_live_stock_delivery_status_webhook(payload)
+    state_packet = (
+        sam_result.get("operational_state")
+        if isinstance(sam_result.get("operational_state"), dict)
+        else {}
+    )
+    if sam_status < 400 and state_packet:
+        inbound = state_packet.get("inbound") or {}
+        try:
+            sam_result["chatwoot_operational_state"] = (
+                apply_sam_chatwoot_delivery_state(
+                    inbound,
+                    state_packet.get("decision") or {},
+                    state_packet.get("provider_state") or "",
+                    authoritative_latest_inbound_id=(
+                        inbound.get("message_id") or ""
+                    ),
+                )
+            )
+        except Exception as exc:
+            sam_result["chatwoot_operational_state"] = {
+                "applied": False,
+                "status": "delivery_confirmed_state_reconciliation_failed",
+                "error_type": exc.__class__.__name__,
+                "automatic_retry_authorized": False,
+                "delivery_evidence_preserved": True,
+            }
     if sam_status < 400 and sam_result.get("processed") is True:
         try:
             run_bounded_authority_evaluation()

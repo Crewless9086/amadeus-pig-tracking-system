@@ -77,6 +77,49 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         self.assertEqual(calls, ["1"])
         self.assertEqual(packet["customers_answered"], 1)
 
+    def test_exact_accepted_attempt_is_durable_pending_provider_work(self):
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page([self.row("1")]),
+            history_loader=lambda cid, _env: (
+                self.history("101", "I want five weaned piglets"),
+                200,
+            ),
+            claim_exists=lambda cid, mid: False,
+            inbound_processor=lambda payload: {
+                "processed": True,
+                "sent": False,
+                "_operation_status_code": 200,
+                "sam_decision": {
+                    "routine_reply_delivery": {
+                        "claim": {
+                            "success": True,
+                            "created": True,
+                            "delivery_attempt_id": "ATTEMPT-EXACT",
+                        },
+                        "delivery_outcome": {
+                            "delivery_state": (
+                                "chatwoot_accepted_unverified"
+                            ),
+                        },
+                        "automatic_retry_prohibited": True,
+                    }
+                },
+            },
+        )
+        self.assertEqual(
+            sum(
+                row["selected_for_processing"]
+                for row in packet["dispositions"]
+            ),
+            1,
+        )
+        self.assertEqual(
+            packet["dispositions"][0]["provider_state"],
+            "chatwoot_accepted_unverified",
+        )
+        self.assertFalse(packet["dispositions"][0]["provider_confirmed"])
+
     def test_selected_payload_reuses_exact_authoritative_history(self):
         row = self.row("1")
         history = self.history("101", "I want five weaned piglets")
