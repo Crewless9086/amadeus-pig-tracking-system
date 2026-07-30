@@ -68,7 +68,7 @@ def test_exact_content_binding_normalizes_provider_whitespace_only():
 def test_quantity_is_the_only_question_when_only_quantity_is_missing():
     result = _packet(facts={"quantity": ""})
     assert result["response_kind"] == "qualification"
-    assert result["customer_reply"] == "How many weaned piglets (about 7–19 kg) would you like?"
+    assert result["customer_reply"] == "How many weaned piglets (about 7-19 kg) would you like?"
     assert result["authority"]["asked_fields"] == ["quantity"]
 
 
@@ -329,11 +329,11 @@ def test_owner_approved_exact_split_alternative_has_category_subtotals_and_total
         match_packet={"complete_fulfillment": False, "considered_sample": rows}
     )
     assert result["response_kind"] == "closest_supported_alternatives"
-    assert "3 females in the 35â€“39 kg category" in result["customer_reply"]
+    assert "3 females in the 35-39 kg category" in result["customer_reply"]
     assert "R1,400.00 each (R4,200.00)" in result["customer_reply"]
-    assert "1 female in the 40â€“44 kg category" in result["customer_reply"]
+    assert "1 female in the 40-44 kg category" in result["customer_reply"]
     assert "R1,600.00 each (R1,600.00)" in result["customer_reply"]
-    assert "1 male in the 15â€“19 kg category" in result["customer_reply"]
+    assert "1 male in the 15-19 kg category" in result["customer_reply"]
     assert "R600.00 each (R600.00)" in result["customer_reply"]
     assert "total R6,400.00" in result["customer_reply"]
     assert "4-female/1-male split is preserved" in result["customer_reply"]
@@ -468,7 +468,7 @@ def test_direct_price_question_answers_supported_price_before_smallest_missing_q
 
     assert result["response_kind"] == "supported_price_first"
     assert result["customer_reply"].startswith(
-        "The current supported price for 5â€“6 kg live pigs is R400.00 each."
+        "The current supported price for 5-6 kg live pigs is R400.00 each."
     )
     assert "How many small piglets" in result["customer_reply"]
     assert result["customer_reply"].count("?") == 1
@@ -528,6 +528,62 @@ def test_owner_approved_future_date_becomes_weekly_reassessment_without_reasking
     assert "how many" not in result["customer_reply"].lower()
     assert "which town" not in result["customer_reply"].lower()
     assert "does not reserve or promise future stock" in result["customer_reply"]
+
+
+def test_calculated_alternative_uses_transport_safe_ranges_and_one_customer_question():
+    def row(pig_id, sex, band, price, rank):
+        return {
+            "pig_id": pig_id,
+            "sex": sex,
+            "live_stock_sale_eligible": True,
+            "evidence_complete": True,
+            "latest_weight_date": "2026-07-27",
+            "days_since_weight": 3,
+            "alternative_rank": rank,
+            "sale_category": "Weaner Piglets",
+            "weight_band": band,
+            "pricing": {
+                "unit_price": price,
+                "pricing_id": f"PRICE-{band}",
+                "source": "supabase",
+            },
+        }
+
+    result = _packet(
+        "I need four females and one male around 19 kg.",
+        facts={
+            "sex": "split",
+            "sex_split": {"female": 4, "male": 1},
+            "timing": "",
+        },
+        match_packet={
+            "complete_fulfillment": False,
+            "considered_sample": [
+                row("F1", "Female", "10_to_14_Kg", 500, 1),
+                row("F2", "Female", "10_to_14_Kg", 500, 2),
+                row("F3", "Female", "7_to_9_Kg", 450, 3),
+                row("F4", "Female", "7_to_9_Kg", 450, 4),
+                row("M1", "Male", "15_to_19_Kg", 600, 5),
+            ],
+        },
+    )
+
+    reply = result["customer_reply"]
+    assert "15-19 kg" in reply
+    assert "10-14 kg" in reply
+    assert "7-9 kg" in reply
+    assert "for owner review" not in reply.lower()
+    assert reply.endswith("Would that option work for you?")
+    assert reply.count("?") == 1
+    assert "When would" not in reply
+
+
+def test_all_customer_weight_choices_use_transport_safe_ascii_ranges():
+    result = _packet(facts={"category": "", "weight_range": ""})
+    reply = result["customer_reply"]
+    for expected in ("2-6 kg", "7-19 kg", "20-49 kg", "50-79 kg"):
+        assert expected in reply
+    assert "–" not in reply
 
 
 def test_tenth_request_derives_owner_approved_fifth_reassessment():

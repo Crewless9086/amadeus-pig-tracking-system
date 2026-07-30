@@ -12,10 +12,10 @@ CONTRACT_VERSION = "sam_livestock_evidence_offer_v1"
 HANDOVER_POINTS = ("Riversdale", "Albertinia")
 QUALIFICATION_ORDER = ("category", "quantity", "sex", "timing", "location")
 WEIGHT_CHOICES = {
-    "Young Piglets": "small piglets (about 2–6 kg)",
-    "Weaner Piglets": "weaned piglets (about 7–19 kg)",
-    "Grower Pigs": "growing pigs (about 20–49 kg)",
-    "Finisher Pigs": "larger pigs (about 50–79 kg)",
+    "Young Piglets": "small piglets (about 2-6 kg)",
+    "Weaner Piglets": "weaned piglets (about 7-19 kg)",
+    "Grower Pigs": "growing pigs (about 20-49 kg)",
+    "Finisher Pigs": "larger pigs (about 50-79 kg)",
     "Ready for Slaughter": "slaughter-size pigs (80 kg and above)",
 }
 CATEGORY_ALIASES = {
@@ -176,7 +176,7 @@ def build_canonical_livestock_offer(
             match_packet=match_packet,
             price_packet=price_packet,
         )
-        if missing and customer_reply:
+        if missing and customer_reply and "?" not in customer_reply:
             customer_reply = f"{customer_reply} {_qualification_reply(missing[0], facts)}"
     elif missing:
         response_kind = "qualification"
@@ -304,9 +304,9 @@ def validate_customer_livestock_reply(
 def _qualification_reply(field: str, facts: Mapping[str, Any]) -> str:
     if field == "category":
         return (
-            "What size would suit you: small piglets (about 2–6 kg), weaned piglets "
-            "(about 7–19 kg), growing pigs (about 20–49 kg), larger pigs "
-            "(about 50–79 kg), or slaughter-size pigs (80 kg and above)?"
+            "What size would suit you: small piglets (about 2-6 kg), weaned piglets "
+            "(about 7-19 kg), growing pigs (about 20-49 kg), larger pigs "
+            "(about 50-79 kg), or slaughter-size pigs (80 kg and above)?"
         )
     if field == "quantity":
         descriptor = _plain_product(facts)
@@ -349,7 +349,7 @@ def _offer_reply(*, facts, availability, match_packet, price_packet):
             f"The current sale-eligible list has {quantity} {label} matching your request "
             f"at {_money(unit)} each, giving a subtotal of {_money(total)}. "
             "This is a supported price summary, not a reservation or final commitment. "
-            "Would you like me to prepare it for owner review?"
+            "Would that option work for you?"
         )
     alternatives = _alternatives(match_packet, quantity, facts, availability)
     if alternatives:
@@ -373,7 +373,7 @@ def _offer_reply(*, facts, availability, match_packet, price_packet):
             "closest_supported_alternatives",
             f"{evidence_position}{difference}The closest supported option is "
             f"{alternatives}.{stale} "
-            "Would that option suit you for owner review?"
+            "Would that option work for you?"
         )
     return (
         "evidence_bounded_progression",
@@ -841,7 +841,7 @@ def _human_weight_band(value):
     text = " ".join(str(value or "").replace("_", " ").split())
     match = re.search(r"(\d+(?:\.\d+)?)\s+to\s+(\d+(?:\.\d+)?)", text, re.I)
     if match:
-        return f"{match.group(1)}â€“{match.group(2)} kg"
+        return f"{match.group(1)}-{match.group(2)} kg"
     return text
 
 

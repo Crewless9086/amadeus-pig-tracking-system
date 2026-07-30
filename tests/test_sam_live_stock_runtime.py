@@ -4049,6 +4049,48 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(body["content_attributes"]["amadeus_source"], "sam_live_stock_routine_reply")
         self.assertEqual(response["body"]["status"], "sent")
 
+    def test_chatwoot_payload_preserves_transport_safe_weight_ranges_exactly(self):
+        captured = []
+
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"id":12,"status":"sent"}'
+
+        message = (
+            "Options: 15-19 kg, 10-14 kg, 7-9 kg, 5-6 kg and 2-6 kg. "
+            "Would that option work for you?"
+        )
+        with patch.object(
+            sam_live_stock_runtime.urllib_request,
+            "urlopen",
+            side_effect=lambda request, timeout=0: captured.append(request) or Response(),
+        ):
+            sam_live_stock_runtime._send_chatwoot_message(
+                "2013",
+                message,
+                {
+                    "CHATWOOT_BASE_URL": "https://chatwoot.test",
+                    "CHATWOOT_ACCOUNT_ID": "147387",
+                    "CHATWOOT_API_ACCESS_TOKEN": "secret-token",
+                },
+                amadeus_source="sam_live_stock_routine_reply",
+            )
+
+        serialized = captured[0].data.decode("utf-8")
+        body = json.loads(serialized)
+        self.assertEqual(body["content"], message)
+        self.assertNotIn("\\u2013", serialized)
+        self.assertNotIn("owner review", body["content"].lower())
+        self.assertEqual(body["content"].count("?"), 1)
+
     def test_takeover_and_cleanup_packets_are_auditable(self):
         takeover = sam_live_stock_runtime.build_sam_live_stock_chatwoot_takeover_payload(
             "2401",
