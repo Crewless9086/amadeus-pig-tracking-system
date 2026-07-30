@@ -78,6 +78,72 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_excluded_row_without_observation_does_not_erase_exact_match_freshness(self):
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [
+            exact_eligible_row(
+                pig_id="MATCHED",
+                eligibility_observed_at=now,
+                sex="Male",
+                current_weight_kg=27,
+                sale_category="Grower",
+                calculated_stage="Grower",
+            ),
+            {
+                **exact_eligible_row(pig_id="EXCLUDED"),
+                "sex": "Female",
+                "eligibility_observed_at": "",
+            },
+        ]
+        facts = {
+            "sales_lane": "live_stock_sales",
+            "category": "grower",
+            "quantity": 1,
+            "sex": "male",
+            "weight_range": "25-29 kg",
+        }
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            rows, facts
+        )
+        self.assertTrue(summary["evidence_complete"])
+        self.assertEqual(summary["matched_count"], 1)
+        self.assertEqual(summary["observation_timestamp"], now)
+
+    def test_partial_match_cannot_hide_missing_alternative_observation(self):
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [
+            exact_eligible_row(
+                pig_id="ONE-EXACT",
+                eligibility_observed_at=now,
+                sex="Male",
+                current_weight_kg=27,
+                sale_category="Grower",
+                calculated_stage="Grower",
+            ),
+            {
+                **exact_eligible_row(
+                    pig_id="ALTERNATIVE",
+                    sex="Female",
+                    current_weight_kg=32,
+                    sale_category="Grower",
+                    calculated_stage="Grower",
+                ),
+                "eligibility_observed_at": "",
+            },
+        ]
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            rows,
+            {
+                "sales_lane": "live_stock_sales",
+                "category": "grower",
+                "quantity": 2,
+                "sex": "male",
+                "weight_range": "25-29 kg",
+            },
+        )
+        self.assertEqual(summary["matched_count"], 1)
+        self.assertEqual(summary["observation_timestamp"], "")
+
     def test_runtime_alternatives_are_ranked_and_bind_active_price_provenance(self):
         facts = {
             "sales_lane": "live_stock_sales",
@@ -812,10 +878,15 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(interpretation["sex"], "female")
         self.assertEqual(interpretation["category"], "")
         reply = result["sam_decision"]["suggested_reply_text"]
-        self.assertIn("no single category currently has all 10", reply)
-        self.assertNotIn("split across categories", reply)
-        self.assertIn("check again when more eligible animals become available", reply)
-        self.assertIn("does not reserve the animals", reply)
+        self.assertFalse(
+            result["sam_decision"]["canonical_composition_authorized"]
+        )
+        self.assertIn(
+            "latest_inbound_not_bound_to_packet",
+            result["sam_decision"]["canonical_evidence_offer"][
+                "evidence_errors"
+            ],
+        )
         self.assertFalse(result["sent"])
 
     @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
@@ -876,11 +947,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["sales_lane"], "live_stock_sales")
         self.assertEqual(decision["facts"]["information_scope"], "grower_finisher")
         self.assertEqual(decision["information_response"]["status"], "availability_and_pricing_verified")
-        self.assertIn("Growers: 2 currently eligible", reply)
-        self.assertIn("Finishers: 1 currently eligible", reply)
-        self.assertNotIn("Piglet", reply)
-        self.assertNotIn("9,999", reply)
-        self.assertEqual(reply.count("?"), 1)
+        self.assertFalse(decision["canonical_composition_authorized"])
+        self.assertIn(
+            "latest_inbound_not_bound_to_packet",
+            decision["canonical_evidence_offer"]["evidence_errors"],
+        )
         self.assertEqual(calls, {"availability": 1, "send": 0})
         self.assertFalse(result["sends_customer_message"])
         self.assertFalse(result["creates_order"])

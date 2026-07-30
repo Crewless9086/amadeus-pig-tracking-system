@@ -2280,9 +2280,21 @@ def summarize_live_stock_availability(rows, facts=None):
         )
         category_counts["all"] += 1
         category_counts[sex_label if sex_label in ("female", "male") else "unknown"] += 1
+    # Freshness belongs to the eligible matched evidence used for the offer.
+    # Unmatched/excluded rows may legitimately lack a complete observation and
+    # must not erase the timestamp of an otherwise exact, complete match.
+    requested_quantity = (
+        facts.get("quantity")
+        if isinstance(facts.get("quantity"), int)
+        else 0
+    )
+    exact_fulfillment = (
+        requested_quantity > 0 and len(matched) >= requested_quantity
+    )
+    observation_rows = matched if exact_fulfillment else rows
     result_observations = [
         _parse_aware_utc_timestamp(row.get("eligibility_observed_at"))
-        for row in rows
+        for row in observation_rows
         if isinstance(row, dict)
     ]
     observation_timestamp = (

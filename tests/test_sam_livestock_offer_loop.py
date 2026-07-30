@@ -219,6 +219,16 @@ def test_identity_and_latest_inbound_are_bound_before_composition():
     assert result["response_kind"] == "identity_or_chronology_blocked"
 
 
+def test_identity_error_cannot_fall_back_to_valid_legacy_candidate():
+    result = _packet(
+        chronology=[{"id": "outgoing-1", "message_type": 1, "content": "old"}],
+        proposed_reply="When would you ideally need them?",
+    )
+    assert result["response_kind"] == "identity_or_chronology_blocked"
+    assert result["should_reply"] is False
+    assert result["customer_reply"] == ""
+
+
 def test_owner_approved_exact_split_alternative_has_category_subtotals_and_total():
     rows = [
         *[

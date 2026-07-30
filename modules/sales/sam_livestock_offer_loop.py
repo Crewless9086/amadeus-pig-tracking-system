@@ -159,6 +159,8 @@ def build_canonical_livestock_offer(
         and proposed_reply
         and proposed_authority["allowed"] is True
         and not protected
+        and not evidence_errors
+        and response_kind not in {"natural_close", "identity_or_chronology_blocked"}
     ):
         response_kind = "canonical_validated_candidate"
         customer_reply = proposed_reply
