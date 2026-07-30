@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import hashlib
 import re
 from typing import Any, Mapping
 
 
 CONTRACT_VERSION = "sam_livestock_evidence_offer_v1"
+OBLIGATION_CONTRACT_VERSION = "sam_conversation_obligation_v1"
 HANDOVER_POINTS = ("Riversdale", "Albertinia")
 QUALIFICATION_ORDER = ("category", "quantity", "sex", "timing", "location")
 WEIGHT_CHOICES = {
@@ -70,6 +72,17 @@ def build_canonical_livestock_offer(
     protected = [dict(row) for row in protected_decisions or [] if isinstance(row, Mapping)]
     evidence_context = dict(evidence_context or {})
     latest = str(inbound.get("content") or "").strip()
+    obligations = build_conversation_obligation_packet(
+        inbound=inbound,
+        chronology=chronology,
+        retained_facts=facts,
+        newly_supplied_facts=evidence_context.get("newly_supplied_facts") or {},
+        prior_context=evidence_context.get("returning_customer_context") or {},
+        availability=availability,
+        price_packet=price_packet,
+        farm_knowledge=evidence_context.get("farm_knowledge") or {},
+    )
+    missing = list(obligations["qualification_dependencies"])
     customer_reply = ""
     response_kind = "no_reply"
     owner_exception = None
@@ -146,6 +159,12 @@ def build_canonical_livestock_offer(
             next_missing=missing[0] if missing else "",
         )
     elif (
+        obligations["supported_answer_facts"]
+        or obligations["conversation_acknowledgements"]
+    ):
+        response_kind = "supported_answer_then_qualification"
+        customer_reply = _supported_answer_reply(obligations, facts)
+    elif (
         match_packet.get("complete_fulfillment") is not True
         and reassessment_date
         and not any(field in missing for field in ("category", "quantity", "sex"))
@@ -209,6 +228,7 @@ def build_canonical_livestock_offer(
         response_kind=response_kind,
         availability=availability,
         price_packet=authority_price_packet,
+        obligation_packet=obligations,
     )
     if customer_reply and authority["allowed"] is not True:
         customer_reply = ""
@@ -232,6 +252,7 @@ def build_canonical_livestock_offer(
         },
         "chronology_message_count": len(chronology),
         "retained_facts": facts,
+        "conversation_obligations": obligations,
         "availability_evidence": dict(availability or {}),
         "match_evidence": dict(match_packet or {}),
         "selected_alternative_evidence": selected_alternatives,
@@ -275,6 +296,7 @@ def validate_customer_livestock_reply(
     response_kind: str = "",
     availability: Mapping[str, Any] | None = None,
     price_packet: Mapping[str, Any] | None = None,
+    obligation_packet: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     text = str(reply or "").strip()
     blockers = []
@@ -301,12 +323,212 @@ def validate_customer_livestock_reply(
         blockers.append("safe_but_useless_deferral")
     facts = facts or {}
     asked = _asked_fields(text)
-    repeated = sorted(field for field in asked if not _blank(facts.get(field)))
+    repeated = sorted(
+        field for field in asked
+        if not _blank(facts.get(field))
+        and not (
+            field == "category"
+            and _normal_category(facts.get("category")) == "Young Piglets"
+            and _blank(facts.get("weight_range"))
+        )
+    )
     if repeated and response_kind in {"qualification", "candidate"}:
         blockers.extend(f"repeats_known_{field}" for field in repeated)
     if response_kind == "qualification" and len(asked) != 1:
         blockers.append("qualification_must_ask_one_smallest_question")
+    obligations = obligation_packet or {}
+    direct_questions = list(obligations.get("explicit_direct_questions") or [])
+    answered = list(obligations.get("supported_answer_facts") or [])
+    for question in direct_questions:
+        if question == "location" and any(
+            fact.get("kind") == "handover_location" for fact in answered
+        ) and not re.search(r"\bRiversdale\b.*\bAlbertinia\b", text, re.I):
+            blockers.append("supported_direct_location_question_ignored")
+        if question == "price" and any(
+            fact.get("kind") == "price" for fact in answered
+        ) and not re.search(r"\bR(?:\s?\d)", text):
+            blockers.append("supported_direct_price_question_ignored")
+    known = obligations.get("known_facts") or {}
+    repeated_obligations = sorted(
+        field for field in asked
+        if not _blank(known.get(field))
+        and not (
+            field == "category"
+            and _normal_category(known.get("category")) == "Young Piglets"
+            and _blank(known.get("weight_range"))
+        )
+    ) if response_kind in {
+        "qualification", "candidate", "supported_answer_then_qualification"
+    } else []
+    blockers.extend(
+        f"asks_already_supplied_{field}" for field in repeated_obligations
+        if f"repeats_known_{field}" not in blockers
+    )
+    internal = re.search(
+        r"\b(?:AUTO_GENERAL|AUTO_SPECIALIST|owner review|evidence packet|"
+        r"governance|specialist lane|internal category)\b",
+        text,
+        re.I,
+    )
+    if internal:
+        blockers.append("internal_terminology_exposed")
+    if answered and asked:
+        first_question = text.find("?")
+        answer_markers = [
+            text.lower().find("riversdale")
+            for fact in answered if fact.get("kind") == "handover_location"
+        ] + [
+            text.lower().find("current supported price")
+            for fact in answered if fact.get("kind") == "price"
+        ]
+        answer_markers = [index for index in answer_markers if index >= 0]
+        if answer_markers and first_question >= 0 and first_question < min(answer_markers):
+            blockers.append("qualification_precedes_supported_answer")
     return {"allowed": not blockers, "blockers": blockers, "asked_fields": sorted(asked)}
+
+
+def build_conversation_obligation_packet(
+    *,
+    inbound: Mapping[str, Any],
+    chronology: list[Mapping[str, Any]],
+    retained_facts: Mapping[str, Any],
+    newly_supplied_facts: Mapping[str, Any],
+    prior_context: Mapping[str, Any],
+    availability: Mapping[str, Any],
+    price_packet: Mapping[str, Any],
+    farm_knowledge: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Describe what this exact turn must answer, retain, and ask next."""
+    latest = str(inbound.get("content") or "").strip()
+    retained = dict(retained_facts or {})
+    supplied = {
+        key: value
+        for key, value in dict(newly_supplied_facts or {}).items()
+        if key in QUALIFICATION_ORDER or key in {"weight_range", "sex_split", "quote_requested"}
+        if not _blank(value)
+    }
+    direct_questions = []
+    if _direct_price_question(latest):
+        direct_questions.append("price")
+    if re.search(r"\b(?:where|located|location|based|handover)\b", latest, re.I):
+        direct_questions.append("location")
+    if re.search(r"\b(?:available|availability|in stock)\b", latest, re.I):
+        direct_questions.append("availability")
+    if _delivery_request(latest):
+        direct_questions.append("delivery")
+    if re.search(
+        r"\b(?:more info(?:rmation)?|information about|how (?:is|are) (?:the )?piglets?)\b",
+        latest,
+        re.I,
+    ):
+        direct_questions.append("product_guidance")
+
+    supported = []
+    if "location" in direct_questions:
+        supported.append({
+            "kind": "handover_location",
+            "value": "Riversdale or Albertinia",
+            "provenance": "canonical_handover_policy",
+        })
+    if "price" in direct_questions and _price_provenanced(price_packet):
+        supported.append({
+            "kind": "price",
+            "value": price_packet.get("unit_price"),
+            "provenance": dict(price_packet.get("pricing") or {}),
+        })
+    elif "price" in direct_questions:
+        supported.append({
+            "kind": "price_dependency",
+            "value": "size_or_weight_category_required",
+            "provenance": "canonical_category_pricing_contract",
+        })
+    if "availability" in direct_questions and not _availability_current(availability):
+        supported.append({
+            "kind": "availability_boundary",
+            "value": "current availability requires confirmation",
+            "provenance": "canonical_inventory_freshness_contract",
+        })
+    if "product_guidance" in direct_questions:
+        supported.append({
+            "kind": "piglet_size_guidance",
+            "value": {
+                "small": WEIGHT_CHOICES["Young Piglets"],
+                "weaned": WEIGHT_CHOICES["Weaner Piglets"],
+            },
+            "provenance": "canonical_livestock_categories",
+        })
+
+    prior_context = dict(prior_context or {})
+    prior = dict(
+        prior_context.get("interest") or prior_context.get("facts") or {}
+    )
+    contradictions = []
+    for field, value in supplied.items():
+        if (
+            field in prior
+            and not _blank(prior.get(field))
+            and _normalized_fact_value(field, prior.get(field))
+            != _normalized_fact_value(field, value)
+        ):
+            contradictions.append({
+                "field": field,
+                "retained": prior.get(field),
+                "new": value,
+            })
+    acknowledgements = []
+    if not _blank(supplied.get("location")):
+        acknowledgements.append({
+            "kind": "new_location_retained",
+            "value": supplied["location"],
+            "provenance": "latest_customer_inbound",
+        })
+
+    dependencies = [
+        field for field in QUALIFICATION_ORDER
+        if _qualification_blank(field, retained.get(field))
+    ]
+    if "price" in direct_questions and not _price_provenanced(price_packet):
+        size_known = not _blank(retained.get("weight_range")) or (
+            _normal_category(retained.get("category")) in WEIGHT_CHOICES
+            and _normal_category(retained.get("category")) != "Young Piglets"
+        )
+        if not size_known:
+            dependencies = ["category", *[field for field in dependencies if field != "category"]]
+    if (
+        "product_guidance" in direct_questions
+        and _blank(retained.get("weight_range"))
+        and "category" not in dependencies
+    ):
+        dependencies = ["category", *dependencies]
+    if (
+        any(question in direct_questions for question in ("location", "availability"))
+        and _normal_category(retained.get("category")) == "Young Piglets"
+        and _blank(retained.get("weight_range"))
+        and "category" not in dependencies
+    ):
+        dependencies = ["category", *dependencies]
+
+    return {
+        "contract_version": OBLIGATION_CONTRACT_VERSION,
+        "identity": {
+            "account_id": str(inbound.get("account_id") or ""),
+            "inbox_id": str(inbound.get("inbox_id") or ""),
+            "contact_id": str(inbound.get("contact_id") or ""),
+            "conversation_id": str(inbound.get("conversation_id") or ""),
+            "latest_inbound_message_id": str(inbound.get("message_id") or ""),
+        },
+        "public_chronology": [_chronology_provenance(row) for row in chronology],
+        "known_facts": _qualification_fact_projection(retained),
+        "newly_supplied_facts": supplied,
+        "explicit_direct_questions": direct_questions,
+        "supported_answer_facts": supported,
+        "conversation_acknowledgements": acknowledgements,
+        "unresolved_contradictions": contradictions,
+        "qualification_dependencies": dependencies,
+        "single_next_useful_question": dependencies[0] if dependencies else "",
+        "availability_supported": _availability_current(availability),
+        "farm_knowledge_bound": bool(farm_knowledge),
+    }
 
 
 def _qualification_reply(field: str, facts: Mapping[str, Any]) -> str:
@@ -324,6 +546,84 @@ def _qualification_reply(field: str, facts: Mapping[str, Any]) -> str:
     if field == "timing":
         return "When would you ideally need them?"
     return "Would Riversdale or Albertinia suit you for handover?"
+
+
+def _supported_answer_reply(obligations, facts):
+    parts = []
+    acknowledgements = {
+        item.get("kind"): item
+        for item in obligations.get("conversation_acknowledgements") or []
+        if isinstance(item, Mapping)
+    }
+    if "new_location_retained" in acknowledgements:
+        parts.append(
+            f"Thanks, I've noted {acknowledgements['new_location_retained']['value']}."
+        )
+    kinds = {
+        fact.get("kind"): fact
+        for fact in obligations.get("supported_answer_facts") or []
+        if isinstance(fact, Mapping)
+    }
+    if "handover_location" in kinds:
+        parts.append(
+            "Live-pig handover is normally arranged in Riversdale or Albertinia."
+        )
+    if "price" in kinds:
+        parts.append(
+            f"The current supported price is {_money(kinds['price']['value'])} each."
+        )
+    if "price_dependency" in kinds:
+        parts.append("The price depends on the pig's size or weight category.")
+    if "availability_boundary" in kinds:
+        parts.append(
+            "Current availability still needs confirmation, but I can help narrow "
+            "down the right option."
+        )
+    if "piglet_size_guidance" in kinds:
+        parts.append(
+            "Piglets are usually discussed as small piglets (about 2-6 kg) "
+            "or weaned piglets (about 7-19 kg), depending on the stage you need."
+        )
+    next_field = obligations.get("single_next_useful_question")
+    if next_field:
+        parts.append(_qualification_reply(next_field, facts))
+    return " ".join(parts)
+
+
+def _qualification_fact_projection(facts):
+    allowed = (
+        "category", "quantity", "sex", "sex_split", "weight_range", "timing",
+        "location", "transport_expectation", "quote_requested",
+        "reservation_requested", "payment_requested", "payment_proof_received",
+    )
+    return {
+        key: facts.get(key)
+        for key in allowed
+        if key in facts and not _blank(facts.get(key))
+    }
+
+
+def _chronology_provenance(row):
+    content = _canonical_message_text(row.get("content"))
+    return {
+        "message_id": str(row.get("id") or row.get("message_id") or ""),
+        "message_type": row.get("message_type"),
+        "created_at": row.get("created_at") or row.get("timestamp") or "",
+        "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+    }
+
+
+def _normalized_fact_value(field, value):
+    if field == "category":
+        return _normal_category(value).casefold()
+    if field == "sex_split" and isinstance(value, Mapping):
+        return tuple(sorted((str(key).casefold(), int(amount or 0)) for key, amount in value.items()))
+    if field == "quantity":
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return str(value).strip().casefold()
+    return " ".join(str(value or "").replace("_", " ").split()).casefold()
 
 
 def _offer_reply(*, facts, availability, match_packet, price_packet):

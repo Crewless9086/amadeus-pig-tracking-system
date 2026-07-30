@@ -4257,8 +4257,12 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             "livestock",
         )
         self.assertEqual(decision["facts"]["category"], "piglet")
-        self.assertIn("How many small piglets", decision["suggested_reply_text"])
-        self.assertNotIn("What size", decision["suggested_reply_text"])
+        self.assertIn(
+            "Piglets are usually discussed as small piglets",
+            decision["suggested_reply_text"],
+        )
+        self.assertIn("What size would suit you", decision["suggested_reply_text"])
+        self.assertNotIn("How many", decision["suggested_reply_text"])
         self.assertFalse(decision["customer_send_authorized"])
         self.assertFalse(result["sent"])
         self.assertFalse(result["creates_order"])
@@ -4906,6 +4910,51 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(reply.count("?"), 1)
         self.assertTrue(result["sam_decision"]["clarification_asked"])
+
+    def test_returning_more_information_preserves_livestock_context_without_regreeting(self):
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                id=767530354,
+                content="Hello! Can I get more info on this?",
+                conversation={
+                    "id": 1399,
+                    "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"},
+                },
+                sender={"id": 699, "name": "Returning Customer"},
+            ),
+            environ={},
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [
+                    {
+                        "id": 767500000,
+                        "message_type": 0,
+                        "created_at": 1785313000,
+                        "content": "I am interested in weaned piglets around 12 kg.",
+                    },
+                    {
+                        "id": 767530354,
+                        "message_type": 0,
+                        "created_at": 1785313934,
+                        "content": "Hello! Can I get more info on this?",
+                    },
+                ],
+            },
+            intake_context_loader=lambda *_args: {
+                "success": True,
+                "known_fields": {},
+                "items": [],
+            },
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status, 200)
+        self.assertEqual(decision["conversation_ownership"], "AUTO_SPECIALIST")
+        self.assertEqual(decision["facts"]["weight_range"], "around 12 kg")
+        self.assertIn("weaned piglets", decision["suggested_reply_text"])
+        self.assertNotIn("Good day", decision["suggested_reply_text"])
+        self.assertNotIn("How can I help", decision["suggested_reply_text"])
 
     def test_routine_majority_multiturn_states_do_not_force_a_lane(self):
         general_turns = [
