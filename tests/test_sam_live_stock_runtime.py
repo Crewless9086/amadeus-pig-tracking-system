@@ -96,7 +96,10 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 environ={},
                 intake_context_loader=lambda *_args: {
                     "success": True,
-                    "known_fields": {},
+                    "known_fields": {
+                        "category": "piglet",
+                        "weight_range": "around 6 kg",
+                    },
                     "items": [],
                 },
                 conversation_history_loader=lambda *_args: {
@@ -264,6 +267,204 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 sales_lane="live_stock_sales",
                 latest_customer_text="How much are they?",
             )
+        )
+
+    def test_unpriced_known_size_price_followup_asks_quantity_only(self):
+        followup = (
+            sam_live_stock_runtime
+            .build_live_stock_qualification_followup(
+                {
+                    "content": "How much are the roughly 6 kg piglets?",
+                    "customer_name": "Customer",
+                },
+                {
+                    "category": "piglet",
+                    "weight_range": "around 6 kg",
+                    "quantity": "",
+                    "location": "",
+                    "timing": "",
+                },
+                ["quantity", "location", "order_commitment"],
+                conversation_plan={"next_action": "answer_price"},
+                protected_price_unanswered=True,
+            )
+        )
+        self.assertTrue(followup["applicable"])
+        self.assertEqual(
+            followup["questions_asked"], ["how many do you need"]
+        )
+        self.assertNotIn("town", followup["reply_text"].lower())
+        self.assertIn(
+            "price and current availability still need to be confirmed",
+            followup["reply_text"].lower(),
+        )
+
+    @patch(
+        "modules.sales.sam_live_stock_runtime."
+        "build_contextual_sales_recommendation"
+    )
+    def test_supported_contextual_price_answer_precedes_quantity_followup(
+        self, contextual
+    ):
+        contextual.return_value = {
+            "applicable": True,
+            "status": "commercial_recommendation_ready",
+            "recommendation": "Supported price and eligible-count answer.",
+        }
+        result, _status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="What is the price?"),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {
+                        "category": "piglet",
+                        "weight_range": "around 6 kg",
+                    },
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [{
+                        "id": "PRIOR",
+                        "message_type": 0,
+                        "content": "I need around 6 kg piglets",
+                    }],
+                },
+                availability_loader=lambda: [],
+            )
+        )
+        decision = result["sam_decision"]
+        self.assertFalse(decision["qualification_followup"]["applicable"])
+        self.assertEqual(
+            decision["suggested_reply_text"],
+            "Supported price and eligible-count answer.",
+        )
+
+    @patch(
+        "modules.sales.sam_live_stock_runtime."
+        "build_contextual_sales_recommendation"
+    )
+    def test_seller_owner_handoff_precedes_buyer_quantity_followup(
+        self, contextual
+    ):
+        contextual.return_value = {
+            "applicable": True,
+            "status": "seller_enquiry_owner_handoff",
+            "recommendation": (
+                "Thanks — someone from the farm needs to review this."
+            ),
+        }
+        result, _status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="What will you pay for my piglets?"),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {
+                        "category": "piglet",
+                        "weight_range": "around 6 kg",
+                    },
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [],
+                },
+                availability_loader=lambda: [],
+            )
+        )
+        decision = result["sam_decision"]
+        self.assertFalse(decision["qualification_followup"]["applicable"])
+        self.assertEqual(
+            decision["suggested_reply_text"],
+            "Thanks — someone from the farm needs to review this.",
+        )
+
+    @patch(
+        "modules.sales.sam_live_stock_runtime."
+        "build_contextual_sales_recommendation"
+    )
+    def test_unanswered_price_composed_path_asks_quantity_only(
+        self, contextual
+    ):
+        contextual.return_value = {
+            "applicable": False,
+            "status": "commercial_evidence_unavailable",
+            "recommendation": "",
+        }
+        known_facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I want piglets around 6 kg"
+        )
+        known_facts.update({
+            "information_scope": "price",
+            "sales_lane": "live_stock_sales",
+            "quantity": "",
+        })
+        with patch.object(
+            sam_live_stock_runtime,
+            "extract_live_stock_facts",
+            return_value=known_facts,
+        ), patch.object(
+            sam_live_stock_runtime,
+            "plan_live_stock_next_action",
+            return_value={
+                "next_action": "answer_price",
+                "missing_fields": [
+                    "quantity",
+                    "location",
+                    "order_commitment",
+                ],
+                "stage": "qualifying",
+                "goal": "qualify",
+            },
+        ), patch.object(
+            sam_live_stock_runtime,
+            "build_live_stock_price_answer_packet",
+            return_value={
+                "can_answer_price": False,
+                "customer_send_allowed": False,
+            },
+        ):
+            result, _status = (
+                sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="What is the price?"),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {
+                        "category": "piglet",
+                        "weight_range": "around 6 kg",
+                    },
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [{
+                        "id": "PRIOR",
+                        "message_type": 0,
+                        "content": "I need around 6 kg piglets",
+                    }],
+                },
+                availability_loader=lambda: [],
+            )
+            )
+        followup = result["sam_decision"]["qualification_followup"]
+        self.assertTrue(
+            followup["applicable"],
+            msg={
+                key: result["sam_decision"].get(key)
+                for key in (
+                    "facts",
+                    "missing_fields",
+                    "information_response",
+                    "price_answer_packet",
+                    "contextual_sales",
+                )
+            },
+        )
+        self.assertEqual(
+            followup["questions_asked"], ["how many do you need"]
         )
 
     def test_availability_observation_uses_oldest_counted_row_and_rejects_malformed(self):
