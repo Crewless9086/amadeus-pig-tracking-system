@@ -2677,7 +2677,21 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     )
     customer_guidance = build_live_stock_customer_guidance(inbound, facts)
     qualification_followup = build_live_stock_qualification_followup(
-        inbound, facts, missing, conversation_plan=conversation_plan
+        inbound,
+        facts,
+        missing,
+        conversation_plan=conversation_plan,
+        protected_price_unanswered=bool(
+            _asks_price_question(inbound.get("content"))
+            and price_answer_packet.get("can_answer_price") is not True
+            and information_reply.get("status")
+            not in {
+                "availability_and_pricing_verified",
+                "price_only_verified",
+            }
+            and contextual_sales.get("status")
+            == "commercial_evidence_unavailable"
+        ),
     )
     customer_guidance_preferred = _prefer_customer_size_guidance(
         customer_guidance=customer_guidance,
@@ -4570,7 +4584,12 @@ def build_live_stock_customer_guidance(inbound, facts):
 
 
 def build_live_stock_qualification_followup(
-    inbound, facts, missing, *, conversation_plan=None
+    inbound,
+    facts,
+    missing,
+    *,
+    conversation_plan=None,
+    protected_price_unanswered=False,
 ):
     """Advance known Livestock interest while protected facts stay pending."""
     inbound = inbound if isinstance(inbound, dict) else {}
@@ -4637,14 +4656,27 @@ def build_live_stock_qualification_followup(
             or not _blank(facts.get("weight_range"))
         )
     )
+    protected_price_followup_missing_quantity = bool(
+        protected_price_unanswered
+        and _asks_price_question(current_text)
+        and "quantity" in fields
+        and _quantity_number(facts.get("quantity")) <= 0
+        and (
+            not _blank(facts.get("category"))
+            or not _blank(facts.get("weight_range"))
+        )
+    )
     if (
         not (
             known_selection
             or timing_followup_missing_quantity
             or collection_followup_missing_quantity
+            or protected_price_followup_missing_quantity
         )
         or facts.get("reservation_requested")
         or facts.get("breeding_interest")
+        or facts.get("order_commitment")
+        or not _blank(facts.get("payment_method"))
     ):
         return {
             "applicable": False,
