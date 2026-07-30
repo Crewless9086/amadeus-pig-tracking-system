@@ -5721,6 +5721,10 @@ def _extract_quantity(text):
         return int(match.group(1))
     match = re.search(
         r"\b(?:for|need|want)\s+(\d{1,3})(?!\d)"
+        r"(?!\s*(?:st|nd|rd|th)\b)"
+        r"(?!\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+        r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|"
+        r"nov(?:ember)?|dec(?:ember)?)\b)"
         r"(?!\s*(?:kg|kilograms?)\b)",
         text,
     )
@@ -5833,6 +5837,21 @@ def _extract_timing(text):
     weekday = re.search(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", text)
     if weekday:
         return weekday.group(1)
+    month = (
+        r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+        r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|"
+        r"nov(?:ember)?|dec(?:ember)?)"
+    )
+    day = r"(?:0?[1-9]|[12]\d|3[01])"
+    dated = re.search(
+        rf"\b(?:(?:on|by|before)\s+(?:the\s+)?"
+        rf"({day}(?:st|nd|rd|th))|"
+        rf"({day}(?:st|nd|rd|th)?\s+{month})|"
+        rf"({month}\s+{day}(?:st|nd|rd|th)?))\b",
+        text,
+    )
+    if dated:
+        return next(group for group in dated.groups() if group)
     return ""
 
 
