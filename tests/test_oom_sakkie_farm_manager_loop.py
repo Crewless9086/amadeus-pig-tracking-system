@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import ast
 from pathlib import Path
 
@@ -7,18 +7,22 @@ from modules.oom_sakkie.farm_manager_loop import (
     CoordinationSignal,
     CustomerDemandEvidence,
     FollowUp,
+    HerdmasterInventoryProjection,
     Provenance,
     SpecialistAvailability,
     SpecialistResult,
     SpecialistWorkItem,
+    InventoryReadyCoordinationPacket,
     SaleInventoryEvidence,
     SupportedAnswer,
     WorkState,
     answer_supported_question,
     build_family_brief,
+    build_inventory_ready_coordination_packet,
     build_sales_weighing_packet,
     render_consolidated_brief,
     render_family_brief,
+    render_inventory_ready_coordination_packet,
     render_sales_weighing_packet,
 )
 
@@ -1007,6 +1011,192 @@ def test_asymmetric_weighing_matching_covers_both_demands():
             "wd1",
             "wd2",
         }
+
+
+PROJECTION_NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
+PROJECTION_REVISION = "0d7892d1fbd91559fcbc30d1ef416f6f1a7e4019"
+PROJECTION_CONTRACT = "herdmaster_sale_inventory_projection_v1"
+PROJECTION_HANDOVER_SHA = (
+    "DCC91CB4451F54DE347B131E4A0F4705FC438369ACB505FBB4B5A01B3FC3DA71"
+)
+FIELD_LIST_RECEIPT_SHA = (
+    "F451C0106D9CF6605F27D23EFE75CA9DD0B06BB77B22F2EF156E7455B1C26756"
+)
+
+
+def _inventory_projection(**changes):
+    observed = changes.pop("observed_at", PROJECTION_NOW - timedelta(hours=1))
+    provenance = changes.pop(
+        "provenance",
+        Provenance(
+            specialist="herdmaster",
+            result_id="HERDMASTER-INVENTORY-20260730",
+            source_refs=("herdmaster_inventory_ready_handover",),
+            observed_at=observed,
+            confidence=1,
+        ),
+    )
+    values = {
+        "projection_id": "HERDMASTER-INVENTORY-20260730",
+        "contract_version": PROJECTION_CONTRACT,
+        "source_revision": PROJECTION_REVISION,
+        "source_sha256": PROJECTION_HANDOVER_SHA,
+        "observed_at": observed,
+        "weight_date": date(2026, 7, 27),
+        "weight_age_days": 3,
+        "weight_observation_time_status": "unknown",
+        "canonical_rows_evaluated": 225,
+        "sale_eligible_count": 38,
+        "price_provenanced_count": 38,
+        "weight_only_blocked_count": 0,
+        "selected_reweigh_count": 0,
+        "withdrawal_unknown_excluded_count": 12,
+        "withdrawal_unknown_exclusion_affirmed": True,
+        "field_list_delivery_status": "completed_exact_once",
+        "field_list_receipt_id": "HERDMASTER-SAM-INVENTORY-20260730-0D7892D1",
+        "field_list_receipt_sha256": FIELD_LIST_RECEIPT_SHA,
+        "field_list_message_sha256": (
+            "106d7ed8a559e23e3e8bee499a27de190036a1b0155c81d7033223de74e430ab"
+        ),
+        "field_list_send_attempts": 1,
+        "provenance": provenance,
+    }
+    values.update(changes)
+    return HerdmasterInventoryProjection(**values)
+
+
+def _build_inventory_packet(projection, **changes):
+    values = {
+        "now": PROJECTION_NOW,
+        "required_contract_version": PROJECTION_CONTRACT,
+        "required_source_revision": PROJECTION_REVISION,
+        "required_source_sha256": PROJECTION_HANDOVER_SHA,
+        "required_field_list_receipt_sha256": FIELD_LIST_RECEIPT_SHA,
+        "expected_canonical_rows": 225,
+        "expected_sale_eligible_count": 38,
+        "expected_withdrawal_unknown_count": 12,
+    }
+    values.update(changes)
+    return build_inventory_ready_coordination_packet(projection, **values)
+
+
+def test_authoritative_projection_makes_38_usable_with_zero_weighing():
+    packet = _build_inventory_packet(_inventory_projection())
+    assert packet.status == "ready_for_sam_read_only_reassessment"
+    assert packet.usable_inventory_status == "available"
+    assert packet.usable_inventory_count == 38
+    assert packet.price_provenanced_count == 38
+    assert packet.weigh_next == ()
+    assert packet.withdrawal_unknown_excluded_count == 12
+    assert "do not block" in packet.excluded_inventory_effect
+    assert "same read-only five-journey" in packet.next_action
+    assert packet.family_actions == {"charl": (), "dad": (), "mom": ()}
+    assert packet.family_question == ""
+    assert packet.writes_performed == 0
+
+
+def test_inventory_ready_brief_has_required_conclusions_and_protection():
+    packet = _build_inventory_packet(_inventory_projection())
+    rendered = render_inventory_ready_coordination_packet(packet)
+    assert "Usable inventory now: 38 current sale-eligible" in rendered
+    assert "Weigh next: none." in rendered
+    assert "12 withdrawal-unknown animals remain excluded" in rendered
+    assert "no customer send" in rendered
+    assert packet.automatic_follow_up_instruction["dispatch_performed"] is False
+    assert packet.automatic_follow_up_instruction["field_list_send"] is False
+    assert packet.automatic_follow_up_instruction["field_list_replay"] is False
+
+
+def test_stale_mismatched_or_incomplete_projection_fails_closed_locally():
+    variants = (
+        (
+            _inventory_projection(
+                observed_at=PROJECTION_NOW - timedelta(hours=30),
+                provenance=Provenance(
+                    specialist="herdmaster",
+                    result_id="HERDMASTER-INVENTORY-20260730",
+                    source_refs=("stale_handover",),
+                    observed_at=PROJECTION_NOW - timedelta(hours=30),
+                    confidence=1,
+                ),
+            ),
+            "stale_or_future_projection",
+        ),
+        (
+            _inventory_projection(),
+            "source_revision_mismatch",
+        ),
+        (
+            _inventory_projection(price_provenanced_count=37),
+            "eligible_inventory_price_provenance_incomplete",
+        ),
+        (
+            _inventory_projection(source_sha256="A" * 64),
+            "source_handover_sha256_mismatch",
+        ),
+        (
+            _inventory_projection(field_list_receipt_sha256="B" * 64),
+            "field_list_receipt_sha256_mismatch",
+        ),
+        (
+            _inventory_projection(sale_eligible_count=37, price_provenanced_count=37),
+            "sale_eligible_count_mismatch",
+        ),
+        (
+            _inventory_projection(weight_age_days=2),
+            "weight_date_or_age_mismatch",
+        ),
+    )
+    for index, (projection, expected_gap) in enumerate(variants):
+        required_revision = (
+            "1" * 40 if index == 1 else PROJECTION_REVISION
+        )
+        packet = _build_inventory_packet(
+            projection,
+            required_source_revision=required_revision,
+        )
+        assert packet.status == "waiting_for_evidence"
+        assert packet.usable_inventory_status == "unavailable"
+        assert packet.usable_inventory_count is None
+        assert packet.weigh_next == ()
+        assert expected_gap in packet.evidence_gaps
+        assert packet.withdrawal_unknown_excluded_count is None
+        assert packet.withdrawal_evidence_round["affected_tag_count"] == 0
+        assert packet.withdrawal_evidence_round["grouped_family_questions"] == 0
+        assert packet.family_question == ""
+        assert packet.automatic_follow_up_instruction["customer_send"] is False
+
+
+def test_withdrawal_round_remains_prepared_unsent_and_preserves_38():
+    packet = _build_inventory_packet(_inventory_projection())
+    round_state = packet.withdrawal_evidence_round
+    assert round_state["status"] == "prepared_unsent_owner_authorization_required"
+    assert round_state["affected_tag_count"] == 12
+    assert round_state["grouped_family_questions"] == 1
+    assert round_state["owner_message_send"] is False
+    assert round_state["owner_message_replay"] is False
+    assert round_state["explicit_preview_confirmation_required"] is True
+    assert round_state["governed_recording_invoked"] is False
+    assert round_state["preserve_current_eligible_count"] == 38
+    assert round_state["sam_notification_sent"] is False
+
+
+def test_impossible_inventory_aggregate_is_rejected():
+    for changes in (
+        {
+            "canonical_rows_evaluated": 1,
+            "sale_eligible_count": 38,
+            "price_provenanced_count": 38,
+        },
+        {"weight_only_blocked_count": 0, "selected_reweigh_count": 1},
+        {"withdrawal_unknown_exclusion_affirmed": "yes"},
+    ):
+        try:
+            _inventory_projection(**changes)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"impossible aggregate accepted: {changes}")
 
 
 def test_coordination_kernel_has_no_io_network_database_or_specialist_calls():

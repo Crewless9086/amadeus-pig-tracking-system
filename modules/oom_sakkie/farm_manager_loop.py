@@ -8,7 +8,7 @@ only reconciles, prioritises, presents, and answers from that evidence.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 import math
 import re
@@ -322,6 +322,101 @@ class SalesWeighingPacket:
     family_actions: Mapping[str, tuple[str, ...]]
     family_question: str
     automatic_follow_up_instruction: Mapping[str, Any]
+    evidence_gaps: tuple[str, ...]
+    writes_performed: int = 0
+
+
+@dataclass(frozen=True)
+class HerdmasterInventoryProjection:
+    projection_id: str
+    contract_version: str
+    source_revision: str
+    source_sha256: str
+    observed_at: datetime
+    weight_date: date
+    weight_age_days: int
+    weight_observation_time_status: str
+    canonical_rows_evaluated: int
+    sale_eligible_count: int
+    price_provenanced_count: int
+    weight_only_blocked_count: int
+    selected_reweigh_count: int
+    withdrawal_unknown_excluded_count: int
+    withdrawal_unknown_exclusion_affirmed: bool
+    field_list_delivery_status: str
+    field_list_receipt_id: str
+    field_list_receipt_sha256: str
+    field_list_message_sha256: str
+    field_list_send_attempts: int
+    provenance: Provenance
+
+    def __post_init__(self) -> None:
+        if self.provenance.specialist != "herdmaster":
+            raise ValueError("inventory projection must be HERDMASTER-owned")
+        if self.provenance.result_id != self.projection_id:
+            raise ValueError("inventory projection provenance is mismatched")
+        if not re.fullmatch(r"[0-9a-f]{40}", self.source_revision):
+            raise ValueError("exact lowercase source revision is required")
+        if not re.fullmatch(r"[0-9A-F]{64}", self.source_sha256):
+            raise ValueError("uppercase source SHA-256 is required")
+        if self.observed_at.tzinfo is None:
+            raise ValueError("projection observed_at must be timezone-aware")
+        if self.provenance.observed_at > self.observed_at:
+            raise ValueError("projection provenance cannot postdate its envelope")
+        counts = (
+            self.canonical_rows_evaluated,
+            self.sale_eligible_count,
+            self.price_provenanced_count,
+            self.weight_only_blocked_count,
+            self.selected_reweigh_count,
+            self.withdrawal_unknown_excluded_count,
+        )
+        if any(value < 0 for value in counts):
+            raise ValueError("projection counts cannot be negative")
+        if self.price_provenanced_count > self.sale_eligible_count:
+            raise ValueError("price-provenanced count exceeds eligible inventory")
+        if any(value > self.canonical_rows_evaluated for value in counts[1:]):
+            raise ValueError("projection component exceeds evaluated rows")
+        if (
+            self.sale_eligible_count + self.withdrawal_unknown_excluded_count
+            > self.canonical_rows_evaluated
+        ):
+            raise ValueError("eligible and excluded inventory exceed evaluated rows")
+        if self.selected_reweigh_count > self.weight_only_blocked_count:
+            raise ValueError("selected reweigh count exceeds weight-only blockers")
+        if not isinstance(self.withdrawal_unknown_exclusion_affirmed, bool):
+            raise ValueError("withdrawal exclusion affirmation must be boolean")
+        if self.weight_age_days < 0:
+            raise ValueError("weight age cannot be negative")
+        if self.weight_observation_time_status not in {"known", "unknown"}:
+            raise ValueError("weight observation-time status is invalid")
+        if self.field_list_delivery_status != "completed_exact_once":
+            raise ValueError("field-list delivery must remain completed exact-once")
+        if not self.field_list_receipt_id.strip():
+            raise ValueError("field-list receipt identity is required")
+        if not re.fullmatch(r"[0-9A-F]{64}", self.field_list_receipt_sha256):
+            raise ValueError("field-list receipt SHA-256 is required")
+        if not re.fullmatch(r"[0-9a-f]{64}", self.field_list_message_sha256):
+            raise ValueError("field-list message SHA-256 is required")
+        if self.field_list_send_attempts != 1:
+            raise ValueError("field-list evidence must prove one send attempt")
+
+
+@dataclass(frozen=True)
+class InventoryReadyCoordinationPacket:
+    status: str
+    usable_inventory_status: str
+    usable_inventory_count: int | None
+    price_provenanced_count: int | None
+    weigh_next: tuple[str, ...]
+    withdrawal_unknown_excluded_count: int | None
+    excluded_inventory_effect: str
+    next_action: str
+    automatic_follow_up_instruction: Mapping[str, Any]
+    withdrawal_evidence_round: Mapping[str, Any]
+    protected_decisions: tuple[str, ...]
+    family_actions: Mapping[str, tuple[str, ...]]
+    family_question: str
     evidence_gaps: tuple[str, ...]
     writes_performed: int = 0
 
@@ -721,6 +816,179 @@ def build_sales_weighing_packet(
             }
         ),
         evidence_gaps=tuple(gaps),
+    )
+
+
+def build_inventory_ready_coordination_packet(
+    projection: HerdmasterInventoryProjection,
+    *,
+    now: datetime,
+    required_contract_version: str,
+    required_source_revision: str,
+    required_source_sha256: str,
+    required_field_list_receipt_sha256: str,
+    expected_canonical_rows: int,
+    expected_sale_eligible_count: int,
+    expected_withdrawal_unknown_count: int,
+    maximum_projection_age_hours: int = 24,
+    maximum_weight_age_days: int = 7,
+) -> InventoryReadyCoordinationPacket:
+    """Validate the completed aggregate inventory handover without replaying it."""
+
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    gaps = []
+    if projection.contract_version != required_contract_version:
+        gaps.append("contract_version_mismatch")
+    if projection.source_revision != required_source_revision:
+        gaps.append("source_revision_mismatch")
+    if projection.source_sha256 != required_source_sha256:
+        gaps.append("source_handover_sha256_mismatch")
+    if projection.field_list_receipt_sha256 != required_field_list_receipt_sha256:
+        gaps.append("field_list_receipt_sha256_mismatch")
+    if projection.canonical_rows_evaluated != expected_canonical_rows:
+        gaps.append("canonical_row_count_mismatch")
+    if projection.sale_eligible_count != expected_sale_eligible_count:
+        gaps.append("sale_eligible_count_mismatch")
+    if projection.price_provenanced_count != expected_sale_eligible_count:
+        gaps.append("price_provenanced_count_mismatch")
+    if (
+        projection.withdrawal_unknown_excluded_count
+        != expected_withdrawal_unknown_count
+    ):
+        gaps.append("withdrawal_unknown_count_mismatch")
+    if not _fresh_enough(
+        projection.observed_at, now, maximum_projection_age_hours
+    ):
+        gaps.append("stale_or_future_projection")
+    if not _fresh_enough(
+        projection.provenance.observed_at, now, maximum_projection_age_hours
+    ):
+        gaps.append("stale_or_future_provenance")
+    actual_weight_age = (now.date() - projection.weight_date).days
+    if (
+        actual_weight_age != projection.weight_age_days
+        or actual_weight_age < 0
+        or actual_weight_age > maximum_weight_age_days
+    ):
+        gaps.append("weight_date_or_age_mismatch")
+    if projection.sale_eligible_count != projection.price_provenanced_count:
+        gaps.append("eligible_inventory_price_provenance_incomplete")
+    if projection.weight_only_blocked_count != 0:
+        gaps.append("weight_only_blockers_present")
+    if projection.selected_reweigh_count != 0:
+        gaps.append("unexpected_reweigh_selection")
+    if not projection.withdrawal_unknown_exclusion_affirmed:
+        gaps.append("withdrawal_unknown_exclusion_unproven")
+
+    ready = not gaps
+    next_action = (
+        "SAM performs the same read-only five-journey offer reassessment "
+        "against the verified inventory projection with automatic sending disabled."
+        if ready
+        else "Obtain a fresh, matching and complete HERDMASTER projection before SAM reassessment."
+    )
+    return InventoryReadyCoordinationPacket(
+        status="ready_for_sam_read_only_reassessment" if ready else "waiting_for_evidence",
+        usable_inventory_status="available" if ready else "unavailable",
+        usable_inventory_count=projection.sale_eligible_count if ready else None,
+        price_provenanced_count=(
+            projection.price_provenanced_count if ready else None
+        ),
+        weigh_next=(),
+        withdrawal_unknown_excluded_count=(
+            projection.withdrawal_unknown_excluded_count
+            if ready and projection.withdrawal_unknown_exclusion_affirmed
+            else None
+        ),
+        excluded_inventory_effect=(
+            "Excluded withdrawal-unknown animals do not block the separately "
+            "supported eligible inventory."
+            if ready and projection.withdrawal_unknown_exclusion_affirmed
+            else "Withdrawal exclusion conclusion is unavailable."
+        ),
+        next_action=next_action,
+        automatic_follow_up_instruction=MappingProxyType(
+            {
+                "owner": "oom_sakkie_coordination",
+                "target": "sam_livestock_read_only_reassessment",
+                "projection_id": projection.projection_id if ready else "",
+                "instruction": next_action,
+                "dispatch_performed": False,
+                "customer_send": False,
+                "field_list_send": False,
+                "field_list_replay": False,
+                "farm_write": False,
+                "reservation": False,
+            }
+        ),
+        withdrawal_evidence_round=MappingProxyType(
+            {
+                "status": (
+                    "prepared_unsent_owner_authorization_required"
+                    if ready
+                    else "unavailable_untrusted_projection"
+                ),
+                "affected_tag_count": (
+                    projection.withdrawal_unknown_excluded_count
+                    if ready and projection.withdrawal_unknown_exclusion_affirmed
+                    else 0
+                ),
+                "grouped_family_questions": 1 if ready else 0,
+                "owner_message_send": False,
+                "owner_message_replay": False,
+                "natural_response_preview_only": True,
+                "explicit_preview_confirmation_required": True,
+                "governed_recording_invoked": False,
+                "replay_proof_required_after_confirmation": True,
+                "preserve_current_eligible_count": (
+                    projection.sale_eligible_count if ready else None
+                ),
+                "notify_sam_only_if_inventory_changes": True,
+                "sam_notification_sent": False,
+            }
+        ),
+        protected_decisions=(
+            "No stock promise, reservation, order, quote or customer send is authorized.",
+            "The completed owner field-list delivery must not be recreated or replayed.",
+        ),
+        family_actions=MappingProxyType(
+            {
+                "charl": (),
+                "dad": (),
+                "mom": (),
+            }
+        ),
+        family_question="",
+        evidence_gaps=tuple(gaps),
+    )
+
+
+def render_inventory_ready_coordination_packet(
+    packet: InventoryReadyCoordinationPacket,
+) -> str:
+    usable = (
+        f"{packet.usable_inventory_count} current sale-eligible, "
+        f"price-provenanced animals."
+        if packet.usable_inventory_status == "available"
+        else "Unavailable pending matching fresh HERDMASTER evidence."
+    )
+    excluded = (
+        f"{packet.withdrawal_unknown_excluded_count} withdrawal-unknown animals "
+        "remain excluded and do not block the supported inventory."
+        if packet.withdrawal_unknown_excluded_count is not None
+        else packet.excluded_inventory_effect
+    )
+    return "\n".join(
+        (
+            "OOM SAKKIE — INVENTORY-READY FAMILY BRIEF",
+            f"Usable inventory now: {usable}",
+            "Weigh next: none.",
+            f"Customer opportunity unlocked: {packet.next_action}",
+            f"Excluded evidence boundary: {excluded}",
+            "Protected decisions: no customer send, stock promise, reservation, "
+            "order or binding quote has been authorized.",
+        )
     )
 
 

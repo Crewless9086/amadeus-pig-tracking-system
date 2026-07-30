@@ -9,13 +9,13 @@ data, Telegram, n8n, Render, customer channel, or hardware was read or changed.
 
 ## Governance note
 
-The requested
-`docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md` is
-absent from this worktree. This source slice therefore applies the present
-mandatory `AGENTIC_ARCHITECTURE_STANDARD.md`, `AGENT_AUTHORITY_MATRIX.md`,
-Oom Sakkie doctrine, `NEXT_STEPS.md`, the implementation source map, and the
-dated portfolio/claim evidence. The missing named standard must be reconciled
-before production integration; this slice does not recreate or guess it.
+The authoritative Agentic Operating Mission Standard was read directly from
+the owner-specified external repository path on 2026-07-30. Its verified
+SHA-256 is
+`C0CCBE0F60A390E778DE924440439E5484B601805B3C5E3EF34C381AB0388DE3`.
+It is intentionally not copied or reconstructed in this worktree. This slice
+applies its proportionality rule: missing evidence blocks only the unsupported
+conclusion or protected action, not unrelated useful work.
 
 ## Current capability and genuine gap map
 
@@ -133,7 +133,7 @@ authorized:
 Evidence cut: SAM release handover
 `C:/tmp/sam-pr623-shadow-release-20260730.md`, read on 2026-07-30.
 
-Current exact state:
+Prior exact state:
 
 - real read-only customer chronology was evaluated in six shadow cases;
 - SAM proved that incomplete current sale-eligible inventory evidence blocked
@@ -145,6 +145,35 @@ Current exact state:
 - therefore usable inventory, exact animals to weigh, and customer opportunity
   counts remain `Unavailable`; none are inferred from SAM examples or historical
   animal files.
+
+Completed HERDMASTER state received 2026-07-30:
+
+- authoritative handover:
+  `C:/tmp/herdmaster-to-sam-inventory-ready-20260730.md`;
+- handover SHA-256:
+  `DCC91CB4451F54DE347B131E4A0F4705FC438369ACB505FBB4B5A01B3FC3DA71`;
+- reconciled source revision:
+  `0d7892d1fbd91559fcbc30d1ef416f6f1a7e4019`;
+- 225 canonical rows evaluated;
+- 38 current sale-eligible animals with complete evidence and canonical SAM
+  price provenance;
+- zero eligible animals missing price provenance;
+- zero animals blocked only by weight evidence;
+- zero selected reweigh animals;
+- 12 otherwise-qualified Sale-purpose females remain excluded because
+  withdrawal evidence is Unknown.
+
+The 12 excluded animals do not block the supported 38. Weight evidence cannot
+cure their withdrawal boundary. Their private identifiers are not copied into
+this source handover or family renderer.
+
+The previously delivered Oom Sakkie field-list message is completed exact-once
+work. Its retired receipt state
+`C:/tmp/herdmaster_sam_inventory_owner_brief_state.json` was verified at
+SHA-256
+`F451C0106D9CF6605F27D23EFE75CA9DD0B06BB77B22F2EF156E7455B1C26756`;
+the receipt records one send attempt and the retained message digest. This PR
+neither sends, replays nor reconstructs it.
 
 `build_sales_weighing_packet()` is the prepared pure coordination seam. It
 accepts only:
@@ -198,13 +227,39 @@ Accept the handover only when:
 - no raw customer identity, farm location, protected medical detail or
   executable action is embedded.
 
-Until those checks pass, the exact concise brief is:
+The corrected exact concise brief is:
 
-> Usable inventory now: unavailable. Weigh next: no supported animal task yet.
-> Customer opportunity unlocked: awaiting matched fresh SAM demand and
-> HERDMASTER inventory evidence. Protected decisions: all customer sends,
-> reservations, orders and stock commitments remain with Charl and SAM's
-> governed rails.
+> Usable inventory now: 38 current sale-eligible, price-provenanced animals.
+> Weigh next: none. Customer opportunity unlocked: SAM may rerun the same
+> read-only five-journey offer reassessment with automatic sending disabled.
+> Twelve withdrawal-unknown animals remain excluded and do not block the
+> supported 38. Protected decisions: no customer send, stock promise,
+> reservation, order or binding quote is authorized.
+
+## Protected withdrawal-evidence round
+
+Prepared source:
+`C:/tmp/herdmaster-withdrawal-owner-brief-20260730.md`, SHA-256
+`71C03FFBE426CB72C030443756F0812E4D3E7CC20F16FBD05E75CBF8B623CC17`.
+
+Current state: `prepared_unsent_owner_authorization_required`.
+
+- one grouped factual family response is prepared for the 12 affected tags;
+- no Telegram message has been sent or replayed by this PR;
+- silence never proves clearance;
+- a natural response must first become canonical previews separating proven
+  cleared, active hold and still Unknown animals;
+- Charl must explicitly confirm the exact previews before the existing
+  governed medical/withdrawal recording workflow may be invoked;
+- any confirmed fact must be recorded exactly once and exact replay must create
+  zero additional facts;
+- the current 38 eligible animals must remain preserved throughout;
+- HERDMASTER regenerates sale eligibility with canonical SAM price provenance;
+- SAM Livestock is notified only if supported inventory changes.
+
+This is readiness documentation, not authorization. PR #598 does not send the
+grouped question, interpret an owner response, create previews, record a farm
+fact, regenerate production inventory or notify SAM.
 
 ## Mission stage and measurable outcome
 
