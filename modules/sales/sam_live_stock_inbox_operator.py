@@ -426,6 +426,18 @@ def _inspect_and_operate(
                 "provider_read",
                 "provider_outcome_ambiguous",
             }
+            or (
+                provider_state == "chatwoot_accepted_unverified"
+                and isinstance(delivery.get("claim"), Mapping)
+                and delivery["claim"].get("success") is True
+                and delivery["claim"].get("created") is True
+                and bool(
+                    str(
+                        delivery["claim"].get("delivery_attempt_id") or ""
+                    ).strip()
+                )
+                and delivery.get("automatic_retry_prohibited") is True
+            )
         )
         if (
             int(result.get("_operation_status_code") or 500) >= 400
