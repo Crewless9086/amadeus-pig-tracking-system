@@ -13,8 +13,8 @@ DEFAULT_KNOWLEDGE = {
         "farm_name": "Amadeus Farm",
         "agent_name": "Sam",
         "short_intro": "Hi, I am Sam from Amadeus Farm.",
-        "one_line_story": "We help customers with live pig enquiries, farm collection questions, and practical farm information.",
-        "location_summary": "Riversdale area, with collection details arranged once the farm confirms the order details.",
+        "one_line_story": "We help customers with live pig enquiries, handover questions, and practical farm information.",
+        "location_summary": "We are based in the Riversdale area. Live-pig handover is arranged in Riversdale or Albertinia after the order path is confirmed.",
         "google_maps_url": "",
         "service_areas": ["Riversdale"],
     },
@@ -45,7 +45,7 @@ DEFAULT_KNOWLEDGE = {
         "Set C": "Amadeus Grand Cut Collection",
     },
     "faq": {},
-    "blocked_claims": [],
+    "blocked_claims": ["Never offer, imply, or disclose live-pig collection at the farm."],
 }
 
 

@@ -57,7 +57,7 @@ class SamLiveStockCustomerGuidanceTests(unittest.TestCase):
         self.assertIn("Small piglets: approximately 2 to 6 kg", packet["reply_text"])
         self.assertIn("Slaughter-size pigs: approximately 80 kg and above", packet["reply_text"])
         self.assertIn("Which size would suit you", packet["reply_text"])
-        self.assertIn("male, female, or either", packet["reply_text"])
+        self.assertNotIn("male, female, or either", packet["reply_text"])
         self.assertNotIn("how many do you need", packet["reply_text"])
 
     def test_vague_piglet_enquiry_explains_only_relevant_piglet_sizes(self):
@@ -69,7 +69,8 @@ class SamLiveStockCustomerGuidanceTests(unittest.TestCase):
             [row["customer_label"] for row in packet["options"]],
             ["Small piglets", "Weaned piglets"],
         )
-        self.assertIn("how many do you need", packet["reply_text"])
+        self.assertIn("Which size would suit you", packet["reply_text"])
+        self.assertNotIn("how many do you need", packet["reply_text"])
         self.assertNotIn("Growing pigs", packet["reply_text"])
 
     def test_unfamiliar_internal_term_receives_plain_language_explanation(self):
@@ -101,7 +102,7 @@ class SamLiveStockCustomerGuidanceTests(unittest.TestCase):
         )
         self.assertEqual(
             packet["reply_text"],
-            "Hi Leonello, thanks for your message. We offer pigs in different sizes:\n"
+            "Hi Leonello, thanks for your message. Here are practical size ranges to choose from:\n"
             "\n"
             "- Small piglets: approximately 2 to 6 kg\n"
             "- Weaned piglets: approximately 7 to 19 kg\n"
@@ -109,8 +110,8 @@ class SamLiveStockCustomerGuidanceTests(unittest.TestCase):
             "- Larger pigs: approximately 50 to 79 kg\n"
             "- Slaughter-size pigs: approximately 80 kg and above\n"
             "\n"
-            "Which size would suit you, and would you prefer a male, female, or either?\n"
-            "Once I know that, I can confirm the available options and price.",
+            "Which size would suit you?\n"
+            "Price and current availability still need to be confirmed separately.",
         )
 
     def test_customer_weight_answers_map_to_canonical_boundaries(self):

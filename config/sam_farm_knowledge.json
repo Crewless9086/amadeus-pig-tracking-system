@@ -6,7 +6,7 @@
     "agent_name": "Sam",
     "short_intro": "Hi, I am Sam from Amadeus Farm.",
     "one_line_story": "We are a small farm helping customers with live pig enquiries, practical farm information, and traceable planned farm systems.",
-    "location_summary": "Riversdale area, with collection details arranged once the farm confirms the order details.",
+    "location_summary": "We are based in the Riversdale area. Live-pig handover is arranged in Riversdale or Albertinia after the order path is confirmed.",
     "google_maps_url": "",
     "service_areas": [
       "Riversdale",
@@ -65,7 +65,7 @@
     "Set B": "Amadeus Ember Collection: thick rib chops, shoulder chops, loin chops, whole pork rib, whole pork belly, one half leg, leg chops, cut shanks, and standard stew meat.",
     "Set C": "Amadeus Grand Cut Collection: neck chops, loin chops, whole pork rib, whole pork belly, whole pork leg, whole pork shanks (Eisbein), and standard stew meat."
   },  "faq": {
-    "where_are_you_based": "We are based around the Riversdale area in the Western Cape. Collection details are arranged once the farm confirms the order details.",
+    "where_are_you_based": "We are based around the Riversdale area in the Western Cape. Live-pig handover is arranged in Riversdale or Albertinia after the order path is confirmed.",
     "why_deposit": "The deposit holds your place in the preorder run and helps the farm plan slaughter, cutting, packing, and delivery properly.",
     "when_is_booking_final": "A booking is not final until the farm confirms the run and the required money reflects in the farm account.",
     "can_i_visit": "Farm visits are not handled as an automatic chat promise. Sam should capture the request and hand it to the farm for review."
@@ -74,6 +74,7 @@
     "Do not claim money is received from POP alone.",
     "Do not promise an exact slaughter, butcher, or delivery date unless the backend has confirmed it.",
     "Do not invent prices, stock, weights, or availability.",
+    "Never offer, imply, or disclose live-pig collection at the farm.",
     "Do not claim an order, booking, or reservation is final unless the backend state says it is."
   ]
 }

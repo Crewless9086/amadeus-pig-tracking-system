@@ -14,7 +14,7 @@ from typing import Any, Mapping
 
 
 CONTRACT_VERSION = "sam_customer_front_door_v1"
-CANONICAL_KNOWLEDGE_SHA256 = "4f2b3421d8a4e6ba17a390e752a98fd305c44618d8ed6eb4ce6492c9a5da9a31"
+CANONICAL_KNOWLEDGE_SHA256 = "aada28c4b0c92353bb83218c98b814ba17eea751019d57250b87218623ddc033"
 SPECIALIST_LIVESTOCK = "livestock"
 SPECIALIST_MEAT = "meat"
 SPECIALIST_OWNER = "owner_exception"
@@ -318,7 +318,17 @@ def _interpret(text: str, retained: Mapping[str, Any], campaign: Mapping[str, An
     reset = bool(_RESET.search(text))
     explicit = _specialist_from_text(text)
     prior = "" if reset else retained.get("specialist", "")
-    post = campaign.get("specialist", "") if _POST_REFERENCE.search(text) or _PRICE.search(text) else ""
+    # A vague response to an identified campaign is still campaign-bound.  The
+    # customer must not have to repeat the product shown in the post.
+    campaign_bound = bool(
+        campaign.get("specialist")
+        and (
+            _POST_REFERENCE.search(text)
+            or _PRICE.search(text)
+            or re.search(r"\b(?:this|that|it|more info|information)\b", text, re.I)
+        )
+    )
+    post = campaign.get("specialist", "") if campaign_bound else ""
     specialist = explicit or prior or post
     if _ACK_ONLY.fullmatch(text):
         kind = "acknowledgement_or_natural_close"
@@ -403,6 +413,14 @@ def _decide(*, text, intent, retained, campaign, public_facts, knowledge):
         else:
             clarification = "What would you like to know about the farm?"
         return answer, clarification, None, SPECIALIST_FRONT_DOOR, True, "supported_public_farm_fact"
+    if (
+        kind == "greeting_or_small_talk"
+        and intent.get("used_campaign_context")
+        and specialist in {SPECIALIST_LIVESTOCK, SPECIALIST_MEAT}
+    ):
+        # The specialist owns the warm response as well as the product answer;
+        # this avoids a context-blind greeting that asks what the ad is about.
+        return "", "", None, specialist, False, "campaign_context_identified_for_specialist"
     if kind == "greeting_or_small_talk":
         answer = "Hi! I’m well, thank you." if _SMALL_TALK.search(text) else "Hi! Welcome to Amadeus Farm."
         if re.search(r"\b(môre|more|goeie|hoe gaan)\b", text, re.IGNORECASE):

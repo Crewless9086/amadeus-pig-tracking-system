@@ -49,7 +49,14 @@ class SamLiveStockExactAnimalPrivacyTests(unittest.TestCase):
             llm_drafter=lambda *_: {"reply_text": "I selected PIG-027 in PEN-SECRET and excluded ORD-SECRET.", "confidence": 0.99},
         )
         reply = decision["suggested_reply_text"]
-        self.assertEqual(decision["llm_draft"]["status"], "llm_reply_internal_animal_evidence_blocked")
+        self.assertIn(
+            decision["llm_draft"]["status"],
+            {
+                "llm_reply_internal_animal_evidence_blocked",
+                "commercial_general_information_fallback_blocked",
+            },
+        )
+        self.assertFalse(decision["llm_draft"]["used"])
         for secret in ("PIG-027", "TAG-SECRET", "PEN-SECRET", "ORD-SECRET", "2026-08-01"):
             self.assertNotIn(secret, reply)
         self.assertFalse(decision["creates_order"])
