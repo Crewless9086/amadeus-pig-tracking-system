@@ -598,7 +598,7 @@ def handle_sam_live_stock_chatwoot_inbound(
                 (
                     decision.get("owner_action_packet")
                     if (
-                        facts.get("quote_requested")
+                        _asks_formal_quote(inbound.get("content"))
                         or facts.get("order_commitment")
                         or facts.get("reservation_requested")
                         or facts.get("payment_requested")
@@ -1327,6 +1327,7 @@ def extract_live_stock_facts(message, inbound=None):
         "category": category,
         "quantity": _extract_quantity(text),
         "sex": _extract_sex(text),
+        "sex_split": _extract_sex_split(text),
         "weight_range": weight_range,
         "timing": _extract_timing(text),
         "location": _extract_location(text),
@@ -1381,6 +1382,7 @@ def merge_prior_live_stock_context(facts, prior_context):
         "category",
         "quantity",
         "sex",
+        "sex_split",
         "weight_range",
         "timing",
         "location",
@@ -1428,7 +1430,10 @@ def merge_prior_live_stock_context(facts, prior_context):
                     current_category = prior_weight_category
                 else:
                     continue
-        if _blank(facts.get(key)) and not _blank(prior_value):
+        if (
+            (not facts.get(key) if key == "sex_split" else _blank(facts.get(key)))
+            and (bool(prior_value) if key == "sex_split" else not _blank(prior_value))
+        ):
             facts[key] = prior_value
     if _blank(facts.get("sales_lane")) and not _blank(interest.get("sales_lane")):
         facts["sales_lane"] = interest.get("sales_lane")
@@ -2310,6 +2315,21 @@ def summarize_live_stock_availability(rows, facts=None):
         )
         category_counts["all"] += 1
         category_counts[sex_label if sex_label in ("female", "male") else "unknown"] += 1
+    eligible_weight_ages = []
+    eligible_weight_evidence_complete = bool(safe_rows)
+    for row in safe_rows:
+        try:
+            age = float(row.get("days_since_weight"))
+        except (TypeError, ValueError):
+            eligible_weight_evidence_complete = False
+            continue
+        if not math.isfinite(age) or age < 0:
+            eligible_weight_evidence_complete = False
+            continue
+        if not _weight_evidence_consistent(row):
+            eligible_weight_evidence_complete = False
+            continue
+        eligible_weight_ages.append(age)
     # Freshness belongs to the eligible matched evidence used for the offer.
     # Unmatched/excluded rows may legitimately lack a complete observation and
     # must not erase the timestamp of an otherwise exact, complete match.
@@ -2352,10 +2372,50 @@ def summarize_live_stock_availability(rows, facts=None):
             {**_availability_public_row(row), "selection_status": "eligible_exact_match", "exclusion_reasons": []}
             for row in matched[:10]
         ],
+        # This complete eligible projection is the canonical alternative pool.
+        # It is deliberately separate from the bounded diagnostic samples below.
+        "eligible_projection_count": len(safe_rows),
+        "eligible_projection": [
+            {
+                **_availability_offer_row(row),
+                "selection_status": "sale_eligible",
+                "exclusion_reasons": [],
+            }
+            for row in safe_rows
+        ],
+        "eligible_evidence_complete": bool(safe_rows) and all(
+            isinstance(row, dict) and row.get("evidence_complete") is True
+            for row in safe_rows
+        ) and eligible_weight_evidence_complete,
+        "weight_freshness_consistent": eligible_weight_evidence_complete,
+        "latest_weight_date": max(
+            (
+                _clean(row.get("latest_weight_date") or row.get("last_weight_date"), 40)
+                for row in safe_rows
+                if _clean(row.get("latest_weight_date") or row.get("last_weight_date"), 40)
+            ),
+            default="",
+        ),
+        "oldest_weight_age_days": (
+            max(eligible_weight_ages)
+            if eligible_weight_evidence_complete and eligible_weight_ages
+            else None
+        ),
         "considered_count": len(considered),
         "considered_sample": considered[:25],
         "excluded_count": len(excluded),
         "excluded_sample": excluded[:25],
+        "withdrawal_unknown_exclusions": [
+            {
+                "pig_id": row.get("pig_id"),
+                "withdrawal_evidence_state": row.get(
+                    "withdrawal_evidence_state"
+                ),
+                "eligibility_reason": row.get("eligibility_reason"),
+            }
+            for row in excluded
+            if row.get("withdrawal_evidence_state") == "unknown"
+        ],
         "matching_gate": {
             "affirmative_specialist_intent": facts.get("sales_lane") == LANE_LIVE_STOCK,
             "minimum_usable_constraints": specialist_match_allowed,
@@ -2627,12 +2687,17 @@ def _prior_context_from_chatwoot_history(history, inbound):
             "quantity",
             "category",
             "sex",
+            "sex_split",
             "weight_range",
             "timing",
             "location",
             "payment_method",
         ):
-            if not _blank(extracted.get(key)):
+            if (
+                bool(extracted.get(key))
+                if key == "sex_split"
+                else not _blank(extracted.get(key))
+            ):
                 facts[key] = extracted.get(key)
         for key in ("quote_requested", "order_commitment", "reservation_requested", "breeding_interest"):
             if extracted.get(key):
@@ -2647,6 +2712,7 @@ def _prior_context_from_chatwoot_history(history, inbound):
         "quantity": facts.get("quantity") or "",
         "category": facts.get("category") or "",
         "sex": facts.get("sex") or "",
+        "sex_split": dict(facts.get("sex_split") or {}),
         "weight_range": facts.get("weight_range") or "",
         "timing": facts.get("timing") or "",
         "location": facts.get("location") or "",
@@ -2688,10 +2754,13 @@ def _merge_prior_context_packets(primary, secondary):
         return primary or {}
     merged = dict(primary_interest)
     customer_qualification_fields = {
-        "quantity", "category", "sex", "weight_range", "timing", "location",
+        "quantity", "category", "sex", "sex_split", "weight_range", "timing",
+        "location",
     }
     for key, value in secondary_interest.items():
-        if key in customer_qualification_fields and not _blank(value):
+        if key in customer_qualification_fields and (
+            bool(value) if key == "sex_split" else not _blank(value)
+        ):
             # Customer chronology is authoritative when an intake projection
             # and the customer's own messages overlap.
             if (
@@ -3569,7 +3638,11 @@ def build_live_stock_match_packet(facts, availability):
     selected = matched[:quantity] if minimum_constraints else []
     considered = _rank_and_price_live_stock_alternatives(
         facts,
-        list(availability.get("considered_sample") or []),
+        list(
+            availability.get("eligible_projection")
+            or availability.get("considered_sample")
+            or []
+        ),
     )
     return {
         "version": "sam_live_stock_match_packet_v1",
@@ -3584,6 +3657,15 @@ def build_live_stock_match_packet(facts, availability):
         "selected_pig_ids": [row.get("pig_id") for row in selected if row.get("pig_id")],
         "considered_count": int(availability.get("considered_count") or 0),
         "considered_sample": considered,
+        "eligible_projection_count": int(
+            availability.get("eligible_projection_count") or len(considered)
+        ),
+        "eligible_projection_complete": (
+            int(availability.get("eligible_projection_count") or len(considered))
+            == len(considered)
+        ),
+        "latest_weight_date": _clean(availability.get("latest_weight_date"), 40),
+        "oldest_weight_age_days": availability.get("oldest_weight_age_days"),
         "excluded_count": int(availability.get("excluded_count") or 0),
         "excluded_sample": list(availability.get("excluded_sample") or []),
         "owner_review_required": True,
@@ -5789,6 +5871,25 @@ def _extract_quantity(text):
     return ""
 
 
+def _extract_sex_split(text):
+    """Retain an explicit female/male quantity split across follow-up turns."""
+    number_words = {
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    }
+    matches = re.findall(
+        r"\b(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)"
+        r"\s+(?:x\s+)?(males?|females?|boars?|gilts?|sows?)\b",
+        text,
+    )
+    split = {"female": 0, "male": 0}
+    for raw_count, raw_sex in matches:
+        count = int(raw_count) if raw_count.isdigit() else number_words[raw_count]
+        sex = "female" if raw_sex in {"female", "females", "gilt", "gilts", "sow", "sows"} else "male"
+        split[sex] += count
+    return split if split["female"] and split["male"] else {}
+
+
 def _extract_sex(text):
     male = _has_any(text, ("male", "males", "boar", "boars"))
     female = _has_any(text, ("female", "females", "gilt", "gilts", "sow", "sows"))
@@ -5915,6 +6016,10 @@ def _extract_payment(text):
 
 def _asks_quote(text):
     return _has_any(text, ("price", "pricce", "prise", "cost", "how much", "quote", "quotation", "prys"))
+
+
+def _asks_formal_quote(text):
+    return bool(re.search(r"\b(?:quote|quotation)\b", _normal_text(text)))
 
 
 def _asks_price_question(text):
@@ -6124,6 +6229,54 @@ def _availability_public_row(row):
         "reserved_for_order_id": _clean(row.get("reserved_for_order_id"), 100),
         "eligibility_reason": _clean(row.get("live_stock_sale_reason") or row.get("sales_notes"), 300),
     }
+
+
+def _availability_offer_row(row):
+    """Minimize the complete internal alternative pool to composition evidence."""
+    public = _availability_public_row(row)
+    return {
+        key: public.get(key)
+        for key in (
+            "pig_id",
+            "sex",
+            "current_weight_kg",
+            "latest_weight_date",
+            "days_since_weight",
+            "weight_band",
+            "sale_category",
+            "suggested_price_category",
+            "live_stock_sale_eligible",
+            "exact_animal_eligibility_contract_version",
+            "evidence_complete",
+            "eligibility_observed_at",
+            "allocation_query_status",
+            "allocation_evidence_state",
+            "withdrawal_evidence_state",
+        )
+    } | {"weight_freshness_consistent": _weight_evidence_consistent(row)}
+
+
+def _weight_evidence_consistent(row, *, now=None):
+    raw_date = _clean(
+        row.get("latest_weight_date") or row.get("last_weight_date"), 40
+    )
+    try:
+        reported_age = float(row.get("days_since_weight"))
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(reported_age) or reported_age < 0 or not raw_date:
+        return False
+    try:
+        observed = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            observed = datetime.strptime(raw_date, "%Y-%m-%d")
+        except ValueError:
+            return False
+    current_date = (now or datetime.now(timezone.utc)).date()
+    observed_date = observed.date()
+    actual_age = (current_date - observed_date).days
+    return actual_age >= 0 and abs(actual_age - reported_age) <= 1
 
 
 def _autoreply_canary_policy(source):

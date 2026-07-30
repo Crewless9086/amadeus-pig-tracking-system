@@ -48,7 +48,7 @@ def exact_eligible_row(**overrides):
         "calculated_stage": "Weaner",
         "sale_category": "Weaner",
         "current_weight_kg": 12,
-        "latest_weight_date": "2026-07-24",
+        "latest_weight_date": datetime.now(timezone.utc).date().isoformat(),
         "days_since_weight": 0,
     }
     row.update(overrides)
@@ -78,6 +78,128 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_complete_eligible_projection_is_not_truncated_before_composition(self):
+        rows = [
+            exact_eligible_row(
+                pig_id=f"PIG-{index:02d}",
+                sex="Female" if index % 2 else "Male",
+                current_weight_kg=2 + index,
+                latest_weight_date="2026-07-27",
+                days_since_weight=3,
+            )
+            for index in range(38)
+        ]
+        rows.extend(
+            {
+                **exact_eligible_row(pig_id=f"WITHDRAWAL-UNKNOWN-{index:02d}"),
+                "live_stock_sale_eligible": False,
+                "available_for_sale": "No",
+                "withdrawal_evidence_state": "unknown",
+                "withdrawal_clear": "",
+                "evidence_complete": False,
+                "live_stock_sale_reason": "withdrawal evidence unknown",
+            }
+            for index in range(12)
+        )
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            rows,
+            {
+                "sales_lane": "live_stock_sales",
+                "category": "weaner",
+                "quantity": 5,
+                "sex": "split",
+                "weight_range": "around 19 kg",
+            },
+        )
+
+        self.assertEqual(summary["eligible_projection_count"], 38)
+        self.assertEqual(len(summary["eligible_projection"]), 38)
+        self.assertEqual(
+            {row["pig_id"] for row in summary["eligible_projection"]},
+            {f"PIG-{index:02d}" for index in range(38)},
+        )
+        self.assertEqual(summary["latest_weight_date"], "2026-07-27")
+        self.assertEqual(summary["oldest_weight_age_days"], 3)
+        self.assertEqual(len(summary["withdrawal_unknown_exclusions"]), 12)
+        self.assertTrue(
+            all(
+                row["withdrawal_evidence_state"] == "unknown"
+                for row in summary["withdrawal_unknown_exclusions"]
+            )
+        )
+
+    def test_explicit_sex_split_is_retained_as_structured_customer_fact(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I need four females and one male around 19 kg."
+        )
+
+        self.assertEqual(facts["quantity"], 5)
+        self.assertEqual(facts["sex"], "split")
+        self.assertEqual(facts["sex_split"], {"female": 4, "male": 1})
+
+    def test_malformed_projection_weight_freshness_fails_closed_without_raising(self):
+        row = exact_eligible_row(
+            days_since_weight="unknown",
+            latest_weight_date="2026-07-27",
+        )
+
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            [row],
+            {
+                "sales_lane": "live_stock_sales",
+                "category": "weaner",
+                "quantity": 1,
+                "sex": "female",
+                "weight_range": "10-14 kg",
+            },
+        )
+
+        self.assertFalse(summary["eligible_evidence_complete"])
+        self.assertIsNone(summary["oldest_weight_age_days"])
+        self.assertEqual(summary["eligible_projection_count"], 1)
+
+    def test_weight_date_and_reported_age_must_be_consistent_and_nonfuture(self):
+        cases = (
+            ("2020-01-01", 3),
+            ("2099-01-01", 0),
+            ("not-a-date", 3),
+        )
+        for weight_date, reported_age in cases:
+            with self.subTest(weight_date=weight_date):
+                summary = sam_live_stock_runtime.summarize_live_stock_availability(
+                    [exact_eligible_row(
+                        latest_weight_date=weight_date,
+                        days_since_weight=reported_age,
+                    )],
+                    {
+                        "sales_lane": "live_stock_sales",
+                        "category": "weaner",
+                        "quantity": 1,
+                        "sex": "female",
+                        "weight_range": "10-14 kg",
+                    },
+                )
+                self.assertFalse(summary["eligible_evidence_complete"])
+                self.assertFalse(summary["weight_freshness_consistent"])
+                self.assertIsNone(summary["oldest_weight_age_days"])
+
+    def test_formal_quote_tokens_remain_distinct_from_price_only_questions(self):
+        self.assertTrue(
+            sam_live_stock_runtime._asks_formal_quote(
+                "Please quote the price for five piglets."
+            )
+        )
+        self.assertTrue(
+            sam_live_stock_runtime._asks_formal_quote(
+                "Can I get a quotation of the cost?"
+            )
+        )
+        self.assertFalse(
+            sam_live_stock_runtime._asks_formal_quote(
+                "How much are the 6 kg piglets?"
+            )
+        )
+
     def test_excluded_row_without_observation_does_not_erase_exact_match_freshness(self):
         now = datetime.now(timezone.utc).isoformat()
         rows = [

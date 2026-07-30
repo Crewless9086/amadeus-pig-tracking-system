@@ -1663,6 +1663,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             result, status = launch.audit_sam_live_stock_human_conversations(
                 environ=source,
                 review_loader=lambda conversation_id: ({"success": False}, 404),
+                now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc),
             )
 
         self.assertEqual(status, 200)
