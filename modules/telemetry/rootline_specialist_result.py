@@ -43,15 +43,33 @@ RECOMMENDATION_IDS = (
 
 
 def build_rootline_specialist_result(
-    evidence, operating_date=None, now=None, evidence_origin="caller_supplied"
+    evidence,
+    operating_date=None,
+    now=None,
+    evidence_origin="caller_supplied",
+    forecast_delay_not_after=None,
+    require_fresh_dry_forecast_release=False,
 ):
     """Build one deterministic specialist result from canonical-shaped evidence."""
     generated_at = _as_za(now or datetime.now(timezone.utc))
     selected_date = str(operating_date or generated_at.date().isoformat())[:10]
     evidence = deepcopy(evidence if isinstance(evidence, dict) else {})
     plan = build_water_energy_plan(evidence, selected_date, now=generated_at)
-    recommendations = _recommendations(plan, evidence, generated_at)
-    reassessment = _reassessment(plan, evidence, generated_at, recommendations)
+    delay_cap = _parse_time(forecast_delay_not_after)
+    recommendations = _recommendations(
+        plan,
+        evidence,
+        generated_at,
+        forecast_delay_not_after=delay_cap,
+        require_fresh_dry_forecast_release=require_fresh_dry_forecast_release,
+    )
+    reassessment = _reassessment(
+        plan,
+        evidence,
+        generated_at,
+        recommendations,
+        forecast_delay_not_after=delay_cap,
+    )
     owner_questions = _owner_questions(plan, evidence, recommendations)
     overall = _overall_status(recommendations)
     cutoff = _evidence_cutoff(plan, generated_at)
@@ -120,6 +138,89 @@ def build_current_rootline_specialist_result(
         now=generated_at,
         evidence_origin="canonical_read_models",
     )
+
+
+def reconsider_rootline_forecast_hold(
+    previous_result,
+    evidence,
+    operating_date=None,
+    now=None,
+    evidence_origin="caller_supplied_follow_up",
+):
+    """Recompose one prior forecast hold from a later read-only evidence snapshot.
+
+    The previous result supplies continuity only; every recommendation is
+    rebuilt from the later canonical-shaped evidence. No observation, plan,
+    schedule, command, workflow, or device action is recorded.
+    """
+    generated_at = _as_za(now or datetime.now(timezone.utc))
+    previous = previous_result if isinstance(previous_result, dict) else {}
+    previous_borehole = _recommendation_for(previous, "borehole")
+    previous_follow_up = (
+        previous.get("follow_up")
+        if isinstance(previous.get("follow_up"), dict)
+        else {}
+    )
+    prior_forecast_hold = (
+        previous_borehole.get("status") == "Hold"
+        and (
+            (previous.get("next_reassessment") or {}).get("trigger")
+            == "bounded_forecast_rain_check"
+            or previous_follow_up.get("prior_forecast_hold") is True
+        )
+    )
+    prior_deadline = (
+        previous_follow_up.get("forecast_hold_deadline")
+        or (previous.get("next_reassessment") or {}).get("at")
+        if prior_forecast_hold
+        else None
+    )
+    result = build_rootline_specialist_result(
+        evidence,
+        operating_date=operating_date or previous.get("operating_date"),
+        now=generated_at,
+        evidence_origin=evidence_origin,
+        forecast_delay_not_after=prior_deadline,
+        require_fresh_dry_forecast_release=prior_forecast_hold,
+    )
+    current_borehole = _recommendation_for(result, "borehole")
+    observed_rain = _observed_local_rain(evidence, generated_at)
+    if prior_forecast_hold and observed_rain is False:
+        outcome = (
+            "released_no_observed_rain"
+            if current_borehole.get("status") == "Recommend"
+            else "reconsidered_no_observed_rain"
+        )
+    elif prior_forecast_hold and observed_rain is True:
+        outcome = "continued_with_observed_rain"
+    elif prior_forecast_hold:
+        outcome = "reconsidered_current_weather_unavailable"
+    else:
+        outcome = "no_prior_forecast_hold"
+    result["follow_up"] = {
+        "basis_result_id": previous.get("result_id") or UNAVAILABLE,
+        "prior_forecast_hold": prior_forecast_hold,
+        "previous_borehole_status": previous_borehole.get("status") or UNAVAILABLE,
+        "current_borehole_status": current_borehole.get("status") or UNAVAILABLE,
+        "forecast_hold_deadline": prior_deadline or UNAVAILABLE,
+        "current_local_weather_status": result["current_local_weather"]["status"],
+        "observed_rain_materialized": (
+            observed_rain if observed_rain is not None else UNAVAILABLE
+        ),
+        "visible_confirmation": (
+            "required_from_canonical_authenticated_observation"
+            if observed_rain is None
+            else "not_required"
+        ),
+        "outcome": outcome,
+    }
+    if prior_forecast_hold:
+        result["owner_brief"]["what_changed"] = (
+            "ROOTLINE reconsidered the prior forecast-rain hold using later "
+            "current local weather; forecast rain was not treated as observed "
+            "rain or captured water."
+        )
+    return result
 
 
 def project_water_energy_plan(plan, now=None):
@@ -202,7 +303,13 @@ def _project_existing_plan(plan, now):
     return result
 
 
-def _recommendations(plan, evidence, now):
+def _recommendations(
+    plan,
+    evidence,
+    now,
+    forecast_delay_not_after=None,
+    require_fresh_dry_forecast_release=False,
+):
     tasks = {
         item.get("task_id"): item
         for item in plan.get("candidate_tasks", [])
@@ -213,7 +320,16 @@ def _recommendations(plan, evidence, now):
         rain.get("forecast_replenishment_effect") == "meaningful_rain_candidate"
         and rain.get("current_rain_status") != "Hold"
     )
-    delay_deadline = _forecast_delay_deadline(evidence.get("forecast"), now)
+    water_demand = (
+        evidence.get("water_demand")
+        if isinstance(evidence.get("water_demand"), dict)
+        else {}
+    )
+    delay_deadline = _forecast_delay_deadline(
+        evidence.get("forecast"),
+        now,
+        not_after=forecast_delay_not_after,
+    )
     delay_active = (
         forecast_only_delay
         and delay_deadline is not None
@@ -232,11 +348,23 @@ def _recommendations(plan, evidence, now):
         status = _public_status(task.get("recommendation"))
         reason = task.get("reason") or "Canonical task evidence is unavailable."
         if identity == "borehole" and forecast_only_delay:
-            if delay_active:
+            if water_demand.get("status") == "urgent":
+                status, reason = _borehole_after_forecast_delay(plan, evidence)
+            elif delay_active:
                 status = "Hold"
                 reason = (
                     "Forecast rain may justify only a bounded delay; it is not "
                     "observed rain or captured tank water."
+                )
+            elif (
+                require_fresh_dry_forecast_release
+                and _observed_local_rain(evidence, now) is not False
+            ):
+                status = "Hold"
+                reason = (
+                    "The bounded forecast delay expired, but fresh current local "
+                    "weather showing no rain is required before releasing the "
+                    "hold. Reassess read-only when that evidence is available."
                 )
             else:
                 status, reason = _borehole_after_forecast_delay(plan, evidence)
@@ -252,12 +380,9 @@ def _recommendations(plan, evidence, now):
                 evidence.get("weather")
                 if isinstance(evidence.get("weather"), dict) else {}
             )
-            rain_rate = _number(weather.get("rain_rate_mm_h"))
             if (
                 _public_status(zone.get("recommendation")) == "Recommend"
-                and _freshness(weather, now) == "fresh"
-                and rain_rate is not None
-                and rain_rate <= 0.2
+                and _observed_local_rain(evidence, now) is False
             ):
                 status = "Recommend"
                 reason = (
@@ -283,6 +408,8 @@ def _recommendations(plan, evidence, now):
                 "needs": _genuine_needs(identity, status, plan, evidence),
                 "command_authority": False,
                 "hardware_control": False,
+                "schedule_mutation": False,
+                "workflow_activation": False,
             }
         )
     return result
@@ -293,22 +420,36 @@ def _borehole_after_forecast_delay(plan, evidence):
     demand = evidence.get("water_demand") if isinstance(
         evidence.get("water_demand"), dict
     ) else {}
-    if tanks.get("status") in {"Unavailable", "stale"}:
-        return "Needs Data", "A current storage observation is needed."
+    if demand.get("status") == "urgent":
+        return "Recommend", (
+            "Water continuity outranks grid avoidance; grid may be used only "
+            "when genuinely necessary."
+        )
     if tanks.get("storage_state") == "FULL" and demand.get("status") != "urgent":
         return "Do Not Run", "Storage was explicitly observed FULL."
-    if demand.get("status") == "urgent":
-        return "Recommend", "Water continuity outranks grid avoidance."
     if demand.get("status") == "needed":
         return "Recommend", (
-            "The forecast-only delay expired without observed rain or captured-water "
-            "evidence; reassess and recover the supported water work."
+            "The forecast-only delay expired without observed rain or "
+            "captured-water evidence; recover supported water-continuity work. "
+            "Grid may be used only when genuinely necessary."
         )
+    if tanks.get("status") in {"Unavailable", "stale"}:
+        return "Needs Data", "A current storage observation is needed."
     return "Hold", "Water need is not yet proven after the forecast-only delay."
 
 
-def _reassessment(plan, evidence, now, recommendations):
-    forecast_deadline = _forecast_delay_deadline(evidence.get("forecast"), now)
+def _reassessment(
+    plan,
+    evidence,
+    now,
+    recommendations,
+    forecast_delay_not_after=None,
+):
+    forecast_deadline = _forecast_delay_deadline(
+        evidence.get("forecast"),
+        now,
+        not_after=forecast_delay_not_after,
+    )
     held_for_forecast = any(
         item["subject"] == "borehole"
         and item["status"] == "Hold"
@@ -503,15 +644,17 @@ def _genuine_needs(identity, status, plan, evidence):
     return []
 
 
-def _forecast_delay_deadline(packet, now):
+def _forecast_delay_deadline(packet, now, not_after=None):
     if not isinstance(packet, dict):
         return None
     observed = _parse_time(packet.get("observed_at"))
     if observed is None:
         return None
-    return observed.astimezone(ZA_TZ) + timedelta(
+    deadline = observed.astimezone(ZA_TZ) + timedelta(
         minutes=FORECAST_RAIN_MAX_DELAY_MINUTES
     )
+    cap = _parse_time(not_after)
+    return min(deadline, cap.astimezone(ZA_TZ)) if cap else deadline
 
 
 def _overall_status(recommendations):
@@ -561,6 +704,8 @@ def _recommendations_from_tasks(tasks):
             "needs": [],
             "command_authority": False,
             "hardware_control": False,
+            "schedule_mutation": False,
+            "workflow_activation": False,
         })
     return result
 
@@ -664,6 +809,46 @@ def _number(value):
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _recommendation_for(result, subject):
+    for item in (result or {}).get("recommendations") or []:
+        if isinstance(item, dict) and item.get("subject") == subject:
+            return item
+    return {}
+
+
+def _observed_local_rain(evidence, now):
+    weather = evidence.get("weather") if isinstance(evidence, dict) else None
+    freshness = _freshness(weather, now)
+    if freshness != "fresh":
+        return None
+    rain_rate = _number(weather.get("rain_rate_mm_h"))
+    rain_total_delta = _number(weather.get("rain_total_delta_mm"))
+    if (rain_rate is not None and rain_rate > 0.2) or (
+        rain_total_delta is not None and rain_total_delta > 0.2
+    ):
+        return True
+
+    readings = _number(weather.get("fresh_readings_during_dry_interval"))
+    dry_minutes = _number(weather.get("dry_interval_minutes"))
+    total_unchanged = (
+        rain_total_delta == 0
+        or weather.get("rain_today_unchanged") is True
+    )
+    internally_consistent_dry = (
+        weather.get("conflicting") is not True
+        and rain_rate == 0
+        and readings is not None
+        and readings >= 2
+        and dry_minutes is not None
+        and dry_minutes >= 30
+        and total_unchanged
+    )
+    if internally_consistent_dry:
+        return False
+
+    return None
 
 
 def _as_za(value):

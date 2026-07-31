@@ -11,7 +11,8 @@ The source boundary is
 Phase 1 Water & Energy Plan and returns an in-memory result. It has no route,
 database append, migration, schedule, workflow, Telegram send, device client
 or hardware transport. Every result states `command_authority=false` and
-`hardware_control=false`.
+`hardware_control=false`; every recommendation also states those boundaries
+and `schedule_mutation=false` and `workflow_activation=false`.
 
 ## Contract
 
@@ -44,6 +45,46 @@ minutes from its forecast run. The result schedules a mandatory read-only
 reassessment using fresh local weather and any available owner tank
 observation. If rain has not materialized when the bound expires, forecast-only
 suppression is removed and supported water work is reconsidered.
+
+`reconsider_rootline_forecast_hold(previous_result, later_evidence, now=...)`
+is the reusable read-only follow-up boundary. It links the new result to the
+prior result identity, rebuilds every recommendation from the later canonical
+evidence snapshot, and records whether locally observed rain materialized.
+Before the deadline the bounded hold remains. At or after the deadline, fresh
+local evidence showing no rain removes forecast-only suppression and recovers
+supported water-continuity advice. Sensor evidence is sufficient for read-only
+reasoning when it is fresh and internally consistent, spans at least 30 dry
+minutes with at least two fresh readings, and shows both zero current rain and
+no increase in the rain total. Explicit owner review is not required merely to
+form that recommendation. Visible no-rain confirmation is an evidence fallback
+only when sensor evidence is missing, conflicting or materially uncertain.
+This pure caller-supplied composition boundary never authenticates or accepts
+such a confirmation directly. It remains Hold and records that a canonical
+authenticated observation is required. A future trusted boundary must validate
+the actor, source and timestamp and retain an auditable canonical observation
+identity; a client-supplied flag or self-attested authentication metadata can
+never release the hold.
+A refreshed forecast can update evidence
+and uncertainty but cannot move the prior result's 120-minute deadline. If
+current local weather is missing, stale or conflicting at expiry, the hold is
+reconsidered read-only but is not released until fresh local no-rain evidence
+is available. That waiting result retains the original immutable deadline for
+every later follow-up, so repeated weather refreshes cannot restart the delay.
+A missing optional tank observation does
+not block that recovery when current water demand is explicitly `needed` or
+`urgent`; it remains `Unavailable` and blocks only claims that require a tank
+state. An explicit non-urgent `FULL` observation still prevents borehole
+advice.
+
+The follow-up function returns one specialist result. It does not persist a
+plan or observation, create a schedule, accept a command, activate a workflow,
+send Telegram, or call a device.
+
+Recommendation authority remains separate from actuation authority. Even a
+supported `Recommend` result cannot authorize a pump, irrigation valve,
+fertilizer relay, schedule, workflow or device action. Owner authorization or
+an independently approved standing hardware policy remains mandatory before
+any such future actuation.
 
 ## Water and energy rules preserved
 
