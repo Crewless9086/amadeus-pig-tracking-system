@@ -379,7 +379,7 @@ def get_active_sam_live_stock_owner_card(conversation_id, database_url=None):
                 cursor.execute(
                     """
                     select review_event_id, review_json, created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where chatwoot_conversation_id = %s
                       and event_source = %s
                     order by created_at desc, review_event_id desc
@@ -560,7 +560,7 @@ def get_sam_live_stock_review_event(review_event_id, database_url=None):
                         facts_json,
                         decision_json,
                         created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where review_event_id = %s
                     limit 1
                     """,
@@ -622,7 +622,7 @@ def get_latest_sam_live_stock_review_event_for_conversation(conversation_id, dat
                         facts_json,
                         decision_json,
                         created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where chatwoot_conversation_id = %s
                     order by created_at desc
                     limit 1
@@ -2165,7 +2165,7 @@ def load_latest_sam_live_stock_review_events_for_conversations(conversation_ids,
                         owner_send_required, no_reply_recommended, escalation_required,
                         conversation_mode_recommendation, recommended_action,
                         review_json, facts_json, decision_json, created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where chatwoot_conversation_id = any(%s)
                     order by chatwoot_conversation_id, created_at desc
                     """,

@@ -10,6 +10,10 @@ from modules.pig_weights.litter_supersession_service import (
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "supabase/migrations/202607300001_create_litter_supersession_rail.sql"
+HISTORY_MIGRATION = ROOT / (
+    "supabase/migrations/"
+    "202607310001_allow_immutable_sam_review_history_in_litter_supersession.sql"
+)
 
 
 class _Cursor:
@@ -47,6 +51,9 @@ class _Connection:
                 ["A-1", "A-2"], ["B-1", "B-2"],
                 packet["reference_allowlist_sha256"],
                 packet["skipped_audit_rows_sha256"], packet["input_sha256"],
+                packet["historical_reference_rows_sha256"],
+                packet["historical_reference_row_count"],
+                packet["historical_reference_row_ids"],
             ) if self.replay else None)
         if "from public.litter_cohort_dispositions" in normalized:
             return _Cursor(rows=[("A-1",), ("A-2",)])
@@ -100,7 +107,14 @@ def _packet():
         "preview_sha256": "a" * 64,
         "reference_allowlist_sha256": canonical_sha256({
             "schema_inventory": [], "references": [],
+            "historical_review_rows": [],
+            "historical_review_guard": [],
         }),
+        "historical_reference_rows_sha256": canonical_sha256([]),
+        "historical_reference_row_count": 0,
+        "historical_reference_rows": [],
+        "historical_reference_guard": [],
+        "historical_reference_row_ids": [],
         "skipped_audit_rows_sha256": canonical_sha256([]),
         "skipped_audit_row_count": 0,
         "skipped_audit_row_ids": [],
@@ -123,7 +137,14 @@ def _packet():
         "references": {
             "reference_allowlist_sha256": canonical_sha256({
                 "schema_inventory": [], "references": [],
+                "historical_review_rows": [],
+                "historical_review_guard": [],
             }),
+            "historical_reference_rows_sha256": canonical_sha256([]),
+            "historical_reference_row_count": 0,
+            "historical_reference_rows": [],
+            "historical_reference_guard": [],
+            "historical_reference_row_ids": [],
             "skipped_audit_rows_sha256": canonical_sha256([]),
             "skipped_audit_row_count": 0,
             "skipped_audit_row_ids": [],
@@ -145,6 +166,13 @@ class LitterSupersessionContractTests(unittest.TestCase):
         self.assertIn("cross-sow or cross-farrowing", source)
         self.assertNotIn("delete from public.litters", source.lower())
         self.assertNotIn("update public.pigs", source.lower())
+        history_source = HISTORY_MIGRATION.read_text(encoding="utf-8")
+        self.assertIn("current_actionable_sam_live_stock_review_events", history_source)
+        self.assertIn("historical_reference_row_ids", history_source)
+        self.assertNotIn(
+            "update public.sam_live_stock_conversation_review_events",
+            history_source.lower(),
+        )
 
     def test_operation_identity_is_order_independent(self):
         first = _packet()
