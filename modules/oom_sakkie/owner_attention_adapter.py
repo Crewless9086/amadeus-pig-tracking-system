@@ -15,9 +15,16 @@ from modules.oom_sakkie.owner_attention_queue import (
     consume_decision_card,
     reassess_decision_card,
 )
+from modules.oom_sakkie.specialist_owner_decisions import (
+    render_beacon_card,
+    specialist_choice,
+    specialist_decision_current,
+    validate_specialist_binding,
+)
 from modules.sales.sam_live_stock_launch_control import (
     _deliver_sam_live_stock_owner_card,
     _telegram_edit_message,
+    build_sam_live_stock_owner_card_event,
     build_sam_live_stock_review_event,
     record_sam_live_stock_review_event,
 )
@@ -108,6 +115,105 @@ def operate_owner_attention_queue(dispositions: Iterable[Mapping[str, Any]], *, 
             "sends_customer_message": False, "writes_farm_data": False}
 
 
+def operate_specialist_owner_decision(binding: Mapping[str, Any], *, environ=None, now: datetime | None = None,
+                                      chronology_loader=None, specialist_card_loader=None, active_card_loader=None,
+                                      evidence_recorder=None, telegram_sender=None, telegram_editor=None) -> dict[str, Any]:
+    """Deliver one closed specialist-owned decision through the existing card rail."""
+    source = environ if environ is not None else os.environ
+    if not _truthy(source.get(ENABLED_ENV)):
+        return _result("owner_attention_queue_disabled")
+    try:
+        valid = validate_specialist_binding(binding)
+        if valid["specialist_identity"] != "BEACON":
+            return _result("specialist_owner_decision_unsupported")
+        loader = specialist_card_loader or _load_attention_card
+        prior = loader(valid["decision_token"], source.get(DATABASE_URL_ENV))
+        current = (chronology_loader or _current_specialist_chronology)(valid, source)
+        if not specialist_decision_current(valid, current, now=now or datetime.now(timezone.utc)):
+            card = prior.get("card") if prior.get("success") and isinstance(prior.get("card"), Mapping) else {}
+            if card.get("telegram_message_id"):
+                return _expire_specialist_card(card, valid, source=source, now=now,
+                    evidence_recorder=evidence_recorder, telegram_editor=telegram_editor)
+            return _result("specialist_owner_decision_stale")
+        if prior.get("success") and (prior.get("card") or {}).get("telegram_message_id"):
+            return {**_result("specialist_owner_decision_duplicate_withheld", True),
+                    "decision_identity": valid["deterministic_identity"], "duplicate_cards_created": 0}
+        text, markup = render_beacon_card(binding)
+        item = {"decision_id": valid["decision_token"], "external_decision_identity": valid["deterministic_identity"],
+                "specialist_binding": valid, "card_digest": valid["binding_digest"],
+                "expires_at": valid["expires_at"], "choices": valid["allowed_owner_choices"]}
+        identity = "OOMAQ-" + valid["deterministic_identity"]
+        event = build_sam_live_stock_review_event({"conversation_id": identity}, {}, {},
+            {"score": 0, "safe_to_send": False, "recommended_action": "specialist_owner_decision"}, event_source=EVENT_SOURCE)
+        event["review_event_id"] = "OOMAQ-SPECIALIST-" + _digest(item)[:24]
+        event["chatwoot_conversation_id"] = identity
+        owner_id = _opaque(source.get(OWNER_USER_ID_ENV))
+        if not owner_id:
+            return _result("owner_attention_bound_owner_required")
+        context = {"kind": "decision", "item": item,
+                   "expected_owner_identity_hash": _digest({"telegram_owner_id": owner_id})}
+        recorder = evidence_recorder or record_sam_live_stock_review_event
+
+        def bound_recorder(evidence):
+            evidence = dict(evidence)
+            review = dict(evidence.get("review_json") or {})
+            review["owner_attention"] = context
+            evidence["review_json"] = review
+            evidence["customer_message_excerpt"] = evidence["sam_reply_excerpt"] = ""
+            return recorder(evidence)
+
+        delivered, status = _deliver_sam_live_stock_owner_card(event, {"text": text, "reply_markup": markup}, source,
+            telegram_sender, telegram_editor, active_card_loader, bound_recorder, "oom_sakkie_specialist_decision_created")
+        return {**delivered, "http_status": status, "decision_identity": valid["deterministic_identity"],
+                "duplicate_cards_created": 0, "sends_customer_message": False, "writes_farm_data": False,
+                "publishes": False}
+    except ValueError:
+        return _result("specialist_owner_decision_invalid")
+    except Exception:
+        return _result("specialist_owner_decision_contained")
+
+
+def repair_specialist_owner_attention_resolution(card, receipt, *, environ=None,
+                                                 evidence_loader=None, evidence_recorder=None, telegram_editor=None):
+    """Idempotently repair only a specialist card's post-receipt presentation."""
+    source = environ if environ is not None else os.environ
+    try:
+        binding = validate_specialist_binding(card["specialist_binding"])
+        if card.get("decision_id") != binding["decision_token"] or card.get("card_digest") != binding["binding_digest"]:
+            return _result("specialist_owner_resolution_receipt_invalid")
+        loaded = (evidence_loader or _load_attention_card)(binding["decision_token"], source.get(DATABASE_URL_ENV))
+        if not loaded.get("success") or not isinstance(loaded.get("card"), Mapping) or not isinstance(loaded.get("receipt"), Mapping):
+            return _result("specialist_owner_resolution_evidence_unavailable")
+        trusted_card, trusted_receipt = loaded["card"], loaded["receipt"]
+        if any(str(card.get(key) or "") != str(trusted_card.get(key) or "") for key in
+               ("decision_id", "card_digest", "telegram_chat_id", "telegram_message_id")):
+            return _result("specialist_owner_resolution_card_mismatch")
+        required_receipt = ("status", "receipt_id", "decision_id", "deterministic_identity", "card_digest",
+                            "choice_id", "replay_key", "actor_identity_hash")
+        if any(str(receipt.get(key) or "") != str(trusted_receipt.get(key) or "") for key in required_receipt):
+            return _result("specialist_owner_resolution_receipt_mismatch")
+        replay_key = _digest({"card_digest": binding["binding_digest"], "choice": receipt.get("choice_id"),
+                              "actor_identity_hash": receipt.get("actor_identity_hash")})
+        if (receipt.get("status") != "consumed" or receipt.get("decision_id") != binding["decision_token"]
+                or receipt.get("card_digest") != binding["binding_digest"]
+                or receipt.get("deterministic_identity") != binding["deterministic_identity"]
+                or receipt.get("replay_key") != replay_key
+                or receipt.get("receipt_id") != "OOMAQ-RECEIPT-" + replay_key[:24]
+                or not re.fullmatch(r"[0-9a-f]{64}", str(receipt.get("actor_identity_hash") or ""))):
+            return _result("specialist_owner_resolution_receipt_invalid")
+        authority = specialist_choice(binding, receipt["choice_id"])
+        (telegram_editor or _telegram_edit_message)(_token(source), trusted_card["telegram_chat_id"], trusted_card["telegram_message_id"],
+            "Oom Sakkie — Decision recorded\n\n"
+            f"Outcome: {authority['outcome_code'].replace('_', ' ')}\n"
+            f"Next follow-up: {authority['next_action_owner']}", {"inline_keyboard": []})
+        recorder = evidence_recorder or record_sam_live_stock_review_event
+        recorded, status = recorder(_specialist_resolution_event(trusted_card, receipt, "resolved"))
+        return {**_result("specialist_owner_resolution_repaired", status < 400 and recorded.get("success") is True),
+                "calls_telegram": True, "follow_up_owner": authority["next_action_owner"], "publishes": False}
+    except Exception:
+        return _result("specialist_owner_resolution_repair_contained")
+
+
 def process_owner_attention_callback(payload: Mapping[str, Any], *, environ=None, evidence_loader=None,
                                      current_binding_loader=None, evidence_recorder=None, telegram_editor=None,
                                      now: datetime | None = None) -> tuple[dict[str, Any], int]:
@@ -165,6 +271,10 @@ def _process_owner_attention_callback(payload: Mapping[str, Any], *, environ=Non
     actor_hash = _digest({"telegram_owner_id": actor_id})
     if loaded.get("expected_owner_identity_hash") != actor_hash:
         return _result("owner_attention_card_owner_binding_mismatch"), 409
+    if isinstance(card.get("specialist_binding"), Mapping):
+        return _process_specialist_owner_callback(card, choice, actor_hash, loaded, source=source,
+            current_binding_loader=current_binding_loader, evidence_recorder=evidence_recorder,
+            telegram_editor=telegram_editor, now=now)
     binding_loader = current_binding_loader or (lambda binding: _current_binding(binding, source))
     try:
         current = binding_loader(card["binding"])
@@ -205,6 +315,75 @@ def _process_owner_attention_callback(payload: Mapping[str, Any], *, environ=Non
     recorder(_resolution_event(card, receipt, "resolved"))
     return {**_result("owner_attention_decision_consumed", True), "decision": edit, "calls_telegram": True,
             "sends_customer_message": False, "follow_up_owner": outcome["next_follow_up_owner"]}, 200
+
+
+def _process_specialist_owner_callback(card, choice, actor_hash, loaded, *, source, current_binding_loader,
+                                       evidence_recorder, telegram_editor, now):
+    binding = validate_specialist_binding(card["specialist_binding"])
+    if card.get("decision_id") != binding["decision_token"] or card.get("card_digest") != binding["binding_digest"]:
+        return _result("specialist_owner_decision_binding_mismatch"), 409
+    receipt = loaded.get("receipt") if isinstance(loaded.get("receipt"), Mapping) else None
+    replay_key = _digest({"card_digest": binding["binding_digest"], "choice": choice, "actor_identity_hash": actor_hash})
+    if receipt is not None:
+        if (receipt.get("decision_id") != binding["decision_token"] or receipt.get("replay_key") != replay_key
+                or receipt.get("choice_id") != choice or receipt.get("actor_identity_hash") != actor_hash):
+            return _result("specialist_owner_decision_receipt_mismatch"), 409
+        return {**_result("owner_attention_callback_replay_noop", True), "writes_performed": 0,
+                "calls_telegram": False}, 200
+    loader = current_binding_loader or (lambda value: _current_specialist_chronology(value, source))
+    try:
+        current = loader(binding)
+    except Exception:
+        return _result("owner_attention_authoritative_chronology_unavailable"), 503
+    if not specialist_decision_current(binding, current, now=now or datetime.now(timezone.utc)):
+        result = _expire_specialist_card(card, binding, source=source, now=now,
+            evidence_recorder=evidence_recorder, telegram_editor=telegram_editor)
+        return result, int(result.pop("http_status"))
+    try:
+        callback_authority = specialist_choice(binding, choice)
+    except ValueError:
+        return _result("owner_attention_callback_evidence_invalid"), 409
+    receipt = {"status": "consumed", "receipt_id": "OOMAQ-RECEIPT-" + replay_key[:24],
+               "decision_id": binding["decision_token"], "deterministic_identity": binding["deterministic_identity"],
+               "card_digest": binding["binding_digest"], "choice_id": choice,
+               "replay_key": replay_key, "actor_identity_hash": actor_hash}
+    recorder = evidence_recorder or record_sam_live_stock_review_event
+    recorded, status = recorder(_specialist_receipt_event(card, receipt, callback_authority))
+    if status >= 400 or not recorded.get("success"):
+        return _result("owner_attention_consumption_record_failed"), 503
+    if recorded.get("created") is False:
+        return {**_result("owner_attention_callback_replay_noop", True), "writes_performed": 0,
+                "calls_telegram": False}, 200
+    try:
+        (telegram_editor or _telegram_edit_message)(_token(source), card["telegram_chat_id"], card["telegram_message_id"],
+            "Oom Sakkie — Decision recorded\n\n"
+            f"Outcome: {callback_authority['outcome_code'].replace('_', ' ')}\n"
+            f"Next follow-up: {callback_authority['next_action_owner']}", {"inline_keyboard": []})
+    except Exception:
+        recorder(_specialist_resolution_event(card, receipt, "resolution_edit_failed"))
+        return {**_result("owner_attention_resolution_edit_failed"), "receipt_id": receipt["receipt_id"],
+                "repair_required": True}, 503
+    recorder(_specialist_resolution_event(card, receipt, "resolved"))
+    return {**_result("owner_attention_decision_consumed", True), "calls_telegram": True,
+            "follow_up_owner": callback_authority["next_action_owner"],
+            "specialist_outcome_callback": callback_authority, "publishes": False}, 200
+
+
+def _expire_specialist_card(card, binding, *, source, now, evidence_recorder, telegram_editor):
+    reason = ("expired" if _aware(now or datetime.now(timezone.utc)) >= datetime.fromisoformat(binding["expires_at"])
+              else "chronology_or_evidence_changed")
+    try:
+        (telegram_editor or _telegram_edit_message)(_token(source), card["telegram_chat_id"], card["telegram_message_id"],
+            "Oom Sakkie — Decision expired\n\nSpecialist evidence or chronology changed. No action was applied.",
+            {"inline_keyboard": []})
+    except Exception:
+        return {**_result("specialist_owner_decision_expiry_edit_failed"), "http_status": 503}
+    recorder = evidence_recorder or record_sam_live_stock_review_event
+    recorded, record_status = recorder(_specialist_expiry_event(card, binding, reason))
+    if record_status >= 400 or not recorded.get("success"):
+        return {**_result("specialist_owner_decision_expiry_persistence_failed"), "calls_telegram": True,
+                "repair_required": True, "http_status": 503}
+    return {**_result("decision_expired"), "calls_telegram": True, "http_status": 409}
 
 
 def _deliver(item, *, kind, identity, source, active_card_loader, evidence_recorder, telegram_sender, telegram_editor):
@@ -306,11 +485,53 @@ def _resolution_event(card, receipt, state):
     return event
 
 
+def _specialist_receipt_event(card, receipt, callback_authority):
+    event = build_sam_live_stock_review_event({"conversation_id": "OOMAQ-" + receipt["deterministic_identity"]}, {}, {},
+        {"score": 0, "safe_to_send": False, "recommended_action": "specialist_owner_decision_consumed"},
+        event_source=EVENT_SOURCE)
+    event["review_event_id"] = receipt["receipt_id"]
+    event["review_json"] = {"owner_attention_receipt": receipt,
+                            "specialist_outcome_callback": callback_authority}
+    event["customer_message_excerpt"] = event["sam_reply_excerpt"] = ""
+    return event
+
+
+def _specialist_resolution_event(card, receipt, state):
+    event = _specialist_receipt_event(card, receipt, {})
+    event["review_event_id"] = "OOMAQ-SPECIALIST-RESOLUTION-" + _digest(
+        {"receipt": receipt["receipt_id"], "state": state})[:20]
+    event["recommended_action"] = state
+    event["review_json"] = {"owner_attention_resolution": {
+        "decision_id": card["decision_id"], "deterministic_identity": receipt["deterministic_identity"],
+        "receipt_id": receipt["receipt_id"], "state": state,
+        "telegram_chat_id": card["telegram_chat_id"], "telegram_message_id": card["telegram_message_id"]}}
+    return event
+
+
+def _specialist_expiry_event(card, binding, reason):
+    base = build_sam_live_stock_review_event({"conversation_id": "OOMAQ-" + binding["deterministic_identity"]}, {}, {},
+        {"score": 0, "safe_to_send": False, "recommended_action": "specialist_owner_decision_expired"},
+        event_source=EVENT_SOURCE)
+    base["review_event_id"] = "OOMAQ-SPECIALIST-EXPIRY-" + _digest(
+        {"identity": binding["deterministic_identity"], "digest": binding["binding_digest"], "reason": reason})[:20]
+    event = build_sam_live_stock_owner_card_event(base, {
+        "conversation_id": "OOMAQ-" + binding["deterministic_identity"],
+        "telegram_chat_id": card["telegram_chat_id"], "telegram_message_id": card["telegram_message_id"]},
+        "expired", reason)
+    event["review_event_id"] = base["review_event_id"]
+    event["review_json"]["owner_attention"] = {"kind": "decision", "item": dict(card),
+        "expected_owner_identity_hash": ""}
+    event["customer_message_excerpt"] = event["sam_reply_excerpt"] = ""
+    return event
+
+
 def _expire_prior_decisions(current_ids, *, clock, source, decision_loader, evidence_recorder, telegram_editor):
     loader = decision_loader or _load_active_decisions
     recorder = evidence_recorder or record_sam_live_stock_review_event
     results = []
     for card in loader(source.get(DATABASE_URL_ENV)):
+        if isinstance(card.get("specialist_binding"), Mapping):
+            continue
         if card.get("decision_id") in current_ids:
             continue
         reason = "expired" if clock >= datetime.fromisoformat(card["expires_at"].replace("Z", "+00:00")) else "chronology_or_evidence_superseded"
@@ -399,6 +620,8 @@ def _load_active_owner_attention_cards(database_url, kind, id_key):
                 "telegram_chat_id": owner_card["telegram_chat_id"], "telegram_message_id": owner_card["telegram_message_id"]})
             if kind == "decision":
                 incidents[-1]["expires_at"] = item["expires_at"]
+                if isinstance(item.get("specialist_binding"), Mapping):
+                    incidents[-1]["specialist_binding"] = item["specialist_binding"]
         return incidents
     except Exception:
         return []
@@ -415,6 +638,49 @@ def _current_binding(binding, source):
     inbound.sort(key=lambda row: (int(row.get("created_at") or 0), int(row.get("id") or 0)))
     current["latest_inbound_id"] = str(inbound[-1]["id"])
     return current
+
+
+def _current_specialist_chronology(binding, source):
+    valid = validate_specialist_binding(binding)
+    if valid["specialist_identity"] != "BEACON" or valid["decision_type"] != "organic_publication_decision":
+        raise RuntimeError("unsupported specialist chronology")
+    database_url = str(source.get(DATABASE_URL_ENV) or "").strip()
+    if not database_url:
+        raise RuntimeError("specialist chronology database unavailable")
+    evidence = valid["evidence_binding"]
+    try:
+        import psycopg
+        with psycopg.connect(database_url, connect_timeout=5) as connection, connection.cursor() as cursor:
+            cursor.execute("""select b.binary_asset_id from public.beacon_media_binaries b
+                join public.beacon_media_source_links l using(binary_asset_id)
+                where b.content_sha256=%s and l.beacon_asset_id=%s limit 1""",
+                (evidence["asset_sha256"], evidence["asset_identity"]))
+            row = cursor.fetchone()
+            if not row:
+                raise RuntimeError("specialist asset unavailable")
+            binary_id = row[0]
+            cursor.execute("""select library_event_id,event_type from public.beacon_media_library_events
+                where binary_asset_id=%s order by recorded_at desc,library_event_id desc""", (binary_id,))
+            events = cursor.fetchall()
+            event_map = {event_id: event_type for event_id, event_type in events}
+            if (event_map.get(evidence["library_accept_event_id"]) != "library_accepted"
+                    or event_map.get(evidence["public_use_event_id"]) != "public_use_approved"):
+                raise RuntimeError("specialist approval evidence changed")
+            if events[0][0] != evidence["public_use_event_id"]:
+                latest = events[0][0]
+            else:
+                latest = evidence["public_use_event_id"]
+            cursor.execute("""select count(*) from public.beacon_organic_publication_authorization_events
+                where binding_id=%s""", (valid["deterministic_identity"],))
+            authorizations = int(cursor.fetchone()[0])
+            cursor.execute("""select coalesce(campaign_usage_count,0) from public.beacon_media_assets
+                where asset_id=%s""", (evidence["asset_identity"],))
+            use_row = cursor.fetchone()
+            uses = int(use_row[0]) if use_row else 0
+        return {"latest_library_event_id": latest, "publication_authorization_count": authorizations,
+                "prior_campaign_use_count": uses}
+    except Exception as exc:
+        raise RuntimeError("specialist authoritative chronology unavailable") from exc
 
 
 def _status(row):
