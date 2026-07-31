@@ -1383,6 +1383,45 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
         price_list.assert_called_once()
 
+    def test_untrusted_display_label_is_not_used_in_customer_guidance(self):
+        for display_label in (
+            "...",
+            "Zingce@10",
+            "Stanton😎",
+            "+27821234567",
+            "Free Shipping Nationwide",
+            "Best Deals",
+            "Buy Now",
+            "Amadeus Pork",
+            "ABC Pty Ltd",
+            "Premium Meat Market",
+            "Click Here",
+            "---Anne---",
+            ".John.",
+        ):
+            with self.subTest(display_label=display_label):
+                guidance = (
+                    sam_live_stock_runtime.build_live_stock_customer_guidance(
+                        {
+                            "customer_name": display_label,
+                            "content": "I need piglets",
+                        },
+                        {
+                            "category": "piglet",
+                            "quantity": "",
+                            "sex": "",
+                        },
+                    )
+                )
+                self.assertTrue(guidance["applicable"])
+                self.assertTrue(
+                    guidance["reply_text"].startswith(
+                        "Hi, thanks for your message."
+                    )
+                )
+                self.assertNotIn(display_label, guidance["reply_text"])
+                self.assertEqual(guidance["reply_text"].count("?"), 1)
+
     @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
     def test_big_pig_information_falls_back_to_price_only_when_availability_unavailable(self, price_list):
         price_list.return_value = (self._active_big_pig_prices(), 200)

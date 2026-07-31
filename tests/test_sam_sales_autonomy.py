@@ -556,13 +556,28 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         self.assertFalse(ambiguous["customer_advancement_confirmed"])
         self.assertFalse(ambiguous["intake_write_alone_is_advancement"])
 
-    def test_decorated_and_punctuated_display_name_shapes_are_safe(self):
-        for name in ("😎Customer🔥", "Surname,Name"):
+    def test_non_name_display_labels_are_omitted_from_customer_greetings(self):
+        for name in (
+            "😎Customer🔥",
+            "Surname,Name",
+            "Zingce@10",
+            "...",
+            "+27821234567",
+            "Free Shipping Nationwide",
+            "Best Deals",
+            "Buy Now",
+            "Amadeus Pork",
+            "ABC Pty Ltd",
+            "Premium Meat Market",
+            "Click Here",
+            "---Anne---",
+            ".John.",
+        ):
             with self.subTest(name=name):
                 normalized = normalize_customer_display_name(name)
-                self.assertEqual(normalized, name)
+                self.assertEqual(normalized, "")
                 reply = (
-                    f"Hi {normalized}, thanks for your message.\n\n"
+                    "Hi, thanks for your message.\n\n"
                     "Which size would suit you?\n"
                     "Once I know that, I can confirm the available options and price."
                 )
@@ -585,10 +600,9 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
                 ))
 
     def test_display_name_normalization_removes_unsafe_presentation_text(self):
-        self.assertEqual(
-            normalize_customer_display_name("  A\u0000\u202e <b>`&  B  "),
-            "A b B",
-        )
+        self.assertEqual(normalize_customer_display_name("  Anne-Marie  "), "Anne-Marie")
+        self.assertEqual(normalize_customer_display_name("O’Neil"), "O’Neil")
+        self.assertEqual(normalize_customer_display_name("  A\u0000 B  "), "")
         self.assertEqual(normalize_customer_display_name("x" * 81), "")
         self.assertEqual(normalize_customer_display_name(147387), "")
 

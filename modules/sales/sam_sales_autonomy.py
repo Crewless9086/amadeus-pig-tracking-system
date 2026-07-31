@@ -603,19 +603,78 @@ def _is_canonical_claim_free_customer_guidance(
 
 
 def normalize_customer_display_name(value, limit=MAX_DISPLAY_NAME_CHARS) -> str:
-    """Normalize untrusted presentation text without deriving identity from it."""
+    """Return a greeting name only when the untrusted label is name-like."""
     if not isinstance(value, str):
         return ""
     normalized = unicodedata.normalize("NFKC", value)
     safe = []
     for character in normalized:
-        if unicodedata.category(character).startswith("C"):
-            continue
-        if character in "<>&`":
-            continue
+        category = unicodedata.category(character)
+        if category.startswith("C"):
+            return ""
+        if character in "<>&`@" or category.startswith(("S", "N")):
+            return ""
+        if not (
+            character.isspace()
+            or category.startswith(("L", "M"))
+            or character in {"'", "’", "-", "."}
+        ):
+            return ""
         safe.append(" " if character.isspace() else character)
     text = " ".join("".join(safe).split())
     if not text or len(text) > int(limit):
+        return ""
+    tokens = text.split()
+    if len(tokens) > 4:
+        return ""
+    for token in tokens:
+        stem = token
+        if token.endswith("."):
+            stem = token[:-1]
+            if not (
+                len(stem) == 1
+                or stem.casefold() in {"mr", "mrs", "ms", "dr", "prof"}
+            ):
+                return ""
+        if not stem:
+            return ""
+        if not (
+            unicodedata.category(stem[0]).startswith("L")
+            and unicodedata.category(stem[-1]).startswith("L")
+        ):
+            return ""
+        punctuation_seen = False
+        for character in stem[1:-1]:
+            category = unicodedata.category(character)
+            if category.startswith(("L", "M")):
+                punctuation_seen = False
+                continue
+            if character not in {"'", "’", "-"} or punctuation_seen:
+                return ""
+            punctuation_seen = True
+    if any(
+        not any(
+            unicodedata.category(character).startswith("L")
+            for character in token
+        )
+        for token in tokens
+    ):
+        return ""
+    words = {
+        "".join(
+            character.lower()
+            for character in token
+            if unicodedata.category(character).startswith("L")
+        )
+        for token in tokens
+    }
+    if words & {
+        "amadeus", "available", "best", "business", "buy", "click",
+        "company", "customer", "deal", "deals", "delivery", "farm", "free",
+        "here", "livestock", "ltd", "market", "meat", "now", "official",
+        "pig", "piglets", "pigs", "pork", "premium", "price", "prices",
+        "pty", "sale", "sales", "services", "shipping", "shop", "whatsapp",
+    }:
         return ""
     return text
 
