@@ -1,6 +1,6 @@
 # Oom Sakkie Owner Attention Queue Workflow
 
-Status: source-only coordination contract; transport integration pending
+Status: coordination kernel integrated; existing-rail adapter prepared
 
 ## Outcome
 
@@ -61,3 +61,15 @@ provider, callback-replay or owner-authentication checks.
 
 No summary/card/alert intent itself authorizes Telegram, customer, Chatwoot,
 farm, commercial or hardware activity.
+
+## Existing-rail adapter
+
+`modules/oom_sakkie/owner_attention_adapter.py` projects current SAM inbox
+dispositions without customer content. The existing reconcile loop calls it
+after SAM reaches its normal durable disposition; adapter failure is contained
+and cannot stop SAM. A default-off environment gate controls delivery.
+Summary, decision and incident identities use the existing owner-card lifecycle
+and review-event evidence table. Authenticated `sam_live_owner_decision:`
+callbacks remain inside the existing governed SAM callback namespace and
+the existing Oom Sakkie webhook, record one receipt through that rail,
+and edit the same card without applying a customer or protected action.

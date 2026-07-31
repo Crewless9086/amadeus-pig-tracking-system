@@ -50,8 +50,8 @@ Source references: `docs/00-start-here/PRODUCT_VISION.md`, `docs/01-architecture
 - **Why it matters now:** ordinary SAM work should continue without turning
   Charl into the inbox operator, while genuine authority boundaries remain
   explicit and replay-safe.
-- **Current state:** source-active; pure coordination kernel prepared, existing
-  adapters not yet integrated.
+- **Current state:** release-lane-active; kernel merged and smallest existing-
+  rail adapter prepared for exact-head integration and bounded live proof.
 - **Standing authority:** reconcile structured SAM status/evidence and prepare
   summary, decision-card, expiry, resolution-edit and system-alert intents.
 - **Protected boundary:** no Telegram call, customer send, Chatwoot/customer

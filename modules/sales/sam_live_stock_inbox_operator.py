@@ -7,7 +7,7 @@ import math
 import os
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Mapping
 
@@ -30,6 +30,8 @@ def operate_livestock_inbox(
     claim_exists: Callable,
     claimed_inbound_loader: Callable | None = None,
     quarantined_conversation_loader: Callable | None = None,
+    attention_queue_operator: Callable | None = None,
+    attention_sam_state: Mapping | None = None,
     max_process_count: int | None = None,
     now=None,
 ) -> dict:
@@ -198,6 +200,17 @@ def operate_livestock_inbox(
         if disposition["queue_relevant"]:
             dispositions.append(disposition)
     summary = build_sam_status_summary(dispositions, observed_at=clock)
+    attention = {}
+    if attention_queue_operator is not False:
+        operator = attention_queue_operator
+        if operator is None:
+            from modules.oom_sakkie.owner_attention_adapter import operate_owner_attention_queue
+            operator = operate_owner_attention_queue
+        try:
+            attention = operator(dispositions, environ=source, now=clock,
+                                 sam_state=attention_sam_state or {"state": "healthy"})
+        except Exception:
+            attention = {"success": False, "status": "owner_attention_queue_contained", "calls_telegram": False}
     return {
         "status": "sam_live_stock_inbox_operated",
         "inventory_count": len(rows),
@@ -219,6 +232,7 @@ def operate_livestock_inbox(
         "automatic_retry_authorized": False,
         "protected_authority": False,
         "owner_status_summary": summary,
+        "owner_attention_queue": attention,
     }
 
 
@@ -254,6 +268,13 @@ def _inspect_and_operate(
     now,
 ):
     conversation_id = str(row.get("id") or "")
+    meta = row.get("meta") if isinstance(row.get("meta"), Mapping) else {}
+    sender = meta.get("sender") if isinstance(meta.get("sender"), Mapping) else {}
+    identity = {
+        "account_id": str(row.get("account_id") or ""),
+        "inbox_id": str(row.get("inbox_id") or ""),
+        "contact_id": str(sender.get("id") or ""),
+    }
     provider_latest = (
         row.get("last_non_activity_message")
         if isinstance(row.get("last_non_activity_message"), Mapping)
@@ -265,6 +286,7 @@ def _inspect_and_operate(
     )
     if conversation_quarantined:
         return {
+            **identity,
             "conversation_id": conversation_id,
             "inbound_message_id": provider_inbound_id,
             "queue_relevant": True,
@@ -288,6 +310,7 @@ def _inspect_and_operate(
         )
     ):
         return {
+            **identity,
             "conversation_id": conversation_id,
             "inbound_message_id": provider_inbound_id,
             "queue_relevant": False,
@@ -311,6 +334,7 @@ def _inspect_and_operate(
         and claim_exists(conversation_id, provider_inbound_id)
     ):
         return {
+            **identity,
             "conversation_id": conversation_id,
             "inbound_message_id": provider_inbound_id,
             "queue_relevant": True,
@@ -342,8 +366,6 @@ def _inspect_and_operate(
     latest = messages[-1] if messages else {}
     latest_incoming = latest.get("message_type") in (0, "incoming")
     inbound_id = str(latest.get("id") or "") if latest_incoming else ""
-    meta = row.get("meta") if isinstance(row.get("meta"), Mapping) else {}
-    sender = meta.get("sender") if isinstance(meta.get("sender"), Mapping) else {}
     payload = {
         **latest,
         "event": "message_created",
@@ -450,6 +472,7 @@ def _inspect_and_operate(
             )
     queue_relevant = bool(livestock or exact_claim)
     return {
+        **identity,
         "conversation_id": conversation_id,
         "inbound_message_id": inbound_id,
         "queue_relevant": queue_relevant,
@@ -481,8 +504,36 @@ def _inspect_and_operate(
             decision.get("protected_owner_exception_required")
             or decision.get("owner_gate_required")
         ),
+        "owner_attention_decision": _owner_attention_decision(
+            decision, latest, open_window=open_window
+        ),
         "reply": decision.get("suggested_reply_text") or "",
         "latest_inbound_at": int(latest.get("created_at") or 0),
+    }
+
+
+def _owner_attention_decision(decision, latest, *, open_window):
+    """Map only the existing canonical delivery-exception contract."""
+    exception = decision.get("delivery_owner_exception") if isinstance(decision.get("delivery_owner_exception"), Mapping) else {}
+    if (exception.get("eligible") is not True
+            or exception.get("version") != "sam_delivery_owner_exception_v1"
+            or not open_window):
+        return None
+    try:
+        inbound_at = datetime.fromtimestamp(int(latest.get("created_at")), timezone.utc)
+    except (TypeError, ValueError, OSError):
+        return None
+    return {
+        "requested_authority": "delivery_commitment",
+        "expires_at": (inbound_at + timedelta(hours=24)).isoformat(),
+        "choices": [{
+            "id": "decline",
+            "label_code": "do_not_offer_delivery",
+            "actionable": True,
+            "outcome_code": "delivery_not_approved",
+            "follow_up_trigger_code": "prepare_governed_reply",
+        }],
+        "source_contract": "sam_delivery_owner_exception_v1",
     }
 
 
