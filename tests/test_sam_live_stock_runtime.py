@@ -501,7 +501,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(packet["availability"]["eligible_projection_count"], 1)
         self.assertEqual(
             packet["agent_evidence"]["herdmaster"]["status"],
-            "empty_agent_snapshot_reconciled_from_canonical_reader",
+            "canonical_sales_availability_reader",
         )
         self.assertNotIn(
             "availability_rows",
@@ -1296,6 +1296,92 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["sales_lane"], "live_stock_sales")
         self.assertIn("Finishers: 1 currently eligible", decision["suggested_reply_text"])
         self.assertEqual(decision["suggested_reply_text"].count("?"), 1)
+        price_list.assert_called_once()
+
+    @patch("modules.sales.sam_live_stock_runtime.delegate_to_agent")
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_composed_request_uses_one_price_projection_and_no_agent_round_trip(
+        self, price_list, delegate
+    ):
+        price_list.return_value = (self._active_big_pig_prices(), 200)
+        rows = [
+            exact_eligible_row(
+                pig_id=f"G-{index}",
+                sale_category="Grower Pigs",
+                calculated_stage="Grower",
+                current_weight_kg=20 + index,
+                weight_band="20_to_24_Kg",
+            )
+            for index in range(1, 51)
+        ]
+
+        result, status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="I need five growing pigs"),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {},
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [],
+                },
+                availability_loader=lambda: rows,
+            )
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            result["sam_decision"]["sales_lane"], "live_stock_sales"
+        )
+        price_list.assert_called_once()
+        delegate.assert_not_called()
+
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_price_projection_failure_omits_price_but_keeps_useful_guidance(
+        self, price_list
+    ):
+        price_list.side_effect = RuntimeError("database unavailable")
+
+        result, status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="I need piglets"),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {},
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [],
+                },
+                availability_loader=lambda: [
+                    exact_eligible_row(
+                        sale_category="Young Piglets",
+                        calculated_stage="Piglet",
+                        current_weight_kg=5,
+                        weight_band="5_to_6_Kg",
+                    )
+                ],
+            )
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status, 200)
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertNotIn("R400", decision["suggested_reply_text"])
+        self.assertIn(
+            "small piglets", decision["suggested_reply_text"].lower()
+        )
+        self.assertEqual(decision["suggested_reply_text"].count("?"), 1)
+        self.assertEqual(
+            decision["agent_evidence"]["ledger"]["status"],
+            "canonical_price_projection_unavailable",
+        )
+        price_list.assert_called_once()
 
     @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
     def test_big_pig_information_falls_back_to_price_only_when_availability_unavailable(self, price_list):
@@ -1521,15 +1607,23 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 self.assertFalse(decision["reserves_stock"])
                 self.assertFalse(decision["changes_stock"])
 
+    @patch("modules.sales.sam_live_stock_runtime.get_sales_availability")
     @patch("modules.sales.sam_live_stock_runtime.delegate_to_agent")
-    def test_production_availability_path_delegates_to_herdmaster(self, delegate):
-        delegate.return_value = ({
-            "success": True, "availability_rows": [{"pig_id": "P1", "available_for_sale": True}],
-            "agent": {"agent_id": "herdmaster"}, "sources": [{"name": "sales_availability"}],
-        }, 200)
-        context = sam_live_stock_runtime.load_live_stock_read_context({}, {"category": "piglet"}, environ={})
-        self.assertEqual(delegate.call_args.args[0], "herdmaster")
-        self.assertEqual(context["agent_evidence"]["herdmaster"]["agent"]["agent_id"], "herdmaster")
+    def test_production_availability_path_uses_canonical_reader_without_delegate(
+        self, delegate, availability
+    ):
+        availability.return_value = [
+            {"pig_id": "P1", "available_for_sale": True}
+        ]
+        context = sam_live_stock_runtime.load_live_stock_read_context(
+            {}, {"category": "piglet"}, environ={}
+        )
+        delegate.assert_not_called()
+        availability.assert_called_once_with()
+        self.assertEqual(
+            context["agent_evidence"]["herdmaster"]["status"],
+            "canonical_sales_availability_reader",
+        )
 
     def test_afrikaans_location_question_gets_afrikaans_farm_answer(self):
         result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(

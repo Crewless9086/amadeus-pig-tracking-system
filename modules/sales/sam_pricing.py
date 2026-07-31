@@ -179,7 +179,14 @@ def record_live_stock_price_entry(payload, database_url=None):
     }, 201
 
 
-def resolve_live_stock_price_rule(category, weight_band, sex="", as_of=None, database_url=None):
+def resolve_live_stock_price_rule(
+    category,
+    weight_band,
+    sex="",
+    as_of=None,
+    database_url=None,
+    price_entries=None,
+):
     sale_category = normal_live_sale_category(category)
     weight_band = to_clean_string(weight_band)
     sex = to_clean_string(sex)
@@ -190,8 +197,27 @@ def resolve_live_stock_price_rule(category, weight_band, sex="", as_of=None, dat
             "sale_category": sale_category,
             "weight_band": weight_band,
         }
-    listed, status_code = list_live_stock_price_entries(limit=500, database_url=database_url)
-    entries = listed.get("price_entries", []) if status_code == 200 else default_live_stock_price_entries()
+    if isinstance(price_entries, list):
+        entries = price_entries
+        listed = {
+            "source": next(
+                (
+                    str(entry.get("source") or "")
+                    for entry in entries
+                    if isinstance(entry, dict) and entry.get("source")
+                ),
+                "preloaded_projection",
+            )
+        }
+    else:
+        listed, status_code = list_live_stock_price_entries(
+            limit=500, database_url=database_url
+        )
+        entries = (
+            listed.get("price_entries", [])
+            if status_code == 200
+            else default_live_stock_price_entries()
+        )
     selected = _select_effective_price(entries, sale_category, weight_band, sex, as_of=as_of)
     if not selected:
         return {

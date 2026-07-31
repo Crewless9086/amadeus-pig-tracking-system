@@ -2220,48 +2220,16 @@ def load_live_stock_read_context(
                 "source_mode": "sanitized_replay_fixture",
             }
         else:
-            herdmaster_evidence, herdmaster_status = delegate_to_agent("herdmaster", {
-                "goal": "Provide governed livestock sales candidates for SAM.",
-                "question": _canonical_availability_question(
-                    availability_facts,
-                    inbound.get("content"),
-                ),
-                "capability": "sales_availability", "required_freshness": "live",
-                "known_context": {
-                    "category": availability_facts.get("category"),
-                    "weight_range": availability_facts.get("weight_range"),
-                    "quantity": availability_facts.get("quantity"),
-                    "sex": availability_facts.get("sex"),
-                    "sex_split": availability_facts.get("sex_split"),
-                    "timing": availability_facts.get("timing"),
-                    "location": availability_facts.get("location"),
-                },
-            })
-            if herdmaster_status >= 400:
-                raise RuntimeError(herdmaster_evidence.get("status") or "herdmaster_availability_failed")
-            availability_rows = herdmaster_evidence.get("availability_rows") or []
-            if not availability_rows:
-                reconciled_rows = list(get_sales_availability() or [])
-                if reconciled_rows:
-                    availability_rows = reconciled_rows
-                    herdmaster_evidence = {
-                        **herdmaster_evidence,
-                        "status": "empty_agent_snapshot_reconciled_from_canonical_reader",
-                        "canonical_row_count": len(reconciled_rows),
-                        "summary": (
-                            "The initial read-only agent snapshot was empty; "
-                            "the same canonical sales-availability reader "
-                            f"returned {len(reconciled_rows)} rows."
-                        ),
-                    }
+            availability_rows = list(get_sales_availability() or [])
             herdmaster_evidence = {
-                key: value
-                for key, value in herdmaster_evidence.items()
-                if key != "availability_rows"
+                "agent": {
+                    "agent_id": "herdmaster",
+                    "authority_tier": "canonical_read_only_projection",
+                },
+                "status": "canonical_sales_availability_reader",
+                "provenance": "get_sales_availability",
+                "canonical_row_count": len(availability_rows),
             }
-            herdmaster_evidence["canonical_row_count"] = len(
-                availability_rows
-            )
         availability = summarize_live_stock_availability(availability_rows, availability_facts)
         availability = resolve_authoritative_availability(
             availability_rows,
@@ -3025,15 +2993,56 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         blockers.append("read_context_error")
 
     ready_for_runtime_next_step = route["lane"] == LANE_LIVE_STOCK and not missing and not blockers
-    match_packet = build_live_stock_match_packet(facts, availability)
-    draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
-    price_answer_packet = build_live_stock_price_answer_packet(facts, match_packet)
-    ledger_evidence, _ledger_status = delegate_to_agent("ledger", {
-        "goal": "Validate the active livestock price evidence for SAM's reply.",
-        "question": str(inbound.get("content") or "Validate livestock price"),
-        "capability": "livestock_price_evidence",
-        "known_context": {"pricing": price_answer_packet.get("pricing") or {}},
-    })
+    try:
+        pricing_projection, pricing_status = list_live_stock_price_entries(
+            limit=500,
+            database_url=(environ or {}).get("DATABASE_URL"),
+        )
+    except Exception as exc:
+        pricing_projection = {
+            "success": False,
+            "configured": False,
+            "source": "",
+            "price_entries": [],
+            "status": "canonical_price_projection_unavailable",
+            "error_type": exc.__class__.__name__,
+        }
+        pricing_status = 503
+    price_entries = (
+        pricing_projection.get("price_entries") or []
+        if pricing_status == 200 and isinstance(pricing_projection, dict)
+        else []
+    )
+    match_packet = build_live_stock_match_packet(
+        facts, availability, price_entries=price_entries
+    )
+    draft_packet = build_live_stock_draft_order_packet(
+        inbound, facts, match_packet, price_entries=price_entries
+    )
+    price_answer_packet = build_live_stock_price_answer_packet(
+        facts, match_packet, price_entries=price_entries
+    )
+    ledger_evidence = {
+        "agent": {
+            "agent_id": "ledger",
+            "authority_tier": "canonical_read_only_projection",
+        },
+        "status": (
+            "canonical_price_projection_loaded"
+            if pricing_status == 200
+            else "canonical_price_projection_unavailable"
+        ),
+        "source": (
+            pricing_projection.get("source")
+            if isinstance(pricing_projection, dict)
+            else ""
+        ),
+        "entry_count": len(price_entries),
+        "payment": {
+            "status": "unknown",
+            "reason": "payment_authority_not_requested_for_livestock_composition",
+        },
+    }
     agent_evidence = dict(context_packet.get("agent_evidence") or {})
     agent_evidence["ledger"] = ledger_evidence
     context_packet = {**context_packet, "agent_evidence": agent_evidence}
@@ -3066,6 +3075,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         facts,
         availability,
         environ=environ,
+        price_entries=price_entries,
     )
     contextual_sales = build_contextual_sales_recommendation(
         inbound,
@@ -3073,6 +3083,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         context_packet.get("chatwoot_history_messages") or [],
         availability,
         price_loader=list_live_stock_price_entries,
+        price_projection=pricing_projection,
         database_url=(environ or {}).get("DATABASE_URL"),
     )
     customer_guidance = build_live_stock_customer_guidance(inbound, facts)
@@ -3685,7 +3696,7 @@ def _durable_live_stock_next_action(inbound, facts, route, missing, blockers, co
     return "answer_general_info"
 
 
-def build_live_stock_match_packet(facts, availability):
+def build_live_stock_match_packet(facts, availability, *, price_entries=None):
     facts = facts if isinstance(facts, dict) else {}
     availability = availability if isinstance(availability, dict) else {}
     quantity = facts.get("quantity") if isinstance(facts.get("quantity"), int) else 0
@@ -3715,6 +3726,7 @@ def build_live_stock_match_packet(facts, availability):
             or availability.get("considered_sample")
             or []
         ),
+        price_entries=price_entries,
     )
     return {
         "version": "sam_live_stock_match_packet_v1",
@@ -3757,7 +3769,9 @@ def build_live_stock_match_packet(facts, availability):
     }
 
 
-def _rank_and_price_live_stock_alternatives(facts, rows):
+def _rank_and_price_live_stock_alternatives(
+    facts, rows, *, price_entries=None
+):
     """Produce deterministic, price-provenanced alternatives for composition."""
     facts = facts if isinstance(facts, dict) else {}
     wanted_sex = _normal_text(facts.get("sex"))
@@ -3803,7 +3817,15 @@ def _rank_and_price_live_stock_alternatives(facts, rows):
             str(row.get("sex") or ""),
         )
         if cache_key not in price_cache:
-            price_cache[cache_key] = resolve_live_stock_price_rule(*cache_key)
+            if price_entries is None:
+                price_cache[cache_key] = resolve_live_stock_price_rule(
+                    *cache_key,
+                )
+            else:
+                price_cache[cache_key] = resolve_live_stock_price_rule(
+                    *cache_key,
+                    price_entries=price_entries,
+                )
         pricing = price_cache[cache_key]
         row["alternative_rank"] = index
         row["target_weight_kg"] = wanted_weight
@@ -3837,12 +3859,16 @@ def _safe_float(value):
         return None
 
 
-def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
+def build_live_stock_draft_order_packet(
+    inbound, facts, match_packet=None, *, price_entries=None
+):
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
     match_packet = match_packet if isinstance(match_packet, dict) else {}
     item = _live_stock_sync_requested_item(facts)
-    price_rule = _live_stock_price_rule_for_packet(facts, match_packet)
+    price_rule = _live_stock_price_rule_for_packet(
+        facts, match_packet, price_entries=price_entries
+    )
     quantity = facts.get("quantity") if isinstance(facts.get("quantity"), int) else 0
     quoted_total = (
         round(float(price_rule["unit_price"]) * quantity, 2)
@@ -3913,10 +3939,14 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
     }
 
 
-def build_live_stock_price_answer_packet(facts, match_packet=None):
+def build_live_stock_price_answer_packet(
+    facts, match_packet=None, *, price_entries=None
+):
     facts = facts if isinstance(facts, dict) else {}
     match_packet = match_packet if isinstance(match_packet, dict) else {}
-    price_rule = _live_stock_price_rule_for_packet(facts, match_packet)
+    price_rule = _live_stock_price_rule_for_packet(
+        facts, match_packet, price_entries=price_entries
+    )
     quantity = _quantity_number(facts.get("quantity"))
     unit_price = price_rule.get("unit_price") if price_rule.get("found") else None
     estimated_total = round(float(unit_price) * quantity, 2) if unit_price is not None and quantity > 0 else ""
@@ -3942,7 +3972,9 @@ def build_live_stock_price_answer_packet(facts, match_packet=None):
     }
 
 
-def build_live_stock_information_response(facts, availability, *, environ=None):
+def build_live_stock_information_response(
+    facts, availability, *, environ=None, price_entries=None
+):
     """Build a bounded owner-review information draft from current truth only."""
     facts = facts if isinstance(facts, dict) else {}
     availability = availability if isinstance(availability, dict) else {}
@@ -3956,12 +3988,17 @@ def build_live_stock_information_response(facts, availability, *, environ=None):
         }
 
     source = environ if isinstance(environ, Mapping) else os.environ
-    listed, status_code = list_live_stock_price_entries(
-        limit=500,
-        database_url=source.get("DATABASE_URL"),
-    )
-    price_entries = listed.get("price_entries") if status_code == 200 and isinstance(listed, dict) else []
-    price_entries = price_entries if isinstance(price_entries, list) else []
+    if not isinstance(price_entries, list):
+        listed, status_code = list_live_stock_price_entries(
+            limit=500,
+            database_url=source.get("DATABASE_URL"),
+        )
+        price_entries = (
+            listed.get("price_entries")
+            if status_code == 200 and isinstance(listed, dict)
+            else []
+        )
+        price_entries = price_entries if isinstance(price_entries, list) else []
     now_key = datetime.now(timezone.utc).isoformat()
     categories = ("Grower Pigs", "Finisher Pigs")
     active_prices = {}
@@ -5658,7 +5695,9 @@ def _complete_reservation_protection_reply(facts):
     )
 
 
-def _live_stock_price_rule_for_packet(facts, match_packet):
+def _live_stock_price_rule_for_packet(
+    facts, match_packet, *, price_entries=None
+):
     facts = facts if isinstance(facts, dict) else {}
     match_packet = match_packet if isinstance(match_packet, dict) else {}
     sample = match_packet.get("matched_sample") if isinstance(match_packet.get("matched_sample"), list) else []
@@ -5669,7 +5708,9 @@ def _live_stock_price_rule_for_packet(facts, match_packet):
         _normal_intake_category(facts.get("category")),
     )
     sex = first.get("sex") or facts.get("sex")
-    return resolve_live_stock_price_rule(category, weight_band, sex)
+    return resolve_live_stock_price_rule(
+        category, weight_band, sex, price_entries=price_entries
+    )
 
 
 def _quantity_number(value):
