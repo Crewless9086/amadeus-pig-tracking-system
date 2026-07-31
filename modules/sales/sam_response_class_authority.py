@@ -346,7 +346,7 @@ def load_canonical_evidence(*, database_url: str | None = None, limit: int = 500
                     """
                     select review_event_id, chatwoot_conversation_id,
                            event_source, review_json, created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where event_source in (
                         'sam_outbound_delivery_attempt_claim',
                         'sam_outbound_delivery_transition'

@@ -66,6 +66,29 @@ class LitterSupersessionConsumerContractTests(unittest.TestCase):
                 offenders.append(str(path.relative_to(ROOT)))
         self.assertEqual(offenders, [])
 
+    def test_current_sam_action_consumers_ignore_historical_superseded_snapshots(self):
+        paths = [
+            "modules/sales/sam_live_stock_launch_control.py",
+            "modules/sales/sam_response_class_authority.py",
+            "modules/charlie/owner_approval_inbox.py",
+        ]
+        for relative in paths:
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn(
+                "public.current_actionable_sam_live_stock_review_events",
+                source,
+                f"{relative} must not treat historical inventory snapshots as current",
+            )
+        launch = (ROOT / paths[0]).read_text(encoding="utf-8")
+        self.assertIn(
+            "insert into public.sam_live_stock_conversation_review_events",
+            launch,
+        )
+        self.assertIn(
+            "select count(*) from public.sam_live_stock_conversation_review_events",
+            launch,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
