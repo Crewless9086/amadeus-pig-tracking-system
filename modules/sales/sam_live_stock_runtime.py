@@ -55,6 +55,9 @@ from modules.sales.sam_chatwoot_inbox_state import (
 from modules.sales.sam_live_stock_continuous_dispatch import (
     build_delivery_owner_exception,
 )
+from modules.sales.sam_owner_example_projection import (
+    read_owner_example_projection,
+)
 from modules.sales.sam_live_stock_media import classify_chatwoot_image, media_policy, transcribe_chatwoot_voice
 from modules.sales.sam_delivery_truth import (
     CHATWOOT_ACCEPTED_UNVERIFIED,
@@ -3051,13 +3054,14 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         price_answer_packet,
         match_packet,
     )
-    owner_correction_examples = _load_owner_correction_examples(
+    owner_example_projection = _load_owner_correction_examples(
         inbound,
         environ or {},
         owner_example_loader=owner_example_loader,
         facts=facts,
         conversation_plan=conversation_plan,
     )
+    owner_correction_examples = owner_example_projection.get("examples") or []
     information_reply = build_live_stock_information_response(
         facts,
         availability,
@@ -3219,6 +3223,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "agent_evidence": agent_evidence,
         "owner_action_packet": owner_action_packet,
         "owner_correction_examples": owner_correction_examples,
+        "owner_example_projection": owner_example_projection,
         "draft_order_packet": draft_packet,
         "llm_draft": llm_draft,
         "blockers": blockers,
@@ -5418,36 +5423,16 @@ def _llm_runtime_diagnostics(source):
 def _load_owner_correction_examples(inbound, source, owner_example_loader=None, facts=None, conversation_plan=None):
     source = source if isinstance(source, dict) else {}
     if not _owner_example_retrieval_enabled(source):
-        return []
-    loader = owner_example_loader
-    if loader is None:
-        try:
-            from modules.sales.conversation_learning import list_live_stock_owner_reply_examples
-        except Exception:
-            return []
-        loader = list_live_stock_owner_reply_examples
-    try:
-        result, _status = loader(
-            conversation_id=(inbound or {}).get("conversation_id") or "",
-            limit=3,
-            customer_message=(inbound or {}).get("content") or "",
-            customer_language=(facts or {}).get("customer_language") or "",
-            conversation_stage=(conversation_plan or {}).get("stage") or "",
-            reply_class=(facts or {}).get("message_intent") or "",
-        )
-    except TypeError:
-        try:
-            result, _status = loader(
-                conversation_id=(inbound or {}).get("conversation_id") or "",
-                limit=3,
-                customer_message=(inbound or {}).get("content") or "",
-            )
-        except TypeError:
-            result, _status = loader((inbound or {}).get("conversation_id") or "", 3)
-    except Exception:
-        return []
-    examples = result.get("examples") if isinstance(result, dict) else []
-    return examples if isinstance(examples, list) else []
+        return {
+            "version": "sam_owner_example_projection_v1",
+            "projection_id": "",
+            "fresh": False,
+            "status": "disabled",
+            "examples": [],
+            "request_blocking_load": False,
+            "canonical_authority": False,
+        }
+    return read_owner_example_projection(loader=owner_example_loader)
 
 
 def _llm_reply_context_packet(
