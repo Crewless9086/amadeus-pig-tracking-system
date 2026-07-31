@@ -8,6 +8,7 @@ from modules.oom_sakkie.service import handle_message
 from modules.oom_sakkie.ledger_agent import ledger_agent_policy
 from modules.oom_sakkie.sales_campaign_store import approve_first_waiting_sales_campaign
 from modules.sales.sam_live_stock_launch_control import process_sam_live_stock_owner_callback
+from modules.oom_sakkie.owner_attention_adapter import process_owner_attention_callback
 from modules.oom_sakkie.telegram_gateway import (
     ALLOWED_USER_IDS_ENV,
     MAX_TELEGRAM_TEXT_CHARS,
@@ -174,12 +175,18 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
             body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
             body["telegram_user_id"] = callback["telegram_user_id"]
             return body, status_code
-        action_result, action_status = process_sam_live_stock_owner_callback({
-            "callback_data": callback["callback_data"],
-            "telegram_chat_id": callback["telegram_chat_id"],
-            "telegram_message_id": callback["telegram_message_id"],
-            "owner": "telegram_owner",
-        }, environ=environ)
+        if callback["callback_data"].startswith("sam_live_owner_decision:"):
+            action_result, action_status = process_owner_attention_callback({
+                "callback_data": callback["callback_data"], "telegram_user_id": callback["telegram_user_id"],
+                "telegram_chat_id": callback["telegram_chat_id"], "telegram_message_id": callback["telegram_message_id"],
+            }, environ=environ)
+        else:
+            action_result, action_status = process_sam_live_stock_owner_callback({
+                "callback_data": callback["callback_data"],
+                "telegram_chat_id": callback["telegram_chat_id"],
+                "telegram_message_id": callback["telegram_message_id"],
+                "owner": "telegram_owner",
+            }, environ=environ)
         ack_result, ack_status = acknowledge_telegram_callback(callback["callback_query_id"], environ=environ)
         status_label = action_result.get("status", "sam_live_callback_failed")
         body, _ = _direct_result(action_result.get("success") is True and ack_status < 400, status_label, policy, action_status)

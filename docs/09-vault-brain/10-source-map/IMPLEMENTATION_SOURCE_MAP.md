@@ -8,8 +8,12 @@
   `docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`
 - Pure coordination kernel:
   `modules/oom_sakkie/owner_attention_queue.py`
+- Existing-infrastructure adapter:
+  `modules/oom_sakkie/owner_attention_adapter.py`, invoked after the existing
+  SAM inbox disposition and through the authenticated Oom Sakkie callback.
 - Focused tests:
-  `tests/test_oom_sakkie_owner_attention_queue.py`
+  `tests/test_oom_sakkie_owner_attention_queue.py`,
+  `tests/test_oom_sakkie_owner_attention_adapter.py`
 - Source-ready shared-adapter handover:
   `docs/06-operations/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_SOURCE_HANDOVER.md`
 - Existing later integration surfaces, unchanged by this source slice:

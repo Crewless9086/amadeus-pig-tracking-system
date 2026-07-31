@@ -1063,6 +1063,12 @@ def sam_live_stock_chatwoot_reconcile():
     try:
         packet = operate_livestock_inbox(
             environ=os.environ,
+            attention_sam_state=(
+                {"state": "healthy"}
+                if str(os.environ.get("SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
+                else {"state": "disabled", "affected_work_codes": ["current_eligible_enquiries"],
+                      "manual_coverage_required": True, "manual_coverage_reason_code": "sam_disabled"}
+            ),
             history_loader=lambda conversation_id, environ: (
                 load_chatwoot_conversation_history(
                     conversation_id, environ, limit=200
@@ -1081,6 +1087,13 @@ def sam_live_stock_chatwoot_reconcile():
         )
         return jsonify(packet), 200
     except Exception as exc:
+        try:
+            from modules.oom_sakkie.owner_attention_adapter import operate_owner_attention_queue
+            operate_owner_attention_queue([], environ=os.environ,
+                sam_state={"state": "systemically_contained", "affected_work_codes": ["current_eligible_enquiries"],
+                           "manual_coverage_required": True, "manual_coverage_reason_code": "systemic_containment"})
+        except Exception:
+            pass
         return jsonify(
             {
                 "status": "sam_live_stock_inbox_operation_failed",

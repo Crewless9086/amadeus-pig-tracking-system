@@ -1,6 +1,6 @@
 # Oom Sakkie Owner Attention Queue — Source Handover
 
-Status: source-ready only; unmerged and undeployed
+Status: kernel integrated; shared adapter prepared for reviewed deployment
 
 ## Prepared result
 
@@ -20,9 +20,11 @@ bindings, unsafe identifiers, forged cards and receipt mismatches fail closed.
 
 ## Shared-file integration handover
 
-No shared runtime adapter was changed. In a later serialized Oom Sakkie window,
-the existing owners must make these bounded integrations rather than add a new
-bot, trigger, router or ledger:
+The bounded adapter now lives in
+`modules/oom_sakkie/owner_attention_adapter.py`. It reuses the existing SAM
+inbox result, owner-card lifecycle, review-event evidence rail, Telegram
+send/edit helpers and authenticated direct-owner callback. It adds no bot,
+trigger, router, webhook, workflow family, table or decision ledger:
 
 - the existing SAM status projection supplies provenance-bound observation
   timestamps, chronology sequence, opaque identities and canonical evidence
@@ -39,7 +41,7 @@ bot, trigger, router or ledger:
 - existing incident-message identity storage retains stable alert IDs across
   summary periods and resolves/edits an incident only when its state changes.
 
-Integration tests must exercise these exact existing adapters for provider
+Integration tests exercise these exact existing adapters for provider
 message identity, atomic receipt uniqueness, stale-button removal, changed
 chronology, callback replay, incident lifecycle, SAM-disabled containment and
 preservation of every unrelated Oom Sakkie, SAM, HERDMASTER, ROOTLINE and BEACON
@@ -55,5 +57,28 @@ route.
 - Oom Sakkie browser behavior smoke: passed;
 - Python compilation and `git diff --check`: passed.
 
+Adapter review evidence:
+
+- focused queue/adapter/inbox selection: 57 passed, 3 subtests passed;
+- shared Oom Sakkie/SAM/Telegram selection: 623 passed, 7 skipped, 289
+  subtests passed;
+- independent owner-experience/product/operations review: approved;
+- independent backend/security/privacy/authority review: approved.
+
 No Telegram call, deployment, merge, customer/farm mutation, decision
 consumption or shared-runtime acquisition occurred.
+
+The preceding source-only statement describes the kernel PR. During the later
+authorized serialized window, PR #641 and the reconciled PR #631 were merged
+normally with exact-head and exact-merge CI. Render reached merge `2bda3248`,
+and the existing active relay Build node was updated alone to reviewed SHA-256
+`732d38a80dc777f634bc189a949b5f318a37bf308f9c57cfeb55e36e3c8372a1`.
+
+## Deployment gate and bounded proof
+
+`OOM_SAKKIE_OWNER_ATTENTION_QUEUE_ENABLED` is the only new runtime gate. Keep
+it false until the exact adapter merge is deployed and healthy. Then enable
+only that key and run one read-only current-SAM reconciliation with customer
+processing capped at zero. It may establish one owner summary identity; the
+repeat proof must edit that identity or deduplicate it. It must send no
+customer message and must not manufacture a protected decision.

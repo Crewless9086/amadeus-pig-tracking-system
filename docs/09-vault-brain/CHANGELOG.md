@@ -1,4 +1,15 @@
 # Vault Brain Changelog
+## 2026-07-31 - Owner Attention Queue existing-rail adapter prepared
+
+- Connected current SAM inbox dispositions to the consolidated queue after
+  normal SAM processing, with adapter failure contained from the sales lane.
+- Reused the existing owner-card lifecycle, review-event evidence rail,
+  Telegram send/edit helpers and authenticated Oom Sakkie callback; added no
+  bot, trigger, router, webhook, workflow family, table or decision ledger.
+- Kept ordinary activity summary-only, incomplete protected evidence
+  buttonless, consumption receipt-bound, resolution in-place and every
+  customer/farm/protected action outside adapter authority.
+
 ## 2026-07-31 - Oom Sakkie consolidated Owner Attention Queue prepared
 
 - Added an I/O-free coordination kernel for one deduplicated sales-status
