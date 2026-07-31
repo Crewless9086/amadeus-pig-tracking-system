@@ -417,12 +417,16 @@ def _decide(*, text, intent, retained, campaign, public_facts, knowledge):
         return answer, clarification, None, SPECIALIST_FRONT_DOOR, True, "supported_public_farm_fact"
     if (
         kind == "greeting_or_small_talk"
-        and intent.get("used_campaign_context")
+        and (
+            intent.get("used_campaign_context")
+            or intent.get("used_prior_context")
+        )
         and specialist in {SPECIALIST_LIVESTOCK, SPECIALIST_MEAT}
     ):
         # The specialist owns the warm response as well as the product answer;
-        # this avoids a context-blind greeting that asks what the ad is about.
-        return "", "", None, specialist, False, "campaign_context_identified_for_specialist"
+        # this avoids a context-blind greeting that drops an established need.
+        source = "prior" if intent.get("used_prior_context") else "campaign"
+        return "", "", None, specialist, False, f"{source}_context_identified_for_specialist"
     if kind == "greeting_or_small_talk":
         answer = "Hi! I’m well, thank you." if _SMALL_TALK.search(text) else "Hi! Welcome to Amadeus Farm."
         if re.search(r"\b(môre|more|goeie|hoe gaan)\b", text, re.IGNORECASE):

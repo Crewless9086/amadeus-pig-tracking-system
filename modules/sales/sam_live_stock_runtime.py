@@ -232,6 +232,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     inbound["understanding"] = understanding
 
     facts = extract_live_stock_facts(inbound["content"], inbound)
+    newly_supplied_facts = dict(facts)
     facts["customer_language"] = understanding.get("language") or "unknown"
     facts["message_intent"] = understanding.get("message_intent") or "unclear"
     facts["media_review_required"] = bool(understanding.get("requires_media_review"))
@@ -626,6 +627,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         proposed_source=decision.get("reply_source") or "",
         evidence_context={
             "returning_customer_context": context_packet.get("prior_context") or {},
+            "newly_supplied_facts": newly_supplied_facts,
             "campaign_or_post_context": context_packet.get("campaign_or_post_context") or {},
             "farm_knowledge": load_sam_farm_knowledge(source).get("knowledge") or {},
             "delivery_claims": context_packet.get("delivery_claims") or [],
@@ -6070,6 +6072,7 @@ def _extract_location(text):
     known = (
         "riversdale", "albertinia", "still bay", "stilbaai", "jongensfontein", "heidelberg", "mossel bay",
         "port elizabeth", "gqeberha", "east london", "eastern cape", "western cape", "cape town", "george",
+        "worcester",
     )
     for place in known:
         if place in text:
