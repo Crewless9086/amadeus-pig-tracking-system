@@ -2965,10 +2965,17 @@ def _compact_chatwoot_history_messages(history, limit=10, current_message_id="")
 def _authority_chatwoot_messages(history, limit=20):
     history = history if isinstance(history, dict) else {}
     messages = history.get("messages") if isinstance(history.get("messages"), list) else []
+    public_messages = [
+        message
+        for message in messages
+        if (
+            isinstance(message, dict)
+            and message.get("private") is not True
+            and message.get("message_type") in (0, 1, "incoming", "outgoing")
+        )
+    ]
     authoritative = []
-    for message in messages[-max(int(limit or 20), 1):]:
-        if not isinstance(message, dict):
-            continue
+    for message in public_messages[-max(int(limit or 20), 1):]:
         authoritative.append({
             "id": _clean(message.get("id"), 100),
             "message_type": message.get("message_type"),

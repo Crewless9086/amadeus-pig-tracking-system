@@ -4557,6 +4557,75 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["creates_order"])
         self.assertFalse(result["reserves_stock"])
 
+    def test_authoritative_chronology_excludes_later_activity_and_private_rows(self):
+        history = {
+            "messages": [
+                {
+                    "id": "100",
+                    "message_type": 1,
+                    "created_at": 100,
+                    "content": "Earlier public reply",
+                    "private": False,
+                },
+                {
+                    "id": "101",
+                    "message_type": 0,
+                    "created_at": 101,
+                    "content": "How much each",
+                    "private": False,
+                },
+                {
+                    "id": "102",
+                    "message_type": 2,
+                    "created_at": 102,
+                    "content": "Conversation assigned",
+                    "private": False,
+                },
+                {
+                    "id": "103",
+                    "message_type": 1,
+                    "created_at": 103,
+                    "content": "Internal note",
+                    "private": True,
+                },
+            ]
+        }
+
+        authority = sam_live_stock_runtime._authority_chatwoot_messages(
+            history
+        )
+
+        self.assertEqual([row["id"] for row in authority], ["100", "101"])
+        self.assertEqual(authority[-1]["message_type"], 0)
+        self.assertEqual(authority[-1]["content"], "How much each")
+
+    def test_authoritative_chronology_preserves_later_public_outgoing_row(self):
+        history = {
+            "messages": [
+                {
+                    "id": "101",
+                    "message_type": 0,
+                    "created_at": 101,
+                    "content": "How much each",
+                    "private": False,
+                },
+                {
+                    "id": "104",
+                    "message_type": 1,
+                    "created_at": 104,
+                    "content": "A later public reply",
+                    "private": False,
+                },
+            ]
+        }
+
+        authority = sam_live_stock_runtime._authority_chatwoot_messages(
+            history
+        )
+
+        self.assertEqual([row["id"] for row in authority], ["101", "104"])
+        self.assertEqual(authority[-1]["message_type"], 1)
+
     def test_context_resolved_livestock_terse_followup_stays_specialist(self):
         current_at = 1785313934
         payload = inbound_payload(
