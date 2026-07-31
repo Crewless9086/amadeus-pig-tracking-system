@@ -60,6 +60,7 @@ def build_contextual_sales_recommendation(
     availability: Mapping[str, Any],
     *,
     price_loader: Callable[..., tuple[dict[str, Any], int]] | None = None,
+    price_projection: Mapping[str, Any] | None = None,
     database_url: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -118,6 +119,7 @@ def build_contextual_sales_recommendation(
         availability,
         interpretation,
         price_loader=price_loader,
+        price_projection=price_projection,
         database_url=database_url,
         now=now,
     )
@@ -306,6 +308,7 @@ def build_customer_livestock_aggregate(
     interpretation: Mapping[str, Any],
     *,
     price_loader: Callable[..., tuple[dict[str, Any], int]] | None = None,
+    price_projection: Mapping[str, Any] | None = None,
     database_url: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -359,8 +362,12 @@ def build_customer_livestock_aggregate(
         counts[category] = selected_count
         exclusions[category] = all_count - selected_count
 
-    loader = price_loader or list_live_stock_price_entries
-    listed, price_status = loader(limit=500, database_url=database_url)
+    if isinstance(price_projection, Mapping):
+        listed = dict(price_projection)
+        price_status = 200 if listed.get("success") is not False else 503
+    else:
+        loader = price_loader or list_live_stock_price_entries
+        listed, price_status = loader(limit=500, database_url=database_url)
     entries = (
         listed.get("price_entries")
         if price_status == 200 and isinstance(listed, Mapping)
