@@ -108,7 +108,10 @@ def test_direct_location_question_is_answered_before_one_qualification():
         "Live-pig handover is normally arranged in Riversdale or Albertinia."
     )
     assert result["customer_reply"].count("?") == 1
-    assert "What size would suit you" in result["customer_reply"]
+    assert result["customer_reply"].endswith(
+        "Would you prefer small piglets (about 2-6 kg) or weaned piglets "
+        "(about 7-19 kg)?"
+    )
     assert result["authority"]["allowed"] is True
 
 
@@ -130,7 +133,10 @@ def test_unclear_piglet_information_gets_guidance_then_one_size_question():
         "or weaned piglets (about 7-19 kg)"
     )
     assert result["customer_reply"].count("?") == 1
-    assert "What size would suit you" in result["customer_reply"]
+    assert result["customer_reply"].endswith(
+        "Would you prefer small piglets (about 2-6 kg) or weaned piglets "
+        "(about 7-19 kg)?"
+    )
 
 
 def test_price_question_without_size_asks_size_before_quantity():
@@ -152,8 +158,188 @@ def test_price_question_without_size_asks_size_before_quantity():
     assert result["customer_reply"].startswith(
         "The price depends on the pig's size or weight category."
     )
-    assert "What size would suit you" in result["customer_reply"]
+    assert result["customer_reply"].endswith(
+        "Would you prefer small piglets (about 2-6 kg) or weaned piglets "
+        "(about 7-19 kg)?"
+    )
     assert "How many" not in result["customer_reply"]
+
+
+def test_broad_pig_interest_keeps_broad_category_clarification():
+    result = _packet(
+        "I am looking for a pig.",
+        facts={
+            "category": "",
+            "weight_range": "",
+            "quantity": "",
+            "sex": "",
+            "timing": "",
+            "location": "",
+            "latest_customer_message": "I am looking for a pig.",
+        },
+    )
+
+    assert "growing pigs (about 20-49 kg)" in result["customer_reply"]
+    assert "larger pigs (about 50-79 kg)" in result["customer_reply"]
+    assert "slaughter-size pigs (80 kg and above)" in result["customer_reply"]
+
+
+def test_retained_price_obligation_is_answered_once_when_chronology_has_no_answer():
+    result = _packet(
+        "OK thanks but I'm from Worcester",
+        facts={
+            "category": "Young Piglets",
+            "weight_range": "5_to_6_Kg",
+            "quantity": "",
+            "sex": "",
+            "timing": "",
+            "location": "Worcester",
+            "quote_requested": True,
+        },
+        price_packet={
+            "can_answer_price": True,
+            "unit_price": 400,
+            "pricing": {
+                "pricing_id": "PRICE-5-6",
+                "weight_band": "5_to_6_Kg",
+                "source": "supabase",
+            },
+        },
+        evidence_context={"newly_supplied_facts": {"location": "Worcester"}},
+    )
+
+    assert (
+        "The current supported price for 5-6 kg live pigs is R400.00 each."
+        in result["customer_reply"]
+    )
+    assert result["customer_reply"].endswith(
+        "How many small piglets (about 2-6 kg) would you like?"
+    )
+    assert result["conversation_obligations"]["answered_obligations"] == []
+
+
+def test_retained_price_obligation_is_not_repeated_when_exact_prior_answer_exists():
+    prior = (
+        "Piglets in the 5-6 kg category are R400 each. "
+        "How many piglets do you need?"
+    )
+    current = "OK thanks but I'm from Worcester"
+    result = _packet(
+        current,
+        facts={
+            "category": "Young Piglets",
+            "weight_range": "5_to_6_Kg",
+            "quantity": "",
+            "sex": "",
+            "timing": "",
+            "location": "Worcester",
+            "quote_requested": True,
+        },
+        chronology=[
+            {"id": "outgoing-1", "message_type": 1, "content": prior},
+            {"id": "inbound-1", "message_type": 0, "content": current},
+        ],
+        price_packet={
+            "can_answer_price": True,
+            "unit_price": 400,
+            "pricing": {
+                "pricing_id": "PRICE-5-6",
+                "weight_band": "5_to_6_Kg",
+                "source": "supabase",
+            },
+        },
+        evidence_context={"newly_supplied_facts": {"location": "Worcester"}},
+    )
+
+    assert result["customer_reply"] == (
+        "Thanks, I've noted Worcester. "
+        "How many small piglets (about 2-6 kg) would you like?"
+    )
+    assert "R400" not in result["customer_reply"]
+    answered = result["conversation_obligations"]["answered_obligations"]
+    assert answered[0]["kind"] == "price"
+    assert answered[0]["message_id"] == "outgoing-1"
+    assert len(answered[0]["content_sha256"]) == 64
+    assert set(answered[0]) == {"kind", "message_id", "content_sha256"}
+
+
+def test_prior_price_obligation_requires_exact_decimal_amount():
+    current = "OK thanks but I'm from Worcester"
+    for historical_amount in ("R400.50", "R400,000", "R4000"):
+        result = _packet(
+            current,
+            facts={
+                "category": "Young Piglets",
+                "weight_range": "5_to_6_Kg",
+                "quantity": "",
+                "sex": "",
+                "timing": "",
+                "location": "Worcester",
+                "quote_requested": True,
+            },
+            chronology=[
+                {
+                    "id": "outgoing-1",
+                    "message_type": 1,
+                    "content": f"Piglets in the 5-6 kg category are {historical_amount} each.",
+                },
+                {"id": "inbound-1", "message_type": 0, "content": current},
+            ],
+            price_packet={
+                "can_answer_price": True,
+                "unit_price": 400,
+                "pricing": {
+                    "pricing_id": "PRICE-5-6",
+                    "weight_band": "5_to_6_Kg",
+                    "source": "supabase",
+                },
+            },
+            evidence_context={"newly_supplied_facts": {"location": "Worcester"}},
+        )
+        assert "R400.00 each" in result["customer_reply"]
+        assert result["conversation_obligations"]["answered_obligations"] == []
+
+
+def test_prior_price_obligation_accepts_exact_plain_decimal_and_grouped_amounts():
+    cases = (
+        (400, "R400"),
+        (400, "R400.00"),
+        (1400, "R1,400.00"),
+    )
+    for unit_price, rendered in cases:
+        current = "Thanks, how many should I order?"
+        result = _packet(
+            current,
+            facts={
+                "category": "Young Piglets",
+                "weight_range": "5_to_6_Kg",
+                "quantity": "",
+                "sex": "",
+                "timing": "",
+                "location": "Worcester",
+                "quote_requested": True,
+            },
+            chronology=[
+                {
+                    "id": "outgoing-1",
+                    "message_type": 1,
+                    "content": f"Piglets in the 5-6 kg category are {rendered} each.",
+                },
+                {"id": "inbound-1", "message_type": 0, "content": current},
+            ],
+            price_packet={
+                "can_answer_price": True,
+                "unit_price": unit_price,
+                "pricing": {
+                    "pricing_id": "PRICE-5-6",
+                    "weight_band": "5_to_6_Kg",
+                    "source": "supabase",
+                },
+            },
+        )
+        answered = result["conversation_obligations"]["answered_obligations"]
+        assert answered[0]["message_id"] == "outgoing-1"
+        assert set(answered[0]) == {"kind", "message_id", "content_sha256"}
 
 
 def test_unsupported_availability_claim_is_omitted_without_blocking_qualification():
@@ -173,7 +359,10 @@ def test_unsupported_availability_claim_is_omitted_without_blocking_qualificatio
     assert result["customer_reply"].startswith(
         "Current availability still needs confirmation"
     )
-    assert "What size would suit you" in result["customer_reply"]
+    assert result["customer_reply"].endswith(
+        "Would you prefer small piglets (about 2-6 kg) or weaned piglets "
+        "(about 7-19 kg)?"
+    )
     assert "available" not in result["customer_reply"].lower()
     assert result["customer_reply"].count("?") == 1
 

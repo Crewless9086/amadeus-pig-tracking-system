@@ -4261,7 +4261,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             "Piglets are usually discussed as small piglets",
             decision["suggested_reply_text"],
         )
-        self.assertIn("What size would suit you", decision["suggested_reply_text"])
+        self.assertIn(
+            "Would you prefer small piglets (about 2-6 kg) or weaned piglets "
+            "(about 7-19 kg)?",
+            decision["suggested_reply_text"],
+        )
         self.assertNotIn("How many", decision["suggested_reply_text"])
         self.assertFalse(decision["customer_send_authorized"])
         self.assertFalse(result["sent"])

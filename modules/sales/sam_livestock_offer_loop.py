@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import hashlib
 import re
 from typing import Any, Mapping
@@ -424,6 +424,7 @@ def build_conversation_obligation_packet(
         direct_questions.append("product_guidance")
 
     supported = []
+    answered_obligations = []
     if "location" in direct_questions:
         supported.append({
             "kind": "handover_location",
@@ -434,6 +435,7 @@ def build_conversation_obligation_packet(
         supported.append({
             "kind": "price",
             "value": price_packet.get("unit_price"),
+            "label": _price_label(price_packet, retained),
             "provenance": dict(price_packet.get("pricing") or {}),
         })
     elif "price" in direct_questions:
@@ -442,6 +444,21 @@ def build_conversation_obligation_packet(
             "value": "size_or_weight_category_required",
             "provenance": "canonical_category_pricing_contract",
         })
+    elif facts_request_supported_price(retained, price_packet):
+        prior_price_answer = _prior_supported_price_answer(
+            chronology,
+            inbound,
+            price_packet,
+        )
+        if prior_price_answer:
+            answered_obligations.append(prior_price_answer)
+        else:
+            supported.append({
+                "kind": "price",
+                "value": price_packet.get("unit_price"),
+                "label": _price_label(price_packet, retained),
+                "provenance": dict(price_packet.get("pricing") or {}),
+            })
     if "availability" in direct_questions and not _availability_current(availability):
         supported.append({
             "kind": "availability_boundary",
@@ -522,6 +539,7 @@ def build_conversation_obligation_packet(
         "newly_supplied_facts": supplied,
         "explicit_direct_questions": direct_questions,
         "supported_answer_facts": supported,
+        "answered_obligations": answered_obligations,
         "conversation_acknowledgements": acknowledgements,
         "unresolved_contradictions": contradictions,
         "qualification_dependencies": dependencies,
@@ -533,6 +551,11 @@ def build_conversation_obligation_packet(
 
 def _qualification_reply(field: str, facts: Mapping[str, Any]) -> str:
     if field == "category":
+        if _piglet_scope(facts):
+            return (
+                "Would you prefer small piglets (about 2-6 kg) or weaned "
+                "piglets (about 7-19 kg)?"
+            )
         return (
             "What size would suit you: small piglets (about 2-6 kg), weaned piglets "
             "(about 7-19 kg), growing pigs (about 20-49 kg), larger pigs "
@@ -569,8 +592,10 @@ def _supported_answer_reply(obligations, facts):
             "Live-pig handover is normally arranged in Riversdale or Albertinia."
         )
     if "price" in kinds:
+        label = str(kinds["price"].get("label") or "live pigs")
         parts.append(
-            f"The current supported price is {_money(kinds['price']['value'])} each."
+            f"The current supported price for {label} is "
+            f"{_money(kinds['price']['value'])} each."
         )
     if "price_dependency" in kinds:
         parts.append("The price depends on the pig's size or weight category.")
@@ -624,6 +649,86 @@ def _normalized_fact_value(field, value):
         except (TypeError, ValueError):
             return str(value).strip().casefold()
     return " ".join(str(value or "").replace("_", " ").split()).casefold()
+
+
+def facts_request_supported_price(facts, price_packet):
+    return bool(
+        facts.get("quote_requested")
+        and not _blank(facts.get("weight_range"))
+        and _price_provenanced(price_packet)
+    )
+
+
+def _price_label(price_packet, facts):
+    pricing = (
+        price_packet.get("pricing")
+        if isinstance(price_packet.get("pricing"), Mapping)
+        else {}
+    )
+    band = (
+        pricing.get("weight_band")
+        or price_packet.get("requested_weight_range")
+        or facts.get("weight_range")
+    )
+    return f"{_human_weight_band(band)} live pigs" if band else "live pigs"
+
+
+def _prior_supported_price_answer(chronology, inbound, price_packet):
+    unit = Decimal(str(price_packet.get("unit_price")))
+    pricing = (
+        price_packet.get("pricing")
+        if isinstance(price_packet.get("pricing"), Mapping)
+        else {}
+    )
+    band = _human_weight_band(
+        pricing.get("weight_band")
+        or price_packet.get("requested_weight_range")
+    )
+    band_pattern = re.compile(
+        re.escape(band).replace(r"\-", r"[-\u2013\u2014]"),
+        re.I,
+    ) if band else None
+    current_id = str(inbound.get("message_id") or "")
+    for row in reversed(chronology):
+        message_id = str(row.get("id") or row.get("message_id") or "")
+        if message_id == current_id:
+            continue
+        if row.get("message_type") not in (1, "outgoing", "agent"):
+            continue
+        text = _canonical_message_text(row.get("content"))
+        amounts = _currency_amounts(text)
+        if unit in amounts and (band_pattern is None or band_pattern.search(text)):
+            return {
+                "kind": "price",
+                "message_id": message_id,
+                "content_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            }
+    return None
+
+
+def _currency_amounts(text):
+    amounts = []
+    for match in re.finditer(
+        r"\bR\s?(\d+(?:,\d{3})*)(?:\.(\d{2}))?(?![\d.,])",
+        str(text or ""),
+        re.I,
+    ):
+        whole = match.group(1).replace(",", "")
+        cents = match.group(2) or "00"
+        try:
+            amounts.append(Decimal(f"{whole}.{cents}"))
+        except InvalidOperation:
+            continue
+    return amounts
+
+
+def _piglet_scope(facts):
+    category = _normal_category(facts.get("category"))
+    latest = str(facts.get("latest_customer_message") or "")
+    return bool(
+        category == "Young Piglets"
+        or re.search(r"\bpiglets?\b", latest, re.I)
+    )
 
 
 def _offer_reply(*, facts, availability, match_packet, price_packet):
@@ -856,7 +961,10 @@ def _canonical_message_text(value):
 def _asked_fields(text):
     fields = set()
     patterns = {
-        "category": r"\bwhat size|which size|what type|which type\b",
+        "category": (
+            r"\bwhat size|which size|what type|which type|"
+            r"would you prefer small piglets\b"
+        ),
         "quantity": r"\bhow many\b",
         "sex": r"\b(?:males?|females?|sex preference|mixture)\b.*\?",
         "timing": r"\bwhen\b.*\?",
