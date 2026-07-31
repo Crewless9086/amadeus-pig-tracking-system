@@ -38,3 +38,32 @@ Oom Sakkie is registered on CHARLIE's shared agent runtime as the read-only farm
 Oom Sakkie may see sales context, orders, and customer-related farm impact, but direct client interaction belongs to SAM.
 
 Source references: `docs/00-start-here/PRODUCT_VISION.md`, `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`.
+
+## Active Goal Card — Owner Attention Queue
+
+- **Specialist terminal:** Oom Sakkie.
+- **Business mission:** give Charl one quiet, trustworthy owner-attention stream
+  instead of one Telegram interruption per customer event.
+- **Current measurable outcome:** one deduplicated sales-status summary per
+  period; individual cards only for current protected decisions; separate
+  buttonless alerts only for systemic SAM failures.
+- **Why it matters now:** ordinary SAM work should continue without turning
+  Charl into the inbox operator, while genuine authority boundaries remain
+  explicit and replay-safe.
+- **Current state:** source-active; pure coordination kernel prepared, existing
+  adapters not yet integrated.
+- **Standing authority:** reconcile structured SAM status/evidence and prepare
+  summary, decision-card, expiry, resolution-edit and system-alert intents.
+- **Protected boundary:** no Telegram call, customer send, Chatwoot/customer
+  write, decision consumption, farm write, merge, deployment or runtime change.
+- **Success measurement:** ordinary SAM-handled events create zero individual
+  cards; one latest proven state is counted per conversation; every protected
+  decision is digest-bound and stale-safe; the existing rail must atomically
+  receipt consumption before a buttonless resolved edit is prepared; stable
+  alerts identify affected work and genuine manual-coverage need.
+- **Stop condition:** source PR reviewed and exact-head green; later adapter
+  integration is handed over rather than duplicated.
+- **Release successor:** Control Tower assigns a serialized Oom Sakkie window
+  after SAM releases production.
+- **Evidence/handover:**
+  `docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`.

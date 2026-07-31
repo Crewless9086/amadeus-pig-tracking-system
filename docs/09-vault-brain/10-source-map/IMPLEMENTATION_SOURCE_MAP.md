@@ -1,5 +1,28 @@
 # Implementation Source Map
 
+## Oom Sakkie Owner Attention Queue
+
+- Doctrine and goal card:
+  `docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md`
+- Workflow contract:
+  `docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`
+- Pure coordination kernel:
+  `modules/oom_sakkie/owner_attention_queue.py`
+- Focused tests:
+  `tests/test_oom_sakkie_owner_attention_queue.py`
+- Source-ready shared-adapter handover:
+  `docs/06-operations/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_SOURCE_HANDOVER.md`
+- Existing later integration surfaces, unchanged by this source slice:
+  `modules/sales/sam_live_stock_launch_control.py`,
+  `modules/oom_sakkie/telegram_direct.py`, GateKeeper's existing SAM callback
+  relay and the existing SAM review/decision evidence rail.
+- Rule: ordinary SAM activity is summary-only. Buttons belong only to a fresh,
+  digest-bound protected decision. Consumption is an unperformed atomic intent
+  until the existing rail returns an authoritative receipt. Operational alerts
+  are separate and
+  buttonless. Resolution edits the original card and callback replay is a
+  no-op. This module adds no I/O or authority.
+
 ## Rootline owner daily brief
 
 - Doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`
