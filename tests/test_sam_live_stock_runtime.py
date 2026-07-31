@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 from modules.sales import sam_live_stock_runtime
+from modules.sales import sam_owner_example_projection
 
 
 def inbound_payload(**overrides):
@@ -2869,7 +2870,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         calls = []
         owner_example_calls = []
 
-        def owner_example_loader(conversation_id="", limit=3, customer_message=""):
+        def owner_example_loader(conversation_id="", limit=3, customer_message="", **_kwargs):
             owner_example_calls.append({
                 "conversation_id": conversation_id,
                 "limit": limit,
@@ -2886,6 +2887,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 }],
             }, 200
 
+        sam_owner_example_projection._reset_owner_example_projection_for_tests()
+        preload = sam_owner_example_projection.refresh_owner_example_projection(
+            owner_example_loader
+        )
+        self.assertTrue(preload["success"])
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(content="How much for 1 piglet?"),
             environ={
@@ -2916,7 +2922,15 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             result["sam_decision"]["contextual_sales"]["status"],
             "commercial_evidence_unavailable",
         )
-        self.assertEqual(owner_example_calls[0]["customer_message"], "How much for 1 piglet?")
+        self.assertEqual(owner_example_calls, [{
+            "conversation_id": "",
+            "limit": 30,
+            "customer_message": "",
+        }])
+        self.assertTrue(
+            result["sam_decision"]["owner_example_projection"]["fresh"]
+        )
+        sam_owner_example_projection._reset_owner_example_projection_for_tests()
 
     def test_llm_payload_long_history_remains_valid_json_with_rules(self):
         context = {
