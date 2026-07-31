@@ -1,4 +1,21 @@
 # Vault Brain Changelog
+## 2026-07-31 - Oom Sakkie consolidated Owner Attention Queue prepared
+
+- Added an I/O-free coordination kernel for one deduplicated sales-status
+  summary per period, exact-bound protected owner-decision cards and separate
+  buttonless systemic SAM alerts.
+- Ordinary inbounds, acknowledgements, automatically handled conversations and
+  qualification progress create no individual Telegram item or buttons.
+- Latest proven conversation chronology wins, conflicting ties fail closed,
+  and unchanged systemic incidents deduplicate across reporting periods.
+- Changed chronology or evidence prepares an in-place button-removal edit.
+  Consumption remains unperformed: the kernel prepares a trusted-owner-bound
+  atomic intent, and only an existing-rail authoritative receipt can prepare
+  the resolved-card edit. Receipt replay is a complete no-op.
+- Preserved the existing SAM owner-card lifecycle, GateKeeper route, Telegram
+  bot/trigger and decision evidence rail. No runtime, customer, farm, Telegram,
+  deployment or configuration action occurred.
+
 ## 2026-07-27 - SAM Meat owner-assisted launch truth reconciled
 
 - Replaced the retired four-set new-sales menu with Amadeus Signature, Ember and Grand Cut while preserving Set D as historical evidence only.

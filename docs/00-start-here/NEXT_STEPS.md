@@ -1,6 +1,19 @@
 # Next Steps
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
+## OOM-SAKKIE-OWNER-ATTENTION-QUEUE-1
+
+Review the source-only consolidated Owner Attention Queue. Its pure kernel
+prepares one period sales summary from each conversation's latest proven state,
+digest-bound protected-decision cards, in-place expiry intents and separate
+stable buttonless systemic alerts. A resolved edit requires an authoritative
+atomic-consumption receipt from the existing owner-decision rail. It
+does not call Telegram, consume a decision, send a customer, write Chatwoot or
+farm state, or alter SAM's enabled lane. After SAM releases production, assign
+one serialized integration window to map these intents into the existing SAM
+owner-card, GateKeeper callback, Telegram edit and owner-decision evidence
+rails. Do not create another bot, trigger, router, callback owner or ledger.
+
 ## SAM-MEAT-LAUNCH-READINESS-1
 
 Complete the owner-assisted meat launch slice before any customer-send canary:
