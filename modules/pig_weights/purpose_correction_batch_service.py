@@ -115,7 +115,7 @@ def execute_correction_batch(batch_id, *, actor_id, connect_factory=None, today=
                 decisions = clean_decisions
                 pig_ids = [item["pig_id"] for item in decisions]
                 cursor.execute("""select pig.pig_id,pig.status,pig.on_farm,pig.purpose,latest.weight_date,latest.weight_kg
-                    from public.pigs pig
+                    from public.current_canonical_pigs pig
                     left join lateral (
                         select weight_date,weight_kg from public.pig_weight_events
                         where pig_id=pig.pig_id order by weight_date desc,created_at desc,weight_event_id desc limit 1

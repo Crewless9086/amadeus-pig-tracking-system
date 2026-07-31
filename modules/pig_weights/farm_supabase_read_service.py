@@ -280,7 +280,7 @@ def _current_state_rows(connect_factory=None):
             pig.wean_weight_kg,
             pig.exit_reason,
             pig.notes
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         order by coalesce(nullif(state.tag_number, ''), state.pig_id)
         """,
@@ -299,7 +299,7 @@ def _dashboard_rows(connect_factory=None):
             state.current_weight_kg,
             pig.exit_date,
             pig.exit_reason
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         """,
         connect_factory=connect_factory,
@@ -426,7 +426,7 @@ def get_pig_detail(pig_id, connect_factory=None):
             pig.notes,
             mother.tag_number as mother_tag_number,
             father.tag_number as father_tag_number
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         left join public.pigs mother on mother.pig_id = pig.mother_pig_id
         left join public.pigs father on father.pig_id = pig.father_pig_id
@@ -530,7 +530,7 @@ def get_parent_options(connect_factory=None):
     rows = _fetch_all(
         """
         select pig_id, tag_number, sex, status, purpose, current_pen_id, current_pen_name
-        from public.pig_current_state
+        from public.current_canonical_pig_state
         where status = 'Active'
           and purpose = 'Breeding'
           and sex in ('Female', 'Male', 'Castrated_Male')
@@ -587,7 +587,7 @@ def get_pig_master_rows_by_ids(pig_ids, connect_factory=None):
             state.litter_id,
             state.purpose,
             pig.notes
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         where state.pig_id = any(%s)
         """,
@@ -635,7 +635,7 @@ def get_pig_master_rows(connect_factory=None):
             pig.wean_weight_kg,
             pig.earmarked,
             pig.earmark_date
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         order by coalesce(nullif(state.tag_number, ''), state.pig_id)
         """,
@@ -697,7 +697,7 @@ def get_litter_register_rows(connect_factory=None):
             wean_date,
             litter_status,
             litter_notes
-        from public.litters
+        from public.current_canonical_litters
         order by farrowing_date desc nulls last, litter_id
         """,
         connect_factory=connect_factory,
@@ -1122,7 +1122,7 @@ def _get_allocation_input_rows_queries(connect_factory):
         """
         select litter_id, sow_pig_id, boar_pig_id, sow_tag_number, boar_tag_number,
                farrowing_date, wean_date, born_alive, weaned_count, litter_status
-        from public.litters
+        from public.current_canonical_litters
         order by litter_id
         """,
         connect_factory=connect_factory,
@@ -1180,7 +1180,7 @@ def _litter_rows_with_pigs(connect_factory=None):
     litters = _fetch_all(
         """
         select *
-        from public.litters
+        from public.current_canonical_litters
         order by farrowing_date desc nulls last, litter_id
         """,
         connect_factory=connect_factory,
@@ -1819,7 +1819,7 @@ def get_breeding_analytics(connect_factory=None):
 
 
 def _tag_for_pig(pig_id, connect_factory=None):
-    row = _fetch_one("select tag_number from public.pigs where pig_id = %s", (pig_id,), connect_factory=connect_factory)
+    row = _fetch_one("select tag_number from public.current_canonical_pigs where pig_id = %s", (pig_id,), connect_factory=connect_factory)
     return _text(row.get("tag_number")) if row else ""
 
 
@@ -1950,7 +1950,7 @@ def get_latest_weight_for_pig(pig_id, connect_factory=None):
     row = _fetch_one(
         """
         select state.pig_id, state.tag_number, state.current_weight_kg, state.last_weight_date
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         where state.pig_id = %s
         """,
         (pig_id,),
@@ -1973,7 +1973,7 @@ def get_weight_entries_by_date(weight_date, connect_factory=None):
                event.weight_date, event.weight_kg, event.weighed_by, event.condition_notes
         from public.pig_weight_events event
         left join public.pigs pig on pig.pig_id = event.pig_id
-        left join public.pig_current_state state on state.pig_id = event.pig_id
+        left join public.current_canonical_pig_state state on state.pig_id = event.pig_id
         where event.weight_date = %s
         order by coalesce(nullif(pig.tag_number, ''), event.pig_id), event.pig_id
         """,
@@ -2011,7 +2011,7 @@ def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
             state.animal_type,
             state.current_weight_kg
         from public.pig_weight_events event
-        left join public.pig_current_state state on state.pig_id = event.pig_id
+        left join public.current_canonical_pig_state state on state.pig_id = event.pig_id
         where event.weight_date <= %s
         order by event.pig_id, event.weight_date, event.created_at, event.weight_event_id
         """,

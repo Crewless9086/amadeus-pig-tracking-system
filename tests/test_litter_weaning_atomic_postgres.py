@@ -20,6 +20,20 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
         cls.url = os.getenv("CHARLIE_DISPOSABLE_POSTGRES_URL", "").strip()
         if not cls.url:
             raise unittest.SkipTest("CHARLIE_DISPOSABLE_POSTGRES_URL not configured")
+        with psycopg.connect(cls.url) as connection:
+            connection.execute(
+                """
+                create or replace view public.current_canonical_pig_state as
+                select * from public.pig_current_state
+                """
+            )
+
+    @classmethod
+    def tearDownClass(cls):
+        with psycopg.connect(cls.url) as connection:
+            connection.execute(
+                "drop view if exists public.current_canonical_pig_state"
+            )
 
     def setUp(self):
         suffix = uuid.uuid4().hex[:10]

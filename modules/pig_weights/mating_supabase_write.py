@@ -92,7 +92,7 @@ def get_pig_lookup(connect_factory=None):
                 cursor,
                 """
                 select pig_id, tag_number, current_pen_id
-                from public.pig_current_state
+                from public.current_canonical_pig_state
                 """,
             )
     return {

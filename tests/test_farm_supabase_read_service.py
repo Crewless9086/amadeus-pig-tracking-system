@@ -184,7 +184,10 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                 return []
             if "from public.pig_weight_events" in sql:
                 return []
-            if "from public.litters" in sql or "from public.pens" in sql:
+            if (
+                "from public.current_canonical_litters" in sql
+                or "from public.pens" in sql
+            ):
                 return []
             return []
         with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[{"pig_id": "PIG-1"}]), patch.object(
@@ -628,7 +631,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         def fake_fetch_all(sql, params=(), connect_factory=None):
             if "from public.pig_weight_events" in sql:
                 return [{"pig_id": "PIG-1", "weight_date": date(2026, 6, 22), "weight_kg": 61.5}]
-            if "from public.litters" in sql:
+            if "from public.current_canonical_litters" in sql:
                 return [{
                     "litter_id": "LIT-1",
                     "sow_pig_id": "SOW-1",
