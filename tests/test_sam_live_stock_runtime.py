@@ -2887,6 +2887,144 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(delivery["sent"])
         self.assertEqual(sends, [])
 
+    def test_livestock_delivery_requires_exact_canonical_offer_payload(self):
+        sends = []
+        canonical = {
+            "should_reply": True,
+            "customer_reply": (
+                "The price depends on the pig's size or weight category. "
+                "Which size would suit you?"
+            ),
+            "evidence_errors": [],
+            "authority": {"allowed": True},
+        }
+        base = {
+            "canonical_composition_authorized": True,
+            "canonical_evidence_offer": canonical,
+            "conversation_ownership": "AUTO_SPECIALIST",
+            "specialist_lane_selected": True,
+            "sales_lane": "live_stock_sales",
+            "should_reply": True,
+            "reply_source": "canonical_evidence_to_offer_loop",
+            "suggested_reply_text": canonical["customer_reply"],
+        }
+
+        mismatch = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            {"conversation_id": "2117", "contact_id": "99", "inbox_id": "77"},
+            {**base, "suggested_reply_text": "Which size would suit you?"},
+            {"safe_to_send": True, "escalation_required": False},
+            {},
+            chatwoot_sender=lambda *_args: sends.append(True),
+        )
+
+        self.assertEqual(
+            mismatch["status"],
+            "routine_reply_canonical_payload_mismatch",
+        )
+        self.assertEqual(sends, [])
+
+    def test_canonical_payload_rejects_whitespace_and_truncation_collisions(self):
+        canonical_text = "Which size would suit you?"
+        base = {
+            "canonical_composition_authorized": True,
+            "canonical_evidence_offer": {
+                "should_reply": True,
+                "customer_reply": canonical_text,
+                "evidence_errors": [],
+                "authority": {"allowed": True},
+            },
+            "conversation_ownership": "AUTO_SPECIALIST",
+            "specialist_lane_selected": True,
+            "sales_lane": "live_stock_sales",
+            "should_reply": True,
+            "reply_source": "canonical_evidence_to_offer_loop",
+        }
+        for altered in (
+            " Which size would suit you? ",
+            ("A" * 1800) + " protected tail",
+        ):
+            offer_text = altered if len(altered) > 1800 else canonical_text
+            decision = {
+                **base,
+                "canonical_evidence_offer": {
+                    **base["canonical_evidence_offer"],
+                    "customer_reply": offer_text,
+                },
+                "suggested_reply_text": altered,
+            }
+            with self.subTest(altered_length=len(altered)):
+                delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+                    {
+                        "conversation_id": "2117",
+                        "contact_id": "99",
+                        "inbox_id": "77",
+                    },
+                    decision,
+                    {"safe_to_send": True, "escalation_required": False},
+                    {},
+                )
+                self.assertEqual(
+                    delivery["status"],
+                    "routine_reply_canonical_payload_mismatch",
+                )
+
+    def test_level1_created_claim_with_wrong_reply_hash_never_sends(self):
+        sends = []
+        reply = "Which size would suit you?"
+        inbound = {
+            "account_id": "147387",
+            "conversation_id": "2117",
+            "contact_id": "99",
+            "inbox_id": "77",
+            "message_id": "767390473",
+        }
+        decision = {
+            "canonical_composition_authorized": True,
+            "canonical_evidence_offer": {
+                "should_reply": True,
+                "customer_reply": reply,
+                "evidence_errors": [],
+                "authority": {"allowed": True},
+            },
+            "conversation_ownership": "AUTO_SPECIALIST",
+            "specialist_lane_selected": True,
+            "sales_lane": "live_stock_sales",
+            "should_reply": True,
+            "reply_source": "canonical_evidence_to_offer_loop",
+            "suggested_reply_text": reply,
+        }
+        wrong_claim = {
+            "success": True,
+            "created": True,
+            **inbound,
+            "inbound_message_id": inbound["message_id"],
+            "reply_hash": "0" * 64,
+        }
+        with patch.object(
+            sam_live_stock_runtime,
+            "evaluate_level1_authority",
+            return_value={"dispatch_authorized": True, "checks": {}},
+        ):
+            delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+                inbound,
+                decision,
+                {"safe_to_send": True, "escalation_required": False},
+                {},
+                delivery_claim=lambda *_args: wrong_claim,
+                delivery_evidence_recorder=lambda *_args: {
+                    "success": True,
+                },
+                chatwoot_sender=lambda *_args: sends.append(True),
+                isolated_runtime={"allowed": True},
+            )
+
+        self.assertEqual(
+            delivery["status"],
+            "routine_reply_claim_payload_mismatch",
+        )
+        self.assertEqual(sends, [])
+        self.assertTrue(delivery["automatic_retry_prohibited"])
+
     def test_reservation_request_keeps_conversation_with_sam_but_requests_owner_authority(self):
         sends = []
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
@@ -5106,6 +5244,20 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("weaned piglets", decision["suggested_reply_text"])
         self.assertNotIn("Good day", decision["suggested_reply_text"])
         self.assertNotIn("How can I help", decision["suggested_reply_text"])
+        self.assertTrue(decision["canonical_composition_authorized"])
+        self.assertEqual(
+            decision["reply_source"],
+            "canonical_evidence_to_offer_loop",
+        )
+        self.assertEqual(
+            decision["suggested_reply_text"],
+            decision["canonical_evidence_offer"]["customer_reply"],
+        )
+        self.assertTrue(decision["conversation_review"]["safe_to_send"])
+        self.assertNotEqual(
+            decision["routine_reply_delivery"]["status"],
+            "routine_reply_canonical_composition_not_authorized",
+        )
 
     def test_routine_majority_multiturn_states_do_not_force_a_lane(self):
         general_turns = [

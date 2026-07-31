@@ -649,6 +649,28 @@ def handle_sam_live_stock_chatwoot_inbound(
             final_canonical_offer.get("customer_reply") or ""
         )
         decision["reply_source"] = "canonical_evidence_to_offer_loop"
+        # The canonical offer is the final customer-facing composition, so the
+        # safety/usefulness review that reaches authority, claim and dispatch
+        # must review this exact text rather than the earlier legacy candidate.
+        conversation_review = review_sam_live_stock_conversation(
+            inbound,
+            facts,
+            decision,
+            context_packet,
+        )
+        decision["conversation_review"] = conversation_review
+        decision["owner_escalation_required"] = bool(
+            conversation_review.get("escalation_required")
+        )
+        decision["handled_autonomously"] = not decision[
+            "owner_escalation_required"
+        ]
+        decision["owner_authority_required"] = bool(
+            conversation_review.get("owner_authority_required")
+        )
+        decision["protected_action_reasons"] = list(
+            conversation_review.get("protected_action_reasons") or []
+        )
     intake_write = write_live_stock_intake_if_enabled(
         inbound,
         facts,
@@ -766,6 +788,38 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
             "attempted": False,
             "sent": False,
             "status": "routine_reply_canonical_composition_not_authorized",
+        }
+    canonical_offer = (
+        decision.get("canonical_evidence_offer")
+        if isinstance(decision.get("canonical_evidence_offer"), dict)
+        else {}
+    )
+    canonical_reply = _clean_multiline(
+        canonical_offer.get("customer_reply"),
+        1800,
+    )
+    canonical_reply_raw = canonical_offer.get("customer_reply")
+    decision_reply_raw = decision.get("suggested_reply_text")
+    if (
+        decision.get("conversation_ownership") != AUTO_GENERAL
+        and (
+            decision.get("reply_source") == "canonical_evidence_to_offer_loop"
+            or canonical_offer
+        )
+        and (
+            canonical_offer.get("should_reply") is not True
+            or canonical_offer.get("evidence_errors")
+            or (canonical_offer.get("authority") or {}).get("allowed") is not True
+            or decision.get("reply_source") != "canonical_evidence_to_offer_loop"
+            or not isinstance(canonical_reply_raw, str)
+            or canonical_reply_raw != canonical_reply
+            or decision_reply_raw != canonical_reply_raw
+        )
+    ):
+        return {
+            "attempted": False,
+            "sent": False,
+            "status": "routine_reply_canonical_payload_mismatch",
         }
     reply = _clean_multiline(decision.get("suggested_reply_text"), 1800)
     legacy_canary = (
@@ -889,6 +943,18 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
         return {"attempted": False, "sent": False, "status": "routine_reply_idempotency_claim_failed", "canary": canary}
     if claim.get("created") is not True:
         return {"attempted": False, "sent": False, "status": "routine_reply_duplicate_withheld", "canary": canary, "claim": claim}
+    if (
+        level1.get("dispatch_authorized") is True
+        and not _delivery_claim_matches_exact_payload(claim, inbound, reply)
+    ):
+        return {
+            "attempted": False,
+            "sent": False,
+            "status": "routine_reply_claim_payload_mismatch",
+            "canary": canary,
+            "claim": claim,
+            "automatic_retry_prohibited": True,
+        }
     try:
         sender = chatwoot_sender or (
             lambda target, message, runtime_source: _send_chatwoot_message(
@@ -1063,6 +1129,25 @@ def _record_delivery_outcome(recorder, claim, outcome):
         return recorded if isinstance(recorded, dict) else {"success": False, "status": "delivery_outcome_record_invalid"}
     except Exception as exc:
         return {"success": False, "status": "delivery_outcome_record_failed", "error_type": exc.__class__.__name__}
+
+
+def _delivery_claim_matches_exact_payload(claim, inbound, reply):
+    claim = claim if isinstance(claim, dict) else {}
+    inbound = inbound if isinstance(inbound, dict) else {}
+    expected = {
+        "account_id": _clean(inbound.get("account_id"), 120),
+        "conversation_id": _clean(inbound.get("conversation_id"), 120),
+        "contact_id": _clean(inbound.get("contact_id"), 120),
+        "inbox_id": _clean(inbound.get("inbox_id"), 120),
+        "inbound_message_id": _clean(inbound.get("message_id"), 120),
+        "reply_hash": hashlib.sha256(
+            str(reply or "").encode("utf-8", errors="strict")
+        ).hexdigest(),
+    }
+    return bool(
+        all(expected.values())
+        and all(_clean(claim.get(key), 120) == value for key, value in expected.items())
+    )
 
 
 def _send_failure_confirmed(exc):
