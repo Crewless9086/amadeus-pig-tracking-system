@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 
 from modules.oom_sakkie.owner_task_lifecycle import (
     ROOTLINE_MEDIA_SHA256,
+    ROOTLINE_PROVIDER_MEDIA_SHA256,
+    ROOTLINE_SOURCE_MEDIA_SHA256,
     handle_owner_task_input,
     monitor_owner_task_dispatch,
     owner_task_input,
@@ -44,6 +46,12 @@ class Rail:
 
 
 class OwnerTaskLifecycleTests(unittest.TestCase):
+    def test_provider_readback_hashes_are_distinct_from_source_evidence_hashes(self):
+        self.assertEqual(len(ROOTLINE_MEDIA_SHA256), 6)
+        self.assertEqual(len(ROOTLINE_SOURCE_MEDIA_SHA256), 6)
+        self.assertTrue(ROOTLINE_MEDIA_SHA256.isdisjoint(ROOTLINE_SOURCE_MEDIA_SHA256))
+        self.assertEqual(set(ROOTLINE_PROVIDER_MEDIA_SHA256.values()),set(ROOTLINE_MEDIA_SHA256))
+
     def test_normalizes_text_photo_video_and_rejects_non_message(self):
         self.assertIsNone(owner_task_input({"callback_query":{}}))
         self.assertEqual(owner_task_input(photo(1,"u"))["item_kind"],"photo")
@@ -72,6 +80,31 @@ class OwnerTaskLifecycleTests(unittest.TestCase):
             media_reader=lambda *_:self.fail("replay must not read media"),telegram_sender=rail.send,now=NOW)
         self.assertEqual(replay["status"],"owner_task_completed_from_prepared_specialist_result")
         self.assertEqual((len(rail.events),len(rail.messages)),before)
+
+    def test_source_file_hashes_do_not_impersonate_provider_readback_bytes(self):
+        rail=Rail();hashes=sorted(ROOTLINE_SOURCE_MEDIA_SHA256);req=request(6,ROOTLINE_MEDIA_SHA256)
+        last=None
+        for index,digest in enumerate(hashes,1):
+            last,status=handle_owner_task_input(photo(index,"source"+str(index)),environ=ENV,
+                request_loader=lambda _:req,event_loader=rail.load,event_recorder=rail.record,
+                media_reader=lambda envelope,task,d=digest:{"content_sha256":d,"readback_verified":True,"storage_path":"private/"+d},
+                telegram_sender=rail.send,now=NOW)
+        self.assertEqual((status,last["status"]),(202,"owner_task_contained_no_deployed_specialist_adapter"))
+        self.assertEqual([m[2] for m in rail.messages],["acknowledgement","no-adapter"])
+        self.assertNotIn("completion",[m[2] for m in rail.messages])
+
+    def test_provider_hashes_are_bound_to_their_exact_message_identity(self):
+        rail=Rail();hashes=sorted(ROOTLINE_MEDIA_SHA256);req=request(6,hashes)
+        req["expected_provider_media_sha256"]={str(index):digest for index,digest in enumerate(hashes,1)}
+        swapped=[hashes[1],hashes[0],*hashes[2:]]
+        last=None
+        for index,digest in enumerate(swapped,1):
+            last,status=handle_owner_task_input(photo(index,"u"+str(index)),environ=ENV,
+                request_loader=lambda _:req,event_loader=rail.load,event_recorder=rail.record,
+                media_reader=lambda envelope,task,d=digest:{"content_sha256":d,"readback_verified":True},
+                telegram_sender=rail.send,now=NOW)
+        self.assertEqual((status,last["status"]),(202,"owner_task_contained_no_deployed_specialist_adapter"))
+        self.assertNotIn("completion",[m[2] for m in rail.messages])
 
     def test_no_deployed_adapter_creates_one_truthful_exception(self):
         rail=Rail();digest="b"*64;req=request(1,[digest]);req.pop("prepared_result_sha256")

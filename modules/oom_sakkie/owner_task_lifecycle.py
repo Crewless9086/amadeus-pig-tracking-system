@@ -34,7 +34,7 @@ ROOTLINE_PROVIDER_ITEMS = {
     "3161": "AQADGw5rGyoncFN-",
     "3162": "AQADHA5rGyoncFN-",
 }
-ROOTLINE_MEDIA_SHA256 = frozenset({
+ROOTLINE_SOURCE_MEDIA_SHA256 = frozenset({
     "d620f5ff0ffe9aba21edbb80add05dc2a3d97633507d0153e81ee26d20bdca76",
     "9a0bdc5c3c1917084878aa9435cd84651daa7879aa8da1a9d542ac170a9af089",
     "87ca237d66d0d7288c7f239d240d6cd94275d464361c3c1fc244a4494a868cd5",
@@ -42,6 +42,26 @@ ROOTLINE_MEDIA_SHA256 = frozenset({
     "28c2e189b9dfcdcf6722b9e741e1b78c0bc83b8dcc8bfd57abc4c6a06f078063",
     "2b66d3c8c036c8923cfb44e962b8bcfec1a5e3e22e6eb1609e756435e4cf54c0",
 })
+# Telegram serves normalized JPEG bytes for these provider photo identities.
+# Prepared-result reconciliation must bind the bytes actually authenticated,
+# retained, and read back by the deployed agent; the source hashes above stay
+# separate so normalization is never misrepresented as byte equality.
+ROOTLINE_MEDIA_SHA256 = frozenset({
+    "4278abdce3e6f85d517498c40a44686cb4f3d35551f34851da8b85a5bdb977d1",
+    "30c15c19a5c80932aaceb4ab8547441a5ce0eec7b9ce144cb1cf67c9a9dfa31b",
+    "ae54b7832a8f3f7094c294d73e035c2a433732e0de9949f8941676adb4a24b1a",
+    "496e79ac9b9c67066e3d6366eade68003e154c8f3c6e20ac285c9efa96856834",
+    "101c52f258d8cca94092a3d7b8ccd62e32f1708c367b5f73bf0085be6c11e0cb",
+    "7c8489400d3c8c4d1d2d2109d9374f683c1b21509e136545dca52aab58e324c6",
+})
+ROOTLINE_PROVIDER_MEDIA_SHA256 = {
+    "3157": "4278abdce3e6f85d517498c40a44686cb4f3d35551f34851da8b85a5bdb977d1",
+    "3158": "30c15c19a5c80932aaceb4ab8547441a5ce0eec7b9ce144cb1cf67c9a9dfa31b",
+    "3159": "ae54b7832a8f3f7094c294d73e035c2a433732e0de9949f8941676adb4a24b1a",
+    "3160": "496e79ac9b9c67066e3d6366eade68003e154c8f3c6e20ac285c9efa96856834",
+    "3161": "101c52f258d8cca94092a3d7b8ccd62e32f1708c367b5f73bf0085be6c11e0cb",
+    "3162": "7c8489400d3c8c4d1d2d2109d9374f683c1b21509e136545dca52aab58e324c6",
+}
 
 
 def owner_task_input(payload: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -167,10 +187,15 @@ def handle_owner_task_input(
 
     hashes = sorted(str(item.get("media", {}).get("content_sha256") or "").lower() for item in items if item.get("media"))
     provider_items = {str(item.get("provider_message_id")): str(item.get("file_unique_id")) for item in items}
+    provider_hashes = {str(item.get("provider_message_id")): str(item.get("media", {}).get("content_sha256") or "").lower()
+                       for item in items if item.get("media")}
+    expected_provider_hashes = {str(key): str(value).lower()
+                                for key, value in dict(request.get("expected_provider_media_sha256") or {}).items()}
     prepared_input_exact = (
         len(items) == expected
         and hashes == sorted(str(value).lower() for value in request.get("expected_media_sha256") or ())
         and (not expected_provider_items or provider_items == expected_provider_items)
+        and (not expected_provider_hashes or provider_hashes == expected_provider_hashes)
     )
     if request.get("prepared_result_sha256") and prepared_input_exact:
         return _complete_prepared_result(task_id, request, envelope, existing, record,
@@ -345,6 +370,7 @@ def _load_active_request(envelope):
         "decision_type": "controller_capability_evidence",
         "expected_item_count": 6,
         "expected_provider_items": dict(ROOTLINE_PROVIDER_ITEMS),
+        "expected_provider_media_sha256": dict(ROOTLINE_PROVIDER_MEDIA_SHA256),
         "expected_media_sha256": tuple(sorted(ROOTLINE_MEDIA_SHA256)),
         "prepared_result_id": ROOTLINE_RESULT_ARTIFACT,
         "prepared_result_sha256": ROOTLINE_RESULT_SHA256,

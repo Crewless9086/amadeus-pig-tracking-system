@@ -58,8 +58,12 @@ Recovery is fail-closed on all of these facts:
 - album `14284829442614404`;
 - provider messages `3157` through `3162` and their exact Telegram
   `file_unique_id` values;
-- the six private-media byte hashes listed in
-  `C:\tmp\rootline-ewelink-controller-evidence-20260801.md`;
+- the six exact Telegram provider message/file identities and the byte hashes
+  of the authenticated provider JPEGs after private storage readback;
+- the six original screenshot hashes listed in
+  `C:\tmp\rootline-ewelink-controller-evidence-20260801.md`, retained as
+  distinct source provenance rather than asserted to equal Telegram's
+  normalized JPEG bytes;
 - prepared ROOTLINE result
   `ROOTLINE-BC-AUTONOMOUS-CONTROL-CLOSURE-20260801`, SHA-256
   `0747FFE0DBF3CDAEB0BADD6DE3B2DF43174B855616BDAC3881585FAE00BF1A50`.
@@ -83,6 +87,26 @@ arrivals cannot strand completion. Album retries, duplicate updates and
 repeated callbacks therefore create no second task, media write,
 acknowledgement, exception or result. Prepared-result completion requires exact
 cardinality, provider item identities and byte hashes.
+
+The first bounded recovery proved Telegram had recompressed the six images.
+Oom Sakkie correctly recorded the six received items, delivered one receipt
+acknowledgement, then delivered one truthful no-adapter exception instead of
+claiming the prepared conclusion against unequal bytes. Visual reconciliation
+of the private readbacks proved the exact provider set contains the same
+device/channel map, SONOFF 4CH Pro R3 identity, firmware 3.8.2, safe power-on
+states and independent inching controls as the authoritative ROOTLINE
+evidence. The corrected binding uses these provider-readback SHA-256 values:
+
+- `4278abdce3e6f85d517498c40a44686cb4f3d35551f34851da8b85a5bdb977d1`
+- `30c15c19a5c80932aaceb4ab8547441a5ce0eec7b9ce144cb1cf67c9a9dfa31b`
+- `ae54b7832a8f3f7094c294d73e035c2a433732e0de9949f8941676adb4a24b1a`
+- `496e79ac9b9c67066e3d6366eade68003e154c8f3c6e20ac285c9efa96856834`
+- `101c52f258d8cca94092a3d7b8ccd62e32f1708c367b5f73bf0085be6c11e0cb`
+- `7c8489400d3c8c4d1d2d2109d9374f683c1b21509e136545dca52aab58e324c6`
+
+The retained task may now advance from its historical containment to the one
+prepared completion. Existing acknowledgement and exception delivery events
+remain immutable; recovery must send no second acknowledgement or exception.
 
 Every Telegram acknowledgement, result and exception has separate attempted
 and provider-delivered evidence. Delivery requires a non-empty Telegram message
