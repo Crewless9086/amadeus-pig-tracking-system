@@ -14,7 +14,7 @@ CONTRACT_VERSION = "oom_sakkie_specialist_owner_decision_v1"
 SPECIALISTS = frozenset({"SAM_Livestock", "BEACON"})
 DECISION_TYPES = {
     "SAM_Livestock": frozenset({"sales_protected_decision"}),
-    "BEACON": frozenset({"organic_publication_decision"}),
+    "BEACON": frozenset({"organic_publication_decision", "organic_publication_timing_decision"}),
 }
 _OPAQUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$")
 _CHOICE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -30,6 +30,10 @@ BEACON_CAPTION_UTF8_HEX = (
     "e280996e206d6f6f69206f6f6d626c696b206f6d207465206465656c2e20f09f90b7"
 )
 BEACON_CAPTION_SHA256 = "58a60223599365b90803570909e09f3828c32768d8b27470dc1304ff27fc17d4"
+BEACON_SUCCESSOR_EXECUTION_ID = "BEACON-PUBLICATION-EXECUTION-928F7D5A9731FFDE3D62CE1A"
+BEACON_TIMING_DECISION_ID = "BEACON-TIMING-20260801-1300-SAST"
+BEACON_TIMING_START = "2026-08-01T13:00:00+02:00"
+BEACON_TIMING_END = "2026-08-01T14:00:00+02:00"
 REJECTED_MUTATED_PROPOSAL_ID = "BEACON-PROPOSAL-9971D111AB23533027A45463"
 BEACON_CHOICES = [
     {"id": "approve", "label": "Approve exact publication", "outcome_code": "exact_publication_approved",
@@ -38,6 +42,12 @@ BEACON_CHOICES = [
      "specialist_callback": "prepare_reviewed_correction", "next_action_owner": "BEACON", "public_action": False},
     {"id": "decline", "label": "Decline", "outcome_code": "proposal_declined",
      "specialist_callback": "close_without_public_action", "next_action_owner": "BEACON", "public_action": False},
+]
+BEACON_TIMING_CHOICES = [
+    {"id": "approve", "label": "Approve 13:00 SAST", "outcome_code": "publication_time_approved",
+     "specialist_callback": "prepare_successor_publication", "next_action_owner": "BEACON", "public_action": False},
+    {"id": "decline", "label": "Decline", "outcome_code": "publication_time_declined",
+     "specialist_callback": "close_without_publication", "next_action_owner": "BEACON", "public_action": False},
 ]
 
 
@@ -80,6 +90,35 @@ def beacon_organic_publication_binding(*, preview_reference: str, expires_at: st
     return validated
 
 
+def beacon_publication_timing_binding(*, expires_at: str) -> dict[str, Any]:
+    """Bind only one renewed time; preserve the already-approved publication."""
+    raw = {
+        "contract_version": CONTRACT_VERSION,
+        "specialist_identity": "BEACON",
+        "decision_type": "organic_publication_timing_decision",
+        "deterministic_identity": BEACON_TIMING_DECISION_ID,
+        "decision_token": _digest(BEACON_TIMING_DECISION_ID)[:20],
+        "evidence_binding": {
+            "proposal_identity": BEACON_PROPOSAL_ID,
+            "publication_execution_identity": BEACON_SUCCESSOR_EXECUTION_ID,
+            "asset_identity": BEACON_ASSET_ID, "asset_sha256": BEACON_ASSET_SHA256,
+            "library_accept_event_id": BEACON_LIBRARY_EVENT_ID,
+            "public_use_event_id": BEACON_PUBLIC_USE_EVENT_ID,
+            "caption_utf8_hex": BEACON_CAPTION_UTF8_HEX,
+            "caption_sha256": BEACON_CAPTION_SHA256, "channel": "facebook_organic",
+            "image_order": [BEACON_ASSET_ID], "zero_spend": True,
+            "timing_start": BEACON_TIMING_START, "timing_end": BEACON_TIMING_END,
+        },
+        "chronology_binding": {"latest_library_event_id": BEACON_PUBLIC_USE_EVENT_ID,
+            "publication_authorization_count": 0, "prior_campaign_use_count": 0},
+        "allowed_owner_choices": BEACON_TIMING_CHOICES,
+        "expiry_revalidation": "authoritative_specialist_chronology",
+        "expires_at": _time(expires_at).isoformat(),
+        "resolution_contract": "exact_once_receipt_then_edit_same_card_remove_buttons",
+    }
+    return validate_specialist_binding(raw)
+
+
 def validate_specialist_binding(raw: Mapping[str, Any]) -> dict[str, Any]:
     value = json.loads(json.dumps(raw, ensure_ascii=False)) if isinstance(raw, Mapping) else {}
     specialist = _id(value.get("specialist_identity"), "specialist identity")
@@ -103,7 +142,10 @@ def validate_specialist_binding(raw: Mapping[str, Any]) -> dict[str, Any]:
     if value.get("resolution_contract") != "exact_once_receipt_then_edit_same_card_remove_buttons":
         raise ValueError("specialist resolution contract invalid")
     if specialist == "BEACON":
-        _validate_beacon(identity, evidence, chronology, choices)
+        if decision_type == "organic_publication_timing_decision":
+            _validate_beacon_timing(identity, evidence, chronology, choices)
+        else:
+            _validate_beacon(identity, evidence, chronology, choices)
     core = {key: value[key] for key in (
         "contract_version", "specialist_identity", "decision_type", "deterministic_identity", "decision_token",
         "evidence_binding", "chronology_binding", "allowed_owner_choices", "expiry_revalidation", "expires_at",
@@ -141,29 +183,56 @@ def specialist_choice(binding: Mapping[str, Any], choice_id: str) -> dict[str, A
     }
     if choice_id == "approve" and valid["specialist_identity"] == "BEACON":
         authority["bounded_publication_handover"] = {
-            key: valid["evidence_binding"][key] for key in (
-                "asset_identity", "asset_sha256", "caption_utf8_hex", "caption_sha256", "channel",
-                "image_order", "zero_spend", "timing_start", "timing_end")
+            key: valid["evidence_binding"][key] for key in valid["evidence_binding"]
         }
     return authority
 
 
+def timing_authorization_from_receipt(binding: Mapping[str, Any], receipt: Mapping[str, Any]) -> dict[str, Any]:
+    """Project an exact consumed timing receipt into the successor authorization input."""
+    valid = validate_specialist_binding(binding)
+    if (valid["decision_type"] != "organic_publication_timing_decision"
+            or receipt.get("status") != "consumed"
+            or receipt.get("decision_id") != valid["decision_token"]
+            or receipt.get("deterministic_identity") != valid["deterministic_identity"]
+            or receipt.get("card_digest") != valid["binding_digest"]
+            or receipt.get("choice_id") != "approve"
+            or not str(receipt.get("receipt_id") or "").startswith("OOMAQ-RECEIPT-")):
+        raise ValueError("timing authorization receipt invalid")
+    return {
+        "timing_authorization_id": receipt["receipt_id"],
+        "publication_execution_identity": valid["evidence_binding"]["publication_execution_identity"],
+        "proposal_identity": valid["evidence_binding"]["proposal_identity"],
+        "timing_start": valid["evidence_binding"]["timing_start"],
+        "timing_end": valid["evidence_binding"]["timing_end"],
+        "evidence_binding": valid["evidence_binding"],
+    }
+
+
 def render_beacon_card(binding: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
-    preview_reference = _preview(binding.get("_transient_preview_reference"))
     valid = validate_specialist_binding(binding)
     if valid["specialist_identity"] != "BEACON":
         raise ValueError("BEACON binding required")
     evidence = valid["evidence_binding"]
     caption = bytes.fromhex(evidence["caption_utf8_hex"]).decode("utf-8")
-    text = (
-        "Oom Sakkie — Protected BEACON publication decision\n\n"
-        f"Authenticated private preview: {preview_reference}\n"
-        "Channel: Facebook organic\n"
-        f"Caption: {caption}\n"
-        "Recommended timing: Saturday 2026-08-01, 08:00-09:00 SAST\n\n"
-        "Approval permits only this exact single-image, exact-caption, zero-spend Facebook organic publication at that timing. "
-        "It does not permit different copy/media, customer contact, advertising, boosting, spending, or campaign reuse."
-    )
+    if valid["decision_type"] == "organic_publication_timing_decision":
+        text = (
+            "Oom Sakkie — BEACON timing-only decision\n\n"
+            "The Bella image, exact caption, Facebook organic channel and R0 spend remain already approved.\n"
+            "Approve only this renewed publication time: 2026-08-01 13:00-14:00 SAST.\n\n"
+            "This does not reapprove or change the image, caption, public use, channel, spend boundary or campaign reuse."
+        )
+    else:
+        preview_reference = _preview(binding.get("_transient_preview_reference"))
+        text = (
+            "Oom Sakkie — Protected BEACON publication decision\n\n"
+            f"Authenticated private preview: {preview_reference}\n"
+            "Channel: Facebook organic\n"
+            f"Caption: {caption}\n"
+            "Recommended timing: Saturday 2026-08-01, 08:00-09:00 SAST\n\n"
+            "Approval permits only this exact single-image, exact-caption, zero-spend Facebook organic publication at that timing. "
+            "It does not permit different copy/media, customer contact, advertising, boosting, spending, or campaign reuse."
+        )
     buttons = [[{"text": row["label"], "callback_data":
         f"sam_live_owner_decision:{valid['decision_token']}:{row['id']}"}]
         for row in valid["allowed_owner_choices"]]
@@ -192,8 +261,31 @@ def _validate_beacon(identity, evidence, chronology, choices):
         raise ValueError("BEACON owner choices changed")
 
 
+def _validate_beacon_timing(identity, evidence, chronology, choices):
+    expected = {
+        "proposal_identity": BEACON_PROPOSAL_ID,
+        "publication_execution_identity": BEACON_SUCCESSOR_EXECUTION_ID,
+        "asset_identity": BEACON_ASSET_ID, "asset_sha256": BEACON_ASSET_SHA256,
+        "library_accept_event_id": BEACON_LIBRARY_EVENT_ID,
+        "public_use_event_id": BEACON_PUBLIC_USE_EVENT_ID,
+        "caption_utf8_hex": BEACON_CAPTION_UTF8_HEX,
+        "caption_sha256": BEACON_CAPTION_SHA256, "channel": "facebook_organic",
+        "image_order": [BEACON_ASSET_ID], "zero_spend": True,
+        "timing_start": BEACON_TIMING_START, "timing_end": BEACON_TIMING_END,
+    }
+    if identity != BEACON_TIMING_DECISION_ID or any(evidence.get(k) != v for k, v in expected.items()):
+        raise ValueError("BEACON timing evidence binding changed")
+    if hashlib.sha256(bytes.fromhex(evidence["caption_utf8_hex"])).hexdigest() != BEACON_CAPTION_SHA256:
+        raise ValueError("BEACON timing caption bytes changed")
+    if chronology != {"latest_library_event_id": BEACON_PUBLIC_USE_EVENT_ID,
+                       "publication_authorization_count": 0, "prior_campaign_use_count": 0}:
+        raise ValueError("BEACON timing chronology changed")
+    if choices != BEACON_TIMING_CHOICES:
+        raise ValueError("BEACON timing choices changed")
+
+
 def _choices(raw):
-    if not isinstance(raw, list) or len(raw) != 3:
+    if not isinstance(raw, list) or not 1 <= len(raw) <= 3:
         raise ValueError("specialist choices invalid")
     result = []
     for row in raw:

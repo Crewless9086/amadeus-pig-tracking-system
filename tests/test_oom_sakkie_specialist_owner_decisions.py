@@ -6,10 +6,14 @@ from modules.oom_sakkie.specialist_owner_decisions import (
     BEACON_CAPTION_SHA256,
     BEACON_CAPTION_UTF8_HEX,
     BEACON_PROPOSAL_ID,
+    BEACON_SUCCESSOR_EXECUTION_ID,
+    BEACON_TIMING_DECISION_ID,
     REJECTED_MUTATED_PROPOSAL_ID,
     beacon_organic_publication_binding,
+    beacon_publication_timing_binding,
     render_beacon_card,
     specialist_choice,
+    timing_authorization_from_receipt,
     specialist_decision_current,
     validate_specialist_binding,
 )
@@ -88,6 +92,36 @@ class SpecialistOwnerDecisionTests(unittest.TestCase):
             result = specialist_choice(binding, choice)
             self.assertNotIn("bounded_publication_handover", result)
             self.assertFalse(result["publish"])
+
+    def test_timing_only_binding_preserves_content_and_offers_only_time_or_decline(self):
+        binding = beacon_publication_timing_binding(
+            expires_at="2026-08-01T14:00:00+02:00"
+        )
+        self.assertEqual(binding["deterministic_identity"], BEACON_TIMING_DECISION_ID)
+        self.assertEqual(
+            binding["evidence_binding"]["publication_execution_identity"],
+            BEACON_SUCCESSOR_EXECUTION_ID,
+        )
+        text, markup = render_beacon_card(binding)
+        self.assertIn("timing-only", text)
+        self.assertIn("remain already approved", text)
+        self.assertEqual(
+            [row[0]["text"] for row in markup["inline_keyboard"]],
+            ["Approve 13:00 SAST", "Decline"],
+        )
+        authority = specialist_choice(binding, "approve")
+        self.assertFalse(authority["publish"])
+        self.assertFalse(authority["meta_call"])
+        self.assertEqual(
+            authority["bounded_publication_handover"]["publication_execution_identity"],
+            BEACON_SUCCESSOR_EXECUTION_ID,
+        )
+        receipt = {"status": "consumed", "receipt_id": "OOMAQ-RECEIPT-ABC",
+                   "decision_id": binding["decision_token"],
+                   "deterministic_identity": binding["deterministic_identity"],
+                   "card_digest": binding["binding_digest"], "choice_id": "approve"}
+        projected = timing_authorization_from_receipt(binding, receipt)
+        self.assertEqual(projected["timing_authorization_id"], "OOMAQ-RECEIPT-ABC")
 
     def test_callbacks_fit_telegram_and_do_not_expose_full_identity(self):
         binding = self.binding()

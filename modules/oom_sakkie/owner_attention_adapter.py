@@ -16,6 +16,7 @@ from modules.oom_sakkie.owner_attention_queue import (
     reassess_decision_card,
 )
 from modules.oom_sakkie.specialist_owner_decisions import (
+    beacon_publication_timing_binding,
     render_beacon_card,
     specialist_choice,
     specialist_decision_current,
@@ -171,6 +172,12 @@ def operate_specialist_owner_decision(binding: Mapping[str, Any], *, environ=Non
         return _result("specialist_owner_decision_invalid")
     except Exception:
         return _result("specialist_owner_decision_contained")
+
+
+def operate_beacon_timing_only_decision(*, environ=None, now: datetime | None = None, **adapters) -> dict[str, Any]:
+    """Deliver the one pinned renewed-time decision through the existing queue rail."""
+    binding = beacon_publication_timing_binding(expires_at="2026-08-01T14:00:00+02:00")
+    return operate_specialist_owner_decision(binding, environ=environ, now=now, **adapters)
 
 
 def repair_specialist_owner_attention_resolution(card, receipt, *, environ=None,
@@ -642,7 +649,10 @@ def _current_binding(binding, source):
 
 def _current_specialist_chronology(binding, source):
     valid = validate_specialist_binding(binding)
-    if valid["specialist_identity"] != "BEACON" or valid["decision_type"] != "organic_publication_decision":
+    if (valid["specialist_identity"] != "BEACON"
+            or valid["decision_type"] not in {
+                "organic_publication_decision", "organic_publication_timing_decision"
+            }):
         raise RuntimeError("unsupported specialist chronology")
     database_url = str(source.get(DATABASE_URL_ENV) or "").strip()
     if not database_url:
