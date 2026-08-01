@@ -29,7 +29,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
             supervisor, "STOP_PATH", Path(tmp) / "stop"
         ), patch.object(
             supervisor, "redact_tree_in_place", return_value={"errors": []}
-        ), patch.dict(
+        ) as scrub, patch.dict(
             os.environ,
             {
                 "CHARLIE_CORE_EXECUTION_MODE": "observe_only",
@@ -59,6 +59,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertNotIn("SUPABASE_SERVICE_ROLE_KEY", popen.call_args.kwargs["env"])
         self.assertNotIn("PROVIDER_KEY", popen.call_args.kwargs["env"])
         self.assertEqual(packet["execution_mode"], "observe_only")
+        scrub.assert_not_called()
 
     def test_recovery_runs_only_after_controller_final_authorization(self):
         observed = []
