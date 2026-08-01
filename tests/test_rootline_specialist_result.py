@@ -6,6 +6,7 @@ from modules.telemetry.rootline_specialist_result import (
     RECOMMENDATION_IDS,
     RESULT_AUTHORITY,
     build_rootline_specialist_result,
+    project_water_energy_plan,
     reconsider_rootline_forecast_hold,
 )
 
@@ -89,6 +90,45 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         self.assertFalse(result["current_local_weather"]["is_forecast"])
         self.assertFalse(result["forecast"]["is_current_local_weather"])
 
+    def test_plan_projection_retains_timing_cadence_and_recovery(self):
+        plan = {
+            "success": True,
+            "operating_date": "2026-08-01",
+            "evidence_generation": "ABC123",
+            "evidence_observed_at": "2026-08-01T12:40:00+00:00",
+            "current_power": {"status": "fresh"},
+            "forecast": {"status": "stale"},
+            "tank_evidence": {"status": "fresh"},
+            "candidate_tasks": [{
+                "task_id": "irrigation_B12345",
+                "recommendation": "Recommend",
+                "reason": "Dated owner candidate.",
+                "preferred_window": "15:00 SAST",
+                "planned_start_at": "15:00 SAST",
+                "planned_duration_minutes": 120,
+                "weekly_cadence": {
+                    "target_days_per_week": 4,
+                    "completed_days_last_7_days": None,
+                },
+                "recommendation_source": "owner_confirmed_ROOTLINE_policy_20260801",
+                "advisory_plan_supported": True,
+                "actuation_blocked": True,
+            }],
+            "reassessment": {
+                "next_time_or_trigger": "15:00 SAST",
+                "triggers": ["observed_rain"],
+            },
+            "recovery_handling": "Reconsider at the next suitable window; no command replay.",
+        }
+        result = project_water_energy_plan(plan, now=NOW)
+        b_camp = self.recommendation(result, "B12345")
+        self.assertEqual(b_camp["planned_start_at"], "15:00 SAST")
+        self.assertEqual(b_camp["planned_duration_minutes"], 120)
+        self.assertEqual(b_camp["weekly_cadence"]["target_days_per_week"], 4)
+        self.assertTrue(b_camp["actuation_blocked"])
+        self.assertEqual(result["next_reassessment"]["at"], "15:00 SAST")
+        self.assertIn("no command replay", result["next_reassessment"]["recovery_if_window_is_missed"])
+
     def test_fresh_and_stale_power_and_conflict_are_localized(self):
         fresh = self.build()
         self.assertEqual(fresh["current_power"]["status"], "fresh")
@@ -122,6 +162,32 @@ class RootlineSpecialistResultTests(unittest.TestCase):
         )
         self.assertIn(
             "not observed rain", result["forecast"]["uncertainty"].lower()
+        )
+
+    def test_b_plan_window_does_not_mask_bounded_borehole_forecast_reassessment(self):
+        wet = evidence()["forecast"] | {
+            "days": [{"rain_sum_mm": 8, "rain_probability_max_pct": 80}]
+        }
+        irrigation = evidence()["irrigation"] | {
+            "owner_candidate": {
+                "zone_id": "B12345",
+                "operating_date": "2026-07-29",
+                "source": "owner_confirmed_test",
+            }
+        }
+        tanks = evidence()["tanks"] | {"reservoir_reported_count": 9}
+        result = self.build(forecast=wet, irrigation=irrigation, tanks=tanks)
+        self.assertEqual(
+            result["next_reassessment"]["trigger"],
+            "bounded_forecast_rain_check",
+        )
+        self.assertEqual(
+            result["next_reassessment"]["maximum_delay_minutes"],
+            FORECAST_RAIN_MAX_DELAY_MINUTES,
+        )
+        self.assertIn(
+            "reconsider supported water work",
+            result["next_reassessment"]["recovery_if_rain_does_not_occur"],
         )
 
     def test_forecast_rain_not_materialized_releases_suppression(self):

@@ -79,6 +79,15 @@ OPERATING_KNOWLEDGE = {
         },
         "solar_transfer_pump": {"control_identity": UNKNOWN},
     },
+    "irrigation": {
+        "standing_water_requirement": True,
+        "zones": ["B12345", "C12345"],
+        "target_days_per_week_each": 4,
+        "nominal_runtime_minutes": 120,
+        "historical_window": "22:00-00:00 SAST alternating camps",
+        "historical_window_is_policy": False,
+        "today_owner_candidate": "B12345",
+    },
     "fertilizer": {
         "manufacturer": "SONOFF",
         "model": "4CHPRO R3",
@@ -119,6 +128,7 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
     tanks = _dict(evidence.get("tanks"))
     irrigation = _dict(evidence.get("irrigation"))
     history = _dict(evidence.get("history"))
+    irrigation_history = _dict(evidence.get("irrigation_history"))
     water_demand = _dict(evidence.get("water_demand"))
 
     power_state = _freshness(power, now)
@@ -132,7 +142,9 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
     tasks = [
         _borehole_task(tanks, tank_state, water_demand, rain, reserve),
         _transfer_task(tanks, tank_state, water_demand, reserve),
-        *_irrigation_tasks(irrigation, reserve, rain),
+        *_irrigation_tasks(irrigation, irrigation_history, reserve, rain, tanks,
+                           tank_state, power, power_state, weather_state, now,
+                           selected_date),
         _fertilizer_injection_task(irrigation),
         _fertilizer_mixing_task(tanks, tank_state, reserve),
     ]
@@ -145,6 +157,7 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         "tanks": tanks,
         "irrigation": irrigation,
         "history": history,
+        "irrigation_history": irrigation_history,
         "water_demand": water_demand,
     }
     evidence_hash = _canonical_sha(_material_evidence(canonical_evidence, now))
@@ -176,6 +189,9 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
             "status": UNAVAILABLE,
             "limitations": ["Historical context reader unavailable."],
         },
+        "recent_irrigation_history": irrigation_history or {
+            "status": UNAVAILABLE, "zones": {}
+        },
         "forecast": {
             "status": forecast_state,
             "confidence": forecast_confidence,
@@ -187,20 +203,34 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         "rain_capture": rain,
         "battery_reserve": reserve,
         "tank_evidence": {
-            "status": tank_state,
+            "status": tank_state["overall"],
             "storage_reported_count": tanks.get("storage_reported_count"),
             "storage_state": tanks.get("storage_state", UNKNOWN),
             "storage_total_count": 5,
             "reservoir_reported_count": tanks.get("reservoir_reported_count"),
             "reservoir_state": tanks.get("reservoir_state", UNKNOWN),
             "reservoir_total_count": 12,
+            "storage_observed_at": tanks.get("storage_observed_at"),
+            "storage_age_minutes": _age_minutes(
+                {"observed_at": tanks.get("storage_observed_at")}, now
+            ),
+            "storage_freshness": tank_state["storage"],
+            "reservoir_observed_at": tanks.get("reservoir_observed_at"),
+            "reservoir_age_minutes": _age_minutes(
+                {"observed_at": tanks.get("reservoir_observed_at")}, now
+            ),
+            "reservoir_freshness": tank_state["reservoir"],
             "observed_at": tanks.get("observed_at"),
             "reporter": tanks.get("reporter"),
             "source": tanks.get("source"),
+            "storage_reporter": tanks.get("storage_reporter"),
+            "storage_source": tanks.get("storage_source"),
+            "reservoir_reporter": tanks.get("reservoir_reporter"),
+            "reservoir_source": tanks.get("reservoir_source"),
             "age_minutes": _age_minutes(tanks, now),
             "litres_inferred": False,
         },
-        "water_demand": water_demand or {"status": UNAVAILABLE},
+        "water_demand": water_demand or {"status": "standing_essential"},
         "candidate_tasks": tasks,
         "outcome_separation": {
             "plan": "advice_only",
@@ -212,6 +242,23 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         "estimated_grid_exposure": _grid_exposure(tasks, reserve),
         "operating_knowledge": deepcopy(OPERATING_KNOWLEDGE),
         "evidence_gaps": _evidence_gaps(forecast_state, tank_state, tasks),
+        "reassessment": {
+            "next_time_or_trigger": _next_reassessment(tasks),
+            "triggers": [
+                "fresh_or_materially_changed_local_weather",
+                "observed_rain",
+                "fresh_forecast_generation",
+                "new_independent_storage_or_reservoir_observation",
+                "completed_or_missed_B_or_C_irrigation_evidence",
+                "SOC_crosses_governing_reserve_or_absolute_floor",
+            ],
+            "automatic_command": False,
+        },
+        "recovery_handling": (
+            "If the B window is missed or interrupted, reconsider the remaining "
+            "weekly B target at the next suitable evidence-backed energy and water "
+            "window; do not create or replay a command automatically."
+        ),
         "authority": deepcopy(AUTHORITY),
     }
     return plan
@@ -307,10 +354,19 @@ def read_current_water_energy_evidence(
             "zones": deepcopy(advisor.get("zones", [])),
             "active_zone": None,
             "source": "rootline_daily_advisor",
+            "owner_candidate": {
+                "zone_id": "B12345",
+                "operating_date": "2026-08-01",
+                "source": "owner_confirmed_ROOTLINE_policy_20260801",
+            },
         },
         "history": _read_historical_context(database_url),
+        "irrigation_history": _read_recent_irrigation_history(database_url, now),
         "tanks": _read_latest_tank_observation(database_url),
-        "water_demand": {"status": UNAVAILABLE},
+        "water_demand": {
+            "status": "standing_essential",
+            "owner_reclassification_required": False,
+        },
     }
     return evidence, selected, now
 
@@ -544,7 +600,51 @@ def _read_historical_context(database_url):
         return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
 
 
+def _read_recent_irrigation_history(database_url, now):
+    database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"status": UNAVAILABLE, "zones": {}}
+    try:
+        import psycopg
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select zone_id, max(event_at) filter (
+                               where lower(event_type) in ('completed','done')
+                                 and event_at <= %s
+                           ) as last_completed_at,
+                           count(distinct (event_at at time zone 'Africa/Johannesburg')::date) filter (
+                               where lower(event_type) in ('completed','done')
+                                 and event_at >= %s - interval '7 days'
+                                 and event_at <= %s
+                           )::int as completed_last_7_days
+                      from public.irrigation_events
+                     where zone_id in ('B12345','C12345')
+                     group by zone_id
+                    """,
+                    (now, now, now),
+                )
+                rows = cursor.fetchall()
+        zones = {
+            row[0]: {
+                "last_completed_at": row[1].isoformat() if row[1] else None,
+                "completed_last_7_days": row[2],
+            }
+            for row in rows
+        }
+        return {
+            "status": "Available" if zones else UNAVAILABLE,
+            "zones": zones,
+            "absence_means_no_canonical_completion_evidence": True,
+            "completion_events_do_not_prove_flow_or_delivered_water": True,
+        }
+    except Exception as exc:
+        return {"status": UNAVAILABLE, "zones": {}, "error_type": exc.__class__.__name__}
+
+
 def _read_latest_tank_observation(database_url):
+    """Compose the newest independent storage and reservoir observations."""
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
         return {}
@@ -558,20 +658,41 @@ def _read_latest_tank_observation(database_url):
                            storage_state,reservoir_state,observed_at,
                            reporter_identity,source
                       from public.rootline_tank_observations
+                     where storage_reported_count is not null
                      order by observed_at desc,recorded_at desc limit 1
                     """
                 )
-                row = cursor.fetchone()
-        if not row:
+                storage = cursor.fetchone()
+                cursor.execute(
+                    """
+                    select storage_reported_count,reservoir_reported_count,
+                           storage_state,reservoir_state,observed_at,
+                           reporter_identity,source
+                      from public.rootline_tank_observations
+                     where reservoir_reported_count is not null
+                     order by observed_at desc,recorded_at desc limit 1
+                    """
+                )
+                reservoir = cursor.fetchone()
+        if not storage and not reservoir:
             return {}
+        newest = max(
+            (row for row in (storage, reservoir) if row), key=lambda row: row[4]
+        )
         return {
-            "storage_reported_count": row[0],
-            "reservoir_reported_count": row[1],
-            "storage_state": row[2],
-            "reservoir_state": row[3],
-            "observed_at": row[4].isoformat(),
-            "reporter": row[5],
-            "source": row[6],
+            "storage_reported_count": storage[0] if storage else None,
+            "reservoir_reported_count": reservoir[1] if reservoir else None,
+            "storage_state": storage[2] if storage else UNKNOWN,
+            "reservoir_state": reservoir[3] if reservoir else UNKNOWN,
+            "storage_observed_at": storage[4].isoformat() if storage else None,
+            "reservoir_observed_at": reservoir[4].isoformat() if reservoir else None,
+            "storage_reporter": storage[5] if storage else None,
+            "storage_source": storage[6] if storage else None,
+            "reservoir_reporter": reservoir[5] if reservoir else None,
+            "reservoir_source": reservoir[6] if reservoir else None,
+            "observed_at": newest[4].isoformat(),
+            "reporter": newest[5],
+            "source": newest[6],
         }
     except Exception:
         return {}
@@ -646,16 +767,17 @@ def _borehole_task(tanks, tank_state, demand, rain, reserve):
             if rain["current_rain_status"] == "Hold"
             else "Fresh credible forecast indicates meaningful roof-capture rain."
         )
-    elif tank_state == "stale" or storage is None:
+    elif tank_state["storage"] in {"stale", UNAVAILABLE} or storage is None:
         rec, reason = "Needs Data", "Fresh storage count is unavailable."
     elif tanks.get("storage_state") == "FULL" and not urgent:
         rec, reason = "Do Not Run", "Storage was explicitly observed FULL."
-    elif rain["rain_hold_state"] == UNKNOWN and not urgent:
-        rec, reason = "Hold", "Rain-hold release evidence is incomplete."
     elif urgent:
         rec, reason = "Recommend", "Urgent water continuity can justify grid exposure."
     else:
-        rec, reason = "Hold", "Water need is not proven."
+        rec, reason = "Hold", (
+            "Standing water continuity is protected; current storage evidence does "
+            "not support borehole catch-up before the next reassessment."
+        )
     return _task("borehole", rec, reason, "overnight_or_surplus_solar", [
         "fresh_storage_observation", "genuine_water_need",
         "SmartLife_device_binding_unresolved",
@@ -665,14 +787,16 @@ def _borehole_task(tanks, tank_state, demand, rain, reserve):
 def _transfer_task(tanks, tank_state, demand, reserve):
     storage = tanks.get("storage_reported_count")
     reservoir = tanks.get("reservoir_reported_count")
-    if tank_state == "stale" or storage is None or reservoir is None:
+    if (tank_state["storage"] in {"stale", UNAVAILABLE}
+            or tank_state["reservoir"] in {"stale", UNAVAILABLE}
+            or storage is None or reservoir is None):
         rec, reason = "Needs Data", "Fresh storage and reservoir counts are required."
     elif tanks.get("reservoir_state") == "FULL":
         rec, reason = "Do Not Run", "Reservoir storage was explicitly observed FULL."
     elif storage <= 0:
         rec, reason = "Hold", "No active storage supply is reported."
-    elif demand.get("status") in {"needed", "urgent"}:
-        rec, reason = "Recommend", "Reservoir demand exists; prefer direct surplus solar."
+    elif demand.get("status") in {"standing_essential", "needed", "urgent"}:
+        rec, reason = "Hold", "Adequate reservoir is reported; passive solar transfer remains monitor-only."
     else:
         rec, reason = "Hold", "Transfer demand is not proven."
     return _task("solar_transfer_pump", rec, reason, "10:00-15:00 SAST candidate", [
@@ -681,24 +805,81 @@ def _transfer_task(tanks, tank_state, demand, reserve):
     ], reserve)
 
 
-def _irrigation_tasks(irrigation, reserve, rain):
+def _irrigation_tasks(irrigation, irrigation_history, reserve, rain, tanks,
+                      tank_state, power, power_state, weather_state, now,
+                      operating_date):
     zones = irrigation.get("zones") if isinstance(irrigation.get("zones"), list) else []
     result = []
     for zone in zones:
         zone = _dict(zone)
-        rec = str(zone.get("recommendation") or "Needs Data")
-        if rain["rain_hold_state"] != "released":
-            rec = "Hold"
+        zone_id = zone.get("zone_id") or "unknown"
+        owner_candidate = _dict(irrigation.get("owner_candidate"))
+        is_candidate = (
+            zone_id == owner_candidate.get("zone_id")
+            and operating_date == owner_candidate.get("operating_date")
+            and bool(owner_candidate.get("source"))
+        )
+        zone_history = _dict(_dict(irrigation_history.get("zones")).get(zone_id))
+        completed_days = zone_history.get("completed_last_7_days")
+        adequate_reservoir = (
+            tank_state["reservoir"] in {"fresh", "aging"}
+            and tanks.get("reservoir_reported_count") is not None
+            and tanks.get("reservoir_reported_count") >= 9
+        )
+        observed_rain = rain["current_rain_status"] == "Hold"
+        rec = "Recommend" if (
+            is_candidate and adequate_reservoir and weather_state == "fresh"
+            and not observed_rain
+        ) else "Hold"
+        reason = (
+            "B Camp is today's owner-identified candidate; the nominal two-hour "
+            "drip target is supported proportionally by adequate reservoir evidence "
+            "and fresh dry local weather. Crop/soil evidence is unavailable."
+            if rec == "Recommend" else
+            "Not selected for today's proportional B-Camp plan; retain the four-day "
+            "weekly target and reassess from completed-irrigation evidence."
+        )
+        start = _adaptive_irrigation_start(now, power, power_state, reserve)
         result.append(_task(
-            f"irrigation_{zone.get('zone_id') or 'unknown'}", rec,
-            "Daily Advisor evidence; runtime remains separate and may be Unavailable.",
-            "08:00-17:00 SAST advice window",
-            ["one_zone_at_a_time", "runtime_policy", "fresh_weather"], reserve,
+            f"irrigation_{zone_id}", rec, reason, start,
+            ["recent_completed_irrigation_unavailable", "crop_soil_need_unavailable",
+             "exact_device_binding_required_for_actuation"], reserve,
         ))
+        result[-1]["planned_start_at"] = start if rec == "Recommend" else None
+        result[-1]["planned_duration_minutes"] = 120 if rec == "Recommend" else None
+        result[-1]["advisory_plan_supported"] = rec == "Recommend"
+        result[-1]["actuation_blocked"] = True
+        result[-1]["recommendation_source"] = (
+            owner_candidate.get("source") if is_candidate
+            else "adaptive_daily_plan_not_selected"
+        )
+        result[-1]["weekly_cadence"] = {
+            "target_days_per_week": 4,
+            "completed_days_last_7_days": completed_days,
+            "completion_evidence_status": (
+                "Available" if completed_days is not None else UNAVAILABLE
+            ),
+            "today_eligibility_basis": (
+                "bounded_dated_owner_candidate_with_nominal_target"
+                if is_candidate else "not_selected_today"
+            ),
+            "may_not_be_reused_as_tomorrow_eligibility": True,
+        }
     if not result:
         result.append(_task("irrigation", "Needs Data", "Zone advice unavailable.",
                             "Unavailable", ["daily_advisor"], reserve))
     return result
+
+
+def _adaptive_irrigation_start(now, power, power_state, reserve):
+    surplus = (_number(power.get("solar_power_w")) or 0) > (_number(power.get("load_power_w")) or 0)
+    soc = _number(power.get("battery_soc_pct"))
+    if (power_state == "fresh" and surplus and soc is not None
+            and soc >= reserve["governing_reserve_soc_pct"] and now.hour < 15):
+        minute = 30 if now.minute < 30 else 0
+        hour = now.hour if minute == 30 else now.hour + 1
+        return f"{hour:02d}:{minute:02d} SAST"
+    return "22:00 SAST"
 
 
 def _fertilizer_injection_task(irrigation):
@@ -781,12 +962,18 @@ def _freshness(packet, now):
 
 
 def _tank_freshness(packet, now):
-    if not packet or not packet.get("observed_at"):
-        return UNAVAILABLE
-    age = _age_minutes(packet, now)
-    if age is None:
-        return UNAVAILABLE
-    return "fresh" if age <= 360 else "aging" if age <= 1440 else "stale"
+    def one(field):
+        age = _age_minutes({"observed_at": packet.get(field)}, now)
+        if age is None:
+            return UNAVAILABLE
+        return "fresh" if age <= 360 else "aging" if age <= 1440 else "stale"
+    storage = one("storage_observed_at" if "storage_observed_at" in packet else "observed_at")
+    reservoir = one("reservoir_observed_at" if "reservoir_observed_at" in packet else "observed_at")
+    states = {storage, reservoir}
+    overall = "stale" if "stale" in states else (
+        UNAVAILABLE if UNAVAILABLE in states else "aging" if "aging" in states else "fresh"
+    )
+    return {"overall": overall, "storage": storage, "reservoir": reservoir}
 
 
 def _age_minutes(packet, now):
@@ -885,6 +1072,12 @@ def _material_evidence(evidence, now):
             "storage_state": tanks.get("storage_state"),
             "reservoir_state": tanks.get("reservoir_state"),
             "observed_at": tanks.get("observed_at"),
+            "storage_observed_at": tanks.get("storage_observed_at"),
+            "reservoir_observed_at": tanks.get("reservoir_observed_at"),
+            "storage_reporter": tanks.get("storage_reporter"),
+            "storage_source": tanks.get("storage_source"),
+            "reservoir_reporter": tanks.get("reservoir_reporter"),
+            "reservoir_source": tanks.get("reservoir_source"),
         },
         "irrigation": {
             "zones": [
@@ -901,9 +1094,11 @@ def _material_evidence(evidence, now):
             "active_zone_observed_minutes": irrigation.get("active_zone_observed_minutes"),
             "minutes_since_last_injection": irrigation.get("minutes_since_last_injection"),
             "clean_water_flush_supported": irrigation.get("clean_water_flush_supported"),
+            "owner_candidate": irrigation.get("owner_candidate"),
         },
         "water_demand": evidence.get("water_demand"),
         "history": evidence.get("history"),
+        "irrigation_history": evidence.get("irrigation_history"),
         "calculation_version": "rootline_water_energy_plan_v1",
     }
 
@@ -964,12 +1159,21 @@ def _summary(tasks, reserve, rain):
     )
 
 
+def _next_reassessment(tasks):
+    for task in tasks:
+        if task.get("task_id") == "irrigation_B12345" and task.get("planned_start_at"):
+            return task["planned_start_at"]
+    return "on_material_evidence_change"
+
+
 def _evidence_gaps(forecast_state, tank_state, tasks):
     gaps = []
     if forecast_state != "fresh":
         gaps.append("fresh_forecast")
-    if tank_state not in {"fresh", "aging"}:
-        gaps.append("fresh_manual_tank_counts")
+    if tank_state["storage"] not in {"fresh", "aging"}:
+        gaps.append("fresh_storage_observation")
+    if tank_state["reservoir"] not in {"fresh", "aging"}:
+        gaps.append("fresh_reservoir_observation")
     for task in tasks:
         gaps.extend(d for d in task.get("dependencies", []) if "unresolved" in d)
     return sorted(set(gaps))
