@@ -186,7 +186,7 @@ def main():
     return 0 if status_code < 400 else 1
 
 
-def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep, transition_timeout_seconds=5):
+def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep, transition_timeout_seconds=30):
     if SUPERVISOR_STOP_PATH.exists():
         return {
             "success": False,
