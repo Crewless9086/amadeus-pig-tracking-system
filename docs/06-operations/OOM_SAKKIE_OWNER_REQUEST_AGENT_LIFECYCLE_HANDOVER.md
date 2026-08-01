@@ -23,8 +23,8 @@ deployed-agent activity.
 
 ## Reused production surfaces
 
-- authenticated `handle_telegram_direct_webhook` ingress and existing owner
-  allowlist;
+- authenticated `handle_telegram_direct_webhook` and active
+  `handle_telegram_gateway_message` ingress with the existing owner allowlist;
 - existing Telegram `sendMessage` transport;
 - existing BEACON private Telegram-media download, validation and readback
   primitives;
@@ -37,6 +37,15 @@ The lifecycle records `received`, `assigned`, `working`,
 requires exact mission/worker/release bindings, delivery acknowledgement, fresh
 task activity and an outcome artifact. Missing acknowledgement/start becomes
 one stable systemic exception rather than an invisible stall.
+
+Production preflight found the direct route intentionally disabled. The active
+GateKeeper therefore keeps its single trigger, leaves ordinary text and BEACON
+single-photo routing unchanged, and forwards only a private-owner,
+unforwarded, stable photo album through a dedicated authenticated gateway
+output. Rejected or unsupported media remains terminal. The gateway uses the
+existing SAM/Oom owner bot as one explicit canonical identity for both media
+download and owner-task delivery, requires a Telegram provider message ID, and
+never retries ambiguous delivery.
 
 ## ROOTLINE request 3156 recovery binding
 

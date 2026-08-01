@@ -452,12 +452,20 @@ def _store_owner_media(envelope, task_id):
     )
     temp_path = None
     try:
-        temp_path, download = _download_telegram_file(envelope, os.environ)
+        source = dict(os.environ)
+        canonical_token = str(source.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or "").strip()
+        if not canonical_token:
+            raise RuntimeError("owner_task_canonical_bot_token_not_configured")
+        # Request 3156 and GateKeeper's owner trigger use the existing SAM/Oom
+        # owner bot. Force the media helper onto that same bot identity even if
+        # the disabled direct route has a different legacy token configured.
+        source["OOM_SAKKIE_TELEGRAM_BOT_TOKEN"] = canonical_token
+        temp_path, download = _download_telegram_file(envelope, source)
         validated = _validate_streamed_image(temp_path, envelope["declared_mime_type"], download)
         suffix = ".jpg" if validated["observed_mime_type"] == "image/jpeg" else ".png"
         path = f"owner-tasks/{task_id}/{envelope['message_id']}-{validated['content_sha256']}{suffix}"
         body = Path(temp_path).read_bytes()
-        storage = SupabasePrivateStorage(os.environ)
+        storage = SupabasePrivateStorage(source)
         uploaded = storage.put(path, body, validated["observed_mime_type"])
         if uploaded.get("success") is not True:
             raise RuntimeError("owner_task_private_upload_failed")

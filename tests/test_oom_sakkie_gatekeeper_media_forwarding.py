@@ -5,6 +5,7 @@ from pathlib import Path
 
 from scripts.oom_sakkie_gatekeeper_media_forwarding_contract import (
     MEDIA_NODE,
+    OWNER_TASK_MEDIA_NODE,
     SAM_NODE,
     TEXT_NODE,
     build_n8n_workflow_put_payload,
@@ -62,6 +63,7 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
                 "Code - Gate BEACON Single Photo",
                 "Switch - BEACON Media Intake",
                 MEDIA_NODE,
+                OWNER_TASK_MEDIA_NODE,
             }
         ]
         for node in live["nodes"]:
@@ -71,6 +73,7 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
         live["connections"].pop("Code - Gate BEACON Single Photo")
         live["connections"].pop("Switch - BEACON Media Intake")
         live["connections"].pop(MEDIA_NODE)
+        live["connections"].pop(OWNER_TASK_MEDIA_NODE)
         live["connections"]["Security Check"]["main"][1] = [
             {
                 "node": "Switch - Telegram Update Type",
@@ -184,12 +187,16 @@ class GateKeeperMediaForwardingTests(unittest.TestCase):
                     "media_rejected",
                 )
 
-    def test_album_is_unavailable_during_single_photo_canary(self):
+    def test_private_owner_album_uses_dedicated_owner_task_gateway_branch(self):
         album = photo_update(media_group_id="album-1")
         self.assertEqual(
             classify_update(album, authenticated=True, expected_user=OWNER, expected_chat=CHAT),
-            "media_rejected",
+            "owner_request_album",
         )
+        outputs = self.workflow["connections"]["Switch - BEACON Media Intake"]["main"]
+        self.assertEqual(outputs[2], [])
+        self.assertEqual([edge["node"] for edge in outputs[3]], [OWNER_TASK_MEDIA_NODE])
+        self.assertEqual(self.workflow["connections"][OWNER_TASK_MEDIA_NODE]["main"], [[]])
 
     def test_backend_failure_cannot_fall_through_or_send_extra_reply(self):
         relay = self.nodes[MEDIA_NODE]
