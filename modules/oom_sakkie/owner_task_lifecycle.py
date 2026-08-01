@@ -277,9 +277,11 @@ def monitor_owner_task_dispatch(task, dispatch_events, *, now, event_recorder, t
 
 def _complete_prepared_result(task_id, request, envelope, existing, record, sender,
                               delivery_reconciler, acknowledgements):
-    record(_event(task_id, request, "assigned", envelope, detail={
+    record(_event(task_id, request, "assigned", envelope,
+        event_id=task_id + "-PREPARED-RESULT-ASSIGNED", detail={
         "specialist": request["specialist_identity"], "result_source": "prepared_specialist_result"}))
-    record(_event(task_id, request, "working", envelope, detail={
+    record(_event(task_id, request, "working", envelope,
+        event_id=task_id + "-PREPARED-RESULT-WORKING", detail={
         "working_agent_identity": "oom-sakkie-agent",
         "work_type": "prepared_specialist_result_reconciliation",
         "specialist_agent_dispatched": False, "development_terminal_started": False}))
