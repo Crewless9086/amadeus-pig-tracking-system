@@ -62,11 +62,20 @@ EXECUTION_MODES = {EXECUTION_MODE_ORDINARY, EXECUTION_MODE_OBSERVE_ONLY}
 EMERGENCY_CLEANUP_DISABLED_PATH = RUNNER_DIR / "EMERGENCY_PROCESS_CLEANUP_DISABLED"
 EMERGENCY_CLEANUP_REFUSAL_LOG = RUNNER_DIR / "emergency-process-cleanup-refusals.jsonl"
 STALE_SECONDS = 120
-START_ACK_TIMEOUT_SECONDS = 30
+# Windows ownership validation uses authenticated CIM snapshots for both the
+# supervisor and worker trees.  Keep the startup bounded, but allow those
+# fail-closed inspections and execution-worktree reconciliation to complete.
+START_ACK_TIMEOUT_SECONDS = 90
 SUPERVISOR_PACKET_VERSION = "charlie_supervisor_ownership_v3"
 
 
 def _python_executable(repo_root=REPO_ROOT):
+    if (
+        os.name == "nt"
+        and Path(repo_root).resolve() == REPO_ROOT.resolve()
+        and str(getattr(sys, "_base_executable", "") or "")
+    ):
+        return str(Path(sys._base_executable))
     candidates = [
         Path(repo_root) / "venv" / "Scripts" / "python.exe",
         Path(repo_root).parents[1] / "venv" / "Scripts" / "python.exe",
@@ -460,6 +469,15 @@ def start_runner(status_override=None, respect_stop_marker=True, execution_mode=
         "CHARLIE_CONTROLLER_PUBLIC_KEY": controller_public_key,
         "CHARLIE_CORE_EXECUTION_MODE": execution_mode,
     }
+    if os.name == "nt":
+        venv_site = Path(sys.prefix) / "Lib" / "site-packages"
+        child_env["PYTHONPATH"] = os.pathsep.join(
+            str(path) for path in (
+                REPO_ROOT,
+                venv_site,
+                child_env.get("PYTHONPATH", ""),
+            ) if str(path)
+        )
     # The final check is deliberately adjacent to process creation.  A marker
     # arriving after this point is still authoritative: both the child entry
     # point and the acknowledgement loop refuse it and contain the new tree.

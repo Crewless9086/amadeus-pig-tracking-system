@@ -164,6 +164,12 @@ def _transaction_pool_url(value):
 
 
 def _python_executable(repo_root=REPO_ROOT):
+    if (
+        os.name == "nt"
+        and Path(repo_root).resolve() == REPO_ROOT.resolve()
+        and str(getattr(sys, "_base_executable", "") or "")
+    ):
+        return str(Path(sys._base_executable))
     candidates = [
         Path(repo_root) / "venv" / "Scripts" / "python.exe",
         Path(repo_root).parents[1] / "venv" / "Scripts" / "python.exe",
@@ -614,7 +620,7 @@ def _wait_for_controller_ack(
     execution_mode="ordinary",
     live_validate=True,
     sleep_fn=time.sleep,
-    timeout_seconds=15,
+    timeout_seconds=30,
 ):
     deadline = time.monotonic() + max(0, float(timeout_seconds))
     last_reason = "controller_ownership_packet_missing"
