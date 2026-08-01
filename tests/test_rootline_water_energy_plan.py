@@ -10,6 +10,8 @@ from modules.telemetry.rootline_water_energy_plan import (
     append_water_energy_plan,
     _normalize_forecast,
     _read_historical_context,
+    _read_latest_tank_observation,
+    _read_recent_irrigation_history,
 )
 
 
@@ -250,6 +252,85 @@ class WaterEnergyPlanTests(unittest.TestCase):
             self.assertFalse(task["command_created"])
             self.assertFalse(task["dispatchable"])
             self.assertFalse(task["physical_water_flow_confirmed"])
+
+    def test_owner_policy_builds_explicit_b_plan_without_crop_sensor_evidence(self):
+        plan = self.build(
+            forecast={
+                "observed_at": "2026-07-27T10:00:00+02:00",
+                "stale_after_minutes": 360,
+                "days": [{"rain_sum_mm": 0, "rain_probability_max_pct": 0}],
+            },
+            water_demand={},
+            tanks=evidence()["tanks"] | {"reservoir_reported_count": 9},
+            irrigation={
+                "owner_candidate": {
+                    "zone_id": "B12345",
+                    "operating_date": "2026-07-28",
+                    "source": "owner_confirmed_test",
+                },
+                "zones": [
+                    {"zone_id": "B12345", "recommendation": "Hold"},
+                    {"zone_id": "C12345", "recommendation": "Hold"},
+                ]
+            },
+        )
+        b_camp = self.task(plan, "irrigation_B12345")
+        self.assertEqual(b_camp["recommendation"], "Recommend")
+        self.assertEqual(b_camp["planned_duration_minutes"], 120)
+        self.assertEqual(b_camp["planned_start_at"], "12:30 SAST")
+        self.assertIn("Crop/soil evidence is unavailable", b_camp["reason"])
+        self.assertTrue(b_camp["advisory_plan_supported"])
+        self.assertTrue(b_camp["actuation_blocked"])
+        self.assertEqual(plan["water_demand"]["status"], "standing_essential")
+        self.assertEqual(plan["forecast"]["status"], "stale")
+
+    def test_missing_reservoir_blocks_irrigation_not_storage_borehole_conclusion(self):
+        tanks = evidence()["tanks"] | {
+            "reservoir_reported_count": None,
+            "reservoir_observed_at": None,
+            "storage_observed_at": "2026-07-28T10:00:00+02:00",
+        }
+        plan = self.build(tanks=tanks, water_demand={})
+        self.assertEqual(self.task(plan, "irrigation_B12345")["recommendation"], "Hold")
+        self.assertNotEqual(self.task(plan, "borehole")["recommendation"], "Needs Data")
+        self.assertEqual(plan["tank_evidence"]["storage_freshness"], "fresh")
+        self.assertEqual(plan["tank_evidence"]["reservoir_freshness"], "Unavailable")
+
+    def test_independent_tank_rows_are_composed_with_exact_timestamps(self):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.side_effect = [
+            (3, None, "Unknown", "Unknown",
+             datetime.fromisoformat("2026-08-01T13:16:52+02:00"), "storage-owner", "telegram-3150"),
+            (None, 9, "Unknown", "Unknown",
+             datetime.fromisoformat("2026-08-01T12:01:41+02:00"), "reservoir-owner", "telegram-3146"),
+        ]
+        with mock.patch("psycopg.connect") as connect:
+            connect.return_value.__enter__.return_value = connection
+            result = _read_latest_tank_observation("postgresql://production-shaped")
+        self.assertEqual(result["storage_reported_count"], 3)
+        self.assertEqual(result["reservoir_reported_count"], 9)
+        self.assertEqual(result["storage_observed_at"], "2026-08-01T13:16:52+02:00")
+        self.assertEqual(result["reservoir_observed_at"], "2026-08-01T12:01:41+02:00")
+        self.assertEqual(result["storage_reporter"], "storage-owner")
+        self.assertEqual(result["storage_source"], "telegram-3150")
+        self.assertEqual(result["reservoir_reporter"], "reservoir-owner")
+        self.assertEqual(result["reservoir_source"], "telegram-3146")
+
+    def test_recent_history_excludes_stopped_and_future_completion_evidence(self):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchall.return_value = []
+        with mock.patch("psycopg.connect") as connect:
+            connect.return_value.__enter__.return_value = connection
+            result = _read_recent_irrigation_history(
+                "postgresql://production-shaped", NOW
+            )
+        sql, params = cursor.execute.call_args.args
+        self.assertNotIn("'stopped'", sql)
+        self.assertEqual(sql.count("event_at <= %s"), 2)
+        self.assertEqual(params, (NOW, NOW, NOW))
+        self.assertEqual(result["status"], "Unavailable")
 
     def test_append_database_failure_returns_fail_closed_response(self):
         plan = self.build()
