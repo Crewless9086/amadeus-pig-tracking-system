@@ -283,11 +283,22 @@ def _project_existing_plan(plan, now):
         "battery_policy": deepcopy(plan.get("battery_reserve") or {}),
         "water_observations": deepcopy(plan.get("tank_evidence") or {}),
         "recommendations": recommendations,
-        "next_reassessment": {
-            "trigger": "new_canonical_evidence_or_next_read",
-            "at": now.isoformat(),
-            "reason": "Recompose from current read models before owner use.",
-        },
+        "next_reassessment": (
+            {
+                "trigger": "canonical_plan_reassessment",
+                "at": plan["reassessment"]["next_time_or_trigger"],
+                "also_on": deepcopy(plan["reassessment"].get("triggers") or []),
+                "recovery_if_window_is_missed": plan.get("recovery_handling"),
+                "automatic_command": False,
+            }
+            if isinstance(plan.get("reassessment"), dict)
+            and plan["reassessment"].get("next_time_or_trigger")
+            else {
+                "trigger": "new_canonical_evidence_or_next_read",
+                "at": now.isoformat(),
+                "reason": "Recompose from current read models before owner use.",
+            }
+        ),
         "owner_questions": _questions_from_plan(plan),
         "outcome_separation": {
             "plan_or_recommendation": "available",
@@ -410,6 +421,7 @@ def _recommendations(
                 "hardware_control": False,
                 "schedule_mutation": False,
                 "workflow_activation": False,
+                **_task_plan_projection(task),
             }
         )
     return result
@@ -470,6 +482,20 @@ def _reassessment(
                 "Remove forecast-only suppression and reconsider supported water work."
             ),
         }
+    plan_reassessment = plan.get("reassessment") if isinstance(plan, dict) else None
+    has_explicit_task_window = any(
+        isinstance(task, dict) and task.get("planned_start_at")
+        for task in plan.get("candidate_tasks", [])
+    )
+    if (has_explicit_task_window and isinstance(plan_reassessment, dict)
+            and plan_reassessment.get("next_time_or_trigger")):
+        return {
+            "trigger": "canonical_plan_reassessment",
+            "at": plan_reassessment["next_time_or_trigger"],
+            "also_on": deepcopy(plan_reassessment.get("triggers") or []),
+            "recovery_if_window_is_missed": plan.get("recovery_handling"),
+            "automatic_command": False,
+        }
     freshness = [
         ("power", plan.get("current_power", {}).get("status")),
         ("weather", _freshness(evidence.get("weather"), now)),
@@ -511,7 +537,7 @@ def _owner_questions(plan, evidence, recommendations):
         )
     demand = evidence.get("water_demand")
     if not isinstance(demand, dict) or demand.get("status") not in {
-        "normal", "needed", "urgent"
+        "normal", "needed", "urgent", "standing_essential"
     }:
         questions.append(
             {
@@ -706,8 +732,20 @@ def _recommendations_from_tasks(tasks):
             "hardware_control": False,
             "schedule_mutation": False,
             "workflow_activation": False,
+            **_task_plan_projection(task),
         })
     return result
+
+
+def _task_plan_projection(task):
+    return {
+        "planned_start_at": task.get("planned_start_at"),
+        "planned_duration_minutes": task.get("planned_duration_minutes"),
+        "weekly_cadence": deepcopy(task.get("weekly_cadence")),
+        "recommendation_source": task.get("recommendation_source"),
+        "advisory_plan_supported": task.get("advisory_plan_supported", False),
+        "actuation_blocked": task.get("actuation_blocked", True),
+    }
 
 
 def _questions_from_plan(plan):
@@ -768,6 +806,12 @@ def _packet_from_plan_tanks(value):
         "observed_at": value.get("observed_at"),
         "reporter": value.get("reporter"),
         "source": value.get("source"),
+        "storage_observed_at": value.get("storage_observed_at"),
+        "storage_reporter": value.get("storage_reporter"),
+        "storage_source": value.get("storage_source"),
+        "reservoir_observed_at": value.get("reservoir_observed_at"),
+        "reservoir_reporter": value.get("reservoir_reporter"),
+        "reservoir_source": value.get("reservoir_source"),
     }
 
 
