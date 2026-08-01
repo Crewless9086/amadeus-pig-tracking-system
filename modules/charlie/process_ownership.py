@@ -345,8 +345,11 @@ def validate_live_bootstrap_tree(
         return structural
     members = tree.get("members") or []
     root_pid = int((tree.get("root") or {}).get("pid") or -1)
+    live_processes = inspect_processes(
+        [record.get("pid") for record in members if isinstance(record, dict)]
+    )
     for index, record in enumerate(members):
-        current = inspect_process(record.get("pid"))
+        current = live_processes.get(int(record.get("pid") or 0))
         label = f"member_{index}"
         if not isinstance(current, dict) or current.get("inspection_complete") is False:
             return _deny(f"live_identity_inspection_incomplete:{label}")
@@ -938,24 +941,53 @@ def inspect_process(pid):
             return None
     try:
         rows = _windows_process_snapshot()
-        by_pid = {int(row["pid"]): row for row in rows if row.get("pid")}
-        target = dict(by_pid.get(int(pid)) or {})
-        if not target:
-            return None
-        target["ancestry"] = _snapshot_ancestry(by_pid, target.get("parent_pid"))
-        target["current_process_ancestry"] = _snapshot_ancestry(
-            by_pid, os.getpid(), include_start=True
-        )
-        if not target["current_process_ancestry"]:
-            return None
-        target["inspection_complete"] = True
-        return target
+        return _inspect_windows_process_from_snapshot(pid, rows)
     except (OSError, subprocess.SubprocessError, ValueError, TypeError, json.JSONDecodeError):
         # Process inspection is a safety aid, never a reason to terminate the
         # supervisor.  Returning no identity keeps termination fail-closed:
         # make_ownership_record produces an unusable record and every later
         # kill authorization is refused until a complete inspection succeeds.
         return None
+
+
+def inspect_processes(pids):
+    """Inspect a bounded PID set from one consistent OS snapshot.
+
+    Windows CIM startup is comparatively expensive and can time out when a
+    live-tree validation launches one query per member.  One snapshot both
+    avoids that startup failure and prevents identities from being compared
+    across different observation instants.
+    """
+    normalized = sorted({int(pid or 0) for pid in (pids or []) if int(pid or 0) > 0})
+    if os.name != "nt":
+        return {pid: inspect_process(pid) for pid in normalized}
+    try:
+        rows = _windows_process_snapshot()
+        return {
+            pid: _inspect_windows_process_from_snapshot(pid, rows)
+            for pid in normalized
+        }
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError, json.JSONDecodeError):
+        return {pid: None for pid in normalized}
+
+
+def _inspect_windows_process_from_snapshot(pid, rows):
+    by_pid = {
+        int(row["pid"]): row
+        for row in (rows or [])
+        if isinstance(row, dict) and row.get("pid")
+    }
+    target = dict(by_pid.get(int(pid)) or {})
+    if not target:
+        return None
+    target["ancestry"] = _snapshot_ancestry(by_pid, target.get("parent_pid"))
+    target["current_process_ancestry"] = _snapshot_ancestry(
+        by_pid, os.getpid(), include_start=True
+    )
+    if not target["current_process_ancestry"]:
+        return None
+    target["inspection_complete"] = True
+    return target
 
 
 def inspect_descendant_processes(root_pid):
