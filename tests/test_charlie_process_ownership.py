@@ -260,7 +260,8 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
             },
         ]
         with patch.object(
-            process_ownership, "inspect_process", side_effect=inspect
+            process_ownership, "inspect_processes",
+            side_effect=lambda pids: {int(pid): inspect(pid) for pid in pids},
         ), patch.object(
             process_ownership,
             "_inspect_process_descendants",
@@ -419,7 +420,8 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
             },
         ]
         with patch.object(
-            process_ownership, "inspect_process", side_effect=inspect
+            process_ownership, "inspect_processes",
+            side_effect=lambda pids: {int(pid): inspect(pid) for pid in pids},
         ), patch.object(
             process_ownership,
             "_inspect_process_descendants",
@@ -583,6 +585,34 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
     def test_windows_invalid_inspection_json_returns_no_identity(self, run):
         run.return_value = Mock(returncode=0, stdout="not-json", stderr="")
         self.assertIsNone(process_ownership.inspect_process(222))
+
+    @patch.object(process_ownership.os, "name", "nt")
+    @patch.object(process_ownership, "_windows_process_snapshot")
+    def test_windows_bounded_pid_set_uses_one_consistent_snapshot(self, snapshot):
+        snapshot.return_value = [
+            {
+                "pid": os.getpid(), "parent_pid": 0,
+                "creation_time": "current", "executable_path": "python.exe",
+                "command_line": "python tests", "name": "python.exe",
+            },
+            {
+                "pid": 221, "parent_pid": os.getpid(),
+                "creation_time": "one", "executable_path": "python.exe",
+                "command_line": "python supervisor.py", "name": "python.exe",
+            },
+            {
+                "pid": 222, "parent_pid": 221,
+                "creation_time": "two", "executable_path": "python.exe",
+                "command_line": "python runner.py", "name": "python.exe",
+            },
+        ]
+
+        result = process_ownership.inspect_processes([221, 222, 221])
+
+        snapshot.assert_called_once_with()
+        self.assertEqual(sorted(result), [221, 222])
+        self.assertEqual(result[222]["ancestry"][0]["pid"], 221)
+        self.assertTrue(result[221]["inspection_complete"])
 
     def test_missing_pid_fails_closed(self):
         self.assertEqual(self.validate(live=False)["reason"], "pid_not_found")
