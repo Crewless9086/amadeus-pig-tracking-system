@@ -1,6 +1,19 @@
 # Next Steps
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
+
+## OOM-SAKKIE-OWNER-REQUEST-LIFECYCLE-1
+
+Integrate and prove the existing-rail owner-request lifecycle. The deployed Oom
+Sakkie agent must bind owner text/photo/video/album evidence to its exact active
+request, acknowledge once, persist task state, and either obtain a deployed
+specialist agent's task-specific acknowledgement/activity or expose one
+deduplicated exception that development-terminal work is required. Completion
+requires an outcome artifact and a Telegram provider message identity. First
+recovery is request 3156 and its exact six-photo album; no further screenshot,
+hardware action, or specialist-terminal operation is required. A PR, release
+row, general health check, or source artifact alone does not complete this
+mission.
 ## OOM-SAKKIE-OWNER-ATTENTION-QUEUE-1
 
 Integrate and prove the consolidated Owner Attention Queue. Its pure kernel

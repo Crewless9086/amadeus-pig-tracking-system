@@ -1,5 +1,26 @@
 # Implementation Source Map
 
+## Oom Sakkie owner-request lifecycle
+
+- Existing authenticated ingress and Telegram delivery:
+  `modules/oom_sakkie/telegram_direct.py`.
+- Durable owner-task lifecycle adapter:
+  `modules/oom_sakkie/owner_task_lifecycle.py`.
+- Dispatch truth reducer:
+  `modules/oom_sakkie/specialist_dispatch_ack.py`.
+- Existing durable evidence rail:
+  `sam_live_stock_conversation_review_events`; this is reused for append-only
+  task events and is not a second queue or decision ledger.
+- Focused acceptance:
+  `tests/test_oom_sakkie_owner_task_lifecycle.py` and
+  `tests/test_oom_sakkie_specialist_dispatch_ack.py`.
+- Production/recovery contract:
+  `docs/06-operations/OOM_SAKKIE_OWNER_REQUEST_AGENT_LIFECYCLE_HANDOVER.md`.
+- Rule: a deployed agent needs target-specific acknowledgement and fresh
+  activity before Oom Sakkie reports execution. A terminal is manual and a
+  specialist role is broader than any current adapter. Neither a release nor
+  general agent health proves task receipt or start.
+
 ## Oom Sakkie Owner Attention Queue
 
 - Doctrine and goal card:

@@ -22,6 +22,7 @@ from modules.beacon.media_intake import (
     media_intake_policy,
     telegram_media_envelope,
 )
+from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 
 
 DIRECT_ENABLED_ENV = "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED"
@@ -218,6 +219,16 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
             )
             return result
 
+        owner_task, owner_task_status = handle_owner_task_input(
+            payload,
+            environ=environ,
+            telegram_sender=lambda chat_id, text, purpose: send_owner_telegram_reply(
+                chat_id, text, environ=environ, parse_mode="HTML"
+            )[0],
+        )
+        if owner_task.get("handled"):
+            return owner_task, owner_task_status
+
         return handle_telegram_media_intake(
             payload,
             environ=environ,
@@ -232,6 +243,16 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
         body["telegram_user_id"] = parsed["telegram_user_id"]
         return body, status_code
+
+    owner_task, owner_task_status = handle_owner_task_input(
+        payload,
+        environ=environ,
+        telegram_sender=lambda chat_id, text, purpose: send_owner_telegram_reply(
+            chat_id, text, environ=environ, parse_mode="HTML"
+        )[0],
+    )
+    if owner_task.get("handled"):
+        return owner_task, owner_task_status
 
     if parsed["text"].strip().lower().startswith("/beacon-complete "):
         completion_code = parsed["text"].strip().split(maxsplit=1)[1].strip()
@@ -853,7 +874,7 @@ def _help_message_result(text):
     }
 
 
-def send_owner_telegram_reply(chat_id, text, environ=None):
+def send_owner_telegram_reply(chat_id, text, environ=None, parse_mode=None):
     source = environ if environ is not None else os.environ
     policy = telegram_direct_policy(environ=source)
     if not policy["enabled"]:
@@ -867,11 +888,14 @@ def send_owner_telegram_reply(chat_id, text, environ=None):
 
     token = str(source.get(BOT_TOKEN_ENV, "") or "").strip()
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    body = json.dumps({
+    packet = {
         "chat_id": chat_id,
         "text": text,
         "disable_web_page_preview": True,
-    }).encode("utf-8")
+    }
+    if parse_mode in {"HTML", "MarkdownV2"}:
+        packet["parse_mode"] = parse_mode
+    body = json.dumps(packet).encode("utf-8")
     request = urllib_request.Request(
         url,
         data=body,
