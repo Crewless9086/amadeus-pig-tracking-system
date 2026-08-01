@@ -236,7 +236,11 @@ def supervise_runner(
         execution_revision,
         controller_public_key=controller_public_key,
         execution_mode=execution_mode,
-        live_validate=not test_mode,
+        # The controller acknowledgement is signed only after the controller
+        # has freshly validated this exact tree.  Re-running the same Windows
+        # CIM inspection here creates a competing snapshot at the startup
+        # boundary without adding a second authority decision.
+        live_validate=False,
         sleep_fn=sleep_fn,
     )
     if not controller.get("success"):
