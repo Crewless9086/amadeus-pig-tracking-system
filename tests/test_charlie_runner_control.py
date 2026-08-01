@@ -985,6 +985,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 "agent_ledger_path": str(ledger),
                 "stdout_tail": "running tests",
                 "stderr_tail": "",
+                "reason": "bounded diagnostic reason",
             }, heartbeat)
 
             with patch("modules.charlie.runner_control.REPO_ROOT", Path(tmp)):
@@ -1006,6 +1007,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["agent_ledger"]["latest_stage"]["agent"], "builder")
         self.assertEqual(result["agent_ledger"]["latest_stage"]["commands_run"][0], "node --check static/js/charlieMissionControl.js")
         self.assertEqual(result["stdout_tail"], "running tests")
+        self.assertEqual(result["reason"], "bounded diagnostic reason")
 
     @patch("modules.charlie.runner_control._pid_alive", return_value=True)
     def test_healthy_idle_runner_reports_waiting_not_stale(self, _pid_alive):
