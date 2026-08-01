@@ -75,10 +75,11 @@ class OwnerTaskLifecycleTests(unittest.TestCase):
         self.assertEqual([row["detail"]["telegram_message_id"] for row in delivered],["901","902"])
         self.assertFalse(last["specialist_agent_dispatched"]);self.assertEqual(last["hardware_actions"],0)
         before=(len(rail.events),len(rail.messages))
-        replay,_=handle_owner_task_input(photo(6,"u6"),environ=ENV,request_loader=lambda _:req,
-            event_loader=rail.load,event_recorder=rail.record,
-            media_reader=lambda *_:self.fail("replay must not read media"),telegram_sender=rail.send,now=NOW)
-        self.assertEqual(replay["status"],"owner_task_completed_from_prepared_specialist_result")
+        for index in range(1,7):
+            replay,_=handle_owner_task_input(photo(index,"u"+str(index)),environ=ENV,request_loader=lambda _:req,
+                event_loader=rail.load,event_recorder=rail.record,
+                media_reader=lambda *_:self.fail("replay must not read media"),telegram_sender=rail.send,now=NOW)
+            self.assertEqual(replay["status"],"owner_task_completed_from_prepared_specialist_result")
         self.assertEqual((len(rail.events),len(rail.messages)),before)
 
     def test_source_file_hashes_do_not_impersonate_provider_readback_bytes(self):
