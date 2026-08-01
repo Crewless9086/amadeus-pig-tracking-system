@@ -470,3 +470,13 @@
 - Bound exact Facebook copy, approved media hash, source revisions, cap, price, and SAM attribution into a deterministic packet that is server-revalidated before the existing exact owner confirmation gate.
 - Kept WhatsApp suggestion-only and preserved all no-send, no-reservation, no-order, no-stock-change, no-spend, and no-lifecycle-write boundaries.
 - Added a deterministic append-only pre-send claim so retries and concurrent duplicates stop before Meta, while the returned Facebook post ID remains separate append-only result evidence.
+# 2026-08-01 — BEACON server-derived publication hash correction prepared
+
+- Corrected Facebook image execution to derive hash trust only from authenticated
+  private-object readback joined to canonical server media and approval lineage.
+- Added fail-closed byte, MIME, object-version, freshness, changed-media,
+  concurrency, replay and ambiguous-provider regressions. No runtime, Meta,
+  publication, Telegram, merge or deployment action occurred.
+- Preserved terminal failed claim `BEACON-FB-POST-A3E2BBED0CEA5F93E2` and prepared
+  successor execution identity `BEACON-PUBLICATION-EXECUTION-928F7D5A9731FFDE3D62CE1A`
+  plus a timing-only Oom Sakkie reauthorization handover.
