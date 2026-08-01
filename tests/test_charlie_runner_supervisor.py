@@ -58,6 +58,15 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertNotIn("DATABASE_URL", popen.call_args.kwargs["env"])
         self.assertNotIn("SUPABASE_SERVICE_ROLE_KEY", popen.call_args.kwargs["env"])
         self.assertNotIn("PROVIDER_KEY", popen.call_args.kwargs["env"])
+        self.assertTrue(
+            popen.call_args.kwargs["env"]["CHARLIE_CONTROLLER_PUBLIC_KEY"]
+        )
+        self.assertTrue(
+            popen.call_args.kwargs["env"]["CHARLIE_INTENDED_RUNTIME_REVISION"]
+        )
+        self.assertTrue(
+            popen.call_args.kwargs["env"]["CHARLIE_INTENDED_EXECUTION_REVISION"]
+        )
         self.assertEqual(packet["execution_mode"], "observe_only")
         scrub.assert_not_called()
 

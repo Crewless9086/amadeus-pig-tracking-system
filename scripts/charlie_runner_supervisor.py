@@ -352,6 +352,9 @@ def supervise_runner(
             "CHARLIE_SUPERVISOR_GENERATION": generation,
             "CHARLIE_STARTUP_NONCE": startup_nonce,
             "CHARLIE_CORE_EXECUTION_MODE": execution_mode,
+            "CHARLIE_INTENDED_RUNTIME_REVISION": runtime_revision,
+            "CHARLIE_INTENDED_EXECUTION_REVISION": execution_revision,
+            "CHARLIE_CONTROLLER_PUBLIC_KEY": controller_public_key,
             "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
         })
         # The legacy alias can still be present in the scheduled-task
