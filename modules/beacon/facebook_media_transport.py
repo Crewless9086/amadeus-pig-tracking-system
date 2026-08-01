@@ -54,13 +54,13 @@ def resolve_server_publication_assets(asset_ids, database_url):
                    join public.beacon_media_source_links l on l.beacon_asset_id=a.asset_id
                    join public.beacon_media_binaries b using(binary_asset_id)
                    left join lateral (
-                     select library_event_id from public.beacon_media_library_events
+                     select library_event_id,event_type from public.beacon_media_library_events
                      where binary_asset_id=b.binary_asset_id
                        and event_type in ('library_accepted','library_rejected','archived')
                      order by recorded_at desc,library_event_id desc limit 1
                    ) la on true
                    left join lateral (
-                     select library_event_id from public.beacon_media_library_events
+                     select library_event_id,event_type from public.beacon_media_library_events
                      where binary_asset_id=b.binary_asset_id
                        and event_type in ('public_use_approved','public_use_revoked')
                      order by recorded_at desc,library_event_id desc limit 1

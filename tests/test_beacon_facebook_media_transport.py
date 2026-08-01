@@ -153,6 +153,22 @@ class ServerProjectionTests(unittest.TestCase):
         self.assertEqual(result["assets"][0]["binary_asset_id"], "BINARY-A")
         self.assertEqual(result["assets"][0]["file_size_bytes"], 418512)
 
+    def test_projection_laterals_select_the_event_type_the_outer_query_reads(self):
+        captured = []
+        connection = self._connect([])
+
+        class CapturingCursor:
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def execute(self, query, *_args): captured.append(query)
+            def fetchall(self): return []
+
+        connection.cursor = lambda: CapturingCursor()
+        with patch("psycopg.connect", return_value=connection):
+            resolve_server_publication_assets(["A"], "postgres://db")
+        sql = captured[0]
+        self.assertEqual(sql.count("select library_event_id,event_type"), 2)
+
     @patch.dict("os.environ", {"DATABASE_URL": "postgres://configured"})
     def test_server_projection_uses_configured_database_when_argument_omitted(self):
         digest = "a" * 64
