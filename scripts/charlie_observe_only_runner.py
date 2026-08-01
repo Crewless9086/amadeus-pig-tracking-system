@@ -37,7 +37,7 @@ def _identity():
     }
 
 
-def _validate_runner_start(sleep_fn=time.sleep, timeout_seconds=30):
+def _validate_runner_start(sleep_fn=time.sleep, timeout_seconds=60):
     identity = _identity()
     if SUPERVISOR_STOP_PATH.exists():
         return {"success": False, "reason": "governed_stop_active"}

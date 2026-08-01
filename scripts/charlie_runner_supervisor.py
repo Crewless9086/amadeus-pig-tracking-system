@@ -388,6 +388,7 @@ def supervise_runner(
                     getattr(sys, "_base_executable", "") or sys.executable
                 ),
                 process_role_prefix="runner",
+                timeout_seconds=45,
             )
         if not runner_observation.get("success"):
             STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
