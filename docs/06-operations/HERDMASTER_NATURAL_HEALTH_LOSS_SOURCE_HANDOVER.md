@@ -46,6 +46,12 @@ A separately authorized production mission must make the smallest shared Oom Sak
 
 No shared registry, adapter, routing, configuration, migration, or CI-registration file is changed by this PR.
 
+## Prepared Oom Sakkie preview adapter
+
+`modules/oom_sakkie/herdmaster_health_loss_preview.py` is the smallest source-only bridge to the existing authenticated gateway authority. It accepts the opaque private-owner authority already issued by the Telegram gateway plus the provider message identity/time and complete canonical evidence, calls the zero-I/O evaluator, and returns either one privacy-minimal clarification or one human-readable consolidated preview. It neither routes nor sends messages, consumes confirmations, persists records, or creates a competing write path.
+
+The future shared-router edit is intentionally deferred: after private-owner authentication, pass the existing gateway authority together with Telegram update/message identity, Telegram provider timestamp and timezone into `prepare_health_loss_owner_preview`; load canonical evidence through existing HERDMASTER/lifecycle/litter/observation projections; return `owner_text` through the existing reply transport. A later confirmation callback must validate the operation ID, evidence generation, protected-confirmation set, evaluator preview hash, and exact rendered `owner_text_sha256` in `confirmation_binding`, then delegate each already-governed effect to its canonical service inside one serializable coordinator. No generic health/loss writer is authorized.
+
 ## Required operational proof
 
 Integration is not business-complete until an authenticated ordinary family report produces one correct preview, explicit owner confirmation produces exactly the previewed canonical effects once, replay creates zero rows, recommendations refresh, and farm-state digests prove zero unrelated mutations. Shared runtime must then be released to the named successor immediately.

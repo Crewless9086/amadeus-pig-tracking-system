@@ -233,7 +233,7 @@ def _parse_report(text, provider_time):
     lower = text.casefold()
     reported_died = bool(re.search(r"\bdied\b", lower))
     found_dead = bool(
-        re.search(r"\bfound\s+.+dead\b", lower)
+        re.search(r"\bfound(?:\s+.+?)?\s+dead\b", lower)
         or re.search(r"\bwas dead(?:\s+when|\s+in|\s+at|[.!?]|$)", lower)
     )
     dead = reported_died or found_dead
@@ -295,6 +295,23 @@ def _parse_report(text, provider_time):
     ):
         if marker in lower:
             observed.append({"fact": fact, "value": True})
+    welfare_checks = {
+        "standing": bool(re.search(r"\b(?:can|able to) stand\b", lower)),
+        "breathing": bool(re.search(r"\bbreath(?:ing|es) normally\b", lower)),
+        "drinking": bool(re.search(r"\b(?:is )?drinking(?: water)?\b", lower)),
+    }
+    for fact, supplied in welfare_checks.items():
+        if supplied:
+            observed.append({"fact": f"{fact}_reported", "value": True})
+    last_seen_supplied = "last seen alive" in lower
+    found_time_supplied = bool(re.search(r"\bfound\b.+\b(?:today|yesterday|morning|afternoon|evening|night|\d{1,2}[:.]\d{2})\b", lower))
+    removal_supplied = bool(re.search(r"\b(?:removed from (?:the )?pen|buried|disposed|cremated)\b", lower))
+    if last_seen_supplied:
+        observed.append({"fact": "last_seen_alive_context_reported", "value": True})
+    if found_time_supplied:
+        observed.append({"fact": "body_found_time_context_reported", "value": True})
+    if removal_supplied:
+        observed.append({"fact": "removal_or_disposal_context_reported", "value": True})
     observed.append({"fact": "event_date", "value": event_date.isoformat()})
     suspected = []
     suspect = re.search(r"(?:believe|think|suspect)(?:\s+that)?\s+(?:she|he|it)?\s*(?:had|has|was)?\s+([^.!?]+)", lower)
@@ -316,6 +333,10 @@ def _parse_report(text, provider_time):
         "stillborn_count": stillborn_count if stillborn_match else None,
         "later_death_count": later_death_count if later_death_match else None,
         "complete_birth_outcomes": complete_outcomes,
+        "welfare_checks": welfare_checks,
+        "last_seen_supplied": last_seen_supplied,
+        "found_time_supplied": found_time_supplied,
+        "removal_supplied": removal_supplied,
         "current_signs": sick or injured,
     }
 
@@ -385,8 +406,13 @@ def _effects(animal, parsed, canonical, chronology):
     if parsed["dead"]:
         add("availability", "remove_from_current_active_sale_and_breeding_projections", {}, "confirm_availability_effect")
         add("downstream_work", "close_or_replace_future_animal_tasks", {"preserve_mortality_follow_up": True}, "confirm_downstream_work_effect")
-        add("movement_pen", "leave_physical_removal_and_disposal_unknown", {}, "", supported=False)
-        missing.append("physical removal/disposal evidence")
+        if parsed["removal_supplied"]:
+            add("movement_pen", "record_reported_removal_or_disposal_context", {
+                "owner_reported_context": True,
+            }, "confirm_movement_pen_context")
+        else:
+            add("movement_pen", "leave_physical_removal_and_disposal_unknown", {}, "", supported=False)
+            missing.append("physical removal/disposal evidence")
     if parsed["farrowing"]:
         mating = chronology["mating"]
         if mating:
@@ -420,13 +446,14 @@ def _effects(animal, parsed, canonical, chronology):
 def _smallest_question(parsed, missing, animal):
     if "piglet birth outcome counts" in missing:
         return "In total, how many were born alive, stillborn, mummified, or died after live birth?"
-    if "death effective date evidence" in missing:
+    if ("death effective date evidence" in missing
+            and not (parsed["last_seen_supplied"] and parsed["found_time_supplied"])):
         return f"When was {_display(animal)} last seen alive, and when was the body found?"
     if parsed["dead"] and "physical removal/disposal evidence" in missing:
         return f"Has {_display(animal)} been removed from the pen; if yes, when and what was the disposal/removal outcome?"
     if "exact current mating cycle" in missing:
         return f"Which exact current mating cycle applies to {_display(animal)}?"
-    if parsed["current_signs"]:
+    if parsed["current_signs"] and not all(parsed["welfare_checks"].values()):
         return f"Is {_display(animal)} able to stand, breathe normally and drink water right now?"
     return ""
 
