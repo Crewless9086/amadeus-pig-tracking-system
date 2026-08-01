@@ -304,7 +304,11 @@ def supervise_runner(
                 "failure_status": bootstrap.get("status", "execution_bootstrap_failed"),
                 "bootstrap": bootstrap,
             }
-        scrub_results = [
+        # Observe-only receives a stripped, credential-free environment and
+        # cannot open the mission queue.  Recursively scanning the historical
+        # execution archive here delayed a harmless ownership probe by
+        # minutes.  Ordinary execution retains the complete preflight scrub.
+        scrub_results = [] if execution_mode == "observe_only" else [
             redact_tree_in_place(RUNNER_HEARTBEAT_PATH),
             redact_tree_in_place(RUNNER_DIR / "runner.log"),
             redact_tree_in_place(EXECUTION_ROOT / ".charlie_runner" / "executions"),
