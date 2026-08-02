@@ -1403,6 +1403,7 @@ def _write_status(status, **extra):
             "created_at",
             "startup_nonce",
             "controller_acknowledgement",
+            "child_pid",
             "child_identity",
             "process_tree_identity",
             "stop_evidence",

@@ -45,6 +45,14 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    def test_observe_only_active_state_is_reported_truthfully(self):
+        self.assertEqual(
+            runner_control._runner_operating_state(
+                {"execution_mode": "observe_only"}, {}, True
+            ),
+            "observe_only",
+        )
+
     def test_observe_only_packet_requires_exact_mode(self):
         tree = successful_bootstrap_observation(
             100, generation="g", revision="r", startup_nonce="n"

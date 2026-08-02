@@ -154,6 +154,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
     elif active:
         status = "runner_active"
         next_action = {
+            "observe_only": "CORE is healthy in credential-free observation mode and cannot access the mission queue.",
             "running_agent": "CORE is actively executing the displayed agent stage.",
             "between_stages": "CORE is healthy and transitioning between agent stages.",
             "waiting_for_queue": "CORE is healthy and waiting for an approved mission.",
@@ -227,6 +228,8 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
 def _runner_operating_state(payload, ledger, active):
     if not active:
         return "stale_or_stopped"
+    if str(payload.get("execution_mode") or "") == EXECUTION_MODE_OBSERVE_ONLY:
+        return "observe_only"
     latest = ledger.get("latest_stage") if isinstance(ledger, dict) and isinstance(ledger.get("latest_stage"), dict) else {}
     current_agent = str(payload.get("current_agent") or latest.get("agent") or "").strip()
     stage_status = str(latest.get("status") or "").strip().lower()
