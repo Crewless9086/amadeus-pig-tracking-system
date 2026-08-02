@@ -7387,10 +7387,11 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
                 continue
             artifact_value["authoritative_pr_changed_files"] = list(authoritative_pr_files)
             _normalize_authoritative_diff_followups(artifact_agent, artifact_value)
+    finalization_revision = _finalization_candidate_revision(mission, artifacts)
     candidate_manifest = build_candidate_manifest(
         mission,
         artifacts,
-        source_commit=_release_candidate_revision_sha(mission, artifacts),
+        source_commit=finalization_revision,
     )
     evidence_reconciliation = resolve_effective_agent_results(
         artifacts,
@@ -7592,6 +7593,20 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         "agent_runner_version": AGENT_RUNNER_VERSION,
         "agent_ledger_path": str(ledger_path),
     }, 200
+
+
+def _finalization_candidate_revision(mission, artifacts):
+    revision = _release_candidate_revision_sha(mission, artifacts)
+    if revision:
+        return revision
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    orchestration = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    if orchestration.get("tier") == "T0" and _mission_agent_sequence(mission) == ["source_mapper"]:
+        # A T0 report has no mutable release candidate, but finalisation still
+        # needs an immutable source identity. Bind it to the inspected checkout.
+        return _git_head_revision()
+    return ""
 
 
 def _apply_authoritative_reconciliation(review_packet, workflow_status):
