@@ -534,7 +534,7 @@ def watch_for_mission(
             if recovery.get("recovered_count"):
                 recovery["checks"] = checks
                 write_runner_heartbeat(recovery)
-            if checks == 1 or checks % 5 == 0:
+            if checks % 5 == 0:
                 executive, _executive_status = run_executive_cycle(runner={"active_mission_id": (_active_mission() or {}).get("mission_id", "")})
                 if executive.get("status") not in {"executive_disabled", "executive_cycle_complete"} or executive.get("results"):
                     executive["checks"] = checks
@@ -543,19 +543,15 @@ def watch_for_mission(
                         "status": "executive_cycle_observed", "executive": executive, "checks": checks,
                         "queue_health": cycle.get("queue_health") if isinstance(cycle.get("queue_health"), dict) else {},
                     })
-                # The first cycle must reach authoritative pickup promptly.
-                # Potentially slow observers and reconciliation begin only
-                # after one bounded pickup opportunity.
-                if checks % 5 == 0:
-                    observers = _run_domain_observers()
-                    if observers.get("status") not in {"domain_observers_disabled", "observer_cycle_not_due"}:
-                        write_runner_heartbeat({"status": "domain_observer_cycle", "observers": observers, "checks": checks})
-                    if notify:
-                        _deliver_executive_outbox()
-                    reconciliation = reconcile_blocked_pr_missions(notify=notify)
-                    if reconciliation.get("changed_count"):
-                        reconciliation["checks"] = checks
-                        write_runner_heartbeat(reconciliation)
+                observers = _run_domain_observers()
+                if observers.get("status") not in {"domain_observers_disabled", "observer_cycle_not_due"}:
+                    write_runner_heartbeat({"status": "domain_observer_cycle", "observers": observers, "checks": checks})
+                if notify:
+                    _deliver_executive_outbox()
+                reconciliation = reconcile_blocked_pr_missions(notify=notify)
+                if reconciliation.get("changed_count"):
+                    reconciliation["checks"] = checks
+                    write_runner_heartbeat(reconciliation)
             # Review-media cleanup is maintenance, not a mission-pickup gate.
             # Running it every cycle delayed an otherwise ready queue by nearly
             # a minute on the owner workstation.
