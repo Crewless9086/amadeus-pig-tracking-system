@@ -75,7 +75,7 @@ from modules.charlie.mission_governance import (
     update_acceptance_matrix,
 )
 from modules.charlie.block_recovery import classify_block, normalize_findings
-from modules.charlie.adaptive_orchestration import expand_orchestration
+from modules.charlie.adaptive_orchestration import expand_orchestration, validate_orchestration_binding
 from modules.charlie.evidence_reconciliation import (
     bind_artifact_to_candidate,
     build_candidate_manifest,
@@ -995,6 +995,8 @@ def run_agent_execution_bridge_v2(
             )
         if expansion.get("status") == "orchestration_generation_expanded":
             mission.setdefault("metadata", {})["orchestration"] = expansion["packet"]
+            mission["metadata"]["orchestration_binding"] = expansion["binding"]
+            mission["agent_workflow"] = expansion["agent_workflow"]
             for added_agent in expansion.get("added_roles", []):
                 if added_agent not in completed and added_agent not in agent_queue:
                     protected_consumer = next(
@@ -2960,15 +2962,49 @@ def _reconcile_adaptive_expansion(mission, producing_agent, artifact, *, databas
             "triggering_evidence": evidence,
             "added_roles": added_roles,
         })
+    current_workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    workflow_by_agent = {
+        str(item.get("agent") or ""): dict(item)
+        for item in current_workflow
+        if isinstance(item, dict) and item.get("agent")
+    }
+    expanded_workflow = []
+    for selected_agent in updated["selected_agents"]:
+        agent_name = str(selected_agent.get("agent") or "")
+        expanded_workflow.append(workflow_by_agent.get(agent_name) or {
+            "agent": agent_name,
+            "status": "pending",
+            "authority": selected_agent.get("authority", "read_only"),
+            "required_output": selected_agent.get("required_output", "charlie_handoff_v1"),
+            "selection_reason": selected_agent.get("selection_reason", "Adaptive evidence expansion."),
+        })
+    binding = validate_orchestration_binding(updated, expanded_workflow)
+    if not binding.get("valid"):
+        return {
+            "success": False,
+            "status": "orchestration_expansion_binding_invalid",
+            "reason": binding.get("reason", "orchestration_binding_invalid"),
+        }, 409
+    orchestration_binding = {
+        "version": "charlie_orchestration_binding_v1",
+        "identity": binding["identity"],
+        "generation_identity": updated["generation_identity"],
+        "validated": True,
+    }
     result, status = update_mission_vault(
         mission.get("mission_id", ""),
-        {"orchestration": updated},
+        {
+            "orchestration": updated,
+            "orchestration_binding": orchestration_binding,
+            "agent_workflow": expanded_workflow,
+        },
         database_url=database_url,
         connect_factory=connect_factory,
     )
     if status >= 400:
         return {"success": False, "status": "orchestration_expansion_persistence_failed", "store": result}, status
     return {"success": True, "status": "orchestration_generation_expanded", "packet": updated,
+            "binding": orchestration_binding, "agent_workflow": expanded_workflow,
             "added_roles": added_roles}, 200
 
 
@@ -7387,10 +7423,11 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
                 continue
             artifact_value["authoritative_pr_changed_files"] = list(authoritative_pr_files)
             _normalize_authoritative_diff_followups(artifact_agent, artifact_value)
+    finalization_revision = _finalization_candidate_revision(mission, artifacts)
     candidate_manifest = build_candidate_manifest(
         mission,
         artifacts,
-        source_commit=_release_candidate_revision_sha(mission, artifacts),
+        source_commit=finalization_revision,
     )
     evidence_reconciliation = resolve_effective_agent_results(
         artifacts,
@@ -7594,6 +7631,20 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     }, 200
 
 
+def _finalization_candidate_revision(mission, artifacts):
+    revision = _release_candidate_revision_sha(mission, artifacts)
+    if revision:
+        return revision
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    orchestration = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    if orchestration.get("tier") == "T0" and _mission_agent_sequence(mission) == ["source_mapper"]:
+        # A T0 report has no mutable release candidate, but finalisation still
+        # needs an immutable source identity. Bind it to the inspected checkout.
+        return _git_head_revision()
+    return ""
+
+
 def _apply_authoritative_reconciliation(review_packet, workflow_status):
     review_packet = dict(review_packet) if isinstance(review_packet, dict) else {}
     workflow_status = workflow_status if isinstance(workflow_status, dict) else {}
@@ -7713,6 +7764,27 @@ def _transition_finalization_transaction_failure(
 
 def _build_github_finalization_gate(mission, review_packet, candidate_revision):
     """Return machine-verified PR evidence bound to the tested revision."""
+    sequence = _mission_agent_sequence(mission if isinstance(mission, dict) else {})
+    mutation_stages = {
+        "builder", "tester", "qa_red_team", "product_reviewer",
+        "business_reviewer", "security_reviewer", "evidence_reviewer",
+        "visual_qa_reviewer", "reviewer", "publisher",
+    }
+    if sequence and not any(agent in mutation_stages for agent in sequence):
+        return {
+            "version": "charlie_github_finalization_gate_v1",
+            "passed": True,
+            "required": False,
+            "reasons": [],
+            "pr_reference": "",
+            "pr_number": None,
+            "pr_url": "",
+            "state": "NOT_APPLICABLE",
+            "mergeable": "NOT_APPLICABLE",
+            "head_revision": str(candidate_revision or "").strip(),
+            "check_conclusions": [],
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
     candidate = str(candidate_revision or "").strip()
     reference = mission_pr_reference({
         **(mission if isinstance(mission, dict) else {}),
@@ -7744,6 +7816,7 @@ def _build_github_finalization_gate(mission, review_packet, candidate_revision):
     return {
         "version": "charlie_github_finalization_gate_v1",
         "passed": not reasons,
+        "required": True,
         "reasons": reasons,
         "pr_reference": reference,
         "pr_number": state.get("number"),
@@ -7801,6 +7874,21 @@ def _verify_owner_review_artifacts_ready(mission, artifacts):
             "reason": "all_workflow_artifacts_passing",
             "legacy_evidence": True,
             "compatibility_adapter": "frozen_historical_workflow_v1" if historical_workflow else "",
+        }
+    orchestration = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    if orchestration.get("tier") == "T0" and sequence == ["source_mapper"]:
+        artifact = artifacts.get("source_mapper") if isinstance(artifacts.get("source_mapper"), dict) else {}
+        judgement = _judgement_evidence_quality_gate("source_mapper", artifact)
+        if not judgement.get("passed"):
+            return False, {
+                "blocked_agent": "source_mapper",
+                "stage_status": "non_passing",
+                "reason": f"T0 report is not ready: {judgement.get('reason') or 'source evidence quality gate failed'}.",
+            }
+        return True, {
+            "reason": "t0_source_report_passing",
+            "tier": "T0",
+            "release_candidate_required": False,
         }
     manifest = build_candidate_manifest(
         mission,
@@ -7915,6 +8003,10 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
     mission_id = mission.get("mission_id", "")
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     project_truth = vault.get("project_truth") if isinstance(vault.get("project_truth"), dict) else {}
+    # Project identity is stable across missions. Mission type describes the
+    # workflow, not a new Vault project row; using it as project_id while
+    # defaulting project_key to charlie_core violates the unique key on replay.
+    project_id = project_truth.get("project_key") or "charlie_core"
     writes = []
     vault_write_unavailable = False
 
@@ -7941,14 +8033,25 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
         if status_code >= 500 and not result.get("success") and result.get("configured") is not False:
             vault_write_unavailable = True
 
-    record("project", lambda: vault_store.write_project({
-        "project_id": project_truth.get("project_key") or mission.get("mission_type") or "charlie_core",
-        "project_key": project_truth.get("project_key") or "charlie_core",
+    project_result, project_status = vault_store.write_project({
+        "project_id": project_id,
+        "project_key": project_id,
         "name": project_truth.get("workflow_label") or mission.get("title") or "CHARLIE mission",
         "purpose": vault.get("desired_outcome") or vault.get("problem_statement") or mission.get("raw_text", ""),
         "workflow_template": project_truth.get("workflow_template") or mission.get("mission_type") or "software_build",
         "metadata": {"mission_id": mission_id, "project_truth": project_truth},
-    }, database_url=database_url, connect_factory=connect_factory))
+    }, database_url=database_url, connect_factory=connect_factory)
+    writes.append({
+        "label": "project",
+        "status_code": project_status,
+        "success": bool(project_result.get("success")),
+        "status": project_result.get("status", ""),
+        "error_type": project_result.get("error_type", ""),
+    })
+    if project_status >= 500 and not project_result.get("success") and project_result.get("configured") is not False:
+        vault_write_unavailable = True
+    elif project_result.get("success") and project_result.get("project_id"):
+        project_id = project_result["project_id"]
 
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
@@ -7959,7 +8062,7 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
             artifact,
             title=f"{agent} artifact",
             summary=artifact.get("summary", ""),
-            project_id=project_truth.get("project_key") or "",
+            project_id=project_id,
             agent=agent,
             database_url=database_url,
             connect_factory=connect_factory,
@@ -8070,12 +8173,23 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
     # are surfaced as warnings below). Otherwise every publisher-only recovery
     # loses the mission-level context and loops through Source Mapper.
     source_coverage = evaluate_vault_source_coverage(coverage_artifacts, retrieval)
+    orchestration = (
+        mission.get("metadata", {}).get("orchestration", {})
+        if isinstance(mission.get("metadata"), dict)
+        and isinstance(mission.get("metadata", {}).get("orchestration"), dict)
+        else {}
+    )
+    t0_proportional_coverage = (
+        orchestration.get("tier") == "T0"
+        and agent_sequence == ["source_mapper"]
+        and int(source_coverage.get("score") or 0) >= 40
+    )
     if context.get("missing_docs"):
         findings.append(f"Vault Brain context has missing docs: {', '.join(context['missing_docs'])}.")
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     if not vault:
         findings.append("Mission Vault payload is missing from the mission.")
-    if not source_coverage.get("passed"):
+    if not source_coverage.get("passed") and not t0_proportional_coverage:
         findings.append(f"Vault source coverage score is {source_coverage.get('score', 0)}; required coverage not met.")
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
@@ -8107,6 +8221,7 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
         "warnings": warnings,
         "preserved_legacy_artifacts": sorted(preserved),
         "source_coverage": source_coverage,
+        "t0_proportional_coverage": t0_proportional_coverage,
         "agent_sequence": agent_sequence,
         "workflow_contract": workflow_contract,
         "agentic_architecture": agentic_gate,

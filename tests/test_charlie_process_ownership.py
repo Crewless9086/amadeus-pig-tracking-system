@@ -1,3 +1,4 @@
+import base64
 import os
 import subprocess
 import json
@@ -260,7 +261,11 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
             },
         ]
         with patch.object(
-            process_ownership, "inspect_process", side_effect=inspect
+            process_ownership, "inspect_processes_with_snapshot",
+            side_effect=lambda pids: (
+                {int(pid): inspect(pid) for pid in pids},
+                None,
+            ),
         ), patch.object(
             process_ownership,
             "_inspect_process_descendants",
@@ -419,7 +424,11 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
             },
         ]
         with patch.object(
-            process_ownership, "inspect_process", side_effect=inspect
+            process_ownership, "inspect_processes_with_snapshot",
+            side_effect=lambda pids: (
+                {int(pid): inspect(pid) for pid in pids},
+                None,
+            ),
         ), patch.object(
             process_ownership,
             "_inspect_process_descendants",
@@ -583,6 +592,79 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
     def test_windows_invalid_inspection_json_returns_no_identity(self, run):
         run.return_value = Mock(returncode=0, stdout="not-json", stderr="")
         self.assertIsNone(process_ownership.inspect_process(222))
+
+    @patch.object(process_ownership.os, "name", "nt")
+    @patch.object(process_ownership, "_windows_process_snapshot")
+    def test_windows_bounded_pid_set_uses_one_consistent_snapshot(self, snapshot):
+        snapshot.return_value = [
+            {
+                "pid": os.getpid(), "parent_pid": 0,
+                "creation_time": "current", "executable_path": "python.exe",
+                "command_line": "python tests", "name": "python.exe",
+            },
+            {
+                "pid": 221, "parent_pid": os.getpid(),
+                "creation_time": "one", "executable_path": "python.exe",
+                "command_line": "python supervisor.py", "name": "python.exe",
+            },
+            {
+                "pid": 222, "parent_pid": 221,
+                "creation_time": "two", "executable_path": "python.exe",
+                "command_line": "python runner.py", "name": "python.exe",
+            },
+        ]
+
+        result = process_ownership.inspect_processes([221, 222, 221])
+
+        snapshot.assert_called_once_with()
+        self.assertEqual(sorted(result), [221, 222])
+        self.assertEqual(result[222]["ancestry"][0]["pid"], 221)
+        self.assertTrue(result[221]["inspection_complete"])
+
+    @patch.object(process_ownership.time, "sleep")
+    @patch.object(process_ownership.subprocess, "run")
+    def test_windows_snapshot_retries_one_startup_timeout(self, run, sleep):
+        run.side_effect = [
+            subprocess.TimeoutExpired(["powershell"], 8),
+            Mock(
+                returncode=0,
+                stdout=base64.b64encode(
+                    b'{"pid":221,"parent_pid":1}'
+                ).decode("ascii"),
+                stderr="",
+            ),
+        ]
+
+        rows = process_ownership._windows_process_snapshot()
+
+        self.assertEqual(rows[0]["pid"], 221)
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(0.1)
+
+    @patch.object(process_ownership.time, "sleep")
+    @patch.object(process_ownership.subprocess, "run")
+    def test_windows_snapshot_second_timeout_remains_fail_closed(self, run, sleep):
+        run.side_effect = subprocess.TimeoutExpired(["powershell"], 8)
+
+        with self.assertRaises(subprocess.TimeoutExpired):
+            process_ownership._windows_process_snapshot()
+
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(0.1)
+
+    @patch.object(process_ownership.subprocess, "run")
+    def test_windows_snapshot_accepts_ascii_base64_from_hidden_powershell(self, run):
+        run.return_value = Mock(
+            returncode=0,
+            stdout=base64.b64encode(
+                b'[{"pid":221,"parent_pid":1}]'
+            ).decode("ascii"),
+            stderr="",
+        )
+
+        rows = process_ownership._windows_process_snapshot()
+
+        self.assertEqual(rows, [{"pid": 221, "parent_pid": 1}])
 
     def test_missing_pid_fails_closed(self):
         self.assertEqual(self.validate(live=False)["reason"], "pid_not_found")

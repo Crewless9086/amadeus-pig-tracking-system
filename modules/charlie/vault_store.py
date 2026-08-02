@@ -119,14 +119,21 @@ def write_project(project, database_url=None, connect_factory=None):
                 ) values (
                     {", ".join(value_sql)}
                 )
-                on conflict (project_id) do update set
+                on conflict (project_key) do update set
                     {", ".join(update_sql)}
+                returning project_id
             """
             with connection.cursor() as cursor:
                 cursor.execute(sql, params)
+                rows = cursor.fetchall()
     except Exception as exc:
         return _write_error("project_written", exc), 503
-    return {"success": True, "configured": True, "status": "project_written"}, 200
+    return {
+        "success": True,
+        "configured": True,
+        "status": "project_written",
+        "project_id": rows[0][0] if rows else project_id,
+    }, 200
 
 
 def write_artifact(mission_id, artifact_type, content, title="", summary="", project_id="", agent="",

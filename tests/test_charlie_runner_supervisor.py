@@ -29,7 +29,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
             supervisor, "STOP_PATH", Path(tmp) / "stop"
         ), patch.object(
             supervisor, "redact_tree_in_place", return_value={"errors": []}
-        ), patch.dict(
+        ) as scrub, patch.dict(
             os.environ,
             {
                 "CHARLIE_CORE_EXECUTION_MODE": "observe_only",
@@ -58,7 +58,17 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertNotIn("DATABASE_URL", popen.call_args.kwargs["env"])
         self.assertNotIn("SUPABASE_SERVICE_ROLE_KEY", popen.call_args.kwargs["env"])
         self.assertNotIn("PROVIDER_KEY", popen.call_args.kwargs["env"])
+        self.assertTrue(
+            popen.call_args.kwargs["env"]["CHARLIE_CONTROLLER_PUBLIC_KEY"]
+        )
+        self.assertTrue(
+            popen.call_args.kwargs["env"]["CHARLIE_INTENDED_RUNTIME_REVISION"]
+        )
+        self.assertTrue(
+            popen.call_args.kwargs["env"]["CHARLIE_INTENDED_EXECUTION_REVISION"]
+        )
         self.assertEqual(packet["execution_mode"], "observe_only")
+        scrub.assert_not_called()
 
     def test_recovery_runs_only_after_controller_final_authorization(self):
         observed = []
@@ -470,6 +480,29 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
             self.assertEqual(stop.read_text(encoding="utf-8"), "owner stop")
         self.assertEqual(result["status"], "governed_stop_active")
         supervise.assert_not_called()
+
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_same_generation_status_preserves_signed_identity_fields(self, _inspect):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "supervisor.json"
+            state_path.write_text(json.dumps({
+                "generation": "gen-1",
+                "child_pid": 321,
+                "controller_public_key": "public-key",
+                "intended_runtime_revision": "runtime-revision",
+                "intended_execution_revision": "execution-revision",
+            }), encoding="utf-8")
+            with patch.object(supervisor, "SUPERVISOR_PATH", state_path):
+                supervisor._write_status(
+                    "operational_authorized",
+                    generation="gen-1",
+                )
+            persisted = json.loads(state_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(persisted["controller_public_key"], "public-key")
+        self.assertEqual(persisted["child_pid"], 321)
+        self.assertEqual(persisted["intended_runtime_revision"], "runtime-revision")
+        self.assertEqual(persisted["intended_execution_revision"], "execution-revision")
 
     @patch.object(supervisor, "inspect_process", return_value={})
     def test_terminal_supervisor_status_retains_pre_stop_ownership_evidence(self, _inspect):
