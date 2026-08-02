@@ -300,7 +300,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                         runner_control.atomic_write_json(
                             runner_control.HEARTBEAT_PATH,
                             {
-                            "status": "ownership_ready",
+                            "last_result_status": "ownership_ready",
                             "supervisor_generation": generation,
                             "runner_source_commit": revision,
                             "startup_nonce": runner_nonce,
@@ -563,7 +563,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
             "controller_public_key": public_key,
         }
         heartbeat = {
-            "status": "ownership_ready",
+            "last_result_status": "ownership_ready",
             "supervisor_generation": generation,
             "runner_source_commit": revision,
             "startup_nonce": "runner-nonce",
