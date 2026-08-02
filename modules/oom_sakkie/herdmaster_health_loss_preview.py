@@ -7,6 +7,7 @@ It performs no I/O, routing, confirmation consumption, or persistence.
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Mapping
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
@@ -71,7 +72,7 @@ def prepare_health_loss_owner_preview(
             **ZERO_AUTHORITY,
         }
 
-    owner_text = _render_preview(evaluated)
+    owner_text = _render_preview(evaluated, report)
     binding = dict(evaluated["confirmation_binding"])
     binding.update({
         "contract_version": CONTRACT_VERSION,
@@ -95,20 +96,25 @@ def prepare_health_loss_owner_preview(
     }
 
 
-def _render_preview(value):
+def _render_preview(value, report):
     identity = value["identity"]
     lines = [
         "Oom Sakkie - HERDMASTER health/loss preview",
         "",
         f"Animal: {identity['name']} ({identity['pig_id']}; tag {identity['tag_number']})",
+        f"Provider message: {report['provider_message_id']}",
+        f"Observed at: {value['provider_report_time']}",
+        "Owner evidence: authenticated private owner binding",
         f"Event: {value['event_family'].replace('_', ' ')}",
         f"Welfare priority: {value['immediate_welfare_priority']['level'].replace('_', ' ')}",
         f"Welfare action: {value['immediate_welfare_priority']['action']}",
         "",
         "Observed facts:",
         *_facts(value["observed_facts"], "None"),
-        "Owner-suspected cause (not a diagnosis):",
+        "Agent diagnosis: Unknown (none inferred)",
+        "Suspected cause: Unknown" if not value["owner_suspected_cause"] else "Owner-suspected cause (not a diagnosis):",
         *_causes(value["owner_suspected_cause"], "None reported"),
+        _treatment_line(value["owner_report_text"]),
         "Veterinary evidence:",
         *_diagnoses(value["veterinary_evidence"], "None reported"),
         "Agent inference: None",
@@ -117,6 +123,8 @@ def _render_preview(value):
         *_mapping_lines(value["preview"]["before"]),
         "Proposed affected records (nothing written):",
         *_effect_lines(value["canonical_effects"]),
+        "Intentionally unchanged:",
+        "- " + ", ".join(value["preview"]["intentionally_unchanged"]),
     ]
     question = str(value.get("smallest_missing_follow_up_question") or "").strip()
     if question:
@@ -126,9 +134,42 @@ def _render_preview(value):
         lines.extend([
             "",
             f"Protected confirmations covered: {confirmations or 'None'}",
-            "Reply with explicit confirmation of this exact preview before any governed write.",
+            f"Reply exactly: CONFIRM {value['operation_id']}",
         ])
     return "\n".join(lines)
+
+
+def _treatment_line(owner_report_text):
+    text = str(owner_report_text or "").casefold()
+    absence_pattern = (
+        r"\b(?:no|without)\s+(?:treatment|medication|medicine|antibiotic\w*)\b(?:\s+(?:initially|earlier|yesterday|today))?(?=\s*(?:[.!?;,]|except\b|$))|"
+        r"\bno\s+(?:treatment|medication|medicine|antibiotic\w*)\s+(?:was\s+)?(?:given|administered|provided)\b|"
+        r"\bnot\s+treat(?:ed|ing)\b|"
+        r"\b(?:treatment|medication|medicine|antibiotic\w*)\s+(?:was\s+)?not\s+(?:given|administered)\b|"
+        r"\bgave\s+no\s+(?:treatment|medication|medicine|antibiotic\w*)\b"
+    )
+    mention_pattern = (
+        r"\b(?:treat(?:ed|ment)?|medicat(?:ed|ion)?|antibiotic\w*|inject(?:ed|ion)?|dos(?:e|ed|ing))\b|"
+        r"\bgave\s+(?:an?\s+)?(?:antibiotic\w*|medication|medicine|injection|dose)\b"
+    )
+    absence_matches = list(re.finditer(absence_pattern, text))
+    mention_matches = [
+        match for match in re.finditer(mention_pattern, text)
+        if not any(
+            match.start() < absence.end() and absence.start() < match.end()
+            for absence in absence_matches
+        )
+    ]
+    explicit_none = bool(absence_matches)
+    mentioned = bool(mention_matches)
+    exception_wording = explicit_none and bool(re.search(r"\bexcept\b", text))
+    if explicit_none and (mentioned or exception_wording):
+        return "Treatment evidence: mixed or contradictory owner wording; details Unknown / not evaluated"
+    if explicit_none:
+        return "Treatment evidence: owner reported absence wording; scope Unknown / not evaluated"
+    if mentioned:
+        return "Treatment evidence: mentioned by owner; details Unknown / not evaluated by this intake"
+    return "Treatment evidence: Unknown / not evaluated or extracted by this intake"
 
 
 def _facts(rows, empty):
