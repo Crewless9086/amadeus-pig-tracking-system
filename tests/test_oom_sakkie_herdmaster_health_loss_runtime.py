@@ -164,6 +164,22 @@ def test_new_found_dead_report_does_not_reuse_another_pigs_active_lifecycle(load
 
 
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_explicit_loss_report_with_no_conclusion_cannot_become_active_case_follow_up(loader):
+    loader.return_value = pig_125_evidence()
+    active = {"status": "waiting_for_input", "combined_text": "Pig 11 is not eating",
+              "mission_id": "OOM-PIG-11", "operation_id": "HERD-11"}
+    store, recorded = memory_store(active)
+    result, status = handle_authenticated_health_loss_message(
+        parsed("Pig 125 is found dead in pen. No conclusion on what it might be.", "3179"),
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["handled"] is True
+    assert result["mission_id"] != "OOM-PIG-11"
+    assert recorded[0]["combined_text"] == "Pig 125 is found dead in pen. No conclusion on what it might be."
+    assert "Pig 11" not in recorded[0]["combined_text"]
+    assert recorded[0]["preview"]["writes_farm_data"] is False
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
 def test_rootline_presence_is_not_misclassified_as_pig11_health_follow_up(loader):
     active = {"status": "waiting_for_input", "combined_text": "Pig 11 is not eating",
               "mission_id": "OOM-PIG-11"}
