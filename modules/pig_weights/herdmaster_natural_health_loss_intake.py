@@ -243,8 +243,54 @@ def _parse_report(text, provider_time):
         r"(\d+)\s+piglets?\s+(?:were\s+)?born alive(?:\s+but)?\s+(?:then\s+)?died", lower
     )
     total_match = re.search(r"(?:total(?: born)?|in total)\s*(?:was|were|of|:)?\s*(\d+)", lower)
-    injured = bool(re.search(r"\b(injur|limp|wound|bleed|broken|swollen)\w*\b", lower))
-    sick = bool(re.search(r"\b(sick|ill|not eating|not drinking|vomit|diarrh|cough|fever)\w*\b", lower))
+    def latest_positive(positive_pattern, negative_pattern, subject):
+        negative_matches = list(re.finditer(negative_pattern, subject))
+        positive = [
+            match.end()
+            for match in re.finditer(positive_pattern, subject)
+            if not any(
+                match.start() < negative.end() and negative.start() < match.end()
+                for negative in negative_matches
+            )
+        ]
+        negative = [match.end() for match in negative_matches]
+        if not positive:
+            return False
+        return not negative or max(positive) > max(negative)
+
+    def latest_negative(positive_pattern, negative_pattern, subject):
+        negative_matches = list(re.finditer(negative_pattern, subject))
+        positive_matches = [
+            match
+            for match in re.finditer(positive_pattern, subject)
+            if not any(
+                match.start() < negative.end() and negative.start() < match.end()
+                for negative in negative_matches
+            )
+        ]
+        if not negative_matches:
+            return False
+        return not positive_matches or max(match.end() for match in negative_matches) > max(
+            match.end() for match in positive_matches
+        )
+
+    def current_sign(pattern):
+        return latest_positive(
+            rf"\b(?:{pattern})\w*\b",
+            rf"\b(?:no|not|without)\s+(?:any\s+)?(?:(?:\w+)\s*(?:,\s*(?:and\s+|or\s+)?|and\s+|or\s+)){{0,4}}(?:{pattern})\w*\b",
+            lower,
+        )
+
+    injured = current_sign(r"injur|limp|wound|bleed|broken|swollen")
+    eating_positive = r"\b(?:is|was)?\s*eating(?: food|normally|again|now)?\b|\bappetite (?:is )?(?:normal|back)\b"
+    eating_negative = r"\b(?:not|no longer|isn't|wasn't|without) eating\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) eat(?:ing)?\b|\b(?:no|poor|reduced) appetite\b"
+    drinking_positive = r"\bdrinking(?: water)?\b"
+    drinking_negative = r"\b(?:not|no longer|isn't|wasn't|without) drinking\b|\bdrinking no water\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) drink(?:ing)?\b"
+    not_eating = latest_negative(eating_positive, eating_negative, lower)
+    not_drinking = latest_negative(drinking_positive, drinking_negative, lower)
+    other_sick = current_sign(r"sick|ill|vomit|diarrh|cough|fever")
+    sick = not_eating or not_drinking or other_sick
+    severe_sick = not_drinking or other_sick
     complications = bool(re.search(r"\bcomplication\w*\b", lower))
     families = []
     if dead:
@@ -289,16 +335,35 @@ def _parse_report(text, provider_time):
                     {"fact": "reported_born_alive_count", "value": later_death_count},
                     {"fact": "reported_later_deaths", "value": later_death_count},
                 ])
-    for marker, fact in (
-        ("not eating", "not_eating"), ("not drinking", "not_drinking"),
-        ("limp", "limping"), ("bleed", "bleeding"),
-    ):
-        if marker in lower:
-            observed.append({"fact": fact, "value": True})
+    if not_eating:
+        observed.append({"fact": "not_eating", "value": True})
+    if not_drinking:
+        observed.append({"fact": "not_drinking", "value": True})
+    if current_sign(r"limp"):
+        observed.append({"fact": "limping", "value": True})
+    if current_sign(r"bleed"):
+        observed.append({"fact": "bleeding", "value": True})
     welfare_checks = {
-        "standing": bool(re.search(r"\b(?:can|able to) stand\b", lower)),
-        "breathing": bool(re.search(r"\bbreath(?:ing|es) normally\b", lower)),
-        "drinking": bool(re.search(r"\b(?:is )?drinking(?: water)?\b", lower)),
+        "standing": latest_positive(
+            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b",
+            r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b",
+            lower,
+        ),
+        "moving": latest_positive(
+            r"\bmoving(?: around)?\b",
+            r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) mov(?:e|ing)\b",
+            lower,
+        ),
+        "breathing": latest_positive(
+            r"\bbreath(?:ing|es) normal(?:ly)?\b",
+            r"\b(?:not|no longer|isn't|wasn't|without) breathing normal(?:ly)?\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) breath(?:e|ing)(?: normal(?:ly)?)?\b|\b(?:breathing abnormally|struggling to breathe)\b",
+            lower,
+        ),
+        "drinking": latest_positive(
+            drinking_positive,
+            drinking_negative,
+            lower,
+        ),
     }
     for fact, supplied in welfare_checks.items():
         if supplied:
@@ -338,6 +403,7 @@ def _parse_report(text, provider_time):
         "found_time_supplied": found_time_supplied,
         "removal_supplied": removal_supplied,
         "current_signs": sick or injured,
+        "severe_signs": injured or severe_sick or complications,
     }
 
 
@@ -453,7 +519,7 @@ def _smallest_question(parsed, missing, animal):
         return f"Has {_display(animal)} been removed from the pen; if yes, when and what was the disposal/removal outcome?"
     if "exact current mating cycle" in missing:
         return f"Which exact current mating cycle applies to {_display(animal)}?"
-    if parsed["current_signs"] and not all(parsed["welfare_checks"].values()):
+    if parsed["current_signs"] and not all(parsed["welfare_checks"].get(key) for key in ("standing", "breathing", "drinking")):
         return f"Is {_display(animal)} able to stand, breathe normally and drink water right now?"
     return ""
 
@@ -465,6 +531,9 @@ def _welfare(parsed):
         return {"level": "urgent_follow_up", "action": "Check the pen, any surviving animals and biosecurity needs now; veterinary/mortality review may be required."}
     if parsed["farrowing"]:
         return {"level": "emergency", "action": "If the sow or any piglet is alive or farrowing is continuing, obtain immediate experienced or veterinary assistance before record work."}
+    if (parsed["current_signs"] and not parsed.get("severe_signs")
+            and all(parsed["welfare_checks"].get(key) for key in ("standing", "breathing", "drinking"))):
+        return {"level": "monitor_closely", "action": "The immediate standing, breathing and drinking checks are reassuring; keep monitoring appetite and seek experienced or veterinary help if signs worsen or eating does not resume."}
     if parsed["current_signs"]:
         return {"level": "urgent_assessment", "action": "Physically assess breathing, standing, water intake, bleeding and distress now; seek veterinary help for serious signs."}
     return {"level": "review", "action": "Verify the animal and observable welfare state."}
