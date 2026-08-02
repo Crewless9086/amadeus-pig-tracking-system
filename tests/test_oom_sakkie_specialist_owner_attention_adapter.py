@@ -8,7 +8,11 @@ from modules.oom_sakkie.owner_attention_adapter import (
     process_owner_attention_callback,
     repair_specialist_owner_attention_resolution,
 )
-from modules.oom_sakkie.specialist_owner_decisions import beacon_organic_publication_binding
+from modules.oom_sakkie.specialist_owner_decisions import (
+    beacon_organic_publication_binding,
+    rootline_supervised_commissioning_binding,
+    specialist_choice,
+)
 
 
 NOW = datetime(2026, 8, 1, 5, 0, tzinfo=timezone.utc)
@@ -222,3 +226,48 @@ class SpecialistOwnerAttentionAdapterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RootlineCommissioningOwnerDecisionTests(unittest.TestCase):
+    def binding(self):
+        return rootline_supervised_commissioning_binding(expires_at="2026-08-03T12:00:00+02:00")
+
+    def test_exact_rootline_decision_delivers_once_without_hardware_authority(self):
+        rail, binding = Rail(), self.binding()
+        missing = lambda *_: {"success": False, "status": "owner_attention_card_not_found"}
+        first = operate_specialist_owner_decision(
+            binding, environ=ENV, now=NOW,
+            chronology_loader=lambda valid, _source: valid["chronology_binding"],
+            specialist_card_loader=missing, active_card_loader=rail.active_loader,
+            evidence_recorder=rail.recorder, telegram_sender=rail.sender,
+        )
+        self.assertTrue(first["success"])
+        self.assertEqual(len(rail.sends), 1)
+        self.assertIn("SUPERVISED COMMISSIONING DECISION", rail.sends[0][1])
+        self.assertIn("not irrigation", rail.sends[0][1])
+        self.assertEqual(len(rail.sends[0][2]["inline_keyboard"]), 2)
+        authority = specialist_choice(binding, "authorize")
+        self.assertEqual(authority["specialist_callback"], "prepare_supervised_commissioning_handover")
+        self.assertFalse(authority["publish"])
+        self.assertNotIn("hardware_action", authority)
+        loaded = rail.delivered()
+        replay = operate_specialist_owner_decision(
+            binding, environ=ENV, now=NOW,
+            chronology_loader=lambda valid, _source: valid["chronology_binding"],
+            specialist_card_loader=lambda *_: loaded,
+            active_card_loader=rail.active_loader, evidence_recorder=rail.recorder,
+            telegram_sender=rail.sender,
+        )
+        self.assertEqual(replay["status"], "specialist_owner_decision_duplicate_withheld")
+        self.assertEqual(len(rail.sends), 1)
+
+    def test_changed_rootline_chronology_sends_nothing(self):
+        rail, binding = Rail(), self.binding()
+        changed = dict(binding["chronology_binding"], commissioning_authorization_count=1)
+        result = operate_specialist_owner_decision(
+            binding, environ=ENV, now=NOW, chronology_loader=lambda *_: changed,
+            specialist_card_loader=lambda *_: {}, active_card_loader=rail.active_loader,
+            evidence_recorder=rail.recorder, telegram_sender=rail.sender,
+        )
+        self.assertEqual(result["status"], "specialist_owner_decision_stale")
+        self.assertEqual(rail.sends, [])

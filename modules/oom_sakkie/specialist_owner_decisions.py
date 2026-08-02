@@ -11,10 +11,11 @@ from typing import Any, Mapping
 
 
 CONTRACT_VERSION = "oom_sakkie_specialist_owner_decision_v1"
-SPECIALISTS = frozenset({"SAM_Livestock", "BEACON"})
+SPECIALISTS = frozenset({"SAM_Livestock", "BEACON", "ROOTLINE"})
 DECISION_TYPES = {
     "SAM_Livestock": frozenset({"sales_protected_decision"}),
     "BEACON": frozenset({"organic_publication_decision"}),
+    "ROOTLINE": frozenset({"supervised_commissioning_decision"}),
 }
 _OPAQUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$")
 _CHOICE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -40,6 +41,14 @@ BEACON_CHOICES = [
      "specialist_callback": "close_without_public_action", "next_action_owner": "BEACON", "public_action": False},
 ]
 
+
+ROOTLINE_COMMISSIONING_ID = "ROOTLINE-SONOFF-COMMISSIONING-20260802"
+ROOTLINE_DECISION_ARTIFACT_SHA256 = "8263e5d43e786e215ac06f8413abeee16ff24f65bac0f0bfe41592183527deda"
+ROOTLINE_RELEASE_SHA256 = "98d9fe68235017a7033f89ae0f8dc6aee09aea4c9a7fab2cd2dc3985dda40afc"
+ROOTLINE_CHOICES = [
+    {"id": "authorize", "label": "Authorize supervised commissioning", "outcome_code": "supervised_commissioning_authorized", "specialist_callback": "prepare_supervised_commissioning_handover", "next_action_owner": "ROOTLINE", "public_action": False},
+    {"id": "not_now", "label": "Not now", "outcome_code": "commissioning_deferred", "specialist_callback": "retain_hardware_containment", "next_action_owner": "ROOTLINE", "public_action": False},
+]
 
 def beacon_organic_publication_binding(*, preview_reference: str, expires_at: str) -> dict[str, Any]:
     """Build the first reviewed BEACON binding from pinned authoritative bytes."""
@@ -80,6 +89,33 @@ def beacon_organic_publication_binding(*, preview_reference: str, expires_at: st
     return validated
 
 
+def rootline_supervised_commissioning_binding(*, expires_at: str) -> dict[str, Any]:
+    raw = {
+        "contract_version": CONTRACT_VERSION, "specialist_identity": "ROOTLINE",
+        "decision_type": "supervised_commissioning_decision",
+        "deterministic_identity": ROOTLINE_COMMISSIONING_ID,
+        "decision_token": _digest(ROOTLINE_COMMISSIONING_ID)[:20],
+        "evidence_binding": {
+            "decision_artifact_sha256": ROOTLINE_DECISION_ARTIFACT_SHA256,
+            "rootline_release_sha256": ROOTLINE_RELEASE_SHA256,
+            "controller": "SONOFF 4CH Pro R3", "firmware": "3.8.2",
+            "channel_1": "B Camp", "channel_2": "C Camp",
+            "native_auto_off_max_seconds": 3600, "power_restore_state": "OFF",
+            "supervised_short_pulse_only": True, "irrigation_authority": False,
+            "hardware_action_performed": False,
+        },
+        "chronology_binding": {
+            "decision_artifact_sha256": ROOTLINE_DECISION_ARTIFACT_SHA256,
+            "earlier_valve_proof_is_approval": False,
+            "commissioning_authorization_count": 0,
+        },
+        "allowed_owner_choices": ROOTLINE_CHOICES,
+        "expiry_revalidation": "authoritative_specialist_chronology",
+        "expires_at": _time(expires_at).isoformat(),
+        "resolution_contract": "exact_once_receipt_then_edit_same_card_remove_buttons",
+    }
+    return validate_specialist_binding(raw)
+
 def validate_specialist_binding(raw: Mapping[str, Any]) -> dict[str, Any]:
     value = json.loads(json.dumps(raw, ensure_ascii=False)) if isinstance(raw, Mapping) else {}
     specialist = _id(value.get("specialist_identity"), "specialist identity")
@@ -104,6 +140,8 @@ def validate_specialist_binding(raw: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("specialist resolution contract invalid")
     if specialist == "BEACON":
         _validate_beacon(identity, evidence, chronology, choices)
+    elif specialist == "ROOTLINE":
+        _validate_rootline(identity, evidence, chronology, choices)
     core = {key: value[key] for key in (
         "contract_version", "specialist_identity", "decision_type", "deterministic_identity", "decision_token",
         "evidence_binding", "chronology_binding", "allowed_owner_choices", "expiry_revalidation", "expires_at",
@@ -172,6 +210,47 @@ def render_beacon_card(binding: Mapping[str, Any]) -> tuple[str, dict[str, Any]]
     return text, {"inline_keyboard": buttons}
 
 
+def render_rootline_commissioning_card(binding: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+    valid = validate_specialist_binding(binding)
+    if valid["specialist_identity"] != "ROOTLINE":
+        raise ValueError("ROOTLINE binding required")
+    text = (
+        "<b>ROOTLINE — SUPERVISED COMMISSIONING DECISION</b>\n\n"
+        "May ROOTLINE commission the proven SONOFF irrigation controller in one supervised session? "
+        "B Camp/channel 1 and C Camp/channel 2 will be configured and tested independently. "
+        "Native auto-OFF will be no more than 3,600 seconds; conflicting schedules, scenes and timers "
+        "must first be absent or disabled; and power restoration must remain OFF.\n\n"
+        "Commissioning uses one short supervised pulse per channel—not irrigation. Charl must physically "
+        "confirm the correct valve starts, the other channel stays off, and native auto-OFF stops the tested "
+        "valve. Production irrigation remains supervised until both channels independently pass.\n\n"
+        "Earlier valve testing is evidence only and is not commissioning approval. No configuration or "
+        "hardware actuation occurs unless this exact procedure is explicitly authorized."
+    )
+    buttons = [[{"text": row["label"], "callback_data":
+        f"sam_live_owner_decision:{valid['decision_token']}:{row['id']}"}]
+        for row in valid["allowed_owner_choices"]]
+    return text, {"inline_keyboard": buttons}
+
+
+def _validate_rootline(identity, evidence, chronology, choices):
+    expected = {
+        "decision_artifact_sha256": ROOTLINE_DECISION_ARTIFACT_SHA256,
+        "rootline_release_sha256": ROOTLINE_RELEASE_SHA256,
+        "controller": "SONOFF 4CH Pro R3", "firmware": "3.8.2",
+        "channel_1": "B Camp", "channel_2": "C Camp",
+        "native_auto_off_max_seconds": 3600, "power_restore_state": "OFF",
+        "supervised_short_pulse_only": True, "irrigation_authority": False,
+        "hardware_action_performed": False,
+    }
+    expected_chronology = {
+        "decision_artifact_sha256": ROOTLINE_DECISION_ARTIFACT_SHA256,
+        "earlier_valve_proof_is_approval": False,
+        "commissioning_authorization_count": 0,
+    }
+    if identity != ROOTLINE_COMMISSIONING_ID or evidence != expected or chronology != expected_chronology or choices != ROOTLINE_CHOICES:
+        raise ValueError("ROOTLINE commissioning evidence binding changed")
+
+
 def _validate_beacon(identity, evidence, chronology, choices):
     expected = {
         "asset_identity": BEACON_ASSET_ID, "asset_sha256": BEACON_ASSET_SHA256,
@@ -193,7 +272,7 @@ def _validate_beacon(identity, evidence, chronology, choices):
 
 
 def _choices(raw):
-    if not isinstance(raw, list) or len(raw) != 3:
+    if not isinstance(raw, list) or not 2 <= len(raw) <= 3:
         raise ValueError("specialist choices invalid")
     result = []
     for row in raw:
