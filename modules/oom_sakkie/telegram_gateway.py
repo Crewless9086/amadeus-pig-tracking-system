@@ -1,10 +1,12 @@
 import hmac
 import os
 import time
+from datetime import datetime, timezone
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY, handle_message
 from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
+from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -199,6 +201,35 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if parsed["telegram_chat_type"] != "private":
         gateway_authority = None
 
+    health_result, health_status = handle_authenticated_health_loss_message(
+        parsed,
+        gateway_authority,
+    )
+    if health_result.get("handled"):
+        answer = str(health_result.get("answer") or "")
+        body, _ = _gateway_result(
+            health_result.get("success") is True,
+            str(health_result.get("status") or "health_loss_contained"),
+            policy,
+            health_status,
+        )
+        body.update({
+            "telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"],
+            "text": parsed["text"],
+            "answer": answer,
+            "message": health_result,
+            "records_audit_trace": health_result.get("records_audit_trace") is True,
+            "audit_trace_status": "stored" if health_result.get("records_audit_trace") is True else "not_written",
+            "reply": {
+                "chat_id": parsed["telegram_chat_id"],
+                "text": answer,
+                "parse_mode": "HTML",
+                "sends_telegram": False,
+            },
+        })
+        return body, health_status
+
     message_result, message_status = handle_message({
         "text": parsed["text"],
         "channel": "telegram_read_only",
@@ -259,6 +290,11 @@ def parse_telegram_gateway_payload(payload):
         "telegram_chat_id": str(telegram_chat_id or "").strip()[:80],
         "telegram_chat_type": str(telegram_chat_type or "").strip()[:20],
         "session_id": f"telegram-{str(session_id or '').strip()[:100]}",
+        "provider_message_id": str(message.get("message_id") or payload.get("message_id") or "").strip()[:120],
+        "provider_timestamp": (
+            datetime.fromtimestamp(float(message.get("date")), timezone.utc).isoformat()
+            if isinstance(message.get("date"), (int, float)) else ""
+        ),
     }
 
 
