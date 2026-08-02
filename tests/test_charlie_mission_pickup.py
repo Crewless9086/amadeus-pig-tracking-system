@@ -257,6 +257,52 @@ class CharlieMissionPickupTests(unittest.TestCase):
             result["reason"], "live_identity_creation_time_mismatch"
         )
 
+    def test_runner_excludes_its_signed_tree_from_supervisor_descendants(self):
+        acknowledgement = {
+            "runner_pid": str(os.getpid()),
+            "supervisor_member_pids": [100, 101],
+            "runner_member_pids": [200, os.getpid()],
+            "supervisor_tree_digest": "supervisor-digest",
+            "runner_tree_digest": "runner-digest",
+        }
+        packet = {
+            "controller_final_acknowledgement": acknowledgement,
+            "controller_public_key": "public-key",
+            "supervisor_tree_identity": {"tree": "supervisor"},
+            "process_tree_identity": {"tree": "runner"},
+        }
+        with patch.dict(os.environ, {
+            "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+            "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
+            "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
+            "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+            "CHARLIE_CONTROLLER_PUBLIC_KEY": "public-key",
+        }, clear=True), patch.object(
+            charlie_mission_pickup,
+            "validate_live_bootstrap_tree",
+            side_effect=[
+                {"authorized": True, "member_pids": [100, 101]},
+                {"authorized": True, "member_pids": [200, os.getpid()]},
+            ],
+        ) as validate_live, patch.object(
+            charlie_mission_pickup,
+            "verify_controller_acknowledgement",
+            return_value=True,
+        ), patch.object(
+            charlie_mission_pickup,
+            "process_tree_identity_digest",
+            side_effect=["supervisor-digest", "runner-digest"],
+        ):
+            result = charlie_mission_pickup._validate_final_packet_live(packet)
+        self.assertTrue(result["success"], result)
+        self.assertIs(
+            validate_live.call_args_list[0].kwargs["allowed_descendant_tree"],
+            packet["process_tree_identity"],
+        )
+        self.assertNotIn(
+            "allowed_descendant_tree", validate_live.call_args_list[1].kwargs
+        )
+
     def test_runner_refuses_missing_current_generation_packet(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(
             os.environ,
