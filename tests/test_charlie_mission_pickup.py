@@ -1268,6 +1268,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["mission_id"], "REPLACEMENT")
         pickup.assert_called_once()
+        executive.assert_not_called()
         observers.assert_not_called()
         reconcile.assert_not_called()
         write_heartbeat.assert_called()
