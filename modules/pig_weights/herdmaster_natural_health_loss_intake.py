@@ -258,6 +258,22 @@ def _parse_report(text, provider_time):
             return False
         return not negative or max(positive) > max(negative)
 
+    def latest_negative(positive_pattern, negative_pattern, subject):
+        negative_matches = list(re.finditer(negative_pattern, subject))
+        positive_matches = [
+            match
+            for match in re.finditer(positive_pattern, subject)
+            if not any(
+                match.start() < negative.end() and negative.start() < match.end()
+                for negative in negative_matches
+            )
+        ]
+        if not negative_matches:
+            return False
+        return not positive_matches or max(match.end() for match in negative_matches) > max(
+            match.end() for match in positive_matches
+        )
+
     def current_sign(pattern):
         return latest_positive(
             rf"\b(?:{pattern})\w*\b",
@@ -266,8 +282,12 @@ def _parse_report(text, provider_time):
         )
 
     injured = current_sign(r"injur|limp|wound|bleed|broken|swollen")
-    not_eating = "not eating" in lower
-    not_drinking = "not drinking" in lower
+    eating_positive = r"\b(?:is|was)?\s*eating(?: food|normally|again|now)?\b|\bappetite (?:is )?(?:normal|back)\b"
+    eating_negative = r"\b(?:not|no longer|isn't|wasn't|without) eating\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) eat(?:ing)?\b|\b(?:no|poor|reduced) appetite\b"
+    drinking_positive = r"\bdrinking(?: water)?\b"
+    drinking_negative = r"\b(?:not|no longer|isn't|wasn't|without) drinking\b|\bdrinking no water\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) drink(?:ing)?\b"
+    not_eating = latest_negative(eating_positive, eating_negative, lower)
+    not_drinking = latest_negative(drinking_positive, drinking_negative, lower)
     other_sick = current_sign(r"sick|ill|vomit|diarrh|cough|fever")
     sick = not_eating or not_drinking or other_sick
     severe_sick = not_drinking or other_sick
@@ -340,8 +360,8 @@ def _parse_report(text, provider_time):
             lower,
         ),
         "drinking": latest_positive(
-            r"\bdrinking(?: water)?\b",
-            r"\b(?:not|no longer|isn't|wasn't|without) drinking\b|\bdrinking no water\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) drink(?:ing)?\b",
+            drinking_positive,
+            drinking_negative,
             lower,
         ),
     }
