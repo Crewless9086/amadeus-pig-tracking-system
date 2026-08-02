@@ -7713,6 +7713,27 @@ def _transition_finalization_transaction_failure(
 
 def _build_github_finalization_gate(mission, review_packet, candidate_revision):
     """Return machine-verified PR evidence bound to the tested revision."""
+    sequence = _mission_agent_sequence(mission if isinstance(mission, dict) else {})
+    mutation_stages = {
+        "builder", "tester", "qa_red_team", "product_reviewer",
+        "business_reviewer", "security_reviewer", "evidence_reviewer",
+        "visual_qa_reviewer", "reviewer", "publisher",
+    }
+    if sequence and not any(agent in mutation_stages for agent in sequence):
+        return {
+            "version": "charlie_github_finalization_gate_v1",
+            "passed": True,
+            "required": False,
+            "reasons": [],
+            "pr_reference": "",
+            "pr_number": None,
+            "pr_url": "",
+            "state": "NOT_APPLICABLE",
+            "mergeable": "NOT_APPLICABLE",
+            "head_revision": str(candidate_revision or "").strip(),
+            "check_conclusions": [],
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
     candidate = str(candidate_revision or "").strip()
     reference = mission_pr_reference({
         **(mission if isinstance(mission, dict) else {}),
@@ -7744,6 +7765,7 @@ def _build_github_finalization_gate(mission, review_packet, candidate_revision):
     return {
         "version": "charlie_github_finalization_gate_v1",
         "passed": not reasons,
+        "required": True,
         "reasons": reasons,
         "pr_reference": reference,
         "pr_number": state.get("number"),
