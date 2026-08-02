@@ -6,6 +6,7 @@ from modules.oom_sakkie.herdmaster_health_loss_runtime import (
     handle_authenticated_health_loss_message,
 )
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
+from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 
 
 def parsed(text, message_id="3169"):
@@ -41,6 +42,19 @@ def pig_125_evidence():
         "availability": "Herd", "pen": "PEN-125",
     }]
     return packet
+
+
+def pig_125_active():
+    return {
+        "status": "waiting_for_input",
+        "combined_text": "Pig 125 is found dead in pen. No conclusion on what it might be.",
+        "mission_id": "OOM-HERDMASTER-7F3E42E3FD65581696E065D8",
+        "operation_id": "HERD-PIG125-INITIAL",
+        "provider_message_id": "3179",
+        "provider_timestamp": "2026-08-02T14:52:09+00:00",
+        "preview": {"evaluator": {"identity": {
+            "pig_id": "PIG-2026-125A", "tag_number": "125"}}},
+    }
 
 
 def memory_store(active=None):
@@ -102,6 +116,9 @@ def test_follow_up_reuses_open_context_without_repeating_known_report(loader):
     active = {
         "status": "waiting_for_input",
         "combined_text": "Pig 11 is not eating, just laying down",
+        "mission_id": "OOM-PIG11",
+        "provider_message_id": "3169",
+        "provider_timestamp": "2026-08-02T07:00:00+00:00",
     }
     store, recorded = memory_store(active)
     result, status = handle_authenticated_health_loss_message(
@@ -122,7 +139,7 @@ def test_exact_natural_confirmation_records_once_and_reuses_card(confirm):
     confirm.return_value=({"success":True,"status":"health_loss_observation_recorded",
                            "writes_farm_data":True,"rows_created":1},201)
     active={"status":"preview_ready","operation_id":"HERD-1","mission_id":"MISSION-1",
-            "preview":{"confirmation_ready":True},"provider_timestamp":"2026-08-02T07:10:00+00:00"}
+            "preview":{"confirmation_ready":True},"provider_timestamp":"2026-08-02T07:00:00+00:00"}
     store,recorded=memory_store(active)
     result,status=handle_authenticated_health_loss_message(
         parsed("CONFIRM HERD-1","3173"),issue_gateway_owner_authority("42","42"),context_store=store)
@@ -145,9 +162,22 @@ def test_unrelated_owner_message_is_not_claimed(loader):
     loader.assert_not_called()
 
 
+def test_malformed_confirmation_does_not_enter_health_lifecycle():
+    def unexpected_store(*_args):
+        raise AssertionError("malformed confirmation must not read lifecycle state")
+
+    result, status = handle_authenticated_health_loss_message(
+        parsed("CONFIRM maybe HERD-1"),
+        issue_gateway_owner_authority("42", "42"),
+        context_store=unexpected_store,
+    )
+    assert status == 200
+    assert result["handled"] is False
+
+
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
 def test_new_found_dead_report_does_not_reuse_another_pigs_active_lifecycle(loader):
-    loader.return_value = pig_125_evidence()
+    loader.return_value = {**pig_125_evidence(), "as_of_timestamp": "2026-08-02T17:12:00+00:00"}
     active = {"status": "waiting_for_input", "combined_text": "Pig 11 is not eating",
               "mission_id": "OOM-PIG-11", "operation_id": "HERD-11"}
     store, recorded = memory_store(active)
@@ -177,6 +207,172 @@ def test_explicit_loss_report_with_no_conclusion_cannot_become_active_case_follo
     assert recorded[0]["combined_text"] == "Pig 125 is found dead in pen. No conclusion on what it might be."
     assert "Pig 11" not in recorded[0]["combined_text"]
     assert recorded[0]["preview"]["writes_farm_data"] is False
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_exact_natural_answer_reenters_existing_pig125_mission_without_repeating_question(loader):
+    loader.return_value = {**pig_125_evidence(), "as_of_timestamp": "2026-08-02T17:12:00+00:00"}
+    store, recorded = memory_store(pig_125_active())
+    result, status = handle_authenticated_health_loss_message(
+        {**parsed("Pig 125 was seen alive this morning, but he seemed off. When I went to feed them this evening I found him dead in the pen. I'm going to spray the pens with LAB tomorrow.", "3185"),
+         "provider_timestamp": "2026-08-02T17:11:58+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200
+    assert result["mission_id"] == "OOM-HERDMASTER-7F3E42E3FD65581696E065D8"
+    assert result["question_count"] == 1
+    assert "last seen alive" not in result["answer"].lower()
+    assert "when was the body found" not in result["answer"].lower()
+    assert "removed from the pen" in result["answer"].lower()
+    facts = recorded[0]["preview"]["evaluator"]["observed_facts"]
+    assert {row["fact"]: row["value"] for row in facts}["last_seen_alive_context_reported"] == "this morning"
+    assert {row["fact"]: row["value"] for row in facts}["body_found_time_context_reported"] == "this evening"
+    assert {row["fact"]: row["value"] for row in facts}["future_biosecurity_intention_reported"] == "spray the pens with lab tomorrow"
+    assert recorded[0]["combined_text"].startswith(pig_125_active()["combined_text"])
+
+
+def test_unrelated_reservoir_message_cannot_claim_pig125_context():
+    store, recorded = memory_store(pig_125_active())
+    result, status = handle_authenticated_health_loss_message(
+        {**parsed("Reservoir 4/4", "3182"), "provider_timestamp": "2026-08-02T15:54:10+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["handled"] is False
+    assert recorded == []
+
+
+def test_multiple_active_cases_require_animal_identity_for_short_natural_reply():
+    second = {**pig_125_active(), "mission_id": "OOM-PIG11", "operation_id": "HERD-PIG11",
+              "preview": {"evaluator": {"identity": {"pig_id": "PIG-11", "tag_number": "11"}}}}
+    store, recorded = memory_store([pig_125_active(), second])
+    result, status = handle_authenticated_health_loss_message(
+        {**parsed("Yes, found this evening", "3188"), "provider_timestamp": "2026-08-02T17:20:00+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 409 and result["status"] == "health_loss_active_context_ambiguous"
+    assert result["writes_farm_data"] is False and recorded == []
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_same_inbound_duplicate_mission_is_suppressed_in_favour_of_prior_case(loader):
+    loader.return_value = {**pig_125_evidence(), "as_of_timestamp": "2026-08-02T18:11:00+00:00"}
+    duplicate = {**pig_125_active(), "mission_id": "OOM-HERDMASTER-DUPLICATE",
+                 "provider_message_id": "3185", "provider_timestamp": "2026-08-02T17:11:58+00:00",
+                 "combined_text": "Pig 125 was seen alive this morning and found dead this evening"}
+    contexts = [duplicate, pig_125_active()]; recorded = []; identities = set()
+    def store(action, identity, payload):
+        if action == "load": return list(contexts)
+        recorded.append(payload)
+        if identity in identities: return {"success": True, "created": False}
+        identities.add(identity); contexts.insert(0, payload)
+        return {"success": True, "created": True}
+    result, status = handle_authenticated_health_loss_message(
+        {**parsed("Pig 125 was seen alive this morning and found dead this evening", "3185"),
+         "provider_timestamp": "2026-08-02T17:11:58+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["mission_id"] == pig_125_active()["mission_id"]
+    assert result["superseded_duplicate_missions"] == ["OOM-HERDMASTER-DUPLICATE"]
+    assert recorded[0]["mission_id"] == pig_125_active()["mission_id"]
+    replay, replay_status = handle_authenticated_health_loss_message(
+        {**parsed("Pig 125 was seen alive this morning and found dead this evening", "3185"),
+         "provider_timestamp": "2026-08-02T17:11:58+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert replay_status == 200 and replay["mission_id"] == pig_125_active()["mission_id"]
+    later, later_status = handle_authenticated_health_loss_message(
+        {**parsed("Pig 125 was removed from the pen and buried", "3190"),
+         "provider_timestamp": "2026-08-02T18:00:00+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert later_status == 200 and later["mission_id"] == pig_125_active()["mission_id"]
+    latest, latest_status = handle_authenticated_health_loss_message(
+        {**parsed("Pig 125 was buried safely", "3191"),
+         "provider_timestamp": "2026-08-02T18:10:00+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert latest_status == 200 and latest["mission_id"] == pig_125_active()["mission_id"]
+    assert latest["superseded_duplicate_missions"] == ["OOM-HERDMASTER-DUPLICATE"]
+
+
+def test_tagless_removal_reply_selects_only_case_waiting_for_removal_evidence():
+    pig125 = {**pig_125_active(), "preview": {"evaluator": {
+        "identity": {"pig_id": "PIG-125", "tag_number": "125"},
+        "missing_evidence": ["physical removal/disposal evidence"]}}}
+    pig11 = {**pig_125_active(), "mission_id": "OOM-PIG11", "provider_message_id": "3174",
+             "preview": {"evaluator": {"identity": {"pig_id": "PIG-11", "tag_number": "11"},
+                                        "missing_evidence": ["appetite reassessment"]}}}
+    store, _ = memory_store([pig125, pig11])
+    with patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence",
+               return_value={**pig_125_evidence(), "as_of_timestamp": "2026-08-02T18:01:00+00:00"}):
+        result, status = handle_authenticated_health_loss_message(
+            {**parsed("The body was removed from the pen and buried", "3190"),
+             "provider_timestamp": "2026-08-02T18:00:00+00:00"},
+            issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["mission_id"] == pig125["mission_id"]
+    assert result["writes_farm_data"] is False
+
+
+def test_stale_follow_up_is_contained_on_original_mission():
+    store, recorded = memory_store(pig_125_active())
+    result, status = handle_authenticated_health_loss_message(
+        {**parsed("Pig 125 was seen alive this morning", "3185"),
+         "provider_timestamp": "2026-08-02T13:00:00+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 409 and result["status"] == "health_loss_follow_up_chronology_conflict"
+    assert result["mission_id"] == pig_125_active()["mission_id"] and recorded == []
+
+
+def test_active_context_store_failure_is_visible_containment_not_new_mission():
+    def broken_store(*_args): raise RuntimeError("database unavailable")
+    result, status = handle_authenticated_health_loss_message(
+        parsed("Pig 125 was seen alive this morning", "3185"),
+        issue_gateway_owner_authority("42", "42"), context_store=broken_store)
+    assert status == 503 and result["status"] == "health_loss_active_context_unavailable"
+    assert result["answer"] and result["writes_farm_data"] is False
+
+
+def test_mismatched_owner_context_cannot_receive_natural_follow_up():
+    foreign = {**pig_125_active(), "owner_user_id": "99"}
+    store, recorded = memory_store(foreign)
+    result, status = handle_authenticated_health_loss_message(
+        parsed("Yes, found this evening", "3188"),
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["handled"] is False and recorded == []
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_reentry_survives_restart_and_replay_creates_no_duplicate_card_or_question(loader):
+    loader.return_value = {**pig_125_evidence(), "as_of_timestamp": "2026-08-02T18:01:00+00:00"}
+    contexts = [pig_125_active()]
+    context_ids = set()
+    def context_store(action, identity, payload):
+        if action == "load": return list(contexts)
+        if identity in context_ids: return {"success": True, "created": False}
+        context_ids.add(identity); contexts.insert(0, payload)
+        return {"success": True, "created": True}
+    mission = pig_125_active()["mission_id"]
+    family_events = [{"state": "delivered", "card_mission_id": mission,
+                      "telegram_message_id": "3184", "text_sha256": "initial"}]
+    family_ids = set()
+    def family_store(action, identity, payload):
+        if action == "load": return list(family_events)
+        if identity in family_ids: return {"success": True, "created": False}
+        family_ids.add(identity); family_events.append(payload)
+        return {"success": True, "created": True}
+    edits = []
+    message = {**parsed("Pig 125 was seen alive this morning, but he seemed off. When I went to feed them this evening I found him dead in the pen. I'm going to spray the pens with LAB tomorrow.", "3185"),
+               "provider_timestamp": "2026-08-02T17:11:58+00:00"}
+    first, status = handle_authenticated_health_loss_message(message,
+        issue_gateway_owner_authority("42", "42"), context_store=context_store)
+    delivered = deliver_family_result(message, first, specialist="HERDMASTER",
+        mission_id=first["mission_id"], card_mission_id=first["card_mission_id"],
+        event_store=family_store, sender=lambda *_: (_ for _ in ()).throw(AssertionError("send")),
+        editor=lambda chat, card, text: edits.append((chat, card, text)) or {"success": True})
+    assert status == 200 and delivered["telegram_sends"] == 0 and delivered["telegram_edits"] == 1
+    assert delivered["telegram_message_id"] == "3184" and len(edits) == 1
+    replay, replay_status = handle_authenticated_health_loss_message(message,
+        issue_gateway_owner_authority("42", "42"), context_store=context_store)
+    replay_delivery = deliver_family_result(message, replay, specialist="HERDMASTER",
+        mission_id=replay["mission_id"], card_mission_id=replay["card_mission_id"],
+        event_store=family_store, sender=lambda *_: (_ for _ in ()).throw(AssertionError("send")),
+        editor=lambda *_: (_ for _ in ()).throw(AssertionError("edit")))
+    assert replay_status == 200 and replay["mission_id"] == mission
+    assert replay_delivery["telegram_sends"] == 0 and replay_delivery["telegram_edits"] == 0
+    assert len({row.get("mission_id") for row in contexts}) == 1
 
 
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
@@ -233,7 +429,7 @@ def test_completed_context_accepts_only_exact_confirmation_replay(confirm):
                            "writes_farm_data":False,"rows_created":0},200)
     active={"status":"completed","operation_id":"HERD-1","mission_id":"MISSION-1",
             "owner_user_id":"42","preview":{"confirmation_ready":True},
-            "provider_timestamp":"2026-08-02T07:10:00+00:00"}
+            "provider_timestamp":"2026-08-02T07:00:00+00:00"}
     store,recorded=memory_store(active)
     result,status=handle_authenticated_health_loss_message(
         parsed("CONFIRM HERD-1","3174"),issue_gateway_owner_authority("42","42"),context_store=store)
