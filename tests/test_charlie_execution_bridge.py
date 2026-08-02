@@ -3575,9 +3575,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         write_audit_event,
     ):
         successful = ({"success": True, "configured": True, "status": "written"}, 200)
+        write_project.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "project_written",
+            "project_id": "existing-charlie-project",
+        }, 200)
         for writer in (
-            write_project, write_artifact, write_agent_run,
-            write_quality_gate, write_audit_event,
+            write_artifact, write_agent_run, write_quality_gate, write_audit_event,
         ):
             writer.return_value = successful
 
@@ -3597,7 +3602,28 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         project = write_project.call_args.args[0]
         self.assertEqual(project["project_id"], "charlie_core")
         self.assertEqual(project["project_key"], "charlie_core")
-        self.assertEqual(write_artifact.call_args.kwargs["project_id"], "charlie_core")
+        self.assertEqual(write_artifact.call_args.kwargs["project_id"], "existing-charlie-project")
+
+    def test_t0_source_mapper_report_does_not_require_release_candidate_reviewer(self):
+        mission = {
+            "metadata": {"orchestration": {
+                "version": "charlie_adaptive_orchestration_v1",
+                "tier": "T0",
+                "selected_agents": [{"agent": "source_mapper"}],
+            }},
+            "agent_workflow": [{"agent": "source_mapper", "status": "complete"}],
+        }
+        artifact = _successful_stage_payload("source_mapper")
+        artifact["evidence_lineage"] = {"source_commit": "a" * 40}
+
+        ready, evidence = execution_bridge._verify_owner_review_artifacts_ready(
+            mission,
+            {"source_mapper": artifact},
+        )
+
+        self.assertTrue(ready)
+        self.assertEqual(evidence["reason"], "t0_source_report_passing")
+        self.assertFalse(evidence["release_candidate_required"])
 
     def test_brain_guard_blocks_owner_review_without_vault_citations(self):
         artifacts = {

@@ -7824,6 +7824,21 @@ def _verify_owner_review_artifacts_ready(mission, artifacts):
             "legacy_evidence": True,
             "compatibility_adapter": "frozen_historical_workflow_v1" if historical_workflow else "",
         }
+    orchestration = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    if orchestration.get("tier") == "T0" and sequence == ["source_mapper"]:
+        artifact = artifacts.get("source_mapper") if isinstance(artifacts.get("source_mapper"), dict) else {}
+        judgement = _judgement_evidence_quality_gate("source_mapper", artifact)
+        if not judgement.get("passed"):
+            return False, {
+                "blocked_agent": "source_mapper",
+                "stage_status": "non_passing",
+                "reason": f"T0 report is not ready: {judgement.get('reason') or 'source evidence quality gate failed'}.",
+            }
+        return True, {
+            "reason": "t0_source_report_passing",
+            "tier": "T0",
+            "release_candidate_required": False,
+        }
     manifest = build_candidate_manifest(
         mission,
         artifacts,
@@ -7967,14 +7982,25 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
         if status_code >= 500 and not result.get("success") and result.get("configured") is not False:
             vault_write_unavailable = True
 
-    record("project", lambda: vault_store.write_project({
+    project_result, project_status = vault_store.write_project({
         "project_id": project_id,
         "project_key": project_id,
         "name": project_truth.get("workflow_label") or mission.get("title") or "CHARLIE mission",
         "purpose": vault.get("desired_outcome") or vault.get("problem_statement") or mission.get("raw_text", ""),
         "workflow_template": project_truth.get("workflow_template") or mission.get("mission_type") or "software_build",
         "metadata": {"mission_id": mission_id, "project_truth": project_truth},
-    }, database_url=database_url, connect_factory=connect_factory))
+    }, database_url=database_url, connect_factory=connect_factory)
+    writes.append({
+        "label": "project",
+        "status_code": project_status,
+        "success": bool(project_result.get("success")),
+        "status": project_result.get("status", ""),
+        "error_type": project_result.get("error_type", ""),
+    })
+    if project_status >= 500 and not project_result.get("success") and project_result.get("configured") is not False:
+        vault_write_unavailable = True
+    elif project_result.get("success") and project_result.get("project_id"):
+        project_id = project_result["project_id"]
 
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
