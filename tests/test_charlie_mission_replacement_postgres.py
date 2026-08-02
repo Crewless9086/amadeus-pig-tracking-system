@@ -34,14 +34,13 @@ class CharlieMissionReplacementPostgresTests(unittest.TestCase):
                     if not cursor.fetchone():
                         cursor.execute(f"create role {role} nologin")
                 cursor.execute(Path("supabase/migrations/202606300001_create_charlie_mission_queue.sql").read_text(encoding="utf-8"))
-                cursor.execute("""create table if not exists public.charlie_owner_execution_hold_events(
-                    event_id text primary key, mission_id text not null references public.charlie_missions(mission_id),
-                    event_type text not null, release_of_event_id text references public.charlie_owner_execution_hold_events(event_id))""")
+                cursor.execute(Path("supabase/migrations/202607270003_create_charlie_owner_execution_holds.sql").read_text(encoding="utf-8"))
                 cursor.execute(migration.read_text(encoding="utf-8"))
         separator = "&" if "?" in cls.database_url else "?"
         cls.writer_url = cls.database_url + separator + "options=-c%20role%3Dcharlie_mission_replacement_writer"
         cls.authorizer_url = cls.database_url + separator + "options=-c%20role%3Dcharlie_mission_replacement_authorizer"
         cls.service_url = cls.database_url + separator + "options=-c%20role%3Dservice_role"
+        cls.hold_writer_url = cls.database_url + separator + "options=-c%20role%3Dcharlie_owner_execution_hold_writer"
 
     def setUp(self):
         self.tag = uuid.uuid4().hex[:10].upper()
@@ -102,6 +101,10 @@ class CharlieMissionReplacementPostgresTests(unittest.TestCase):
                 from modules.charlie.mission_store import list_owner_work_missions
                 listed,code=list_owner_work_missions("new",limit=50,database_url=self.database_url); self.assertEqual(code,200,listed); self.assertTrue(set(self.predecessor_ids).isdisjoint({x["mission_id"] for x in listed["missions"]}))
                 with self.assertRaises(psycopg.Error): cursor.execute("update public.charlie_missions set title='changed' where mission_id=%s",(self.predecessor_ids[0],))
+        with psycopg.connect(self.hold_writer_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select count(*) from public.charlie_mission_replacement_bindings where predecessor_mission_id=any(%s)",(self.predecessor_ids,))
+                self.assertEqual(cursor.fetchone()[0],3)
 
     def test_concurrent_exact_attempts_create_once(self):
         outcomes=[]
