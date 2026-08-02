@@ -78,3 +78,13 @@ the gateway but fell through to the generic `unknown farm system` answer. The
 new gateway path is scoped before ordinary intent routing, remains private-owner
 bound, and leaves ROOTLINE, SAM, BEACON, hardware, customer sends, and protected
 farm writers untouched.
+
+## Generic visible lifecycle integration
+
+`modules/oom_sakkie/family_message_lifecycle.py` replaces the failed generic
+caller-send assumption with an exact-once backend-owned card lifecycle through
+the existing authenticated gateway and canonical bot identity. Natural
+follow-ups edit the same mission card. `modules/pig_weights/herdmaster_health_loss_recording.py`
+adds the confirmed, evidence-revalidated transaction for supported factual
+welfare observations only; compound effects without canonical coordinators
+remain contained.
