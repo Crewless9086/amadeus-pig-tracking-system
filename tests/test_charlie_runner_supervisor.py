@@ -482,6 +482,27 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         supervise.assert_not_called()
 
     @patch.object(supervisor, "inspect_process", return_value={})
+    def test_same_generation_status_preserves_signed_identity_fields(self, _inspect):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "supervisor.json"
+            state_path.write_text(json.dumps({
+                "generation": "gen-1",
+                "controller_public_key": "public-key",
+                "intended_runtime_revision": "runtime-revision",
+                "intended_execution_revision": "execution-revision",
+            }), encoding="utf-8")
+            with patch.object(supervisor, "SUPERVISOR_PATH", state_path):
+                supervisor._write_status(
+                    "operational_authorized",
+                    generation="gen-1",
+                )
+            persisted = json.loads(state_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(persisted["controller_public_key"], "public-key")
+        self.assertEqual(persisted["intended_runtime_revision"], "runtime-revision")
+        self.assertEqual(persisted["intended_execution_revision"], "execution-revision")
+
+    @patch.object(supervisor, "inspect_process", return_value={})
     def test_terminal_supervisor_status_retains_pre_stop_ownership_evidence(self, _inspect):
         with tempfile.TemporaryDirectory() as tmp:
             state_path = Path(tmp) / "supervisor.json"

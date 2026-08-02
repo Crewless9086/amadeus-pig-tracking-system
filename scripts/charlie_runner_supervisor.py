@@ -1411,6 +1411,9 @@ def _write_status(status, **extra):
             "runner_startup_nonce",
             "runner_controller_acknowledgement",
             "controller_final_acknowledgement",
+            "controller_public_key",
+            "intended_runtime_revision",
+            "intended_execution_revision",
             "execution_mode",
         ):
             if key not in payload and key in previous:
