@@ -142,6 +142,16 @@ def test_enriched_sick_report_does_not_repeat_supplied_welfare_facts():
     assert "medical observation" in result["owner_text"]
 
 
+def test_pig_wording_resolves_numeric_tag_for_natural_owner_report():
+    animal = pig("", "PIG-2026-E88A", "11")
+    result = prepare_health_loss_owner_preview(
+        envelope("Pig 11 is not eating, just laying down"), evidence(animal)
+    )
+    assert result["success"] is True
+    assert result["evaluator"]["identity"]["pig_id"] == "PIG-2026-E88A"
+    assert "able to stand, breathe normally and drink water" in result["owner_text"]
+
+
 def test_ordinary_found_dead_preview_keeps_death_date_unknown():
     animal = pig("Tag 22", "PIG-2026-0022", "22")
     result = prepare_health_loss_owner_preview(

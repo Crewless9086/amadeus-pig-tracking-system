@@ -55,3 +55,26 @@ The future shared-router edit is intentionally deferred: after private-owner aut
 ## Required operational proof
 
 Integration is not business-complete until an authenticated ordinary family report produces one correct preview, explicit owner confirmation produces exactly the previewed canonical effects once, replay creates zero rows, recommendations refresh, and farm-state digests prove zero unrelated mutations. Shared runtime must then be released to the named successor immediately.
+
+## 2 August operational gateway integration
+
+`modules/oom_sakkie/herdmaster_health_loss_runtime.py` connects the reviewed
+evaluator to the existing authenticated private-owner Telegram gateway without
+creating another bot or router. Natural reports such as `Pig 11 is not eating,
+just laying down` now:
+
+- resolve against the complete current canonical herd projection;
+- preserve provider message identity and time;
+- return one immediate welfare-priority acknowledgement;
+- ask only whether the animal can stand, breathe normally, and drink when
+  those facts are genuinely missing;
+- retain the open private context for a later natural follow-up;
+- produce the consolidated HERDMASTER preview when that follow-up completes
+  the evidence;
+- append private lifecycle evidence while performing zero farm writes.
+
+The production regression is Telegram message `3169`, which previously reached
+the gateway but fell through to the generic `unknown farm system` answer. The
+new gateway path is scoped before ordinary intent routing, remains private-owner
+bound, and leaves ROOTLINE, SAM, BEACON, hardware, customer sends, and protected
+farm writers untouched.
