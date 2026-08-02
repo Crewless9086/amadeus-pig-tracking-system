@@ -35,7 +35,7 @@ HEALTH_PATTERN = re.compile(
     re.I,
 )
 FOLLOW_UP_PATTERN = re.compile(
-    r"\b(?:can|cannot|can't|cant|yes|no|stand|standing|breathe|breathing|"
+    r"\b(?:cannot|can't|cant|yes|no|stand|standing|breathe|breathing|"
     r"drink|drinking|water|bleed|bleeding|distress|responsive|unresponsive)\b",
     re.I,
 )
@@ -88,7 +88,8 @@ def handle_authenticated_health_loss_message(
             "rows_created": int(recorded.get("rows_created") or 0),
             "protected_actions_performed": bool(recorded.get("writes_farm_data"))}, recorded_status
 
-    context_text = str((active or {}).get("combined_text") or "").strip() if follow_up else ""
+    active_for_message = active if follow_up else None
+    context_text = str((active_for_message or {}).get("combined_text") or "").strip()
     combined_text = f"{context_text} Follow-up: {text}".strip() if context_text else text
     evidence = load_canonical_health_loss_evidence(connect_factory=connect_factory)
     envelope = {
@@ -100,7 +101,7 @@ def handle_authenticated_health_loss_message(
     }
     preview = prepare_health_loss_owner_preview(envelope, evidence)
     owner_text = _owner_message(preview)
-    mission_id = str((active or {}).get("mission_id") or "") or "OOM-HERDMASTER-" + hashlib.sha256(
+    mission_id = str((active_for_message or {}).get("mission_id") or "") or "OOM-HERDMASTER-" + hashlib.sha256(
         f"{parsed.get('telegram_user_id')}|{parsed.get('telegram_chat_id')}|{provider_message_id}".encode()
     ).hexdigest()[:24].upper()
     lifecycle = {
@@ -191,7 +192,10 @@ def _owner_message(preview: Mapping[str, Any]) -> str:
 
 def _record_lifecycle_event(lifecycle: Mapping[str, Any], *, context_store=None):
     event_id = "OOM-HERD-HEALTH-" + hashlib.sha256(
-        f"{lifecycle.get('chat_id')}|{lifecycle.get('provider_message_id')}".encode()
+        (
+            f"{lifecycle.get('chat_id')}|{lifecycle.get('provider_message_id')}|"
+            f"{lifecycle.get('mission_id')}"
+        ).encode()
     ).hexdigest()[:24].upper()
     if context_store is not None:
         return context_store("record", event_id, dict(lifecycle))

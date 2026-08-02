@@ -7,6 +7,7 @@ from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY, handle_message
 from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
+from modules.oom_sakkie.operational_specialist_intake import handle_operational_specialist_message
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 
 
@@ -201,6 +202,28 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     )
     if parsed["telegram_chat_type"] != "private":
         gateway_authority = None
+
+    operational_result, operational_status = handle_operational_specialist_message(
+        parsed, gateway_authority,
+    )
+    if operational_result.get("handled"):
+        answer = str(operational_result.get("answer") or "")
+        delivery = deliver_family_result(
+            parsed, operational_result,
+            specialist=str(operational_result.get("specialist_identity") or "OOM_SAKKIE"),
+            mission_id=str(operational_result.get("mission_id") or ""),
+            card_mission_id=str(operational_result.get("card_mission_id") or ""),
+        )
+        body, _ = _gateway_result(
+            delivery.get("success") is True,
+            str(operational_result.get("status") or "contained"), policy, operational_status,
+        )
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": answer, "message": operational_result, "delivery": delivery,
+            "records_audit_trace": True, "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        return body, 200 if delivery.get("success") else 202
 
     health_result, health_status = handle_authenticated_health_loss_message(
         parsed,
