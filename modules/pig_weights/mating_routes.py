@@ -335,6 +335,15 @@ def _build_breeding_attention_packets(proposed_observation=None):
         return packet, hypothetical, started
 
 
+def load_current_breeding_operating_loop():
+    """Return the current complete read-only HERDMASTER operating loop."""
+    packet, _hypothetical, _started = _build_breeding_attention_packets()
+    loop = packet.get("operating_loop") if isinstance(packet, dict) else None
+    if not isinstance(loop, dict) or loop.get("success") is not True or loop.get("writes_performed") is not False:
+        raise RuntimeError("herdmaster_operating_loop_incomplete")
+    return loop
+
+
 @mating_bp.route("/breeding-attention", methods=["GET"])
 def breeding_attention():
     denied = require_owner_read_access()

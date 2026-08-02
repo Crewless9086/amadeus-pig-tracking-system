@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_health_loss_runtime import (
+    _record_lifecycle_event,
     handle_authenticated_health_loss_message,
 )
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
@@ -31,6 +32,17 @@ def evidence():
     }
 
 
+def pig_125_evidence():
+    packet = evidence()
+    packet["evidence_generation"] = "GEN-125"
+    packet["animals"] = [{
+        "pig_id": "PIG-2026-125A", "name": "", "tag_number": "125",
+        "lifecycle_status": "Active", "on_farm": True,
+        "availability": "Herd", "pen": "PEN-125",
+    }]
+    return packet
+
+
 def memory_store(active=None):
     recorded = []
 
@@ -41,6 +53,29 @@ def memory_store(active=None):
         return {"success": True, "created": True}
 
     return store, recorded
+
+
+def test_recovery_identity_distinguishes_corrected_mission_from_prior_misbound_case():
+    identities = []
+
+    def store(action, identity, payload):
+        identities.append(identity)
+        return {"success": True, "created": True}
+
+    base = {
+        "chat_id": "42",
+        "provider_message_id": "3179",
+        "mission_id": "OOM-HERDMASTER-PIG11-WRONG",
+    }
+    _record_lifecycle_event(base, context_store=store)
+    _record_lifecycle_event(
+        {**base, "mission_id": "OOM-HERDMASTER-PIG125-CORRECT"},
+        context_store=store,
+    )
+    _record_lifecycle_event(base, context_store=store)
+
+    assert identities[0] != identities[1]
+    assert identities[0] == identities[2]
 
 
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
@@ -107,6 +142,37 @@ def test_unrelated_owner_message_is_not_claimed(loader):
     )
     assert status == 200
     assert result["handled"] is False
+    loader.assert_not_called()
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_new_found_dead_report_does_not_reuse_another_pigs_active_lifecycle(loader):
+    loader.return_value = pig_125_evidence()
+    active = {"status": "waiting_for_input", "combined_text": "Pig 11 is not eating",
+              "mission_id": "OOM-PIG-11", "operation_id": "HERD-11"}
+    store, recorded = memory_store(active)
+    result, status = handle_authenticated_health_loss_message(
+        parsed("Pig 125 is found dead in the pen.", "3179"),
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["handled"] is True
+    assert result["mission_id"] != "OOM-PIG-11"
+    assert recorded[0]["provider_message_id"] == "3179"
+    assert recorded[0]["combined_text"] == "Pig 125 is found dead in the pen."
+    assert recorded[0]["preview"]["writes_farm_data"] is False
+    assert "last seen alive" in result["answer"].lower()
+    assert "when was the body found" in result["answer"].lower()
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_rootline_presence_is_not_misclassified_as_pig11_health_follow_up(loader):
+    active = {"status": "waiting_for_input", "combined_text": "Pig 11 is not eating",
+              "mission_id": "OOM-PIG-11"}
+    store, recorded = memory_store(active)
+    result, status = handle_authenticated_health_loss_message(
+        parsed("I am at the B and C valve area now, can observe both camps, and can intervene immediately for supervised commissioning.", "3181"),
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result == {"handled": False, "status": "health_loss_intake_not_applicable"}
+    assert recorded == []
     loader.assert_not_called()
 
 
