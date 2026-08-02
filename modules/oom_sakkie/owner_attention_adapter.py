@@ -17,6 +17,7 @@ from modules.oom_sakkie.owner_attention_queue import (
 )
 from modules.oom_sakkie.specialist_owner_decisions import (
     render_beacon_card,
+    render_rootline_commissioning_card,
     specialist_choice,
     specialist_decision_current,
     validate_specialist_binding,
@@ -124,7 +125,7 @@ def operate_specialist_owner_decision(binding: Mapping[str, Any], *, environ=Non
         return _result("owner_attention_queue_disabled")
     try:
         valid = validate_specialist_binding(binding)
-        if valid["specialist_identity"] != "BEACON":
+        if valid["specialist_identity"] not in {"BEACON", "ROOTLINE"}:
             return _result("specialist_owner_decision_unsupported")
         loader = specialist_card_loader or _load_attention_card
         prior = loader(valid["decision_token"], source.get(DATABASE_URL_ENV))
@@ -138,7 +139,8 @@ def operate_specialist_owner_decision(binding: Mapping[str, Any], *, environ=Non
         if prior.get("success") and (prior.get("card") or {}).get("telegram_message_id"):
             return {**_result("specialist_owner_decision_duplicate_withheld", True),
                     "decision_identity": valid["deterministic_identity"], "duplicate_cards_created": 0}
-        text, markup = render_beacon_card(binding)
+        renderer = render_beacon_card if valid["specialist_identity"] == "BEACON" else render_rootline_commissioning_card
+        text, markup = renderer(binding)
         item = {"decision_id": valid["decision_token"], "external_decision_identity": valid["deterministic_identity"],
                 "specialist_binding": valid, "card_digest": valid["binding_digest"],
                 "expires_at": valid["expires_at"], "choices": valid["allowed_owner_choices"]}
@@ -642,6 +644,25 @@ def _current_binding(binding, source):
 
 def _current_specialist_chronology(binding, source):
     valid = validate_specialist_binding(binding)
+    if valid["specialist_identity"] == "ROOTLINE" and valid["decision_type"] == "supervised_commissioning_decision":
+        database_url = str(source.get(DATABASE_URL_ENV) or "").strip()
+        if not database_url:
+            raise RuntimeError("ROOTLINE authoritative chronology database unavailable")
+        try:
+            import psycopg
+            with psycopg.connect(database_url, connect_timeout=5) as connection, connection.cursor() as cursor:
+                cursor.execute("""select count(*) from public.sam_live_stock_conversation_review_events
+                    where review_json->'owner_attention_receipt'->>'deterministic_identity'=%s
+                      and review_json->'specialist_outcome_callback'->>'outcome_code'=%s""",
+                    (valid["deterministic_identity"], "supervised_commissioning_authorized"))
+                authorization_count = int(cursor.fetchone()[0])
+        except Exception as exc:
+            raise RuntimeError("ROOTLINE authoritative chronology unavailable") from exc
+        return {
+            "decision_artifact_sha256": valid["chronology_binding"]["decision_artifact_sha256"],
+            "earlier_valve_proof_is_approval": False,
+            "commissioning_authorization_count": authorization_count,
+        }
     if valid["specialist_identity"] != "BEACON" or valid["decision_type"] != "organic_publication_decision":
         raise RuntimeError("unsupported specialist chronology")
     database_url = str(source.get(DATABASE_URL_ENV) or "").strip()
