@@ -142,6 +142,7 @@ def _validate_final(packet):
         generation=identity["generation"],
         revision=identity["execution_revision"],
         startup_nonce=identity["supervisor_nonce"],
+        allowed_descendant_tree=packet.get("process_tree_identity"),
     )
     runner = validate_live_bootstrap_tree(
         packet.get("process_tree_identity"),
