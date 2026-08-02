@@ -75,7 +75,7 @@ from modules.charlie.mission_governance import (
     update_acceptance_matrix,
 )
 from modules.charlie.block_recovery import classify_block, normalize_findings
-from modules.charlie.adaptive_orchestration import expand_orchestration
+from modules.charlie.adaptive_orchestration import expand_orchestration, validate_orchestration_binding
 from modules.charlie.evidence_reconciliation import (
     bind_artifact_to_candidate,
     build_candidate_manifest,
@@ -995,6 +995,8 @@ def run_agent_execution_bridge_v2(
             )
         if expansion.get("status") == "orchestration_generation_expanded":
             mission.setdefault("metadata", {})["orchestration"] = expansion["packet"]
+            mission["metadata"]["orchestration_binding"] = expansion["binding"]
+            mission["agent_workflow"] = expansion["agent_workflow"]
             for added_agent in expansion.get("added_roles", []):
                 if added_agent not in completed and added_agent not in agent_queue:
                     protected_consumer = next(
@@ -2960,15 +2962,49 @@ def _reconcile_adaptive_expansion(mission, producing_agent, artifact, *, databas
             "triggering_evidence": evidence,
             "added_roles": added_roles,
         })
+    current_workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    workflow_by_agent = {
+        str(item.get("agent") or ""): dict(item)
+        for item in current_workflow
+        if isinstance(item, dict) and item.get("agent")
+    }
+    expanded_workflow = []
+    for selected_agent in updated["selected_agents"]:
+        agent_name = str(selected_agent.get("agent") or "")
+        expanded_workflow.append(workflow_by_agent.get(agent_name) or {
+            "agent": agent_name,
+            "status": "pending",
+            "authority": selected_agent.get("authority", "read_only"),
+            "required_output": selected_agent.get("required_output", "charlie_handoff_v1"),
+            "selection_reason": selected_agent.get("selection_reason", "Adaptive evidence expansion."),
+        })
+    binding = validate_orchestration_binding(updated, expanded_workflow)
+    if not binding.get("valid"):
+        return {
+            "success": False,
+            "status": "orchestration_expansion_binding_invalid",
+            "reason": binding.get("reason", "orchestration_binding_invalid"),
+        }, 409
+    orchestration_binding = {
+        "version": "charlie_orchestration_binding_v1",
+        "identity": binding["identity"],
+        "generation_identity": updated["generation_identity"],
+        "validated": True,
+    }
     result, status = update_mission_vault(
         mission.get("mission_id", ""),
-        {"orchestration": updated},
+        {
+            "orchestration": updated,
+            "orchestration_binding": orchestration_binding,
+            "agent_workflow": expanded_workflow,
+        },
         database_url=database_url,
         connect_factory=connect_factory,
     )
     if status >= 400:
         return {"success": False, "status": "orchestration_expansion_persistence_failed", "store": result}, status
     return {"success": True, "status": "orchestration_generation_expanded", "packet": updated,
+            "binding": orchestration_binding, "agent_workflow": expanded_workflow,
             "added_roles": added_roles}, 200
 
 
