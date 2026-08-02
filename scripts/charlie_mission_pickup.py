@@ -1302,13 +1302,26 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
         }, update_status
     refresh = _refresh_core_plan_for_pickup(mission)
     if refresh.get("blocked"):
+        rollback, rollback_status = update_mission_status(
+            mission_id,
+            clean_status,
+            owner_decision="",
+            event_type="status_changed",
+            notes="CHARLIE returned the mission to its pre-claim state because adaptive orchestration refresh was blocked before execution.",
+            metadata={
+                "claim_rollback_reason": refresh.get("reason", "orchestration_binding_invalid"),
+                "claim_rollback_lease_id": execution_lease.get("lease_id", ""),
+            },
+            expected_status="in_progress",
+        )
         return {
             "success": False,
             "status": "adaptive_orchestration_refresh_blocked",
             "mission_id": mission_id,
             "reason": refresh.get("reason", "orchestration_binding_invalid"),
+            "claim_rollback": rollback,
             "codex_chat_written": False,
-        }, 409
+        }, 409 if rollback_status < 400 else rollback_status
     if refresh.get("refreshed"):
         refreshed, refreshed_status = get_mission(mission_id)
         if refreshed_status < 400 and refreshed.get("mission"):
@@ -1483,6 +1496,18 @@ def _refresh_core_plan_for_pickup(mission):
         for item in (plan.get("agent_workflow") if isinstance(plan.get("agent_workflow"), list) else [])
         if isinstance(item, dict) and str(item.get("agent") or "").strip()
     ]
+    intake = metadata.get("intake") if isinstance(metadata.get("intake"), dict) else {}
+    if (
+        intake.get("adaptive_orchestration_required")
+        and resume_stage
+        and resume_stage not in planned_agents
+        and str((plan.get("orchestration") or {}).get("tier") or "") == "T0"
+        and planned_agents == ["source_mapper"]
+    ):
+        # A previously failed finalization gate can leave a stale publisher
+        # recovery marker on a report-only T0 mission. T0 has no publisher or
+        # mutation authority; rerun its only authorized source-mapper stage.
+        resume_stage = "source_mapper"
     if resume_stage in AGENT_DEFINITIONS and resume_stage not in planned_agents:
         definition = AGENT_DEFINITIONS[resume_stage]
         inserted = {
@@ -1520,7 +1545,6 @@ def _refresh_core_plan_for_pickup(mission):
         },
         "charlie_core": plan,
     }
-    intake = metadata.get("intake") if isinstance(metadata.get("intake"), dict) else {}
     if intake.get("adaptive_orchestration_required"):
         payload["orchestration"] = plan.get("orchestration")
         binding = validate_orchestration_binding(
@@ -1537,6 +1561,13 @@ def _refresh_core_plan_for_pickup(mission):
             "identity": binding["identity"],
             "generation_identity": payload["orchestration"]["generation_identity"],
             "validated": True,
+        }
+    if resume_stage == "source_mapper" and review_packet:
+        payload["review_packet"] = {
+            **review_packet,
+            "return_to_stage": "source_mapper",
+            "blocked_agent": "source_mapper",
+            "recommended_next_action": "CORE will rerun the sole authorized T0 source-mapper stage.",
         }
     result, status_code = update_mission_vault(
         mission_id,
