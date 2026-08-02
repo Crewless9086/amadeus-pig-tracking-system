@@ -164,15 +164,16 @@ def test_pig_wording_resolves_numeric_tag_for_natural_owner_report():
     assert "able to stand, breathe normally and drink water" in result["owner_text"]
 
 
-def test_ordinary_found_dead_preview_keeps_death_date_unknown():
+def test_ordinary_found_dead_preview_proposes_deceased_date_and_unknown_time():
     animal = pig("Tag 22", "PIG-2026-0022", "22")
     result = prepare_health_loss_owner_preview(
         envelope("I found tag 22 dead this morning."), evidence(animal)
     )
     assert result["question_count"] == 1
-    assert "last seen alive" in result["owner_text"]
-    assert "leave death effective date unknown [Unknown / no change]" in result["owner_text"]
-    assert "found dead observation date: 2026-08-01" in result["owner_text"]
+    assert "removed from the pen" in result["owner_text"]
+    assert "record death [proposed]" in result["owner_text"]
+    assert "date: 2026-08-01" in result["owner_text"]
+    assert "time: Unknown" in result["owner_text"]
     assert "Agent inference: None" in result["owner_text"]
 
 

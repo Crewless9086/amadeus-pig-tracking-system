@@ -241,23 +241,26 @@ def test_authentication_and_provider_time_are_required():
         evaluate_health_loss_intake(report("Tag 51 is sick."), {**evidence(pig), "evidence_generation": ""})
 
 
-def test_found_dead_does_not_infer_death_effective_date():
+def test_found_dead_supports_deceased_date_but_not_exact_death_time():
     pig = animal("PIG-22", "22", "22")
     result = evaluate_health_loss_intake(report("I found tag 22 dead this morning."), evidence(pig))
     lifecycle = next(x for x in result["canonical_effects"] if x["area"] == "lifecycle")
-    assert lifecycle["supported"] is False
-    assert lifecycle["facts"]["found_dead_observation_date"] == "2026-08-01"
-    assert "last seen alive" in result["smallest_missing_follow_up_question"]
+    assert lifecycle["supported"] is True
+    assert lifecycle["action"] == "record_death"
+    assert lifecycle["facts"]["date"] == "2026-08-01"
+    assert lifecycle["facts"]["time"] == "Unknown"
+    assert result["smallest_missing_follow_up_question"].startswith("Has 22")
 
 
-def test_was_dead_discovery_language_does_not_infer_death_date():
+def test_was_dead_discovery_language_supports_date_not_time():
     pig = animal("PIG-22", "Maya", "Maya")
     result = evaluate_health_loss_intake(
         report("Maya was dead when I found her this morning."), evidence(pig)
     )
     lifecycle = next(x for x in result["canonical_effects"] if x["area"] == "lifecycle")
-    assert lifecycle["supported"] is False
-    assert "last seen alive" in result["smallest_missing_follow_up_question"]
+    assert lifecycle["supported"] is True
+    assert lifecycle["facts"]["date"] == "2026-08-01"
+    assert lifecycle["facts"]["time"] == "Unknown"
 
 
 def test_existing_terminal_lifecycle_and_duplicate_litter_fail_closed():

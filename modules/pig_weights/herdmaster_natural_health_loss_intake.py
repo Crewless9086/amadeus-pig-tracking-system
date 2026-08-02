@@ -381,16 +381,24 @@ def _parse_report(text, provider_time):
     last_seen_supplied = bool(last_seen)
     found_time_supplied = bool(found_time)
     removal_supplied = bool(re.search(r"\b(?:removed from (?:the )?pen|buried|disposed|cremated)\b", lower))
+    removal_outcome = (
+        "removed and buried" if re.search(r"\bremoved\b.{0,40}\bburied\b", lower)
+        else "buried" if re.search(r"\bburied\b", lower)
+        else "cremated" if re.search(r"\bcremated\b", lower)
+        else "disposed" if re.search(r"\bdisposed\b", lower)
+        else "removed from pen" if removal_supplied else ""
+    )
     if last_seen_supplied:
         observed.append({"fact": "last_seen_alive_context_reported",
                          "value": (last_seen.group("when") if last_seen and last_seen.group("when") else True)})
     if found_time_supplied:
         observed.append({"fact": "body_found_time_context_reported",
                          "value": (found_time.group("when") if found_time and found_time.group("when") else True)})
-    biosecurity_plan = re.search(r"\bgoing to\s+(spray\b[^.!?]*)", lower)
+    biosecurity_plan = re.search(r"\bgoing to\s+(spray\b[^.!?]*)", text, re.I)
     if biosecurity_plan:
         observed.append({"fact": "future_biosecurity_intention_reported",
-                         "value": biosecurity_plan.group(1).strip()})
+                         "value": biosecurity_plan.group(1).strip(),
+                         "classification": "unverified_owner_wording_not_canonical_effect"})
     if removal_supplied:
         observed.append({"fact": "removal_or_disposal_context_reported", "value": True})
     observed.append({"fact": "event_date", "value": event_date.isoformat()})
@@ -418,6 +426,7 @@ def _parse_report(text, provider_time):
         "last_seen_supplied": last_seen_supplied,
         "found_time_supplied": found_time_supplied,
         "removal_supplied": removal_supplied,
+        "removal_outcome": removal_outcome,
         "current_signs": sick or injured,
         "severe_signs": injured or severe_sick or complications,
     }
@@ -478,19 +487,25 @@ def _effects(animal, parsed, canonical, chronology):
         if confirmation and supported:
             confirmations.append(confirmation)
 
-    if parsed["reported_died"]:
-        add("lifecycle", "record_death", {"date": parsed["event_date"], "time": "Unknown"}, "confirm_lifecycle_death")
-    elif parsed["found_dead"]:
-        add("lifecycle", "leave_death_effective_date_unknown", {
-            "found_dead_observation_date": parsed["event_date"]
-        }, "", supported=False)
-        missing.append("death effective date evidence")
     if parsed["dead"]:
-        add("availability", "remove_from_current_active_sale_and_breeding_projections", {}, "confirm_availability_effect")
-        add("downstream_work", "close_or_replace_future_animal_tasks", {"preserve_mortality_follow_up": True}, "confirm_downstream_work_effect")
+        add("lifecycle", "record_death", {
+            "date": parsed["event_date"], "time": "Unknown",
+            "evidence_basis": "owner_reported_found_dead_or_died",
+            "discovery_context_is_not_exact_time_of_death": True,
+            "resulting_status": "Deceased", "resulting_on_farm": False,
+        }, "confirm_lifecycle_death")
+    if parsed["dead"]:
+        add("availability", "remove_from_current_active_sale_and_breeding_projections", {
+            "current_availability": False, "historical_sales_and_breeding_records_preserved": True,
+        }, "confirm_availability_effect")
+        add("downstream_work", "close_or_replace_future_animal_tasks", {
+            "preserve_mortality_follow_up": True, "reassess_herd_counts": True,
+        }, "confirm_downstream_work_effect")
         if parsed["removal_supplied"]:
             add("movement_pen", "record_reported_removal_or_disposal_context", {
-                "owner_reported_context": True,
+                "owner_reported_context": True, "current_pen_occupancy": "remove animal",
+                "historical_movements_preserved": True,
+                "owner_reported_outcome": parsed["removal_outcome"],
             }, "confirm_movement_pen_context")
         else:
             add("movement_pen", "leave_physical_removal_and_disposal_unknown", {}, "", supported=False)
@@ -528,9 +543,6 @@ def _effects(animal, parsed, canonical, chronology):
 def _smallest_question(parsed, missing, animal):
     if "piglet birth outcome counts" in missing:
         return "In total, how many were born alive, stillborn, mummified, or died after live birth?"
-    if ("death effective date evidence" in missing
-            and not (parsed["last_seen_supplied"] and parsed["found_time_supplied"])):
-        return f"When was {_display(animal)} last seen alive, and when was the body found?"
     if parsed["dead"] and "physical removal/disposal evidence" in missing:
         return f"Has {_display(animal)} been removed from the pen; if yes, when and what was the disposal/removal outcome?"
     if "exact current mating cycle" in missing:
