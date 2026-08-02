@@ -13,6 +13,7 @@ def task(pig_id, tag, group, *, priority=18, why="Evidence is unresolved."):
         "known_evidence": {
             "latest_weight_kg": 100, "latest_weight_date": "2026-07-20",
             "state": "Pregnancy evidence pending",
+            "current_mating_id": f"MAT-{pig_id}", "current_mating_date": "2026-05-02",
         },
         "required_checks": ["governed pregnancy check result"],
         "provisional_recommendation": "Pregnancy evidence pending",
@@ -55,6 +56,8 @@ def owner_observation(pig_id, result, days):
         "source_identity": f"OWNER-OBS-{pig_id}",
         "observed_at": "2026-08-01T06:09:01+00:00",
         "canonical_task_id": f"TASK-{pig_id}",
+        "mating_id": f"MAT-{pig_id}",
+        "mating_date": "2026-05-02",
     }
 
 
@@ -84,10 +87,82 @@ def test_ranks_active_welfare_then_near_term_assumed_pregnant_without_duplicate_
     for pregnancy in result["ranked_actions"][1:]:
         assert "Assumed Pregnant" in pregnancy["current_evidence"][-1]
         assert "not clinically confirmed" in pregnancy["current_evidence"][-1]
+        plan = pregnancy["pregnancy_planning"]
+        assert plan["operational_status"] == "Assumed Pregnant"
+        assert plan["clinical_confirmation"].startswith("Optional higher-confidence")
+        assert plan["projected_farrowing_range"] == {
+            "earliest": "2026-08-22", "nominal": "2026-08-24",
+            "latest": "2026-08-26",
+            "uncertainty": "114 days from mating, planning range +/- 2 days; not a recorded outcome",
+        }
+        assert plan["monitoring_phase"] == "assumed_pregnant_farrowing_preparation"
+        assert plan["farrowing_pen_preparation_window"]["start"] == "2026-08-08"
+        assert plan["farrowing_pen_preparation_window"]["complete_by"] == "2026-08-15"
+        assert "clinical" not in pregnancy["smallest_missing_physical_observation"].casefold()
+        assert "method" not in pregnancy["smallest_missing_physical_observation"].casefold()
     assert "Assumed Pregnant" in result["owner_text"]
     assert "not clinically confirmed" in result["owner_text"]
     assert "acting strangely" not in result["owner_text"]  # exact test fixture uses a shorter welfare fact
     assert "Owner reported lying down" in result["owner_text"]
+    assert "Projected farrowing: 2026-08-22 to 2026-08-26" in result["owner_text"]
+    assert "Farrowing-pen preparation: 2026-08-08 to 2026-08-15" in result["owner_text"]
+
+
+def test_baby_inconclusive_remains_unresolved_without_pregnancy_inference():
+    baby = owner_observation("PIG-2026-7DAA", "Inconclusive", 39)
+    result = build_management_round(
+        canonical([task("PIG-2026-7DAA", "Baby", "pregnancy check due")]),
+        attributable_owner_observations=[baby],
+    )
+    action = result["ranked_actions"][0]
+    assert action["pregnancy_planning"]["operational_status"] == "Inconclusive"
+    assert action["pregnancy_planning"]["monitoring_phase"] == "post_mating_monitoring_unresolved"
+    assert "treat as pregnant" in action["pregnancy_planning"]["prohibited_without_further_evidence"]
+    assert "Assumed Pregnant" not in result["owner_text"]
+
+
+def test_optional_clinical_confirmation_is_separate_and_absence_does_not_block_planning():
+    observation = owner_observation("PIG-1", "Assumed Pregnant", 22)
+    result = build_management_round(
+        canonical([task("PIG-1", "One", "pregnancy check due")]),
+        attributable_owner_observations=[observation],
+    )
+    plan = result["ranked_actions"][0]["pregnancy_planning"]
+    assert plan["clinical_confirmation"] == (
+        "Optional higher-confidence fact; not present and not required for proportional planning."
+    )
+    assert plan["farrowing_pen_preparation_window"]
+    assert "record clinically confirmed pregnancy" in plan["prohibited_without_further_evidence"]
+
+
+def test_assumed_pregnant_requires_visual_signs_bound_to_canonical_cycle():
+    packet = canonical([task("PIG-1", "One", "pregnancy check due")])
+    base = owner_observation("PIG-1", "Assumed Pregnant", 22)
+    for changed, reason in (
+        ({**base, "observed_signs": ""}, "observed_signs"),
+        ({**base, "mating_id": "MAT-OTHER"}, "canonical_mating_mismatch"),
+        ({**base, "mating_date": "2026-05-03"}, "canonical_mating_mismatch"),
+    ):
+        with pytest.raises(ValueError, match=reason):
+            build_management_round(packet, attributable_owner_observations=[changed])
+
+
+def test_future_mating_fails_closed_and_post_125_day_cycle_cannot_drive_preparation():
+    future_task = task("PIG-1", "One", "pregnancy check due")
+    future_task["known_evidence"].update(current_mating_id="MAT-FUTURE", current_mating_date="2026-09-01")
+    future_observation = {**owner_observation("PIG-1", "Assumed Pregnant", 22), "mating_id": "MAT-FUTURE", "mating_date": "2026-09-01"}
+    with pytest.raises(ValueError, match="future_mating_date"):
+        build_management_round(canonical([future_task]), attributable_owner_observations=[future_observation])
+
+    stale_task = task("PIG-2", "Two", "pregnancy check due")
+    stale_task["known_evidence"].update(current_mating_id="MAT-STALE", current_mating_date="2026-01-01")
+    stale_observation = {**owner_observation("PIG-2", "Assumed Pregnant", 22), "mating_id": "MAT-STALE", "mating_date": "2026-01-01"}
+    result = build_management_round(canonical([stale_task]), attributable_owner_observations=[stale_observation])
+    plan = result["ranked_actions"][0]["pregnancy_planning"]
+    assert plan["current_applicability"] is False
+    assert plan["operational_status"] == "Reproductive status unresolved"
+    assert "farrowing_pen_preparation_window" not in plan
+    assert "Whether farrowing occurred" in plan["smallest_next_visual_observation"]
 
 
 def test_contained_zigay_case_is_suppressed_not_rewritten():
