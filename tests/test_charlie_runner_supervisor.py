@@ -487,6 +487,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
             state_path = Path(tmp) / "supervisor.json"
             state_path.write_text(json.dumps({
                 "generation": "gen-1",
+                "child_pid": 321,
                 "controller_public_key": "public-key",
                 "intended_runtime_revision": "runtime-revision",
                 "intended_execution_revision": "execution-revision",
@@ -499,6 +500,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
             persisted = json.loads(state_path.read_text(encoding="utf-8"))
 
         self.assertEqual(persisted["controller_public_key"], "public-key")
+        self.assertEqual(persisted["child_pid"], 321)
         self.assertEqual(persisted["intended_runtime_revision"], "runtime-revision")
         self.assertEqual(persisted["intended_execution_revision"], "execution-revision")
 
