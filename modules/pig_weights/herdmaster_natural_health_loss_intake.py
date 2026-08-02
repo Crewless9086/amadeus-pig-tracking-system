@@ -551,7 +551,11 @@ def _before(animal, chronology):
 
 def _unchanged(effects):
     changed = {row["area"] for row in effects if row["supported"]}
-    areas = ["lifecycle", "mating", "litter", "medical_observation", "movement_pen", "availability", "downstream_work"]
+    areas = [
+        "lifecycle", "medication", "withdrawal", "feeding", "movement_pen",
+        "availability", "reservation", "sales", "mating", "litter",
+        "medical_observation", "downstream_work",
+    ]
     return [area for area in areas if area not in changed]
 
 

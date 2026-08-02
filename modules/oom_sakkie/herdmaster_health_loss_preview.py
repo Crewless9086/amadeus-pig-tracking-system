@@ -71,7 +71,7 @@ def prepare_health_loss_owner_preview(
             **ZERO_AUTHORITY,
         }
 
-    owner_text = _render_preview(evaluated)
+    owner_text = _render_preview(evaluated, report)
     binding = dict(evaluated["confirmation_binding"])
     binding.update({
         "contract_version": CONTRACT_VERSION,
@@ -95,20 +95,25 @@ def prepare_health_loss_owner_preview(
     }
 
 
-def _render_preview(value):
+def _render_preview(value, report):
     identity = value["identity"]
     lines = [
         "Oom Sakkie - HERDMASTER health/loss preview",
         "",
         f"Animal: {identity['name']} ({identity['pig_id']}; tag {identity['tag_number']})",
+        f"Provider message: {report['provider_message_id']}",
+        f"Observed at: {value['provider_report_time']}",
+        "Owner evidence: authenticated private owner binding",
         f"Event: {value['event_family'].replace('_', ' ')}",
         f"Welfare priority: {value['immediate_welfare_priority']['level'].replace('_', ' ')}",
         f"Welfare action: {value['immediate_welfare_priority']['action']}",
         "",
         "Observed facts:",
         *_facts(value["observed_facts"], "None"),
-        "Owner-suspected cause (not a diagnosis):",
+        "Diagnosis: Unknown",
+        "Suspected cause: Unknown" if not value["owner_suspected_cause"] else "Owner-suspected cause (not a diagnosis):",
         *_causes(value["owner_suspected_cause"], "None reported"),
+        "Treatment: none reported",
         "Veterinary evidence:",
         *_diagnoses(value["veterinary_evidence"], "None reported"),
         "Agent inference: None",
@@ -117,6 +122,8 @@ def _render_preview(value):
         *_mapping_lines(value["preview"]["before"]),
         "Proposed affected records (nothing written):",
         *_effect_lines(value["canonical_effects"]),
+        "Intentionally unchanged:",
+        "- " + ", ".join(value["preview"]["intentionally_unchanged"]),
     ]
     question = str(value.get("smallest_missing_follow_up_question") or "").strip()
     if question:

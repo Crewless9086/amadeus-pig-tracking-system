@@ -140,6 +140,15 @@ def test_enriched_sick_report_does_not_repeat_supplied_welfare_facts():
     assert "not eating: True" in result["owner_text"]
     assert "Agent inference: None" in result["owner_text"]
     assert "medical observation" in result["owner_text"]
+    assert "Provider message: telegram-update-700-message-9" in result["owner_text"]
+    assert "Observed at: 2026-08-01T08:30:00+02:00" in result["owner_text"]
+    assert "Diagnosis: Unknown" in result["owner_text"]
+    assert "Suspected cause: Unknown" in result["owner_text"]
+    assert "Treatment: none reported" in result["owner_text"]
+    assert (
+        "lifecycle, medication, withdrawal, feeding, movement_pen, availability, "
+        "reservation, sales, mating, litter, downstream_work"
+    ) in result["owner_text"]
 
 
 def test_pig_wording_resolves_numeric_tag_for_natural_owner_report():
