@@ -82,6 +82,21 @@ def test_follow_up_reuses_open_context_without_repeating_known_report(loader):
     assert "drinking water" in recorded[0]["combined_text"]
 
 
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.confirm_health_loss_preview")
+def test_exact_natural_confirmation_records_once_and_reuses_card(confirm):
+    confirm.return_value=({"success":True,"status":"health_loss_observation_recorded",
+                           "writes_farm_data":True,"rows_created":1},201)
+    active={"status":"preview_ready","operation_id":"HERD-1","mission_id":"MISSION-1",
+            "preview":{"confirmation_ready":True},"provider_timestamp":"2026-08-02T07:10:00+00:00"}
+    store,recorded=memory_store(active)
+    result,status=handle_authenticated_health_loss_message(
+        parsed("CONFIRM HERD-1","3173"),issue_gateway_owner_authority("42","42"),context_store=store)
+    assert status==201 and result["status"]=="completed"
+    assert result["card_mission_id"]=="MISSION-1" and result["rows_created"]==1
+    assert "No diagnosis or treatment" in result["answer"]
+    assert recorded[0]["status"]=="completed"
+
+
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
 def test_unrelated_owner_message_is_not_claimed(loader):
     store, _recorded = memory_store()
@@ -97,7 +112,11 @@ def test_unrelated_owner_message_is_not_claimed(loader):
 
 @patch("modules.oom_sakkie.telegram_gateway.handle_authenticated_health_loss_message")
 @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
-def test_existing_gateway_returns_health_reply_through_caller_transport(owner_task, health):
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+def test_existing_gateway_delivers_health_reply_through_backend_once(deliver, owner_task, health):
+    deliver.return_value = {"success": True, "status": "family_message_delivered",
+                            "telegram_sends": 1, "telegram_edits": 0,
+                            "telegram_message_id": "4001"}
     owner_task.return_value = ({"handled": False}, 200)
     health.return_value = ({
         "handled": True, "success": True, "status": "waiting_for_input",
@@ -121,4 +140,26 @@ def test_existing_gateway_returns_health_reply_through_caller_transport(owner_ta
     assert result["answer"].startswith("🚨")
     assert result["reply"]["text"] == result["answer"]
     assert result["reply"]["parse_mode"] == "HTML"
-    assert result["reply_transport"] == "caller_handles_telegram_send"
+    assert result["reply_transport"] == "backend_handles_owner_task_delivery"
+    assert result["sends_telegram"] is True
+    deliver.assert_called_once()
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.confirm_health_loss_preview")
+def test_completed_context_accepts_only_exact_confirmation_replay(confirm):
+    confirm.return_value=({"success":True,"status":"health_loss_replayed_withheld",
+                           "writes_farm_data":False,"rows_created":0},200)
+    active={"status":"completed","operation_id":"HERD-1","mission_id":"MISSION-1",
+            "owner_user_id":"42","preview":{"confirmation_ready":True},
+            "provider_timestamp":"2026-08-02T07:10:00+00:00"}
+    store,recorded=memory_store(active)
+    result,status=handle_authenticated_health_loss_message(
+        parsed("CONFIRM HERD-1","3174"),issue_gateway_owner_authority("42","42"),context_store=store)
+    assert status==200 and result["status"]=="completed" and result["rows_created"]==0
+    assert result["mission_id"]=="MISSION-1" and result["card_mission_id"]=="MISSION-1"
+    assert len(recorded)==1
+    confirm.assert_called_once()
+
+    unrelated,status=handle_authenticated_health_loss_message(
+        parsed("yes she can stand","3175"),issue_gateway_owner_authority("42","42"),context_store=store)
+    assert status==200 and unrelated["handled"] is False

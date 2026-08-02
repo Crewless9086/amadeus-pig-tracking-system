@@ -4,16 +4,17 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## OOM-SAKKIE-OWNER-REQUEST-LIFECYCLE-1
 
-Integrate and prove the existing-rail owner-request lifecycle. The deployed Oom
-Sakkie agent must bind owner text/photo/video/album evidence to its exact active
-request, acknowledge once, persist task state, and either obtain a deployed
-specialist agent's task-specific acknowledgement/activity or expose one
-deduplicated exception that development-terminal work is required. Completion
-requires an outcome artifact and a Telegram provider message identity. First
-recovery is request 3156 and its exact six-photo album; no further screenshot,
-hardware action, or specialist-terminal operation is required. A PR, release
-row, general health check, or source artifact alone does not complete this
-mission.
+Complete the generic authenticated family-message lifecycle. The deployed Oom
+Sakkie agent must bind text/photo/video/album evidence to a deterministic
+mission, deliver or edit one visible Telegram card exactly once, preserve
+natural follow-up context, and either run an available deployed specialist
+adapter or expose one truthful deduplicated exception. HERDMASTER health/welfare
+is the first adapter: one consolidated preview precedes any exact confirmation,
+and only supported factual observation effects may use the append-only governed
+writer. Pig 11 messages 3169/3171 are immutable recovery evidence. Completion
+requires one later natural reply to edit card 3171, and—only after exact preview
+confirmation—one transactional fact plus zero-row replay proof. Missing
+compound-effect coordinators block only those effects.
 ## OOM-SAKKIE-OWNER-ATTENTION-QUEUE-1
 
 Integrate and prove the consolidated Owner Attention Queue. Its pure kernel

@@ -6,6 +6,11 @@
   `modules/oom_sakkie/telegram_direct.py`.
 - Durable owner-task lifecycle adapter:
   `modules/oom_sakkie/owner_task_lifecycle.py`.
+- Generic authenticated family-message delivery/card lifecycle:
+  `modules/oom_sakkie/family_message_lifecycle.py`.
+- First natural specialist adapter and exact-preview factual writer:
+  `modules/oom_sakkie/herdmaster_health_loss_runtime.py` and
+  `modules/pig_weights/herdmaster_health_loss_recording.py`.
 - Dispatch truth reducer:
   `modules/oom_sakkie/specialist_dispatch_ack.py`.
 - Existing durable evidence rail:
@@ -13,7 +18,9 @@
   task events and is not a second queue or decision ledger.
 - Focused acceptance:
   `tests/test_oom_sakkie_owner_task_lifecycle.py` and
-  `tests/test_oom_sakkie_specialist_dispatch_ack.py`.
+  `tests/test_oom_sakkie_specialist_dispatch_ack.py`, plus
+  `tests/test_oom_sakkie_family_message_lifecycle.py` and
+  `tests/test_herdmaster_health_loss_recording.py`.
 - Production/recovery contract:
   `docs/06-operations/OOM_SAKKIE_OWNER_REQUEST_AGENT_LIFECYCLE_HANDOVER.md`.
 - Rule: a deployed agent needs target-specific acknowledgement and fresh
