@@ -3625,6 +3625,24 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(evidence["reason"], "t0_source_report_passing")
         self.assertFalse(evidence["release_candidate_required"])
 
+    @patch("modules.charlie.execution_bridge._git_head_revision", return_value="c" * 40)
+    @patch("modules.charlie.execution_bridge._release_candidate_revision_sha", return_value="")
+    def test_t0_report_finalization_binds_inspected_checkout_revision(self, _release, _head):
+        mission = {
+            "metadata": {"orchestration": {
+                "version": "charlie_adaptive_orchestration_v1",
+                "tier": "T0",
+                "selected_agents": [{"agent": "source_mapper"}],
+            }},
+            "agent_workflow": [{"agent": "source_mapper", "status": "complete"}],
+        }
+
+        revision = execution_bridge._finalization_candidate_revision(
+            mission, {"source_mapper": _successful_stage_payload("source_mapper")}
+        )
+
+        self.assertEqual(revision, "c" * 40)
+
     def test_brain_guard_blocks_owner_review_without_vault_citations(self):
         artifacts = {
             "planner": {
