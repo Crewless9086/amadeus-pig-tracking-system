@@ -450,6 +450,10 @@ def _validate_final_packet_live(packet):
         generation=generation,
         revision=revision,
         startup_nonce=supervisor_nonce,
+        # The runner is necessarily a live descendant of the supervisor.
+        # Its independently signed tree is validated below, so exclude that
+        # exact bounded subtree when revalidating the supervisor identity.
+        allowed_descendant_tree=packet.get("process_tree_identity"),
     )
     runner = validate_live_bootstrap_tree(
         packet.get("process_tree_identity"),
