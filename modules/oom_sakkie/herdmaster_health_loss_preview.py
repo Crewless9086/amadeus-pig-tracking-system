@@ -142,7 +142,8 @@ def _render_preview(value, report):
 def _treatment_line(owner_report_text):
     text = str(owner_report_text or "").casefold()
     absence_pattern = (
-        r"\b(?:no|without)\s+(?:treatment|medication|medicine|antibiotic\w*)\b|"
+        r"\b(?:no|without)\s+(?:treatment|medication|medicine|antibiotic\w*)\b(?:\s+(?:initially|earlier|yesterday|today))?(?=\s*(?:[.!?;,]|except\b|$))|"
+        r"\bno\s+(?:treatment|medication|medicine|antibiotic\w*)\s+(?:was\s+)?(?:given|administered|provided)\b|"
         r"\bnot\s+treat(?:ed|ing)\b|"
         r"\b(?:treatment|medication|medicine|antibiotic\w*)\s+(?:was\s+)?not\s+(?:given|administered)\b|"
         r"\bgave\s+no\s+(?:treatment|medication|medicine|antibiotic\w*)\b"

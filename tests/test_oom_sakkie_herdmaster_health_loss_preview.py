@@ -260,3 +260,15 @@ def test_mixed_treatment_chronology_fails_closed_without_claiming_absence(mixed)
         in result["owner_text"]
     )
     assert "owner explicitly reported none" not in result["owner_text"]
+
+@pytest.mark.parametrize("modifier_phrase", [
+    "No treatment changes were made; continue the current medicine.",
+    "She recovered without medication changes.",
+    "There were no medication errors.",
+])
+def test_treatment_modifier_phrases_do_not_assert_absence(modifier_phrase):
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        f"Tag 51 is sick. {modifier_phrase} She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert "owner explicitly reported none" not in result["owner_text"]
