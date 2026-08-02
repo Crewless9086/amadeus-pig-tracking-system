@@ -326,6 +326,19 @@ def test_natural_reassuring_welfare_reply_is_retained_without_repeated_question(
 ])
 def test_negative_welfare_phrasing_is_never_converted_to_reassuring_positive(phrase, fact):
     pig = animal("PIG-2026-E88A", "", "11")
-    result = evaluate_health_loss_intake(report(phrase), evidence(pig))
+    result = evaluate_health_loss_intake(report("Pig 11 is not eating. Follow-up: " + phrase), evidence(pig))
     assert fact not in {row["fact"] for row in result["observed_facts"]}
     assert result["immediate_welfare_priority"]["level"] != "monitor_closely"
+
+@pytest.mark.parametrize("severe", [
+    "injured and bleeding",
+    "vomiting",
+    "has diarrhea",
+    "has a fever",
+])
+def test_positive_core_checks_never_downgrade_serious_welfare_signs(severe):
+    pig = animal("PIG-2026-E88A", "", "11")
+    result = evaluate_health_loss_intake(report(
+        f"Pig 11 is {severe}, but is standing, moving around, drinking water and breathing normal."
+    ), evidence(pig))
+    assert result["immediate_welfare_priority"]["level"] == "urgent_assessment"

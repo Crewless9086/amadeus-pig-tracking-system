@@ -245,6 +245,7 @@ def _parse_report(text, provider_time):
     total_match = re.search(r"(?:total(?: born)?|in total)\s*(?:was|were|of|:)?\s*(\d+)", lower)
     injured = bool(re.search(r"\b(injur|limp|wound|bleed|broken|swollen)\w*\b", lower))
     sick = bool(re.search(r"\b(sick|ill|not eating|not drinking|vomit|diarrh|cough|fever)\w*\b", lower))
+    severe_sick = bool(re.search(r"\b(?:sick|ill|not drinking|vomit|diarrh|cough|fever)\w*\b", lower))
     complications = bool(re.search(r"\bcomplication\w*\b", lower))
     families = []
     if dead:
@@ -300,7 +301,7 @@ def _parse_report(text, provider_time):
         if not match:
             return False
         prefix = subject[max(0, match.start() - 24):match.start()]
-        return not re.search(r"\b(?:not|cannot|can't|isn't|wasn't)\b[^.!?]{0,18}$", prefix)
+        return not re.search(r"\b(?:not|cannot|can't|isn't|wasn't|unable|stopped|without)\b[^.!?]{0,18}$", prefix)
 
     welfare_checks = {
         "standing": positive_check(r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b", lower),
@@ -346,6 +347,7 @@ def _parse_report(text, provider_time):
         "found_time_supplied": found_time_supplied,
         "removal_supplied": removal_supplied,
         "current_signs": sick or injured,
+        "severe_signs": injured or severe_sick or complications,
     }
 
 
@@ -473,7 +475,8 @@ def _welfare(parsed):
         return {"level": "urgent_follow_up", "action": "Check the pen, any surviving animals and biosecurity needs now; veterinary/mortality review may be required."}
     if parsed["farrowing"]:
         return {"level": "emergency", "action": "If the sow or any piglet is alive or farrowing is continuing, obtain immediate experienced or veterinary assistance before record work."}
-    if parsed["current_signs"] and all(parsed["welfare_checks"].get(key) for key in ("standing", "breathing", "drinking")):
+    if (parsed["current_signs"] and not parsed.get("severe_signs")
+            and all(parsed["welfare_checks"].get(key) for key in ("standing", "breathing", "drinking"))):
         return {"level": "monitor_closely", "action": "The immediate standing, breathing and drinking checks are reassuring; keep monitoring appetite and seek experienced or veterinary help if signs worsen or eating does not resume."}
     if parsed["current_signs"]:
         return {"level": "urgent_assessment", "action": "Physically assess breathing, standing, water intake, bleeding and distress now; seek veterinary help for serious signs."}
