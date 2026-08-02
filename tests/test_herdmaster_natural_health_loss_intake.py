@@ -358,3 +358,40 @@ def test_latest_explicit_welfare_state_wins_over_earlier_clause(history, fact, e
     assert (fact in observed) is expected
     if not expected:
         assert result["immediate_welfare_priority"]["level"] != "monitor_closely"
+@pytest.mark.parametrize("negative", [
+    "stopped breathing normally",
+    "no longer breathing normally",
+    "no longer drinking",
+    "cannot move",
+])
+def test_current_negative_core_phrasing_never_becomes_reassuring(negative):
+    pig = animal("PIG-2026-E88A", "", "11")
+    result = evaluate_health_loss_intake(report(
+        f"Pig 11 is not eating. It is standing and drinking water but {negative}."
+    ), evidence(pig))
+    assert result["immediate_welfare_priority"]["level"] != "monitor_closely"
+
+
+@pytest.mark.parametrize("reassuring_negative", [
+    "not vomiting",
+    "no fever",
+    "not bleeding",
+    "no diarrhea",
+    "not coughing",
+])
+def test_negated_serious_signs_do_not_force_urgent_assessment(reassuring_negative):
+    pig = animal("PIG-2026-OTHER", "", "12")
+    result = evaluate_health_loss_intake(report(
+        "Pig 12 is not eating. She is standing, moving around, drinking water "
+        f"and breathing normal. She is {reassuring_negative}."
+    ), evidence(pig))
+    assert result["immediate_welfare_priority"]["level"] == "monitor_closely"
+
+
+def test_latest_positive_serious_sign_after_negation_remains_urgent():
+    pig = animal("PIG-2026-OTHER", "", "12")
+    result = evaluate_health_loss_intake(report(
+        "Pig 12 had no fever earlier but has fever now. She is standing, "
+        "moving around, drinking water and breathing normal."
+    ), evidence(pig))
+    assert result["immediate_welfare_priority"]["level"] == "urgent_assessment"

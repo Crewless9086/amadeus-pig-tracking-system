@@ -215,7 +215,7 @@ def _identity_result(matches):
     if not matches:
         return {
             "resolved": False, "pig_id": "", "tag_number": "",
-            "question": "Which exact pig is this—please give its Pig ID or tag?",
+            "question": "Which exact pig is thisâ€”please give its Pig ID or tag?",
             "candidate_pig_ids": [],
         }
     candidates = [_animal_identity(row) for row in matches]
@@ -243,9 +243,34 @@ def _parse_report(text, provider_time):
         r"(\d+)\s+piglets?\s+(?:were\s+)?born alive(?:\s+but)?\s+(?:then\s+)?died", lower
     )
     total_match = re.search(r"(?:total(?: born)?|in total)\s*(?:was|were|of|:)?\s*(\d+)", lower)
-    injured = bool(re.search(r"\b(injur|limp|wound|bleed|broken|swollen)\w*\b", lower))
-    sick = bool(re.search(r"\b(sick|ill|not eating|not drinking|vomit|diarrh|cough|fever)\w*\b", lower))
-    severe_sick = bool(re.search(r"\b(?:sick|ill|not drinking|vomit|diarrh|cough|fever)\w*\b", lower))
+    def latest_positive(positive_pattern, negative_pattern, subject):
+        negative_matches = list(re.finditer(negative_pattern, subject))
+        positive = [
+            match.end()
+            for match in re.finditer(positive_pattern, subject)
+            if not any(
+                match.start() < negative.end() and negative.start() < match.end()
+                for negative in negative_matches
+            )
+        ]
+        negative = [match.end() for match in negative_matches]
+        if not positive:
+            return False
+        return not negative or max(positive) > max(negative)
+
+    def current_sign(pattern):
+        return latest_positive(
+            rf"\b(?:{pattern})\w*\b",
+            rf"\b(?:no|not|without)\s+(?:any\s+)?(?:{pattern})\w*\b",
+            lower,
+        )
+
+    injured = current_sign(r"injur|limp|wound|bleed|broken|swollen")
+    not_eating = "not eating" in lower
+    not_drinking = "not drinking" in lower
+    other_sick = current_sign(r"sick|ill|vomit|diarrh|cough|fever")
+    sick = not_eating or not_drinking or other_sick
+    severe_sick = not_drinking or other_sick
     complications = bool(re.search(r"\bcomplication\w*\b", lower))
     families = []
     if dead:
@@ -290,46 +315,33 @@ def _parse_report(text, provider_time):
                     {"fact": "reported_born_alive_count", "value": later_death_count},
                     {"fact": "reported_later_deaths", "value": later_death_count},
                 ])
-    for marker, fact in (
-        ("not eating", "not_eating"), ("not drinking", "not_drinking"),
-        ("limp", "limping"), ("bleed", "bleeding"),
-    ):
-        if marker in lower:
-            observed.append({"fact": fact, "value": True})
-    def latest_positive(positive_pattern, negative_pattern, subject):
-        negative_matches = list(re.finditer(negative_pattern, subject))
-        positive = [
-            match.end()
-            for match in re.finditer(positive_pattern, subject)
-            if not any(
-                match.start() < negative.end() and negative.start() < match.end()
-                for negative in negative_matches
-            )
-        ]
-        negative = [match.end() for match in negative_matches]
-        if not positive:
-            return False
-        return not negative or max(positive) > max(negative)
-
+    if not_eating:
+        observed.append({"fact": "not_eating", "value": True})
+    if not_drinking:
+        observed.append({"fact": "not_drinking", "value": True})
+    if current_sign(r"limp"):
+        observed.append({"fact": "limping", "value": True})
+    if current_sign(r"bleed"):
+        observed.append({"fact": "bleeding", "value": True})
     welfare_checks = {
         "standing": latest_positive(
             r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b",
-            r"\b(?:not|cannot|can't|isn't|wasn't)\s+(?:able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped) stand(?:ing)?\b",
+            r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped) stand(?:ing)?\b",
             lower,
         ),
         "moving": latest_positive(
             r"\bmoving(?: around)?\b",
-            r"\b(?:not|isn't|wasn't) moving\b|\b(?:unable to|stopped) mov(?:e|ing)\b",
+            r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped) mov(?:e|ing)\b",
             lower,
         ),
         "breathing": latest_positive(
             r"\bbreath(?:ing|es) normal(?:ly)?\b",
-            r"\b(?:not|isn't|wasn't) breathing normal(?:ly)?\b|\b(?:breathing abnormally|struggling to breathe)\b",
+            r"\b(?:not|no longer|isn't|wasn't|without) breathing normal(?:ly)?\b|\b(?:cannot|can't|unable to|stopped) breath(?:e|ing)(?: normal(?:ly)?)?\b|\b(?:breathing abnormally|struggling to breathe)\b",
             lower,
         ),
         "drinking": latest_positive(
             r"\bdrinking(?: water)?\b",
-            r"\b(?:not|isn't|wasn't) drinking\b|\b(?:unable to|stopped) drink(?:ing)?\b",
+            r"\b(?:not|no longer|isn't|wasn't|without) drinking\b|\b(?:cannot|can't|unable to|stopped) drink(?:ing)?\b",
             lower,
         ),
     }
