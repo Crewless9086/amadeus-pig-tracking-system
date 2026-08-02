@@ -7915,6 +7915,10 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
     mission_id = mission.get("mission_id", "")
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     project_truth = vault.get("project_truth") if isinstance(vault.get("project_truth"), dict) else {}
+    # Project identity is stable across missions. Mission type describes the
+    # workflow, not a new Vault project row; using it as project_id while
+    # defaulting project_key to charlie_core violates the unique key on replay.
+    project_id = project_truth.get("project_key") or "charlie_core"
     writes = []
     vault_write_unavailable = False
 
@@ -7942,8 +7946,8 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
             vault_write_unavailable = True
 
     record("project", lambda: vault_store.write_project({
-        "project_id": project_truth.get("project_key") or mission.get("mission_type") or "charlie_core",
-        "project_key": project_truth.get("project_key") or "charlie_core",
+        "project_id": project_id,
+        "project_key": project_id,
         "name": project_truth.get("workflow_label") or mission.get("title") or "CHARLIE mission",
         "purpose": vault.get("desired_outcome") or vault.get("problem_statement") or mission.get("raw_text", ""),
         "workflow_template": project_truth.get("workflow_template") or mission.get("mission_type") or "software_build",
@@ -7959,7 +7963,7 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
             artifact,
             title=f"{agent} artifact",
             summary=artifact.get("summary", ""),
-            project_id=project_truth.get("project_key") or "",
+            project_id=project_id,
             agent=agent,
             database_url=database_url,
             connect_factory=connect_factory,
