@@ -69,7 +69,7 @@ Expected from `2 - The GateKeeper`:
 }
 ```
 
-The workflow also accepts `text`, `telegram_user_id`, and `telegram_chat_id` as fallback field names for smoke tests. Provider message identity and provider time are mandatory. The authenticated GateKeeper `raw_update.message.message_id` and `.date` take precedence and are forwarded in the backend's native Telegram envelope; missing chronology fails closed before HTTP.
+The live contract requires authenticated `raw_update.message`. Text/caption, sender, chat, private-chat type, message identity and provider date all come from that raw Telegram message. Flat GateKeeper fields are cross-checks only; any mismatch fails closed. Flat-only chronology is never accepted.
 
 ## Output Contract
 

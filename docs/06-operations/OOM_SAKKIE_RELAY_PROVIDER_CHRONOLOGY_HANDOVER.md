@@ -1,4 +1,4 @@
-﻿# Oom Sakkie generic relay provider chronology correction
+# Oom Sakkie generic relay provider chronology correction
 
 ## Incident
 
@@ -6,7 +6,7 @@ Authenticated Telegram 3174 reached GateKeeper execution 61883 and relay 61884. 
 
 ## Source correction
 
-The existing `2.0B - Oom Sakkie Backend Read-Only Relay` now forwards the authenticated GateKeeper message as the backend's native Telegram envelope: exact message ID, provider epoch, text, owner, private chat. `raw_update.message` wins over flat fallback values. Missing identity/time fails closed before HTTP with zero send/write authority. No bot, trigger, router, workflow family, specialist route or send path is added.
+The existing `2.0B - Oom Sakkie Backend Read-Only Relay` now forwards the authenticated GateKeeper message as the backend's native Telegram envelope: exact message ID, provider epoch, text, owner, private chat. All authority-bearing fields come from `raw_update.message`: text/caption, sender, chat, private-chat type, message ID and provider date. Flat fields are equality cross-checks only; raw absence, malformed evidence or any substitution fails closed before HTTP with zero send/write authority. No bot, trigger, router, workflow family, specialist route or send path is added.
 
 ## Recovery boundary
 
