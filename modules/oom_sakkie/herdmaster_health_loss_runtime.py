@@ -51,8 +51,10 @@ def handle_authenticated_health_loss_message(
         str(parsed.get("telegram_chat_id") or ""), context_store=context_store
     )
     explicit_health = bool(HEALTH_PATTERN.search(text))
-    follow_up = bool(active and FOLLOW_UP_PATTERN.search(text))
-    confirmation = bool(active and str(active.get("status") or "") == "preview_ready"
+    active_status = str((active or {}).get("status") or "")
+    follow_up = bool(active and active_status in {"waiting_for_input", "preview_ready"}
+                     and FOLLOW_UP_PATTERN.search(text))
+    confirmation = bool(active and active_status in {"preview_ready", "completed"}
                         and text == "CONFIRM " + str(active.get("operation_id") or ""))
     if not explicit_health and not follow_up and not confirmation:
         return {"handled": False, "status": "health_loss_intake_not_applicable"}, 200
@@ -238,7 +240,7 @@ def _load_active_context(chat_id: str, *, context_store=None):
         created_at = row[1]
         if created_at and datetime.now(timezone.utc) - created_at.astimezone(timezone.utc) > CONTEXT_WINDOW:
             return None
-        if str(row[0].get("status") or "") not in {"waiting_for_input", "preview_ready"}:
+        if str(row[0].get("status") or "") not in {"waiting_for_input", "preview_ready", "completed"}:
             return None
         return row[0]
     except Exception:

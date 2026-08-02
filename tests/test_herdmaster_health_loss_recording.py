@@ -29,10 +29,11 @@ class Connection:
 
 def lifecycle():
     operation="HERD-HEALTH-LOSS-ABC"
-    return {"provider_timestamp":"2026-08-02T07:10:00+00:00","preview":{
+    return {"provider_timestamp":"2026-08-02T07:10:00+00:00","owner_user_id":"42","preview":{
         "confirmation_ready":True,
         "confirmation_binding":{"operation_id":operation,"confirmation_ready":True,
-            "evidence_generation":"GEN-11","provider_message_id":"3172","preview_sha256":"p"*64},
+            "evidence_generation":"GEN-11","provider_message_id":"3172","preview_sha256":"p"*64,
+            "authenticated_principal_id":"42"},
         "evaluator":{"identity":{"pig_id":"PIG-11"},
             "immediate_welfare_priority":{"level":"urgent_follow_up"},
             "canonical_effects":[{"area":"medical_observation","supported":True,
@@ -66,3 +67,20 @@ def test_confirmation_must_match_exact_operation():
     result,status=confirm_health_loss_preview(lifecycle(),"CONFIRM SOMETHING-ELSE",actor_id="42",
         evidence_loader=lambda:{"evidence_generation":"GEN-11"},connect_factory=lambda:Connection({}))
     assert status==409 and result["writes_farm_data"] is False
+
+
+def test_confirmation_rejects_empty_or_different_authenticated_actor():
+    for actor in ("", "99"):
+        result,status=confirm_health_loss_preview(lifecycle(),"CONFIRM HERD-HEALTH-LOSS-ABC",actor_id=actor,
+            evidence_loader=lambda:{"evidence_generation":"GEN-11"},connect_factory=lambda:Connection({}))
+        assert status==403 and result["status"]=="authenticated_owner_confirmation_required"
+
+
+def test_multiple_medical_effects_fail_closed_without_partial_write():
+    packet=lifecycle()
+    packet["preview"]["evaluator"]["canonical_effects"].append(
+        {"area":"medical_observation","supported":True,"facts":{"observed":[]}})
+    result,status=confirm_health_loss_preview(packet,"CONFIRM HERD-HEALTH-LOSS-ABC",actor_id="42",
+        evidence_loader=lambda:{"evidence_generation":"GEN-11"},connect_factory=lambda:Connection({}))
+    assert status==409 and result["status"]=="canonical_effect_coordinator_unavailable"
+    assert result["writes_farm_data"] is False

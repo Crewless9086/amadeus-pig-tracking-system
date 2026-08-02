@@ -143,3 +143,23 @@ def test_existing_gateway_delivers_health_reply_through_backend_once(deliver, ow
     assert result["reply_transport"] == "backend_handles_owner_task_delivery"
     assert result["sends_telegram"] is True
     deliver.assert_called_once()
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.confirm_health_loss_preview")
+def test_completed_context_accepts_only_exact_confirmation_replay(confirm):
+    confirm.return_value=({"success":True,"status":"health_loss_replayed_withheld",
+                           "writes_farm_data":False,"rows_created":0},200)
+    active={"status":"completed","operation_id":"HERD-1","mission_id":"MISSION-1",
+            "owner_user_id":"42","preview":{"confirmation_ready":True},
+            "provider_timestamp":"2026-08-02T07:10:00+00:00"}
+    store,recorded=memory_store(active)
+    result,status=handle_authenticated_health_loss_message(
+        parsed("CONFIRM HERD-1","3174"),issue_gateway_owner_authority("42","42"),context_store=store)
+    assert status==200 and result["status"]=="completed" and result["rows_created"]==0
+    assert result["mission_id"]=="MISSION-1" and result["card_mission_id"]=="MISSION-1"
+    assert len(recorded)==1
+    confirm.assert_called_once()
+
+    unrelated,status=handle_authenticated_health_loss_message(
+        parsed("yes she can stand","3175"),issue_gateway_owner_authority("42","42"),context_store=store)
+    assert status==200 and unrelated["handled"] is False

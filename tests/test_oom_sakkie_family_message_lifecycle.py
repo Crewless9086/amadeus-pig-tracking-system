@@ -57,10 +57,24 @@ def test_missing_specialist_adapter_is_truthful_visible_result():
 def test_existing_provider_card_can_be_bound_without_send_then_edited():
     memory=Memory();mission="OOM-HERD-RECOVERED"
     bound=bind_existing_card(PARSED,specialist="HERDMASTER",mission_id=mission,
-        telegram_message_id="3171",text_sha256="a"*64,event_store=memory.store)
+        telegram_message_id="3171",text_sha256="a"*64,expected_bot_identity="bot-1",
+        provider_evidence_loader=lambda chat,message:{"delivered":True,"bot_identity":"bot-1",
+            "chat_id":chat,"telegram_message_id":message,"text_sha256":"a"*64},event_store=memory.store)
     changed=deliver_family_result({**PARSED,"provider_message_id":"501"},
         {**RESULT,"answer":"Consolidated preview"},specialist="HERDMASTER",
         mission_id=mission,card_mission_id=mission,event_store=memory.store,
         sender=memory.send,editor=memory.edit)
     assert bound["telegram_sends"]==0 and memory.sent==[]
     assert changed["telegram_message_id"]=="3171" and changed["telegram_edits"]==1
+
+
+def test_existing_card_binding_rejects_provider_identity_substitution():
+    for changed in ("bot_identity", "chat_id", "telegram_message_id", "text_sha256"):
+        memory=Memory(); evidence={"delivered":True,"bot_identity":"bot-1","chat_id":"42",
+            "telegram_message_id":"3171","text_sha256":"a"*64}
+        evidence[changed]="substituted"
+        bound=bind_existing_card(PARSED,specialist="HERDMASTER",mission_id="OOM-HERD-RECOVERED",
+            telegram_message_id="3171",text_sha256="a"*64,expected_bot_identity="bot-1",
+            provider_evidence_loader=lambda _chat,_message,e=evidence:e,event_store=memory.store)
+        assert bound["status"]=="existing_card_provider_evidence_mismatch"
+        assert memory.rows=={}

@@ -85,11 +85,28 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
 
 
 def bind_existing_card(parsed: Mapping[str, Any], *, specialist: str, mission_id: str,
-                       telegram_message_id: str, text_sha256: str, event_store=None):
+                       telegram_message_id: str, text_sha256: str,
+                       expected_bot_identity: str, provider_evidence_loader,
+                       event_store=None):
     """Bind provider-proven legacy delivery without sending or editing it."""
     if not all(str(value or "").strip() for value in
-               (mission_id, telegram_message_id, text_sha256)):
+               (mission_id, telegram_message_id, text_sha256, expected_bot_identity)):
         return {"success": False, "status": "existing_card_binding_incomplete"}
+    evidence = provider_evidence_loader(str(parsed.get("telegram_chat_id") or ""),
+                                        str(telegram_message_id))
+    evidence = evidence if isinstance(evidence, Mapping) else {}
+    expected = {"delivered": True, "bot_identity": str(expected_bot_identity),
+        "chat_id": str(parsed.get("telegram_chat_id") or ""),
+        "telegram_message_id": str(telegram_message_id),
+        "text_sha256": str(text_sha256).lower()}
+    actual = {"delivered": evidence.get("delivered"),
+        "bot_identity": str(evidence.get("bot_identity") or ""),
+        "chat_id": str(evidence.get("chat_id") or ""),
+        "telegram_message_id": str(evidence.get("telegram_message_id") or ""),
+        "text_sha256": str(evidence.get("text_sha256") or "").lower()}
+    if actual != expected:
+        return {"success": False, "status": "existing_card_provider_evidence_mismatch",
+                "telegram_sends": 0, "telegram_edits": 0}
     store = event_store or _event_store
     if list(store("load", mission_id, None) or []):
         return {"success": False, "status": "existing_card_binding_conflict"}

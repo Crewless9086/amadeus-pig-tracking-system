@@ -23,12 +23,22 @@ def confirm_health_loss_preview(lifecycle: Mapping[str, Any], confirmation_text:
         return _result(False, "exact_preview_confirmation_required"), 409
     if binding.get("confirmation_ready") is not True or preview.get("confirmation_ready") is not True:
         return _result(False, "preview_not_confirmation_ready"), 409
+    bound_owner = str(binding.get("authenticated_principal_id") or "").strip()
+    lifecycle_owner = str(lifecycle.get("owner_user_id") or "").strip()
+    actor_id = str(actor_id or "").strip()
+    if not bound_owner or not lifecycle_owner or actor_id != bound_owner or actor_id != lifecycle_owner:
+        return _result(False, "authenticated_owner_confirmation_required"), 403
+    bound_owner = str(binding.get("authenticated_principal_id") or "").strip()
+    lifecycle_owner = str(lifecycle.get("owner_user_id") or "").strip()
+    actor_id = str(actor_id or "").strip()
+    if not bound_owner or not lifecycle_owner or actor_id != bound_owner or actor_id != lifecycle_owner:
+        return _result(False, "authenticated_owner_confirmation_required"), 403
     current = evidence_loader()
     if str(current.get("evidence_generation") or "") != str(binding.get("evidence_generation") or ""):
         return _result(False, "canonical_evidence_changed_repreview_required"), 409
     evaluator = preview.get("evaluator") if isinstance(preview.get("evaluator"), Mapping) else {}
     supported = [row for row in evaluator.get("canonical_effects") or [] if row.get("supported")]
-    if not supported or any(row.get("area") != "medical_observation" for row in supported):
+    if len(supported) != 1 or supported[0].get("area") != "medical_observation":
         return _result(False, "canonical_effect_coordinator_unavailable",
                        blocked_areas=sorted({str(row.get("area")) for row in supported
                                              if row.get("area") != "medical_observation"})), 409

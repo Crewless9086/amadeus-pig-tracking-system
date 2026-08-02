@@ -23,11 +23,11 @@ most one smallest question, and produces one consolidated preview. Observed
 facts, owner suspicion, veterinary attribution and agent inference remain
 separate.
 
-Explicit confirmation must be exactly `CONFIRM <operation_id>`. The writer
+Explicit confirmation must be exactly `CONFIRM <operation_id>` from the same authenticated owner bound into the preview. Completed context remains loadable only for that exact confirmation replay; unrelated later text cannot reopen it. The writer
 revalidates the canonical evidence generation and uses the existing append-only
 `pig_observation_events` rail transactionally. The deterministic operation ID
 is the idempotency key, so direct replay creates zero rows. This bounded writer
-supports only a factual `medical_observation` effect. If a preview also proposes
+supports exactly one factual `medical_observation` effect. Multiple supported effects, including multiple medical observations, fail closed rather than producing a partial write. If a preview also proposes
 lifecycle, mating, litter, movement, availability or downstream effects, it
 fails closed with `canonical_effect_coordinator_unavailable`; supported
 read-only welfare guidance and preview remain available.
@@ -38,7 +38,7 @@ Messages 3169 and 3171 are immutable recovery evidence and must not be replayed
 or resent. Production continuation must:
 
 1. verify provider chronology and absence of a later welfare reply;
-2. bind existing card 3171 to the deterministic generic mission with zero send;
+2. verify card 3171 against authoritative provider evidence for the exact bot, chat, message identity and text digest, then bind it to the deterministic generic mission with zero send;
 3. seed the open PR #651 context from the authenticated report without a farm
    write;
 4. accept only a later authenticated natural reply;
