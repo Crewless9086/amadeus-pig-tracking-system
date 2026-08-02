@@ -501,6 +501,15 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         history = result["packet"]["expansion_history"][-1]
         self.assertEqual(history["from_generation"], packet["generation_identity"])
         self.assertEqual(history["triggering_stage"], "tester")
+        persisted = update_vault.call_args.args[1]
+        self.assertEqual(
+            persisted["orchestration_binding"]["generation_identity"],
+            result["packet"]["generation_identity"],
+        )
+        self.assertEqual(
+            [row["agent"] for row in persisted["agent_workflow"]],
+            [row["agent"] for row in result["packet"]["selected_agents"]],
+        )
         update_vault.assert_called_once()
 
     @patch("modules.charlie.execution_bridge.update_mission_vault")
