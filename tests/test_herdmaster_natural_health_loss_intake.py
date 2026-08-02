@@ -317,3 +317,15 @@ def test_natural_reassuring_welfare_reply_is_retained_without_repeated_question(
     assert result["immediate_welfare_priority"]["level"] == "monitor_closely"
     assert "reassuring" in result["immediate_welfare_priority"]["action"]
     assert "appetite" in result["immediate_welfare_priority"]["action"]
+
+@pytest.mark.parametrize("phrase,fact", [
+    ("Pig 11 is not standing.", "standing_reported"),
+    ("Pig 11 is not moving around.", "moving_reported"),
+    ("Pig 11 is not breathing normally.", "breathing_reported"),
+    ("Pig 11 is not drinking water.", "drinking_reported"),
+])
+def test_negative_welfare_phrasing_is_never_converted_to_reassuring_positive(phrase, fact):
+    pig = animal("PIG-2026-E88A", "", "11")
+    result = evaluate_health_loss_intake(report(phrase), evidence(pig))
+    assert fact not in {row["fact"] for row in result["observed_facts"]}
+    assert result["immediate_welfare_priority"]["level"] != "monitor_closely"

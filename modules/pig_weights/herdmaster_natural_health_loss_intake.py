@@ -295,11 +295,18 @@ def _parse_report(text, provider_time):
     ):
         if marker in lower:
             observed.append({"fact": fact, "value": True})
+    def positive_check(pattern, subject):
+        match = re.search(pattern, subject)
+        if not match:
+            return False
+        prefix = subject[max(0, match.start() - 24):match.start()]
+        return not re.search(r"\b(?:not|cannot|can't|isn't|wasn't)\b[^.!?]{0,18}$", prefix)
+
     welfare_checks = {
-        "standing": bool(re.search(r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b", lower)),
-        "moving": bool(re.search(r"\b(?:is )?moving(?: around)?\b", lower)),
-        "breathing": bool(re.search(r"\bbreath(?:ing|es) normal(?:ly)?\b", lower)),
-        "drinking": bool(re.search(r"\b(?:is )?drinking(?: water)?\b", lower)),
+        "standing": positive_check(r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b", lower),
+        "moving": positive_check(r"\bmoving(?: around)?\b", lower),
+        "breathing": positive_check(r"\bbreath(?:ing|es) normal(?:ly)?\b", lower),
+        "drinking": positive_check(r"\bdrinking(?: water)?\b", lower),
     }
     for fact, supplied in welfare_checks.items():
         if supplied:
