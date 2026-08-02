@@ -368,13 +368,29 @@ def _parse_report(text, provider_time):
     for fact, supplied in welfare_checks.items():
         if supplied:
             observed.append({"fact": f"{fact}_reported", "value": True})
-    last_seen_supplied = "last seen alive" in lower
-    found_time_supplied = bool(re.search(r"\bfound\b.+\b(?:today|yesterday|morning|afternoon|evening|night|\d{1,2}[:.]\d{2})\b", lower))
+    time_context = r"(?:today|yesterday|(?:this\s+)?morning|(?:this\s+)?afternoon|(?:this\s+)?evening|(?:last\s+)?night|\d{1,2}[:.]\d{2})"
+    last_seen = re.search(rf"\b(?:last\s+)?seen alive(?:\s+(?P<when>{time_context}))?\b", lower)
+    found_words = list(re.finditer(r"\bfound\b", lower))
+    time_words = list(re.finditer(rf"\b(?P<when>{time_context})\b", lower))
+    found_time = min(
+        (time for time in time_words for found in found_words
+         if min(abs(time.end() - found.start()), abs(found.end() - time.start())) <= 100),
+        key=lambda time: min(abs(time.end() - found.start()) for found in found_words),
+        default=None,
+    )
+    last_seen_supplied = bool(last_seen)
+    found_time_supplied = bool(found_time)
     removal_supplied = bool(re.search(r"\b(?:removed from (?:the )?pen|buried|disposed|cremated)\b", lower))
     if last_seen_supplied:
-        observed.append({"fact": "last_seen_alive_context_reported", "value": True})
+        observed.append({"fact": "last_seen_alive_context_reported",
+                         "value": (last_seen.group("when") if last_seen and last_seen.group("when") else True)})
     if found_time_supplied:
-        observed.append({"fact": "body_found_time_context_reported", "value": True})
+        observed.append({"fact": "body_found_time_context_reported",
+                         "value": (found_time.group("when") if found_time and found_time.group("when") else True)})
+    biosecurity_plan = re.search(r"\bgoing to\s+(spray\b[^.!?]*)", lower)
+    if biosecurity_plan:
+        observed.append({"fact": "future_biosecurity_intention_reported",
+                         "value": biosecurity_plan.group(1).strip()})
     if removal_supplied:
         observed.append({"fact": "removal_or_disposal_context_reported", "value": True})
     observed.append({"fact": "event_date", "value": event_date.isoformat()})
