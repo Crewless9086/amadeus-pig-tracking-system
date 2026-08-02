@@ -3639,6 +3639,40 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("Vault Brain discipline", result["reason"])
         self.assertTrue(result["findings"])
 
+    @patch("modules.charlie.execution_bridge.evaluate_vault_source_coverage")
+    @patch("modules.charlie.execution_bridge.build_vault_brain_context")
+    def test_brain_guard_uses_proportional_coverage_for_t0_source_report(
+        self, build_context, evaluate_coverage
+    ):
+        build_context.return_value = {
+            "retrieval": {"sources": []},
+            "missing_docs": [],
+            "docs": [],
+            "owner_preferences": {},
+        }
+        evaluate_coverage.return_value = {"passed": False, "score": 45}
+        mission = {
+            "vault": {"problem_statement": "Inspect CORE."},
+            "metadata": {"orchestration": {
+                "version": "charlie_adaptive_orchestration_v1",
+                "tier": "T0",
+                "selected_agents": [{"agent": "source_mapper"}],
+            }},
+            "agent_workflow": [{"agent": "source_mapper", "status": "complete"}],
+        }
+        artifact = _successful_stage_payload("source_mapper")
+
+        with patch(
+            "modules.charlie.agentic_architecture.evaluate_agentic_architecture",
+            return_value={"findings": []},
+        ):
+            result = execution_bridge._brain_guard_review_gate(
+                mission, {"source_mapper": artifact}, []
+            )
+
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["t0_proportional_coverage"])
+
     def test_brain_guard_accepts_vault_docs_cited_in_canonical_inputs(self):
         artifacts = {
             "planner": {
