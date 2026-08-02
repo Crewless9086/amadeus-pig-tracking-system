@@ -63,11 +63,13 @@ Expected from `2 - The GateKeeper`:
   "user_id": "12345",
   "chat_id": "67890",
   "message_id": "123",
+  "timestamp": 1785673203,
+  "raw_update": {"message": {"message_id": 123, "date": 1785673203}},
   "user_name": "Charl"
 }
 ```
 
-The workflow also accepts `text`, `telegram_user_id`, and `telegram_chat_id` as fallback field names for smoke tests.
+The workflow also accepts `text`, `telegram_user_id`, and `telegram_chat_id` as fallback field names for smoke tests. Provider message identity and provider time are mandatory. The authenticated GateKeeper `raw_update.message.message_id` and `.date` take precedence and are forwarded in the backend's native Telegram envelope; missing chronology fails closed before HTTP.
 
 ## Output Contract
 
