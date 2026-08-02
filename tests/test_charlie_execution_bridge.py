@@ -151,6 +151,53 @@ def _successful_stage_payload(agent):
     return {key: value for key, value in payload.items() if value is not None}
 
 
+class CharlieGithubFinalizationGateTests(unittest.TestCase):
+    def test_source_mapper_only_read_only_mission_does_not_require_pull_request(self):
+        mission = {
+            "mission_id": "CHARLIE-T0-READONLY",
+            "mission_type": "read-only audit",
+            "approval_level": "LEVEL 1",
+            "agent_workflow": [{"agent": "source_mapper", "status": "complete"}],
+        }
+
+        with patch("modules.charlie.execution_bridge.query_pr_state") as query:
+            gate = execution_bridge._build_github_finalization_gate(
+                mission,
+                {"changed_files": []},
+                "a" * 40,
+            )
+
+        self.assertTrue(gate["passed"])
+        self.assertFalse(gate["required"])
+        self.assertEqual(gate["state"], "NOT_APPLICABLE")
+        query.assert_not_called()
+
+    def test_mutating_workflow_still_requires_pull_request(self):
+        mission = {
+            "mission_id": "CHARLIE-BUILD",
+            "agent_workflow": [{"agent": "builder", "status": "complete"}],
+        }
+        state = {
+            "success": True,
+            "state": "OPEN",
+            "mergeable": "MERGEABLE",
+            "headRefOid": "b" * 40,
+            "statusCheckRollup": [{"conclusion": "SUCCESS"}],
+            "number": 1,
+            "url": "https://example.invalid/pr/1",
+        }
+
+        with patch("modules.charlie.execution_bridge.query_pr_state", return_value=state):
+            gate = execution_bridge._build_github_finalization_gate(
+                mission,
+                {"pr_url": state["url"]},
+                "b" * 40,
+            )
+
+        self.assertTrue(gate["passed"])
+        self.assertTrue(gate["required"])
+
+
 class CharlieExecutionBridgeTests(unittest.TestCase):
     def test_targeted_repair_workflow_is_authoritative_execution_sequence(self):
         mission = {
