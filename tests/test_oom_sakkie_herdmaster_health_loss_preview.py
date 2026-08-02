@@ -233,7 +233,7 @@ def test_explicit_treatment_absence_is_preserved(explicit_none):
     result = prepare_health_loss_owner_preview(envelope(
         f"Tag 51 is sick. {explicit_none} She is standing, drinking water and breathing normally."
     ), evidence(animal))
-    assert "Treatment evidence: owner explicitly reported none" in result["owner_text"]
+    assert "Treatment evidence: owner reported absence wording; scope Unknown / not evaluated" in result["owner_text"]
 
 
 def test_unrecognized_treatment_wording_falls_back_to_unknown_not_absence():
@@ -259,7 +259,7 @@ def test_mixed_treatment_chronology_fails_closed_without_claiming_absence(mixed)
         "Treatment evidence: mixed or contradictory owner wording; details Unknown / not evaluated"
         in result["owner_text"]
     )
-    assert "owner explicitly reported none" not in result["owner_text"]
+    assert "owner reported absence wording" not in result["owner_text"]
 
 @pytest.mark.parametrize("modifier_phrase", [
     "No treatment changes were made; continue the current medicine.",
@@ -270,5 +270,21 @@ def test_treatment_modifier_phrases_do_not_assert_absence(modifier_phrase):
     animal = pig("Tag 51", "PIG-2026-0051", "51")
     result = prepare_health_loss_owner_preview(envelope(
         f"Tag 51 is sick. {modifier_phrase} She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert "owner reported absence wording" not in result["owner_text"]
+
+def test_narrow_medication_absence_cannot_erase_other_treatment_evidence():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Tag 51 is sick. No antibiotics; the wound was cleaned. She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert "owner explicitly reported none" not in result["owner_text"]
+    assert "Treatment evidence: owner reported absence wording; scope Unknown / not evaluated" in result["owner_text"]
+
+
+def test_not_treated_modifier_does_not_claim_global_absence():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Tag 51 was not treated differently. She is standing, drinking water and breathing normally."
     ), evidence(animal))
     assert "owner explicitly reported none" not in result["owner_text"]

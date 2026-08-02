@@ -166,7 +166,7 @@ def _treatment_line(owner_report_text):
     if explicit_none and (mentioned or exception_wording):
         return "Treatment evidence: mixed or contradictory owner wording; details Unknown / not evaluated"
     if explicit_none:
-        return "Treatment evidence: owner explicitly reported none"
+        return "Treatment evidence: owner reported absence wording; scope Unknown / not evaluated"
     if mentioned:
         return "Treatment evidence: mentioned by owner; details Unknown / not evaluated by this intake"
     return "Treatment evidence: Unknown / not evaluated or extracted by this intake"
