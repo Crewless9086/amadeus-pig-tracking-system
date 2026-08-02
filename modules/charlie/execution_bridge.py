@@ -8122,12 +8122,23 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
     # are surfaced as warnings below). Otherwise every publisher-only recovery
     # loses the mission-level context and loops through Source Mapper.
     source_coverage = evaluate_vault_source_coverage(coverage_artifacts, retrieval)
+    orchestration = (
+        mission.get("metadata", {}).get("orchestration", {})
+        if isinstance(mission.get("metadata"), dict)
+        and isinstance(mission.get("metadata", {}).get("orchestration"), dict)
+        else {}
+    )
+    t0_proportional_coverage = (
+        orchestration.get("tier") == "T0"
+        and agent_sequence == ["source_mapper"]
+        and int(source_coverage.get("score") or 0) >= 40
+    )
     if context.get("missing_docs"):
         findings.append(f"Vault Brain context has missing docs: {', '.join(context['missing_docs'])}.")
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     if not vault:
         findings.append("Mission Vault payload is missing from the mission.")
-    if not source_coverage.get("passed"):
+    if not source_coverage.get("passed") and not t0_proportional_coverage:
         findings.append(f"Vault source coverage score is {source_coverage.get('score', 0)}; required coverage not met.")
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
@@ -8159,6 +8170,7 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
         "warnings": warnings,
         "preserved_legacy_artifacts": sorted(preserved),
         "source_coverage": source_coverage,
+        "t0_proportional_coverage": t0_proportional_coverage,
         "agent_sequence": agent_sequence,
         "workflow_contract": workflow_contract,
         "agentic_architecture": agentic_gate,
