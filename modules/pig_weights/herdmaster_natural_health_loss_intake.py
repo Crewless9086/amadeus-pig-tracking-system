@@ -296,8 +296,9 @@ def _parse_report(text, provider_time):
         if marker in lower:
             observed.append({"fact": fact, "value": True})
     welfare_checks = {
-        "standing": bool(re.search(r"\b(?:can|able to) stand\b", lower)),
-        "breathing": bool(re.search(r"\bbreath(?:ing|es) normally\b", lower)),
+        "standing": bool(re.search(r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b", lower)),
+        "moving": bool(re.search(r"\b(?:is )?moving(?: around)?\b", lower)),
+        "breathing": bool(re.search(r"\bbreath(?:ing|es) normal(?:ly)?\b", lower)),
         "drinking": bool(re.search(r"\b(?:is )?drinking(?: water)?\b", lower)),
     }
     for fact, supplied in welfare_checks.items():
@@ -453,7 +454,7 @@ def _smallest_question(parsed, missing, animal):
         return f"Has {_display(animal)} been removed from the pen; if yes, when and what was the disposal/removal outcome?"
     if "exact current mating cycle" in missing:
         return f"Which exact current mating cycle applies to {_display(animal)}?"
-    if parsed["current_signs"] and not all(parsed["welfare_checks"].values()):
+    if parsed["current_signs"] and not all(parsed["welfare_checks"].get(key) for key in ("standing", "breathing", "drinking")):
         return f"Is {_display(animal)} able to stand, breathe normally and drink water right now?"
     return ""
 
@@ -465,6 +466,8 @@ def _welfare(parsed):
         return {"level": "urgent_follow_up", "action": "Check the pen, any surviving animals and biosecurity needs now; veterinary/mortality review may be required."}
     if parsed["farrowing"]:
         return {"level": "emergency", "action": "If the sow or any piglet is alive or farrowing is continuing, obtain immediate experienced or veterinary assistance before record work."}
+    if parsed["current_signs"] and all(parsed["welfare_checks"].get(key) for key in ("standing", "breathing", "drinking")):
+        return {"level": "monitor_closely", "action": "The immediate standing, breathing and drinking checks are reassuring; keep monitoring appetite and seek experienced or veterinary help if signs worsen or eating does not resume."}
     if parsed["current_signs"]:
         return {"level": "urgent_assessment", "action": "Physically assess breathing, standing, water intake, bleeding and distress now; seek veterinary help for serious signs."}
     return {"level": "review", "action": "Verify the animal and observable welfare state."}

@@ -299,3 +299,21 @@ def test_output_has_no_authority_for_every_supported_family():
         "movement_authority", "availability_authority", "customer_authority",
     ):
         assert result[key] is False
+
+
+def test_natural_reassuring_welfare_reply_is_retained_without_repeated_question():
+    pig = animal("PIG-2026-E88A", "", "11")
+    result = evaluate_health_loss_intake(report(
+        "Pig 11 is not eating. Follow-up: Yes, Pig 11 is standing and moving around, "
+        "drinking water and breathing normal.", message_id="3174"
+    ), evidence(pig))
+    observed = {row["fact"]: row["value"] for row in result["observed_facts"]}
+    assert observed["not_eating"] is True
+    assert observed["standing_reported"] is True
+    assert observed["moving_reported"] is True
+    assert observed["drinking_reported"] is True
+    assert observed["breathing_reported"] is True
+    assert result["smallest_missing_follow_up_question"] == ""
+    assert result["immediate_welfare_priority"]["level"] == "monitor_closely"
+    assert "reassuring" in result["immediate_welfare_priority"]["action"]
+    assert "appetite" in result["immediate_welfare_priority"]["action"]
