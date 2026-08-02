@@ -690,7 +690,11 @@ def _wait_for_supervisor_ack(
                 ),
                 {},
             ) if isinstance(runner_tree, dict) else {}
-            if str(heartbeat.get("status") or "") != "ownership_ready":
+            if str(
+                heartbeat.get("last_result_status")
+                or heartbeat.get("status")
+                or ""
+            ) != "ownership_ready":
                 last_reason = "runner_ownership_ready_acknowledgement_missing"
             elif str(heartbeat.get("supervisor_generation") or "") != generation:
                 last_reason = "runner_heartbeat_generation_mismatch"

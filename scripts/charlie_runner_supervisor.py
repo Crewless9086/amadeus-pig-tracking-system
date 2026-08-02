@@ -841,7 +841,11 @@ def _wait_for_runner_ack(
     while time.monotonic() <= deadline:
         heartbeat = _read_json(RUNNER_HEARTBEAT_PATH)
         if (
-            str(heartbeat.get("status") or "") == "ownership_ready"
+            str(
+                heartbeat.get("last_result_status")
+                or heartbeat.get("status")
+                or ""
+            ) == "ownership_ready"
             and
             str(heartbeat.get("supervisor_generation") or "") == generation
             and str(heartbeat.get("runner_source_commit") or "") == execution_revision
