@@ -141,23 +141,35 @@ def _render_preview(value, report):
 
 def _treatment_line(owner_report_text):
     text = str(owner_report_text or "").casefold()
-    explicit_none = bool(re.search(
+    absence_pattern = (
         r"\b(?:no|without)\s+(?:treatment|medication|medicine|antibiotic\w*)\b|"
         r"\bnot\s+treat(?:ed|ing)\b|"
         r"\b(?:treatment|medication|medicine|antibiotic\w*)\s+(?:was\s+)?not\s+(?:given|administered)\b|"
-        r"\bgave\s+no\s+(?:treatment|medication|medicine|antibiotic\w*)\b",
-        text,
-    ))
+        r"\bgave\s+no\s+(?:treatment|medication|medicine|antibiotic\w*)\b"
+    )
+    mention_pattern = (
+        r"\b(?:treat(?:ed|ment)?|medicat(?:ed|ion)?|antibiotic\w*|inject(?:ed|ion)?|dos(?:e|ed|ing))\b|"
+        r"\bgave\s+(?:an?\s+)?(?:antibiotic\w*|medication|medicine|injection|dose)\b"
+    )
+    absence_matches = list(re.finditer(absence_pattern, text))
+    mention_matches = [
+        match for match in re.finditer(mention_pattern, text)
+        if not any(
+            match.start() < absence.end() and absence.start() < match.end()
+            for absence in absence_matches
+        )
+    ]
+    explicit_none = bool(absence_matches)
+    mentioned = bool(mention_matches)
+    exception_wording = explicit_none and bool(re.search(r"\bexcept\b", text))
+    if explicit_none and (mentioned or exception_wording):
+        return "Treatment evidence: mixed or contradictory owner wording; details Unknown / not evaluated"
     if explicit_none:
         return "Treatment evidence: owner explicitly reported none"
-    mentioned = bool(re.search(
-        r"\b(?:treat(?:ed|ment)?|medicat(?:ed|ion)?|antibiotic\w*|inject(?:ed|ion)?|dos(?:e|ed|ing))\b|"
-        r"\bgave\s+(?:an?\s+)?(?:antibiotic\w*|medication|medicine|injection|dose)\b",
-        text,
-    ))
     if mentioned:
         return "Treatment evidence: mentioned by owner; details Unknown / not evaluated by this intake"
     return "Treatment evidence: Unknown / not evaluated or extracted by this intake"
+
 
 def _facts(rows, empty):
     return [f"- {row['fact'].replace('_', ' ')}: {row['value']}" for row in rows] or [f"- {empty}"]

@@ -243,3 +243,20 @@ def test_unrecognized_treatment_wording_falls_back_to_unknown_not_absence():
     ), evidence(animal))
     assert "Treatment evidence: Unknown / not evaluated or extracted by this intake" in result["owner_text"]
     assert "none reported" not in result["owner_text"]
+
+@pytest.mark.parametrize("mixed", [
+    "No treatment was given yesterday, but antibiotics were administered today.",
+    "No medication initially; then we gave an antibiotic.",
+    "No treatment except penicillin.",
+    "Antibiotics were given earlier, but no medication was given today.",
+])
+def test_mixed_treatment_chronology_fails_closed_without_claiming_absence(mixed):
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        f"Tag 51 is sick. {mixed} She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert (
+        "Treatment evidence: mixed or contradictory owner wording; details Unknown / not evaluated"
+        in result["owner_text"]
+    )
+    assert "owner explicitly reported none" not in result["owner_text"]
