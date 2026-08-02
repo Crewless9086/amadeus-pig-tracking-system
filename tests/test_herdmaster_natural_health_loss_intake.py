@@ -342,3 +342,19 @@ def test_positive_core_checks_never_downgrade_serious_welfare_signs(severe):
         f"Pig 11 is {severe}, but is standing, moving around, drinking water and breathing normal."
     ), evidence(pig))
     assert result["immediate_welfare_priority"]["level"] == "urgent_assessment"
+
+@pytest.mark.parametrize("history,fact,expected", [
+    ("It was standing earlier but is not standing now.", "standing_reported", False),
+    ("It was breathing normally earlier but is not breathing normally now.", "breathing_reported", False),
+    ("It was not standing earlier but is standing now.", "standing_reported", True),
+    ("It was not breathing normally earlier but is breathing normally now.", "breathing_reported", True),
+])
+def test_latest_explicit_welfare_state_wins_over_earlier_clause(history, fact, expected):
+    pig = animal("PIG-2026-E88A", "", "11")
+    result = evaluate_health_loss_intake(report(
+        "Pig 11 is not eating. " + history + " It is drinking water."
+    ), evidence(pig))
+    observed = {row["fact"] for row in result["observed_facts"]}
+    assert (fact in observed) is expected
+    if not expected:
+        assert result["immediate_welfare_priority"]["level"] != "monitor_closely"

@@ -296,18 +296,42 @@ def _parse_report(text, provider_time):
     ):
         if marker in lower:
             observed.append({"fact": fact, "value": True})
-    def positive_check(pattern, subject):
-        match = re.search(pattern, subject)
-        if not match:
+    def latest_positive(positive_pattern, negative_pattern, subject):
+        negative_matches = list(re.finditer(negative_pattern, subject))
+        positive = [
+            match.end()
+            for match in re.finditer(positive_pattern, subject)
+            if not any(
+                match.start() < negative.end() and negative.start() < match.end()
+                for negative in negative_matches
+            )
+        ]
+        negative = [match.end() for match in negative_matches]
+        if not positive:
             return False
-        prefix = subject[max(0, match.start() - 24):match.start()]
-        return not re.search(r"\b(?:not|cannot|can't|isn't|wasn't|unable|stopped|without)\b[^.!?]{0,18}$", prefix)
+        return not negative or max(positive) > max(negative)
 
     welfare_checks = {
-        "standing": positive_check(r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b", lower),
-        "moving": positive_check(r"\bmoving(?: around)?\b", lower),
-        "breathing": positive_check(r"\bbreath(?:ing|es) normal(?:ly)?\b", lower),
-        "drinking": positive_check(r"\bdrinking(?: water)?\b", lower),
+        "standing": latest_positive(
+            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b",
+            r"\b(?:not|cannot|can't|isn't|wasn't)\s+(?:able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped) stand(?:ing)?\b",
+            lower,
+        ),
+        "moving": latest_positive(
+            r"\bmoving(?: around)?\b",
+            r"\b(?:not|isn't|wasn't) moving\b|\b(?:unable to|stopped) mov(?:e|ing)\b",
+            lower,
+        ),
+        "breathing": latest_positive(
+            r"\bbreath(?:ing|es) normal(?:ly)?\b",
+            r"\b(?:not|isn't|wasn't) breathing normal(?:ly)?\b|\b(?:breathing abnormally|struggling to breathe)\b",
+            lower,
+        ),
+        "drinking": latest_positive(
+            r"\bdrinking(?: water)?\b",
+            r"\b(?:not|isn't|wasn't) drinking\b|\b(?:unable to|stopped) drink(?:ing)?\b",
+            lower,
+        ),
     }
     for fact, supplied in welfare_checks.items():
         if supplied:
