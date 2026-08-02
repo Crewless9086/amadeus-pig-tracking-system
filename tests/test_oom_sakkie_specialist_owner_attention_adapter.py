@@ -1,6 +1,7 @@
 import hashlib
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 
 from modules.oom_sakkie.owner_attention_adapter import (
     operate_owner_attention_queue,
@@ -271,3 +272,49 @@ class RootlineCommissioningOwnerDecisionTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "specialist_owner_decision_stale")
         self.assertEqual(rail.sends, [])
+
+def _chronology_database_count(count):
+    connection = MagicMock()
+    cursor = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value.__enter__.return_value = cursor
+    cursor.fetchone.return_value = (count,)
+    return connection
+
+
+class RootlineDefaultChronologyTests(unittest.TestCase):
+    def binding(self):
+        return rootline_supervised_commissioning_binding(expires_at="2026-08-03T12:00:00+02:00")
+
+    def test_default_delivery_reads_authoritative_receipt_count(self):
+        rail, binding = Rail(), self.binding()
+        with patch("psycopg.connect", return_value=_chronology_database_count(1)):
+            result = operate_specialist_owner_decision(
+                binding, environ=ENV, now=NOW,
+                specialist_card_loader=lambda *_: {}, active_card_loader=rail.active_loader,
+                evidence_recorder=rail.recorder, telegram_sender=rail.sender,
+            )
+        self.assertEqual(result["status"], "specialist_owner_decision_stale")
+        self.assertEqual(rail.sends, [])
+
+    def test_default_callback_expires_when_authorization_already_exists(self):
+        rail, binding = Rail(), self.binding()
+        operate_specialist_owner_decision(
+            binding, environ=ENV, now=NOW,
+            chronology_loader=lambda valid, _source: valid["chronology_binding"],
+            specialist_card_loader=lambda *_: {"success": False},
+            active_card_loader=rail.active_loader, evidence_recorder=rail.recorder,
+            telegram_sender=rail.sender,
+        )
+        loaded = rail.delivered()
+        token = loaded["card"]["decision_id"]
+        payload = {"callback_data": f"sam_live_owner_decision:{token}:authorize",
+                   "telegram_user_id": "77", "telegram_chat_id": "44", "telegram_message_id": "901"}
+        with patch("psycopg.connect", return_value=_chronology_database_count(1)):
+            result, status = process_owner_attention_callback(
+                payload, environ=ENV, now=NOW, evidence_loader=lambda *_: loaded,
+                evidence_recorder=rail.recorder, telegram_editor=rail.editor,
+            )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "decision_expired")
+        self.assertEqual(rail.edits[-1][-1], {"inline_keyboard": []})
