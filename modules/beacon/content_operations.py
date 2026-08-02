@@ -4,10 +4,23 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+from pathlib import Path
 import re
 
 from modules.beacon.media_library import list_beacon_media_assets
 from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
+from modules.beacon.organic_media_intelligence import (
+    build_organic_learning_report,
+)
+from modules.beacon.public_livestock_content_policy import (
+    RISK_STATUS,
+    enforce_public_livestock_drafts,
+    public_livestock_policy_contract,
+)
+from modules.beacon.weekly_owner_review import (
+    build_post_one_owner_review,
+    historical_post_one_packets,
+)
 from modules.sales.beacon_campaign import (
     list_beacon_campaign_performance_events,
     list_beacon_manual_post_evidence,
@@ -71,6 +84,39 @@ AUTHORITATIVE_FACT_ADAPTERS = {
         "statement_mode": "structured_performance_result",
     },
 }
+
+FIRST_LEARNING_CASE = Path(__file__).with_name(
+    "fixtures"
+) / "first_production_learning_case.json"
+
+
+def _first_production_learning_case(assets, performance):
+    fixture = json.loads(FIRST_LEARNING_CASE.read_text(encoding="utf-8"))
+    by_id = {
+        row.get("asset_id"): row for row in assets if isinstance(row, dict)
+    }
+    ordered_media = [
+        by_id.get(asset_id, {"asset_id": asset_id, "content_sha256": ""})
+        for asset_id in fixture["asset_order"]
+    ]
+    evidence = []
+    post_id = fixture["publication"]["facebook_post_id"]
+    for row in performance:
+        if not isinstance(row, dict) or row.get("source_reference") != post_id:
+            continue
+        evidence.append({
+            "event_kind": "performance_snapshot",
+            "facebook_post_id": post_id,
+            "channel": "Facebook",
+            "objective": "farm_awareness",
+            "measurement_window": row.get("measurement_window"),
+            "evidence_key": row.get("performance_event_id"),
+            "metrics": row.get("metric_evidence"),
+        })
+    return build_organic_learning_report(
+        fixture["publication"], ordered_media, fixture["observations"], evidence,
+        case_label=fixture["case_label"],
+    )
 
 
 def gather_beacon_content_evidence(*, database_url=None, now=None, allocation=None,
@@ -137,6 +183,12 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
     assets = _records(evidence.get("media_assets"))
     facts, rejected_facts = _verified_facts(current_facts)
     approved_assets = [asset for asset in assets if _approved_asset(asset)]
+    featured_owner_review_packet = build_post_one_owner_review(assets)
+    if (
+        featured_owner_review_packet.get("review_status")
+        != "awaiting_exact_owner_review"
+    ):
+        featured_owner_review_packet = None
     history_quality = _history_quality(history, performance)
 
     ideas = _ranked_ideas(
@@ -149,9 +201,15 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
     )[:max(1, min(int(max_ideas or 3), 5))]
     selected = ideas[0]
     selected_asset = _preferred_asset(approved_assets)
-    draft_options = _draft_options(facts, selected_asset)
-    exact_copy = draft_options[0]["draft_copy"]
-    fact_constraints = _fact_constraints(facts)
+    draft_options, blocked_drafts = enforce_public_livestock_drafts(
+        _draft_options(facts, selected_asset),
+        objective="farm_awareness",
+        campaign_lane="live_stock_awareness",
+        media=selected_asset,
+    )
+    exact_copy = draft_options[0]["draft_copy"] if draft_options else ""
+    # The awareness-only deterministic copy does not interpolate current facts.
+    fact_constraints = _fact_constraints([])
     packet_evidence = list(selected["supporting_evidence"])
     if selected_asset:
         packet_evidence.append({
@@ -193,9 +251,12 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
         }
     )
     return {
-        "success": True,
-        "status": "owner_review_packet_ready_with_media_gap"
-        if not selected_asset else "owner_review_packet_ready",
+        "success": bool(draft_options),
+        "status": (
+            RISK_STATUS if not draft_options else
+            "owner_review_packet_ready_with_media_gap"
+            if not selected_asset else "owner_review_packet_ready"
+        ),
         "mode": MODE,
         "generated_at": generated_at,
         "evidence_quality": history_quality,
@@ -205,6 +266,11 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
         "media_summary": _media_summary(assets, approved_assets),
         "rejected_current_facts": rejected_facts,
         "ranked_ideas": ideas,
+        "featured_owner_review_packet": featured_owner_review_packet,
+        "historical_owner_review_packets": historical_post_one_packets(),
+        "organic_media_learning": _first_production_learning_case(
+            assets, performance
+        ),
         "owner_review_packet": {
             "packet_id": packet_id,
             "review_status": "awaiting_owner_review",
@@ -218,11 +284,11 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
             "draft_copy": exact_copy,
             "draft_options": draft_options,
             "call_to_action": (
-                "Message Amadeus Farm with the livestock type, age or weight range, "
-                "sex, quantity, and timing you are looking for."
+                "Follow the farm journey, ask an educational question, or suggest "
+                "a responsible animal-care topic for a future post."
             ),
             "measurable_objective": {
-                "metric": "qualified inbound livestock enquiries",
+                "metric": "non-commercial farm-awareness engagement",
                 "measurement_window": "7 days after an owner-approved post",
                 "target": "owner_sets_target_before_publication",
             },
@@ -230,6 +296,8 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
             "recommendation_reason": selected["why"],
             "supporting_evidence": packet_evidence,
             "fact_constraints": fact_constraints,
+            "public_livestock_policy": public_livestock_policy_contract(),
+            "blocked_draft_count": len(blocked_drafts),
             "next_gate": "owner_approves_the_exact_final_copy_media_channel_and_timing_through_the_existing_protected_publish_rail",
             "authority": deepcopy(AUTHORITY),
         },
@@ -242,6 +310,7 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
                 "owner_correction_event",
             ],
             "rule": "Unknown, inferred, stale, or unreferenced outcomes remain unknown and cannot support positive performance claims.",
+            "public_livestock_commerce_optimization_allowed": False,
         },
         "capability_status": {
             "evidence_sources_read": {
@@ -336,15 +405,11 @@ def _ranked_ideas(*, history, opportunities, facts, approved_assets,
             ),
         },
         {
-            "idea_id": "current_livestock_opportunity",
-            "title": "Current livestock opportunity",
-            "angle": "Prepare demand-aware copy only after current supply, demand, and fulfilment evidence pass.",
-            "score": 90 if usable_opportunities else 35,
-            "why": (
-                "A fresh scanner card supports owner review."
-                if usable_opportunities else
-                "No fresh ready-for-owner-review livestock opportunity card is available, so sales claims are blocked."
-            ),
+            "idea_id": "responsible_farming_community",
+            "title": "Responsible farming conversation",
+            "angle": "Invite educational questions about responsible animal care.",
+            "score": 70,
+            "why": "Community engagement is useful when it remains educational and non-commercial.",
             "supporting_evidence": [
                 *common,
                 {
@@ -353,18 +418,49 @@ def _ranked_ideas(*, history, opportunities, facts, approved_assets,
                     "ready_card_count": len(usable_opportunities),
                 },
             ],
-            "risk_flags": [] if usable_opportunities else ["current_opportunity_not_proven"],
-            "owner_note": (
-                "Current supply and demand evidence passed."
-                if usable_opportunities else
-                "Beacon could not prove a fresh overlap between eligible livestock and quantified buyer demand, so it will not suggest stock or availability."
-            ),
+            "risk_flags": [],
+            "owner_note": "Current livestock opportunity evidence is not used to solicit public sales.",
         },
     ]
     return sorted(candidates, key=lambda item: (-item["score"], item["idea_id"]))
 
 
 def _draft_options(facts, selected_asset=None):
+    # Deterministic output is deliberately independent of commercial facts:
+    # public livestock content may tell the farm story, never advertise animals.
+    return [
+        {
+            "rank": 1,
+            "style": "warm_farm_story",
+            "title": "Warm farm story",
+            "draft_copy": (
+                "A small moment from life at Amadeus Farm. These curious piglets "
+                "remind us how much patient daily care goes into every healthy start.\n\n"
+                "Follow the farm journey for more honest moments from behind the scenes."
+            ),
+        },
+        {
+            "rank": 2,
+            "style": "responsible_piglet_care",
+            "title": "Responsible piglet care",
+            "draft_copy": (
+                "Good piglet care is built on steady routines: clean shelter, fresh "
+                "water, careful observation and calm handling.\n\n"
+                "Ask an educational question about responsible animal care and we "
+                "may cover it in a future post."
+            ),
+        },
+        {
+            "rank": 3,
+            "style": "short_non_commercial_engagement",
+            "title": "Short engagement",
+            "draft_copy": (
+                "Curious piglets, patient care and another day on the farm.\n\n"
+                "Which behind-the-scenes part of responsible piglet care would you like to see next?"
+            ),
+        },
+    ]
+    # Legacy implementation retained below temporarily for diff locality; unreachable.
     details = " ".join(fact["statement"].rstrip(".") + "." for fact in facts[:3])
     if details:
         subject = details
@@ -670,6 +766,34 @@ def _performance_evidence_evaluation(row):
         source = str(metric.get("source") or "").strip()
         reference = str(metric.get("source_reference") or "").strip()
         retrieved_at = _iso(metric.get("retrieved_at"))
+        placeholder = metric.get("compatibility_placeholder")
+        if (
+            status in {"missing", "unsupported"}
+            and metric.get("value") is None
+            and isinstance(placeholder, dict)
+            and placeholder.get("evidentiary") is False
+            and placeholder.get("stored_value") == 0
+            and source
+            and source.lower() not in REJECTED_METRIC_SOURCES
+            and reference
+            and retrieved_at
+        ):
+            # NOT NULL compatibility zeros are storage placeholders only.
+            # Their explicit evidence state remains non-rankable and does not
+            # invalidate independently verified metrics in the same snapshot.
+            continue
+        if (
+            status == "unsupported"
+            and metric.get("value") is None
+            and source
+            and source.lower() not in REJECTED_METRIC_SOURCES
+            and reference
+            and retrieved_at
+        ):
+            # Explicit provider limitations are truthful non-rankable evidence.
+            # They do not invalidate independently verified metrics in the same
+            # append-only snapshot.
+            continue
         metric_reasons = []
         if status not in ACCEPTED_METRIC_STATUSES:
             metric_reasons.append("status_unaccepted")

@@ -239,6 +239,7 @@ class MeatDocumentTests(unittest.TestCase):
             }, 200)
             prices.return_value = ({
                 "success": True,
+                "source": "supabase",
                 "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK,
             }, 200)
             env = dict(self.env)
@@ -272,7 +273,7 @@ class MeatDocumentTests(unittest.TestCase):
              patch.object(meat_documents, "record_sales_lead_event") as record_event:
             env["MEAT_SALES_DOCUMENT_OUTPUT_DIR"] = tmp_dir
             contract.return_value = (self._contract_fixture(), 200)
-            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            prices.return_value = ({"success": True, "source": "supabase", "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
             record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
             sender = Mock(return_value={"status_code": 200, "message_id": "M1", "conversation_id": "1808"})
 
@@ -308,7 +309,7 @@ class MeatDocumentTests(unittest.TestCase):
              patch.object(meat_documents, "record_sales_lead_event") as record_event:
             env["MEAT_SALES_DOCUMENT_OUTPUT_DIR"] = tmp_dir
             contract.return_value = (self._contract_fixture(), 200)
-            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            prices.return_value = ({"success": True, "source": "supabase", "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
             record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
             sender = Mock(return_value={
                 "status_code": 200,
@@ -340,7 +341,7 @@ class MeatDocumentTests(unittest.TestCase):
              patch.object(meat_documents, "list_meat_price_book_entries") as prices, \
              patch.object(meat_documents, "record_sales_lead_event") as record_event:
             contract.return_value = (fixture, 200)
-            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            prices.return_value = ({"success": True, "source": "supabase", "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
             record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
             sender = Mock()
 
@@ -376,7 +377,7 @@ class MeatDocumentTests(unittest.TestCase):
              patch.object(meat_documents, "record_sales_lead_event") as record_event:
             env["MEAT_SALES_DOCUMENT_OUTPUT_DIR"] = tmp_dir
             contract.return_value = (fixture, 200)
-            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            prices.return_value = ({"success": True, "source": "supabase", "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
             record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
             sender = Mock(return_value={"status_code": 200, "message_id": "M1", "conversation_id": "1808"})
 
@@ -402,7 +403,7 @@ class MeatDocumentTests(unittest.TestCase):
         with patch.object(meat_documents, "get_sales_lead_preorder_contract") as contract, \
              patch.object(meat_documents, "list_meat_price_book_entries") as prices:
             contract.return_value = (fixture, 200)
-            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            prices.return_value = ({"success": True, "source": "supabase", "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
 
             result, status = meat_documents.send_meat_estimated_quote_to_chatwoot(
                 "OSK-SALES-LEAD-TEST",
@@ -434,7 +435,7 @@ class MeatDocumentTests(unittest.TestCase):
              patch.object(meat_documents, "record_sales_lead_event") as record_event:
             env["MEAT_SALES_DOCUMENT_OUTPUT_DIR"] = tmp_dir
             contract.return_value = (fixture, 200)
-            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            prices.return_value = ({"success": True, "source": "supabase", "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
             record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
             sender = Mock(return_value={"status_code": 200, "message_id": "M1", "conversation_id": "1808"})
 
@@ -581,6 +582,16 @@ class MeatDocumentTests(unittest.TestCase):
             },
         }
 
+
+    def test_route_builder_rejects_code_default_price_as_authoritative(self):
+        with patch.object(meat_documents, "get_sales_lead_preorder_contract") as contract, \
+             patch.object(meat_documents, "list_meat_price_book_entries") as prices:
+            contract.return_value = ({"success": True, "lead": {}, "contract": {}}, 200)
+            prices.return_value = ({"success": True, "source": "code_defaults", "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            packet, status = meat_documents.build_meat_estimated_quote_packet("LEAD-1", environ=self.env)
+        self.assertEqual(status, 503)
+        self.assertFalse(packet["quote_safe"])
+        self.assertIn("authoritative_supabase_price_book_required", packet["blockers"])
 
 if __name__ == "__main__":
     unittest.main()

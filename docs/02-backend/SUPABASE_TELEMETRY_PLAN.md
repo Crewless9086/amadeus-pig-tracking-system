@@ -1,5 +1,22 @@
 # Supabase Telemetry Plan
 
+## ROOTLINE Authority Note
+
+Permanent ROOTLINE control architecture is defined in
+[`ROOTLINE_CONTROL_ARCHITECTURE.md`](../09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md).
+The end goal is bounded operation of routine irrigation, including approved
+physical valve control—not a permanent dashboard-only role. This target does
+not change current authority: production ROOTLINE remains telemetry/read-model
+based, current irrigation status is read-only, and no hardware-control
+capability is operationally proven.
+
+The current legacy bridge is **IFTTT**, not FTP or FTTP. The imported inactive
+controller can call IFTTT ON/OFF events, but n8n/IFTTT must not become the
+decision source of truth or be activated as a shortcut. Backend/Supabase must
+own command identity, validation, locks, safety policy, idempotency, audit,
+verification, and recovery; IFTTT or a future adapter may be a thin actuator
+bridge only.
+
 ## Purpose
 
 Phase 10.3 planning document.

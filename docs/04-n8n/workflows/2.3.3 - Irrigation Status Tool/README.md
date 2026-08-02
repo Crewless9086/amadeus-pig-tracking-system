@@ -2,6 +2,10 @@
 
 Read-only Oom Sakkie irrigation status tool.
 
+Its current boundary and ROOTLINE's future staged control authority are governed
+by
+[`ROOTLINE_CONTROL_ARCHITECTURE.md`](../../../09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md).
+
 Workflow ID: `rG7mN4pQ8sT2uV6w`  
 Status at export: inactive until manually imported and tested  
 Created for Phase 10.3Q: 2026-05-23
@@ -45,6 +49,11 @@ GET https://amadeus-pig-tracking-system.onrender.com/api/telemetry/irrigation/st
 ## Safety Rule
 
 This workflow returns status only. If the backend response ever reports unexpected control flags, the answer warns the operator and still does not trigger any control action.
+
+Read-only status must not be described as hardware authority. Unknown,
+Unavailable, stale, or conflicting irrigation, tank, pump, borehole, power, or
+weather evidence remains explicit and cannot be interpreted as safe, zero, off,
+or completed.
 
 ## Manual Test Plan
 

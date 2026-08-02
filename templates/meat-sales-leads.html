@@ -38,6 +38,14 @@
         <p>Sam captures interest. The owner approves money facts and exact replies. Backend gates stay final for sends, deposits, reservations, fulfilment, and documents.</p>
       </section>
 
+      <section class="sam-command-brief" aria-label="Current SAM Meat commercial offer">
+        <div>
+          <span>Owner-assisted launch offer</span>
+          <strong>R130/kg including VAT | 50% estimated deposit | delivery only</strong>
+        </div>
+        <p><strong>Set A - Amadeus Signature</strong> | <strong>Set B - Amadeus Ember</strong> | <strong>Set C - Amadeus Grand Cut</strong>. Set D is historical only. A full carcass uses one independently selected collection per half. Final billing uses butcher-confirmed packed weight; delivery fee, delivery timing and transport packaging remain unresolved.</p>
+        <p><strong>Journey:</strong> enquiry -&gt; clarification -&gt; estimate -&gt; owner-reviewed quote -&gt; acceptance -&gt; carcass matching -&gt; bank-confirmed deposit -&gt; slaughter eligibility -&gt; processing -&gt; final payment -&gt; delivery. No customer send or protected action occurs from this panel without its existing owner gate.</p>
+      </section>
       <section class="meat-control-room" aria-label="Pilot meat sales control room">
         <div class="meat-control-primary">
           <span class="meat-control-kicker">Pilot Control Room</span>
@@ -118,6 +126,22 @@
             </article>
           </section>
 
+          <section class="sam-missing-facts-panel" aria-label="SAM Meat launch owner review">
+            <div class="page-header section-header-compact">
+              <div>
+                <h3>SAM Meat Prepared Review</h3>
+                <p id="sam_meat_launch_no_send">No send performed. Owner review only.</p>
+              </div>
+            </div>
+            <div class="meat-lead-facts">
+              <div class="meat-lead-fact"><span>Prepared reply</span><strong id="sam_meat_launch_reply">Unavailable</strong></div>
+              <div class="meat-lead-fact"><span>Known facts</span><strong id="sam_meat_launch_facts">Unavailable</strong></div>
+              <div class="meat-lead-fact"><span>Next missing fact</span><strong id="sam_meat_launch_missing">Unavailable</strong></div>
+              <div class="meat-lead-fact"><span>Truth state</span><strong id="sam_meat_launch_truth">Unavailable</strong></div>
+              <div class="meat-lead-fact"><span>Protected decision</span><strong id="sam_meat_launch_decision">Unavailable</strong></div>
+              <div class="meat-lead-fact"><span>Evidence</span><strong id="sam_meat_launch_evidence">Not persisted</strong></div>
+            </div>
+          </section>
           <section class="sam-missing-facts-panel" aria-label="Sam missing facts">
             <h3>Sam Missing Facts</h3>
             <div id="meat_lead_facts" class="meat-lead-facts"></div>
@@ -310,7 +334,7 @@
             <div class="meat-lead-form-grid">
               <div class="form-group">
                 <label for="meat_lead_price_per_kg">Price / kg</label>
-                <input type="text" id="meat_lead_price_per_kg" placeholder="R100.00" />
+                <input type="text" id="meat_lead_price_per_kg" placeholder="R130.00" />
               </div>
               <div class="form-group">
                 <label for="meat_lead_available_week">Available week</label>
@@ -322,15 +346,15 @@
               </div>
               <div class="form-group">
                 <label for="meat_lead_deposit_rule">Deposit rule</label>
-                <input type="text" id="meat_lead_deposit_rule" placeholder="50% pre-order, 50% preslaughter" />
+                <input type="text" id="meat_lead_deposit_rule" placeholder="50% of estimated total" />
               </div>
               <div class="form-group">
                 <label for="meat_lead_payment_method">Payment</label>
                 <input type="text" id="meat_lead_payment_method" placeholder="EFT" />
               </div>
               <div class="form-group">
-                <label for="meat_lead_delivery_collection">Delivery / collection</label>
-                <input type="text" id="meat_lead_delivery_collection" placeholder="collection" />
+                <label for="meat_lead_delivery_collection">Delivery area / method</label>
+                <input type="text" id="meat_lead_delivery_collection" placeholder="delivery" />
               </div>
             </div>
             <div class="form-group">

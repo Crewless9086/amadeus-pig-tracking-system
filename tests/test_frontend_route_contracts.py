@@ -6,6 +6,63 @@ from scripts.oom_sakkie_n8n_relay_contract_check import validate_relay_contract
 
 
 class FrontendRouteContractTests(unittest.TestCase):
+    def test_sam_owner_inbox_is_read_only_and_has_exact_chronology_surface(self):
+        template = Path("templates/sam-owner-inbox.html").read_text(encoding="utf-8")
+        script = Path("static/js/samOwnerInbox.js").read_text(encoding="utf-8")
+        routes = Path("modules/sales/sales_transaction_routes.py").read_text(encoding="utf-8")
+
+        self.assertIn("One canonical view of HUMAN work", template)
+        self.assertIn("chronology_hash", script)
+        self.assertIn("Open exact Chatwoot conversation", script)
+        self.assertNotIn("owner-send", script)
+        self.assertNotIn("telegram", script.lower())
+        self.assertIn("require_owner_read_access()", routes)
+        self.assertIn('"/sales/channels/chatwoot/sam/owner-inbox"', routes)
+        self.assertIn("warning at 6 hours remaining", template)
+        self.assertIn("urgent at 2 hours", template)
+        self.assertIn("expires_at_johannesburg", script)
+        self.assertIn('"Africa/Johannesburg"', script)
+        self.assertIn("alert_band", script)
+        self.assertNotIn("template-send", script)
+        self.assertIn("ownership exceptions", template)
+        self.assertIn("ownership-count", template)
+        self.assertIn("OWNERSHIP_DECISION_REQUIRED", script)
+        self.assertIn("Ownership decision required", script)
+        self.assertIn("Reply and Send Reply disabled", script)
+        self.assertIn("reviewed_inbound_message_id", script)
+        for mode in ("HUMAN", "AUTO_GENERAL", "AUTO_SPECIALIST"):
+            self.assertIn(mode, script)
+        self.assertIn("Confirm ownership", script)
+        self.assertIn("sends no customer message", script)
+        self.assertIn("latest_inbound_message_id", script)
+        self.assertIn("window_evidence_hash", script)
+        self.assertIn("owner-inbox/ownership", script)
+
+    def test_beacon_exact_weekly_owner_decision_controls_are_distinct_and_safe(self):
+        template = Path("templates/beacon-media.html").read_text(encoding="utf-8")
+        script = Path("static/js/beaconMedia.js").read_text(encoding="utf-8")
+        css = Path("static/css/beaconMedia.css").read_text(encoding="utf-8")
+        app_source = Path("app.py").read_text(encoding="utf-8")
+
+        for label in ("Approve This Post", "Request Changes", "Reject This Post"):
+            self.assertIn(label, template)
+        self.assertIn("Approval does not publish this post", template)
+        self.assertIn("beacon-packet-decision-actions", css)
+        self.assertIn("@media(max-width:720px)", css)
+        self.assertIn("recordWeeklyOwnerDecision", script)
+        self.assertIn("setWeeklyDecisionDisabled(true)", script)
+        self.assertIn('readState !== "persistence_unavailable"', script)
+        self.assertIn("require_owner_admin_access()", app_source)
+        self.assertIn(
+            '"/api/beacon/weekly-owner-review/<packet_id>/decision"',
+            app_source,
+        )
+        self.assertIn('id="beacon_media_approve"', template)
+        self.assertNotEqual(
+            template.index('id="beacon_media_approve"'),
+            template.index('id="beacon_packet_approve"'),
+        )
+
     def test_charlie_v2_shows_acceptance_and_mission_family_progress(self):
         template = Path("templates/charlie-v2.html").read_text(encoding="utf-8")
         script = Path("static/js/charlieMissionControlV2.js").read_text(encoding="utf-8")
@@ -278,7 +335,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("hmac.compare_digest", telegram_gateway)
         self.assertIn("MIN_TOKEN_CHARS = 32", telegram_gateway)
         self.assertIn('"allowed_user_ids_required": True', telegram_gateway)
-        self.assertIn('"records_audit_trace": True', telegram_gateway)
+        self.assertIn('"audit_trace_mode": "tool_dependent"', telegram_gateway)
         self.assertIn("AUTH_FAILURE_LIMIT", telegram_gateway)
         self.assertIn("telegram_gateway_exposure_preflight", telegram_gateway)
         self.assertIn("OOM_SAKKIE_TELEGRAM_TLS_CONFIRMED", telegram_gateway)
@@ -577,7 +634,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('@sales_bp.route("/beacon/facebook-posting-policy", methods=["GET"])', sales_route_source)
         self.assertIn('@sales_bp.route("/beacon/facebook-post-executions", methods=["GET", "POST"])', sales_route_source)
         self.assertIn("authorize_sam_meat_webhook(request.headers, request.args)", sales_route_source)
-        self.assertIn("handle_sam_meat_chatwoot_inbound(payload)", sales_route_source)
+        self.assertIn("handle_sam_meat_chatwoot_inbound(", sales_route_source)
+        self.assertIn("routine_delivery_claim=_claim_sam_meat_routine_delivery", sales_route_source)
         self.assertIn("SAM_MEAT_BACKEND_WEBHOOK_ENABLED", runtime_source)
         self.assertIn("SAM_MEAT_BACKEND_WEBHOOK_TOKEN", runtime_source)
         self.assertIn("SAM_MEAT_BACKEND_AUTOREPLY_ENABLED", runtime_source)

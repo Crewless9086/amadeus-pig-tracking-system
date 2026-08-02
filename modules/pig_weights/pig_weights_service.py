@@ -28,7 +28,19 @@ from modules.pig_weights.mating_service import get_breeding_analytics, link_litt
 from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights import farm_supabase_write_service
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
-from modules.sales.riversdale_auction import build_riversdale_auction_packet, load_owner_confirmed_cycle
+from modules.sales.riversdale_auction import (
+    build_riversdale_auction_packet,
+    load_owner_confirmed_cycle,
+    record_owner_auction_decision,
+    sanitized_owner_surface,
+)
+from modules.sales.riversdale_auction_candidate_reviews import (
+    read_latest_candidate_reviews,
+    record_candidate_review,
+)
+from modules.sales.riversdale_auction_list import (
+    eligibility_tokens, read_auction_list, record_auction_list_events,
+)
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
 LIFECYCLE_REMOVAL_REASONS = {
@@ -62,6 +74,7 @@ SLAUGHTER_TARGET_MIN_KG = 80
 SLAUGHTER_TARGET_MAX_KG = None
 STALE_WEIGHT_DAYS = 30
 LIVE_STOCK_SALE_PURPOSE = "sale"
+EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION = "herdmaster_exact_animal_eligibility_v1"
 LIVE_STOCK_MIN_SALE_WEIGHT_KG = 2
 BULK_WEIGHT_BATCH_AUDIT_SHEET = "BULK_WEIGHT_BATCH_LOG"
 BULK_WEIGHT_ROW_AUDIT_SHEET = "BULK_WEIGHT_BATCH_ROWS"
@@ -2220,7 +2233,31 @@ def process_litter_weaning_day(
         return {"success": False, "errors": ["No active on-farm piglets were found for this litter."]}, 409
 
     validation_errors = []
-    tag_plan = _weaning_day_tag_plan(assignments)
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    current_by_id = {
+        to_clean_string(row.get(columns["pig_id"], "")): row
+        for row in active_rows
+    }
+    requested_tags = {
+        to_clean_string(row.get("pig_id")): to_clean_string(row.get("tag_number"))
+        for row in assignments if isinstance(row, dict)
+        and to_clean_string(row.get("pig_id"))
+        and to_clean_string(row.get("tag_number"))
+    }
+    new_tag_assignments = []
+    for pig_id, requested_tag in requested_tags.items():
+        current_tag = to_clean_string(
+            (current_by_id.get(pig_id) or {}).get("Tag_Number", "")
+        )
+        if current_tag and current_tag != requested_tag:
+            validation_errors.append(
+                f"Piglet {pig_id} already has conflicting tag {current_tag}."
+            )
+        elif not current_tag:
+            new_tag_assignments.append({
+                "pig_id": pig_id, "tag_number": requested_tag,
+            })
+    tag_plan = {"assignments": new_tag_assignments}
     health_requested = any(to_clean_string(medicine.get(key, "")) for key in (
         "antiparasitic_product_id",
         "deworming_product_id",
@@ -2300,6 +2337,108 @@ def process_litter_weaning_day(
             changed_by=changed_by,
         ), 200
 
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        assignment_by_id = {
+            to_clean_string(row.get("pig_id")): row
+            for row in assignments if isinstance(row, dict)
+        }
+        movement_by_id = {
+            to_clean_string(row.get("pig_id")): row
+            for row in movement_plan.get("planned_movements", [])
+        }
+        piglets = []
+        for row in active_rows:
+            pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+            assignment = assignment_by_id.get(pig_id, {})
+            movement = movement_by_id.get(pig_id, {})
+            current_pen = to_clean_string(
+                row.get(columns["current_pen_id"], "")
+            )
+            piglets.append({
+                "pig_id": pig_id,
+                "tag_number": (
+                    to_clean_string(assignment.get("tag_number"))
+                    or to_clean_string(row.get("Tag_Number", ""))
+                ),
+                "weight_kg": wean_weights[pig_id],
+                "from_pen_id": movement.get("from_pen_id", current_pen),
+                "to_pen_id": movement.get(
+                    "to_pen_id", target_pen_id or current_pen
+                ),
+                "notes": notes,
+            })
+        try:
+            atomic = farm_supabase_write_service.apply_litter_weaning_day_packet({
+                "litter_id": litter_id,
+                "wean_date": action_date,
+                "changed_by": changed_by,
+                "piglets": piglets,
+                "treatment_rows": health_preview.get(
+                    "planned_treatment_rows", []
+                ),
+            })
+        except Exception as exc:
+            return {
+                "success": False,
+                "status": "weaning_day_transaction_failed",
+                "errors": [
+                    "The canonical Weaning Day transaction did not commit. "
+                    "Reload the litter before deciding whether to retry."
+                ],
+                "error_type": type(exc).__name__,
+                "dry_run": False,
+                "litter_id": litter_id,
+                "operation_committed": None,
+                "operation_state": "unknown_verify_before_retry",
+                "writes_to_sheets": False,
+                "writes_to_supabase": None,
+            }, 503
+        result = _weaning_day_result(
+            litter_id=litter_id,
+            dry_run=False,
+            action_date=action_date,
+            active_count=len(active_rows),
+            tag_result={
+                **tag_preview,
+                "rows_updated": atomic["tags_created"],
+            },
+            health_result={
+                **health_preview,
+                "treatment_rows_created": atomic["treatments_created"],
+            },
+            movement_result={
+                **movement_plan,
+                "movement_count": atomic["movements_created"],
+            },
+            wean_result={
+                **wean_preview,
+                "pig_rows_updated": atomic["piglets_updated"],
+                "litter_row_updated": atomic["litter_updated"],
+            },
+            weight_result={
+                "success": True,
+                "weight_count": atomic["weights_created"],
+                "errors": [],
+            },
+            changed_by=changed_by,
+        )
+        result.update({
+            "status": atomic["status"],
+            "operation_id": atomic["operation_id"],
+            "operation_committed": True,
+            "replay_withheld": (
+                atomic["status"] == "weaning_day_replayed_withheld"
+            ),
+            "atomic_counts": atomic,
+        })
+        result["source"] = {
+            "writes_to_sheets": False,
+            "writes_to_supabase": True,
+        }
+        return result, 200
+
+    # Preserve the established Google Sheets fallback when canonical
+    # Supabase writes are unavailable.
     applied = {}
     if tag_plan["assignments"]:
         applied["tags"], tag_status = assign_litter_piglet_tag_numbers(
@@ -3376,9 +3515,10 @@ def record_litter_newborn_health(
             pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
             if pig_rows_updated is None:
                 pig_rows_updated = 0
-            for row_values in treatment_rows:
-                farm_supabase_write_service.insert_medical_event_from_sheet_row(row_values)
-                treatment_rows_created += 1
+            treatment_result = farm_supabase_write_service.insert_missing_medical_events_from_sheet_rows(
+                treatment_rows
+            )
+            treatment_rows_created = treatment_result["created"]
             writes_to_supabase = True
         else:
             pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
@@ -3795,8 +3935,12 @@ def _sales_availability_from_supabase_allocation():
     thresholds = allocation.get("thresholds", {}) if isinstance(allocation, dict) else {}
     sales_rows = []
     for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
-        eligibility = _live_stock_sale_eligibility(pig, thresholds)
-        withdrawal_clear = eligibility.get("withdrawal_clear") or _live_stock_withdrawal_clear(pig)
+        eligibility_pig = {
+            **pig,
+            "allocation_query_status": pig.get("allocation_query_status") or allocation.get("allocation_query_status", ""),
+        }
+        eligibility = _live_stock_sale_eligibility(eligibility_pig, thresholds)
+        withdrawal_clear = eligibility.get("withdrawal_clear") or _live_stock_withdrawal_clear(eligibility_pig)
         sales_rows.append({
             "pig_id": pig.get("pig_id", ""),
             "tag_number": pig.get("tag_number", ""),
@@ -3817,6 +3961,9 @@ def _sales_availability_from_supabase_allocation():
             "medical_status": pig.get("medical_status", ""),
             "reserved_status": pig.get("reserved_status", ""),
             "reserved_for_order_id": pig.get("reserved_for_order_id", ""),
+            "allocation_evidence_state": pig.get("allocation_evidence_state", ""),
+            "allocation_order_status": pig.get("allocation_order_status", ""),
+            "allocation_line_status": pig.get("allocation_line_status", ""),
             "purpose": pig.get("purpose", ""),
             "available_for_sale": "Yes" if eligibility["eligible"] else "No",
             "live_stock_sale_eligible": eligibility["eligible"],
@@ -3831,6 +3978,11 @@ def _sales_availability_from_supabase_allocation():
             "suggested_price_category": eligibility["suggested_price_category"],
             "sales_notes": eligibility["status"],
             "source": "supabase_allocation_readiness",
+            "exact_animal_eligibility_contract_version": EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION,
+            "eligibility_observed_at": allocation.get("generated_date", ""),
+            "evidence_complete": eligibility.get("evidence_complete", False),
+            "withdrawal_evidence_state": eligibility.get("withdrawal_evidence_state", "unknown"),
+            "allocation_query_status": pig.get("allocation_query_status", allocation.get("allocation_query_status", "")),
         })
 
     return sales_rows
@@ -3851,7 +4003,10 @@ def _live_stock_sale_eligibility(pig, thresholds=None):
     latest_weight_date = to_clean_string(pig.get("latest_weight_date", ""))
     days_since_weight = to_float(pig.get("days_since_weight"))
     stale_weight_days = to_float(thresholds.get("stale_weight_days", STALE_WEIGHT_DAYS))
-    withdrawal_clear = _live_stock_withdrawal_clear(pig)
+    withdrawal_state = _live_stock_withdrawal_evidence_state(pig)
+    withdrawal_clear = "Yes" if withdrawal_state in {"not_applicable", "cleared"} else "No"
+    allocation_state = to_clean_string(pig.get("allocation_evidence_state", "")).lower()
+    allocation_query_status = to_clean_string(pig.get("allocation_query_status", "")).lower()
     health_status = to_clean_string(pig.get("health_status", "")).lower()
     medical_status = to_clean_string(pig.get("medical_status", "")).lower()
     hold_status = to_clean_string(pig.get("hold_status", pig.get("sale_hold_status", ""))).lower()
@@ -3861,18 +4016,28 @@ def _live_stock_sale_eligibility(pig, thresholds=None):
         return _live_stock_sale_block("not_active", "Pig is not active.")
     if on_farm not in {"yes", "true", "1", "on farm"}:
         return _live_stock_sale_block("not_on_farm", "Pig is not currently on farm.")
-    if reserved_status == "reserved" or reserved_for_order_id:
-        return _live_stock_sale_block("reserved", "Pig is already reserved or linked to an order.")
     if normalized_purpose != LIVE_STOCK_SALE_PURPOSE:
         return _live_stock_sale_block("not_sale_purpose", "Only pigs with Purpose = Sale may enter SAM Live stock sales.")
+    if to_clean_string(pig.get("sex", "")).lower() not in {"male", "female", "castrated_male"}:
+        return _live_stock_sale_block("sex_evidence_unknown", "Pig sex evidence is incomplete.")
+    if not (animal_type or calculated_stage):
+        return _live_stock_sale_block("stage_evidence_unknown", "Pig stage/category evidence is incomplete.")
+    if allocation_query_status not in {"known", "success"}:
+        return _live_stock_sale_block("allocation_evidence_unavailable", "Allocation evidence is unavailable.", withdrawal_clear, withdrawal_state)
+    if allocation_state != "known_unallocated":
+        return _live_stock_sale_block("allocated_or_unknown", "Pig allocation evidence is not affirmatively unallocated.", withdrawal_clear, withdrawal_state)
+    if reserved_status not in {"not_reserved", "not reserved"}:
+        return _live_stock_sale_block("reservation_evidence_unknown", "Reservation evidence is not affirmatively clear.", withdrawal_clear, withdrawal_state)
+    if reserved_for_order_id:
+        return _live_stock_sale_block("reserved", "Pig is already reserved or linked to an order.")
     if _is_breeding_or_retained_stage(animal_type, calculated_stage):
         return _live_stock_sale_block("breeding_or_retained", "Breeding and retained animals are excluded from SAM Live stock sales.")
-    if withdrawal_clear == "No":
-        return _live_stock_sale_block("withdrawal_hold", "Pig is blocked by a withdrawal or medical hold.", withdrawal_clear)
+    if withdrawal_state not in {"not_applicable", "cleared"}:
+        return _live_stock_sale_block("withdrawal_evidence_blocked", "Withdrawal evidence is held or incomplete.", withdrawal_clear, withdrawal_state)
     if any(token in health_status for token in ("sick", "injured", "quarantine", "hold")):
         return _live_stock_sale_block("health_hold", "Pig health status blocks SAM Live stock sales.", withdrawal_clear)
-    if any(token in medical_status for token in ("withdrawal", "follow-up hold", "quarantine", "hold")):
-        return _live_stock_sale_block("medical_hold", "Pig medical status blocks SAM Live stock sales.", withdrawal_clear)
+    if medical_status != "clear":
+        return _live_stock_sale_block("medical_evidence_not_clear", "Medical eligibility is not affirmatively clear.", withdrawal_clear, withdrawal_state)
     if hold_status in {"hold", "held", "yes", "true", "medical", "health", "withdrawal"}:
         return _live_stock_sale_block("sale_hold", "Pig is held from sale by source truth.", withdrawal_clear)
     if latest_weight_kg is None:
@@ -3897,10 +4062,12 @@ def _live_stock_sale_eligibility(pig, thresholds=None):
         "weight_band": derived_band,
         "suggested_price_category": f"{category}|{derived_band}",
         "withdrawal_clear": withdrawal_clear,
+        "withdrawal_evidence_state": withdrawal_state,
+        "evidence_complete": True,
     }
 
 
-def _live_stock_sale_block(code, reason, withdrawal_clear=None):
+def _live_stock_sale_block(code, reason, withdrawal_clear=None, withdrawal_evidence_state="unknown"):
     return {
         "eligible": False,
         "reason": reason,
@@ -3909,20 +4076,18 @@ def _live_stock_sale_block(code, reason, withdrawal_clear=None):
         "weight_band": "",
         "suggested_price_category": code,
         "withdrawal_clear": withdrawal_clear or "",
+        "withdrawal_evidence_state": withdrawal_evidence_state or "unknown",
+        "evidence_complete": False,
     }
 
 
+def _live_stock_withdrawal_evidence_state(pig):
+    state = to_clean_string(pig.get("withdrawal_evidence_state", "")).lower()
+    return state if state in {"not_applicable", "cleared", "hold", "unknown"} else "unknown"
+
+
 def _live_stock_withdrawal_clear(pig):
-    explicit = to_clean_string(pig.get("withdrawal_clear", ""))
-    if explicit:
-        return "Yes" if explicit.lower() in {"yes", "true", "1", "clear"} else "No"
-    withdrawal_end = to_clean_string(pig.get("current_withdrawal_end_date", pig.get("withdrawal_end_date", "")))
-    if withdrawal_end:
-        parsed_end = parse_sheet_date(withdrawal_end)
-        if not parsed_end:
-            return "No"
-        return "Yes" if parsed_end <= datetime.now().date() else "No"
-    return "Yes"
+    return "Yes" if _live_stock_withdrawal_evidence_state(pig) in {"not_applicable", "cleared"} else "No"
 
 
 def _live_stock_media_references(pig):
@@ -4479,11 +4644,49 @@ def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=N
     return "Needs Data", "No trusted allocation rule matched this pig yet."
 
 
-def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
+def _complete_canonical_allocation_inputs(value):
+    if not isinstance(value, dict):
+        return False
+    required_lists = (
+        "overview_rows", "pig_master_rows", "weight_rows",
+        "sales_rows", "litter_rows",
+    )
+    if any(not isinstance(value.get(key), list) for key in required_lists):
+        return False
+    if not isinstance(value.get("pen_lookup"), dict):
+        return False
+    progress = value.get("read_progress")
+    return (
+        isinstance(progress, dict)
+        and progress.get("status") == "complete"
+        and value.get("allocation_query_status") == "known"
+        and value.get("medical_query_status") == "known"
+    )
+
+
+def get_pig_allocation_readiness(
+    today=None,
+    allow_sheet_fallback=True,
+    connect_factory=None,
+    canonical_inputs=None,
+):
     today = today or datetime.now().date()
     settings = _allocation_settings()
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    supabase_inputs = _try_supabase_read(farm_supabase_read_service.get_allocation_input_rows)
+    supplied_canonical_inputs = canonical_inputs is not None
+    supabase_inputs = canonical_inputs
+    if not supplied_canonical_inputs:
+        supabase_inputs = _try_supabase_read(
+            farm_supabase_read_service.get_allocation_input_rows, connect_factory,
+        )
+    elif not _complete_canonical_allocation_inputs(supabase_inputs):
+        return {
+            "source": "supabase_allocation_readiness_unavailable",
+            "pigs": [],
+            "counts": {},
+            "success": False,
+            "status": "malformed_or_partial_canonical_snapshot",
+        }
     if supabase_inputs is not None:
         overview_rows = supabase_inputs.get("overview_rows", [])
         pig_master_rows = supabase_inputs.get("pig_master_rows", [])
@@ -4608,8 +4811,13 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
             "health_status": to_clean_string(row.get("Health_Status", "")),
             "medical_status": to_clean_string(row.get("Medical_Status", "")),
             "media_references": row.get("Media_References", []) if isinstance(row.get("Media_References", []), list) else [],
-            "reserved_status": sales_meta.get("reserved_status", ""),
-            "reserved_for_order_id": sales_meta.get("reserved_for_order_id", ""),
+            "reserved_status": sales_meta.get("reserved_status") or to_clean_string(row.get("Reserved_Status", "")),
+            "reserved_for_order_id": sales_meta.get("reserved_for_order_id") or to_clean_string(row.get("Reserved_For_Order_ID", "")),
+            "allocation_evidence_state": to_clean_string(row.get("Allocation_Evidence_State", "")),
+            "allocation_order_status": to_clean_string(row.get("Allocation_Order_Status", "")),
+            "allocation_line_status": to_clean_string(row.get("Allocation_Line_Status", "")),
+            "allocation_query_status": supabase_inputs.get("allocation_query_status", "") if supabase_inputs is not None else "",
+            "withdrawal_evidence_state": to_clean_string(row.get("Withdrawal_Evidence_State", "")),
             "sale_category": sales_meta.get("sale_category", ""),
             "suggested_price_category": sales_meta.get("suggested_price_category", ""),
             "existing_link": sales_meta.get("reserved_for_order_id", ""),
@@ -4626,6 +4834,11 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
         "success": True,
         "generated_date": today.isoformat(),
         "source": source,
+        "source_read_progress": (
+            supabase_inputs.get("read_progress")
+            if supabase_inputs is not None and isinstance(supabase_inputs.get("read_progress"), dict)
+            else {"status": "not_exposed", "shared_snapshot": False}
+        ),
         "thresholds": settings,
         "business_rules": {
             "source": settings["source"],
@@ -4648,6 +4861,39 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
     }
 
 
+def _project_riversdale_review_evidence(
+    allocation, confirmation, *, database_url=None, connect_factory=None
+):
+    cycle_id = to_clean_string(confirmation.get("auction_cycle_id"))
+    pig_ids = [
+        to_clean_string(row.get("pig_id"))
+        for row in allocation.get("pigs", [])
+        if isinstance(row, dict) and to_clean_string(row.get("pig_id"))
+    ]
+    latest_reviews, review_status = read_latest_candidate_reviews(
+        auction_cycle_id=cycle_id, pig_ids=pig_ids,
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    if review_status != 200:
+        latest_reviews = {}
+    for row in allocation.get("pigs", []):
+        if not isinstance(row, dict):
+            continue
+        withdrawal_state = to_clean_string(
+            row.get("withdrawal_evidence_state")
+        ).lower()
+        row["withdrawal_clear"] = (
+            "Yes" if withdrawal_state in {"cleared", "not_applicable"} else "No"
+        )
+        review = latest_reviews.get(to_clean_string(row.get("pig_id")))
+        row["auction_review_evidence"] = review or {}
+        row["observed_quality"] = (
+            to_clean_string((review or {}).get("quality_state"))
+            if (review or {}).get("fresh") is True else "Unknown"
+        )
+    return review_status
+
+
 def get_riversdale_auction_recommendation(today=None, confirmation=None, ledger_evidence=None, sam_demand=None, oom_sakkie_preparation=None, database_url=None, connect_factory=None):
     """Read-only SAM Live Stock auction packet grounded in the canonical allocation."""
     today = today or datetime.now().date()
@@ -4655,9 +4901,151 @@ def get_riversdale_auction_recommendation(today=None, confirmation=None, ledger_
     confirmation = confirmation if isinstance(confirmation, dict) else load_owner_confirmed_cycle(
         today=today, database_url=database_url, connect_factory=connect_factory,
     )
-    return build_riversdale_auction_packet(
+    review_status = _project_riversdale_review_evidence(
+        allocation, confirmation, database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    packet = build_riversdale_auction_packet(
         allocation, today=today, confirmation=confirmation, ledger_evidence=ledger_evidence,
         sam_demand=sam_demand, oom_sakkie_preparation=oom_sakkie_preparation,
+    )
+    packet["owner_surface"] = sanitized_owner_surface(packet, today=today)
+    packet["review_evidence_status"] = (
+        "available" if review_status == 200 else "unavailable"
+    )
+    return packet
+
+
+def record_riversdale_auction_decision(payload, *, actor_id, database_url=None, connect_factory=None):
+    return record_owner_auction_decision(
+        payload, actor_id=actor_id, database_url=database_url, connect_factory=connect_factory,
+    )
+
+
+def _auction_review_candidates_in_transaction(connection, auction_cycle_id):
+    allocation = get_pig_allocation_readiness(
+        allow_sheet_fallback=False,
+        connect_factory=_ManagedReadFactory(connection),
+    )
+    if allocation.get("success") is not True:
+        return []
+    packet = build_riversdale_auction_packet(
+        allocation,
+        today=datetime.now().date(),
+        confirmation={
+            "auction_cycle_id": auction_cycle_id,
+            "operating": True,
+            "confirmed_date": datetime.now().date(),
+            "valid": True,
+        },
+    )
+    return [
+        to_clean_string(row.get("pig_id"))
+        for row in packet.get("candidate_preview", [])
+        if isinstance(row, dict) and to_clean_string(row.get("pig_id"))
+    ]
+
+
+def record_riversdale_candidate_review(payload, *, actor_id, database_url=None, connect_factory=None):
+    return record_candidate_review(
+        payload, actor_id=actor_id,
+        candidate_loader=_auction_review_candidates_in_transaction,
+        database_url=database_url, connect_factory=connect_factory,
+    )
+
+
+def _auction_selectable_ids(packet):
+    selectable = []
+    for item in packet.get("candidate_preview", []):
+        evidence = item.get("herdmaster_evidence", {}) if isinstance(item, dict) else {}
+        withdrawal = to_clean_string(evidence.get("withdrawal_clear")).lower()
+        quality = to_clean_string(evidence.get("observed_quality")).lower()
+        health = to_clean_string(evidence.get("health_status")).lower()
+        medical = to_clean_string(evidence.get("medical_status")).lower()
+        if (
+            withdrawal in {"yes", "clear", "cleared", "true", "1"}
+            and quality in {"suitable", "clear", "cleared", "yes"}
+            and medical == "clear"
+            and health
+            and "hold" not in health
+        ):
+            selectable.append(to_clean_string(item.get("pig_id")))
+    return [pig_id for pig_id in selectable if pig_id]
+
+
+def get_riversdale_auction_list(database_url=None, connect_factory=None):
+    listing, status = read_auction_list(database_url=database_url, connect_factory=connect_factory)
+    if status != 200:
+        return listing, status
+    packet = get_riversdale_auction_recommendation(
+        database_url=database_url, connect_factory=connect_factory
+    )
+    packet_cycle = to_clean_string((packet.get("confirmation") or {}).get("auction_cycle_id"))
+    if not packet_cycle or packet_cycle != listing.get("auction_cycle_id"):
+        return {
+            **listing, "success": False, "status": "auction_list_stale_cycle",
+            "selectable_pig_ids": [], "eligibility_tokens": {},
+        }, 409
+    tokens = eligibility_tokens(packet)
+    listing["selectable_pig_ids"] = sorted(tokens)
+    listing["eligibility_tokens"] = tokens
+    return listing, 200
+
+
+class _ManagedReadFactory:
+    """Let canonical readers share the writer transaction without closing it."""
+    transaction_managed = True
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def __call__(self, _database_url):
+        from contextlib import nullcontext
+        return nullcontext(self.connection)
+
+
+def _auction_eligibility_in_transaction(connection, _pig_ids):
+    allocation = get_pig_allocation_readiness(
+        allow_sheet_fallback=False,
+        connect_factory=_ManagedReadFactory(connection),
+    )
+    if allocation.get("success") is not True:
+        return allocation
+    with connection.cursor() as cursor:
+        cursor.execute("""select auction_cycle_id,auction_date,operating_confirmed,
+            owner_confirmed_at,decision_status,location,organizer_details,
+            entry_deadline,commission_percent,auction_fees,transport_estimate,owner_note
+            from public.riversdale_auction_cycles where operating_confirmed
+            order by owner_confirmed_at desc,created_at desc limit 1""")
+        row = cursor.fetchone()
+    if not row:
+        return {"success": False, "status": "confirmed_auction_cycle_required"}
+    confirmation = {
+        "auction_cycle_id": row[0], "confirmed_date": row[1],
+        "operating": row[2], "confirmed_at": row[3],
+        "decision_status": row[4], "location": row[5],
+        "organizer_details": row[6], "entry_deadline": row[7],
+        "commission_percent": row[8], "auction_fees": row[9],
+        "transport_estimate": row[10], "owner_note": row[11],
+        "valid": True,
+    }
+    review_status = _project_riversdale_review_evidence(
+        allocation, confirmation, connect_factory=_ManagedReadFactory(connection)
+    )
+    if review_status != 200:
+        return {"success": False, "status": "auction_review_evidence_unavailable"}
+    packet = build_riversdale_auction_packet(
+        allocation, today=datetime.now().date(), confirmation=confirmation,
+    )
+    packet["success"] = True
+    return packet
+
+
+def update_riversdale_auction_list(payload, *, actor_id, database_url=None, connect_factory=None):
+    return record_auction_list_events(
+        payload, actor_id=actor_id,
+        eligibility_loader=_auction_eligibility_in_transaction,
+        database_url=database_url, connect_factory=connect_factory,
     )
 
 
@@ -5233,8 +5621,12 @@ def _meat_planning_row(row, planning_bucket):
     }
 
 
-def get_meat_planning_summary(today=None):
-    allocation = get_pig_allocation_readiness(today=today)
+def get_meat_planning_summary(today=None, connect_factory=None, allow_sheet_fallback=True):
+    allocation = get_pig_allocation_readiness(
+        today=today,
+        allow_sheet_fallback=allow_sheet_fallback,
+        connect_factory=connect_factory,
+    )
     planning_rows = []
     buckets = {
         "ready_now": 0,

@@ -1,6 +1,7 @@
+import copy
+import json
 import tempfile
 import unittest
-import json
 import os
 import re
 import shutil
@@ -11,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from modules.charlie import execution_bridge
+from modules.charlie.adaptive_orchestration import build_orchestration_packet
 
 
 MISSION = {
@@ -219,6 +221,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(execution_bridge._authoritative_targeted_recovery_agent(mission), "risk_agent")
 
     def setUp(self):
+        self.default_artifact_consumer_patch = patch(
+            "modules.charlie.execution_bridge.consume_final_agent_artifact",
+            side_effect=lambda mission_id, agent, execution_id, attempt, artifact, artifact_hash, **_kwargs: (
+                {
+                    "success": True,
+                    "status": "final_artifact_consumed",
+                    "claim": {
+                        "identity": f"{mission_id}:{execution_id}:{agent}:{attempt}:{artifact_hash}",
+                    },
+                },
+                200,
+            ),
+        )
+        self.default_artifact_consumer = self.default_artifact_consumer_patch.start()
+        self.addCleanup(self.default_artifact_consumer_patch.stop)
         self.builder_admission = patch(
             "modules.charlie.execution_bridge.build_admission",
             return_value={
@@ -385,6 +402,73 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(ready)
         self.assertEqual(detail["reason"], "all_workflow_artifacts_passing")
+
+    def test_historical_workflow_uses_compatibility_adapter_with_new_lineage(self):
+        mission = {
+            "mission_context_pack": {"agent_order": ["builder", "reviewer"]},
+            "agent_workflow": [{"agent": "builder", "status": "active"}],
+        }
+        artifacts = {
+            "builder": {"summary": "Built.", "changed_files": ["module.py"], "evidence_lineage": {"candidate": "abc"}},
+            "reviewer": {"summary": "Approved.", "recommended_owner_decision": "approve_final_release",
+                         "quality_gate": {"passed": True}, "evidence_lineage": {"candidate": "abc"}},
+        }
+
+        ready, detail = execution_bridge._verify_owner_review_artifacts_ready(mission, artifacts)
+
+        self.assertTrue(ready)
+        self.assertEqual(detail["compatibility_adapter"], "frozen_historical_workflow_v1")
+
+    def test_unsafe_historical_workflow_still_fails_closed(self):
+        mission = {
+            "mission_context_pack": {"agent_order": ["builder", "security_reviewer", "reviewer"]},
+            "agent_workflow": [{"agent": "builder", "status": "active"}],
+        }
+        artifacts = {"builder": {"summary": "Built.", "evidence_lineage": {"candidate": "abc"}}}
+
+        ready, detail = execution_bridge._verify_owner_review_artifacts_ready(mission, artifacts)
+
+        self.assertFalse(ready)
+        self.assertEqual(detail["blocked_agent"], "security_reviewer")
+        self.assertEqual(detail["stage_status"], "legacy_required_artifact_missing")
+
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_material_execution_evidence_persists_one_expansion_generation(self, update_vault):
+        packet = build_orchestration_packet({"raw_text": "Fix small bounded module.py regression"})
+        mission = {"mission_id": "M-EXPAND", "raw_text": "Fix small bounded module.py regression",
+                   "metadata": {"orchestration": packet}}
+        update_vault.return_value = ({"success": True}, 200)
+
+        result, status = execution_bridge._reconcile_adaptive_expansion(
+            mission, "tester", {"risk_flags": ["authentication security impact"]},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "orchestration_generation_expanded")
+        self.assertIn("security_reviewer", result["added_roles"])
+        self.assertTrue(
+            {item["agent"] for item in packet["selected_agents"]}.issubset(
+                {item["agent"] for item in result["packet"]["selected_agents"]}
+            )
+        )
+        history = result["packet"]["expansion_history"][-1]
+        self.assertEqual(history["from_generation"], packet["generation_identity"])
+        self.assertEqual(history["triggering_stage"], "tester")
+        update_vault.assert_called_once()
+
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_identical_execution_evidence_reuses_generation(self, update_vault):
+        mission_shape = {"raw_text": "Fix authentication security in module.py"}
+        packet = build_orchestration_packet(mission_shape)
+        mission = {"mission_id": "M-SAME", **mission_shape, "metadata": {"orchestration": packet}}
+
+        result, status = execution_bridge._reconcile_adaptive_expansion(
+            mission, "security_reviewer", {"risk_flags": ["authentication security"]},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "orchestration_generation_reused")
+        update_vault.assert_not_called()
 
     def test_reviewer_quality_gate_requires_structured_executable_test_evidence(self):
         artifact = {
@@ -1199,7 +1283,76 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(normalized)
         self.assertTrue(artifact["bugs"][0]["introduced_by_current_diff"])
 
+    def test_protected_pause_requires_exact_full_candidate_binding(self):
+        revision = "a" * 40
+        artifact = {
+            "source_commit": revision,
+            "tested_revision": revision,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
+        }
+        original = copy.deepcopy(artifact)
+
+        self.assertTrue(execution_bridge._protected_pause_has_exact_candidate_binding(artifact))
+        self.assertEqual(artifact, original)
+
+    def test_protected_pause_rejects_blank_short_malformed_historical_and_mismatched_lineage(self):
+        revision = "a" * 40
+        cases = [
+            {"tested_revision": ""},
+            {"tested_revision": "a"},
+            {"tested_revision": revision[:7]},
+            {"tested_revision": "not-a-sha"},
+            {"tested_revision": "b" * 40},
+            {"tested_revision": revision, "lineage_revision": "b" * 40},
+            {"tested_revision": revision, "lineage_candidate": "historical-candidate"},
+        ]
+        for overrides in cases:
+            with self.subTest(overrides=overrides):
+                artifact = {
+                    "source_commit": revision,
+                    "tested_revision": overrides.get("tested_revision"),
+                    "candidate_fingerprint": "candidate-123",
+                    "evidence_lineage": {
+                        "source_commit": overrides.get("lineage_revision", revision),
+                        "candidate_fingerprint": overrides.get("lineage_candidate", "candidate-123"),
+                    },
+                }
+                original = copy.deepcopy(artifact)
+
+                self.assertFalse(execution_bridge._protected_pause_has_exact_candidate_binding(artifact))
+                self.assertEqual(artifact, original)
+
+    def test_unbound_protected_pause_remains_non_passing_without_builder_normalization(self):
+        artifact = _successful_stage_payload("product_reviewer")
+        artifact.update({
+            "summary": "Code passes, but migration application remains owner-gated.",
+            "recommended_owner_decision": "pause",
+            "errors": [],
+            "bugs": [],
+            "files_inspected": ["supabase/migrations/202607220001_additive.sql"],
+            "acceptance_results": [{"id": "authority", "status": "passed", "evidence": ["No protected write."]}],
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "passed"}],
+            "next_action": "Obtain owner authorization before migration application.",
+            "release_notes": ["Do not apply the migration."],
+            "product_review_status": "blocked",
+            "source_commit": "a" * 40,
+            "tested_revision": "b" * 40,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {"source_commit": "a" * 40, "candidate_fingerprint": "candidate-123"},
+        })
+
+        result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(artifact["recommended_owner_decision"], "pause")
+        self.assertNotIn("protected_operations", artifact)
+
     def test_product_protected_pause_accepts_explicit_preexisting_scope_aliases(self):
+        revision = "a" * 40
         artifact = _successful_stage_payload("product_reviewer")
         artifact.update({
             "summary": "Code checks pass; migration application and live canary remain owner-authorized.",
@@ -1231,6 +1384,13 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "59 tests passed"}],
             "next_action": "Obtain owner authorization to apply the additive migration and run the live canary.",
             "release_notes": ["Do not apply the migration without owner authorization."],
+            "source_commit": revision,
+            "tested_revision": revision,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
         })
 
         result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
@@ -2530,6 +2690,19 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(commands_by_agent["idea_expander"][commands_by_agent["idea_expander"].index("--sandbox") + 1], "read-only")
         self.assertIn("--model", commands_by_agent["idea_expander"])
         self.assertIn("reasoning-model-a", commands_by_agent["idea_expander"])
+        consumed_agents = [
+            call.args[1] for call in self.default_artifact_consumer.call_args_list
+        ]
+        self.assertIn("idea_expander", consumed_agents)
+        self.assertIn("source_mapper", consumed_agents)
+        self.assertFalse(
+            any(
+                len(call.args) > 1
+                and call.args[1] in {"idea_expander", "source_mapper"}
+                and call.kwargs.get("step_status") == "complete"
+                for call in update_workflow.call_args_list
+            )
+        )
         vault_metadata = {"review_packet": self.finalize_owner_review.call_args.args[1]}
         self.assertEqual(
             vault_metadata["review_packet"]["agent_artifacts"]["idea_expander"]["model_assignment"]["runtime_model"],
@@ -2672,6 +2845,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 execute_codex=True,
                 output_dir=tmp,
                 run_subprocess=fake_runner,
+                artifact_consumer=lambda mission_id, agent, execution_id, attempt, artifact, artifact_hash, **kwargs: (
+                    {"success": True, "status": "final_artifact_consumed", "claim": {
+                        "identity": f"{mission_id}:{execution_id}:{agent}:{attempt}:{artifact_hash}",
+                    }}, 200
+                ),
             )
 
         self.assertEqual(status_code, 200)
@@ -4160,6 +4338,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["passed"], result)
 
     def test_product_reviewer_migration_application_pause_is_not_builder_backflow(self):
+        revision = "a" * 40
         artifact = _successful_stage_payload("product_reviewer")
         artifact.update({
             "summary": "No current-diff product bug. Applying this migration remains owner-gated.",
@@ -4178,6 +4357,13 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "next_action": "Obtain owner decisions before migration application.",
             "release_notes": ["Do not apply the migration yet."],
             "product_review_status": "blocked",
+            "source_commit": revision,
+            "tested_revision": revision,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
         })
 
         result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
@@ -5353,6 +5539,95 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_binding_rejection_blocks_at_producing_stage_without_visual_reroute(
+        self,
+        update_vault,
+        update_workflow,
+        update_status,
+        _changed_files,
+    ):
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_status.return_value = ({"success": True, "status": "ok"}, 200)
+        ledger = {
+            "version": "charlie_agent_runner_v2",
+            "execution_id": "EXEC-BINDING",
+            "mission_id": "CHARLIE-MISSION-BINDING",
+            "stages": [],
+            "backflow_events": [],
+            "quality_gates": [],
+        }
+        artifact = {
+            "summary": "Screenshots and preview evidence remain unavailable.",
+            "artifact_ingestion": {
+                "status": "final_artifact_binding_invalid",
+                "missing_or_invalid": ["source_revision", "candidate_fingerprint"],
+                "semantic_rejection": {"identity": "semantic-rejection-1"},
+            },
+            "ingestion_blocked": True,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = {
+                name: Path(tmp) / f"EXEC-BINDING.architect.{suffix}"
+                for name, suffix in (
+                    ("final_path", "final.md"),
+                    ("stdout_path", "stdout.txt"),
+                    ("stderr_path", "stderr.txt"),
+                    ("prompt_path", "prompt.md"),
+                )
+            }
+            for path in paths.values():
+                path.write_text("", encoding="utf-8")
+            result, status_code = execution_bridge._block_agent_stage(
+                "CHARLIE-MISSION-BINDING",
+                "EXEC-BINDING",
+                ledger,
+                "architect",
+                paths,
+                SimpleNamespace(returncode=0, stdout="", stderr=""),
+                "2026-07-25T17:20:00+00:00",
+                blocked_reason="Final artifact ingestion blocked: final_artifact_binding_invalid",
+                artifact=artifact,
+                artifacts={"architect": artifact},
+            )
+        self.assertEqual(status_code, 504)
+        self.assertEqual(result["status"], "agent_stage_blocked")
+        self.assertEqual(result["block_disposition"]["block_class"], "final_artifact_binding_invalid")
+        self.assertEqual(result["block_disposition"]["responsible_stage"], "architect")
+        self.assertEqual(result["block_disposition"]["return_to_stage"], "architect")
+        self.assertEqual(
+            result["block_disposition"]["semantic_rejection_identity"],
+            "semantic-rejection-1",
+        )
+        packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertEqual(packet["blocked_agent"], "architect")
+        self.assertEqual(packet["block_disposition"]["responsible_stage"], "architect")
+        self.assertNotEqual(packet["block_disposition"]["responsible_stage"], "visual_qa_reviewer")
+        self.assertEqual(update_status.call_args.args[1], "blocked")
+
+    def test_agent_prompt_requires_candidate_and_lineage_binding(self):
+        prompt = execution_bridge.build_agent_stage_prompt(
+            {
+                "mission_id": "MISSION-BINDING-PROMPT",
+                "title": "Bounded internal correction",
+                "mission_type": "bug fix",
+                "raw_text": "Fix one internal regression.",
+                "metadata": {"agent_workflow": [{"agent": "architect", "status": "active"}]},
+            },
+            "architect",
+            artifacts={},
+            ledger={},
+        )
+        self.assertIn("Candidate-bound ingestion requirements", prompt)
+        self.assertIn("source_revision", prompt)
+        self.assertIn("candidate_fingerprint", prompt)
+        self.assertIn("parent_artifact_id", prompt)
+        self.assertIn("Do not invent a revision", prompt)
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_exhausted_acceptance_matrix_stops_in_owner_block_instead_of_requeueing_qa(
         self,
         update_vault,
@@ -6289,6 +6564,71 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertEqual(result["ingestion_attempts"], 1)
         self.assertEqual(len(calls), 1)
+
+
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.consume_final_agent_artifact")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_restart_recovery_preserves_attempt_candidate_and_parent_without_rerun(self, get_mission, consume, _heartbeat):
+        revision = "a" * 40
+        payload = _successful_stage_payload("tester")
+        payload.update({"source_commit": revision, "tested_revision": revision, "expected_revision": revision})
+        mission = {
+            "mission_id": "M-RECOVER", "mission_type": "feature build",
+            "agent_workflow": [{"agent": "builder", "status": "complete"}, {"agent": "tester", "status": "active"}],
+            "metadata": {"review_packet": {"agent_artifacts": {"builder": {
+                "artifact_identity": "M-RECOVER:E-RECOVER:builder:1:durable", "source_commit": revision,
+            }}}},
+        }
+        get_mission.return_value = ({"success": True, "mission": mission}, 200)
+        consume.return_value = ({"success": True, "status": "final_artifact_consumed", "next_agent": "", "claim": {"identity": "tester-durable"}}, 200)
+        with tempfile.TemporaryDirectory() as tmp:
+            final_path = Path(tmp) / "E-RECOVER.tester.attempt2.final.md"
+            final_path.write_text(json.dumps(payload), encoding="utf-8")
+            result, status = execution_bridge.recover_pending_final_agent_artifact(
+                "M-RECOVER", status_loader=lambda **_kwargs: {
+                    "last_mission_id": "M-RECOVER", "current_agent": "tester",
+                    "execution_artifact": str(final_path), "agent_ledger": {"execution_id": "E-RECOVER"},
+                },
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "final_artifact_consumed")
+        args = consume.call_args.args
+        self.assertEqual(args[3], 2)
+        stored = args[4]
+        self.assertEqual(stored["candidate_revision"], revision)
+        self.assertEqual(stored["tested_revision"], revision)
+        self.assertEqual(stored["parent_artifact_id"], "M-RECOVER:E-RECOVER:builder:1:durable")
+
+    def test_durable_artifact_contract_links_tester_to_exact_builder_identity(self):
+        revision = "a" * 40
+        builder = {"artifact_identity": "M:E:builder:3:durable"}
+        artifact = {"source_commit": revision, "tested_revision": revision, "candidate_fingerprint": "fp"}
+        prepared = execution_bridge._prepare_durable_artifact_contract(
+            {"mission_id": "M"}, artifact, "tester", "E", 3,
+            {"builder": builder}, ["builder", "tester", "qa_red_team"],
+        )
+        self.assertEqual(prepared["candidate_revision"], revision)
+        self.assertEqual(prepared["expected_revision"], revision)
+        self.assertEqual(prepared["tested_revision"], revision)
+        self.assertEqual(prepared["parent_artifact_id"], builder["artifact_identity"])
+        self.assertEqual(prepared["input_artifact_ids"], [builder["artifact_identity"]])
+        self.assertEqual(prepared["producing_stage"], "tester")
+        self.assertEqual(prepared["attempt"], 3)
+
+    def test_ingestion_retry_forwards_atomic_backflow_intent(self):
+        calls = []
+        def consumer(*args, **kwargs):
+            calls.append(kwargs)
+            return {"success": True, "status": "final_artifact_consumed", "claim": {"identity": "durable"}}, 200
+        result, status = execution_bridge._consume_final_artifact_with_retry(
+            consumer, "M", "tester", "E", 2, {"summary": "send back"}, "hash",
+            transition_target="builder", transition_status="complete", sleep_fn=lambda _: None,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["claim"]["identity"], "durable")
+        self.assertEqual(calls[0]["transition_target"], "builder")
+        self.assertEqual(calls[0]["transition_status"], "complete")
 
 
 if __name__ == "__main__":

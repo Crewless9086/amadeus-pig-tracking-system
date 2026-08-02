@@ -1,15 +1,18 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 from modules.auth.owner_access import (
     configure_owner_access,
     owner_login_get,
     owner_login_post,
     owner_logout_post,
+    owner_admin_principal,
     owner_status,
+    require_owner_admin_access,
     require_owner_page_access,
     require_owner_read_access,
+    require_strict_owner_read_access,
 )
 from modules.beacon.content_operations import (
     build_beacon_content_candidate,
@@ -17,6 +20,18 @@ from modules.beacon.content_operations import (
 )
 from modules.beacon.meta_ads_insights_preview import (
     build_meta_ads_insights_preview,
+)
+from modules.beacon.meta_ads_evidence_import import (
+    execute_meta_ads_import_packet,
+    prepare_meta_ads_import_packet,
+)
+from modules.beacon.weekly_owner_review import (
+    PACKET_ID as WEEKLY_OWNER_REVIEW_PACKET_ID,
+    load_post_one_thumbnail,
+)
+from modules.beacon.weekly_owner_review_decisions import (
+    get_weekly_owner_review_decision,
+    record_weekly_owner_review_decision,
 )
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
@@ -55,6 +70,14 @@ app.register_blueprint(charlie_bp, url_prefix="/api")
 @app.route("/")
 def home():
     return render_template("dashboard.html")
+
+
+@app.route("/rootline/policy-review")
+def rootline_policy_review_page():
+    guard = require_strict_owner_read_access()
+    if guard:
+        return guard
+    return render_template("rootline-policy-review.html")
 
 
 @app.route("/pigs")
@@ -131,12 +154,89 @@ def beacon_content_operations_read():
         return guard
     evidence = gather_beacon_content_evidence()
     candidate = build_beacon_content_candidate(evidence)
+    decision, decision_state = get_weekly_owner_review_decision()
+    candidate["weekly_owner_review_decision"] = decision
+    candidate["weekly_owner_review_decision_state"] = decision_state
     candidate["runtime_status"] = {
         "endpoint_available": True,
         "owner_authenticated_read_succeeded": True,
         **candidate.pop("capability_status"),
     }
     return jsonify(candidate), 200
+
+
+@app.route(
+    "/api/beacon/weekly-owner-review/<packet_id>/decision",
+    methods=["POST"],
+)
+def beacon_weekly_owner_review_decision(packet_id):
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    if "owner_identity" in payload:
+        return jsonify({
+            "success": False,
+            "status": "client_owner_identity_prohibited",
+            "publication_authority_status": "publication_not_authorized",
+            "publish": False,
+            "meta_call": False,
+            "upload": False,
+            "scheduled": False,
+            "send": False,
+            "spend": False,
+            "business_data_mutation": False,
+        }), 400
+    if payload.get("packet_id") != packet_id:
+        return jsonify({
+            "success": False,
+            "status": "weekly_owner_review_packet_mismatch",
+            "publication_authority_status": "publication_not_authorized",
+            "publish": False,
+            "meta_call": False,
+            "upload": False,
+            "scheduled": False,
+            "send": False,
+            "spend": False,
+            "business_data_mutation": False,
+        }), 409
+    result, status = record_weekly_owner_review_decision(
+        payload,
+        owner_identity=owner_admin_principal(),
+    )
+    return jsonify(result), status
+
+
+@app.route(
+    "/api/beacon/weekly-owner-review/<packet_id>/media/<asset_id>",
+    methods=["GET"],
+)
+def beacon_weekly_owner_review_media(packet_id, asset_id):
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    if packet_id != WEEKLY_OWNER_REVIEW_PACKET_ID:
+        return jsonify({
+            "success": False,
+            "status": "weekly_owner_review_packet_not_found",
+            "posts_publicly": False,
+            "calls_meta": False,
+            "writes_performed": False,
+        }), 404
+    result, status = load_post_one_thumbnail(asset_id)
+    if status != 200:
+        return jsonify(result), status
+    return Response(
+        result["data"],
+        status=200,
+        mimetype=result["mime_type"],
+        headers={
+            "Cache-Control": "no-store, private",
+            "X-Content-Type-Options": "nosniff",
+            "X-Beacon-Packet": WEEKLY_OWNER_REVIEW_PACKET_ID,
+            "X-Beacon-Dimensions": f"{result['width']}x{result['height']}",
+        },
+    )
 
 
 @app.route("/api/beacon/meta-ads-insights-preview", methods=["GET"])
@@ -148,6 +248,30 @@ def beacon_meta_ads_insights_preview_read():
         start_date=request.args.get("start"),
         end_date=request.args.get("end"),
         level=request.args.get("level", "ad"),
+    )
+    return jsonify(result), status
+
+
+@app.route("/api/beacon/meta-ads-import-packet", methods=["GET"])
+def beacon_meta_ads_import_packet_prepare():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status = prepare_meta_ads_import_packet(
+        start_date=request.args.get("start"),
+        end_date=request.args.get("end"),
+        level=request.args.get("level", "ad"),
+    )
+    return jsonify(result), status
+
+
+@app.route("/api/beacon/meta-ads-import-packet/execute", methods=["POST"])
+def beacon_meta_ads_import_packet_execute():
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    result, status = execute_meta_ads_import_packet(
+        request.get_json(silent=True) or {}
     )
     return jsonify(result), status
 

@@ -78,6 +78,30 @@ Parent missions become review-ready when their frozen matrix and focused mission
 
 ## Queue Discipline
 
+Mission approval and execution eligibility are distinct. An approved mission
+may carry a current-generation `owner_execution_hold` without changing its
+owner approval, orchestration packet, workflow, or mission row. The hold and
+its later release are separate append-only, server-owner-derived events.
+
+While a hold is active, every authoritative runnable query, executive queue
+cycle, direct pickup, stranded recovery, status claim, and execution-lease
+write must exclude or reject that mission. Holds have no timeout and survive
+restart. Only a separate exact owner-admin release for the same mission,
+generation, and hold identity restores execution eligibility. Replays are
+idempotent; stale generations and conflicting holds fail closed.
+
+Deployment of this contract is migration-first. Apply and verify the additive
+owner-hold ledger before deploying code that reads it. Code deployed before
+the ledger exists fails closed and makes authoritative mission selection
+unavailable. Rollback restores the prior code revision while retaining the
+additive append-only ledger and its evidence.
+
+Hold and release writes require the dedicated
+`CHARLIE_OWNER_EXECUTION_HOLD_DATABASE_URL` credential whose database login is
+authenticates only as the `charlie_owner_execution_hold_writer` login. Generic
+`service_role` access is read-only for this ledger and cannot call its
+append functions. Missing dedicated writer configuration fails closed.
+
 CHARLIE owner-facing queues, Telegram handoff views, command-center buckets, and local runner pickup must treat `owner_work` as the actionable queue class. System smoke tests, validation missions, canary/no-op checks, placeholder relay records, and low-signal intake are not owner work and must not crowd out real owner missions waiting for approval, pickup, review, or release handling.
 
 Dependencies are executable gates, not display hints. A child remains `waiting_dependency` until every `depends_on_mission_id` is `done`, `merged`, or `deployed`. Oversized parents become paused `waiting_children` coordinators after their deterministic children are created; the parent pipeline may not execute in parallel with those children. Child scope is frozen from its explicit family scope and may not recursively split from words inherited from the parent title.
@@ -131,6 +155,35 @@ Every inbox item must identify its source agent, source type, exact proposed act
 
 Telegram and `/charlie` record mission authority, but they do not execute shell commands directly. A local runner/Codex process must pick up and execute approved work.
 
+Governed startup is a controller-side ownership bootstrap:
+
+1. The controller generates the startup nonce and supervisor generation.
+2. It observes and validates the complete Windows supervisor
+   launcher/interpreter tree before acknowledging supervisor readiness.
+3. The supervisor may spawn the runner only after that exact durable
+   acknowledgement.
+4. The controller then observes and validates the runner
+   launcher/interpreter tree and publishes a signed full-tree acknowledgement
+   bound to generation, nonce, exact revision, PID topology, executable,
+   command role, and live creation identity.
+5. Runner recovery and mission pickup remain disabled until the exact current
+   acknowledgement is durably readable.
+
+Partial or stale acknowledgements, PID reuse, wrong ancestry, role, command,
+path, revision, generation, nonce, or creation identity fail closed. Repeated
+live validation at the acknowledgement boundary limits PID-reuse and TOCTOU
+risk. Timeout, crash, mismatch, or validation failure must terminate and
+verify the entire proven spawned tree while retaining redacted durable
+evidence.
+
+The canonical stop marker blocks governed CLI startup, direct supervisor
+startup, direct pickup, runner recovery, and watchdog recovery. It is never
+removed implicitly. Governed stop must handle supervisor-only,
+runner-starting, and running trees, retain pre-stop ownership and termination
+evidence, and never target an unrelated process. Disabled-watchdog state
+remains authoritative until separately changed by an explicit governed owner
+action.
+
 If an agent subprocess times out or crashes, CHARLIE must record stdout/stderr excerpts, return code, changed files, blocker class, responsible stage, and recovery guidance, then queue an internal environment retry. A timed-out runner must not leave a mission silently stuck in `in_progress` or create false owner work. Repeated identical failures become an honest owner block only after the durable recovery cap is exhausted.
 
 The no-final-artifact watchdog measures inactivity, not total elapsed build time. Continued stdout/stderr or worktree progress keeps a bounded agent run alive until the hard stage timeout; a productive long Builder must not be killed merely because its final handoff JSON is written at the end.
@@ -142,6 +195,48 @@ Existing `in_progress` missions must not be blindly re-executed by the watch loo
 Runner recovery requires both an expired durable execution lease and a dead/stale matching process. An empty current-agent display, a between-stage heartbeat, or another active mission is not enough to block a mission. Recovery returns the mission to its responsible internal stage and appends `runner_recovery_history`; it does not overwrite the original review packet or create owner work.
 
 Builder packaging is transactional. CORE stages every actual Git change except runner-generated scratch output, including untracked files omitted by a model artifact. If commit packaging fails, CORE preserves the complete dirty state in a mission-labelled recovery stash, cleans the shared runner worktree, and reapplies that stash only when the same mission resumes.
+
+PR #517 integrated this ownership bootstrap at merge
+`0c4eb404fce6df8dfc2e8aab100690697d6e7cb9`. Hosted deployment is proven,
+but local promotion, startup, watchdog activation, pickup, and T0 execution
+remain separate and unauthorized.
+
+### Observe-only startup contract
+
+PR #539 adds an explicit `observe_only` governed start mode. It is a process
+ownership test, not a mission workflow:
+
+1. The controller binds observe-only mode to the accepted revision,
+   generation, controller nonce, and observed supervisor tree.
+2. The supervisor receives only an allowlisted OS/bootstrap environment and
+   may spawn only the dedicated observe-only child after controller
+   acknowledgement.
+3. The dedicated child validates the current signed packet and live process
+   trees without importing mission, execution-provider, or recovery modules.
+4. The final signed acknowledgement binds mode, revision, generation, both
+   nonces, launcher/interpreter membership, ancestry, creation identity, and
+   both process-tree digests.
+5. The child may publish ownership heartbeat evidence only. It cannot query
+   runnable missions, inspect or acquire leases, recover work, execute a
+   stage, invoke an agent provider, or mutate mission/queue/review/stage/
+   artifact state.
+6. Governed stop validates the exact tree, retains sanitized signed binding
+   and termination evidence, restores the canonical stop marker, and proves
+   zero survivors.
+
+Direct CLI, supervisor, runner/pickup, recovery, and watchdog entry points
+must all agree on the selected mode. Observe-only never falls back to ordinary
+operation, and ordinary operation never inherits observe-only authority.
+Malformed or unreadable current supervisor state suppresses watchdog recovery
+instead of defaulting to a new ordinary start.
+
+Before a future observe-only handshake, a read-only preflight must establish
+zero runnable missions, zero leases/writers, exact current-main/deployment
+identity, clean runtime/execution worktrees, and zero CORE processes. An
+inability to prove zero runnable missions is a stop condition: retain the
+marker and do not start. Removing and restoring the marker are bounded,
+explicit governed operations; the canary ends stopped and cannot authorize a
+mission.
 
 ## Revision And Finding Contracts
 

@@ -96,7 +96,8 @@ class ForecastLoggerTests(unittest.TestCase):
             "fetch_open_meteo_daily",
             side_effect=forecast_logger.ForecastProviderRateLimited("Open-Meteo daily request limit exceeded"),
         ), redirect_stdout(output):
-            forecast_logger.main()
+            with self.assertRaisesRegex(SystemExit, "2"):
+                forecast_logger.main()
         result = json.loads(output.getvalue())
         self.assertEqual(result["status"], "provider_rate_limited")
         self.assertTrue(result["existing_forecast_preserved"])

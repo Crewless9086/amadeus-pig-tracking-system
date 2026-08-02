@@ -7,6 +7,10 @@ from modules.pig_weights.pig_weights_service import (
     get_sales_metrics,
     get_pig_allocation_readiness,
     get_riversdale_auction_recommendation,
+    record_riversdale_auction_decision,
+    record_riversdale_candidate_review,
+    get_riversdale_auction_list,
+    update_riversdale_auction_list,
     get_herdmaster_pig_allocation_alerts,
     get_purpose_review_queue,
     apply_purpose_review_decisions,
@@ -97,6 +101,22 @@ def get_pig_allocation_alerts_data():
 
 def get_riversdale_auction_recommendation_data():
     return get_riversdale_auction_recommendation()
+
+
+def record_riversdale_auction_decision_data(payload: dict, *, actor_id: str):
+    return record_riversdale_auction_decision(payload, actor_id=actor_id)
+
+
+def record_riversdale_candidate_review_data(payload: dict, *, actor_id: str):
+    return record_riversdale_candidate_review(payload, actor_id=actor_id)
+
+
+def get_riversdale_auction_list_data():
+    return get_riversdale_auction_list()
+
+
+def update_riversdale_auction_list_data(payload: dict, *, actor_id: str):
+    return update_riversdale_auction_list(payload, actor_id=actor_id)
 
 
 def get_purpose_review_queue_data(litter_id: str = ""):

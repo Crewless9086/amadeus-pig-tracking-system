@@ -192,6 +192,70 @@ def build_live_stock_owner_reply_learning_event(outbound, latest_review_event=No
     return event
 
 
+def record_sam_meat_launch_review_packet(packet, lead_id, database_url=None):
+    """Persist stable prepared review/correction evidence on the existing append-only rail."""
+    packet = packet if isinstance(packet, dict) else {}
+    lead_id = _clean(lead_id, 120)
+    review = packet.get("review_event") if isinstance(packet.get("review_event"), dict) else {}
+    correction = packet.get("correction_event") if isinstance(packet.get("correction_event"), dict) else {}
+    if not lead_id or not review.get("event_id"):
+        return {"success": False, "status": "launch_review_identity_required", "persisted": False, **AUTHORITY_FLAGS}, 400
+
+    base = {
+        "lead_id": lead_id,
+        "chatwoot_conversation_id": _clean(packet.get("conversation_ref"), 120),
+        "channel": "chatwoot_whatsapp",
+        "source_agent": "sam_meat_backend",
+        "event_source": "sam_meat_launch_packet",
+        "customer_message_excerpt": "",
+        "sam_reply_excerpt": _clip(_clean(packet.get("prepared_reply"), 1800), 500),
+        "customer_wanted": _dict(packet.get("understood_request")),
+        "captured_facts": {
+            "packet_version": _clean(packet.get("packet_version"), 80),
+            "facts": _dict(packet.get("facts")),
+            "fact_evidence": _dict(packet.get("fact_evidence")),
+            "corrections": packet.get("corrections") if isinstance(packet.get("corrections"), list) else [],
+            "catalogue_match": _dict(packet.get("catalogue_match")),
+            "quantity": _dict(packet.get("quantity")),
+            "price_basis": _dict(packet.get("price_basis")),
+            "availability": _dict(packet.get("availability")),
+            "fulfilment": _dict(packet.get("fulfilment")),
+            "butcher_loop": _dict(packet.get("butcher_loop")),
+            "protected_decision": _dict(packet.get("protected_decision")),
+            "diagnostics": _dict(packet.get("diagnostics")),
+            "authority": _dict(packet.get("authority")),
+        },
+        "missing_facts": _list(packet.get("missing_facts")),
+        "objections": [],
+        "confusion_signals": [],
+        "sam_misses": [],
+        "conversion_signal": "unknown",
+        "improvement_suggestion": "Owner reviews the prepared SAM Meat launch packet; no send or protected action.",
+        "campaign_source": "sam_meat_chatwoot",
+        "recorded_by": "sam_meat_launch_review_packet",
+        **AUTHORITY_FLAGS,
+    }
+    review_payload = {**base, "learning_event_id": _clean(review.get("event_id"), 120), "event_type": "owner_review_note"}
+    review_result, review_status = record_sales_conversation_learning_event(review_payload, database_url=database_url)
+    correction_result, correction_status = {}, 200
+    if correction.get("event_id"):
+        correction_payload = {
+            **base,
+            "learning_event_id": _clean(correction.get("event_id"), 120),
+            "event_type": "owner_correction",
+            "improvement_suggestion": "Customer correction retained as a distinct append-only SAM Meat event.",
+        }
+        correction_result, correction_status = record_sales_conversation_learning_event(correction_payload, database_url=database_url)
+    success = review_status == 200 and correction_status == 200
+    return {
+        "success": success,
+        "status": "sam_meat_launch_evidence_persisted" if success else "sam_meat_launch_evidence_failed",
+        "persisted": success,
+        "review": review_result,
+        "correction": correction_result,
+        **AUTHORITY_FLAGS,
+    }, 200 if success else max(review_status, correction_status)
+
 def record_learning_event_from_sam_result(sam_result, database_url=None):
     event = build_learning_event_from_sam_result(sam_result)
     if not event.get("lead_id"):

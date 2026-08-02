@@ -1,0 +1,28 @@
+:root { color-scheme: light; font-family: Inter, system-ui, sans-serif; color: #17231d; background: #eef2ed; }
+body { margin: 0; }
+.owner-inbox { max-width: 1050px; margin: 0 auto; padding: 36px 20px 70px; }
+header { background: #163d2b; color: #fff; padding: 28px; border-radius: 18px; }
+h1 { margin: 4px 0 8px; font-size: clamp(2rem, 5vw, 3.8rem); }
+.eyebrow { color: #b7d9c5; letter-spacing: .12em; text-transform: uppercase; }
+button, a { font: inherit; }
+button { border: 0; border-radius: 999px; padding: 10px 16px; background: #f5c95e; color: #17231d; cursor: pointer; }
+.summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 18px 0; }
+.summary div, .work-item { background: #fff; border-radius: 14px; padding: 18px; box-shadow: 0 8px 30px #163d2b12; }
+.summary strong, .summary span { display: block; }
+.summary strong { font-size: 1.8rem; }
+.items { display: grid; gap: 12px; }
+.work-item { border-left: 6px solid #52745f; }
+.lane-protected { border-color: #a4473d; }
+.lane-specialist { border-color: #bd7d22; }
+.work-item h2 { margin-top: 0; }
+.classification { font-weight: 700; }
+.ownership-state { font-weight: 700; color: #7a4b00; }
+.reasons { color: #5d6961; }
+.window-policy { color: #d6eadf; }
+.window-state { font-weight: 700; }
+.band-warning { color: #9a6500; }
+.band-urgent, .band-missed_window, .band-withheld { color: #a4473d; }
+.work-item a { color: #165f3b; font-weight: 700; }
+.ownership-decision { margin: 14px 0; padding: 14px; background: #fff6dc; border: 1px solid #e6c66d; border-radius: 10px; }
+.ownership-decision select { margin-right: 10px; padding: 9px; border-radius: 8px; }
+@media (max-width: 680px) { .summary { grid-template-columns: repeat(2, 1fr); } }

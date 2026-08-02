@@ -8,6 +8,11 @@ const state = {
   powerCurrent: null,
   irrigation: null,
   rollup: null,
+    rootline: null,
+    rootlineAdvisor: null,
+    rootlineDailyPlan: null,
+    rootlinePolicy: null,
+    rootlineWaterEnergy: null,
   farm: null,
   orders: null,
 };
@@ -214,6 +219,121 @@ function renderIrrigation() {
     : `<div class="ops-empty-inline">No plan rows for today.</div>`;
 }
 
+function renderRootline() {
+  const brief = state.rootline || {};
+  const advisor = state.rootlineAdvisor || {};
+  setText("rootline_status", displayLabel(brief.status, "Unavailable"));
+  setText("rootline_summary", brief.executive_summary || "Rootline daily brief is unavailable.");
+  const conditions = brief.current_conditions || {};
+  setText(
+    "rootline_conditions",
+    conditions.availability === "Available"
+      ? `${numberOrDash(conditions.temperature_c)} °C · ${numberOrDash(conditions.rain_today_mm)} mm · ${numberOrDash(conditions.wind_speed_kmh)} km/h · ${numberOrDash(conditions.pressure_hpa)} hPa`
+      : "Current conditions Unavailable"
+  );
+    setText(
+      "rootline_advisor_summary",
+      advisor.executive_summary || "Owner-only advice Unavailable."
+    );
+    const advisorZones = advisor.zones || [];
+    byId("rootline_advisor_zones").innerHTML = advisorZones.length
+      ? advisorZones.map(zone => `
+        <div class="ops-list-row">
+          <strong>${escapeHtml(zone.zone_name || zone.zone_id || "Zone")} · ${escapeHtml(zone.recommendation || "Needs Data")}</strong>
+          <span>Eligible: ${escapeHtml(zone.eligibility_today || "Needs Data")} · Runtime: ${escapeHtml(zone.proposed_runtime_status || "Unavailable")} · ${escapeHtml((zone.reasoning || []).join(" "))}</span>
+        </div>
+      `).join("")
+      : `<div class="ops-empty-inline">Zone advice Unavailable.</div>`;
+    const advisorDecisions = advisor.unresolved_owner_decisions || [];
+    byId("rootline_advisor_decisions").innerHTML = advisorDecisions.length
+      ? advisorDecisions.map(item => `
+        <div class="ops-list-row">
+          <strong>${escapeHtml(displayLabel(item.decision, "Decision"))}</strong>
+          <span>${escapeHtml(item.current_value || "Unknown")}</span>
+        </div>
+      `).join("")
+      : `<div class="ops-empty-inline">No unresolved decisions reported.</div>`;
+    renderRootlinePolicy();
+    renderRootlineWaterEnergy();
+    const zones = brief.irrigation?.zones || [];
+    const planPacket = state.rootlineDailyPlan || {};
+    const plan = planPacket.daily_plan;
+    byId("rootline_daily_plan").innerHTML = plan
+      ? `<div class="ops-list-row">
+          <strong>${escapeHtml(plan.operating_date)} · Generation ${escapeHtml(plan.generation)}</strong>
+          <span>${escapeHtml(displayLabel(plan.status, "Unavailable"))} · Evidence ${escapeHtml(plan.evidence_observed_at || "Unavailable")} · ${escapeHtml(plan.replacement_reason || "Replacement reason Unavailable")}</span>
+        </div>`
+      : `<div class="ops-empty-inline">${escapeHtml(planPacket.owner_message || "Daily irrigation plan Unavailable.")}</div>`;
+  byId("rootline_zone_list").innerHTML = zones.length
+    ? zones.map(zone => `
+      <div class="ops-list-row">
+        <strong>${escapeHtml(zone.zone_name || zone.zone_id || "Zone")}</strong>
+        <span>${escapeHtml(displayLabel(zone.recommendation))} - ${escapeHtml((zone.reasoning || []).join(" "))}</span>
+      </div>
+    `).join("")
+    : `<div class="ops-empty-inline">Zone recommendations unavailable.</div>`;
+  const decisions = brief.owner_decisions_needed || [];
+  byId("rootline_decisions").innerHTML = decisions.length
+    ? decisions.map(item => `<div class="ops-list-row"><span>${escapeHtml(item)}</span></div>`).join("")
+    : `<div class="ops-empty-inline">No owner decision is currently supported.</div>`;
+}
+
+function renderRootlineWaterEnergy() {
+  const plan = state.rootlineWaterEnergy || {};
+  const reserve = plan.battery_reserve || {};
+  setText(
+    "rootline_water_energy_status",
+    plan.success === true
+      ? `${plan.plan_id} · Generation ${plan.generation ?? "Unavailable"} · Reserve ${reserve.governing_reserve_soc_pct ?? "Unavailable"}% · ${plan.executive_summary || ""}`
+      : plan.owner_message || "Current advisory plan Unavailable."
+  );
+  const power = plan.current_power || {};
+  const forecast = plan.forecast || {};
+  const rain = plan.rain_capture || {};
+  const tanks = plan.tank_evidence || {};
+  const grid = plan.estimated_grid_exposure || {};
+  byId("rootline_water_energy_evidence").innerHTML = `
+    <div class="ops-list-row"><strong>Power: ${escapeHtml(power.status || "Unavailable")}</strong><span>SOC ${escapeHtml(power.battery_soc_pct ?? "Unavailable")}%; ${escapeHtml(power.age_minutes ?? "Unavailable")} min old</span></div>
+    <div class="ops-list-row"><strong>Forecast: ${escapeHtml(forecast.status || "Unavailable")}</strong><span>${escapeHtml(forecast.solar_profile || "uncertain")}; confidence ${escapeHtml(forecast.confidence || "Unavailable")}</span></div>
+    <div class="ops-list-row"><strong>Rain: ${escapeHtml(rain.current_rain_status || "Needs Data")}</strong><span>${escapeHtml(rain.fresh_rain_rate_mm_h ?? "Unavailable")} mm/h; forecast ${escapeHtml(rain.forecast_replenishment_effect || "Unavailable")}</span></div>
+    <div class="ops-list-row"><strong>Tanks: ${escapeHtml(tanks.status || "Unavailable")}</strong><span>Storage ${escapeHtml(tanks.storage_reported_count ?? "Unavailable")}/5 (${escapeHtml(tanks.storage_state || "Unknown")}); reservoir ${escapeHtml(tanks.reservoir_reported_count ?? "Unavailable")}/12 (${escapeHtml(tanks.reservoir_state || "Unknown")}); ${escapeHtml(tanks.age_minutes ?? "Unavailable")} min old</span></div>
+    <div class="ops-list-row"><strong>Grid exposure: ${escapeHtml(grid.status || "Unavailable")}</strong><span>${escapeHtml(grid.estimated_kwh ?? "Unavailable")} kWh; R${escapeHtml(grid.estimated_cost_zar ?? "Unavailable")} at provisional R${escapeHtml(grid.tariff_zar_per_kwh ?? "Unavailable")}/kWh</span></div>
+    <div class="ops-list-row"><strong>Evidence outcomes remain separate</strong><span>Plan is not command acceptance, electrical operation, water flow or measured volume.</span></div>`;
+  const tasks = Array.isArray(plan.candidate_tasks) ? plan.candidate_tasks : [];
+  byId("rootline_water_energy_tasks").innerHTML = tasks.length
+    ? tasks.map(task => `
+      <div class="ops-list-row">
+        <strong>${escapeHtml(displayLabel(task.task_id, "Task"))} · ${escapeHtml(task.recommendation || "Needs Data")}</strong>
+        <span>${escapeHtml(task.reason || "Evidence unavailable.")} · Window ${escapeHtml(task.preferred_window || "Unavailable")}</span>
+      </div>
+    `).join("")
+    : `<div class="ops-empty-inline">Task recommendations Unavailable.</div>`;
+  const gaps = Array.isArray(plan.evidence_gaps) ? plan.evidence_gaps : [];
+  byId("rootline_water_energy_gaps").innerHTML = gaps.length
+    ? gaps.map(gap => `<div class="ops-list-row"><strong>Needs evidence</strong><span>${escapeHtml(gap)}</span></div>`).join("")
+    : `<div class="ops-empty-inline">No additional evidence gap reported.</div>`;
+  const authority = plan.authority || {};
+  setText(
+    "rootline_water_energy_authority",
+    authority.controls_hardware === false && authority.creates_command === false
+      ? "Advice only · no command, schedule, workflow, retry or hardware authority."
+      : "Authority evidence Unavailable."
+  );
+}
+
+function renderRootlinePolicy() {
+  const packet = state.rootlinePolicy || {};
+  const active = packet.active_policy;
+  setText(
+    "rootline_policy_status",
+    active
+      ? `Active advice policy version ${active.version}.`
+      : packet.status === "rootline_policy_schema_unavailable"
+        ? "Policy schema is not applied; active advice policy is Unavailable."
+        : "No policy version is active for advice."
+  );
+}
+
 function renderFarmSummary() {
   const summary = state.farm?.summary || {};
   const salesMetrics = summary.sales_metrics || state.farm?.sales_metrics || {};
@@ -300,6 +420,11 @@ async function loadDashboard() {
     ["powerCurrent", "/api/telemetry/power/current", "power_panel"],
     ["irrigation", `/api/telemetry/irrigation/status?date=${today}`, "irrigation_panel"],
     ["rollup", `/api/telemetry/rollups/daily?date=${yesterday}`, "power_panel"],
+      ["rootline", `/api/telemetry/rootline/daily-brief?date=${today}`, "rootline_panel"],
+      ["rootlineAdvisor", `/api/telemetry/rootline/daily-advisor?date=${today}`, "rootline_panel"],
+      ["rootlineDailyPlan", `/api/telemetry/rootline/daily-irrigation-plan?date=${today}`, "rootline_panel"],
+      ["rootlinePolicy", "/api/telemetry/rootline/operating-policy", "rootline_panel"],
+      ["rootlineWaterEnergy", `/api/telemetry/rootline/water-energy-plan?date=${today}`, "rootline_panel"],
     ["farm", "/api/pig-weights/dashboard", "herd_panel"],
     ["orders", `/api/reports/daily-summary?date=${today}`, "orders_panel"],
   ];
@@ -322,6 +447,7 @@ async function loadDashboard() {
   renderWeather();
   renderPower();
   renderIrrigation();
+  renderRootline();
   renderFarmSummary();
   renderOrders();
 

@@ -4,9 +4,20 @@ Status: Current authority for SAM Live Stock Sales.
 
 ## Non-Negotiables
 
+- Claim each exact customer reply once before attempting delivery.
+- Never retry a failed or ambiguous outcome automatically.
+- Quarantine only the affected conversation and send when its provider outcome
+  is failed or ambiguous; continue unrelated exact Level 1 bindings.
+- Stop the full cohort only for a systemic provider outage, corrupted claim
+  rail, cross-binding identity/chronology collision, or authority breach.
+- Count a delivered customer only after provider delivered/read evidence.
+
 - Current stock truth must come from app/Supabase-backed backend reads.
 - Legacy n8n and Google Sheet files are reference history only.
-- SAM must classify the sales lane before any draft reply, order, or reservation path.
+- SAM may conduct ordinary general conversation before lane classification.
+  It must classify and graduate to `live_stock_sales` before making live-stock
+  claims, calling live-stock tools, preparing an order, or entering a
+  reservation path.
 - Meat sales and live-stock sales must stay separate.
 - No stock may be invented.
 - SAM may auto-create a draft order only after the live-stock lane is confirmed, required facts are present, backend availability can fully satisfy the request, and active pricing is resolved.
@@ -19,6 +30,27 @@ Status: Current authority for SAM Live Stock Sales.
 - SAM must not debate or prove the farm's legitimacy to rude, aggressive, or already-decided scam accusations. It should close politely, log/escalate, and stop replying unless the owner reopens.
 - SAM must not negotiate pricing or use cheap/budget/discount language unless the owner creates a specific approved pricing rule.
 - SAM must not keep a conversation alive just to have the last word. Polite acknowledgement endings may be left unanswered.
+- Persisted `Any`, `Unknown`, blank, defaulted, or inferred qualification
+  values do not prove a customer preference. Only authoritative customer
+  chronology may establish an explicit `either`/no-preference answer.
+- Ask only missing facts. If size and sex are both missing, explain the
+  customer-facing weight choices and ask both together; do not expose
+  unexplained internal category names.
+- Missing or stale availability/pricing blocks only those claims. A useful
+  claim-free clarification remains eligible under the ordinary Level 1 rail.
+- Intake/category defaults must never manufacture weight, sex, or handover
+  preferences.
+- A customer display name is presentation-only. Safe Unicode, punctuation,
+  spacing and emoji may be normalized for a greeting; it never replaces or
+  modifies the exact numeric/provider identity binding. Controls, markup,
+  unreasonable length and disguised commercial claims fail closed.
+- Always-on Livestock Level 1 authority comes only from the latest current
+  append-only isolated control event and the exact current inbound evidence.
+  Missing storage, a disabled/killed/expired state, a pre-cutoff historical
+  event not explicitly carried, or any identity mismatch authorizes no send.
+- Always-on activation never grants Meat, retry, quote, negotiation, delivery
+  promise, reservation, allocation, order, payment, ownership, animal, stock
+  or farm authority.
 
 ## Product Categories
 
@@ -112,6 +144,7 @@ This protects the farm's premium posture and avoids low-quality sales conversati
 
 ## Source References
 
+- `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`
 - `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
 - `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`

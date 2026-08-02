@@ -2,12 +2,18 @@ import unittest
 import os
 import json
 import tempfile
+from dataclasses import replace
 from urllib import error as urllib_error
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
+from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY
+from modules.oom_sakkie.gateway_authority import (
+    bind_gateway_owner_authority,
+    issue_gateway_owner_authority,
+)
 from modules.oom_sakkie.voice_stt import (
     backend_voice_stt_policy,
     transcribe_oom_sakkie_voice_audio,
@@ -196,7 +202,15 @@ from modules.oom_sakkie.trace_store import (
     record_trace_feedback,
     write_trace,
 )
-from modules.oom_sakkie.tools import RiskLevel, TOOL_REGISTRY, list_tool_catalog
+from modules.oom_sakkie.tools import (
+    RiskLevel,
+    TOOL_REGISTRY,
+    herdmaster_breeding_observation_preview_handler,
+    herdmaster_herd_question_handler,
+    herdmaster_breeding_worklist_handler,
+    list_tool_catalog,
+    rootline_water_energy_plan_handler,
+)
 
 
 TELEGRAM_TEST_TOKEN = "test-telegram-token-32-chars-minimum"
@@ -267,6 +281,11 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
+                "rootline_water_energy_plan",
+                "herdmaster_breeding_worklist",
+                "herdmaster_herd_question",
+                "herdmaster_breeding_observation_preview",
+                "herdmaster_weight_preview",
                 "weather_now",
                 "weather_today",
                 "weather_forecast",
@@ -279,7 +298,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         )
         for tool in TOOL_REGISTRY.values():
             with self.subTest(tool=tool.name):
-                expected_risk = RiskLevel.DRAFT_ONLY if tool.name in {"sales_customer_draft", "ledger_sales_agent"} else RiskLevel.READ_ONLY
+                expected_risk = RiskLevel.DRAFT_ONLY if tool.name in {
+                    "sales_customer_draft",
+                    "ledger_sales_agent",
+                } else RiskLevel.READ_ONLY
                 self.assertEqual(tool.risk_level, expected_risk)
                 self.assertFalse(tool.requires_confirmation)
                 self.assertEqual(tool.input_schema["type"], "object")
@@ -297,10 +319,534 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(irrigation["requires_confirmation"])
         self.assertIn("Never starts or stops irrigation", irrigation["description"])
         self.assertEqual(irrigation["input_schema"]["additionalProperties"], False)
+
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_rootline_plan_tool_denies_anonymous_default_context(self, protected_read):
+        from app import app
+        with app.test_request_context("/api/oom-sakkie/message"):
+            result = rootline_water_energy_plan_handler({})
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "owner_authentication_required")
+        self.assertEqual(result["raw"], {})
+        protected_read.assert_not_called()
+        catalog = list_tool_catalog()
         draft = next(item for item in catalog if item["name"] == "sales_customer_draft")
         self.assertEqual(draft["risk_level"], 1)
         self.assertEqual(draft["risk_label"], "DRAFT_ONLY")
         self.assertFalse(draft["requires_confirmation"])
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_rootline_specialist_result_returns_coherent_owner_brief(
+        self, build_result, _owner
+    ):
+        result = {
+            "success": True,
+            "overall_status": "Recommend",
+            "current_power": {
+                "battery_soc_pct": 74,
+                "solar_power_w": 3200,
+                "load_power_w": 850,
+                "grid_power_w": 0,
+            },
+            "battery_policy": {
+                "governing_reserve_soc_pct": 63,
+                "governing_reason": (
+                    "sunny forecast profile; protect historical overnight depletion"
+                ),
+            },
+            "current_local_weather": {
+                "status": "fresh",
+                "observed_at": "2026-07-29T18:00:00+02:00",
+                "rain_rate_mm_h": 0,
+                "rain_today_mm": 0,
+            },
+            "forecast": {
+                "status": "fresh",
+                "confidence": "medium",
+                "observed_at": "2026-07-29T16:00:00+02:00",
+                "solar_profile": "sunny",
+                "uncertainty": "Forecast rain is not observed rain or captured water.",
+            },
+            "evidence": {
+                "freshness": {
+                    "power": "fresh",
+                    "current_local_weather": "fresh",
+                    "forecast": "fresh",
+                    "water_observations": "Unavailable",
+                }
+            },
+            "recommendations": [
+                {
+                    "subject": "borehole",
+                    "status": "Recommend",
+                    "command_authority": False,
+                    "hardware_control": False,
+                },
+                {
+                    "subject": "solar_transfer_dependency",
+                    "status": "Hold",
+                    "command_authority": False,
+                    "hardware_control": False,
+                },
+            ],
+            "owner_questions": [
+                {"question": "Are the storage tanks LOW, OK or FULL?"}
+            ],
+            "owner_brief": {
+                "recommend_now": "borehole",
+                "why": ["borehole: Water continuity is needed."],
+                "reassess": "new_canonical_evidence at 2026-07-29T18:30:00+02:00",
+                "family_fact_needed": "Are the storage tanks LOW, OK or FULL?",
+            },
+            "authority": {
+                "command_authority": False,
+                "hardware_control": False,
+                "writes_performed": False,
+            },
+        }
+        build_result.return_value = result
+
+        response = rootline_water_energy_plan_handler({"date": "2026-07-29"})
+
+        self.assertTrue(response["success"])
+        self.assertIs(response["raw"], result)
+        self.assertIs(response["llm_context"], result)
+        self.assertIn("SOC 74%", response["summary"])
+        self.assertIn("40% absolute", response["summary"])
+        self.assertIn("Reserve reason: sunny forecast", response["summary"])
+        self.assertIn("Current local weather", response["summary"])
+        self.assertIn("Forecast", response["summary"])
+        self.assertIn("solar_transfer_dependency: Hold", response["summary"])
+        self.assertIn("monitor-only", response["summary"])
+        self.assertIn("not controllable by ROOTLINE", response["summary"])
+        self.assertIn("not an instruction to run", response["summary"])
+        self.assertIn("Reassess:", response["summary"])
+        self.assertEqual(response["summary"].count("Family fact needed:"), 1)
+        self.assertFalse(response["raw"]["authority"]["command_authority"])
+        self.assertFalse(response["raw"]["authority"]["hardware_control"])
+        self.assertFalse(response["raw"]["authority"]["writes_performed"])
+        self.assertEqual(
+            response["stale_warnings"],
+            ["water_observations: Unavailable"],
+        )
+        self.assertIn("no database or farm write", response["safety_notes"][0])
+        build_result.assert_called_once_with(operating_date="2026-07-29")
+
+    def test_combined_water_and_power_question_routes_to_rootline(self):
+        match = classify_intent(
+            "What should we do about water and power today, and when reassess?"
+        )
+        self.assertEqual(match.tool_name, "rootline_water_energy_plan")
+        self.assertEqual(match.reason, "rule:rootline_water_energy")
+        self.assertEqual(classify_intent("check the pump").tool_name, "irrigation_status")
+        self.assertEqual(classify_intent("battery status").tool_name, "power_current")
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.service.write_trace")
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_owner_authenticated_gateway_reaches_rootline_without_flask_session(
+        self, protected_read, _owner_session, write_trace_record
+    ):
+        protected_read.return_value = {
+            "success": True,
+            "overall_status": "Needs Data",
+            "current_power": {},
+            "battery_policy": {},
+            "current_local_weather": {},
+            "forecast": {},
+            "evidence": {"freshness": {}},
+            "recommendations": [],
+            "owner_brief": {
+                "recommend_now": "Needs Data",
+                "why": ["Only supported evidence is included."],
+                "reassess": "when canonical evidence changes",
+                "family_fact_needed": "Are the storage tanks LOW, OK or FULL?",
+            },
+            "authority": {
+                "command_authority": False,
+                "hardware_control": False,
+                "writes_performed": False,
+            },
+        }
+
+        result, status = handle_telegram_gateway_message(
+            {
+                "message": {
+                    "text": "What should we do about water and power today?",
+                    "from": {"id": 12345},
+                    "chat": {"id": 12345, "type": "private"},
+                },
+            },
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            result["message"]["tool_used"],
+            "rootline_water_energy_plan",
+        )
+        self.assertIn("ROOTLINE recommends now", result["answer"])
+        self.assertFalse(result["writes"])
+        self.assertFalse(result["physical_controls_enabled"])
+        self.assertEqual(
+            result["message"]["trace_store"]["status"],
+            "not_stored_rootline_zero_write",
+        )
+        protected_read.assert_called_once_with(operating_date=None)
+        write_trace_record.assert_not_called()
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_rootline_rejects_forged_stale_and_mismatched_gateway_authority(
+        self, protected_read, _owner_session
+    ):
+        issued = issue_gateway_owner_authority("12345", "12345")
+        invalid = (
+            {"service": "oom_sakkie_telegram_gateway"},
+            bind_gateway_owner_authority(issued, "power_current"),
+            replace(issued, service="wrong-service"),
+            replace(issued, owner_user_id="999"),
+            replace(issued, issued_monotonic=0),
+        )
+
+        for authority in invalid:
+            with self.subTest(authority=authority):
+                result = rootline_water_energy_plan_handler({
+                    "gateway_authority": authority,
+                })
+                self.assertFalse(result["success"])
+                self.assertEqual(
+                    result["status"],
+                    "owner_authentication_required",
+                )
+                self.assertEqual(result["raw"], {})
+                self.assertNotIn("SOC", result["summary"])
+        protected_read.assert_not_called()
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_direct_message_cannot_reuse_legacy_owner_flag_for_rootline(
+        self, protected_read, _owner_session
+    ):
+        result, status = handle_message({
+            "text": "What should we do about water and power today?",
+            "channel": "telegram_read_only",
+            "session_id": "forged-direct-call",
+            "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
+        })
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["success"])
+        self.assertTrue(result["needs_clarification"])
+        self.assertEqual(result["tool_context"], {})
+        self.assertNotIn("SOC", result["answer"])
+        protected_read.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    @patch("modules.oom_sakkie.tools.build_current_rootline_specialist_result")
+    def test_gateway_rejects_wrong_private_chat_without_protected_read(
+        self, protected_read, _owner_session
+    ):
+        result, status = handle_telegram_gateway_message(
+            {
+                "message": {
+                    "text": "What should we do about water and power today?",
+                    "from": {"id": 12345},
+                    "chat": {"id": 999, "type": "private"},
+                },
+            },
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
+        )
+
+        self.assertEqual(status, 403)
+        self.assertEqual(
+            result["status"],
+            "protected_reader_authentication_denied",
+        )
+        self.assertFalse(result["success"])
+        self.assertFalse(result["records_audit_trace"])
+        self.assertEqual(
+            result["audit_trace_status"],
+            "not_stored_rootline_zero_write",
+        )
+        self.assertNotIn("SOC", result["answer"])
+        protected_read.assert_not_called()
+
+    @patch("modules.oom_sakkie.service.write_trace")
+    @patch("modules.oom_sakkie.service.get_tool")
+    def test_rootline_message_pipeline_does_not_write_trace(
+        self, get_tool, write_trace_record
+    ):
+        tool = Mock()
+        tool.name = "rootline_water_energy_plan"
+        tool.risk_level = RiskLevel.READ_ONLY
+        tool.handler.return_value = {
+            "success": True,
+            "status": "Recommend",
+            "summary": "ROOTLINE current read-only answer.",
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": ["No write or hardware authority."],
+            "raw": {
+                "authority": {
+                    "command_authority": False,
+                    "hardware_control": False,
+                    "writes_performed": False,
+                }
+            },
+        }
+        get_tool.return_value = tool
+
+        result, status = handle_message({
+            "text": "What should we do about water and power today?",
+            "channel": "kiosk",
+            "session_id": "rootline-zero-write-proof",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["tool_used"], "rootline_water_energy_plan")
+        self.assertEqual(
+            result["trace_store"]["status"],
+            "not_stored_rootline_zero_write",
+        )
+        write_trace_record.assert_not_called()
+
+    @patch("modules.oom_sakkie.tools.get_mating_overview")
+    @patch("modules.oom_sakkie.tools.get_pig_allocation_readiness_data")
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=False)
+    def test_herd_question_denies_anonymous_without_reading_protected_facts(
+        self, _owner, worklist, readiness, matings
+    ):
+        from app import app
+        with app.test_request_context("/api/oom-sakkie/message"):
+            result = herdmaster_herd_question_handler({
+                "user_text": "What do you know about Shupe?"
+            })
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "owner_authentication_required")
+        self.assertEqual(result["raw"], {})
+        readiness.assert_not_called()
+        matings.assert_not_called()
+        worklist.assert_not_called()
+
+    @patch("modules.oom_sakkie.tools.get_mating_overview", return_value=[])
+    @patch(
+        "modules.oom_sakkie.tools.get_pig_allocation_readiness_data",
+        return_value={
+            "success": True,
+            "generated_date": "2026-07-29",
+            "pigs": [{
+                "pig_id": "PIG-2026-34BF",
+                "tag_number": "Shupe",
+                "status": "Active",
+                "on_farm": "Yes",
+                "sex": "Female",
+                "purpose": "Breeding",
+                "latest_weight_kg": 72.2,
+                "latest_weight_date": "2026-07-20",
+                "days_since_weight": 9,
+                "readiness_bucket": "Retain / Breeding Candidate",
+                "readiness_reason": "Current purpose is breeding.",
+                "recommended_action": "Review for retention.",
+            }],
+        },
+    )
+    @patch(
+        "modules.oom_sakkie.tools._current_herdmaster_breeding_loop",
+        return_value={"success": True, "tasks": [], "cases": []},
+    )
+    def test_authenticated_telegram_herd_question_is_read_only(
+        self, _worklist, _readiness, _matings
+    ):
+        result = herdmaster_herd_question_handler({
+            "authenticated_owner": True,
+            "user_text": "What do you currently know about Shupe?",
+        })
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "herd_question_answer_ready")
+        self.assertIn("Facts — Shupe", result["summary"])
+        self.assertFalse(result["raw"]["writes_performed"])
+        self.assertFalse(result["raw"]["protected_actions_performed"])
+
+    @patch(
+        "modules.oom_sakkie.service.write_trace",
+        return_value={"stored": False, "status": "test"},
+    )
+    @patch("modules.oom_sakkie.tools.get_mating_overview", return_value=[])
+    @patch(
+        "modules.oom_sakkie.tools.get_pig_allocation_readiness_data",
+        return_value={
+            "success": True,
+            "generated_date": "2026-07-29",
+            "pigs": [{
+                "pig_id": "PIG-2026-34BF",
+                "tag_number": "Shupe",
+                "status": "Active",
+                "on_farm": "Yes",
+                "sex": "Female",
+                "purpose": "Breeding",
+                "latest_weight_kg": 72.2,
+                "latest_weight_date": "2026-07-20",
+                "days_since_weight": 9,
+                "readiness_bucket": "Retain / Breeding Candidate",
+                "readiness_reason": "Current purpose is breeding.",
+                "recommended_action": "Review for retention.",
+            }],
+        },
+    )
+    @patch(
+        "modules.oom_sakkie.tools._current_herdmaster_breeding_loop",
+        return_value={"success": True, "tasks": [], "cases": []},
+    )
+    def test_original_telegram_question_returns_one_deterministic_answer(
+        self, _worklist, _readiness, _matings, _trace
+    ):
+        result, status = handle_message({
+            "text": (
+                "Oom Sakkie, what do you currently know about Shupe, what is "
+                "her latest recorded weight, what is her breeding status, "
+                "what evidence is still missing, and what is the next "
+                "recommended action?"
+            ),
+            "channel": "telegram_read_only",
+            "session_id": "telegram-test",
+            "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tool_used"], "herdmaster_herd_question")
+        self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
+        self.assertIn("72.2 kg", result["answer"])
+        self.assertIn("evidence date 2026-07-20", result["answer"])
+        self.assertIn("Recommendation", result["answer"])
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    def test_herdmaster_worklist_preserves_canonical_loop(
+        self, current_loop, _owner
+    ):
+        current_loop.return_value = {
+            "success": True,
+            "week_start": "2026-07-27",
+            "task_count": 1,
+            "tasks": [{
+                "tag_number": "Ms Piggy",
+                "why": "Heat was not affirmatively observed.",
+                "required_checks": ["availability", "family tree", "withdrawal"],
+                "provisional_recommendation": "Needs Data",
+                "delay_consequence": "Mating consideration remains blocked.",
+            }],
+            "limitations": [],
+        }
+        result = herdmaster_breeding_worklist_handler({})
+        self.assertTrue(result["success"])
+        self.assertIn("Ms Piggy", result["summary"])
+        self.assertIn("no observation or mating was recorded", result["safety_notes"][0])
+        self.assertIs(result["raw"], current_loop.return_value)
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    def test_herdmaster_conversation_preview_never_writes(
+        self, current_loop, _owner
+    ):
+        current_loop.return_value = {
+            "success": True,
+            "tasks": [{
+                "task_id": "HERD-TASK-1",
+                "pig_id": "PIG-MS",
+                "tag_number": "Ms Piggy",
+                "required_checks": ["heat signs"],
+                "provisional_recommendation": "Needs Data",
+            }],
+        }
+        result = herdmaster_breeding_observation_preview_handler({
+            "owner_words": "Ms Piggy has no standing heat today.",
+        })
+        self.assertTrue(result["success"])
+        self.assertEqual(result["raw"]["facts"]["standing_heat"], "not_observed")
+        self.assertFalse(result["raw"]["writes_performed"])
+
+    def test_herdmaster_breeding_intents_use_deterministic_owner_tools(self):
+        worklist = classify_intent("Please give me the Monday breeding round")
+        self.assertEqual(worklist.tool_name, "herdmaster_breeding_worklist")
+        preview = classify_intent(
+            "Ms Piggy body condition 3, moving well and no heat today"
+        )
+        self.assertEqual(
+            preview.tool_name,
+            "herdmaster_breeding_observation_preview",
+        )
+
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    def test_telegram_style_user_text_reaches_observation_preview(
+        self, current_loop, _owner
+    ):
+        current_loop.return_value = {
+            "success": True,
+            "tasks": [{
+                "task_id": "HERD-TASK-1",
+                "pig_id": "PIG-MS",
+                "tag_number": "Ms Piggy",
+                "required_checks": ["body condition", "heat signs"],
+                "provisional_recommendation": "Needs Data",
+            }],
+        }
+        result = herdmaster_breeding_observation_preview_handler({
+            "user_text": "Ms Piggy body condition 3 and no heat today.",
+        })
+        self.assertTrue(result["success"])
+        self.assertEqual(result["raw"]["facts"]["body_condition_score"], 3.0)
+        self.assertEqual(result["raw"]["facts"]["standing_heat"], "not_observed")
+        self.assertFalse(result["raw"]["writes_performed"])
+
+    @patch("modules.oom_sakkie.service.write_trace")
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm")
+    @patch("modules.oom_sakkie.tools.owner_session_is_valid", return_value=True)
+    @patch("modules.oom_sakkie.tools._current_herdmaster_breeding_loop")
+    def test_herdmaster_exact_animal_tools_never_use_external_composer(
+        self, current_loop, _owner, composer, write_trace_mock
+    ):
+        current_loop.return_value = {
+            "success": True,
+            "week_start": "2026-07-27",
+            "task_count": 1,
+            "tasks": [{
+                "task_id": "HERD-TASK-1",
+                "pig_id": "PIG-MS",
+                "tag_number": "Ms Piggy",
+                "why": "Current records are incomplete.",
+                "required_checks": ["heat signs"],
+                "provisional_recommendation": "Needs Data",
+                "delay_consequence": "The decision remains blocked.",
+            }],
+            "limitations": [],
+        }
+        write_trace_mock.return_value = {"stored": False}
+        result, status = handle_message({
+            "text": "Give me the Monday breeding worklist",
+            "channel": "kiosk",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(result["tool_used"], "herdmaster_breeding_worklist")
+        composer.assert_not_called()
+        trace = write_trace_mock.call_args.args[0]
+        self.assertNotIn("raw", trace)
+        self.assertNotIn("PIG-MS", str(trace))
+        catalog = list_tool_catalog()
         ledger = next(item for item in catalog if item["name"] == "ledger_sales_agent")
         self.assertEqual(ledger["risk_level"], 1)
         self.assertEqual(ledger["risk_label"], "DRAFT_ONLY")
@@ -457,7 +1003,13 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(policy["telegram_gateway"]["deterministic_only"])
         self.assertFalse(policy["telegram_gateway"]["can_trigger_outbound_llm"])
         self.assertFalse(policy["telegram_gateway"]["writes"])
-        self.assertTrue(policy["telegram_gateway"]["records_audit_trace"])
+        self.assertIsNone(
+            policy["telegram_gateway"]["records_audit_trace"]
+        )
+        self.assertEqual(
+            policy["telegram_gateway"]["audit_trace_mode"],
+            "tool_dependent",
+        )
         self.assertTrue(policy["telegram_gateway"]["token_meets_minimum_entropy"])
         self.assertTrue(policy["telegram_gateway"]["allowed_user_ids_required"])
         self.assertTrue(policy["telegram_gateway"]["allowed_user_ids_configured"])
@@ -537,13 +1089,14 @@ class OomSakkieServiceTests(unittest.TestCase):
             "message": {
                 "text": "what needs attention today",
                 "from": {"id": 12345},
-                "chat": {"id": 67890},
+                "chat": {"id": 67890, "type": "private"},
             },
         })
 
         self.assertEqual(parsed["text"], "what needs attention today")
         self.assertEqual(parsed["telegram_user_id"], "12345")
         self.assertEqual(parsed["telegram_chat_id"], "67890")
+        self.assertEqual(parsed["telegram_chat_type"], "private")
         self.assertEqual(parsed["session_id"], "telegram-67890")
 
     @patch.dict(os.environ, {}, clear=True)
@@ -622,6 +1175,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             "risk_level": 0,
             "trace_id": "OSK-TRACE-TELEGRAM",
             "safety_notes": ["No write."],
+            "trace_store": {"stored": True, "status": "stored"},
         }, 200)
 
         result, status_code = handle_telegram_gateway_message(
@@ -646,10 +1200,13 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["can_trigger_outbound_llm"])
         self.assertFalse(result["writes"])
         self.assertTrue(result["records_audit_trace"])
+        self.assertEqual(result["audit_trace_status"], "stored")
         mock_handle.assert_called_once_with({
             "text": "what needs attention today",
             "channel": "telegram_read_only",
             "session_id": "telegram-67890",
+            "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
+            "gateway_authority": ANY,
         })
 
     @patch.dict(os.environ, {
@@ -674,7 +1231,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "what needs attention today",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
@@ -714,7 +1271,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "what needs attention today",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
@@ -809,7 +1366,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(preflight["direct_bot_cutover_enabled"])
         self.assertFalse(preflight["can_trigger_outbound_llm"])
         self.assertFalse(preflight["writes"])
-        self.assertTrue(preflight["records_audit_trace"])
+        self.assertIsNone(preflight["records_audit_trace"])
+        self.assertEqual(preflight["audit_trace_mode"], "tool_dependent")
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
@@ -1041,10 +1599,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertTrue(result["sends_customer_message"])
         self.assertTrue(result["calls_chatwoot"])
-        self.assertIn("Approved reply sent to WhatsApp", result["telegram_text"])
+        self.assertFalse(result["confirmation_message_created"])
         mock_handle.assert_not_called()
         mock_callback.assert_called_once()
-        mock_send.assert_called_once()
+        mock_send.assert_not_called()
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
@@ -1078,10 +1636,12 @@ class OomSakkieServiceTests(unittest.TestCase):
 
         self.assertEqual(status_code, 200)
         self.assertFalse(result["success"])
-        self.assertTrue(result["sends_telegram"])
+        self.assertFalse(result["sends_telegram"])
         self.assertFalse(result["sends_customer_message"])
         self.assertEqual(result["status"], "sam_live_stock_owner_send_disabled")
-        self.assertIn("blocked by a safety gate", result["telegram_text"])
+        self.assertFalse(result["confirmation_message_created"])
+        self.assertEqual(result["sam_live_callback_status_code"], 409)
+        mock_send.assert_not_called()
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",

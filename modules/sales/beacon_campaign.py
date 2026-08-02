@@ -9,6 +9,30 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from services.database_service import DATABASE_URL_ENV
+from modules.beacon.facebook_media_transport import (
+    create_multi_photo_feed,
+    load_supabase_asset_bytes,
+    manual_composer_handoff,
+    resolve_server_publication_assets,
+    upload_unpublished_photo_binary,
+    validate_facebook_image_asset,
+)
+from modules.beacon.public_livestock_content_policy import (
+    RISK_STATUS,
+    assess_public_livestock_content,
+    public_livestock_policy_contract,
+)
+from modules.beacon.organic_publication_binding import (
+    require_organic_publication_binding,
+)
+from modules.beacon.organic_publication_authorization import (
+    canonical_caption_text,
+)
+from modules.beacon.publication_execution_identity import (
+    ASSET_SHA256 as SUCCESSOR_ASSET_SHA256,
+    CAPTION_SHA256 as SUCCESSOR_CAPTION_SHA256,
+    require_publish_now_authority, validate_successor_execution,
+)
 from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 
@@ -343,8 +367,14 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
     if missing_asset_ids:
         errors.append("selected_asset_not_approved_or_not_found")
     exact_text = _clean_caption_text(payload.get("owner_exact_text")) or (draft.get("text", "") if draft else "")
-    if _has_live_stock_direct_sales_wording(exact_text):
-        errors.append("live_stock_awareness_direct_sales_wording_blocked")
+    content_policy = assess_public_livestock_content(
+        exact_text,
+        objective="farm_awareness",
+        campaign_lane="live_stock_awareness",
+        media=assets,
+    )
+    if not content_policy["allowed"]:
+        errors.append(RISK_STATUS)
     channel = selected_channel or (draft.get("channel") if draft else "")
     packet_id = _publish_packet_id(draft_id, "|".join(selected_asset_ids), channel, "live_stock_awareness", exact_text)
     return {
@@ -366,6 +396,7 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
         "selected_assets": assets,
         "asset_ids": selected_asset_ids,
         "owner_notes": owner_notes,
+        "public_livestock_policy": content_policy,
         "approval_status": "owner_review_required",
         "approval_records_publish": False,
         "approval_sends_or_posts": False,
@@ -374,8 +405,8 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
         "safety_checks": {
-            "draft_is_awareness_only": not _has_live_stock_direct_sales_wording(exact_text),
-            "draft_has_no_direct_sales_wording": not _has_live_stock_direct_sales_wording(exact_text),
+            "draft_is_awareness_only": content_policy["allowed"],
+            "draft_has_no_direct_sales_wording": content_policy["allowed"],
             "assets_are_owner_approved": len(assets) == len(selected_asset_ids) and all(
                 item.get("effective_public_use_approved") or item.get("public_use_approved") for item in assets
             ),
@@ -418,9 +449,10 @@ def build_live_stock_sales_campaign_selection(payload=None, approved_assets=None
     truth, errors = _live_stock_sales_truth(payload)
     ranked = [asset for asset in _rank_approved_assets(approved_assets or [], campaign_lane="live_stock_sales")
               if asset.get("public_use_approved") and asset.get("content_sha256")]
-    drafts = _live_stock_sales_drafts(truth) if not errors else []
+    errors.append(RISK_STATUS)
+    drafts = []
     return {
-        "success": not errors,
+        "success": False,
         "mode": "beacon_live_stock_sales_campaign_review_only",
         "campaign_lane": "live_stock_sales",
         "campaign": {"name": "Live-Stock Sales", "status": "owner_review_required", "product_focus": truth.get("product_focus", "")},
@@ -432,7 +464,8 @@ def build_live_stock_sales_campaign_selection(payload=None, approved_assets=None
         "errors": errors,
         "handoff_to_sam": {"sales_lane": "live_stock_sales", "campaign_attribution_id": truth.get("campaign_attribution_id", ""), "negotiates": False, "reserves": False, "creates_order": False},
         "whatsapp_suggestion_only": True,
-        "next_gate": "owner_selects_exact_facebook_copy_and_approved_image" if not errors else "restore_current_supabase_and_sheet_lineaged_sales_evidence",
+        "public_livestock_policy": public_livestock_policy_contract(),
+        "next_gate": "use_private_sam_livestock_sales_for_independent_customer_enquiries",
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
     }
@@ -1210,7 +1243,7 @@ def facebook_posting_policy(environ=None):
         "posts_text_only_now": posting_ready,
         "posts_media_now": bool(posting_ready and media_storage_configured),
         "posts_image_now": bool(posting_ready and media_storage_configured),
-        "media_source": "approved_beacon_supabase_image_signed_url",
+        "media_source": "approved_beacon_server_validated_binary_multipart",
         "boosts_or_spends_now": False,
         "required_envs": [
             FACEBOOK_POSTING_ENABLED_ENV,
@@ -1222,12 +1255,90 @@ def facebook_posting_policy(environ=None):
 
 
 def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None,
-                                      meat_launch_authorized=False):
+                                      meat_launch_authorized=False, media_projector=None,
+                                      now_provider=None, publish_now_authority_reader=None):
     payload = payload if isinstance(payload, dict) else {}
-    if normalize_campaign_lane(payload.get("campaign_lane")) == "meat_launch" and not meat_launch_authorized:
+    current_time = now_provider or (lambda: datetime.now(timezone.utc))
+    raw_campaign_lane = payload.get("campaign_lane")
+    raw_objective = payload.get("objective")
+    campaign_lane = normalize_campaign_lane(raw_campaign_lane)
+    is_publish_now = (
+        payload.get("publish_packet_id") == "BEACON-PROPOSAL-18DEAAD8E896A87FE961F45B"
+        and payload.get("publication_authority_mode") == "publish_now"
+    )
+    authority_reader = publish_now_authority_reader or require_publish_now_authority
+    successor_error = validate_successor_execution(payload, now=current_time())
+    if successor_error:
+        return {"success": False, "status": successor_error,
+                **_facebook_execution_authority(False)}, 409
+    if is_publish_now:
+        authority_result, authority_status = authority_reader(database_url)
+        if authority_status != 200 or authority_result.get("success") is not True:
+            return {**authority_result, **_facebook_execution_authority(False)}, authority_status
+        if poster is not None:
+            return {
+                "success": False,
+                "status": "publish_now_custom_poster_forbidden",
+                **_facebook_execution_authority(False),
+            }, 409
+    authorization_generation_id = _clean_text(
+        payload.get("authorization_generation_id")
+    )
+    if authorization_generation_id or campaign_lane == "live_stock_awareness":
+        if (
+            not isinstance(raw_campaign_lane, str)
+            or raw_campaign_lane != "live_stock_awareness"
+            or not isinstance(raw_objective, str)
+            or raw_objective != "farm_awareness"
+        ):
+            return {
+                "success": False,
+                "status": "organic_publication_objective_binding_mismatch",
+                **_facebook_execution_authority(False),
+            }, 409
+    if campaign_lane == "meat_launch" and not meat_launch_authorized:
         return controlled_mode_denial("publish_meat_campaign")
+    if campaign_lane in {"live_stock_awareness", "live_stock_sales"}:
+        assessment = assess_public_livestock_content(
+            payload.get("exact_text") or payload.get("message"),
+            objective=raw_objective or "farm_awareness",
+            campaign_lane=campaign_lane,
+            media=payload.get("selected_assets") or payload.get("selected_asset"),
+        )
+        if not assessment["allowed"]:
+            return {
+                "success": False,
+                "status": RISK_STATUS,
+                "public_livestock_policy": assessment,
+                **_facebook_execution_authority(False),
+            }, 409
     policy = facebook_posting_policy(environ=environ)
-    params = _facebook_post_params(payload, policy)
+    requested_assets = payload.get("selected_assets") if isinstance(payload.get("selected_assets"), list) else []
+    if not requested_assets and isinstance(payload.get("selected_asset"), dict):
+        requested_assets = [payload["selected_asset"]]
+    requested_types = {str(item.get("media_type") or "").lower() for item in requested_assets if isinstance(item, dict)}
+    projector = media_projector or resolve_server_publication_assets
+    projected = []
+    if requested_assets and requested_types == {"image"}:
+        identities = [str(item.get("asset_id") or "").strip() for item in requested_assets if isinstance(item, dict)]
+        projection, projection_status = projector(identities, database_url)
+        if projection_status != 200 or projection.get("success") is not True:
+            return {**projection, **_facebook_execution_authority(False)}, projection_status
+        projected = projection["assets"]
+        payload = {**payload, "asset_id": projected[0]["asset_id"],
+                   "selected_asset": projected[0], "selected_assets": projected}
+        successor_error = validate_successor_execution(payload, now=current_time())
+        if successor_error:
+            return {"success": False, "status": successor_error,
+                    **_facebook_execution_authority(False)}, 409
+    try:
+        params = _facebook_post_params(payload, policy)
+    except ValueError:
+        return {
+            "success": False,
+            "status": "canonical_caption_invalid",
+            **_facebook_execution_authority(False),
+        }, 400
     validation_error = _facebook_post_validation_error(params, policy)
     if validation_error:
         params["execution_status"] = validation_error
@@ -1239,9 +1350,79 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             "execution_event": _public_facebook_post_event(params),
             **_facebook_execution_authority(False),
         }, 400 if validation_error not in {"facebook_posting_disabled", "facebook_page_credentials_missing"} else 503
+    if campaign_lane == "live_stock_awareness":
+        source = environ if environ is not None else os.environ
+        binding_result, binding_status = require_organic_publication_binding(
+            params,
+            target_page_id=_clean_text(source.get(FACEBOOK_PAGE_ID_ENV)),
+            database_url=database_url,
+        )
+        if binding_status != 200:
+            return {
+                **binding_result,
+                "policy": policy,
+                **_facebook_execution_authority(False),
+            }, binding_status
+        binding = binding_result["binding"]
+        authorization = binding_result["authorization"]
+        params["publication_binding_id"] = binding["binding_id"]
+        params["approved_weekly_packet_id"] = binding["weekly_packet_id"]
+        params["owner_decision_event_id"] = binding["owner_decision_event_id"]
+        params["authorization_generation_id"] = authorization[
+            "authorization_generation_id"
+        ]
+        successor_error = validate_successor_execution(
+            params,
+            now=current_time(),
+            authoritative_timing_authorization_id=authorization[
+                "authorization_generation_id"
+            ],
+        )
+        if successor_error:
+            return {"success": False, "status": successor_error,
+                    **_facebook_execution_authority(False)}, 409
+        params["execution_event_id"] = _facebook_post_execution_id(params)
+        if (
+            params["execution_event_id"]
+            != authorization["expected_attempt_identity"]
+        ):
+            return {
+                "success": False,
+                "status": "organic_publication_attempt_identity_mismatch",
+                "publish": False,
+                "upload": False,
+                "scheduled": False,
+                "meta_call": False,
+                **_facebook_execution_authority(False),
+            }, 409
+
+        final_assessment = assess_public_livestock_content(
+            params.get("exact_text"),
+            objective=params.get("objective"),
+            campaign_lane=params.get("campaign_lane"),
+            media=params.get("selected_assets") or params.get("selected_asset"),
+        )
+        if not final_assessment["allowed"]:
+            return {
+                "success": False,
+                "status": RISK_STATUS,
+                "public_livestock_policy": final_assessment,
+                **_facebook_execution_authority(False),
+            }, 409
 
     recorder = execution_recorder or _record_facebook_post_execution_event
     params["execution_status"] = "record_only_before_send"
+    params["facebook_response_json"] = json.dumps({
+        "transport_stage": "attempt_claimed",
+        "post_kind": params.get("post_kind", "feed"),
+        "campaign_lane": params.get("campaign_lane", ""),
+        "objective": params.get("objective", ""),
+        "selected_media": _facebook_selected_media(params),
+        "caption_sha256": hashlib.sha256(
+            params.get("exact_text", "").encode("utf-8")
+        ).hexdigest(),
+        "automatic_retry_allowed": False,
+    }, sort_keys=True, default=str)
     claim_result, claim_status = recorder(params, database_url=database_url)
     if claim_status != 201 or not claim_result.get("created_count"):
         return {
@@ -1254,8 +1435,78 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             **_facebook_execution_authority(False),
         }, 409 if claim_status < 400 else 503
 
-    post_fn = poster or _post_to_facebook_page
-    post_result, post_status = post_fn(params, policy)
+    if projected:
+        current_projection, current_status = projector(
+            [asset.get("asset_id", "") for asset in projected], database_url
+        )
+        if (current_status != 200
+                or current_projection.get("success") is not True
+                or current_projection.get("assets") != projected):
+            return {
+                "success": False,
+                "status": "server_media_authority_changed_after_claim",
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+                **_facebook_execution_authority(False),
+            }, 409
+
+    successor_error = validate_successor_execution(
+        params,
+        now=current_time(),
+        authoritative_timing_authorization_id=(
+            params.get("authorization_generation_id") or None
+        ),
+    )
+    if successor_error:
+        return {
+            "success": False,
+            "status": successor_error,
+            "outcome": "definite_failure_before_meta",
+            "automatic_retry_allowed": False,
+            **_facebook_execution_authority(False),
+        }, 409
+
+    if is_publish_now:
+        authority_result, authority_status = authority_reader(database_url)
+        if authority_status != 200 or authority_result.get("success") is not True:
+            return {
+                **authority_result,
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+                **_facebook_execution_authority(False),
+            }, authority_status
+
+    if poster:
+        post_result, post_status = poster(params, policy)
+    else:
+        def record_stage(stage):
+            stage_params = dict(params)
+            stage_name = _clean_text(stage.get("transport_stage"))[:80]
+            stage_identity = (
+                f"{stage_name}|{stage.get('asset_position', '')}|"
+                f"{stage.get('asset_id', '')}"
+            )
+            stage_params["execution_event_id"] = (
+                f'{params["execution_event_id"]}-STAGE-'
+                f'{hashlib.sha256(stage_identity.encode()).hexdigest()[:12].upper()}'
+            )
+            stage_params["execution_status"] = "record_only_before_send"
+            stage_params["facebook_response_json"] = json.dumps(
+                stage, sort_keys=True, default=str
+            )
+            result, status = recorder(stage_params, database_url=database_url)
+            return status < 400 and bool(result.get("success"))
+
+        def authority_guard():
+            if not is_publish_now:
+                return True
+            guard_result, guard_status = authority_reader(database_url)
+            return guard_status == 200 and guard_result.get("success") is True
+
+        post_result, post_status = _post_to_facebook_page(
+            params, policy, stage_recorder=record_stage,
+            authority_guard=authority_guard,
+        )
     execution_status = "facebook_page_post_sent" if post_status < 400 and post_result.get("success") else "facebook_page_post_failed"
     params.update({
         "execution_event_id": f'{params["execution_event_id"]}-RESULT',
@@ -2023,6 +2274,8 @@ def _performance_params(payload):
         "manual_post_event_id": _clean_text(payload.get("manual_post_event_id"))[:120],
         "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
         "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
+        "campaign_lane": normalize_campaign_lane(payload.get("campaign_lane")),
+        "objective": _clean_text(payload.get("objective") or "farm_awareness")[:120],
         "measurement_window": _clean_text(payload.get("measurement_window") or "manual_snapshot")[:120],
         "spend_amount": spend_amount,
         "spend_currency": _clean_text(payload.get("spend_currency") or "ZAR")[:12],
@@ -2058,6 +2311,18 @@ def _performance_params(payload):
 
 def _recommend_boost(payload, spend_amount, messages, qualified, evidence=None):
     evidence = evidence or _performance_metric_evidence(payload)
+    campaign_lane = normalize_campaign_lane(payload.get("campaign_lane"))
+    if campaign_lane in {"live_stock_awareness", "live_stock_sales"}:
+        return {
+            "recommended_action": "do_not_boost",
+            "recommendation_reason": (
+                "Public livestock performance may be reported, but clicks, messages "
+                "and engagement cannot optimize or graduate commercial livestock copy."
+            ),
+            "recommended_spend_amount": 0,
+            "recommended_duration_days": 0,
+            "public_livestock_commerce_optimization_allowed": False,
+        }
     fulfillment_risk = _clean_text(payload.get("fulfillment_risk")).lower()
     safety_risk = _clean_text(payload.get("safety_risk")).lower()
     owner_blocked = str(payload.get("owner_blocked") or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -2322,13 +2587,40 @@ def _facebook_post_params(payload, policy):
         "mode": "beacon_facebook_page_post_execution_gate",
         "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
         "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
-        "exact_text": _clean_text(payload.get("exact_text") or payload.get("message"))[:5000],
+        "exact_text": canonical_caption_text(
+            payload.get("exact_text")
+            if "exact_text" in payload
+            else payload.get("message", "")
+        )[:5000],
         "asset_id": _clean_text(payload.get("asset_id") or selected_asset.get("asset_id"))[:120],
         "selected_asset": selected_asset,
         "selected_assets": selected_assets,
         "selected_media_json": "{}",
         "post_kind": post_kind,
         "owner_confirmation": _clean_text(payload.get("owner_confirmation"))[:120],
+        "authorization_generation_id": _clean_text(
+            payload.get("authorization_generation_id")
+        )[:160],
+        "publication_execution_identity": _clean_text(
+            payload.get("publication_execution_identity")
+        )[:160],
+        "publication_authority_mode": _clean_text(
+            payload.get("publication_authority_mode") or "scheduled_exact"
+        )[:40],
+        "publication_authority_id": _clean_text(
+            payload.get("publication_authority_id")
+        )[:160],
+        "publication_authority_state": _clean_text(
+            payload.get("publication_authority_state") or "active"
+        )[:40],
+        "zero_spend": payload.get("zero_spend") is True,
+        "timing_authorization_id": _clean_text(
+            payload.get("timing_authorization_id")
+        )[:160],
+        "timing_start": _clean_text(payload.get("timing_start"))[:80],
+        "timing_end": _clean_text(payload.get("timing_end"))[:80],
+        "campaign_lane": payload.get("campaign_lane", ""),
+        "objective": payload.get("objective", ""),
         "execution_status": "not_attempted",
         "facebook_post_id": "",
         "facebook_response_json": "{}",
@@ -2372,13 +2664,20 @@ def _facebook_post_validation_error(params, policy):
     return ""
 
 
-def _post_to_facebook_page(params, policy, environ=None):
+def _post_to_facebook_page(params, policy, environ=None, stage_recorder=None,
+                           authority_guard=None):
     if params.get("post_kind") == "multi_photo":
-        return _post_to_facebook_page_multi_photo(params, policy, environ=environ)
+        return _post_to_facebook_page_binary_images(
+            params, policy, environ=environ, stage_recorder=stage_recorder,
+            authority_guard=authority_guard,
+        )
     if params.get("post_kind") == "video":
         return _post_to_facebook_page_video(params, policy, environ=environ)
     if params.get("asset_id"):
-        return _post_to_facebook_page_photos(params, policy, environ=environ)
+        return _post_to_facebook_page_binary_images(
+            params, policy, environ=environ, stage_recorder=stage_recorder,
+            authority_guard=authority_guard,
+        )
     return _post_to_facebook_page_feed(params, policy, environ=environ)
 
 
@@ -2415,6 +2714,241 @@ def _post_to_facebook_page_feed(params, policy, environ=None):
             "error_type": exc.__class__.__name__,
             "error": str(exc)[:240],
         }, 502
+
+
+def _post_to_facebook_page_binary_images(
+    params,
+    policy,
+    environ=None,
+    stage_recorder=None,
+    storage_loader=None,
+    photo_uploader=None,
+    feed_creator=None,
+    authority_guard=None,
+):
+    """Validate all bytes, then upload once per image with no retry."""
+    source = environ if environ is not None else os.environ
+    page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    assets = [
+        asset for asset in params.get("selected_assets", [])
+        if isinstance(asset, dict)
+    ]
+    load_fn = storage_loader or (
+        lambda asset: load_supabase_asset_bytes(asset, environ=source)
+    )
+    upload_fn = photo_uploader or (
+        lambda asset, data, mime: upload_unpublished_photo_binary(
+            page_id, token, version, asset, data, mime
+        )
+    )
+    feed_fn = feed_creator or (
+        lambda caption, ids: create_multi_photo_feed(
+            page_id, token, version, caption, ids
+        )
+    )
+    stage_fn = stage_recorder or (lambda _stage: True)
+    authority_fn = authority_guard or (lambda: True)
+    validations = []
+    loaded = []
+    for position, asset in enumerate(assets, start=1):
+        loaded_result, loaded_status = load_fn(asset)
+        if loaded_status >= 400 or not loaded_result.get("success"):
+            handoff = manual_composer_handoff(
+                params, validations, loaded_result.get("status")
+                or "private_storage_read_failed"
+            )
+            return {
+                "success": False,
+                "status": "facebook_image_validation_failed",
+                "post_kind": params.get("post_kind"),
+                "failed_asset_position": position,
+                "storage_status": loaded_result.get("status"),
+                "manual_handoff": handoff,
+                "uploaded_media_ids": [],
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+            }, 422
+        validation = validate_facebook_image_asset(
+            asset,
+            loaded_result.get("data"),
+            loaded_result.get("returned_mime"),
+            loaded_result.get("readback_proof"),
+        )
+        validation["position"] = position
+        validations.append(validation)
+        if not validation["allowed"]:
+            return {
+                "success": False,
+                "status": "facebook_image_validation_failed",
+                "post_kind": params.get("post_kind"),
+                "failed_asset_position": position,
+                "asset_validations": validations,
+                "manual_handoff": manual_composer_handoff(
+                    params, validations, "image_validation_failed"
+                ),
+                "uploaded_media_ids": [],
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+            }, 422
+        loaded.append((
+            asset,
+            loaded_result["data"],
+            validation["returned_mime"],
+        ))
+
+    validation_stage = {
+        "transport_stage": "validation_complete",
+        "post_kind": params.get("post_kind"),
+        "selected_media": _facebook_selected_media(params),
+        "asset_order": [asset.get("asset_id", "") for asset in assets],
+        "asset_validations": validations,
+        "meta_call_performed": False,
+        "automatic_retry_allowed": False,
+    }
+    if not stage_fn(validation_stage):
+        return {
+            "success": False,
+            "status": "facebook_stage_evidence_failed_before_meta",
+            "outcome": "definite_failure_before_meta",
+            "uploaded_media_ids": [],
+            "manual_handoff": manual_composer_handoff(
+                params, validations, "stage_evidence_failed"
+            ),
+            "automatic_retry_allowed": False,
+        }, 503
+
+    if params.get("campaign_lane") in {"live_stock_awareness", "live_stock_sales"}:
+        final_policy = assess_public_livestock_content(
+            params.get("exact_text"),
+            objective=params.get("objective") or "farm_awareness",
+            campaign_lane=params.get("campaign_lane"),
+            media=assets,
+        )
+        if not final_policy["allowed"]:
+            return {
+                "success": False,
+                "status": RISK_STATUS,
+                "public_livestock_policy": final_policy,
+                "outcome": "definite_failure_before_meta",
+                "uploaded_media_ids": [],
+                "automatic_retry_allowed": False,
+            }, 409
+
+    media_ids = []
+    for position, (asset, data, mime_type) in enumerate(loaded, start=1):
+        if not authority_fn():
+            return {"success": False, "status": "publish_now_authority_not_actionable",
+                    "outcome": "definite_failure_before_meta",
+                    "automatic_retry_allowed": False}, 409
+        result, status = upload_fn(asset, data, mime_type)
+        media_id = str(result.get("id") or "")
+        upload_stage = {
+            "transport_stage": "image_upload_result",
+            "asset_id": asset.get("asset_id", ""),
+            "asset_position": position,
+            "http_status": status,
+            "success": status < 400 and bool(media_id),
+            "returned_media_id": media_id,
+            "uploaded_media_ids": [*media_ids, *([media_id] if media_id else [])],
+            "meta_error": result.get("meta_error", {}),
+            "outcome": result.get("outcome", ""),
+            "meta_call_performed": True,
+            "automatic_retry_allowed": False,
+        }
+        recorded = stage_fn(upload_stage)
+        if media_id:
+            media_ids.append(media_id)
+        if not recorded:
+            return {
+                "success": False,
+                "status": "facebook_upload_evidence_failed",
+                "outcome": "ambiguous",
+                "uploaded_media_ids": media_ids,
+                "owner_reconciliation_required": True,
+                "automatic_retry_allowed": False,
+            }, 503
+        if status >= 400 or not media_id:
+            outcome = (
+                "ambiguous"
+                if result.get("outcome") == "ambiguous"
+                else "partial_upload_final_post_not_created"
+                if media_ids
+                else "definitely_not_posted_no_media_accepted"
+            )
+            return {
+                **result,
+                "success": False,
+                "post_kind": params.get("post_kind"),
+                "failed_asset_position": position,
+                "uploaded_media_ids": media_ids,
+                "outcome": outcome,
+                "owner_reconciliation_required": bool(media_ids)
+                or outcome == "ambiguous",
+                "manual_handoff": manual_composer_handoff(
+                    params, validations, result.get("status")
+                    or "image_upload_failed"
+                ),
+                "automatic_retry_allowed": False,
+            }, status
+
+    if not authority_fn():
+        return {"success": False, "status": "publish_now_authority_not_actionable",
+                "outcome": "media_uploaded_final_post_not_published",
+                "automatic_retry_allowed": False}, 409
+    result, status = feed_fn(params.get("exact_text", ""), media_ids)
+    post_id = str(result.get("id") or result.get("post_id") or "")
+    feed_stage = {
+        "transport_stage": "final_feed_result",
+        "http_status": status,
+        "success": status < 400 and bool(post_id),
+        "uploaded_media_ids": media_ids,
+        "final_post_id": post_id,
+        "meta_error": result.get("meta_error", {}),
+        "outcome": result.get("outcome", ""),
+        "meta_call_performed": True,
+        "automatic_retry_allowed": False,
+    }
+    if not stage_fn(feed_stage):
+        return {
+            "success": False,
+            "status": "facebook_final_evidence_failed",
+            "outcome": "ambiguous",
+            "uploaded_media_ids": media_ids,
+            "final_post_id": post_id,
+            "owner_reconciliation_required": True,
+            "automatic_retry_allowed": False,
+        }, 503
+    if status >= 400 or not post_id:
+        return {
+            **result,
+            "success": False,
+            "post_kind": params.get("post_kind"),
+            "uploaded_media_ids": media_ids,
+            "outcome": (
+                "ambiguous"
+                if result.get("outcome") == "ambiguous"
+                else "media_uploaded_final_post_not_published"
+            ),
+            "owner_reconciliation_required": True,
+            "manual_handoff": manual_composer_handoff(
+                params, validations, result.get("status")
+                or "final_feed_failed"
+            ),
+            "automatic_retry_allowed": False,
+        }, status
+    return {
+        "success": True,
+        "status": "facebook_page_post_sent",
+        "post_kind": params.get("post_kind"),
+        "selected_media": _facebook_selected_media(params),
+        "uploaded_media_ids": media_ids,
+        "id": post_id,
+        "facebook_post_id": post_id,
+        "outcome": "post_published_and_evidence_recorded",
+        "automatic_retry_allowed": False,
+    }, status
 
 
 def _post_to_facebook_page_photos(params, policy, environ=None):
@@ -2690,9 +3224,36 @@ def _facebook_post_row_to_event(row):
 
 
 def _facebook_post_execution_id(params):
+    if (params.get("publish_packet_id") == "BEACON-PROPOSAL-18DEAAD8E896A87FE961F45B"
+            and params.get("publication_authority_mode") == "publish_now"):
+        assets = params.get("selected_assets") or []
+        seed = {
+            "publish_packet_id": params.get("publish_packet_id", ""),
+            "channel": params.get("channel", ""),
+            "publication_execution_identity": params.get(
+                "publication_execution_identity", ""
+            ),
+            "caption_sha256": SUCCESSOR_CAPTION_SHA256,
+            "asset_sha256": SUCCESSOR_ASSET_SHA256,
+            "zero_spend": params.get("zero_spend") is True,
+        }
+        digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
+        return f"BEACON-FB-POST-{digest}"
     seed = {
         "publish_packet_id": params.get("publish_packet_id", ""),
         "channel": params.get("channel", ""),
+        "publication_binding_id": params.get("publication_binding_id", ""),
+        "approved_weekly_packet_id": params.get("approved_weekly_packet_id", ""),
+        "owner_decision_event_id": params.get("owner_decision_event_id", ""),
+        "authorization_generation_id": params.get(
+            "authorization_generation_id", ""
+        ),
+        "publication_execution_identity": params.get(
+            "publication_execution_identity", ""
+        ),
+        "timing_authorization_id": params.get("timing_authorization_id", ""),
+        "timing_start": params.get("timing_start", ""),
+        "timing_end": params.get("timing_end", ""),
     }
     digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
     return f"BEACON-FB-POST-{digest}"
@@ -2723,10 +3284,6 @@ def _facebook_selected_media(params):
         "title": asset.get("title", ""),
         "media_type": asset.get("media_type", ""),
         "mime_type": asset.get("mime_type", ""),
-        "storage_bucket": asset.get("storage_bucket", ""),
-        "storage_path": asset.get("storage_path", ""),
-        "privacy_risk": asset.get("privacy_risk", ""),
-        "quality_score": asset.get("quality_score"),
         "public_use_approved": bool(asset.get("effective_public_use_approved") or asset.get("public_use_approved")),
     } for asset in assets]
     if len(selected) == 1:

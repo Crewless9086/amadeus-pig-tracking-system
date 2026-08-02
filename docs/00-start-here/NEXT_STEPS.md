@@ -1,8 +1,56 @@
-﻿# Next Steps
+# Next Steps
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
 
+## OOM-SAKKIE-OWNER-REQUEST-LIFECYCLE-1
+
+Integrate and prove the existing-rail owner-request lifecycle. The deployed Oom
+Sakkie agent must bind owner text/photo/video/album evidence to its exact active
+request, acknowledge once, persist task state, and either obtain a deployed
+specialist agent's task-specific acknowledgement/activity or expose one
+deduplicated exception that development-terminal work is required. Completion
+requires an outcome artifact and a Telegram provider message identity. First
+recovery is request 3156 and its exact six-photo album; no further screenshot,
+hardware action, or specialist-terminal operation is required. A PR, release
+row, general health check, or source artifact alone does not complete this
+mission.
+## OOM-SAKKIE-OWNER-ATTENTION-QUEUE-1
+
+Integrate and prove the consolidated Owner Attention Queue. Its pure kernel
+prepares one period sales summary from each conversation's latest proven state,
+digest-bound protected-decision cards, in-place expiry intents and separate
+stable buttonless systemic alerts. A resolved edit requires an authoritative
+atomic-consumption receipt from the existing owner-decision rail. It
+does not call Telegram, consume a decision, send a customer, write Chatwoot or
+farm state, or alter SAM's enabled lane. The smallest adapter now maps the
+existing SAM reconcile result into the existing owner-card, authenticated
+callback, Telegram edit and owner-decision evidence rails. Enable only
+`OOM_SAKKIE_OWNER_ATTENTION_QUEUE_ENABLED` after exact deployment, then prove
+one summary identity and repeat edit/deduplication with customer processing
+capped at zero. Do not create another bot, trigger, router, callback owner or
+ledger.
+
+## SAM-MEAT-LAUNCH-READINESS-1
+
+Complete the owner-assisted meat launch slice before any customer-send canary:
+use only Set A Amadeus Signature, Set B Amadeus Ember and Set C Amadeus Grand
+Cut; support one collection per half of a full carcass; prepare evidence-bound
+R130/kg VAT-inclusive estimates with a 50% estimated deposit and final
+butcher-confirmed packed-weight reconciliation; deliver only; leave delivery
+fee, timing and transport packaging unresolved; and keep every send, order,
+payment, allocation and slaughter action owner-protected. The authoritative
+cutting source is `external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md`.
+
 ## Beacon Marketing Department Roadmap - Owner Approval Queue
+
+0. **BEACON-MEDIA-INTAKE-1 - default-disabled foundation candidate built for review.** Use the existing owner-controlled OOM SAKKIE Telegram bot as the preferred mobile intake door; store validated JPEG/PNG media privately in BEACON raw intake; preserve owner context and explicit album order; hash/deduplicate exact bytes; and present real owner-authorized thumbnails/contact sheets for separate library and public-use decisions. The additive migration is unapplied, Telegram intake is inactive, videos remain visibly unsupported pending bounded resumable transport, and no first canary has run. Historical OneDrive/folder ingestion is a separate bounded follow-up using the same provenance contract. See `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`.
+
+Current production learning state (2026-07-27): one confirmed organic Page
+post and reliable run are persisted with media/post understanding; graduation
+is `not_eligible` and grants no automatic authority. The next bounded
+marketing-learning action is one exact-post, read-only 24-hour snapshot after
+`2026-07-27T16:27:01Z`, preserving unsupported metrics as unavailable. Do not
+retrieve it early or access another post.
 
 1. `CHARLIE-MISSION-0AFC18F12C5CFA64` - Marketing operating contract, brand kit and targets.
 2. `CHARLIE-MISSION-47C615183E54E430` - Fulfilment-aware opportunity scanner.
@@ -11,9 +59,46 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 5. `CHARLIE-MISSION-AE07E79AAFEF7728` - Meta insights, SAM lead and revenue attribution.
 6. `CHARLIE-MISSION-BD1FB9CC86FD0069` - Marketing command brief and optimization loop.
 
-These missions are `new`, not approved for automatic execution. Public posting remains exact-owner-confirmed; scheduling, paid spend and creative-provider calls remain disabled.
+BEACON-MEDIA-INTAKE-1 is an owner-approved direction with built-only candidate code, not migration or activation authority. The numbered CHARLIE missions are `new`, not approved for automatic execution. Public posting remains exact-owner-confirmed; Telegram intake, historical import, scheduling, paid spend and creative-provider calls remain disabled until their own reviewed gates are integrated and activated.
+
+## ROOTLINE Read-Only Advisor Queue
+
+1. Review the command-inert Operating Knowledge Register and owner-only Daily
+   Advisor candidate. It preserves Charl's approved initial policy, visibly
+   withholds eligibility/runtime where material values remain Unknown, and
+   keeps historical planned minutes separate from observed runtime and measured
+   water.
+2. Review the design-only append-only canary-evidence contract. Do not create
+   or apply a migration or persist the C12345 result until separately
+   authorized.
+3. Resolve the remaining owner values: seasonal boundaries, exact daylight
+   windows, per-zone minimum/maximum runtime, forecast-rain policy,
+   temperature limits, crop-need bands, power-loss behavior, and—if
+   available—the C12345 residual-drainage decay time.
+
+The single supervised C12345 channel-2 identity-and-shutdown canary passed and
+ended safe closed. It is evidence of one physical mapping and shutdown, not
+routine irrigation, scheduling, command dispatch, IFTTT/n8n activation, or
+autonomous authority.
 
 ## P0 Operational / Live Issues
+
+- CORE ownership bootstrap and observe-only mode are merged. PR #539 merged
+  as `ce8971dff7605a91120a63c26dd22d81ca413360`; current main and exact
+  Render deployment are now
+  `1c47e53d5121d2fae5e49019f88872838b80d47c`. Local runtime, execution, and
+  manifest remain deliberately unpromoted at
+  `98cfe04e4ea23a4ddc43525671bb56de0a49670d`.
+- Keep CORE stopped, retain the canonical stop marker, and keep the watchdog
+  disabled. A future separately authorized observe-only handshake must first
+  prove zero runnable missions without starting CORE, then prove the signed
+  ownership tree and governed zero-survivor stop. It may not execute either T0
+  mission or transition into ordinary operation.
+- PR #530 is a stale, open 2026-07-26 night-handover candidate. It is not
+  authoritative current state and must be reconciled or closed rather than
+  merged as-is. SAM Live Stock P0 remains the current business priority; this
+  CORE documentation reconciliation does not claim SAM files or authorize SAM
+  work.
 
 - P0 Bulk Weight Data-Loss Fix: owner entered 71 rows, 60 were recorded in the draft/session, upload failed with a vague error, refresh lost all typed rows. Branch: `p0-bulk-weight-draft-recovery`.
 - P0 Bulk Upload HTML/JSON Failure: owner entered 73 entries with about 21 pen changes; upload returned HTML/non-JSON (`Unexpected token '<'`) instead of structured JSON. JSON-safe hotfix is merged, but live retest still failed through the old synchronous path.

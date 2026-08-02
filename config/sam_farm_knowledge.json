@@ -1,12 +1,12 @@
 {
-  "version": "2026-06-20-v1",
+  "version": "2026-07-27-sam-meat-launch-v1",
   "status": "draft_owner_editable",
   "public_profile": {
     "farm_name": "Amadeus Farm",
     "agent_name": "Sam",
     "short_intro": "Hi, I am Sam from Amadeus Farm.",
     "one_line_story": "We are a small farm helping customers with live pig enquiries, practical farm information, and traceable planned farm systems.",
-    "location_summary": "Riversdale area, with collection details arranged once the farm confirms the order details.",
+    "location_summary": "We are based in the Riversdale area. Live-pig handover is arranged in Riversdale or Albertinia after the order path is confirmed.",
     "google_maps_url": "",
     "service_areas": [
       "Riversdale",
@@ -46,25 +46,26 @@
   ],
   "meat_sales": {
     "positioning": "Pre-booked Amadeus Farm pork for freezer buyers. It is not unlimited shelf stock.",
-    "core_options": [
-      "half carcass",
-      "full carcass",
-      "custom cuts",
-      "assisted slaughter"
-    ],
+    "core_options": ["half carcass", "full carcass"],
+    "price_per_kg_including_vat": 130,
+    "deposit_percent": 50,
+    "final_billing_basis": "butcher-confirmed packed weight",
+    "fulfilment_mode": "delivery only",
+    "delivery_fee": "Unresolved",
+    "delivery_timing": "Unresolved",
+    "transport_packaging": "Unresolved",
     "payment_rule": "For meat sales we use EFT only for now so the reference and payment trail stay clean.",
-    "pilot_payment_rule": "For meat sales we use EFT only for now so the reference and payment trail stay clean.",
-    "deposit_explanation": "The deposit holds the customer's place in the preorder run and helps the farm plan slaughter, cutting, packing, and delivery properly.",
-    "pop_explanation": "Proof of payment is useful evidence, but the booking only moves forward once the money reflects in the farm account."
+    "deposit_explanation": "The 50% deposit is based on the estimated total. Final billing uses the butcher-confirmed packed weight, and the balance is payable before delivery.",
+    "pop_explanation": "Proof of payment is useful evidence, but payment is confirmed only after the money reflects in the farm account.",
+    "slaughter_gate": "The full carcass must be committed and every required deposit bank-confirmed.",
+    "full_carcass_rule": "Two independently selected half-carcass collections; they may be the same or different."
   },
   "cut_sets": {
-    "Set A": "Family Freezer Pack: pork chops, leg portions or roasts, shoulder roasts, belly strips, ribs, mince or stew meat, and bones for soup or stock.",
-    "Set B": "Braai Pack: chops, rashers or belly strips, ribs, shoulder steaks, sosatie or stew cubes, and mince or sausage meat option.",
-    "Set C": "Lean Pack: lean chops, leg steaks, lean shoulder cuts, mince, stew cubes, and fewer fatty belly cuts.",
-    "Set D": "Slow-Cook Family Roast Pack: larger roasting cuts, shoulder, mixed chops, mince or stew meat, and soup bones for slow cooking, roasting, and family meals."
-  },
-  "faq": {
-    "where_are_you_based": "We are based around the Riversdale area in the Western Cape. Collection details are arranged once the farm confirms the order details.",
+    "Set A": "Amadeus Signature Collection: boneless neck steaks, additional forequarter stew meat, loin chops, bone-in rib rashers, whole pork belly, two half legs, cut shanks, and standard stew meat.",
+    "Set B": "Amadeus Ember Collection: thick rib chops, shoulder chops, loin chops, whole pork rib, whole pork belly, one half leg, leg chops, cut shanks, and standard stew meat.",
+    "Set C": "Amadeus Grand Cut Collection: neck chops, loin chops, whole pork rib, whole pork belly, whole pork leg, whole pork shanks (Eisbein), and standard stew meat."
+  },  "faq": {
+    "where_are_you_based": "We are based around the Riversdale area in the Western Cape. Live-pig handover is arranged in Riversdale or Albertinia after the order path is confirmed.",
     "why_deposit": "The deposit holds your place in the preorder run and helps the farm plan slaughter, cutting, packing, and delivery properly.",
     "when_is_booking_final": "A booking is not final until the farm confirms the run and the required money reflects in the farm account.",
     "can_i_visit": "Farm visits are not handled as an automatic chat promise. Sam should capture the request and hand it to the farm for review."
@@ -73,6 +74,7 @@
     "Do not claim money is received from POP alone.",
     "Do not promise an exact slaughter, butcher, or delivery date unless the backend has confirmed it.",
     "Do not invent prices, stock, weights, or availability.",
+    "Never offer, imply, or disclose live-pig collection at the farm.",
     "Do not claim an order, booking, or reservation is final unless the backend state says it is."
   ]
 }

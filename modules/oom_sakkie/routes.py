@@ -1,7 +1,19 @@
 import hmac
 import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
+
+from modules.auth.owner_access import (
+    owner_admin_principal,
+    require_owner_admin_access,
+    require_owner_read_access,
+)
+from modules.beacon.media_intake import (
+    list_media_intakes,
+    read_private_thumbnail,
+    record_media_group_review,
+    record_media_review,
+)
 
 from modules.oom_sakkie.access import (
     is_message_request_allowed,
@@ -244,7 +256,26 @@ def oom_sakkie_telegram_message():
 
 @oom_sakkie_bp.route("/oom-sakkie/channels/telegram/direct-webhook", methods=["POST"])
 def oom_sakkie_telegram_direct_webhook():
-    payload = request.get_json(silent=True) or {}
+    if not request.is_json:
+        return jsonify({
+            "success": False,
+            "status": "telegram_json_content_type_required",
+            "expected_content_type": "application/json",
+            "download_attempted": False,
+            "persistence_attempted": False,
+            "sends_telegram": False,
+            "writes": False,
+        }), 415
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not payload:
+        return jsonify({
+            "success": False,
+            "status": "telegram_json_object_required",
+            "download_attempted": False,
+            "persistence_attempted": False,
+            "sends_telegram": False,
+            "writes": False,
+        }), 400
     result, status_code = handle_telegram_direct_webhook(payload, headers=request.headers)
     return jsonify(result), status_code
 
@@ -255,6 +286,88 @@ def oom_sakkie_telegram_direct_parity():
     if denied:
         return denied
     return jsonify(telegram_direct_parity_report()), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/beacon/media-intakes", methods=["GET"])
+def beacon_media_intakes():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = list_media_intakes(limit=request.args.get("limit", 50))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route(
+    "/oom-sakkie/beacon/media-intakes/<binary_asset_id>/thumbnail",
+    methods=["GET"],
+)
+def beacon_media_intake_thumbnail(binary_asset_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = read_private_thumbnail(
+        binary_asset_id,
+        token=request.args.get("token", ""),
+        expires=request.args.get("expires", ""),
+    )
+    if status_code >= 400:
+        return jsonify(result), status_code
+    return Response(
+        result["body"],
+        status=200,
+        content_type=result["content_type"],
+        headers={
+            "Cache-Control": result["cache_control"],
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'",
+        },
+    )
+
+
+@oom_sakkie_bp.route(
+    "/oom-sakkie/beacon/media-intakes/<binary_asset_id>/review",
+    methods=["POST"],
+)
+def beacon_media_intake_review(binary_asset_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    principal = owner_admin_principal()
+    if not principal:
+        return jsonify({
+            "success": False,
+            "status": "owner_identity_required",
+            "publish": False,
+            "public_use_approved": False,
+        }), 403
+    result, status_code = record_media_review(
+        binary_asset_id,
+        request.get_json(silent=True) or {},
+        principal,
+    )
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route(
+    "/oom-sakkie/beacon/media-intakes/groups/<intake_group_id>/review",
+    methods=["POST"],
+)
+def beacon_media_intake_group_review(intake_group_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    principal = owner_admin_principal()
+    if not principal:
+        return jsonify({
+            "success": False,
+            "status": "owner_identity_required",
+            "publish": False,
+            "public_use_approved": False,
+        }), 403
+    result, status_code = record_media_group_review(
+        intake_group_id, request.get_json(silent=True) or {}, principal
+    )
+    return jsonify(result), status_code
 
 
 @oom_sakkie_bp.route("/oom-sakkie/channels/telegram/exposure-preflight", methods=["GET"])

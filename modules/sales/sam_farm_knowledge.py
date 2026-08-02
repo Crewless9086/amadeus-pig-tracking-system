@@ -13,8 +13,8 @@ DEFAULT_KNOWLEDGE = {
         "farm_name": "Amadeus Farm",
         "agent_name": "Sam",
         "short_intro": "Hi, I am Sam from Amadeus Farm.",
-        "one_line_story": "We help customers with live pig enquiries, farm collection questions, and practical farm information.",
-        "location_summary": "Riversdale area, with collection details arranged once the farm confirms the order details.",
+        "one_line_story": "We help customers with live pig enquiries, handover questions, and practical farm information.",
+        "location_summary": "We are based in the Riversdale area. Live-pig handover is arranged in Riversdale or Albertinia after the order path is confirmed.",
         "google_maps_url": "",
         "service_areas": ["Riversdale"],
     },
@@ -29,15 +29,23 @@ DEFAULT_KNOWLEDGE = {
     ],
     "meat_sales": {
         "positioning": "Pre-booked Amadeus Farm pork for freezer buyers.",
-        "core_options": ["half carcass", "full carcass", "custom cuts", "assisted slaughter"],
+        "core_options": ["half carcass", "full carcass"],
+        "price_per_kg_including_vat": 130,
+        "deposit_percent": 50,
+        "fulfilment_mode": "delivery only",
+        "transport_packaging": "Unresolved",
         "payment_rule": "For meat sales we use EFT only for now so the reference and payment trail stay clean.",
         "pilot_payment_rule": "For meat sales we use EFT only for now so the reference and payment trail stay clean.",
         "deposit_explanation": "The deposit holds the customer's place in the preorder run and helps the farm plan properly.",
         "pop_explanation": "Proof of payment is useful evidence, but the booking only moves forward once the money reflects in the farm account.",
     },
-    "cut_sets": {},
+    "cut_sets": {
+        "Set A": "Amadeus Signature Collection",
+        "Set B": "Amadeus Ember Collection",
+        "Set C": "Amadeus Grand Cut Collection",
+    },
     "faq": {},
-    "blocked_claims": [],
+    "blocked_claims": ["Never offer, imply, or disclose live-pig collection at the farm."],
 }
 
 

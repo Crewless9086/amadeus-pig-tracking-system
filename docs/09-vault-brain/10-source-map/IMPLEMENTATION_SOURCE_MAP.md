@@ -1,5 +1,104 @@
 # Implementation Source Map
 
+## Oom Sakkie owner-request lifecycle
+
+- Existing authenticated ingress and Telegram delivery:
+  `modules/oom_sakkie/telegram_direct.py`.
+- Durable owner-task lifecycle adapter:
+  `modules/oom_sakkie/owner_task_lifecycle.py`.
+- Dispatch truth reducer:
+  `modules/oom_sakkie/specialist_dispatch_ack.py`.
+- Existing durable evidence rail:
+  `sam_live_stock_conversation_review_events`; this is reused for append-only
+  task events and is not a second queue or decision ledger.
+- Focused acceptance:
+  `tests/test_oom_sakkie_owner_task_lifecycle.py` and
+  `tests/test_oom_sakkie_specialist_dispatch_ack.py`.
+- Production/recovery contract:
+  `docs/06-operations/OOM_SAKKIE_OWNER_REQUEST_AGENT_LIFECYCLE_HANDOVER.md`.
+- Rule: a deployed agent needs target-specific acknowledgement and fresh
+  activity before Oom Sakkie reports execution. A terminal is manual and a
+  specialist role is broader than any current adapter. Neither a release nor
+  general agent health proves task receipt or start.
+
+## Oom Sakkie Owner Attention Queue
+
+- Doctrine and goal card:
+  `docs/09-vault-brain/02-agents/farm/OOM_SAKKIE.md`
+- Workflow contract:
+  `docs/09-vault-brain/04-workflows/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_WORKFLOW.md`
+- Pure coordination kernel:
+  `modules/oom_sakkie/owner_attention_queue.py`
+- Existing-infrastructure adapter:
+  `modules/oom_sakkie/owner_attention_adapter.py`, invoked after the existing
+  SAM inbox disposition and through the authenticated Oom Sakkie callback.
+- Focused tests:
+  `tests/test_oom_sakkie_owner_attention_queue.py`,
+  `tests/test_oom_sakkie_owner_attention_adapter.py`
+- Source-ready shared-adapter handover:
+  `docs/06-operations/OOM_SAKKIE_OWNER_ATTENTION_QUEUE_SOURCE_HANDOVER.md`
+- Existing later integration surfaces, unchanged by this source slice:
+  `modules/sales/sam_live_stock_launch_control.py`,
+  `modules/oom_sakkie/telegram_direct.py`, GateKeeper's existing SAM callback
+  relay and the existing SAM review/decision evidence rail.
+- Rule: ordinary SAM activity is summary-only. Buttons belong only to a fresh,
+  digest-bound protected decision. Consumption is an unperformed atomic intent
+  until the existing rail returns an authoritative receipt. Operational alerts
+  are separate and
+  buttonless. Resolution edits the original card and callback replay is a
+  no-op. This module adds no I/O or authority.
+
+## Rootline owner daily brief
+
+- Doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`
+- Control architecture:
+  `docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md`
+- Composer: `modules/telemetry/rootline_daily_brief.py`
+- Owner-only route: `GET /api/telemetry/rootline/daily-brief`
+- Existing owner dashboard surfaces: `templates/dashboard.html`,
+  `static/js/dashboard.js`
+- Focused safety/behavior tests: `tests/test_rootline_daily_brief.py`
+- Underlying truth remains in the existing weather, forecast, power,
+  irrigation, and daily-rollup readers. Rootline adds no write or hardware
+  control authority.
+- Delivery evidence: built, merged, and deployed through PR #464 at merge
+  `187e07fb9f531549d35b04824ec9149875fabb85`; the owner-only route returned
+  structured HTTP 200 evidence in one controlled read. This proves the Level 1
+  Daily Brief route, not complete telemetry, hardware control, IFTTT
+  authorization, or autonomous irrigation.
+
+### Rootline Operating Knowledge And Daily Advisor candidate
+
+- Operating register:
+  `docs/06-operations/ROOTLINE_OPERATING_KNOWLEDGE_REGISTER.md`
+- Read-only advisor:
+  `modules/telemetry/rootline_daily_advisor.py`
+- Owner-only route:
+  `GET /api/telemetry/rootline/daily-advisor`
+- Existing dashboard panel:
+  `templates/dashboard.html`, `static/js/dashboard.js`
+- Tests:
+  `tests/test_rootline_daily_advisor.py`
+- Input evidence:
+  the existing owner Daily Brief plus immutable owner-approved policy.
+- Output:
+  B12345/C12345 eligibility status, fresh-evidence status,
+  `Irrigate`/`Do Not Irrigate`/`Hold`/`Needs Data` vocabulary, runtime only
+  when authoritative policy is complete, explanations, historical-plan
+  separation, and unresolved owner decisions.
+- C12345 proof:
+  packet `ROOTLINE-CANARY-C12345-CH2-20260727-32B0D177-G1`, SHA-256
+  `ef388830f14056bf7baea2915950a655ae77c8f7c058b8e1f9f1c92638d028ab`,
+  records one supervised identity/open/flow/OFF/closure proof ending safe
+  closed. It is not routine irrigation authority.
+- Authority:
+  no database write, migration application, plan/command generation,
+  schedule/workflow/queue/retry, IFTTT/n8n invocation, or hardware control.
+- Future persistence:
+  design-only strict append contract with evidence-content and provenance-
+  envelope checksums; no migration exists and no evidence row is written by
+  this candidate.
+
 Status: active machine-aligned map, maintained with `modules/charlie/source_map.py`.
 
 Purpose: tell CHARLIE CORE where real implementation truth lives before it advises or builds. Vault Brain carries doctrine and strategy; this map links doctrine to code, routes, tests, migrations, and legacy sources.
@@ -9,6 +108,97 @@ Purpose: tell CHARLIE CORE where real implementation truth lives before it advis
 For income, SAM, Beacon, order, WhatsApp, Chatwoot, n8n, or live-sales missions, CHARLIE CORE must inspect the relevant implementation source-map section before planning or building.
 
 ## Current Sections
+
+### CHARLIE CORE Adaptive Mission Orchestration
+
+Current implementation and review surface:
+
+- operating contract:
+  `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`;
+- scoring and packet construction:
+  `modules/charlie/adaptive_orchestration.py`,
+  `modules/charlie/core_workflow.py`;
+- durable execution, historical compatibility and evidence-driven expansion:
+  `modules/charlie/execution_bridge.py`,
+  `modules/charlie/mission_store.py`;
+- owner-only throughput surface:
+  `GET /api/charlie/build-relay/missions/summary`;
+- tests:
+  `tests/test_charlie_adaptive_orchestration.py`,
+  `tests/test_charlie_core_workflow.py`,
+  `tests/test_charlie_execution_bridge.py`,
+  `tests/test_charlie_mission_store.py`,
+  `tests/test_charlie_mission_pickup.py`,
+  `tests/test_charlie_runner_control.py`,
+  `tests/test_charlie_runner_supervisor.py`,
+  `tests/test_charlie_runner_watchdog.py`;
+- persistence: existing `charlie_missions.metadata_json`, agent artifacts and
+  execution evidence; no second mission ledger or schema migration;
+- rule: missions about workflow selection, mission scoring, execution tiers,
+  agent budgets, dynamic expansion, historical workflow compatibility or
+  orchestration throughput must inspect this section. Protected triggers and
+  owner gates outrank aggregate scores. Existing persisted workflows remain
+  frozen.
+
+### CHARLIE CORE Process Ownership Bootstrap
+
+Current implementation and verification surface:
+
+- ownership identity, canonical tree normalization, signing, redaction, and
+  live validation: `modules/charlie/process_ownership.py`;
+- governed start/stop, stop-marker enforcement, acknowledgement waiting, and
+  containment: `modules/charlie/runner_control.py`;
+- supervisor-side handshake and runner-spawn gate:
+  `scripts/charlie_runner_supervisor.py`;
+- pickup/recovery acknowledgement gate:
+  `scripts/charlie_mission_pickup.py`;
+- focused tests:
+  `tests/test_charlie_process_ownership.py`,
+  `tests/test_charlie_runner_control.py`,
+  `tests/test_charlie_runner_supervisor.py`,
+  `tests/test_charlie_mission_pickup.py`;
+- rule: startup or stop work must validate the complete externally observed
+  launcher/interpreter topology, generation, revision, startup nonce,
+  executable/command roles, parentage, PIDs, and live creation identity.
+  Missing or stale identity fails closed. The canonical stop marker is not an
+  implicit startup toggle, and watchdog enablement remains a separate governed
+  action.
+- delivery state: PR #517 code is merged and Render-deployed at
+  `0c4eb404fce6df8dfc2e8aab100690697d6e7cb9`; local governed promotion,
+  startup, watchdog activation, mission pickup, and natural proof have not
+  been authorized.
+
+### CHARLIE CORE Observe-Only Ownership Handshake
+
+- doctrine:
+  `docs/09-vault-brain/01-identity/CHARLIE_CORE.md`,
+  `docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md`;
+- governed controller and signed acknowledgement/stop evidence:
+  `modules/charlie/runner_control.py`,
+  `scripts/charlie_runner_control.py`;
+- supervisor mode propagation, credential allowlist, runner-spawn gate, and
+  recovery suppression: `scripts/charlie_runner_supervisor.py`;
+- dedicated no-mission/no-provider child:
+  `scripts/charlie_observe_only_runner.py`;
+- ordinary pickup mode separation and direct-entry fail-closed checks:
+  `scripts/charlie_mission_pickup.py`;
+- watchdog malformed-state and observe-only recovery suppression:
+  `scripts/charlie_runner_watchdog.py`;
+- tests:
+  `tests/test_charlie_observe_only_runner.py`,
+  `tests/test_charlie_runner_control.py`,
+  `tests/test_charlie_runner_supervisor.py`,
+  `tests/test_charlie_mission_pickup.py`,
+  `tests/test_charlie_runner_watchdog.py`;
+- rule: observe-only is a credential-free ownership/start/stop proof. It may
+  emit only heartbeat, signed ownership, containment, and termination
+  evidence. It cannot inspect or mutate mission, queue, lease, review, stage,
+  artifact, product, customer, farm, migration, deployment, or business state
+  and cannot transition into ordinary operation.
+- state: PR #539 merged as
+  `ce8971dff7605a91120a63c26dd22d81ca413360`; code is hosted in current main.
+  Local promotion, handshake execution, ordinary startup, mission processing,
+  and natural operational proof remain separate and incomplete.
 
 ### CHARLIE CORE Dashboard
 
@@ -46,15 +236,83 @@ Current active governance surface:
 - legacy references: `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`, `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md`;
 - rule: authority, Claude review, public/customer automation, payment, meat, slaughter, butcher, stock reservation, farm lifecycle, specialist dispatch, runtime authority, or agent registration missions must inspect this section. The matrix documents current authority only; it does not grant new live authority.
 
+### SAM General Conversation
+
+Current governance and implementation-ownership surface:
+
+- routes: `/api/sales/channels/chatwoot/sam-meat/inbound`,
+  `/api/sales/channels/chatwoot/sam-live-stock/inbound`;
+- Vault doctrine:
+  `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`,
+  `docs/09-vault-brain/02-agents/sales/SAM.md`,
+  `docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md`,
+  `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`,
+  `docs/09-vault-brain/00-governance/BRAIN_GUARD.md`,
+  `docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md`;
+- router and context:
+  `modules/sales/sam_sales_router.py`,
+  `modules/sales/sam_shared_context.py`;
+- LLM/review and inbound surfaces:
+  `modules/sales/sam_meat_runtime.py`,
+  `modules/sales/sam_live_stock_runtime.py`,
+  `modules/sales/sales_transaction_routes.py`;
+- journey tests:
+  `tests/test_sam_sales_router.py`,
+  `tests/test_sam_v3_shared_context.py`,
+  `tests/test_sam_v3_replay_stress.py`,
+  `tests/test_sam_meat_runtime.py`,
+  `tests/test_sam_live_stock_runtime.py`,
+  `tests/test_sam_live_stock_replay.py`;
+- migrations: none;
+- legacy reference only:
+  `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md`;
+- rule: missions affecting ordinary SAM dialogue, unknown/general intent,
+  ownership transitions, progressive lane discovery, topic changes, or
+  specialist-tool timing must inspect this domain first and prove the complete
+  customer journey. This map records ownership; it does not claim the doctrine
+  is implemented, deployed, configured, or operational.
+
+### Shared Outbound Delivery Truth
+
+Current cross-system governance surface:
+
+- Vault doctrine:
+  `docs/09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md`,
+  `docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md`,
+  `docs/09-vault-brain/00-governance/BRAIN_GUARD.md`;
+- SAM journeys:
+  `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`,
+  `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`,
+  `docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md`;
+- quote/invoice/attachment doctrine:
+  `docs/02-backend/QUOTE_INVOICE_DESIGN.md`,
+  `docs/04-n8n/workflows/1.5 - outbound-document-delivery/README.md`;
+- implementation surfaces to inspect, not authority granted:
+  `modules/sales/sales_transaction_routes.py`,
+  `modules/sales/sam_live_stock_runtime.py`,
+  `modules/sales/sam_meat_runtime.py`,
+  `modules/documents/document_service.py`;
+- tests to inspect:
+  `tests/test_sales_transaction_routes.py`,
+  `tests/test_sam_live_stock_runtime.py`,
+  `tests/test_sam_meat_runtime.py`,
+  `tests/test_document_service_send.py`;
+- rule: every customer-message, quote, invoice, or attachment delivery mission
+  must distinguish prepared, claimed, Chatwoot-accepted, provider-delivered,
+  provider-read, failed, and ambiguous states. HTTP/mock success is not
+  delivery proof; provider identity and application idempotency remain
+  separate; accepted/ambiguous outcomes are not automatically retried.
+
 ### SAM Meat Sales And Production
 
 Current built pilot surface:
 
 - routes: `/sales/meat-leads`, `/sales/meat-driver`, `/sales/meat-production`, `/meat-planning`, `/api/sales/meat-leads`, `/api/sales/meat-production/batches`, `/api/sales/meat-pilot-readiness`, `/api/sales/meat-pricing`, `/api/sales/channels/chatwoot/sam-meat/inbound`;
+- authoritative offer: `external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md` plus `docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`;
 - Vault doctrine: `docs/09-vault-brain/02-agents/sales/SAM.md`, `docs/09-vault-brain/02-agents/sales/BUTCHER.md`, `docs/09-vault-brain/02-agents/sales/MEAT_SALES_AGENT.md`, `docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md`, `docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md`, `docs/09-vault-brain/05-playbooks/SAM_MEAT_HUMAN_SALES_PLAYBOOK.md`, `docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md`, `docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md`, `docs/09-vault-brain/09-examples/SAM_MEAT_GOLD_STANDARD_REPLIES.md`;
-- code: `modules/sales/sam_meat_runtime.py`, `modules/sales/meat_pilot_readiness.py`, `modules/sales/meat_production.py`, `modules/sales/meat_documents.py`, `modules/sales/meat_match_engine.py`, `modules/sales/meat_ops.py`, `modules/sales/meat_fulfillment.py`, `modules/sales/meat_reconciliation.py`, `modules/oom_sakkie/sales_campaign_store.py`;
+- code: `modules/sales/sam_meat_runtime.py`, `modules/sales/sam_meat_launch_readiness.py`, `modules/sales/sam_meat_commercial_standard.py`, `modules/sales/meat_pilot_readiness.py`, `modules/sales/meat_production.py`, `modules/sales/meat_documents.py`, `modules/sales/meat_match_engine.py`, `modules/sales/meat_ops.py`, `modules/sales/meat_fulfillment.py`, `modules/sales/meat_reconciliation.py`, `modules/oom_sakkie/sales_campaign_store.py`;
 - UI: `templates/meat-sales-leads.html`, `templates/meat-production.html`, `static/js/meatSalesLeads.js`, `static/js/meatProduction.js`, `static/css/meatSalesLeads.css`, `static/css/meatProduction.css`;
-- tests: `tests/test_sam_meat_runtime.py`, `tests/test_meat_launch_readiness.py`, `tests/test_meat_production.py`, `tests/test_meat_ops.py`, `tests/test_meat_fulfillment.py`, `tests/test_meat_reconciliation.py`, `tests/sam_meat_command_room_playwright.spec.js`;
+- tests: `tests/test_sam_meat_runtime.py`, `tests/test_sam_meat_launch_readiness.py`, `tests/test_sam_meat_commercial_standard.py`, `tests/test_meat_launch_readiness.py`, `tests/test_meat_production.py`, `tests/test_meat_ops.py`, `tests/test_meat_fulfillment.py`, `tests/test_meat_reconciliation.py`, `tests/sam_meat_command_room_playwright.spec.js`;
 - migrations: `supabase/migrations/202606140002_create_oom_sakkie_sales_leads.sql`, `202606160005_create_meat_price_book.sql`, `202606160006_create_meat_ops_rails.sql`, `202606170001_create_meat_reservation_events.sql`, `202606180001_create_meat_sales_conversation_learning_events.sql`, `202607130001_create_meat_processing_batches.sql`;
 - legacy references: `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md`, `MEAT_INTAKE_HANDOFF_PLAN.md`.
 
@@ -63,11 +321,13 @@ Current built pilot surface:
 Current built gated surface:
 
 - routes: `/sales/beacon-media`, `/api/beacon/media-assets`, `/api/beacon/creative-studio/providers`, `/api/beacon/creative-studio/jobs`, `/api/beacon/creative-studio/jobs/<job_id>/reviews`, `/api/beacon/campaign-draft-selection`, `/api/beacon/campaign-publish-packet`, `/api/beacon/facebook-image-launch-packet`, `/api/beacon/manual-post-evidence`, `/api/beacon/campaign-performance`;
-- code: `modules/beacon/media_library.py`, `modules/beacon/creative_providers.py`, `modules/beacon/creative_studio.py`, `modules/sales/beacon_campaign.py`, `modules/sales/sales_transaction_routes.py`;
+- owner media-intake workflow: `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`; OOM SAKKIE is the preferred owner-only Telegram intake gateway, while BEACON owns private storage, cataloguing, understanding, visual review, approval state, and usage history. A default-disabled foundation is built as a candidate; its migration is unapplied and the gateway is inactive;
+- code: `modules/beacon/media_library.py`, `modules/beacon/media_intake.py`, `modules/beacon/creative_providers.py`, `modules/beacon/creative_studio.py`, `modules/beacon/organic_media_intelligence.py`, `modules/beacon/organic_publication_binding.py`, `modules/beacon/organic_publication_authorization.py`, `modules/beacon/weekly_owner_review.py`, `modules/beacon/weekly_owner_review_decisions.py`, `modules/oom_sakkie/telegram_direct.py`, `modules/oom_sakkie/routes.py`, `modules/sales/beacon_campaign.py`, `modules/sales/sales_transaction_routes.py`;
 - UI: `templates/beacon-media.html`, `static/js/beaconMedia.js`, `static/css/beaconMedia.css`;
-- tests: `tests/test_beacon_media_library.py`, `tests/test_beacon_creative_studio.py`, `tests/test_beacon_creative_studio_migration.py`, `tests/test_beacon_campaign.py`;
-- migrations: `supabase/migrations/202606180002_create_beacon_media_library.sql`, `202606180003_create_beacon_manual_post_events.sql`, `202606180004_create_beacon_campaign_performance_events.sql`, `202606180005_create_beacon_facebook_post_execution_events.sql`, `202606180006_extend_beacon_facebook_post_execution_statuses.sql`, `202607130002_create_beacon_creative_studio.sql`, `202607130003_enable_beacon_creative_studio_rls.sql` (Creative Studio migrations are created but unapplied; separate owner approval required to apply);
+- tests: `tests/test_beacon_media_library.py`, `tests/test_beacon_media_intake.py`, `tests/test_beacon_media_intake_routes.py`, `tests/test_beacon_media_intake_postgres.py`, `tests/test_beacon_creative_studio.py`, `tests/test_beacon_creative_studio_migration.py`, `tests/test_beacon_campaign.py`, `tests/test_beacon_organic_media_intelligence.py`, `tests/test_beacon_organic_media_intelligence_postgres.py`, `tests/test_beacon_weekly_owner_review.py`, `tests/test_beacon_weekly_owner_review_decisions.py`;
+- migrations: `supabase/migrations/202606180002_create_beacon_media_library.sql`, `202606180003_create_beacon_manual_post_events.sql`, `202606180004_create_beacon_campaign_performance_events.sql`, `202606180005_create_beacon_facebook_post_execution_events.sql`, `202606180006_extend_beacon_facebook_post_execution_statuses.sql`, `202607130002_create_beacon_creative_studio.sql`, `202607130003_enable_beacon_creative_studio_rls.sql`, `202607250001_create_beacon_weekly_review_decisions.sql`, `202607260003_create_beacon_publication_bindings.sql`, `202607260005_create_beacon_publication_authorizations.sql`, `202607260008_create_beacon_organic_media_learning.sql`, `202607270001_create_beacon_media_intake.sql` (candidate, unapplied);
 - legacy references: `docs/05-ai/agents/beacon/BEACON_SCOPE.md`, `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md`.
+- rule: media-intake missions must inspect the BEACON media-intake workflow plus current OOM SAKKIE Telegram and BEACON storage contracts. Intake, library acceptance, public-use approval, and publication authorization remain separate. Historical OneDrive/folder import is a separate phase.
 
 ### Orders And Sales Transactions
 
@@ -106,6 +366,7 @@ Current status: live pig sales behavior is not yet a clean backend-native agent 
 Current Stage 4 surface:
 
 - routes to inspect later: `/sales-dashboard`, `/sales-availability`, `/orders`, `/api/order-intake/context`, `/api/order-intake/update`, `/api/orders/active-customer-context`, `/api/orders/available-pigs`, `/api/master/orders`, `/api/master/order-lines`, `/api/pig-weights/sales-dashboard`, `/api/pig-weights/pig-allocation-readiness`;
+- authoritative offer: `external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md` plus `docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`;
 - Vault doctrine: `docs/09-vault-brain/02-agents/sales/SAM.md`, `docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md`, `docs/09-vault-brain/03-business/LIVE_PIG_SALES.md`, `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`, `docs/09-vault-brain/04-workflows/BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md`, `docs/09-vault-brain/05-playbooks/SAM_LIVE_STOCK_HUMAN_SALES_PLAYBOOK.md`, `docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md`, `docs/09-vault-brain/09-examples/SAM_LIVE_STOCK_GOLD_STANDARD_REPLIES.md`;
 - code: `modules/sales/sam_sales_router.py`, `modules/sales/sam_live_stock_runtime.py`, `modules/pig_weights/pig_weights_service.py`, `modules/orders/order_intake_service.py`, `modules/orders/order_service.py`, `modules/orders/order_write.py`, `modules/orders/order_routes.py`, `modules/sales/sales_transaction_read.py`, `modules/sales/sales_transaction_create.py`;
 - tests: `tests/test_sam_sales_router.py`, `tests/test_sam_live_stock_runtime.py`, `tests/test_order_intake_service.py`, `tests/test_order_routes.py`, `tests/test_order_service_reservation.py`, `tests/test_sales_transaction_read.py`, `tests/test_pig_allocation_readiness_service.py`;

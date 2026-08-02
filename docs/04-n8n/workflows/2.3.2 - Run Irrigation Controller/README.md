@@ -4,6 +4,10 @@
 
 Irrigation controller workflow that starts and stops irrigation zones.
 
+This is an imported legacy **IFTTT** bridge (not FTP or FTTP). Its target
+relationship to mature ROOTLINE is governed by
+[`ROOTLINE_CONTROL_ARCHITECTURE.md`](../../../09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md).
+
 Workflow ID: `f6oPLsaolGH4pMKC`  
 Status at import: inactive  
 Imported for docs: 2026-05-18
@@ -50,6 +54,14 @@ Imported for docs: 2026-05-18
 - The imported workflow contains direct IFTTT webhook URL expressions. Treat this export as private and move the key into a protected credential or environment value before wider sharing.
 - Do not activate or edit this workflow casually.
 - Phase 10.3O status: this workflow must remain inactive while the command/audit/safety model is planned. Do not edit IFTTT start/stop nodes or add Oom Sakkie start/stop commands in this slice.
+- IFTTT acceptance or HTTP 200 is not proof that a valve moved; valve state is
+  not automatically proof that water flowed.
+- The downstream platform behind IFTTT is Unknown pending authoritative
+  owner/hardware inventory. Do not infer Home Assistant, Sonoff, Tuya, Shelly,
+  ESP hardware, or another platform.
+- This workflow is not approved as ROOTLINE's decision engine and must not be
+  activated as a shortcut around backend command, lock, safety, idempotency,
+  audit, verification, or recovery rails.
 
 ## Credential / Secret Handling Plan
 
@@ -64,12 +76,16 @@ Short-term:
 
 Medium-term:
 
-- Replace direct n8n-to-IFTTT calls with backend-controlled irrigation endpoints.
+- Replace direct n8n-to-IFTTT decision/control with a backend-owned command
+  rail. IFTTT may remain a thin actuator adapter if the approved hardware
+  architecture retains it.
 - Suggested backend shape:
   - `POST /api/irrigation/zones/<zone_id>/start`
   - `POST /api/irrigation/zones/<zone_id>/stop`
 - Backend should own the IFTTT key, zone validation, cooldowns, audit logs, safety locks, and error handling.
 - n8n should request a zone action from the backend instead of holding hardware-control secrets.
+- Ambiguous outcomes must not be automatically retried. Recovery must reconcile
+  physical state before another action.
 
 ## Planning Notes
 

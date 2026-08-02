@@ -18,12 +18,30 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.charlie.core_workflow import build_core_plan
+from modules.charlie.adaptive_orchestration import validate_orchestration_binding
 from modules.charlie.environment import env_value
 from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, transition_mission_review_state, update_mission_status, update_mission_vault
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids, mission_execution_dependency_ids
 from modules.charlie.repository_guard import RepositoryOperationLock, inspect_git_operation_markers, repository_lock_path
-from modules.charlie.runner_control import STALE_SECONDS, _pid_alive, runner_status, write_runner_heartbeat
+from modules.charlie.runner_control import (
+    EXECUTION_MODE_OBSERVE_ONLY,
+    EXECUTION_MODE_ORDINARY,
+    STALE_SECONDS,
+    SUPERVISOR_PATH,
+    SUPERVISOR_STOP_PATH,
+    _pid_alive,
+    _read_json,
+    runner_status,
+    validate_supervisor_packet,
+    write_runner_heartbeat,
+)
 from modules.charlie.runner_preflight import runner_environment_preflight
+from modules.charlie.process_ownership import validate_bootstrap_tree
+from modules.charlie.process_ownership import (
+    process_tree_identity_digest,
+    validate_live_bootstrap_tree,
+    verify_controller_acknowledgement,
+)
 from modules.charlie.process_policy import background_run_kwargs
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
 from modules.charlie.improvement_analyst import run_operational_analyst
@@ -55,6 +73,7 @@ ANALYST_THREAD = None
 ANALYST_THREAD_LOCK = threading.Lock()
 RECOVERED_STALE_MISSIONS = set()
 NOTIFICATION_FINGERPRINTS = {}
+_TEST_PICKUP_AUTHORIZED = False
 BASE_BRANCH_ENV = "CORE_EXECUTION_BASE_BRANCH"
 LEASE_TTL_SECONDS = int(env_value("CORE_RUNNER_LEASE_TTL_SECONDS", "900") or "900")
 
@@ -73,9 +92,35 @@ def _load_runner_dotenv():
 
 
 def main():
-    _load_runner_dotenv()
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY).strip().lower()
+    cli_observe_only = "--observe-only" in sys.argv[1:]
+    if (
+        execution_mode not in {EXECUTION_MODE_ORDINARY, EXECUTION_MODE_OBSERVE_ONLY}
+        or cli_observe_only != (execution_mode == EXECUTION_MODE_OBSERVE_ONLY)
+    ):
+        result = {"success": False, "status": "runner_startup_refused", "reason": "execution_mode_conflict"}
+        write_runner_heartbeat(result)
+        print(result)
+        return 1
+    if execution_mode == EXECUTION_MODE_ORDINARY:
+        _load_runner_dotenv()
+    startup = _validate_supervisor_startup()
+    if not startup["success"]:
+        write_runner_heartbeat(startup)
+        print(startup)
+        return 1
+    write_runner_heartbeat({
+        "status": "ownership_ready",
+        "startup_nonce": str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or ""),
+    })
+    authorization = _wait_for_final_start_authorization()
+    if not authorization["success"]:
+        write_runner_heartbeat(authorization)
+        print(authorization)
+        return 1
     parser = argparse.ArgumentParser(description="Pick up the next approved CHARLIE mission for Codex.")
     parser.add_argument("--status", default="approved", help="Mission status to pick up. Default: approved.")
+    parser.add_argument("--observe-only", action="store_true")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--notify", action="store_true", help="Send owner Telegram notification after pickup.")
@@ -89,6 +134,16 @@ def main():
     parser.add_argument("--auto-merge-pr", action="store_true", help="For release_approved missions with a PR link, merge the PR locally with gh.")
     parser.add_argument("--release-verify-url", default="", help="Live URL to verify before marking a merged release deployed.")
     args = parser.parse_args()
+
+    if args.observe_only:
+        while not SUPERVISOR_STOP_PATH.exists():
+            write_runner_heartbeat({
+                "status": "observe_only_ready",
+                "active_status": "observe_only",
+                "current_action": "ownership_handshake_only",
+            })
+            time.sleep(0.2)
+        return 0
 
     if args.watch:
         result, status_code = watch_for_mission(
@@ -131,6 +186,309 @@ def main():
     return 0 if status_code < 400 else 1
 
 
+def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep, transition_timeout_seconds=60):
+    if SUPERVISOR_STOP_PATH.exists():
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "governed_stop_active",
+        }
+    generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
+    if not generation:
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "supervisor_generation_missing",
+        }
+    runtime_revision = str(os.getenv("CHARLIE_INTENDED_RUNTIME_REVISION") or "")
+    execution_revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
+    supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
+    runner_nonce = str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or "")
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY)
+    packet = _read_json(SUPERVISOR_PATH)
+    deadline = time.monotonic() + max(0, float(transition_timeout_seconds))
+    while (
+        str(packet.get("generation") or "") == generation
+        and str(packet.get("runner_state") or "") == "not_spawned"
+        and time.monotonic() <= deadline
+    ):
+        sleep_fn(0.05)
+        packet = _read_json(SUPERVISOR_PATH)
+    valid, reason = validate_supervisor_packet(
+        packet,
+        generation,
+        runtime_revision,
+        execution_revision,
+        runner_states={"runner_starting"},
+        startup_nonce=supervisor_nonce,
+        statuses={"runner_starting"},
+        execution_mode=execution_mode,
+    )
+    if not valid:
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": reason,
+            "supervisor_generation": generation,
+        }
+    runner_tree = packet.get("process_tree_identity")
+    runner_decision = validate_bootstrap_tree(
+        runner_tree,
+        generation=generation,
+        revision=execution_revision,
+        startup_nonce=runner_nonce,
+        require_interpreter=True,
+    )
+    if not runner_decision["authorized"]:
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": runner_decision["reason"],
+            "supervisor_generation": generation,
+        }
+    if os.getpid() not in set(runner_decision.get("member_pids") or []):
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "runner_identity_pid_not_acknowledged",
+        }
+    acknowledgement = packet.get("runner_controller_acknowledgement")
+    if not isinstance(acknowledgement, dict):
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "ownership_identity_incomplete:runner_controller_acknowledgement",
+        }
+    acknowledgement_checks = {
+        "generation": generation,
+        "startup_nonce": runner_nonce,
+        "revision": execution_revision,
+    }
+    if execution_mode == EXECUTION_MODE_OBSERVE_ONLY or acknowledgement.get("execution_mode"):
+        acknowledgement_checks["execution_mode"] = execution_mode
+    for field, expected in acknowledgement_checks.items():
+        if str(acknowledgement.get(field) or "") != expected:
+            return {
+                "success": False,
+                "status": "runner_startup_refused",
+                "reason": f"runner_controller_acknowledgement_{field}_mismatch",
+            }
+    try:
+        completed = run_factory(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            **background_run_kwargs(),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "execution_revision_unavailable",
+            "error_type": exc.__class__.__name__,
+        }
+    actual_revision = str(completed.stdout or "").strip() if completed.returncode == 0 else ""
+    if not actual_revision or actual_revision != execution_revision:
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "execution_revision_mismatch",
+            "expected_revision": execution_revision,
+            "actual_revision": actual_revision,
+        }
+    return {
+        "success": True,
+        "status": "runner_startup_validated",
+        "supervisor_generation": generation,
+        "execution_revision": actual_revision,
+        "execution_mode": execution_mode,
+    }
+
+
+def _wait_for_final_start_authorization(sleep_fn=time.sleep, timeout_seconds=30):
+    generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
+    supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
+    runner_nonce = str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or "")
+    revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY)
+    deadline = time.monotonic() + max(0, float(timeout_seconds))
+    reason = "controller_final_acknowledgement_missing"
+    while time.monotonic() <= deadline:
+        if SUPERVISOR_STOP_PATH.exists():
+            return {
+                "success": False,
+                "status": "runner_startup_refused",
+                "reason": "governed_stop_active",
+            }
+        packet = _read_json(SUPERVISOR_PATH)
+        acknowledgement = packet.get("controller_final_acknowledgement")
+        if (
+            str(packet.get("status") or "") == "operational_authorized"
+            and str(packet.get("runner_state") or "") == "operational_authorized"
+            and isinstance(acknowledgement, dict)
+        ):
+            expected = {
+                "generation": generation,
+                "supervisor_startup_nonce": supervisor_nonce,
+                "runner_startup_nonce": runner_nonce,
+                "revision": revision,
+                "runner_pid": str(os.getpid()),
+            }
+            if execution_mode == EXECUTION_MODE_OBSERVE_ONLY or acknowledgement.get("execution_mode"):
+                expected["execution_mode"] = execution_mode
+            mismatch = next(
+                (
+                    field for field, value in expected.items()
+                    if str(acknowledgement.get(field) or "") != str(value or "")
+                ),
+                "",
+            )
+            if mismatch:
+                return {
+                    "success": False,
+                    "status": "runner_startup_refused",
+                    "reason": f"controller_final_acknowledgement_{mismatch}_mismatch",
+                }
+            live = _validate_final_packet_live(packet)
+            if not live["success"]:
+                return {
+                    "success": False,
+                    "status": "runner_startup_refused",
+                    "reason": live["reason"],
+                }
+            return {
+                "success": True,
+                "status": "runner_start_authorized",
+                "supervisor_generation": generation,
+                "execution_revision": revision,
+                "execution_mode": execution_mode,
+            }
+        sleep_fn(0.05)
+    return {
+        "success": False,
+        "status": "runner_startup_refused",
+        "reason": reason,
+    }
+
+
+def _runtime_pickup_authorized():
+    if SUPERVISOR_STOP_PATH.exists():
+        return False, "governed_stop_active"
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY)
+    if execution_mode == EXECUTION_MODE_OBSERVE_ONLY:
+        return False, "observe_only_mission_paths_unreachable"
+    if execution_mode != EXECUTION_MODE_ORDINARY:
+        return False, "execution_mode_invalid"
+    if _TEST_PICKUP_AUTHORIZED:
+        return True, "test_isolation_authorized"
+    packet = _read_json(SUPERVISOR_PATH)
+    generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
+    supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
+    runner_nonce = str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or "")
+    revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
+    acknowledgement = packet.get("controller_final_acknowledgement")
+    if (
+        not generation
+        or str(packet.get("generation") or "") != generation
+        or str(packet.get("status") or "") != "operational_authorized"
+        or not isinstance(acknowledgement, dict)
+        or any(
+            str(acknowledgement.get(field) or "") != str(expected or "")
+            for field, expected in {
+                "generation": generation,
+                "supervisor_startup_nonce": supervisor_nonce,
+                "runner_startup_nonce": runner_nonce,
+                "revision": revision,
+                "runner_pid": str(os.getpid()),
+            }.items()
+        )
+    ):
+        return False, "current_generation_running_authorization_missing"
+    live = _validate_final_packet_live(packet)
+    if not live["success"]:
+        return False, live["reason"]
+    return True, "current_generation_running_authorized"
+
+
+def _authorize_test_pickup_for_current_process():
+    """Explicit in-process test capability; never inherited by a child."""
+    if str(os.getenv("CHARLIE_TEST_ISOLATION") or "") != "1":
+        raise RuntimeError("test_pickup_authorization_requires_test_isolation")
+    global _TEST_PICKUP_AUTHORIZED
+    _TEST_PICKUP_AUTHORIZED = True
+
+
+def _validate_final_packet_live(packet):
+    generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
+    supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
+    runner_nonce = str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or "")
+    revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
+    acknowledgement = packet.get("controller_final_acknowledgement")
+    if not isinstance(acknowledgement, dict):
+        return {"success": False, "reason": "controller_final_acknowledgement_missing"}
+    public_key = str(os.getenv("CHARLIE_CONTROLLER_PUBLIC_KEY") or "")
+    unsigned = {
+        key: value for key, value in acknowledgement.items()
+        if key != "signature"
+    }
+    if (
+        not public_key
+        or str(packet.get("controller_public_key") or "") != public_key
+        or not verify_controller_acknowledgement(
+            unsigned, acknowledgement.get("signature"), public_key
+        )
+    ):
+        return {
+            "success": False,
+            "reason": "controller_final_acknowledgement_signature_invalid",
+        }
+    supervisor = validate_live_bootstrap_tree(
+        packet.get("supervisor_tree_identity"),
+        generation=generation,
+        revision=revision,
+        startup_nonce=supervisor_nonce,
+    )
+    runner = validate_live_bootstrap_tree(
+        packet.get("process_tree_identity"),
+        generation=generation,
+        revision=revision,
+        startup_nonce=runner_nonce,
+    )
+    if not supervisor["authorized"]:
+        return {"success": False, "reason": supervisor["reason"]}
+    if not runner["authorized"]:
+        return {"success": False, "reason": runner["reason"]}
+    expected_lists = {
+        "supervisor_member_pids": supervisor["member_pids"],
+        "runner_member_pids": runner["member_pids"],
+    }
+    for field, expected in expected_lists.items():
+        if sorted(acknowledgement.get(field) or []) != sorted(expected):
+            return {"success": False, "reason": f"controller_final_{field}_mismatch"}
+    for field, expected in {
+        "supervisor_tree_digest": process_tree_identity_digest(
+            packet.get("supervisor_tree_identity")
+        ),
+        "runner_tree_digest": process_tree_identity_digest(
+            packet.get("process_tree_identity")
+        ),
+    }.items():
+        if str(acknowledgement.get(field) or "") != expected:
+            return {"success": False, "reason": f"controller_final_{field}_mismatch"}
+    supervisor_root_pid = int(
+        ((packet.get("supervisor_tree_identity") or {}).get("root") or {}).get("pid")
+        or -1
+    )
+    if int(acknowledgement.get("supervisor_pid") or -1) != supervisor_root_pid:
+        return {"success": False, "reason": "controller_final_supervisor_pid_mismatch"}
+    if int(acknowledgement.get("runner_pid") or -1) != os.getpid():
+        return {"success": False, "reason": "controller_final_runner_pid_mismatch"}
+    return {"success": True, "reason": "final_live_process_tree_valid"}
+
+
 def watch_for_mission(
     status="approved",
     limit=10,
@@ -146,6 +504,9 @@ def watch_for_mission(
     auto_merge_pr=False,
     release_verify_url="",
 ):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {"success": False, "status": "runner_contained", "reason": reason}, 423
     interval_seconds = max(5, int(interval_seconds or 60))
     if notify:
         preflight = _notification_preflight()
@@ -160,6 +521,9 @@ def watch_for_mission(
     checks = 0
     write_runner_heartbeat({"status": "watch_started"})
     while True:
+        authorized, reason = _runtime_pickup_authorized()
+        if not authorized:
+            return {"success": False, "status": "runner_contained", "reason": reason}, 423
         checks += 1
         if continuous:
             recovery = recover_stranded_missions(notify=notify)
@@ -175,15 +539,19 @@ def watch_for_mission(
                         "status": "executive_cycle_observed", "executive": executive, "checks": checks,
                         "queue_health": cycle.get("queue_health") if isinstance(cycle.get("queue_health"), dict) else {},
                     })
-                observers = _run_domain_observers()
-                if observers.get("status") not in {"domain_observers_disabled", "observer_cycle_not_due"}:
-                    write_runner_heartbeat({"status": "domain_observer_cycle", "observers": observers, "checks": checks})
-                if notify:
-                    _deliver_executive_outbox()
-                reconciliation = reconcile_blocked_pr_missions(notify=notify)
-                if reconciliation.get("changed_count"):
-                    reconciliation["checks"] = checks
-                    write_runner_heartbeat(reconciliation)
+                # The first cycle must reach authoritative pickup promptly.
+                # Potentially slow observers and reconciliation begin only
+                # after one bounded pickup opportunity.
+                if checks % 5 == 0:
+                    observers = _run_domain_observers()
+                    if observers.get("status") not in {"domain_observers_disabled", "observer_cycle_not_due"}:
+                        write_runner_heartbeat({"status": "domain_observer_cycle", "observers": observers, "checks": checks})
+                    if notify:
+                        _deliver_executive_outbox()
+                    reconciliation = reconcile_blocked_pr_missions(notify=notify)
+                    if reconciliation.get("changed_count"):
+                        reconciliation["checks"] = checks
+                        write_runner_heartbeat(reconciliation)
             # Review-media cleanup is maintenance, not a mission-pickup gate.
             # Running it every cycle delayed an otherwise ready queue by nearly
             # a minute on the owner workstation.
@@ -317,6 +685,10 @@ def reconcile_blocked_pr_missions(notify=False, run_subprocess=None):
                 "block_disposition": disposition,
                 "github_reconciliation": review_packet.get("github_reconciliation", {}),
             })
+        authorized, reason = _runtime_pickup_authorized()
+        if not authorized:
+            skipped.append({"mission_id": mission_id, "reason": reason})
+            break
         updated, updated_code = transition_mission_review_state(
             mission_id,
             decision.get("target_status"),
@@ -356,6 +728,14 @@ def _active_mission():
 
 
 def recover_stranded_missions(notify=False):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "recovered_count": 0,
+        }
     missions, status_code = _execution_state_missions(statuses=("in_progress",), limit=100)
     if status_code >= 400:
         return {"success": False, "status": "stranded_recovery_queue_unavailable", "recovered_count": 0, "status_code": status_code}
@@ -398,6 +778,10 @@ def recover_stranded_missions(notify=False):
             "runner_recovery": recovery_event,
             "runner_recovery_history": recovery_history[-20:],
         }
+        authorized, reason = _runtime_pickup_authorized()
+        if not authorized:
+            skipped.append({"mission_id": mission_id, "reason": reason})
+            break
         status_result, block_status = update_mission_status(
             mission_id,
             "approved",
@@ -410,6 +794,10 @@ def recover_stranded_missions(notify=False):
         if block_status >= 400:
             skipped.append({"mission_id": mission_id, "reason": status_result.get("status", "blocked_status_update_failed")})
             continue
+        authorized, reason = _runtime_pickup_authorized()
+        if not authorized:
+            skipped.append({"mission_id": mission_id, "reason": reason})
+            break
         vault_result, vault_status = update_mission_vault(
             mission_id,
             {
@@ -576,7 +964,13 @@ def _execution_state_missions(statuses, limit=100):
         clean_status = str(status or "").strip()
         if not clean_status:
             continue
-        loaded, status_code = list_missions(status=clean_status, limit=parsed_limit, compact=False)
+        loaded, status_code = list_missions(
+            status=clean_status,
+            limit=parsed_limit,
+            compact=False,
+            exclude_superseded=True,
+            exclude_execution_held=True,
+        )
         if status_code >= 400:
             return [], status_code
         missions.extend(loaded.get("missions") or [])
@@ -634,6 +1028,14 @@ def _retryable_queue_error(result, status_code):
 
 
 def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_TIMEOUT_SECONDS):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+        }, 423
     loaded, _load_status = get_mission(mission_id) if mission_id else ({}, 400)
     mission = loaded.get("mission") if isinstance(loaded, dict) and isinstance(loaded.get("mission"), dict) else {}
     preflight = runner_environment_preflight(require_browser=_mission_requires_browser_preflight(mission))
@@ -699,6 +1101,14 @@ def _mission_requires_browser_preflight(mission):
 
 
 def process_release_approved_mission(mission_id, notify=False, auto_close_no_release=False, auto_merge_pr=False, release_verify_url=""):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+        }, 423
     if auto_close_no_release:
         result, status_code = complete_no_release_mission(mission_id=mission_id)
     elif auto_merge_pr:
@@ -758,6 +1168,13 @@ def _run_analyst_cycle(mission_id, trigger, notify=False):
 
 
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+        }, 423
     checkout = _ensure_base_branch()
     if not checkout["success"]:
         failure_status = str(checkout.get("status") or "base_branch_checkout_failed")
@@ -826,32 +1243,53 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "next_action": "Retry after the canonical mission record is available; no claim or workflow update was written.",
         }, authoritative_status if authoritative_status >= 400 else 503
     mission = authoritative_mission
+    authoritative_metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    intake = authoritative_metadata.get("intake") if isinstance(authoritative_metadata.get("intake"), dict) else {}
+    if intake.get("adaptive_orchestration_required"):
+        binding = validate_orchestration_binding(
+            authoritative_metadata.get("orchestration"),
+            mission.get("agent_workflow"),
+        )
+        persisted_binding = (
+            authoritative_metadata.get("orchestration_binding")
+            if isinstance(authoritative_metadata.get("orchestration_binding"), dict)
+            else {}
+        )
+        if (
+            not binding.get("valid")
+            or binding.get("identity") != persisted_binding.get("identity")
+            or persisted_binding.get("generation_identity")
+            != (authoritative_metadata.get("orchestration") or {}).get("generation_identity")
+        ):
+            return {
+                "success": False,
+                "status": "adaptive_orchestration_not_durably_bound",
+                "mission_id": mission_id,
+                "reason": binding.get("reason", "orchestration_binding_missing"),
+                "codex_chat_written": False,
+                "next_action": "Keep the mission blocked until packet and exact workflow binding are durably readable.",
+            }, 409
     codex_chat_preview = _codex_chat_content(mission)
 
-    refresh = _refresh_core_plan_for_pickup(mission)
-    if refresh.get("refreshed"):
-        refreshed, refreshed_status = get_mission(mission_id)
-        if refreshed_status < 400 and refreshed.get("mission"):
-            mission = refreshed["mission"]
-            codex_chat_preview = _codex_chat_content(mission)
-
-    branch_restore = _restore_mission_branch_for_resume(mission)
-    if not branch_restore.get("success"):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
         return {
-            **branch_restore,
-            "status": "mission_branch_restore_failed",
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
             "mission_id": mission_id,
             "codex_chat_written": False,
-            "next_action": "Restore the packaged mission branch before resuming review stages.",
-        }, 409
-
-    updated, update_status = update_mission_status(
+        }, 423
+    # Claim execution eligibility before workflow refresh, branch restoration,
+    # or any other pickup side effect. The store serializes this transition
+    # with the same mission-scoped advisory lock used by owner holds.
+    execution_lease = _execution_lease_packet(mission_id)
+    updated, update_status = update_mission_vault(
         mission_id,
-        "in_progress",
+        {"execution_lease": execution_lease},
+        status="in_progress",
         owner_decision="Codex picked up this approved CHARLIE mission for execution under CODEX_CHAT rules.",
-        event_type="status_changed",
-        notes="Codex mission pickup wrote planning/CODEX_CHAT.md and marked the mission in progress.",
-        metadata={"script": "scripts/charlie_mission_pickup.py"},
+        notes="CHARLIE runner atomically claimed mission status and execution lease before pickup preparation.",
         expected_status=clean_status,
     )
     if update_status >= 400:
@@ -862,8 +1300,64 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "codex_chat_written": False,
             "expected_status": clean_status,
         }, update_status
+    refresh = _refresh_core_plan_for_pickup(mission)
+    if refresh.get("blocked"):
+        return {
+            "success": False,
+            "status": "adaptive_orchestration_refresh_blocked",
+            "mission_id": mission_id,
+            "reason": refresh.get("reason", "orchestration_binding_invalid"),
+            "codex_chat_written": False,
+        }, 409
+    if refresh.get("refreshed"):
+        refreshed, refreshed_status = get_mission(mission_id)
+        if refreshed_status < 400 and refreshed.get("mission"):
+            mission = refreshed["mission"]
+            codex_chat_preview = _codex_chat_content(mission)
 
-    lease = _write_execution_lease(mission_id)
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+        }, 423
+    branch_restore = _restore_mission_branch_for_resume(mission)
+    if not branch_restore.get("success"):
+        return {
+            **branch_restore,
+            "status": "mission_branch_restore_failed",
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+            "next_action": "Restore the packaged mission branch before resuming review stages.",
+        }, 409
+
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+        }, 423
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+        }, 423
+    lease = {
+        **execution_lease,
+        "write_status": updated.get("status") if isinstance(updated, dict) else "unknown",
+        "write_status_code": update_status,
+        "persisted": True,
+    }
     _write_codex_chat(codex_chat_preview)
     if notify:
         _send_pickup_notification(mission)
@@ -1026,6 +1520,24 @@ def _refresh_core_plan_for_pickup(mission):
         },
         "charlie_core": plan,
     }
+    intake = metadata.get("intake") if isinstance(metadata.get("intake"), dict) else {}
+    if intake.get("adaptive_orchestration_required"):
+        payload["orchestration"] = plan.get("orchestration")
+        binding = validate_orchestration_binding(
+            payload["orchestration"], payload["agent_workflow"]
+        )
+        if not binding.get("valid"):
+            return {
+                "refreshed": False,
+                "reason": binding.get("reason", "orchestration_binding_invalid"),
+                "blocked": True,
+            }
+        payload["orchestration_binding"] = {
+            "version": "charlie_orchestration_binding_v1",
+            "identity": binding["identity"],
+            "generation_identity": payload["orchestration"]["generation_identity"],
+            "validated": True,
+        }
     result, status_code = update_mission_vault(
         mission_id,
         payload,
@@ -1139,6 +1651,15 @@ def _merge_resumable_workflow(current_workflow, planned_workflow, resume_stage="
 
 
 def _write_execution_lease(mission_id):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "mission_id": mission_id,
+            "persisted": False,
+            "write_status": "runner_contained",
+            "write_status_code": 423,
+            "reason": reason,
+        }
     lease = _execution_lease_packet(mission_id)
     result, status_code = update_mission_vault(
         mission_id,

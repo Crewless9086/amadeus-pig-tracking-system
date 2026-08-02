@@ -495,6 +495,7 @@ def _load_executive_missions(*, database_url=None, connect_factory=None):
             limit=100,
             compact=status in terminal_statuses,
             outcome_candidates=status in terminal_statuses,
+            exclude_execution_held=True,
             database_url=database_url,
             connect_factory=connect_factory,
         )

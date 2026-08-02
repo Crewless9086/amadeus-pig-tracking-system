@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}SAM Livestock Availability Evidence{% endblock %}
+{% block content %}
+<main class="container" id="sam-live-stock-availability">
+  <h1>Livestock availability observation</h1>
+  <p>
+    Review the privacy-safe eligible totals and exclusions. Confirmation records
+    immutable evidence only; it does not reserve animals or send a customer reply.
+  </p>
+
+  <section aria-labelledby="observation-heading">
+    <h2 id="observation-heading">Observation evidence</h2>
+    <label>
+      Johannesburg observation time
+      <input id="availabilityObservedAt" type="datetime-local" required>
+    </label>
+    <label>
+      Evidence lifetime
+      <select id="availabilityMaxAge">
+        <option value="24" selected>24 hours</option>
+        <option value="12">12 hours</option>
+        <option value="6">6 hours</option>
+      </select>
+    </label>
+    <button id="previewAvailability" type="button">Preview current evidence</button>
+    <div id="availabilityPreview" aria-live="polite"></div>
+    <label>
+      <input id="availabilityConfirmed" type="checkbox">
+      I confirm that I reviewed today's eligible livestock and the displayed
+      exclusions at the exact time above.
+    </label>
+  </section>
+
+  <section aria-labelledby="canary-heading">
+    <h2 id="canary-heading">Bound recommendation card</h2>
+    <label>Account <input id="availabilityAccountId"></label>
+    <label>Conversation <input id="availabilityConversationId" value="67"></label>
+    <label>Contact <input id="availabilityContactId"></label>
+    <label>Inbox <input id="availabilityInboxId" value="96568"></label>
+    <label>Latest inbound <input id="availabilityInboundId" value="761948125"></label>
+    <label>Customer display name <input id="availabilityCustomerName" value="Lionel"></label>
+    <button id="confirmAvailability" type="button" disabled>
+      Confirm observation and prepare recommendation
+    </button>
+    <div id="availabilityResult" aria-live="polite"></div>
+  </section>
+</main>
+<script src="{{ url_for('static', filename='js/samLiveStockAvailability.js') }}"></script>
+{% endblock %}

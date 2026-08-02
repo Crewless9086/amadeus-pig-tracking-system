@@ -51,6 +51,20 @@ For PR-backed missions it must also include the expected PR head SHA and the exa
 
 "Looks good" is not evidence.
 
+For agent-behavior changes, isolated router, parser, prompt, policy, or unit
+tests are supporting evidence only. The exact-head review packet must also prove
+the complete customer journey across multiple turns: context retention,
+progressive routing, specialist tool boundaries, topic change, review/send
+gates, escalation ownership, and the final customer or owner outcome. It must
+report the defined journey metrics with their denominators; document citations
+alone do not satisfy this gate.
+
+For any customer-visible outbound path, review evidence must follow
+[`OUTBOUND_DELIVERY_TRUTH_STANDARD.md`](OUTBOUND_DELIVERY_TRUTH_STANDARD.md).
+HTTP 2xx, mock success, n8n success, or Chatwoot `status=sent` is acceptance
+evidence only. Exact-head tests cannot substitute for one controlled real
+provider delivered/read proof required for canary or autonomy graduation.
+
 ## Release Evidence
 
 Release/merge/deploy review must include:

@@ -1,10 +1,11 @@
 from io import BytesIO
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from app import app
 from modules.oom_sakkie.access import is_review_request_allowed
+from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY
 from modules.oom_sakkie.telegram_direct import _reset_direct_auth_rate_limit_for_tests
 from modules.oom_sakkie.telegram_gateway import _reset_auth_rate_limit_for_tests
 
@@ -253,6 +254,7 @@ class OomSakkieRouteTests(unittest.TestCase):
             "risk_level": 0,
             "trace_id": "OSK-TRACE-ROUTE",
             "safety_notes": ["No write."],
+            "trace_store": {"stored": True, "status": "stored"},
         }, 200)
 
         response = self.client.post(
@@ -277,11 +279,14 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["sends_telegram"])
         self.assertFalse(data["writes"])
         self.assertTrue(data["records_audit_trace"])
+        self.assertEqual(data["audit_trace_mode"], "tool_dependent")
         self.assertFalse(data["dispatch_enabled"])
         mock_handle.assert_called_once_with({
             "text": "what needs attention today",
             "channel": "telegram_read_only",
             "session_id": "telegram-67890",
+            "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
+            "gateway_authority": ANY,
         })
 
     @patch.dict(os.environ, {
@@ -307,7 +312,7 @@ class OomSakkieRouteTests(unittest.TestCase):
                 "message": {
                     "text": "what needs attention today",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Oom-Sakkie-Telegram-Token": TELEGRAM_TEST_TOKEN},
@@ -343,7 +348,8 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["direct_bot_cutover_enabled"])
         self.assertFalse(data["can_trigger_outbound_llm"])
         self.assertFalse(data["writes"])
-        self.assertTrue(data["records_audit_trace"])
+        self.assertIsNone(data["records_audit_trace"])
+        self.assertEqual(data["audit_trace_mode"], "tool_dependent")
 
         denied = self.client.get(
             "/api/oom-sakkie/channels/telegram/exposure-preflight",
@@ -369,6 +375,95 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(data["status"], "telegram_direct_disabled")
         self.assertFalse(data["sends_telegram"])
         self.assertFalse(data["writes"])
+
+    @patch("modules.oom_sakkie.routes.handle_telegram_direct_webhook")
+    def test_telegram_direct_route_rejects_missing_json_content_type_before_handler(
+        self, mock_handler
+    ):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            data='{"update_id":101}',
+            content_type="text/plain",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 415)
+        self.assertEqual(data["status"], "telegram_json_content_type_required")
+        self.assertEqual(data["expected_content_type"], "application/json")
+        self.assertFalse(data["download_attempted"])
+        self.assertFalse(data["persistence_attempted"])
+        mock_handler.assert_not_called()
+
+    @patch("modules.oom_sakkie.routes.handle_telegram_direct_webhook")
+    def test_telegram_direct_route_rejects_malformed_or_empty_json_before_handler(
+        self, mock_handler
+    ):
+        malformed = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            data="{not-json",
+            content_type="application/json",
+        )
+        empty = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json={},
+        )
+
+        for response in (malformed, empty):
+            with self.subTest(status=response.status_code):
+                data = response.get_json()
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(data["status"], "telegram_json_object_required")
+                self.assertFalse(data["download_attempted"])
+                self.assertFalse(data["persistence_attempted"])
+        mock_handler.assert_not_called()
+
+    @patch("modules.oom_sakkie.routes.handle_telegram_direct_webhook")
+    def test_telegram_direct_route_passes_exact_json_object_to_handler(
+        self, mock_handler
+    ):
+        payload = {
+            "update_id": 101,
+            "message": {
+                "message_id": 22,
+                "from": {"id": 12345},
+                "chat": {"id": 12345, "type": "private"},
+                "photo": [
+                    {
+                        "file_id": "protected-test-file",
+                        "file_unique_id": "stable-test-file",
+                        "width": 1280,
+                        "height": 960,
+                    }
+                ],
+            },
+        }
+        mock_handler.return_value = (
+            {
+                "success": True,
+                "status": "media_intake_received",
+                "download_attempted": False,
+                "persistence_attempted": False,
+            },
+            200,
+        )
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json=payload,
+            headers={
+                "X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_handler.assert_called_once()
+        self.assertEqual(mock_handler.call_args.args[0], payload)
+        self.assertEqual(
+            mock_handler.call_args.kwargs["headers"].get(
+                "X-Telegram-Bot-Api-Secret-Token"
+            ),
+            TELEGRAM_DIRECT_SECRET,
+        )
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
@@ -507,7 +602,104 @@ class OomSakkieRouteTests(unittest.TestCase):
             "telegram_message_id": "987",
             "owner": "telegram_owner",
         }, environ=None)
-        mock_send.assert_called_once()
+        self.assertFalse(data["confirmation_message_created"])
+        mock_send.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.process_sam_live_stock_owner_callback")
+    def test_telegram_direct_route_preserves_explicit_resolve_card_only_callback(self, mock_callback, mock_send):
+        action_identity = "SAM-LIVE-RESOLVE-ABC123"
+        mock_callback.return_value = ({
+            "success": True,
+            "status": "sam_live_stock_card_resolved_only",
+            "action": "resolve_card_only",
+            "action_identity": action_identity,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_telegram": True,
+            "creates_order": False,
+            "reserves_stock": False,
+            "changes_stock": False,
+            "writes_farm_data": False,
+        }, 200)
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json={
+                "callback_query": {
+                    "data": f"sam_live_card_resolve:{action_identity}",
+                    "from": {"id": 12345},
+                    "message": {"message_id": 2865, "chat": {"id": 67890}},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["callback_data"], f"sam_live_card_resolve:{action_identity}")
+        self.assertEqual(data["sam_live_callback"]["action"], "resolve_card_only")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["sam_live_callback"]["creates_order"])
+        self.assertFalse(data["sam_live_callback"]["reserves_stock"])
+        mock_callback.assert_called_once_with({
+            "callback_data": f"sam_live_card_resolve:{action_identity}",
+            "telegram_chat_id": "67890",
+            "telegram_message_id": "2865",
+            "owner": "telegram_owner",
+        }, environ=None)
+        mock_send.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.process_sam_live_stock_owner_callback")
+    def test_telegram_direct_preserves_candidate_bound_send_identity(self, mock_callback, mock_send):
+        action_identity = "SAM-LIVE-CARD-SEND-ABC123"
+        mock_callback.return_value = ({
+            "success": True,
+            "status": "sam_live_card_send_accepted_unverified",
+            "delivery_state": "chatwoot_accepted_unverified",
+            "sends_customer_message": True,
+            "calls_chatwoot": True,
+            "calls_telegram": True,
+        }, 200)
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json={"callback_query": {
+                "data": f"sam_live_card_send:{action_identity}",
+                "from": {"id": 12345},
+                "message": {"message_id": 987, "chat": {"id": 67890}},
+            }},
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["callback_data"], f"sam_live_card_send:{action_identity}")
+        self.assertEqual(data["sam_live_callback"]["delivery_state"], "chatwoot_accepted_unverified")
+        mock_callback.assert_called_once_with({
+            "callback_data": f"sam_live_card_send:{action_identity}",
+            "telegram_chat_id": "67890",
+            "telegram_message_id": "987",
+            "owner": "telegram_owner",
+        }, environ=None)
+        mock_send.assert_not_called()
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
@@ -583,7 +775,7 @@ class OomSakkieRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["success"])
-        self.assertEqual(data["status"], "telegram_sent")
+        self.assertEqual(data["status"], "sam_live_stock_review_prepare_quote_ready")
         self.assertEqual(data["callback_data"], "sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123")
         self.assertEqual(data["sam_live_callback"]["action"], "review_prepare_quote")
         self.assertFalse(data["sends_customer_message"])
@@ -593,7 +785,8 @@ class OomSakkieRouteTests(unittest.TestCase):
         callback_payload = mock_callback.call_args.args[0]
         self.assertEqual(callback_payload["callback_data"], "sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123")
         self.assertEqual(callback_payload["telegram_chat_id"], "67890")
-        mock_send.assert_called_once()
+        self.assertFalse(data["confirmation_message_created"])
+        mock_send.assert_not_called()
 
     def test_review_packet_denies_non_local_review_access(self):
         response = self.client.get(

@@ -2,6 +2,9 @@ import re
 from dataclasses import dataclass
 
 from modules.oom_sakkie.agent_runtime import build_agent_activity
+from modules.oom_sakkie.gateway_authority import (
+    bind_gateway_owner_authority,
+)
 from modules.oom_sakkie.llm_answer import compose_answer_with_llm
 from modules.oom_sakkie.llm_router import route_with_llm
 from modules.oom_sakkie.tools import RiskLevel, get_tool
@@ -11,6 +14,13 @@ from modules.oom_sakkie.trace_store import build_trace_id, hash_tool_result, wri
 CONFIDENCE_FLOOR = 0.65
 MAX_USER_TEXT_CHARS = 2000
 DETERMINISTIC_ONLY_CHANNELS = {"telegram_read_only"}
+TELEGRAM_OWNER_AUTHORITY = object()
+DETERMINISTIC_ONLY_TOOLS = {
+    "herdmaster_breeding_worklist",
+    "herdmaster_herd_question",
+    "herdmaster_breeding_observation_preview",
+    "herdmaster_weight_preview",
+}
 
 
 ACTION_GUARD_PATTERN = re.compile(
@@ -39,6 +49,66 @@ class IntentMatch:
 
 
 RULES = [
+    (
+        re.compile(
+            r"\b(?:"
+            r"what (?:do you|does oom sakkie) (?:currently )?know about|"
+            r"latest recorded weight|breeding status|"
+            r"next recommended action"
+            r")\b",
+            re.I,
+        ),
+        IntentMatch(
+            "herdmaster_herd_question",
+            "herdmaster_herd_question",
+            0.99,
+            "rule:herdmaster_herd_question",
+        ),
+    ),
+    (
+        re.compile(
+            r"^\s*.+?\s+weighed\s+\d+(?:[.,]\d+)?\s*kg\s+on\s+.+$",
+            re.I,
+        ),
+        IntentMatch(
+            "herdmaster_weight_preview",
+            "herdmaster_weight_preview",
+            0.99,
+            "rule:herdmaster_weight_preview",
+        ),
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"monday breeding|breeding round|breeding worklist|"
+            r"breeding attention|which females need attention|"
+            r"which sows need attention|which gilts need attention|"
+            r"herdmaster breeding"
+            r")\b",
+            re.I,
+        ),
+        IntentMatch(
+            "herdmaster_breeding_worklist",
+            "herdmaster_breeding_worklist",
+            0.95,
+            "rule:herdmaster_breeding_worklist",
+        ),
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"body condition|bcs|standing heat|no heat|not in heat|"
+            r"moving well|walking well|no injury|visible concern"
+            r")\b",
+            re.I,
+        ),
+        IntentMatch(
+            "herdmaster_breeding_observation_preview",
+            "herdmaster_breeding_observation_preview",
+            0.95,
+            "rule:herdmaster_breeding_observation_preview",
+        ),
+    ),
     (
         re.compile(r"\b(agent command center|jarvis command center|oom sakkie command center|command center status|agent workspace|team workspace|who is working|what are the agents doing|show me the team workspace|control tower)\b", re.I),
         IntentMatch("agent_command_center", "agent_command_center", 0.95, "rule:agent_command_center"),
@@ -180,6 +250,20 @@ RULES = [
         IntentMatch("business_growth_brief", "business_growth_brief", 0.95, "rule:business_growth_brief"),
     ),
     (
+        re.compile(
+            r"\b(rootline|water[- ]and[- ]power|water and (power|energy)|"
+            r"(power|energy).{0,30}water|water.{0,30}(power|energy)|"
+            r"borehole.{0,30}(battery|solar|grid))\b",
+            re.I,
+        ),
+        IntentMatch(
+            "rootline_water_energy",
+            "rootline_water_energy_plan",
+            0.98,
+            "rule:rootline_water_energy",
+        ),
+    ),
+    (
         re.compile(r"\b(irrigation|irrigate|water zone|water zones|watering|water anything|need to water|do we need to water|sprinkler|sprinklers|pump)\b", re.I),
         IntentMatch("irrigation_status", "irrigation_status", 0.95, "rule:irrigation_status"),
     ),
@@ -231,6 +315,16 @@ def handle_message(payload):
     channel = str((payload or {}).get("channel") or "kiosk").strip()[:40]
     session_id = str((payload or {}).get("session_id") or "").strip()[:120]
     allow_specialist_llm = (payload or {}).get("allow_specialist_llm") is True
+    legacy_authenticated_owner = bool(
+        channel == "telegram_read_only"
+        and (payload or {}).get("authenticated_owner")
+        is TELEGRAM_OWNER_AUTHORITY
+    )
+    gateway_authority = (
+        (payload or {}).get("gateway_authority")
+        if channel == "telegram_read_only"
+        else None
+    )
     llm_allowed = channel not in DETERMINISTIC_ONLY_CHANNELS
     trace_id = build_trace_id()
 
@@ -452,15 +546,28 @@ def handle_message(payload):
             "trace_store": trace_status,
         }, 500
 
-    tool_result = tool.handler({"user_text": text, "allow_specialist_llm": allow_specialist_llm})
+    bound_gateway_authority = bind_gateway_owner_authority(
+        gateway_authority,
+        tool.name,
+    )
+    tool_result = tool.handler({
+        "user_text": text,
+        "allow_specialist_llm": allow_specialist_llm,
+        "authenticated_owner": legacy_authenticated_owner,
+        "gateway_authority": bound_gateway_authority,
+    })
     stale_warnings = list(tool_result.get("stale_warnings") or [])
     safety_notes = list(tool_result.get("safety_notes") or [])
     links = list(tool_result.get("links") or [])
     if is_unsupported_action_request(text):
         safety_notes.append("I treated this as a read-only check. No write, message, control, or physical action was performed.")
-    deterministic_answer = build_answer(tool_result, stale_warnings, safety_notes)
+    deterministic_answer = (
+        str(tool_result.get("summary") or "")
+        if tool.name == "herdmaster_herd_question"
+        else build_answer(tool_result, stale_warnings, safety_notes)
+    )
     composed_answer = None
-    if llm_allowed:
+    if llm_allowed and tool.name not in DETERMINISTIC_ONLY_TOOLS:
         composed_answer = compose_answer_with_llm(
             user_text=text,
             tool_name=tool.name,
@@ -491,10 +598,18 @@ def handle_message(payload):
         safety_notes=safety_notes,
         links=links,
     )
-    trace_status = write_trace(trace)
+    trace_status = _write_tool_trace(tool.name, trace)
 
+    protected_tool_succeeded = (
+        tool_result.get("success") is True
+        if tool.name in {
+            "herdmaster_herd_question",
+            "rootline_water_energy_plan",
+        }
+        else True
+    )
     return {
-        "success": True,
+        "success": protected_tool_succeeded,
         "answer": answer,
         "tool_used": tool.name,
         "trace_id": trace_id,
@@ -502,7 +617,7 @@ def handle_message(payload):
         "links": links,
         "stale_warnings": stale_warnings,
         "safety_notes": safety_notes,
-        "needs_clarification": False,
+        "needs_clarification": not protected_tool_succeeded,
         "pipeline": _pipeline(
             route_source=_route_source(match),
             answer_source=answer_source,
@@ -549,6 +664,15 @@ def build_answer(tool_result, stale_warnings, safety_notes=None):
     if safety_notes:
         return f"{summary} Note: {safety_notes[0]}"
     return summary
+
+
+def _write_tool_trace(tool_name, trace):
+    if tool_name == "rootline_water_energy_plan":
+        return {
+            "stored": False,
+            "status": "not_stored_rootline_zero_write",
+        }
+    return write_trace(trace)
 
 
 def _route_source(match):

@@ -2,7 +2,9 @@ import hmac
 import os
 import time
 
-from modules.oom_sakkie.service import handle_message
+from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY, handle_message
+from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -28,6 +30,7 @@ def telegram_gateway_policy(environ=None):
     token_meets_minimum = len(token) >= MIN_TOKEN_CHARS
     allowed_ids = _allowed_user_ids(source)
     auth_locked = _auth_locked()
+    owner_task_bot_configured = bool(str(source.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or "").strip())
     return {
         "enabled": explicitly_enabled and token_configured and token_meets_minimum and bool(allowed_ids) and not auth_locked,
         "explicitly_enabled": explicitly_enabled,
@@ -49,13 +52,27 @@ def telegram_gateway_policy(environ=None):
         },
         "sends_telegram": False,
         "reply_transport": "caller_handles_telegram_send",
+        "owner_task_lifecycle": {
+            "enabled": owner_task_bot_configured,
+            "canonical_bot": "existing_sam_oom_owner_bot",
+            "sends_telegram": owner_task_bot_configured,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "scope": "authenticated_active_owner_request_acknowledgement_result_or_systemic_exception_only",
+            "requires_provider_message_identity": True,
+            "ambiguous_delivery_retries": False,
+        },
         "deterministic_only": True,
         "can_trigger_outbound_llm": False,
         "minimum_token_entropy": "Requires a long random token of at least 32 characters before the gateway can enable.",
         "direct_bot_cutover_enabled": False,
         "writes": False,
-        "records_audit_trace": True,
-        "writes_note": "writes=false means no farm/control/public-output write; successful messages still append the normal Oom Sakkie audit trace.",
+        "records_audit_trace": None,
+        "audit_trace_mode": "tool_dependent",
+        "writes_note": (
+            "writes=false means no farm/control/public-output write. Ordinary "
+            "tools append their normal audit trace; ROOTLINE intentionally "
+            "returns not_stored_rootline_zero_write."
+        ),
         "dispatch_enabled": False,
         "changes_runtime_now": False,
         "changes_prompt_now": False,
@@ -76,9 +93,18 @@ def telegram_gateway_exposure_preflight(environ=None):
         _check("auth_lockout_enabled", policy["auth_rate_limit"]["enabled"], "Repeated bad tokens trigger a fail-closed lockout."),
         _check("deterministic_only", policy["deterministic_only"], "telegram_read_only never uses LLM router or answer composer."),
         _check("no_outbound_llm", not policy["can_trigger_outbound_llm"], "Gateway cannot trigger outbound LLM calls."),
-        _check("no_telegram_send", not policy["sends_telegram"] and not policy["direct_bot_cutover_enabled"], "Gateway returns caller-send payload only."),
+        _check("ordinary_reply_uses_caller_transport", not policy["sends_telegram"] and not policy["direct_bot_cutover_enabled"],
+               "Ordinary gateway answers remain caller-sent; only a bound owner-task lifecycle may send directly."),
+        _check("owner_task_send_is_scoped", not policy["owner_task_lifecycle"]["enabled"] or (
+               policy["owner_task_lifecycle"]["requires_provider_message_identity"]
+               and not policy["owner_task_lifecycle"]["ambiguous_delivery_retries"]),
+               "When configured, owner-task sends use the existing owner bot, require provider identity, and never retry ambiguity."),
         _check("no_farm_control_write", not policy["writes"] and not policy["dispatch_enabled"], "Gateway does not write farm/control/public output or dispatch."),
-        _check("audit_trace_disclosed", policy["records_audit_trace"], "Successful messages append the normal Oom Sakkie audit trace."),
+        _check(
+            "audit_trace_disclosed",
+            policy["audit_trace_mode"] == "tool_dependent",
+            "Audit storage is reported from the selected tool's trace_store result.",
+        ),
     ]
     manual_checks = [
         _check("tls_termination_confirmed", _env_truthy(source.get(TLS_CONFIRMED_ENV)), "Confirm HTTPS/TLS terminates before public traffic reaches the route."),
@@ -108,6 +134,7 @@ def telegram_gateway_exposure_preflight(environ=None):
         "can_trigger_outbound_llm": False,
         "writes": False,
         "records_audit_trace": policy["records_audit_trace"],
+        "audit_trace_mode": policy["audit_trace_mode"],
         "dispatch_enabled": False,
         "changes_runtime_now": False,
         "changes_prompt_now": False,
@@ -132,6 +159,31 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         _record_auth_failure()
         return _gateway_result(False, "telegram_gateway_auth_denied", policy, 403)
 
+    source = environ if environ is not None else os.environ
+    owner_task, owner_task_status = handle_owner_task_input(
+        payload,
+        environ=source,
+        telegram_sender=lambda chat_id, text, purpose: _send_owner_task_telegram(
+            chat_id, text, source),
+    )
+    if owner_task.get("handled"):
+        owner_task.update({
+            "mode": "authenticated_gateway_owner_task",
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": any(int(owner_task.get(key) or 0) > 0 for key in
+                                  ("acknowledgements", "results", "systemic_exceptions")),
+            "direct_bot_cutover_enabled": False,
+            "can_trigger_outbound_llm": False,
+            "writes": False,
+            "records_audit_trace": True,
+            "dispatch_enabled": False,
+            "changes_runtime_now": False,
+            "changes_prompt_now": False,
+            "physical_controls_enabled": False,
+            "customer_public_output_enabled": False,
+        })
+        return owner_task, owner_task_status
+
     parsed = parse_telegram_gateway_payload(payload)
     if not parsed["text"]:
         return _gateway_result(False, "telegram_text_required", policy, 400)
@@ -140,19 +192,45 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         body, status_code = _gateway_result(False, "telegram_user_not_allowed", policy, 403)
         body["telegram_user_id"] = parsed["telegram_user_id"]
         return body, status_code
+    gateway_authority = issue_gateway_owner_authority(
+        parsed["telegram_user_id"],
+        parsed["telegram_chat_id"],
+    )
+    if parsed["telegram_chat_type"] != "private":
+        gateway_authority = None
 
     message_result, message_status = handle_message({
         "text": parsed["text"],
         "channel": "telegram_read_only",
         "session_id": parsed["session_id"],
+        "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
+        "gateway_authority": gateway_authority,
     })
-    body, _ = _gateway_result(bool(message_result.get("success")), "answered", policy, message_status)
+    rootline_auth_denied = (
+        message_result.get("tool_used") == "rootline_water_energy_plan"
+        and message_result.get("success") is not True
+    )
+    response_status = (
+        "protected_reader_authentication_denied"
+        if rootline_auth_denied
+        else "answered"
+    )
+    response_code = 403 if rootline_auth_denied else message_status
+    trace_store = message_result.get("trace_store") or {}
+    body, _ = _gateway_result(
+        bool(message_result.get("success")),
+        response_status,
+        policy,
+        response_code,
+    )
     body.update({
         "telegram_user_id": parsed["telegram_user_id"],
         "telegram_chat_id": parsed["telegram_chat_id"],
         "text": parsed["text"],
         "answer": message_result.get("answer", ""),
         "message": message_result,
+        "records_audit_trace": trace_store.get("stored") is True,
+        "audit_trace_status": str(trace_store.get("status") or "not_written"),
         "reply": {
             "chat_id": parsed["telegram_chat_id"],
             "text": message_result.get("answer", ""),
@@ -160,7 +238,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": False,
         },
     })
-    return body, message_status
+    return body, response_code
 
 
 def parse_telegram_gateway_payload(payload):
@@ -172,12 +250,35 @@ def parse_telegram_gateway_payload(payload):
     telegram_user_id = payload.get("telegram_user_id") or payload.get("from_user_id") or from_user.get("id") or ""
     telegram_chat_id = payload.get("telegram_chat_id") or payload.get("chat_id") or chat.get("id") or ""
     session_id = payload.get("session_id") or telegram_chat_id or telegram_user_id or ""
+    telegram_chat_type = payload.get("telegram_chat_type") or chat.get("type") or ""
+    if not telegram_chat_type and str(telegram_chat_id) == str(telegram_user_id):
+        telegram_chat_type = "private"
     return {
         "text": str(text or "").strip()[:MAX_TELEGRAM_TEXT_CHARS],
         "telegram_user_id": str(telegram_user_id or "").strip()[:80],
         "telegram_chat_id": str(telegram_chat_id or "").strip()[:80],
+        "telegram_chat_type": str(telegram_chat_type or "").strip()[:20],
         "session_id": f"telegram-{str(session_id or '').strip()[:100]}",
     }
+
+
+def _send_owner_task_telegram(chat_id, text, source):
+    from modules.sales.sam_live_stock_launch_control import _telegram_api
+    token = str(source.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:
+        return {"success": False, "status": "owner_task_telegram_token_not_configured"}
+    try:
+        response = _telegram_api(token, "sendMessage", {
+            "chat_id": str(chat_id), "text": str(text), "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        })
+    except Exception:
+        return {"success": False, "status": "owner_task_telegram_delivery_ambiguous"}
+    result = response.get("result") if isinstance(response, dict) else {}
+    message_id = str((result or {}).get("message_id") or "")
+    return {"success": response.get("ok") is True and bool(message_id),
+            "status": "owner_task_telegram_delivered" if message_id else "owner_task_telegram_delivery_unconfirmed",
+            "telegram_message_id": message_id}
 
 
 def _gateway_result(success, status, policy, status_code):
@@ -191,8 +292,9 @@ def _gateway_result(success, status, policy, status_code):
         "deterministic_only": True,
         "can_trigger_outbound_llm": False,
         "writes": False,
-        "records_audit_trace": True,
-        "writes_note": "writes=false means no farm/control/public-output write; successful messages still append the normal Oom Sakkie audit trace.",
+        "records_audit_trace": False,
+        "audit_trace_mode": policy.get("audit_trace_mode", "tool_dependent"),
+        "writes_note": policy.get("writes_note", ""),
         "dispatch_enabled": False,
         "changes_runtime_now": False,
         "changes_prompt_now": False,

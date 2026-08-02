@@ -58,7 +58,50 @@
           <pre id="beacon_packet_copy" class="beacon-packet-copy">Loading exact copy…</pre>
           <div id="beacon_packet_options" class="beacon-recommendation-list"></div>
           <div id="beacon_packet_meta" class="beacon-content-evidence"></div>
+          <section id="beacon_packet_decision" class="beacon-packet-decision" aria-labelledby="beacon_packet_decision_title">
+            <div>
+              <span class="beacon-eyebrow">Exact owner decision</span>
+              <h4 id="beacon_packet_decision_title">Review this exact caption and image order</h4>
+              <p class="beacon-approval-warning">Approval does not publish this post.</p>
+            </div>
+            <div class="beacon-packet-decision-fields">
+              <div class="form-group">
+                <label for="beacon_packet_proposed_datetime">Proposed publication date/time (optional)</label>
+                <input id="beacon_packet_proposed_datetime" type="datetime-local" />
+              </div>
+              <div class="form-group">
+                <label for="beacon_packet_proposed_timezone">Timezone</label>
+                <select id="beacon_packet_proposed_timezone">
+                  <option value="Africa/Johannesburg">Africa/Johannesburg (SAST)</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="beacon_packet_owner_notes">Owner notes or requested changes (optional)</label>
+              <textarea id="beacon_packet_owner_notes" rows="3" maxlength="1200" placeholder="Add a concise review note. Notes are required when requesting changes."></textarea>
+            </div>
+            <div id="beacon_packet_decision_actions" class="beacon-packet-decision-actions">
+              <button type="button" id="beacon_packet_approve" class="button-link">Approve This Post</button>
+              <button type="button" id="beacon_packet_request_changes" class="button-link button-link-secondary">Request Changes</button>
+              <button type="button" id="beacon_packet_reject" class="button-link button-link-danger">Reject This Post</button>
+            </div>
+            <div id="beacon_packet_decision_result" class="beacon-decision-result" aria-live="polite"></div>
+          </section>
         </section>
+      </section>
+
+      <section class="beacon-content-operations" aria-labelledby="beacon_learning_title">
+        <header class="beacon-compose-header">
+          <div>
+            <span class="beacon-eyebrow">Recommendation-only learning</span>
+            <h2 id="beacon_learning_title">Organic media intelligence</h2>
+            <p>First production learning case: evidence-bound observations, post alignment and graduation readiness. This is not generalized autonomous visual understanding, and one successful post cannot graduate Beacon.</p>
+          </div>
+          <span id="beacon_learning_state" class="beacon-status-chip" data-state="loading">Loading learning case</span>
+        </header>
+        <div id="beacon_learning_report" class="beacon-recommendation-list">
+          <div class="table-empty">Loading the confirmed production learning case…</div>
+        </div>
       </section>
 
       <section class="beacon-content-operations" aria-labelledby="beacon_meta_preview_title">
@@ -99,6 +142,26 @@
           <summary>Append-only import preview</summary>
           <div id="beacon_meta_preview_events" class="beacon-content-evidence"></div>
         </details>
+        <section class="beacon-owner-packet" aria-labelledby="beacon_meta_import_title">
+          <div class="beacon-panel-heading">
+            <div>
+              <span class="beacon-eyebrow">Owner approval required</span>
+              <h3 id="beacon_meta_import_title">Exact Meta evidence import packet</h3>
+            </div>
+            <span id="beacon_meta_import_state" class="beacon-status-chip" data-state="waiting">Not prepared</span>
+          </div>
+          <p>Preparation performs bounded reads only. Import remains disabled until an owner administrator approves the exact unexpired packet hash.</p>
+          <button type="button" id="beacon_meta_import_prepare" class="button-link button-link-secondary">Prepare exact import packet</button>
+          <div id="beacon_meta_import_summary" class="beacon-content-evidence"><p>No packet prepared.</p></div>
+          <div class="form-group">
+            <label>
+              <input id="beacon_meta_import_approval" type="checkbox" disabled />
+              I approve this exact packet hash for append-only evidence import.
+            </label>
+          </div>
+          <button type="button" id="beacon_meta_import_execute" class="button-link" disabled>Append approved evidence</button>
+          <div id="beacon_meta_import_result" class="beacon-content-evidence"></div>
+        </section>
       </section>
 
       <main class="beacon-compose" aria-labelledby="beacon_compose_title">
@@ -236,6 +299,25 @@
             </div>
             <div id="beacon_decision_result" class="beacon-decision-result" aria-live="polite"></div>
           </aside>
+        </div>
+      </section>
+
+      <section class="beacon-intake-review" aria-labelledby="beacon_intake_heading">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2 id="beacon_intake_heading">Private Telegram Intake</h2>
+            <p>Real private previews from the owner-controlled OOM SAKKIE bot. Intake is not library acceptance, public-use approval, or publication authorization.</p>
+          </div>
+          <button type="button" id="beacon_intake_refresh" class="button-link button-link-secondary">Refresh intake</button>
+        </div>
+        <div class="message-box" id="beacon_intake_boundary">
+          Private originals and thumbnails require an owner session. Suggested visual observations never establish animal identity, ownership, health, availability, location, or capture date.
+        </div>
+        <p id="beacon_intake_state">Loading private intake…</p>
+        <div id="beacon_intake_contact_sheet" class="beacon-intake-contact-sheet" aria-live="polite"></div>
+        <div id="beacon_intake_preview" class="beacon-intake-preview hidden" role="dialog" aria-modal="true" aria-label="Private media preview" tabindex="-1">
+          <button type="button" id="beacon_intake_preview_close" class="button-link button-link-secondary">Close preview</button>
+          <img id="beacon_intake_preview_image" alt="Owner-authorized private BEACON media preview" />
         </div>
       </section>
 

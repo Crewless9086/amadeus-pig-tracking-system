@@ -52,6 +52,23 @@ jobs:
           with psycopg.connect(os.environ["DATABASE_URL"]) as connection:
               with connection.cursor() as cursor:
                   cursor.execute("""
+                      do $$
+                      begin
+                          create role anon nologin;
+                      exception when duplicate_object then null;
+                      end $$;
+                      do $$
+                      begin
+                          create role authenticated nologin;
+                      exception when duplicate_object then null;
+                      end $$;
+                      do $$
+                      begin
+                          create role service_role nologin bypassrls;
+                      exception when duplicate_object then null;
+                      end $$;
+                      alter default privileges in schema public
+                          grant all privileges on tables to service_role;
                       create table if not exists public.order_lines (
                           order_line_id text primary key, order_id text, pig_id text,
                           line_status text not null default 'Draft', reserved_status text not null default 'Not_Reserved'
@@ -76,6 +93,9 @@ jobs:
       - name: Apply Oom Sakkie audit migrations
         run: |
           python scripts/apply_supabase_migration.py supabase/migrations/202605210001_foundation_migration_log.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606280001_create_bulk_weight_batch_tables.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606290001_create_farm_canonical_tables.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606290003_add_litter_lifecycle_fields.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060001_create_oom_sakkie_traces.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060002_create_oom_sakkie_trace_feedback.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060003_add_oom_sakkie_safety_notes.sql
@@ -113,14 +133,75 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202606180006_extend_beacon_facebook_post_execution_statuses.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606180007_add_sales_lead_conversation_lookup_index.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607230001_create_riversdale_auction_cycles.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607250001_create_beacon_weekly_review_decisions.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607260008_create_beacon_organic_media_learning.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607270001_create_beacon_media_intake.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607270002_create_rootline_operating_policies.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606300001_create_charlie_mission_queue.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607270003_create_charlie_owner_execution_holds.sql
+
+      - name: Run Beacon weekly owner-decision permission gates
+        env:
+          BEACON_WEEKLY_REVIEW_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m unittest tests.test_beacon_weekly_owner_review_decisions_postgres
+      - name: Run Beacon organic-learning permission gates
+        env:
+          BEACON_WEEKLY_REVIEW_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m unittest tests.test_beacon_organic_media_intelligence_postgres
+      - name: Run Beacon private media-intake permission gates
+        env:
+          BEACON_WEEKLY_REVIEW_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m unittest tests.test_beacon_media_intake_postgres
       - name: Run CHARLIE callback durability integration tests
         run: python -m unittest tests.test_charlie_callback_postgres
+
+      - name: Run CHARLIE adaptive orchestration durable canary tests
+        run: python -m unittest tests.test_charlie_adaptive_orchestration_postgres tests.test_charlie_owner_execution_hold_postgres
+
+      - name: Run pig observation privilege gates
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_observation_event_postgres tests.test_herdmaster_breeding_observation_postgres
+
+      - name: Run Herdmaster Weaning Day atomic transaction gates
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
 
       - name: Run Riversdale auction disposable-Postgres integration tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_riversdale_auction_postgres
 
+      - name: Run pig lifecycle audit disposable-Postgres tests
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_lifecycle_event_postgres
+
+      - name: Run ROOTLINE plan-only ledger disposable-Postgres tests
+        run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_irrigation_command_ledger_postgres tests.test_irrigation_daily_plan_postgres
+
+      - name: Run ROOTLINE Operating Knowledge policy-review permission gates
+        run: ROOTLINE_POLICY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_operating_policy_postgres
+
+      - name: Run ROOTLINE Water and Energy Plan permission gates
+        run: ROOTLINE_WATER_ENERGY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_water_energy_plan_postgres
+
+      - name: Run HERDMASTER breeding operating-loop gates
+        run: |
+          python - <<'PY'
+          import tests.test_herdmaster_breeding_operating_loop as suite
+          tests = [
+              getattr(suite, name) for name in dir(suite)
+              if name.startswith("test_")
+          ]
+          for test in tests:
+              test()
+          print(f"{len(tests)} HERDMASTER operating-loop gates passed")
+          PY
+
+      - name: Run SAM Meat PostgreSQL deadline gates without skips
+        env:
+          SAM_MEAT_DEADLINE_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m unittest tests.test_sam_meat_database_deadline_postgres
+      - name: Run SAM Meat production-shaped snapshot gates without skips
+        env:
+          SAM_MEAT_DEADLINE_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m unittest tests.test_sam_meat_truth_snapshot_postgres
       - name: Run Oom Sakkie audit-rail suite with live checks enabled
-        run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book tests.test_meat_match_engine tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_sales_conversation_learning tests.test_beacon_media_library tests.test_beacon_campaign
+        run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book tests.test_meat_match_engine tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_sales_conversation_learning tests.test_beacon_media_library tests.test_beacon_campaign tests.test_beacon_media_intake tests.test_beacon_media_intake_routes
 
       - name: Check Oom Sakkie JavaScript syntax
         run: |

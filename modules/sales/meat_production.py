@@ -38,14 +38,19 @@ EVENT_STATUS = {
 }
 
 
-def list_meat_processing_batches(database_url=None):
+def list_meat_processing_batches(database_url=None, database_deadline=None):
     database_url = _db_url(database_url)
     if not database_url:
         return _unavailable(), 503
     try:
         import psycopg
         from psycopg.rows import dict_row
-        with psycopg.connect(database_url, connect_timeout=10, row_factory=dict_row) as connection:
+        connection_context = (
+            database_deadline.connect(database_url, row_factory=dict_row)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10, row_factory=dict_row)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -163,7 +168,7 @@ def create_meat_processing_batch(payload=None, database_url=None):
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
                 pig_ids = [item["pig_id"] for item in clean_pigs]
-                cursor.execute("select pig_id, tag_number from public.pig_current_state where pig_id = any(%s)", (pig_ids,))
+                cursor.execute("select pig_id, tag_number from public.current_canonical_pig_state where pig_id = any(%s)", (pig_ids,))
                 canonical = {row[0]: row[1] for row in cursor.fetchall()}
                 missing = [pig_id for pig_id in pig_ids if pig_id not in canonical]
                 if missing:

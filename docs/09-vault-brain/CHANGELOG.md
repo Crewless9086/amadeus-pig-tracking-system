@@ -1,4 +1,183 @@
 # Vault Brain Changelog
+## 2026-07-31 - Owner Attention Queue existing-rail adapter prepared
+
+- Connected current SAM inbox dispositions to the consolidated queue after
+  normal SAM processing, with adapter failure contained from the sales lane.
+- Reused the existing owner-card lifecycle, review-event evidence rail,
+  Telegram send/edit helpers and authenticated Oom Sakkie callback; added no
+  bot, trigger, router, webhook, workflow family, table or decision ledger.
+- Kept ordinary activity summary-only, incomplete protected evidence
+  buttonless, consumption receipt-bound, resolution in-place and every
+  customer/farm/protected action outside adapter authority.
+
+## 2026-07-31 - Oom Sakkie consolidated Owner Attention Queue prepared
+
+- Added an I/O-free coordination kernel for one deduplicated sales-status
+  summary per period, exact-bound protected owner-decision cards and separate
+  buttonless systemic SAM alerts.
+- Ordinary inbounds, acknowledgements, automatically handled conversations and
+  qualification progress create no individual Telegram item or buttons.
+- Latest proven conversation chronology wins, conflicting ties fail closed,
+  and unchanged systemic incidents deduplicate across reporting periods.
+- Changed chronology or evidence prepares an in-place button-removal edit.
+  Consumption remains unperformed: the kernel prepares a trusted-owner-bound
+  atomic intent, and only an existing-rail authoritative receipt can prepare
+  the resolved-card edit. Receipt replay is a complete no-op.
+- Preserved the existing SAM owner-card lifecycle, GateKeeper route, Telegram
+  bot/trigger and decision evidence rail. No runtime, customer, farm, Telegram,
+  deployment or configuration action occurred.
+
+## 2026-07-27 - SAM Meat owner-assisted launch truth reconciled
+
+- Replaced the retired four-set new-sales menu with Amadeus Signature, Ember and Grand Cut while preserving Set D as historical evidence only.
+- Recorded two independent half-carcass collection choices for a full carcass, R130/kg including VAT, a 50% estimated deposit, final butcher-confirmed packed-weight billing, delivery-only fulfilment and unresolved delivery fee/timing/transport packaging.
+- Kept customer send, binding quote/order, payment confirmation, reservation/allocation and slaughter actions owner-protected. Conversation 2033 remains a prepare-only regression; no customer or business action was performed.
+
+## 2026-07-27 - CORE observe-only ownership handshake integrated
+
+- PR #539 merged normally as
+  `ce8971dff7605a91120a63c26dd22d81ca413360` after exact-head CI and an
+  independent security/architecture approval.
+- Added a dedicated credential-free observe-only child and bound mode,
+  revision, generation, nonces, live launcher/interpreter topology, creation
+  identity, signed tree digests, heartbeat, watchdog decision, and governed
+  stop evidence.
+- Observe-only cannot import or invoke mission-store, execution-provider, or
+  recovery paths; cannot query or acquire missions/leases; and cannot mutate
+  mission, queue, stage, review, artifact, product, customer, farm, migration,
+  deployment, or business state.
+- Current main and Render are exactly
+  `1c47e53d5121d2fae5e49019f88872838b80d47c`
+  (`dep-d9jni4741pts73bd639g`, HTTP 200). Local runtime, execution, and
+  manifest remain `98cfe04e4ea23a4ddc43525671bb56de0a49670d`.
+- Code available/merged/hosted: yes/yes/yes. Local promotion, handshake
+  execution, ordinary startup, mission processing, and natural proof:
+  no/no/no/no/no.
+- CORE remains stopped with the canonical stop marker present and watchdog
+  disabled. No T0 mission or PR #466 action occurred.
+
+## 2026-07-27 - ROOTLINE Daily Advisor integrated and verified
+
+- PR #544 merged normally as
+  `bd66fade8b753412a47994894f7e1aa881fc83f1`; all three exact-merge
+  checks passed. Render deployment `dep-d9jndo1oagis7390c2eg` is live at
+  that exact revision and `/health` returned HTTP 200.
+- One owner-authenticated read-only production verification returned the
+  ROOTLINE dashboard and Daily Advisor successfully. Anonymous direct Advisor
+  access returned structured HTTP 403, and the anonymous dashboard shell
+  contained no protected canary payload.
+- B12345 and C12345 both returned `Needs Data` with no proposed runtime.
+  Current weather was fresh while the forecast was stale; Unknown policy and
+  unavailable delivery evidence remained explicit and fail-closed.
+- Legacy planned minutes remained historical/provisional evidence. Observed
+  runtime, measured water and verified watering remained Unavailable. The
+  C12345 canary remained one supervised identity-and-shutdown proof and did
+  not become watering or routine control authority.
+- Every write, plan, command, schedule, workflow, n8n/IFTTT, retry and hardware
+  authority flag remained false. No migration, evidence row, production plan,
+  command, schedule, workflow, irrigation request or hardware action occurred.
+
+## 2026-07-27 - ROOTLINE operating knowledge and Daily Advisor candidate
+
+- Recorded Charl's approved initial B12345/C12345 operating policy, keeping
+  unknown seasonal, window, runtime, crop-need and forecast-rain values
+  explicit and fail-closed.
+- Added a command-inert owner-only Daily Advisor candidate on the existing
+  Rootline dashboard. Legacy planned minutes, observed runtime and measured
+  delivery remain separate; no unknown numeric policy becomes zero.
+- Reconciled supervised C12345 packet
+  `ROOTLINE-CANARY-C12345-CH2-20260727-32B0D177-G1` and evidence SHA-256
+  `ef388830f14056bf7baea2915950a655ae77c8f7c058b8e1f9f1c92638d028ab`:
+  correct channel-2 opening and dripper flow, observed closure and stopped
+  full-pressure supply, diminishing residual drainage with decay time
+  unavailable, zero retries, no manual isolation, final safe closed.
+- The canary is one physical identity-and-shutdown proof only. Added a
+  design-only append-only evidence contract; no migration, evidence append,
+  plan, command, schedule, workflow, IFTTT/n8n invocation, or hardware
+  authority is included.
+
+## 2026-07-27 - BEACON private media-intake foundation candidate
+
+- Built a default-disabled OOM SAKKIE-to-BEACON JPEG/PNG intake candidate with
+  exact owner-user/private-chat binding, deterministic replay identities,
+  bounded streaming, magic/MIME/decoder validation, server SHA-256, private
+  storage readback and explicit album completion.
+- Added an unapplied additive provenance migration with SHA-256 canonical
+  binary deduplication, immutable source links, append-only intake,
+  understanding and library events, RLS, client-role denial and least-
+  privilege service access.
+- Added owner-authenticated private thumbnails/contact sheets and separate
+  Library Accept, Public-use Approve, Reject, Archive and owner-context
+  controls. None grants publication authority.
+- Videos remain visibly unsupported until bounded resumable transport is
+  separately reviewed. Historical OneDrive/folder import remains unstarted.
+- Designed/built: yes/yes. Migration applied/gateway active/first intake
+  canary/historical import/public-use change/publication authority:
+  no/no/no/no/no/no/no.
+
+## 2026-07-27 - BEACON owner media-intake direction
+
+- Recorded `BEACON-MEDIA-INTAKE-1` as the queued milestone after the
+  confirmed-publication learning loop reached a clean integration point.
+- Selected the existing owner-controlled OOM SAKKIE Telegram bot as the
+  preferred phone photo/video/album intake gateway, with BEACON responsible
+  for private storage, hashing, provenance, understanding, cataloguing, visual
+  review, approval state, and usage history.
+- Required thumbnails/contact sheets and enlarged previews so the owner
+  approves visible media rather than filenames.
+- Separated intake receipt, library acceptance, public-use approval, and exact
+  publication authorization.
+- Kept historical OneDrive/folder ingestion as a later bounded phase using the
+  same hash/provenance contract.
+- This records owner-approved direction only. Telegram media intake,
+  historical import, public use, posting, scheduling, messaging, advertising,
+  and spending received no activation authority.
+
+## 2026-07-27 - CORE controller-observed ownership bootstrap
+
+- Recorded PR #517's controller-observed Windows launcher/interpreter
+  bootstrap, signed full-tree acknowledgement, exact
+  generation/revision/nonce/process binding, pickup gating, and fail-closed
+  tree containment.
+- Made the canonical stop marker an explicit owner-controlled boundary across
+  governed start, direct supervisor startup, pickup, recovery, and watchdog
+  paths; startup may not remove it implicitly.
+- Recorded exact code merge and hosted deployment
+  `0c4eb404fce6df8dfc2e8aab100690697d6e7cb9` while keeping local promotion,
+  startup, watchdog enablement, mission pickup, and T0 proof explicitly
+  separate and not yet authorized.
+- Marked open PR #530's 2026-07-26 night handover as stale and
+  non-authoritative pending reconciliation or closure. SAM Live Stock P0
+  remains the business priority and is outside this documentation change.
+
+## 2026-07-27 - Beacon confirmed-publication learning canary
+
+- Merged the persisted-evidence graduation correction as PR #529, exact merge
+  `9feb7bee5d645a19a5a44df0aa814acbdee93ca4`.
+- Appended one canonical confirmed-publication event for Facebook post
+  `920598737794159_122145593991122163`; exact replay was withheld and altered
+  evidence conflicted.
+- Recomputed graduation from persisted evidence and appended a fresh
+  `not_eligible` evaluation: one confirmed post, one reliable run, no
+  compatible performance window, no owner usefulness rating and no policy
+  evidence counted for graduation.
+- Preserved recommendation-only authority. No Meta read, publication, retry,
+  scheduling, message, boost, advertisement, spend or cross-post access
+  occurred; the 24-hour performance window was not yet due.
+
+## 2026-07-25
+
+- Added the Rootline owner-only daily brief contract and implementation map:
+  advisory evidence composition, explicit unavailable/stale/conflict handling,
+  per-zone proceed/hold/review recommendations, and deterministic zero
+  hardware/write/alert authority.
+- PR #464 merged and deployed the Level 1 Daily Brief at exact merge
+  `187e07fb9f531549d35b04824ec9149875fabb85`; one controlled owner-only route
+  read returned structured HTTP 200 evidence. Telemetry remained partial:
+  tank, pump, and borehole evidence unavailable; forecast stale; all-zero
+  power suspicious/unverified; no zone received `proceed`. IFTTT and hardware
+  control were not authorized or activated, and autonomous irrigation remains
+  non-operational.
 
 ## 2026-07-24 - Herdmaster breeding match safety-field repair
 
@@ -291,3 +470,13 @@
 - Bound exact Facebook copy, approved media hash, source revisions, cap, price, and SAM attribution into a deterministic packet that is server-revalidated before the existing exact owner confirmation gate.
 - Kept WhatsApp suggestion-only and preserved all no-send, no-reservation, no-order, no-stock-change, no-spend, and no-lifecycle-write boundaries.
 - Added a deterministic append-only pre-send claim so retries and concurrent duplicates stop before Meta, while the returned Facebook post ID remains separate append-only result evidence.
+# 2026-08-01 — BEACON server-derived publication hash correction prepared
+
+- Corrected Facebook image execution to derive hash trust only from authenticated
+  private-object readback joined to canonical server media and approval lineage.
+- Added fail-closed byte, MIME, object-version, freshness, changed-media,
+  concurrency, replay and ambiguous-provider regressions. No runtime, Meta,
+  publication, Telegram, merge or deployment action occurred.
+- Preserved terminal failed claim `BEACON-FB-POST-A3E2BBED0CEA5F93E2` and prepared
+  successor execution identity `BEACON-PUBLICATION-EXECUTION-928F7D5A9731FFDE3D62CE1A`
+  plus a timing-only Oom Sakkie reauthorization handover.

@@ -40,6 +40,11 @@ Before a CHARLIE CORE mission is review-ready, Brain Guard checks:
 - business/legal gates remain correct;
 - stale docs or contradictions are called out;
 - `CHANGELOG.md` is updated when needed.
+- an agent-behavior change proves the complete customer journey, including
+  multi-turn context, routing/graduation, tool-call boundaries, topic changes,
+  send/action gates, and the final customer or owner outcome;
+- isolated component tests and document citations are not presented as proof of
+  journey readiness.
 
 ## Runtime Enforcement
 
@@ -65,6 +70,18 @@ The second runtime pass adds stronger operating rails:
 - The command center exposes autonomy readiness, Vault retrieval counts, owner preference rules, tool permissions, model registry, and remaining safety boundaries.
 
 Brain Guard still cannot self-approve. It can only prove whether Vault discipline is strong enough for owner review.
+
+For agent-behavior missions, Vault citation coverage proves doctrine was
+consulted; it does not prove behavior. Brain Guard must block review-ready status
+until an end-to-end journey replay or equivalent integration evidence exercises
+the full customer path and reports the applicable outcome and interruption
+metrics.
+
+For customer-message or document-delivery missions, Brain Guard must enforce
+`../07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md`. It blocks review-ready
+claims that equate HTTP/Chatwoot acceptance with provider delivery, replace
+provider identity with application idempotency, automatically retry accepted
+or ambiguous attempts, or mark owner-card cleanup as customer completion.
 
 ## Agentic Architecture Gate
 

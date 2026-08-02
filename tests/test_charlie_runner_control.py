@@ -1,15 +1,842 @@
 import tempfile
 import unittest
+import base64
 import json
+import os
+import subprocess
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from modules.charlie import runner_control
+from modules.charlie import process_ownership, runner_control
+from scripts import charlie_runner_control as runner_control_cli
+
+
+def successful_bootstrap_observation(root_pid, *, generation, revision, startup_nonce, **_kwargs):
+    root = {
+        "pid": root_pid, "creation_time": "launcher-created",
+        "executable_path": "C:/venv/python.exe",
+        "command_fingerprint": "launcher-command", "parent_pid": 999,
+        "runner_generation": generation, "mission_id": "charlie-control",
+        "execution_id": generation, "ownership_type": "charlie_runner",
+        "revision": revision, "startup_nonce": startup_nonce,
+        "process_role": "test_launcher",
+    }
+    interpreter = {
+        **root, "pid": int(root_pid) + 1, "parent_pid": root_pid,
+        "creation_time": "interpreter-created",
+        "command_fingerprint": "interpreter-command",
+        "process_role": "test_interpreter",
+    }
+    return {
+        "success": True,
+        "tree": {
+            "version": "charlie_process_tree_v1",
+            "runner_generation": generation,
+            "root_pid": root_pid,
+            "root": root,
+            "members": [root, interpreter],
+        },
+        "validation": {"authorized": True, "member_pids": [root_pid, int(root_pid) + 1]},
+    }
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    def test_observe_only_active_state_is_reported_truthfully(self):
+        self.assertEqual(
+            runner_control._runner_operating_state(
+                {"execution_mode": "observe_only"}, {}, True
+            ),
+            "observe_only",
+        )
+
+    def test_observe_only_packet_requires_exact_mode(self):
+        tree = successful_bootstrap_observation(
+            100, generation="g", revision="r", startup_nonce="n"
+        )["tree"]
+        packet = {
+            "version": runner_control.SUPERVISOR_PACKET_VERSION,
+            "generation": "g",
+            "startup_nonce": "n",
+            "created_at": "now",
+            "intended_runtime_revision": "r",
+            "intended_execution_revision": "r",
+            "runner_state": "not_spawned",
+            "status": "supervisor_ready",
+            "supervisor_tree_identity": tree,
+        }
+        valid, reason = runner_control.validate_supervisor_packet(
+            packet, "g", "r", "r",
+            runner_states={"not_spawned"}, startup_nonce="n",
+            statuses={"supervisor_ready"}, execution_mode="observe_only",
+        )
+        self.assertFalse(valid)
+        self.assertEqual(reason, "supervisor_packet_execution_mode_mismatch")
+
+    def test_invalid_execution_mode_never_spawns(self):
+        result, status = runner_control.start_runner(
+            status_override={"active": False}, execution_mode="forged"
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(result["status"], "execution_mode_invalid")
+    @unittest.skipUnless(os.name == "nt", "Windows launcher-first exit harness")
+    def test_windows_exited_launcher_still_contains_unobserved_child(self):
+        powershell = (
+            Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        )
+        process = subprocess.Popen(
+            [
+                str(powershell), "-NoProfile", "-NonInteractive", "-Command",
+                "Start-Process powershell.exe -ArgumentList "
+                "'-NoProfile','-NonInteractive','-Command',"
+                "'Start-Sleep -Seconds 120' -WindowStyle Hidden;"
+                "Start-Sleep -Seconds 1",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            **runner_control.background_process_kwargs(),
+        )
+        process.wait(timeout=15)
+        descendants = process_ownership.inspect_descendant_processes(process.pid)
+        if not descendants:
+            self.skipTest("Windows did not retain the detached child parent identity")
+        try:
+            containment = runner_control._contain_spawned_process(process, {})
+            self.assertTrue(containment["success"], containment)
+            self.assertFalse(
+                process_ownership.inspect_descendant_processes(process.pid)
+            )
+        finally:
+            for descendant in process_ownership.inspect_descendant_processes(
+                process.pid
+            ):
+                subprocess.run(
+                    ["taskkill", "/PID", str(descendant["pid"]), "/T", "/F"],
+                    capture_output=True, text=True, check=False,
+                )
+
+    @unittest.skipUnless(os.name == "nt", "Windows failed-start containment harness")
+    def test_windows_failed_start_leaves_zero_observed_processes(self):
+        if not process_ownership._windows_process_snapshot():
+            self.skipTest("Windows process inspection is unavailable to this session")
+        powershell = (
+            Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        )
+        command = (
+            "$p=Start-Process powershell.exe -ArgumentList "
+            "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120' "
+            "-PassThru -WindowStyle Hidden; Wait-Process -Id $p.Id"
+        )
+        failure_mode = "failed_start"
+        process = subprocess.Popen(
+                    [
+                        str(powershell), "-NoProfile", "-NonInteractive",
+                        "-Command", command,
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    **runner_control.background_process_kwargs(),
+                )
+        tree = {}
+        try:
+            observed = process_ownership.observe_process_tree(
+                        process.pid,
+                        generation=f"generation-{failure_mode}",
+                        revision="revision-1",
+                        startup_nonce=f"nonce-{failure_mode}",
+                        expected_script="",
+                        expected_root_executable=str(powershell),
+                        process_role_prefix="supervisor",
+                        timeout_seconds=10,
+                    )
+            self.assertTrue(observed["success"], observed)
+            tree = observed["tree"]
+            containment = runner_control._contain_spawned_process(
+                        process, tree
+                    )
+            self.assertTrue(containment["success"], containment)
+            for member in tree.get("members") or []:
+                self.assertIsNone(
+                            runner_control.inspect_process(member.get("pid")),
+                            (failure_mode, member),
+                        )
+        finally:
+            if process.poll() is None:
+                subprocess.run(
+                            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                            capture_output=True, text=True, check=False,
+                        )
+
+    @unittest.skipUnless(os.name == "nt", "Windows governed lifecycle harness")
+    def test_windows_governed_start_and_stop_exact_observed_tree(self):
+        if not process_ownership._windows_process_snapshot():
+            self.skipTest("Windows process inspection is unavailable to this session")
+        powershell = (
+            Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        )
+        command = (
+            "$p=Start-Process powershell.exe -ArgumentList "
+            "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120' "
+            "-PassThru -WindowStyle Hidden; Wait-Process -Id $p.Id"
+        )
+        original_observe = runner_control.observe_process_tree
+        publisher_threads = []
+        runner_pids = []
+        publisher_failures = []
+
+        def observe(root_pid, *, generation, revision, startup_nonce, **_kwargs):
+            result = original_observe(
+                root_pid,
+                generation=generation,
+                revision=revision,
+                startup_nonce=startup_nonce,
+                expected_root_executable=str(powershell),
+                process_role_prefix="supervisor",
+                timeout_seconds=10,
+            )
+            if result.get("success"):
+                tree = result["tree"]
+                excluded_pids = set()
+                if runner_pid_path.exists():
+                    excluded_pids.add(
+                        int(runner_pid_path.read_text(encoding="utf-8"))
+                    )
+                    changed = True
+                    while changed:
+                        changed = False
+                        for item in tree["members"]:
+                            if (
+                                int(item.get("parent_pid") or -1)
+                                in excluded_pids
+                                and int(item.get("pid") or -1)
+                                not in excluded_pids
+                            ):
+                                excluded_pids.add(
+                                    int(item.get("pid") or -1)
+                                )
+                                changed = True
+                members = [
+                    item for item in tree["members"]
+                    if int(item.get("pid") or -1) not in excluded_pids
+                ]
+                tree = process_ownership.make_process_tree_record(
+                    tree["root"], members, generation
+                )
+                result["tree"] = tree
+                result["validation"] = process_ownership.validate_bootstrap_tree(
+                    tree,
+                    generation=generation,
+                    revision=revision,
+                    startup_nonce=startup_nonce,
+                )
+                def publish_runner_ready():
+                    try:
+                        deadline = time.monotonic() + 30
+                        packet = {}
+                        while time.monotonic() <= deadline:
+                            packet = runner_control._read_json(
+                                runner_control.SUPERVISOR_PATH
+                            )
+                            if packet.get("controller_acknowledgement"):
+                                break
+                            time.sleep(0.05)
+                        runner_nonce = "windows-harness-runner-nonce"
+                        deadline = time.monotonic() + 30
+                        while (
+                            not runner_pid_path.exists()
+                            and time.monotonic() <= deadline
+                        ):
+                            time.sleep(0.05)
+                        if not runner_pid_path.exists():
+                            publisher_failures.append("runner_pid_not_published")
+                            return
+                        runner_pid = int(
+                            runner_pid_path.read_text(encoding="utf-8")
+                        )
+                        runner_pids.append(runner_pid)
+                        runner_observation = original_observe(
+                        runner_pid,
+                        generation=generation,
+                        revision=revision,
+                        startup_nonce=runner_nonce,
+                        expected_script="",
+                        expected_root_executable=str(powershell),
+                        expected_root_parent_pid=root_pid,
+                        process_role_prefix="runner",
+                        timeout_seconds=10,
+                        )
+                        if not runner_observation.get("success"):
+                            publisher_failures.append(
+                                str(runner_observation)
+                            )
+                            return
+                        runner_tree = runner_observation["tree"]
+                        runner_members = list(runner_tree["members"])
+                        runner_tree = process_ownership.make_process_tree_record(
+                            runner_tree["root"], runner_members, generation
+                        )
+                        runner_identity = runner_tree["members"][-1]
+                        packet.update({
+                        "status": "running",
+                        "runner_state": "running",
+                        "child_pid": runner_pid,
+                        "child_identity": runner_tree["root"],
+                        "process_tree_identity": runner_tree,
+                        "runner_startup_nonce": runner_nonce,
+                        "runner_controller_acknowledgement": {
+                            "generation": generation,
+                            "startup_nonce": runner_nonce,
+                            "revision": revision,
+                            "runner_tree_digest": (
+                                process_ownership.process_tree_identity_digest(
+                                    runner_tree
+                                )
+                            ),
+                        },
+                        })
+                        runner_control.atomic_write_json(
+                            runner_control.SUPERVISOR_PATH, packet
+                        )
+                        runner_control.atomic_write_json(
+                            runner_control.HEARTBEAT_PATH,
+                            {
+                            "last_result_status": "ownership_ready",
+                            "supervisor_generation": generation,
+                            "runner_source_commit": revision,
+                            "startup_nonce": runner_nonce,
+                            "pid": runner_identity["pid"],
+                            "process_identity": runner_identity,
+                            },
+                        )
+                    except Exception as exc:
+                        publisher_failures.append(repr(exc))
+                publisher = threading.Thread(
+                    target=publish_runner_ready, daemon=True
+                )
+                publisher.start()
+                publisher_threads.append(publisher)
+            return result
+
+        started_pid = 0
+        original_wait_for_ack = runner_control._wait_for_supervisor_ack
+        with tempfile.TemporaryDirectory() as tmp:
+            stop_path = Path(tmp) / "supervisor.stop"
+            runner_pid_path = Path(tmp) / "runner.pid"
+            quoted_stop = str(stop_path).replace("'", "''")
+            quoted_runner_pid = str(runner_pid_path).replace("'", "''")
+            helper_script = (
+                f"while (!(Test-Path -LiteralPath '{quoted_stop}')) "
+                "{ Start-Sleep -Milliseconds 100 }"
+            )
+            helper_encoded = base64.b64encode(
+                helper_script.encode("utf-16le")
+            ).decode("ascii")
+            runner_script = (
+                "$c=Start-Process powershell.exe -ArgumentList "
+                "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120' "
+                "-PassThru -WindowStyle Hidden;Wait-Process -Id $c.Id"
+            )
+            runner_encoded = base64.b64encode(
+                runner_script.encode("utf-16le")
+            ).decode("ascii")
+            supervisor_command = (
+                "$s=Start-Process powershell.exe -ArgumentList "
+                f"'-NoProfile -NonInteractive -EncodedCommand {helper_encoded}' "
+                "-PassThru -WindowStyle Hidden;"
+                "$r=Start-Process powershell.exe -ArgumentList "
+                f"'-NoProfile -NonInteractive -EncodedCommand {runner_encoded}' "
+                "-PassThru -WindowStyle Hidden;"
+                f"Set-Content -LiteralPath '{quoted_runner_pid}' -Value $r.Id;"
+                "Wait-Process -Id $s.Id"
+            )
+            with patch.dict(os.environ, {
+                "CHARLIE_TEST_ISOLATION": "0",
+                process_ownership.TERMINATION_ENABLE_ENV:
+                    process_ownership.TERMINATION_ENABLE_VALUE,
+            }, clear=False), patch.object(
+                runner_control, "RUNNER_DIR", Path(tmp)
+            ), patch.object(
+                runner_control, "LOG_PATH", Path(tmp) / "runner.log"
+            ), patch.object(
+                runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+            ), patch.object(
+                runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"
+            ), patch.object(
+                runner_control, "SUPERVISOR_STOP_PATH", stop_path
+            ), patch.object(
+                runner_control, "SUPERVISOR_COMMAND",
+                [
+                    str(powershell), "-NoProfile", "-NonInteractive", "-Command",
+                    supervisor_command,
+                ],
+            ), patch.object(
+                runner_control, "runner_status",
+                return_value={
+                    "active": False,
+                    "status": "runner_not_started",
+                    "orphan_processes": [],
+                },
+            ), patch.object(
+                runner_control, "_current_git_commit", return_value="revision-1"
+            ), patch.object(
+                runner_control, "observe_process_tree", side_effect=observe
+            ), patch.object(
+                runner_control,
+                "_wait_for_supervisor_ack",
+                side_effect=lambda *args, **kwargs: original_wait_for_ack(
+                    *args, **{**kwargs, "timeout_seconds": 90}
+                ),
+            ):
+                try:
+                    started, start_status = runner_control.start_runner()
+                    self.assertEqual(
+                        start_status, 200,
+                        {"start": started, "publisher_failures": publisher_failures},
+                    )
+                    started_pid = int(started["pid"])
+                    original_validate_tree = (
+                        process_ownership.validate_process_tree
+                    )
+                    original_validate_termination = (
+                        process_ownership.validate_termination
+                    )
+
+                    def independent_inspector(pid):
+                        inspected = process_ownership.inspect_process(pid)
+                        if isinstance(inspected, dict):
+                            inspected["current_process_ancestry"] = []
+                        return inspected
+
+                    def independent_tree(tree, expected, _inspector, **kwargs):
+                        return original_validate_tree(
+                            tree,
+                            expected,
+                            independent_inspector,
+                            current_pid=-999,
+                            require_descendant=kwargs.get("require_descendant", False),
+                            allow_current_descendant=kwargs.get(
+                                "allow_current_descendant", False
+                            ),
+                        )
+
+                    def independent_termination(record, expected, _inspector, **kwargs):
+                        return original_validate_termination(
+                            record,
+                            expected,
+                            independent_inspector,
+                            current_pid=-999,
+                            allow_current_descendant=kwargs.get(
+                                "allow_current_descendant", False
+                            ),
+                        )
+
+                    with patch.object(
+                        runner_control, "validate_process_tree",
+                        side_effect=independent_tree,
+                    ), patch.object(
+                        runner_control, "validate_termination",
+                        side_effect=independent_termination,
+                    ):
+                        stopped, stop_status = runner_control.stop_runner()
+                    self.assertEqual(stop_status, 200, stopped)
+                    self.assertTrue(
+                        stopped["supervisor_containment"]["success"], stopped
+                    )
+                    self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
+                    deadline = time.monotonic() + 10
+                    while (
+                        runner_control.inspect_process(started_pid)
+                        and time.monotonic() <= deadline
+                    ):
+                        time.sleep(0.05)
+                    self.assertIsNone(runner_control.inspect_process(started_pid))
+                    for runner_pid in runner_pids:
+                        self.assertIsNone(
+                            runner_control.inspect_process(runner_pid),
+                            runner_pid,
+                        )
+                    for publisher in publisher_threads:
+                        publisher.join(timeout=5)
+                finally:
+                    for runner_pid in runner_pids:
+                        if runner_control.inspect_process(runner_pid):
+                            subprocess.run(
+                                ["taskkill", "/PID", str(runner_pid), "/T", "/F"],
+                                capture_output=True, text=True, check=False,
+                            )
+                    if started_pid and runner_control.inspect_process(started_pid):
+                        subprocess.run(
+                            ["taskkill", "/PID", str(started_pid), "/T", "/F"],
+                            capture_output=True, text=True, check=False,
+                        )
+
+    def test_governed_start_default_never_removes_stop_marker(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(runner_control.subprocess, "Popen") as popen:
+            runner_control.SUPERVISOR_STOP_PATH.write_text(
+                "owner stop", encoding="utf-8"
+            )
+            result, status = runner_control.start_runner()
+            marker = runner_control.SUPERVISOR_STOP_PATH.read_text(encoding="utf-8")
+        self.assertEqual(status, 423)
+        self.assertEqual(result["status"], "governed_stop_active")
+        self.assertEqual(marker, "owner stop")
+        popen.assert_not_called()
+
+    def test_stop_marker_appearing_at_spawn_boundary_prevents_process_creation(self):
+        marker = Mock()
+        marker.exists.side_effect = [False, False, True]
+        marker.__str__ = Mock(return_value="supervisor.stop")
+        with patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", marker
+        ), patch.object(
+            runner_control, "_read_json", return_value={}
+        ), patch.object(
+            runner_control, "runner_status",
+            return_value={"active": False, "orphan_processes": []},
+        ), patch.object(
+            runner_control, "process_termination_enabled", return_value=True
+        ), patch.object(
+            runner_control, "_current_git_commit", return_value="revision-1"
+        ), patch.object(runner_control.subprocess, "Popen") as popen:
+            result, status = runner_control.start_runner()
+        self.assertEqual(status, 423)
+        self.assertEqual(result["status"], "governed_stop_active")
+        popen.assert_not_called()
+
+    def test_supported_cli_start_cannot_remove_stop_marker(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(
+            runner_control_cli.sys, "argv", ["charlie_runner_control.py", "start"]
+        ), patch.object(runner_control.subprocess, "Popen") as popen:
+            runner_control.SUPERVISOR_STOP_PATH.write_text(
+                "owner stop", encoding="utf-8"
+            )
+            exit_code = runner_control_cli.main()
+            marker = runner_control.SUPERVISOR_STOP_PATH.read_text(encoding="utf-8")
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(marker, "owner stop")
+        popen.assert_not_called()
+
+    def test_final_acknowledgement_binds_both_live_trees_and_nonces(self):
+        generation = "generation-1"
+        revision = "revision-1"
+        supervisor_tree = successful_bootstrap_observation(
+            100,
+            generation=generation,
+            revision=revision,
+            startup_nonce="supervisor-nonce",
+        )["tree"]
+        runner_tree = successful_bootstrap_observation(
+            200,
+            generation=generation,
+            revision=revision,
+            startup_nonce="runner-nonce",
+        )["tree"]
+        runner_identity = runner_tree["members"][1]
+        private_key, public_key = (
+            process_ownership.generate_controller_signing_key()
+        )
+        packet = {
+            "version": runner_control.SUPERVISOR_PACKET_VERSION,
+            "generation": generation,
+            "startup_nonce": "supervisor-nonce",
+            "created_at": "created",
+            "updated_at": "updated",
+            "intended_runtime_revision": revision,
+            "intended_execution_revision": revision,
+            "status": "running",
+            "runner_state": "running",
+            "supervisor_tree_identity": supervisor_tree,
+            "process_tree_identity": runner_tree,
+            "runner_startup_nonce": "runner-nonce",
+            "runner_controller_acknowledgement": {
+                "generation": generation,
+                "startup_nonce": "runner-nonce",
+                "revision": revision,
+                "runner_tree_digest": (
+                    process_ownership.process_tree_identity_digest(runner_tree)
+                ),
+            },
+            "controller_public_key": public_key,
+        }
+        heartbeat = {
+            "last_result_status": "ownership_ready",
+            "supervisor_generation": generation,
+            "runner_source_commit": revision,
+            "startup_nonce": "runner-nonce",
+            "pid": runner_identity["pid"],
+            "process_identity": runner_identity,
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(
+            runner_control, "validate_live_bootstrap_tree",
+            side_effect=[
+                {"authorized": True, "member_pids": [100, 101]},
+                {"authorized": True, "member_pids": [200, 201]},
+            ],
+        ), patch.object(runner_control, "_pid_alive", return_value=True):
+            runner_control.atomic_write_json(runner_control.SUPERVISOR_PATH, packet)
+            runner_control.atomic_write_json(runner_control.HEARTBEAT_PATH, heartbeat)
+            result = runner_control._wait_for_supervisor_ack(
+                generation,
+                revision,
+                supervisor_pid=100,
+                startup_nonce="supervisor-nonce",
+                controller_private_key=private_key,
+                controller_public_key=public_key,
+                timeout_seconds=1,
+                sleep_fn=lambda _seconds: None,
+            )
+            persisted = json.loads(
+                runner_control.SUPERVISOR_PATH.read_text(encoding="utf-8")
+            )
+        self.assertTrue(result["success"])
+        self.assertEqual(persisted["status"], "running_authorized")
+        final = persisted["controller_final_acknowledgement"]
+        self.assertEqual(final["supervisor_startup_nonce"], "supervisor-nonce")
+        self.assertEqual(final["runner_startup_nonce"], "runner-nonce")
+        self.assertEqual(final["supervisor_pid"], "100")
+        self.assertEqual(final["runner_pid"], "201")
+
+    def test_partial_current_generation_acknowledgement_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(runner_control, "_pid_alive", return_value=True):
+            runner_control.atomic_write_json(
+                runner_control.SUPERVISOR_PATH,
+                {
+                    "version": runner_control.SUPERVISOR_PACKET_VERSION,
+                    "generation": "generation-1",
+                },
+            )
+            result = runner_control._wait_for_supervisor_ack(
+                "generation-1",
+                "revision-1",
+                supervisor_pid=100,
+                startup_nonce="nonce-1",
+                timeout_seconds=0.01,
+                sleep_fn=lambda _seconds: None,
+            )
+        self.assertFalse(result["success"])
+        self.assertNotEqual(result["reason"], "")
+
+    def test_startup_failure_evidence_redacts_secrets(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "START_CONTAINMENT_PATH", Path(tmp) / "containment.json"
+        ), patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ):
+            runner_control.SUPERVISOR_STOP_PATH.write_text("stop", encoding="utf-8")
+            evidence = runner_control._write_startup_failure(
+                "generation-1",
+                "nonce-1",
+                "revision-1",
+                "postgresql://owner:secret@db.example/main",
+                {"failure_detail": {"DATABASE_URL": "postgresql://owner:secret@db/main"}},
+            )
+            raw = runner_control.START_CONTAINMENT_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("secret", raw)
+        self.assertNotIn("owner:", raw)
+        self.assertEqual(evidence["status"], "ownership_identity_incomplete")
+
+    def test_incomplete_controller_observation_is_durable_and_contained(self):
+        process = Mock(pid=4321)
+        process.poll.return_value = 1
+        incomplete_tree = {
+            "version": "charlie_process_tree_v1",
+            "root": {"pid": 4321},
+            "members": [{"pid": 4321}],
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "RUNNER_DIR", Path(tmp)
+        ), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(
+            runner_control, "START_CONTAINMENT_PATH", Path(tmp) / "containment.json"
+        ), patch.object(runner_control, "runner_status", return_value={
+            "active": False, "status": "runner_not_started", "orphan_processes": [],
+        }), patch.object(
+            runner_control, "process_termination_enabled", return_value=True
+        ), patch.object(
+            runner_control, "_current_git_commit", return_value="revision-1"
+        ), patch.object(
+            runner_control.subprocess, "Popen", return_value=process
+        ), patch.object(runner_control, "observe_process_tree", return_value={
+            "success": False,
+            "reason": "ownership_identity_incomplete:root.executable_path",
+            "tree": incomplete_tree,
+        }), patch.object(
+            runner_control, "_contain_spawned_process",
+            return_value={
+                "success": True,
+                "reason": "fresh_spawn_handle_tree_termination_verified",
+            },
+        ):
+            result, status = runner_control.start_runner()
+            evidence = json.loads(
+                runner_control.START_CONTAINMENT_PATH.read_text(encoding="utf-8")
+            )
+            self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "ownership_identity_incomplete")
+        self.assertTrue(result["containment"]["success"])
+        self.assertEqual(
+            result["containment"]["reason"],
+            "fresh_spawn_handle_tree_termination_verified",
+        )
+        self.assertEqual(
+            evidence["reason"],
+            "ownership_identity_incomplete:root.executable_path",
+        )
+        self.assertEqual(evidence["process_tree_identity"], incomplete_tree)
+
+    def test_empty_observation_falls_back_to_exact_spawn_handle_and_verifies_exit(self):
+        process = Mock(pid=4321)
+        process.poll.side_effect = lambda: 1 if process.wait.called else None
+        with patch.object(
+            runner_control, "_contain_observed_tree",
+            return_value={"success": False, "reason": "ownership_identity_incomplete"},
+        ), patch.object(
+            runner_control, "inspect_descendant_processes", return_value=[]
+        ), patch.object(
+            runner_control.subprocess, "run", return_value=Mock(returncode=0)
+        ):
+            result = runner_control._contain_spawned_process(process, {})
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            result["reason"], "fresh_spawn_handle_tree_termination_verified"
+        )
+        process.wait.assert_called()
+
+    def test_exited_launcher_still_contains_and_verifies_captured_descendant(self):
+        process = Mock(pid=4321)
+        process.poll.return_value = 1
+        descendant = {"pid": 4322, "creation_time": "child-created"}
+        child_inspections = iter([
+            {"pid": 4322, "creation_time": "child-created"},
+            None,
+        ])
+        with patch.object(
+            runner_control,
+            "_contain_observed_tree",
+            return_value={"success": False, "reason": "partial_observation"},
+        ), patch.object(
+            runner_control,
+            "inspect_descendant_processes",
+            side_effect=[[descendant], []],
+        ), patch.object(
+            runner_control,
+            "inspect_process",
+            side_effect=lambda _pid: next(child_inspections),
+        ), patch.object(
+            runner_control.os, "name", "nt"
+        ), patch.object(
+            runner_control.subprocess, "run", return_value=Mock(returncode=0)
+        ) as terminate:
+            result = runner_control._contain_spawned_process(process, {})
+        self.assertTrue(result["success"])
+        self.assertEqual(result["descendant_pids"], [4322])
+        self.assertIn(
+            ["taskkill", "/PID", "4322", "/T", "/F"],
+            [call.args[0] for call in terminate.call_args_list],
+        )
+
+    def test_atomic_state_replacement_preserves_previous_packet_on_replace_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "supervisor.json"
+            path.write_text('{"generation":"old"}', encoding="utf-8")
+            with self.assertRaises(OSError):
+                runner_control.atomic_write_json(
+                    path,
+                    {"generation": "new"},
+                    replace_fn=Mock(side_effect=OSError("replace denied")),
+                )
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"generation": "old"})
+            self.assertEqual(list(path.parent.glob("*.tmp")), [])
+
+    def test_governed_start_ack_timeout_places_stop_marker_and_contains_current_tree(self):
+        process = Mock(pid=4321)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "RUNNER_DIR", Path(tmp)
+        ), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(runner_control, "runner_status", return_value={
+            "active": False, "status": "runner_not_started", "orphan_processes": [],
+        }), patch.object(runner_control, "process_termination_enabled", return_value=True), patch.object(
+            runner_control, "_current_git_commit", return_value="revision-1"
+        ), patch.object(
+            runner_control.subprocess, "Popen", return_value=process
+        ), patch.object(runner_control, "_wait_for_supervisor_ack", return_value={
+            "success": False, "reason": "runner_heartbeat_acknowledgement_missing",
+        }), patch.object(runner_control, "stop_runner", return_value=(
+            {"success": True, "status": "runner_stop_requested"}, 200
+        )), patch.object(runner_control, "_contain_started_supervisor", return_value={
+            "success": True, "reason": "exact_supervisor_tree_terminated",
+        }), patch.object(runner_control, "observe_process_tree", side_effect=successful_bootstrap_observation):
+            result, status = runner_control.start_runner()
+            self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "runner_start_acknowledgement_failed")
+
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=False)
+    @patch("modules.charlie.runner_control.runner_status")
+    def test_governed_start_requires_bounded_containment_capability(self, status, _enabled):
+        status.return_value = {
+            "active": False, "status": "runner_not_started", "orphan_processes": [],
+        }
+        result, status_code = runner_control.start_runner()
+        self.assertEqual(status_code, 423)
+        self.assertEqual(result["status"], "start_containment_capability_not_enabled")
+
+    def test_start_timeout_contains_only_exact_fresh_supervisor_identity(self):
+        process = {
+            "pid": 4321,
+            "creation_time": "created-now",
+            "executable_path": "C:/venv/python.exe",
+            "command_line": "python charlie_runner_supervisor.py",
+            "parent_pid": 123,
+            "ancestry": [],
+            "current_process_ancestry": [],
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "START_CONTAINMENT_PATH", Path(tmp) / "containment.json"
+        ), patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(runner_control, "_stop_process_tree", return_value={
+            "authorized": True, "terminated": True, "pid": 4321,
+        }) as stop_tree:
+            runner_control.SUPERVISOR_STOP_PATH.write_text("stop", encoding="utf-8")
+            result = runner_control._contain_started_supervisor(
+                4321, "generation-1", inspector=Mock(return_value=process)
+            )
+            persisted = json.loads(runner_control.START_CONTAINMENT_PATH.read_text(encoding="utf-8"))
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "controller_observed_supervisor_identity_required"
+        )
+        self.assertEqual(persisted["supervisor_identity"], {})
+        self.assertEqual(persisted["generation"], "generation-1")
+        stop_tree.assert_not_called()
     def test_heartbeat_and_status_never_persist_environment_secrets(self):
         with tempfile.TemporaryDirectory() as tmp:
             heartbeat = Path(tmp) / "runner.json"
@@ -166,6 +993,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 "agent_ledger_path": str(ledger),
                 "stdout_tail": "running tests",
                 "stderr_tail": "",
+                "reason": "bounded diagnostic reason",
             }, heartbeat)
 
             with patch("modules.charlie.runner_control.REPO_ROOT", Path(tmp)):
@@ -187,6 +1015,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["agent_ledger"]["latest_stage"]["agent"], "builder")
         self.assertEqual(result["agent_ledger"]["latest_stage"]["commands_run"][0], "node --check static/js/charlieMissionControl.js")
         self.assertEqual(result["stdout_tail"], "running tests")
+        self.assertEqual(result["reason"], "bounded diagnostic reason")
 
     @patch("modules.charlie.runner_control._pid_alive", return_value=True)
     def test_healthy_idle_runner_reports_waiting_not_stale(self, _pid_alive):
@@ -277,24 +1106,47 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "runner_already_active")
 
-    @patch("modules.charlie.runner_control.write_runner_heartbeat")
+    @patch("modules.charlie.runner_control._current_git_commit", return_value="revision-1")
+    @patch("modules.charlie.runner_control.observe_process_tree", side_effect=successful_bootstrap_observation)
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control._wait_for_supervisor_ack", return_value={"success": True, "status": "current_generation_acknowledged"})
     @patch("modules.charlie.runner_control.subprocess.Popen")
-    def test_start_runner_accepts_watchdog_status_without_full_reprobe(self, popen, write_heartbeat):
+    def test_start_runner_accepts_watchdog_status_without_full_reprobe(self, popen, _ack, _enabled, _observe, _commit):
         popen.return_value.pid = 1234
-        write_heartbeat.return_value = {"status": "runner_started"}
         with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"):
             result, status_code = runner_control.start_runner(status_override={"active": False, "status": "runner_not_started", "orphan_processes": []})
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "runner_started")
         popen.assert_called_once()
 
-    @patch("modules.charlie.runner_control.write_runner_heartbeat")
+    @patch("modules.charlie.runner_control.subprocess.Popen")
+    def test_watchdog_start_cannot_clear_governed_stop_marker(self, popen):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ):
+            runner_control.SUPERVISOR_STOP_PATH.write_text("governed stop", encoding="utf-8")
+            result, status_code = runner_control.start_runner(
+                status_override={
+                    "active": False,
+                    "status": "runner_stale_or_stopped",
+                    "orphan_processes": [],
+                },
+                respect_stop_marker=True,
+            )
+            self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
+        self.assertEqual(status_code, 423)
+        self.assertEqual(result["status"], "governed_stop_active")
+        popen.assert_not_called()
+
+    @patch("modules.charlie.runner_control._current_git_commit", return_value="revision-1")
+    @patch("modules.charlie.runner_control.observe_process_tree", side_effect=successful_bootstrap_observation)
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control._wait_for_supervisor_ack", return_value={"success": True, "status": "current_generation_acknowledged"})
     @patch("modules.charlie.runner_control.runner_status")
     @patch("modules.charlie.runner_control.subprocess.Popen")
-    def test_start_runner_launches_supervisor(self, popen, status, write_heartbeat):
+    def test_start_runner_launches_supervisor(self, popen, status, _ack, _enabled, _observe, _commit):
         status.return_value = {"active": False, "status": "runner_not_started", "orphan_processes": []}
         popen.return_value.pid = 4321
-        write_heartbeat.side_effect = lambda _result, path: Path(path).write_text('{"pid": 0}', encoding="utf-8")
         with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"):
             result, status_code = runner_control.start_runner()
 
@@ -354,6 +1206,169 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(status_code, 409)
         self.assertEqual(result["status"], "runner_process_ownership_not_proven")
         stop_tree.assert_not_called()
+
+    @patch("modules.charlie.runner_control._stop_process_tree")
+    @patch("modules.charlie.runner_control.validate_process_tree")
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
+    @patch("modules.charlie.runner_control.runner_status")
+    def test_governed_stop_uses_launcher_tree_and_persists_evidence(
+        self, status, _disabled, _enabled, validate_tree, stop_tree
+    ):
+        root_record = {
+            "pid": 200,
+            "creation_time": "launcher-created",
+            "executable_path": "C:/venv/python.exe",
+            "command_fingerprint": "launcher-command",
+            "parent_pid": 100,
+            "runner_generation": "gen-1",
+            "mission_id": "charlie-control",
+            "execution_id": "gen-1",
+            "ownership_type": "charlie_runner",
+        }
+        interpreter_record = {**root_record, "pid": 201, "parent_pid": 200}
+        status.return_value = {"orphan_processes": [], "active": True}
+        validate_tree.return_value = {
+            "authorized": True,
+            "reason": "logical_process_tree_identity_match",
+            "pid": 200,
+            "member_pids": [200, 201],
+        }
+        stop_tree.return_value = {"authorized": True, "terminated": True, "pid": 200}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            supervisor_path = root / "supervisor.json"
+            heartbeat_path = root / "runner.json"
+            stop_path = root / "supervisor.stop"
+            supervisor_path.write_text(json.dumps({
+                "pid": 100,
+                "generation": "gen-1",
+                "child_pid": 200,
+                "child_identity": root_record,
+            }), encoding="utf-8")
+            heartbeat_path.write_text(
+                json.dumps({"pid": 201, "process_identity": interpreter_record}),
+                encoding="utf-8",
+            )
+            with patch.object(runner_control, "RUNNER_DIR", root), patch.object(
+                runner_control, "SUPERVISOR_PATH", supervisor_path
+            ), patch.object(runner_control, "HEARTBEAT_PATH", heartbeat_path), patch.object(
+                runner_control, "SUPERVISOR_STOP_PATH", stop_path
+            ):
+                result, status_code = runner_control.stop_runner()
+                persisted = json.loads(supervisor_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["pids"], [200])
+        stop_tree.assert_called_once()
+        self.assertTrue(persisted["stop_evidence"]["stop_marker_present"])
+        self.assertEqual(
+            persisted["stop_evidence"]["reason"],
+            "logical_process_tree_identity_match",
+        )
+        self.assertEqual(
+            persisted["stop_evidence"]["process_tree_identity"]["members"][1]["pid"],
+            201,
+        )
+
+    @patch("modules.charlie.runner_control._stop_process_tree")
+    @patch("modules.charlie.runner_control.validate_process_tree")
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
+    @patch("modules.charlie.runner_control.runner_status")
+    def test_governed_stop_handles_current_supervisor_before_runner_spawn(
+        self, status, _disabled, _enabled, validate_tree, stop_tree
+    ):
+        root_record = {
+            "pid": 100,
+            "creation_time": "launcher-created",
+            "executable_path": "C:/venv/python.exe",
+            "command_fingerprint": "supervisor-command",
+            "parent_pid": 50,
+            "runner_generation": "gen-1",
+            "mission_id": "charlie-control",
+            "execution_id": "gen-1",
+            "ownership_type": "charlie_runner",
+        }
+        tree = {
+            "version": "charlie_process_tree_v1",
+            "generation": "gen-1",
+            "root": root_record,
+            "members": [root_record],
+        }
+        status.return_value = {"orphan_processes": [], "active": False}
+        validate_tree.return_value = {
+            "authorized": True, "reason": "logical_process_tree_identity_match",
+            "pid": 100, "member_pids": [100],
+        }
+        stop_tree.return_value = {"authorized": True, "terminated": True, "pid": 100}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            supervisor_path = root / "supervisor.json"
+            supervisor_path.write_text(json.dumps({
+                "version": "charlie_supervisor_ownership_v2",
+                "generation": "gen-1",
+                "runner_state": "not_spawned",
+                "supervisor_tree_identity": tree,
+            }), encoding="utf-8")
+            with patch.object(runner_control, "RUNNER_DIR", root), patch.object(
+                runner_control, "SUPERVISOR_PATH", supervisor_path
+            ), patch.object(runner_control, "HEARTBEAT_PATH", root / "runner.json"), patch.object(
+                runner_control, "SUPERVISOR_STOP_PATH", root / "supervisor.stop"
+            ):
+                result, status_code = runner_control.stop_runner()
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["target_kind"], "supervisor")
+        self.assertEqual(result["pids"], [100])
+
+    @patch("modules.charlie.runner_control.validate_process_tree")
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
+    @patch("modules.charlie.runner_control.runner_status")
+    def test_governed_stop_returns_and_persists_exact_tree_rejection(
+        self, status, _disabled, _enabled, validate_tree
+    ):
+        record = {
+            "pid": 200,
+            "creation_time": "created",
+            "executable_path": "C:/python.exe",
+            "command_fingerprint": "command",
+            "parent_pid": 100,
+            "runner_generation": "gen-1",
+            "mission_id": "charlie-control",
+            "execution_id": "gen-1",
+            "ownership_type": "charlie_runner",
+        }
+        status.return_value = {"orphan_processes": [], "active": True}
+        validate_tree.return_value = {
+            "authorized": False,
+            "reason": "member_201_command_fingerprint_mismatch",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            supervisor_path = root / "supervisor.json"
+            heartbeat_path = root / "runner.json"
+            stop_path = root / "supervisor.stop"
+            supervisor_path.write_text(json.dumps({
+                "generation": "gen-1", "child_identity": record,
+            }), encoding="utf-8")
+            heartbeat_path.write_text(
+                json.dumps({"process_identity": {**record, "pid": 201}}),
+                encoding="utf-8",
+            )
+            with patch.object(runner_control, "RUNNER_DIR", root), patch.object(
+                runner_control, "SUPERVISOR_PATH", supervisor_path
+            ), patch.object(runner_control, "HEARTBEAT_PATH", heartbeat_path), patch.object(
+                runner_control, "SUPERVISOR_STOP_PATH", stop_path
+            ):
+                result, status_code = runner_control.stop_runner()
+                persisted = json.loads(supervisor_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["reason"], "member_201_command_fingerprint_mismatch")
+        self.assertEqual(persisted["stop_evidence"]["reason"], result["reason"])
+        self.assertTrue(persisted["stop_evidence"]["stop_marker_present"])
 
     @patch("modules.charlie.runner_control.process_termination_enabled", return_value=False)
     @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)

@@ -10,8 +10,9 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 DEFAULT_RATE_RANDS_PER_ONE_WAY_KM = Decimal("20.00")
 POLICY_SOURCE = "owner_policy_sam_live_stock_delivery_v1"
 SAFE_CUSTOMER_WORDING = (
-    "Collection is the normal option. Because you asked about delivery, I can prepare "
-    "a transport estimate for farm-owner review. It is not confirmed until the owner approves it."
+    "Live-pig handover is normally arranged in Riversdale or Albertinia. "
+    "Because you asked about delivery, I can prepare a transport option for "
+    "owner review. It is not confirmed until the owner approves it."
 )
 
 AUTHORITY_FLAGS = {
@@ -27,7 +28,8 @@ def live_stock_delivery_policy():
     """Expose the durable collection-first policy and its commercial source."""
     return {
         "policy_id": "sam_live_stock_delivery_v1",
-        "collection_first": True,
+        "normal_handover_points": ["Riversdale", "Albertinia"],
+        "farm_collection_offered": False,
         "openly_offer_delivery": False,
         "customer_request_required": True,
         "owner_review_required": True,
@@ -87,7 +89,7 @@ def calculate_live_stock_delivery_option(
     }
 
     if not customer_requested_delivery:
-        return {**base, "status": "collection_first_not_requested"}
+        return {**base, "status": "delivery_not_requested"}
     if not delivery_eligible:
         return {**base, "status": "delivery_not_eligible"}
 

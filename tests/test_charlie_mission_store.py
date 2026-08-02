@@ -1,5 +1,6 @@
+import json
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from modules.charlie.mission_store import (
@@ -10,6 +11,7 @@ from modules.charlie.mission_store import (
     get_mission,
     list_missions,
     list_owner_work_missions,
+    owner_execution_hold_status,
     mission_status_summary,
     normalize_approval_level,
     record_mission_review_decision,
@@ -20,6 +22,8 @@ from modules.charlie.mission_store import (
     transition_mission_review_state,
     update_mission_vault,
     _mission_queue_class,
+    _mission_metadata,
+    _orchestration_throughput_rows,
     _normalize_review_send_back_stage,
     _return_workflow_to_stage,
     _update_workflow_items,
@@ -45,6 +49,7 @@ class FakeCursor:
     def __init__(self, rows):
         self.rows = rows
         self.executed = []
+        self.inserted_metadata = None
 
     def __enter__(self):
         return self
@@ -54,8 +59,19 @@ class FakeCursor:
 
     def execute(self, sql, params=None):
         self.executed.append((sql, params or {}))
+        if "insert into public.charlie_missions" in sql and isinstance(params, dict):
+            raw = params.get("metadata_json")
+            if isinstance(raw, str):
+                import json
+                self.inserted_metadata = json.loads(raw)
 
     def fetchall(self):
+        if (
+            self.executed
+            and "select metadata_json from public.charlie_missions" in self.executed[-1][0]
+            and self.inserted_metadata is not None
+        ):
+            return [(self.inserted_metadata,)]
         return list(self.rows)
 
     def fetchone(self):
@@ -74,6 +90,23 @@ class ConflictCursor(FakeCursor):
         return None
 
 
+class CorruptOrchestrationCursor(FakeCursor):
+    def fetchall(self):
+        if (
+            self.executed
+            and "select metadata_json from public.charlie_missions" in self.executed[-1][0]
+        ):
+            return [({"agent_workflow": [{"agent": "source_mapper", "status": "active"}]},)]
+        return super().fetchall()
+
+
+class MissionInsertFailingCursor(FakeCursor):
+    def execute(self, sql, params=None):
+        if "insert into public.charlie_missions" in sql:
+            raise RuntimeError("injected replacement insert failure")
+        super().execute(sql, params)
+
+
 class FinalizationCursor(FakeCursor):
     def __init__(self, metadata):
         super().__init__([])
@@ -86,7 +119,65 @@ class FinalizationCursor(FakeCursor):
         return [("MISSION-1",)]
 
 
+def _bound_artifact(agent, summary="pass", revision=None, fingerprint="candidate-fp", parent="ARTIFACT-PARENT"):
+    revision = revision or ("1" * 40)
+    artifact = {
+        "agent": agent,
+        "summary": summary,
+        "source_commit": revision,
+        "candidate_revision": revision,
+        "expected_revision": revision,
+        "candidate_fingerprint": fingerprint,
+        "evidence_lineage": {"source_commit": revision, "candidate_fingerprint": fingerprint},
+    }
+    if agent in {"tester", "qa_red_team", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "visual_qa_reviewer", "reviewer", "publisher"}:
+        artifact["tested_revision"] = revision
+    if agent not in {"risk_agent", "architect"}:
+        artifact["parent_artifact_id"] = parent
+        artifact["input_artifact_ids"] = [parent]
+    return artifact
+
+
 class CharlieMissionStoreTests(unittest.TestCase):
+    def test_owner_review_packet_projects_authoritative_orchestration(self):
+        orchestration = {
+            "version": "charlie_adaptive_orchestration_v1",
+            "generation_identity": "a" * 24,
+            "tier": "T0",
+            "selected_agents": [{"agent": "source_mapper"}],
+            "skipped_agents": [{"agent": "builder", "reason": "read only"}],
+            "budgets": {"maximum_elapsed_minutes": 20},
+        }
+        binding = {
+            "version": "charlie_orchestration_binding_v1",
+            "identity": "b" * 64,
+            "generation_identity": "a" * 24,
+            "validated": True,
+        }
+        packet = build_mission_review_packet({
+            "mission_id": "M-T0",
+            "metadata": {
+                "orchestration": orchestration,
+                "orchestration_binding": binding,
+            },
+            "agent_workflow": [{"agent": "source_mapper", "status": "active"}],
+        })
+        self.assertEqual(packet["orchestration"], orchestration)
+        self.assertEqual(packet["orchestration_binding"], binding)
+
+    def test_owner_review_packet_projects_legacy_supersession_relationship(self):
+        supersession = {
+            "status": "current_contract_replacement",
+            "reason": "legacy_duplicate_not_reusable",
+            "supersedes_mission_id": "LEGACY-1",
+            "replacement_mission_id": "REPLACEMENT-1",
+        }
+        packet = build_mission_review_packet({
+            "mission_id": "REPLACEMENT-1",
+            "metadata": {"supersession": supersession},
+        })
+        self.assertEqual(packet["supersession"], supersession)
+
     def test_atomic_finalizer_is_only_path_to_pr_ready(self):
         revision = "abc123"
         packet = {
@@ -225,7 +316,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
             "mission_vault": {},
         }
         connection = FakeConnection([(metadata,)])
-        artifact = {"summary": "Focused tests passed.", "quality_gate": {"passed": True}}
+        artifact = _bound_artifact("tester", "Focused tests passed.")
+        artifact["quality_gate"] = {"passed": True}
         result, status_code = consume_final_agent_artifact(
             "MISSION-1", "tester", "EXEC-1", 1, artifact, "a" * 64,
             database_url="postgres://unit-test", connect_factory=lambda _: connection,
@@ -241,11 +333,12 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(persisted["final_artifact_ingestion"]["last_claim"]["sha256"], "a" * 64)
 
     def test_final_artifact_duplicate_is_read_only(self):
-        identity = f"MISSION-1:EXEC-1:tester:1:{'b' * 64}"
+        artifact = _bound_artifact("tester")
+        identity = f"MISSION-1:EXEC-1:tester:1:{artifact['candidate_revision']}:{artifact['candidate_fingerprint']}:{'b' * 64}"
         metadata = {"final_artifact_ingestion": {"claims": [{"identity": identity, "agent": "tester"}]}}
         connection = FakeConnection([(metadata,)])
         result, status_code = consume_final_agent_artifact(
-            "MISSION-1", "tester", "EXEC-1", 1, {"summary": "pass"}, "b" * 64,
+            "MISSION-1", "tester", "EXEC-1", 1, artifact, "b" * 64,
             database_url="postgres://unit-test", connect_factory=lambda _: connection,
         )
         self.assertEqual(status_code, 200)
@@ -262,7 +355,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         }
         connection = FakeConnection([(metadata,)])
         result, status_code = consume_final_agent_artifact(
-            "MISSION-1", "tester", "EXEC-OLD", 1, {"summary": "Tests passed."}, "c" * 64,
+            "MISSION-1", "tester", "EXEC-OLD", 1, _bound_artifact("tester", "Tests passed."), "c" * 64,
             database_url="postgres://unit-test", connect_factory=lambda _: connection,
         )
         self.assertEqual(status_code, 200)
@@ -281,7 +374,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         connection = FakeConnection([(metadata,)])
         result, status_code = consume_final_agent_artifact(
             "MISSION-1", "builder", "EXEC-BACKFLOW", 1,
-            {"summary": "Bounded correction completed."}, "d" * 64,
+            _bound_artifact("builder", "Bounded correction completed."), "d" * 64,
             database_url="postgres://unit-test", connect_factory=lambda _: connection,
         )
 
@@ -305,13 +398,149 @@ class CharlieMissionStoreTests(unittest.TestCase):
         connection = FakeConnection([(metadata,)])
         result, status_code = consume_final_agent_artifact(
             "MISSION-1", "builder", "EXEC-OUT-OF-ORDER", 1,
-            {"summary": "Should not be accepted."}, "e" * 64,
+            _bound_artifact("builder", "Should not be accepted."), "e" * 64,
             database_url="postgres://unit-test", connect_factory=lambda _: connection,
         )
 
         self.assertEqual(status_code, 409)
         self.assertEqual(result["status"], "final_artifact_stage_mismatch")
         self.assertEqual(result["expected_agent"], "risk_agent")
+
+    def test_protected_artifact_binding_failure_blocks_before_transition(self):
+        connection = FakeConnection([({"agent_workflow": [{"agent": "tester", "status": "active"}]},)])
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "tester", "EXEC-1", 1, {"summary": "unbound"}, "f" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 422)
+        self.assertEqual(result["status"], "final_artifact_binding_invalid")
+        self.assertTrue(result["rejection"]["identity"])
+        self.assertTrue(result["semantic_rejection"]["identity"])
+        statements = connection.cursor_instance.executed
+        self.assertTrue(any("final_artifact_rejections" in sql for sql, _ in statements))
+        self.assertFalse(any("agent_artifact_history" in str(params) for _, params in statements))
+
+    def test_invalid_artifact_rejection_replay_is_idempotent(self):
+        metadata = {
+            "agent_workflow": [{"agent": "architect", "status": "active"}],
+            "review_packet": {"review_generation": "REVIEW-1"},
+        }
+        first = FakeConnection([(metadata,)])
+        first_result, first_status = consume_final_agent_artifact(
+            "MISSION-1", "architect", "EXEC-1", 1, {"summary": "blocked"}, "a" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: first,
+        )
+        self.assertEqual(first_status, 422)
+        persisted_rejections = __import__("json").loads(
+            next(
+                params for sql, params in first.cursor_instance.executed
+                if "final_artifact_rejections" in sql
+            )["rejections_json"]
+        )
+        replay_metadata = {**metadata, "final_artifact_rejections": persisted_rejections}
+        replay = FakeConnection([(replay_metadata,)])
+        replay_result, replay_status = consume_final_agent_artifact(
+            "MISSION-1", "architect", "EXEC-1", 1, {"summary": "blocked"}, "a" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: replay,
+        )
+        self.assertEqual(replay_status, 422)
+        self.assertTrue(replay_result["rejection_already_recorded"])
+        self.assertEqual(
+            replay_result["rejection"]["identity"],
+            first_result["rejection"]["identity"],
+        )
+        self.assertFalse(any("update public.charlie_missions" in sql for sql, _ in replay.cursor_instance.executed))
+
+    def test_wording_only_invalid_artifact_change_reuses_semantic_rejection(self):
+        metadata = {
+            "agent_workflow": [{"agent": "architect", "status": "active"}],
+            "review_packet": {"review_generation": "REVIEW-1"},
+        }
+        first = FakeConnection([(metadata,)])
+        first_result, _ = consume_final_agent_artifact(
+            "MISSION-1", "architect", "EXEC-1", 1, {"summary": "first wording"}, "a" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: first,
+        )
+        persisted_rejections = __import__("json").loads(
+            next(
+                params for sql, params in first.cursor_instance.executed
+                if "final_artifact_rejections" in sql
+            )["rejections_json"]
+        )
+        second = FakeConnection([({**metadata, "final_artifact_rejections": persisted_rejections},)])
+        second_result, second_status = consume_final_agent_artifact(
+            "MISSION-1", "architect", "EXEC-2", 2, {"summary": "different wording"}, "b" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: second,
+        )
+        self.assertEqual(second_status, 422)
+        self.assertNotEqual(
+            first_result["rejection"]["identity"],
+            second_result["rejection"]["identity"],
+        )
+        self.assertEqual(
+            first_result["semantic_rejection"]["identity"],
+            second_result["semantic_rejection"]["identity"],
+        )
+        self.assertEqual(second_result["semantic_rejection"]["observation_count"], 2)
+
+    def test_builder_is_durable_before_tester_activation_with_parent_lineage(self):
+        metadata = {"agent_workflow": [
+            {"agent": "architect", "status": "complete"},
+            {"agent": "builder", "status": "active"},
+            {"agent": "tester", "status": "pending"},
+        ], "review_packet": {}, "mission_vault": {}}
+        connection = FakeConnection([(metadata,)])
+        artifact = _bound_artifact("builder", parent="ARCHITECT-DURABLE-ID")
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "builder", "EXEC-2", 3, artifact, "1" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 200)
+        persisted = __import__("json").loads(next(params for sql, params in connection.cursor_instance.executed if "set metadata_json" in sql)["metadata_json"])
+        self.assertEqual([row["status"] for row in persisted["agent_workflow"]], ["complete", "complete", "active"])
+        stored = persisted["review_packet"]["agent_artifact_history"][-1]
+        self.assertEqual(stored["attempt"], 3)
+        self.assertEqual(stored["parent_artifact_id"], "ARCHITECT-DURABLE-ID")
+        self.assertEqual(stored["artifact_identity"], result["claim"]["identity"])
+
+    def test_tester_backflow_persists_rejected_artifact_before_builder_activation(self):
+        metadata = {"agent_workflow": [
+            {"agent": "builder", "status": "complete"},
+            {"agent": "tester", "status": "active"},
+            {"agent": "qa_red_team", "status": "complete"},
+        ], "review_packet": {}, "mission_vault": {}}
+        connection = FakeConnection([(metadata,)])
+        artifact = _bound_artifact("tester", "release blocker", parent="BUILDER-DURABLE-ID")
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "tester", "EXEC-3", 2, artifact, "2" * 64,
+            transition_target="builder", database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 200)
+        persisted = __import__("json").loads(next(params for sql, params in connection.cursor_instance.executed if "set metadata_json" in sql)["metadata_json"])
+        self.assertEqual([row["status"] for row in persisted["agent_workflow"]], ["active", "pending", "pending"])
+        self.assertEqual(persisted["review_packet"]["agent_artifact_history"][-1]["artifact_identity"], result["claim"]["identity"])
+        self.assertEqual(result["claim"]["transition_target"], "builder")
+
+    def test_attempt_and_candidate_are_part_of_stable_identity(self):
+        metadata = {"agent_workflow": [{"agent": "builder", "status": "active"}], "review_packet": {}, "mission_vault": {}}
+        first = FakeConnection([(metadata,)])
+        second = FakeConnection([(metadata,)])
+        a1 = _bound_artifact("builder", revision="1" * 40)
+        a2 = _bound_artifact("builder", revision="2" * 40)
+        r1, _ = consume_final_agent_artifact("MISSION-1", "builder", "EXEC-4", 2, a1, "3" * 64, database_url="postgres://unit-test", connect_factory=lambda _: first)
+        r2, _ = consume_final_agent_artifact("MISSION-1", "builder", "EXEC-4", 3, a2, "3" * 64, database_url="postgres://unit-test", connect_factory=lambda _: second)
+        self.assertNotEqual(r1["claim"]["identity"], r2["claim"]["identity"])
+        self.assertIn("2" * 40, r2["claim"]["identity"])
+
+    def test_database_failure_cannot_transition_workflow(self):
+        def broken_connect(_):
+            raise RuntimeError("database unavailable")
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "builder", "EXEC-5", 1, _bound_artifact("builder"), "4" * 64,
+            database_url="postgres://unit-test", connect_factory=broken_connect,
+        )
+        self.assertEqual(status_code, 503)
+        self.assertEqual(result["status"], "final_artifact_ingestion_failed")
 
     def test_update_workflow_items_tolerates_unknown_agent_names(self):
         workflow = [{"agent": "planner", "status": "active", "handoff_to": "builder"}]
@@ -478,7 +707,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 201)
         self.assertTrue(result["stored"])
         self.assertEqual(result["status"], "ok")
-        self.assertEqual(len(connection.cursor_instance.executed), 3)
+        self.assertEqual(len(connection.cursor_instance.executed), 4)
         mission_params = connection.cursor_instance.executed[1][1]
         self.assertEqual(mission_params["raw_text"], "Build CHARLIE mission queue")
         self.assertEqual(mission_params["telegram_user_id"], "12345")
@@ -487,6 +716,92 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("agent_workflow", mission_params["metadata_json"])
         self.assertIn("mission_context_pack", mission_params["metadata_json"])
         self.assertIn("intake_quality", mission_params["metadata_json"])
+
+    def test_production_shaped_t0_persists_bound_packet_and_short_workflow(self):
+        connection = FakeConnection()
+        result, status_code = record_mission(
+            {
+                "mission_id": "CHARLIE-MISSION-7001CE3566B4A171-REGRESSION",
+                "title": "Read-only inventory of CORE adaptive orchestration documentation",
+                "mission_type": "read-only audit",
+                "approval_level": "LEVEL 1",
+                "raw_text": (
+                    "Perform a read-only inventory and report of "
+                    "docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md. Inspect only. "
+                    "Do not edit files, write the repository, invoke product routes, "
+                    "contact customers, perform business actions, deploy, publish, "
+                    "migrate, or control hardware. Report the documented adaptive "
+                    "orchestration tier and authority boundary with source evidence."
+                ),
+                "acceptance_criteria": [
+                    "Persist T0 orchestration generation",
+                    "Select one source/domain agent",
+                    "No Builder or repository writer",
+                    "Produce a durable read-only artifact with source evidence",
+                ],
+                "forbidden_actions": [
+                    "repository mutation",
+                    "deployment",
+                    "publication",
+                    "migration",
+                    "hardware control",
+                ],
+            },
+            source_context={"source": "owner_controlled_canary"},
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["stored"])
+        insert = next(
+            params
+            for sql, params in connection.cursor_instance.executed
+            if "insert into public.charlie_missions" in sql
+        )
+        import json
+        metadata = json.loads(insert["metadata_json"])
+        self.assertEqual(metadata["orchestration"]["tier"], "T0")
+        self.assertEqual(
+            [row["agent"] for row in metadata["orchestration"]["selected_agents"]],
+            ["source_mapper"],
+        )
+        self.assertEqual(
+            [row["agent"] for row in metadata["agent_workflow"]],
+            ["source_mapper"],
+        )
+        self.assertTrue(metadata["orchestration_binding"]["validated"])
+        self.assertFalse(metadata["intake"]["requires_builder"])
+        created_event = json.loads(connection.cursor_instance.executed[-1][1]["metadata_json"])
+        self.assertEqual(
+            created_event["orchestration_generation"],
+            metadata["orchestration"]["generation_identity"],
+        )
+        self.assertEqual(
+            created_event["orchestration_binding_identity"],
+            metadata["orchestration_binding"]["identity"],
+        )
+
+    def test_creation_fails_closed_when_packet_reread_loses_binding(self):
+        connection = FakeConnection()
+        connection.cursor_instance = CorruptOrchestrationCursor([])
+        result, status_code = record_mission(
+            {
+                "mission_id": "MISSING-PACKET",
+                "mission_type": "read-only audit",
+                "raw_text": "Read-only inventory of one bounded documentation source.",
+            },
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["stored"])
+        self.assertEqual(result["status"], "mission_write_failed")
+        self.assertFalse(
+            any(
+                "insert into public.charlie_mission_events" in sql
+                for sql, _params in connection.cursor_instance.executed
+            )
+        )
 
     def test_record_mission_rejects_placeholder_relay_noise(self):
         result, status_code = record_mission(
@@ -525,15 +840,18 @@ class CharlieMissionStoreTests(unittest.TestCase):
 
         self.assertEqual(queue_class, "owner_work")
 
-    def test_record_mission_suppresses_duplicate_open_mission(self):
-        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+    def test_record_mission_reuses_current_contract_duplicate(self):
+        mission = {"title": "Build clearer queue", "raw_text": "Build clearer queue"}
+        metadata = _mission_metadata(
+            mission["raw_text"], mission, {"source": "test"}, {}
+        )
         duplicate_row = (
-            "MISSION-1", "new", "Build clearer queue", "Build clearer queue",
+            "MISSION-1", "new", "Build clearer queue", "Build clearer queue", metadata,
         )
         connection = FakeConnection([duplicate_row])
 
         result, status_code = record_mission(
-            {"title": "Build clearer queue", "raw_text": "Build clearer queue"},
+            mission,
             database_url="postgres://unit-test",
             connect_factory=lambda _: connection,
         )
@@ -542,6 +860,104 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertFalse(result["stored"])
         self.assertEqual(result["status"], "duplicate_open_mission")
         self.assertEqual(result["mission_id"], "MISSION-1")
+
+    def test_packetless_legacy_duplicate_creates_current_contract_replacement(self):
+        legacy_metadata = {"historical_evidence": {"preserved": True}}
+        duplicate_row = (
+            "LEGACY-1", "in_progress", "Read-only inventory",
+            "Read-only inventory of one bounded CORE document.", legacy_metadata,
+        )
+        connection = FakeConnection([duplicate_row])
+        with patch.dict(
+            "os.environ",
+            {"CORE_SOURCE_COMMIT": "a" * 40},
+            clear=False,
+        ):
+            result, status_code = record_mission(
+                {
+                    "title": "Read-only inventory",
+                    "raw_text": "Read-only inventory of one bounded CORE document.",
+                    "mission_type": "read-only audit",
+                },
+                source_context={"source": "test"},
+                database_url="postgres://unit-test",
+                connect_factory=lambda _: connection,
+            )
+
+        self.assertEqual(status_code, 201, result)
+        self.assertEqual(result["status"], "legacy_duplicate_replacement_created")
+        self.assertEqual(result["supersedes_mission_id"], "LEGACY-1")
+        self.assertTrue(result["mission_id"].startswith("CHARLIE-REPLACEMENT-"))
+        replacement = connection.cursor_instance.inserted_metadata
+        self.assertEqual(
+            replacement["supersession"]["reason"],
+            "legacy_duplicate_not_reusable",
+        )
+        self.assertEqual(
+            replacement["mission_family"]["parent_mission_id"],
+            "LEGACY-1",
+        )
+        self.assertEqual(replacement["orchestration"]["tier"], "T0")
+        self.assertEqual(
+            [row["agent"] for row in replacement["orchestration"]["selected_agents"]],
+            ["source_mapper"],
+        )
+        self.assertEqual(
+            replacement["orchestration"]["selected_agents"][0]["allowed_mutations"],
+            [],
+        )
+        self.assertEqual(legacy_metadata, {"historical_evidence": {"preserved": True}})
+
+    def test_active_leased_legacy_duplicate_cannot_be_superseded(self):
+        duplicate_row = (
+            "LEGACY-ACTIVE", "in_progress", "Read-only inventory",
+            "Read-only inventory of one bounded CORE document.",
+            {
+                "execution_lease": {
+                    "lease_id": "LEASE-1",
+                    "expires_at": (
+                        datetime.now(timezone.utc) + timedelta(minutes=10)
+                    ).isoformat(),
+                }
+            },
+        )
+        connection = FakeConnection([duplicate_row])
+        result, status_code = record_mission(
+            {
+                "title": "Read-only inventory",
+                "raw_text": "Read-only inventory of one bounded CORE document.",
+                "mission_type": "read-only audit",
+            },
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "legacy_duplicate_active_not_superseded")
+        self.assertFalse(any(
+            "insert into public.charlie_missions" in sql
+            for sql, _ in connection.cursor_instance.executed
+        ))
+
+    def test_replacement_insert_failure_fails_closed(self):
+        duplicate_row = (
+            "LEGACY-FAIL", "in_progress", "Read-only inventory",
+            "Read-only inventory of one bounded CORE document.", {},
+        )
+        connection = FakeConnection([duplicate_row])
+        connection.cursor_instance = MissionInsertFailingCursor([duplicate_row])
+        with patch.dict("os.environ", {"CORE_SOURCE_COMMIT": "b" * 40}, clear=False):
+            result, status_code = record_mission(
+                {
+                    "title": "Read-only inventory",
+                    "raw_text": "Read-only inventory of one bounded CORE document.",
+                    "mission_type": "read-only audit",
+                },
+                database_url="postgres://unit-test",
+                connect_factory=lambda _: connection,
+            )
+        self.assertEqual(status_code, 503)
+        self.assertEqual(result["status"], "mission_write_failed")
+        self.assertEqual(result["error_type"], "RuntimeError")
 
     def test_record_mission_returns_existing_result_on_atomic_id_conflict(self):
         connection = FakeConnection()
@@ -678,9 +1094,45 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("where status = %(status)s", sql)
         self.assertIn("metadata_json->'intake_quality'->>'queue_class'", sql)
         self.assertIn("owner_work", sql)
+        self.assertIn("current_contract_replacement", sql)
+        self.assertIn("supersedes_mission_id", sql)
+        self.assertIn("charlie_owner_execution_hold_events", sql)
+        self.assertIn("hold_released", sql)
+        self.assertIn("not exists", sql.lower())
         self.assertIn("metadata_json->'queue'->>'priority'", sql)
         self.assertEqual(params["status"], "approved")
         self.assertEqual(params["limit"], 20)
+        self.assertEqual(result["missions"], [])
+
+    def test_execution_list_can_exclude_active_owner_holds(self):
+        connection = FakeConnection([])
+        result, status_code = list_missions(
+            status="approved",
+            exclude_execution_held=True,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 200)
+        sql = connection.cursor_instance.executed[0][0]
+        self.assertIn("charlie_owner_execution_hold_events", sql)
+        self.assertIn("release_of_event_id", sql)
+        self.assertEqual(result["missions"], [])
+
+    def test_execution_list_can_exclude_durably_superseded_legacy_rows(self):
+        connection = FakeConnection([])
+
+        result, status_code = list_missions(
+            status="in_progress",
+            exclude_superseded=True,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        sql = connection.cursor_instance.executed[0][0]
+        self.assertIn("current_contract_replacement", sql)
+        self.assertIn("orchestration_binding", sql)
+        self.assertIn("generation_identity", sql)
         self.assertEqual(result["missions"], [])
 
     def test_list_missions_keeps_recent_order_without_status_filter(self):
@@ -756,7 +1208,10 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 409)
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "status_claim_lost")
-        update_sql, update_params = connection.cursor_instance.executed[0]
+        update_sql, update_params = next(
+            item for item in connection.cursor_instance.executed
+            if "update public.charlie_missions" in item[0]
+        )
         self.assertIn("and status = %(expected_status)s", update_sql)
         self.assertEqual(update_params["expected_status"], "approved")
 
@@ -1311,6 +1766,28 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertTrue(result["success"])
         self.assertEqual(result["counts"], {"new": 2, "planned": 1})
+        self.assertEqual(result["orchestration_throughput"]["missions"], [])
+
+    def test_orchestration_throughput_preserves_unknown_historical_values(self):
+        now = datetime.now(timezone.utc)
+        rows = [
+            ("M-NEW", "pr_ready", {
+                "orchestration": {
+                    "tier": "T1", "selected_agents": [{"agent": "builder"}],
+                    "skipped_agents": [{"agent": "publisher"}], "expansion_history": [],
+                    "final_outcome": "owner_ready",
+                },
+                "agent_execution": {"stages": [{"agent": "builder", "attempt": 1, "elapsed_seconds": 12}]},
+            }, now, now),
+            ("M-OLD", "blocked", {}, None, None),
+        ]
+
+        result = _orchestration_throughput_rows(rows)
+
+        self.assertEqual(result["missions"][0]["selected_agent_count"], 1)
+        self.assertEqual(result["missions"][0]["stage_elapsed_seconds"], {"builder": 12})
+        self.assertEqual(result["missions"][1]["tier"], "Unavailable")
+        self.assertEqual(result["missions"][1]["attempts"], "Unavailable")
 
 
 if __name__ == "__main__":

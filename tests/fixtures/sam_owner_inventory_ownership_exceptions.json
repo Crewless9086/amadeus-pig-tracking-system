@@ -1,0 +1,82 @@
+{
+  "contract": "sam_owner_inventory_ownership_exceptions_v1",
+  "contains_customer_content": false,
+  "conversations": [
+    {
+      "account_id": 147387,
+      "id": 1997,
+      "contact_id": 979530969,
+      "inbox_id": 96568,
+      "status": "open",
+      "custom_attributes": {},
+      "labels": [],
+      "channel": "Channel::Whatsapp",
+      "latest_review": {
+        "review_event_id": "SAM-LIVE-REVIEW-8049712098DE",
+        "chatwoot_conversation_id": "1997",
+        "chatwoot_message_id": "760573723"
+      },
+      "messages": [
+        {"id": 760331944, "message_type": 1, "created_at": 1785055837, "private": false},
+        {"id": 760573723, "message_type": 0, "created_at": 1785070159, "private": false}
+      ]
+    },
+    {
+      "account_id": 147387,
+      "id": 2029,
+      "contact_id": 981249565,
+      "inbox_id": 96568,
+      "status": "open",
+      "custom_attributes": {},
+      "labels": [],
+      "channel": "Channel::Whatsapp",
+      "latest_review": {
+        "review_event_id": "SAM-LIVE-REVIEW-6F08A41AC9BA",
+        "chatwoot_conversation_id": "2029",
+        "chatwoot_message_id": "760698880"
+      },
+      "messages": [
+        {"id": 760442481, "message_type": 1, "created_at": 1785062937, "private": false},
+        {"id": 760698880, "message_type": 0, "created_at": 1785076429, "private": false}
+      ]
+    },
+    {
+      "account_id": 147387,
+      "id": 2031,
+      "contact_id": 981323214,
+      "inbox_id": 96568,
+      "status": "open",
+      "custom_attributes": {},
+      "labels": [],
+      "channel": "Channel::Whatsapp",
+      "latest_review": {
+        "review_event_id": "SAM-LIVE-REVIEW-78F447790F3F",
+        "chatwoot_conversation_id": "2031",
+        "chatwoot_message_id": "760566742"
+      },
+      "messages": [
+        {"id": 760564646, "message_type": 1, "created_at": 1785069660, "private": false},
+        {"id": 760566742, "message_type": 0, "created_at": 1785069769, "private": false}
+      ]
+    },
+    {
+      "account_id": 147387,
+      "id": 2039,
+      "contact_id": 981457986,
+      "inbox_id": 96568,
+      "status": "open",
+      "custom_attributes": {},
+      "labels": [],
+      "channel": "Channel::Whatsapp",
+      "latest_review": {
+        "review_event_id": "SAM-LIVE-REVIEW-BF35A9B9B1FC",
+        "chatwoot_conversation_id": "2039",
+        "chatwoot_message_id": "760620144"
+      },
+      "messages": [
+        {"id": 760618767, "message_type": 1, "created_at": 1785072354, "private": false},
+        {"id": 760620144, "message_type": 0, "created_at": 1785072419, "private": false}
+      ]
+    }
+  ]
+}

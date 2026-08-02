@@ -108,7 +108,27 @@ Completed:
 
 Next:
 
-- Deploy and owner-check `/sales/beacon-media`.
-- Apply migration `202606180006_extend_beacon_facebook_post_execution_statuses.sql`.
-- Live-smoke one approved-image Facebook post.
+- The confirmed-publication learning loop is operational with four persisted
+  rows and remains `not_eligible`.
+- Review the built, default-disabled `BEACON-MEDIA-INTAKE-1` candidate:
+  existing OOM SAKKIE Telegram bot -> private raw intake ->
+  hash/provenance/media understanding -> visual Farm App review. Its additive
+  migration is unapplied and its gateway is inactive. See
+  `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`.
+- Keep Telegram intake separate from library acceptance, public-use approval
+  and publication authority.
+- Plan historical OneDrive/folder ingestion as a later bounded phase using the
+  same hashes and provenance; do not import automatically.
 - Design read-only Meta/Facebook performance import without enabling Meta writes, boost execution, or paid spend.
+
+The candidate streams Telegram photos through an observed 8 MiB limit before
+the bounded result is passed to the existing private storage client. Only
+decoder-verified JPEG and PNG files proceed; maximum dimensions are 12,000 ×
+12,000 with a 40-megapixel cap. `Content-Length` is advisory and cannot
+override observed-byte enforcement. Videos remain unsupported until a
+separate resumable transport is reviewed.
+
+Object storage and PostgreSQL are not represented as one atomic system. A
+pending identity precedes download, private upload precedes final metadata,
+and storage readback SHA-256 precedes `stored`. Later failure causes bounded
+cleanup or an explicit quarantined/reconciliation-required state.

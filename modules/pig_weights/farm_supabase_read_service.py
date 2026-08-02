@@ -1,10 +1,21 @@
 import os
 from datetime import date, datetime, timedelta
+from time import monotonic
 
 from services.database_service import DATABASE_URL_ENV
 
 DEFAULT_LITTER_WEAN_AGE_DAYS = 35
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
+ALLOCATION_READ_STAGES = (
+    "current_animal_state", "order_allocation", "medical_events",
+    "weights", "litters", "pens",
+)
+BREEDING_ATTENTION_READ_STAGES = ALLOCATION_READ_STAGES + (
+    "mating_chronology",
+    "human_observations",
+)
+ALLOCATION_TOTAL_DEADLINE_SECONDS = 20.0
+ALLOCATION_STATEMENT_TIMEOUT_SECONDS = 3.0
 
 
 def _database_url():
@@ -27,7 +38,8 @@ def _fetch_all(sql, params=(), connect_factory=None):
         raise RuntimeError(f"{DATABASE_URL_ENV} is not configured.")
     with _connect(connect_factory=connect_factory) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("set transaction read only")
+            if not getattr(connect_factory, "transaction_managed", False):
+                cursor.execute("set transaction read only")
             cursor.execute(sql, params)
             columns = [column.name for column in cursor.description]
             return [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -268,7 +280,7 @@ def _current_state_rows(connect_factory=None):
             pig.wean_weight_kg,
             pig.exit_reason,
             pig.notes
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         order by coalesce(nullif(state.tag_number, ''), state.pig_id)
         """,
@@ -287,7 +299,7 @@ def _dashboard_rows(connect_factory=None):
             state.current_weight_kg,
             pig.exit_date,
             pig.exit_reason
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         """,
         connect_factory=connect_factory,
@@ -414,7 +426,7 @@ def get_pig_detail(pig_id, connect_factory=None):
             pig.notes,
             mother.tag_number as mother_tag_number,
             father.tag_number as father_tag_number
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         left join public.pigs mother on mother.pig_id = pig.mother_pig_id
         left join public.pigs father on father.pig_id = pig.father_pig_id
@@ -518,7 +530,7 @@ def get_parent_options(connect_factory=None):
     rows = _fetch_all(
         """
         select pig_id, tag_number, sex, status, purpose, current_pen_id, current_pen_name
-        from public.pig_current_state
+        from public.current_canonical_pig_state
         where status = 'Active'
           and purpose = 'Breeding'
           and sex in ('Female', 'Male', 'Castrated_Male')
@@ -575,7 +587,7 @@ def get_pig_master_rows_by_ids(pig_ids, connect_factory=None):
             state.litter_id,
             state.purpose,
             pig.notes
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         where state.pig_id = any(%s)
         """,
@@ -610,6 +622,8 @@ def get_pig_master_rows(connect_factory=None):
             pig.pig_name,
             pig.animal_type,
             pig.date_of_birth,
+            pig.mother_pig_id,
+            pig.father_pig_id,
             pig.purpose,
             pig.notes,
             pig.exit_date,
@@ -621,7 +635,7 @@ def get_pig_master_rows(connect_factory=None):
             pig.wean_weight_kg,
             pig.earmarked,
             pig.earmark_date
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         order by coalesce(nullif(state.tag_number, ''), state.pig_id)
         """,
@@ -637,6 +651,8 @@ def get_pig_master_rows(connect_factory=None):
         "Animal_Type": _text(row.get("animal_type")),
         "Sex": _text(row.get("sex")),
         "Date_Of_Birth": _date_text(row.get("date_of_birth")),
+        "Mother_Pig_ID": _text(row.get("mother_pig_id")),
+        "Father_Pig_ID": _text(row.get("father_pig_id")),
         "Current_Weight_Kg": _float_or_none(row.get("current_weight_kg")),
         "Last_Weight_Date": _date_text(row.get("last_weight_date")),
         "Current_Pen_ID": _text(row.get("current_pen_id")),
@@ -681,7 +697,7 @@ def get_litter_register_rows(connect_factory=None):
             wean_date,
             litter_status,
             litter_notes
-        from public.litters
+        from public.current_canonical_litters
         order by farrowing_date desc nulls last, litter_id
         """,
         connect_factory=connect_factory,
@@ -766,11 +782,248 @@ def _allocation_overview_row(row):
         "Medical_Status": _text(row.get("medical_status")),
         "Reserved_Status": _text(row.get("reserved_status")),
         "Reserved_For_Order_ID": _text(row.get("reserved_for_order_id")),
+        "Allocation_Evidence_State": _text(row.get("allocation_evidence_state")),
+        "Allocation_Order_Status": _text(row.get("allocation_order_status")),
+        "Allocation_Line_Status": _text(row.get("allocation_line_status")),
+        "Withdrawal_Evidence_State": _text(row.get("withdrawal_evidence_state")),
         "Media_References": row.get("media_references") if isinstance(row.get("media_references"), list) else [],
     }
 
 
-def get_allocation_input_rows(connect_factory=None):
+class _AllocationSnapshotCursor:
+    def __init__(self, cursor, snapshot, stage):
+        self._cursor = cursor
+        self._snapshot = snapshot
+        self._stage = stage
+        self._data_statement = False
+
+    def __enter__(self):
+        self._cursor.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self._cursor.__exit__(*args)
+
+    def execute(self, sql, params=()):
+        normalized = " ".join(str(sql).lower().split())
+        self._data_statement = normalized.startswith("select") or normalized.startswith("with")
+        if self._data_statement:
+            remaining = self._snapshot.remaining_seconds()
+            if remaining <= 0:
+                self._snapshot.fail(self._stage, "total_deadline_exhausted")
+                raise TimeoutError("canonical allocation read deadline exhausted")
+            timeout_ms = max(1, int(min(ALLOCATION_STATEMENT_TIMEOUT_SECONDS, remaining) * 1000))
+            self._cursor.execute(f"set local statement_timeout = {timeout_ms}")
+            started = self._snapshot.now_fn()
+            try:
+                result = self._cursor.execute(sql, params)
+            except Exception as exc:
+                self._snapshot.finish_sql(self._stage, started, f"failed:{type(exc).__name__}")
+                raise
+            self._snapshot.finish_sql(self._stage, started, "sql_complete")
+            return result
+        return self._cursor.execute(sql, params)
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        if self._data_statement:
+            self._snapshot.finish_rows(self._stage, len(rows))
+        return rows
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+class _AllocationSnapshotConnection:
+    def __init__(self, connection, snapshot):
+        self._connection = connection
+        self._snapshot = snapshot
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def cursor(self):
+        stage = self._snapshot.next_stage()
+        return _AllocationSnapshotCursor(self._connection.cursor(), self._snapshot, stage)
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+
+class _AllocationSnapshot:
+    transaction_managed = True
+
+    def __init__(
+        self, connection, acquired_seconds, *, deadline_seconds, now_fn,
+        started_at, stages=ALLOCATION_READ_STAGES,
+    ):
+        self.connection = connection
+        self.acquired_seconds = acquired_seconds
+        self.deadline_seconds = deadline_seconds
+        self.now_fn = now_fn
+        self.started = started_at
+        self.stage_index = 0
+        self.stages = tuple(stages)
+        self.records = {name: {
+            "stage": name,
+            "connection_acquisition_seconds": round(acquired_seconds, 4) if name == ALLOCATION_READ_STAGES[0] else 0.0,
+            "sql_execution_seconds": None,
+            "bounded_row_count": None,
+            "state": "not_started",
+            "remaining_deadline_seconds": None,
+        } for name in self.stages}
+
+    def __call__(self, _database_url_value):
+        return _AllocationSnapshotConnection(self.connection, self)
+
+    def next_stage(self):
+        if self.stage_index >= len(self.stages):
+            raise RuntimeError("canonical allocation query count exceeded")
+        stage = self.stages[self.stage_index]
+        self.stage_index += 1
+        return stage
+
+    def remaining_seconds(self):
+        return self.deadline_seconds - (self.now_fn() - self.started)
+
+    def finish_sql(self, stage, started, state):
+        self.records[stage]["sql_execution_seconds"] = round(self.now_fn() - started, 4)
+        self.records[stage]["state"] = state
+        self.records[stage]["remaining_deadline_seconds"] = round(max(0.0, self.remaining_seconds()), 4)
+
+    def finish_rows(self, stage, row_count):
+        if self.remaining_seconds() < 0:
+            self.fail(stage, "total_deadline_exhausted")
+            raise TimeoutError("canonical allocation read deadline exhausted")
+        self.records[stage]["bounded_row_count"] = int(row_count)
+        self.records[stage]["state"] = "complete"
+        self.records[stage]["remaining_deadline_seconds"] = round(max(0.0, self.remaining_seconds()), 4)
+
+    def fail(self, stage, state):
+        self.records[stage]["state"] = state
+        self.records[stage]["remaining_deadline_seconds"] = 0.0
+
+    def progress(self):
+        return {
+            "status": "complete" if self.stage_index == len(self.stages)
+            and all(item["state"] == "complete" for item in self.records.values()) else "partial",
+            "shared_snapshot": True,
+            "query_count": self.stage_index,
+            "connection_count": 1,
+            "deadline_seconds": self.deadline_seconds,
+            "stages": [self.records[name] for name in self.stages],
+        }
+
+
+def get_allocation_input_rows(
+    connect_factory=None,
+    *,
+    deadline_seconds=ALLOCATION_TOTAL_DEADLINE_SECONDS,
+    now_fn=monotonic,
+):
+    # Preserve dependency-injected/unit-test behavior when no canonical
+    # database is configured; real canonical reads and explicit factories use
+    # the shared snapshot below.
+    if connect_factory is None and not farm_supabase_reads_available():
+        return _get_allocation_input_rows_queries(connect_factory=None)
+    acquired_started = now_fn()
+    connection_context = _connect(connect_factory=connect_factory)
+    with connection_context as connection:
+        acquired_seconds = now_fn() - acquired_started
+        snapshot = _AllocationSnapshot(
+            connection,
+            acquired_seconds,
+            deadline_seconds=deadline_seconds,
+            now_fn=now_fn,
+            started_at=acquired_started,
+        )
+        if snapshot.remaining_seconds() <= 0:
+            raise TimeoutError("canonical allocation read deadline exhausted during connection acquisition")
+        if not getattr(connect_factory, "transaction_managed", False):
+            with connection.cursor() as cursor:
+                cursor.execute("set transaction isolation level repeatable read read only")
+            if snapshot.remaining_seconds() <= 0:
+                raise TimeoutError("canonical allocation read deadline exhausted during transaction setup")
+        result = _get_allocation_input_rows_queries(connect_factory=snapshot)
+        if snapshot.remaining_seconds() < 0:
+            raise TimeoutError("canonical allocation read deadline exhausted during result projection")
+        result["read_progress"] = snapshot.progress()
+        return result
+
+
+def get_breeding_attention_source_snapshot(
+    connect_factory=None,
+    *,
+    deadline_seconds=ALLOCATION_TOTAL_DEADLINE_SECONDS,
+    started_at=None,
+    now_fn=monotonic,
+):
+    """Read only the canonical evidence needed by Breeding Attention once."""
+    absolute_started = started_at if started_at is not None else now_fn()
+    connection_context = _connect(connect_factory=connect_factory)
+    with connection_context as connection:
+        acquired_seconds = now_fn() - absolute_started
+        snapshot = _AllocationSnapshot(
+            connection,
+            acquired_seconds,
+            deadline_seconds=deadline_seconds,
+            now_fn=now_fn,
+            started_at=absolute_started,
+            stages=BREEDING_ATTENTION_READ_STAGES,
+        )
+        if snapshot.remaining_seconds() <= 0:
+            raise TimeoutError("breeding snapshot deadline exhausted during connection acquisition")
+        if not getattr(connect_factory, "transaction_managed", False):
+            with connection.cursor() as cursor:
+                cursor.execute("set transaction isolation level repeatable read read only")
+        allocation_inputs = _get_allocation_input_rows_queries(connect_factory=snapshot)
+        mating_rows = _fetch_all(
+            """
+            select *
+            from public.mating_events
+            order by mating_date desc nulls last, mating_id desc
+            """,
+            connect_factory=snapshot,
+        )
+        observation_rows = _fetch_all(
+            """
+            select event.pig_id, event.observed_at, event.observation_category,
+                   event.measurements_json, event.observation_event_id
+            from public.pig_observation_events event
+            where (
+                event.observation_category in ('behaviour', 'body_condition')
+                or (
+                    event.observation_category = 'other'
+                    and event.measurements_json->>'contract_version' =
+                        'herdmaster_breeding_observation_v1'
+                )
+            )
+              and not exists (
+                select 1 from public.pig_observation_events correction
+                where correction.supersedes_observation_event_id = event.observation_event_id
+              )
+            order by event.pig_id, event.observation_category,
+                     event.observed_at desc, event.observation_event_id desc
+            """,
+            connect_factory=snapshot,
+        )
+        if snapshot.remaining_seconds() <= 0:
+            raise TimeoutError("breeding snapshot deadline exhausted during projection")
+        allocation_inputs["read_progress"] = snapshot.progress()
+        return {
+            "success": True,
+            "source": "supabase_canonical",
+            "allocation_inputs": allocation_inputs,
+            "mating_rows": mating_rows,
+            "observation_rows": observation_rows,
+            "read_progress": snapshot.progress(),
+        }
+
+
+def _get_allocation_input_rows_queries(connect_factory):
     current_rows = _current_state_rows(connect_factory=connect_factory)
     allocated_rows = _fetch_all(
         """
@@ -792,15 +1045,20 @@ def get_allocation_input_rows(connect_factory=None):
     allocated_by_pig = {row["pig_id"]: row for row in allocated_rows}
     medical_rows = _fetch_all(
         """
-        select distinct on (pig_id)
-            pig_id, treatment_type, reason_for_treatment, withdrawal_end_date,
+        select
+            pig_id, treatment_type, reason_for_treatment, withdrawal_days, withdrawal_end_date,
             follow_up_required, follow_up_date
         from public.pig_medical_events
         order by pig_id, treatment_date desc, created_at desc, medical_event_id desc
         """,
         connect_factory=connect_factory,
     )
-    medical_by_pig = {row["pig_id"]: row for row in medical_rows}
+    medical_by_pig = {}
+    medical_history_by_pig = {}
+    for medical_row in medical_rows:
+        pig_id = medical_row["pig_id"]
+        medical_by_pig.setdefault(pig_id, medical_row)
+        medical_history_by_pig.setdefault(pig_id, []).append(medical_row)
     today = date.today()
     for row in current_rows:
         allocation = allocated_by_pig.get(row.get("pig_id"), {})
@@ -808,14 +1066,45 @@ def get_allocation_input_rows(connect_factory=None):
             "Allocated" if allocation else "Not_Reserved"
         )
         row["reserved_for_order_id"] = allocation.get("order_id", "")
+        row["allocation_evidence_state"] = "allocated" if allocation else "known_unallocated"
+        row["allocation_order_status"] = allocation.get("order_status", "")
+        row["allocation_line_status"] = allocation.get("line_status", "")
         medical = medical_by_pig.get(row.get("pig_id"), {})
+        withdrawal_history = medical_history_by_pig.get(row.get("pig_id"), [])
         withdrawal_end = medical.get("withdrawal_end_date")
         follow_up_date = medical.get("follow_up_date")
         withdrawal_hold = isinstance(withdrawal_end, date) and withdrawal_end > today
+        active_withdrawal_end_dates = [
+            item.get("withdrawal_end_date")
+            for item in withdrawal_history
+            if isinstance(item.get("withdrawal_end_date"), date) and item.get("withdrawal_end_date") > today
+        ]
+        applicable_ended = any(
+            isinstance(item.get("withdrawal_end_date"), date) and item.get("withdrawal_end_date") <= today
+            for item in withdrawal_history
+        )
+        unknown_withdrawal = any(
+            item.get("withdrawal_days") is None and not isinstance(item.get("withdrawal_end_date"), date)
+            for item in withdrawal_history
+        )
+        if active_withdrawal_end_dates:
+            withdrawal_evidence_state = "hold"
+            withdrawal_end = max(active_withdrawal_end_dates)
+        elif unknown_withdrawal:
+            withdrawal_evidence_state = "unknown"
+        elif applicable_ended:
+            withdrawal_evidence_state = "cleared"
+        elif withdrawal_history and all(
+            item.get("withdrawal_days") == 0 for item in withdrawal_history
+        ):
+            withdrawal_evidence_state = "not_applicable"
+        else:
+            withdrawal_evidence_state = "unknown"
         follow_up_hold = bool(medical.get("follow_up_required")) and (
             not isinstance(follow_up_date, date) or follow_up_date >= today
         )
         row["current_withdrawal_end_date"] = withdrawal_end
+        row["withdrawal_evidence_state"] = withdrawal_evidence_state
         row["medical_status"] = "Withdrawal hold" if withdrawal_hold else "Follow-up hold" if follow_up_hold else "Clear"
         row["health_status"] = _text(medical.get("reason_for_treatment") or medical.get("treatment_type"))
         # No canonical animal-media table exists yet. Keep the contract explicit and empty;
@@ -832,8 +1121,8 @@ def get_allocation_input_rows(connect_factory=None):
     litter_rows = _fetch_all(
         """
         select litter_id, sow_pig_id, boar_pig_id, sow_tag_number, boar_tag_number,
-               born_alive, weaned_count, litter_status
-        from public.litters
+               farrowing_date, wean_date, born_alive, weaned_count, litter_status
+        from public.current_canonical_litters
         order by litter_id
         """,
         connect_factory=connect_factory,
@@ -859,6 +1148,8 @@ def get_allocation_input_rows(connect_factory=None):
         "Sow_Tag_Number": _text(row.get("sow_tag_number")),
         "Boar_Pig_ID": _text(row.get("boar_pig_id")),
         "Boar_Tag_Number": _text(row.get("boar_tag_number")),
+        "Farrowing_Date": _date_text(row.get("farrowing_date")),
+        "Wean_Date": _date_text(row.get("wean_date")),
         "Born_Alive": _float_or_none(row.get("born_alive")),
         "Weaned_Count": _float_or_none(row.get("weaned_count")),
         "Litter_Status": _text(row.get("litter_status")),
@@ -880,6 +1171,8 @@ def get_allocation_input_rows(connect_factory=None):
         "litter_rows": formatted_litter_rows,
         "pen_lookup": pen_lookup,
         "source": "supabase_canonical",
+        "allocation_query_status": "known",
+        "medical_query_status": "known",
     }
 
 
@@ -887,7 +1180,7 @@ def _litter_rows_with_pigs(connect_factory=None):
     litters = _fetch_all(
         """
         select *
-        from public.litters
+        from public.current_canonical_litters
         order by farrowing_date desc nulls last, litter_id
         """,
         connect_factory=connect_factory,
@@ -1352,18 +1645,10 @@ def _days_since(value):
     return str((date.today() - value).days)
 
 
-def get_mating_overview(connect_factory=None):
-    rows = _fetch_all(
-        """
-        select *
-        from public.mating_events
-        order by mating_date desc nulls last, mating_id desc
-        """,
-        connect_factory=connect_factory,
-    )
-    state_rows = {row["pig_id"]: row for row in _current_state_rows(connect_factory=connect_factory)}
+def project_mating_overview(rows, state_rows, today=None):
+    state_rows = {row["pig_id"]: row for row in state_rows}
     records = []
-    today = date.today()
+    today = today or date.today()
     for row in rows:
         sow = state_rows.get(_text(row.get("sow_pig_id")), {})
         boar = state_rows.get(_text(row.get("boar_pig_id")), {})
@@ -1387,6 +1672,17 @@ def get_mating_overview(connect_factory=None):
             "expected_pregnancy_check_date": _date_text(expected_check),
             "pregnancy_check_date": _date_text(row.get("pregnancy_check_date")),
             "pregnancy_check_result": _text(row.get("pregnancy_check_result")),
+            "pregnancy_check_method": _text(
+                row.get("pregnancy_check_method")
+                or row.get("diagnostic_method")
+            ),
+            "pregnancy_check_assessor": _text(
+                row.get("pregnancy_check_assessor")
+                or row.get("assessor")
+                or row.get("checked_by")
+            ),
+            "pregnancy_check_time": _text(row.get("pregnancy_check_time")),
+            "pregnancy_checked_at": _text(row.get("pregnancy_checked_at")),
             "expected_farrowing_date": _date_text(expected_farrowing),
             "actual_farrowing_date": _date_text(row.get("farrowing_date")),
             "mating_status": status,
@@ -1401,6 +1697,18 @@ def get_mating_overview(connect_factory=None):
             "updated_at": _date_text(row.get("updated_at")),
         })
     return records
+
+
+def get_mating_overview(connect_factory=None):
+    rows = _fetch_all(
+        """
+        select *
+        from public.mating_events
+        order by mating_date desc nulls last, mating_id desc
+        """,
+        connect_factory=connect_factory,
+    )
+    return project_mating_overview(rows, _current_state_rows(connect_factory=connect_factory))
 
 
 def _blank_breeding_metric(pig_id, tag_number):
@@ -1446,9 +1754,7 @@ def _finish_breeding_metrics(metrics):
     return sorted(rows, key=lambda item: (-item["litter_count"], -item["farrowed_count"], str(item["tag_number"] or item["pig_id"]).lower()))
 
 
-def get_breeding_analytics(connect_factory=None):
-    mating_rows = get_mating_overview(connect_factory=connect_factory)
-    litter_overview = list_litter_overview(connect_factory=connect_factory)
+def build_breeding_analytics_from_evidence(mating_rows, litter_overview):
     sow_metrics = {}
     boar_metrics = {}
 
@@ -1505,8 +1811,15 @@ def get_breeding_analytics(connect_factory=None):
     }
 
 
+def get_breeding_analytics(connect_factory=None):
+    return build_breeding_analytics_from_evidence(
+        get_mating_overview(connect_factory=connect_factory),
+        list_litter_overview(connect_factory=connect_factory),
+    )
+
+
 def _tag_for_pig(pig_id, connect_factory=None):
-    row = _fetch_one("select tag_number from public.pigs where pig_id = %s", (pig_id,), connect_factory=connect_factory)
+    row = _fetch_one("select tag_number from public.current_canonical_pigs where pig_id = %s", (pig_id,), connect_factory=connect_factory)
     return _text(row.get("tag_number")) if row else ""
 
 
@@ -1637,7 +1950,7 @@ def get_latest_weight_for_pig(pig_id, connect_factory=None):
     row = _fetch_one(
         """
         select state.pig_id, state.tag_number, state.current_weight_kg, state.last_weight_date
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         where state.pig_id = %s
         """,
         (pig_id,),
@@ -1660,7 +1973,7 @@ def get_weight_entries_by_date(weight_date, connect_factory=None):
                event.weight_date, event.weight_kg, event.weighed_by, event.condition_notes
         from public.pig_weight_events event
         left join public.pigs pig on pig.pig_id = event.pig_id
-        left join public.pig_current_state state on state.pig_id = event.pig_id
+        left join public.current_canonical_pig_state state on state.pig_id = event.pig_id
         where event.weight_date = %s
         order by coalesce(nullif(pig.tag_number, ''), event.pig_id), event.pig_id
         """,
@@ -1698,7 +2011,7 @@ def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
             state.animal_type,
             state.current_weight_kg
         from public.pig_weight_events event
-        left join public.pig_current_state state on state.pig_id = event.pig_id
+        left join public.current_canonical_pig_state state on state.pig_id = event.pig_id
         where event.weight_date <= %s
         order by event.pig_id, event.weight_date, event.created_at, event.weight_event_id
         """,

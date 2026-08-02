@@ -2,15 +2,15 @@
 
 from datetime import date, datetime, time, timedelta, timezone
 from hashlib import sha256
-from math import ceil, isfinite
+from math import ceil
 import threading
 import time as time_module
 import re
 
 from modules.oom_sakkie.sales_campaign_store import list_sales_leads
 from modules.pig_weights.pig_weights_service import (
-    _live_stock_sale_eligibility,
-    get_pig_allocation_readiness,
+    EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION,
+    get_sales_availability,
 )
 from modules.sales.sam_live_stock_launch_control import list_sam_live_stock_open_intakes
 from modules.sales.sam_meat_control_mode import sam_meat_control_policy
@@ -31,22 +31,55 @@ DEPENDENCY_CACHE_TTL_SECONDS = 15.0
 DEPENDENCY_COOLDOWN_SECONDS = 2.0
 _DEPENDENCY_FLIGHTS = {}
 _DEPENDENCY_FLIGHTS_LOCK = threading.Lock()
+AUTHORITATIVE_AVAILABILITY_SOURCE = "herdmaster_sales_availability"
 
 
-def _normalized_allocation_thresholds(value):
-    """Return eligibility-safe thresholds and whether source evidence is malformed."""
-    if not isinstance(value, dict):
-        return {}, True
-    raw_stale_weight_days = value.get("stale_weight_days")
-    if isinstance(raw_stale_weight_days, bool):
-        return {}, True
-    try:
-        stale_weight_days = float(raw_stale_weight_days)
-    except (TypeError, ValueError):
-        return {}, True
-    if not isfinite(stale_weight_days) or stale_weight_days <= 0:
-        return {}, True
-    return {**value, "stale_weight_days": stale_weight_days}, False
+def _load_authoritative_sales_availability():
+    """Adapt the public versioned Herdmaster sales rail; never raw allocation."""
+    rows = get_sales_availability()
+    rows = rows if isinstance(rows, list) else None
+    observations = [
+        str(row.get("eligibility_observed_at") or "").strip()
+        for row in rows or []
+        if isinstance(row, dict) and row.get("eligibility_observed_at")
+    ]
+    contract_complete = bool(rows) and all(
+        isinstance(row, dict)
+        and row.get("exact_animal_eligibility_contract_version")
+        == EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION
+        for row in rows
+    )
+    return {
+        "source": AUTHORITATIVE_AVAILABILITY_SOURCE,
+        "contract_version": (
+            EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION
+            if contract_complete else ""
+        ),
+        "generated_at": min(observations) if observations else "",
+        "pigs": rows,
+    }
+
+
+def _authoritative_available_pig(row):
+    """Require the complete affirmative versioned row, not compatibility data."""
+    if not isinstance(row, dict):
+        return False
+    normalized = lambda value: str(value or "").strip().lower().replace(" ", "_")
+    return all((
+        row.get("exact_animal_eligibility_contract_version")
+        == EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION,
+        row.get("live_stock_sale_eligible") is True,
+        row.get("evidence_complete") is True,
+        normalized(row.get("purpose")) == "sale",
+        normalized(row.get("allocation_query_status")) in {"known", "success"},
+        normalized(row.get("allocation_evidence_state")) == "known_unallocated",
+        normalized(row.get("withdrawal_evidence_state"))
+        in {"not_applicable", "cleared"},
+        normalized(row.get("medical_status")) == "clear",
+        normalized(row.get("reserved_status")) == "not_reserved",
+        not str(row.get("reserved_for_order_id") or "").strip(),
+        normalized(row.get("available_for_sale")) in {"yes", "true", "1"},
+    ))
 
 
 def _utc(value, *, end_of_day=False):
@@ -138,7 +171,11 @@ def _pig_matches_weight(pig, bounds):
     if bounds is None:
         return True
     try:
-        weight = float(pig.get("latest_weight_kg"))
+        weight = float(
+            pig.get("current_weight_kg")
+            if pig.get("current_weight_kg") is not None
+            else pig.get("latest_weight_kg")
+        )
     except (TypeError, ValueError):
         return False
     return bounds[0] <= weight <= bounds[1]
@@ -284,9 +321,7 @@ def build_beacon_opportunity_cards(
     }
     loaders = {
         "allocation_readiness": allocation_loader or (
-            lambda: get_pig_allocation_readiness(
-                today=now.date(), allow_sheet_fallback=False
-            )
+            _load_authoritative_sales_availability
         ),
         "sam_live_stock_intakes": live_intakes_loader or _load_live_intakes,
         "meat_sales_leads": meat_leads_loader or _load_meat_leads,
@@ -303,20 +338,31 @@ def build_beacon_opportunity_cards(
     meat_leads = loaded["meat_sales_leads"]
     allocation = allocation if isinstance(allocation, dict) else {}
 
-    observed_at = _utc(allocation.get("generated_at") or allocation.get("generated_date"))
-    source_ok = allocation.get("source") == "supabase_canonical"
+    observed_at = _utc(allocation.get("generated_at"))
     evidence_in_future = observed_at is not None and observed_at > now
     fresh = observed_at is not None and not evidence_in_future and now <= observed_at + timedelta(hours=FRESHNESS_HOURS)
     raw_pigs = allocation.get("pigs")
+    rows_versioned = isinstance(raw_pigs, list) and all(
+        isinstance(pig, dict)
+        and pig.get("exact_animal_eligibility_contract_version")
+        == EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION
+        for pig in raw_pigs
+    )
+    source_ok = (
+        allocation.get("source") == AUTHORITATIVE_AVAILABILITY_SOURCE
+        and allocation.get("contract_version")
+        == EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION
+        and rows_versioned
+    )
     malformed_allocation_pigs = not isinstance(raw_pigs, list)
     if isinstance(raw_pigs, list) and any(not isinstance(pig, dict) for pig in raw_pigs):
         malformed_allocation_pigs = True
     pigs_evidence = [pig for pig in raw_pigs if isinstance(pig, dict)] if isinstance(raw_pigs, list) else []
-    thresholds, malformed_allocation_thresholds = _normalized_allocation_thresholds(allocation.get("thresholds"))
-    eligible = []
-    for pig in pigs_evidence if source_ok and not malformed_allocation_pigs and not malformed_allocation_thresholds else []:
-        if _live_stock_sale_eligibility(pig, thresholds).get("eligible"):
-            eligible.append(pig)
+    eligible = [
+        pig for pig in pigs_evidence
+        if source_ok and not malformed_allocation_pigs
+        and _authoritative_available_pig(pig)
+    ]
 
     cards = []
     categories = sorted({str(pig.get("sale_category") or pig.get("weight_band") or "unclassified") for pig in eligible})
@@ -357,11 +403,9 @@ def build_beacon_opportunity_cards(
         available_after_buffers = sum(item["available_after_buffers"] for item in capacity_by_category.values())
         blockers = []
         if not source_ok:
-            blockers.append("supabase_allocation_readiness_unavailable")
+            blockers.append("authoritative_sales_availability_unavailable")
         if malformed_allocation_pigs:
             blockers.append("malformed_allocation_pigs_evidence")
-        if malformed_allocation_thresholds:
-            blockers.append("malformed_allocation_thresholds_evidence")
         if not fresh:
             blockers.append("stale_or_missing_allocation_evidence")
         if evidence_in_future:

@@ -241,7 +241,11 @@ class FarmSupabaseWriteCutoverTests(unittest.TestCase):
              patch.object(pig_weights_service, "generate_medical_log_id", return_value="MED-1"), \
              patch.object(pig_weights_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
              patch.object(pig_weights_service.farm_supabase_write_service, "update_pigs_by_id", return_value=1) as update_pigs, \
-             patch.object(pig_weights_service.farm_supabase_write_service, "insert_medical_event_from_sheet_row") as insert_medical, \
+             patch.object(
+                 pig_weights_service.farm_supabase_write_service,
+                 "insert_missing_medical_events_from_sheet_rows",
+                 return_value={"created": 1, "skipped": 0},
+             ) as insert_medical, \
              patch.object(pig_weights_service, "batch_update_rows_by_id") as sheet_pig_update, \
              patch.object(pig_weights_service, "append_row") as append_row:
             result, status_code = pig_weights_service.record_litter_newborn_health(

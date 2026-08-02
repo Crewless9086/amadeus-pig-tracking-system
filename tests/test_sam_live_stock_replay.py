@@ -25,7 +25,7 @@ class SamLiveStockReplayTests(unittest.TestCase):
         self.assertFalse(report["readiness"]["ready_for_narrow_auto_send_owner_decision"])
         self.assertFalse(report["readiness"]["auto_send_enabled"])
 
-    def test_sanitized_vertical_slice_trace_preserves_evidence_unknowns_and_no_write_boundary(self):
+    def test_sanitized_vertical_slice_unversioned_rows_fail_closed_without_private_output(self):
         cases = [{
             "case_id": "SANITIZED-LIVE-STOCK-01",
             "conversation_group": "SANITIZED-CONVERSATION-01",
@@ -55,13 +55,53 @@ class SamLiveStockReplayTests(unittest.TestCase):
         self.assertEqual(entry["evidence_used"]["herdmaster"]["summary"]["sale_ready_pigs"], 51)
         self.assertEqual(entry["evidence_used"]["herdmaster"]["provenance"], "sanitized_herdmaster_snapshot")
         self.assertEqual(entry["evidence_used"]["ledger"]["payment"]["status"], "unknown")
-        self.assertEqual(len(entry["evidence_used"]["matched_candidate_evidence"]), 2)
-        self.assertTrue(all(candidate["purpose"] == "Sale" for candidate in entry["evidence_used"]["matched_candidate_evidence"]))
+        self.assertEqual(entry["evidence_used"]["matched_candidate_evidence"], [])
+        self.assertFalse(entry["quote_order_preparation"]["draft_order_ready"])
+        self.assertEqual(entry["quote_order_preparation"]["stock_preselection"]["selected_pig_ids"], [])
+        self.assertEqual(entry["quote_order_preparation"]["stock_preselection"]["quantity_shortfall"], 2)
         self.assertEqual(entry["evidence_used"]["supplied_order_warning_review"][1]["classification"], "false_positive_not_blocking")
         self.assertTrue(entry["response_proposal"])
+        response = entry["response_proposal"].casefold()
+        for private_value in ("san-w-01", "san-w-02", "pig_id", "tag_number", "current_pen", "medical_status", "withdrawal_end", "reserved_for_order", "allocation_evidence", "order_id"):
+            self.assertNotIn(private_value, response)
         self.assertTrue(entry["quote_order_preparation"]["owner_gate_required"])
         self.assertFalse(entry["authority_decision"]["writes_or_sends_attempted"])
         self.assertFalse(report["owner_review_packet"]["customer_send_or_write_attempted"])
+
+    def test_versioned_affirmative_rows_remain_eligible_and_proposal_only(self):
+        contract = {
+            "sex": "Female", "status": "Active", "on_farm": "Yes", "purpose": "Sale",
+            "available_for_sale": "Yes", "live_stock_sale_eligible": True,
+            "exact_animal_eligibility_contract_version": "herdmaster_exact_animal_eligibility_v1",
+            "evidence_complete": True, "eligibility_observed_at": "2026-07-24",
+            "allocation_query_status": "known", "allocation_evidence_state": "known_unallocated",
+            "reserved_status": "Not_Reserved", "withdrawal_evidence_state": "not_applicable",
+            "withdrawal_clear": "Yes", "medical_status": "Clear", "calculated_stage": "Weaner",
+            "sale_category": "Weaner", "current_weight_kg": 12, "latest_weight_date": "2026-07-24",
+            "days_since_weight": 0,
+        }
+        cases = [{
+            "case_id": "SANITIZED-VERSIONED-01",
+            "conversation_group": "SANITIZED-CONVERSATION-VERSIONED",
+            "reply_class": "quote_preparation",
+            "payload": {
+                "event": "message_created", "message_type": "incoming",
+                "content": "I need 2 female weaners around 12kg next week in Riversdale. Can you prepare a quote?",
+                "conversation": {"id": "SAN-V1"}, "sender": {"name": "Sanitized Buyer"},
+            },
+            "availability_rows": [
+                dict(contract, pig_id="SAN-V-01"),
+                dict(contract, pig_id="SAN-V-02"),
+            ],
+            "ledger_price_rule": {"found": True, "unit_price": 450, "currency": "ZAR", "source": "sanitized_sales_pricing_snapshot"},
+        }]
+        entry = run_replay(cases)["trace"][0]
+        selected = entry["quote_order_preparation"]["stock_preselection"]
+        self.assertEqual(len(entry["evidence_used"]["matched_candidate_evidence"]), 2)
+        self.assertEqual(selected["selected_pig_ids"], ["SAN-V-01", "SAN-V-02"])
+        self.assertEqual(selected["quantity_shortfall"], 0)
+        self.assertTrue(selected["proposal_only"])
+        self.assertFalse(entry["authority_decision"]["writes_or_sends_attempted"])
 
     def test_missing_or_non_sale_purpose_cannot_support_quote_preparation(self):
         base = {

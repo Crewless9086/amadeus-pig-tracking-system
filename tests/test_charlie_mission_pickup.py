@@ -1,3 +1,5 @@
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -41,6 +43,257 @@ MISSION = {
 
 
 class CharlieMissionPickupTests(unittest.TestCase):
+    def test_observe_only_runtime_makes_pickup_authorization_unreachable(self):
+        with patch.dict(
+            os.environ,
+            {"CHARLIE_CORE_EXECUTION_MODE": "observe_only"},
+            clear=False,
+        ), patch.object(
+            charlie_mission_pickup, "_read_json",
+            side_effect=AssertionError("mission authorization state must not be read"),
+        ), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path("missing-observe-only-stop-marker")
+        ):
+            allowed, reason = charlie_mission_pickup._runtime_pickup_authorized()
+        self.assertFalse(allowed)
+        self.assertEqual(reason, "observe_only_mission_paths_unreachable")
+
+    def test_forged_observe_only_cli_without_mode_fails_before_startup(self):
+        with patch.object(
+            charlie_mission_pickup.sys, "argv",
+            ["charlie_mission_pickup.py", "--observe-only"],
+        ), patch.dict(
+            os.environ, {"CHARLIE_CORE_EXECUTION_MODE": "ordinary"}, clear=False
+        ), patch.object(
+            charlie_mission_pickup, "_validate_supervisor_startup",
+            side_effect=AssertionError("startup must remain unreachable"),
+        ), patch.object(charlie_mission_pickup, "write_runner_heartbeat"):
+            result = charlie_mission_pickup.main()
+        self.assertEqual(result, 1)
+
+    def test_observe_only_main_exits_without_mission_or_recovery_access(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stop_path = Path(tmp) / "supervisor.stop"
+            stop_path.write_text("stop", encoding="utf-8")
+            with patch.object(
+            charlie_mission_pickup.sys, "argv",
+            ["charlie_mission_pickup.py", "--observe-only"],
+        ), patch.dict(
+            os.environ, {"CHARLIE_CORE_EXECUTION_MODE": "observe_only"}, clear=False
+        ), patch.object(
+            charlie_mission_pickup, "_validate_supervisor_startup",
+            return_value={"success": True},
+        ), patch.object(
+            charlie_mission_pickup, "_wait_for_final_start_authorization",
+            return_value={"success": True},
+        ), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", stop_path,
+        ), patch.object(
+            charlie_mission_pickup, "write_runner_heartbeat",
+        ), patch.object(
+            charlie_mission_pickup, "list_missions",
+            side_effect=AssertionError("mission discovery must be unreachable"),
+        ), patch.object(
+            charlie_mission_pickup, "consume_final_agent_artifact",
+            side_effect=AssertionError("recovery must be unreachable"),
+        ):
+                result = charlie_mission_pickup.main()
+        self.assertEqual(result, 0)
+    def test_direct_pickup_without_supervisor_generation_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ, {}, clear=True
+        ), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path(tmp) / "stop"
+        ):
+            result = charlie_mission_pickup._validate_supervisor_startup()
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "supervisor_generation_missing")
+
+    def test_direct_pickup_honors_stop_marker_before_any_packet(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path(tmp) / "stop"
+        ):
+            charlie_mission_pickup.SUPERVISOR_STOP_PATH.write_text(
+                "owner stop", encoding="utf-8"
+            )
+            result = charlie_mission_pickup._validate_supervisor_startup()
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "governed_stop_active")
+
+    def test_test_isolation_cannot_bypass_canonical_stop_marker(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+            "CHARLIE_TEST_ISOLATION": "1",
+        }, clear=True), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path(tmp) / "stop"
+        ):
+            charlie_mission_pickup.SUPERVISOR_STOP_PATH.write_text(
+                "owner stop", encoding="utf-8"
+            )
+            authorized, reason = charlie_mission_pickup._runtime_pickup_authorized()
+        self.assertFalse(authorized)
+        self.assertEqual(reason, "governed_stop_active")
+
+    def test_inherited_test_environment_is_not_pickup_authority(self):
+        original = charlie_mission_pickup._TEST_PICKUP_AUTHORIZED
+        try:
+            charlie_mission_pickup._TEST_PICKUP_AUTHORIZED = False
+            with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+                "CHARLIE_TEST_ISOLATION": "1",
+            }, clear=True), patch.object(
+                charlie_mission_pickup,
+                "SUPERVISOR_STOP_PATH",
+                Path(tmp) / "stop",
+            ), patch.object(
+                charlie_mission_pickup,
+                "SUPERVISOR_PATH",
+                Path(tmp) / "supervisor.json",
+            ):
+                authorized, reason = (
+                    charlie_mission_pickup._runtime_pickup_authorized()
+                )
+            self.assertFalse(authorized)
+            self.assertEqual(
+                reason, "current_generation_running_authorization_missing"
+            )
+        finally:
+            charlie_mission_pickup._TEST_PICKUP_AUTHORIZED = original
+
+    def test_direct_stranded_recovery_is_contained_before_mutation(self):
+        with patch.object(
+            charlie_mission_pickup,
+            "_runtime_pickup_authorized",
+            return_value=(False, "governed_stop_active"),
+        ), patch.object(charlie_mission_pickup, "list_missions") as missions:
+            result = charlie_mission_pickup.recover_stranded_missions()
+        self.assertEqual(result["status"], "runner_contained")
+        self.assertEqual(result["recovered_count"], 0)
+        missions.assert_not_called()
+
+    def test_direct_release_processing_is_contained_before_mutation(self):
+        with patch.object(
+            charlie_mission_pickup,
+            "_runtime_pickup_authorized",
+            return_value=(False, "governed_stop_active"),
+        ), patch.object(
+            charlie_mission_pickup, "complete_no_release_mission"
+        ) as complete, patch.object(
+            charlie_mission_pickup, "run_release_execution"
+        ) as release, patch.object(
+            charlie_mission_pickup, "prepare_release_execution"
+        ) as prepare:
+            result, status = (
+                charlie_mission_pickup.process_release_approved_mission(
+                    "CHARLIE-MISSION-1",
+                    auto_close_no_release=True,
+                )
+            )
+        self.assertEqual(status, 423)
+        self.assertEqual(result["status"], "runner_contained")
+        complete.assert_not_called()
+        release.assert_not_called()
+        prepare.assert_not_called()
+
+    def test_runner_waits_for_final_controller_ack_before_pickup(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+            "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+            "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
+            "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
+            "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+        }, clear=True), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            charlie_mission_pickup, "SUPERVISOR_STOP_PATH", Path(tmp) / "stop"
+        ):
+            charlie_mission_pickup.SUPERVISOR_PATH.write_text(
+                json.dumps({
+                    "status": "running",
+                    "runner_state": "running",
+                    "generation": "generation-1",
+                }),
+                encoding="utf-8",
+            )
+            result = charlie_mission_pickup._wait_for_final_start_authorization(
+                sleep_fn=lambda _seconds: None,
+                timeout_seconds=0,
+            )
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"],
+            "controller_final_acknowledgement_missing",
+        )
+
+    def test_runner_revalidates_live_trees_before_operational_pickup(self):
+        packet = {
+            "controller_final_acknowledgement": {
+                "runner_pid": str(os.getpid()),
+                "supervisor_member_pids": [100, 101],
+                "runner_member_pids": [200, os.getpid()],
+            },
+            "supervisor_tree_identity": {},
+            "process_tree_identity": {},
+        }
+        with patch.dict(os.environ, {
+            "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+            "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
+            "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
+            "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+            "CHARLIE_CONTROLLER_PUBLIC_KEY": "public-key",
+        }, clear=True), patch.object(
+            charlie_mission_pickup,
+            "validate_live_bootstrap_tree",
+            side_effect=[
+                {"authorized": False, "reason": "live_identity_creation_time_mismatch"},
+                {"authorized": True, "member_pids": [200, os.getpid()]},
+            ],
+        ), patch.object(
+            charlie_mission_pickup,
+            "verify_controller_acknowledgement",
+            return_value=True,
+        ):
+            packet["controller_public_key"] = "public-key"
+            result = charlie_mission_pickup._validate_final_packet_live(packet)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "live_identity_creation_time_mismatch"
+        )
+
+    def test_runner_refuses_missing_current_generation_packet(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {
+                "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+                "CHARLIE_INTENDED_RUNTIME_REVISION": "revision-1",
+                "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+            },
+            clear=False,
+        ), patch.object(charlie_mission_pickup, "SUPERVISOR_PATH", Path(tmp) / "missing.json"):
+            result = charlie_mission_pickup._validate_supervisor_startup()
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "supervisor_packet_missing")
+
+    def test_runner_refuses_mismatched_generation_before_pickup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            packet_path = Path(tmp) / "supervisor.json"
+            packet_path.write_text(json.dumps({
+                "version": "charlie_supervisor_ownership_v3",
+                "generation": "other-generation",
+                "created_at": "2026-07-26T00:00:00Z",
+                "intended_runtime_revision": "revision-1",
+                "intended_execution_revision": "revision-1",
+                "runner_state": "runner_starting",
+                "startup_nonce": "supervisor-nonce",
+                "supervisor_tree_identity": {"root": {"pid": 1}, "members": [{"pid": 1}]},
+            }), encoding="utf-8")
+            with patch.dict(os.environ, {
+                "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+                "CHARLIE_INTENDED_RUNTIME_REVISION": "revision-1",
+                "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+                "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
+                "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
+            }, clear=False), patch.object(charlie_mission_pickup, "SUPERVISOR_PATH", packet_path):
+                result = charlie_mission_pickup._validate_supervisor_startup()
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "supervisor_packet_generation_mismatch")
     def test_resume_uses_exact_remote_branch_without_local_fast_forward(self):
         mission = {
             "mission_id": "M-1",
@@ -56,6 +309,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertNotIn(["git", "switch", "feature/test"], commands)
         self.assertFalse(any(command[:3] == ["git", "merge", "--ff-only"] for command in commands))
     def setUp(self):
+        charlie_mission_pickup._authorize_test_pickup_for_current_process()
         self._base_branch_env_patcher = patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": ""})
         self._base_branch_env_patcher.start()
         self.addCleanup(self._base_branch_env_patcher.stop)
@@ -515,11 +769,11 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("Supabase is canonical", content)
         self.assertIn("LEVEL 3 may open PR but not merge.", content)
         self.assertIn("LEVEL 3: code and tests may be changed", content)
-        update_status.assert_called_once()
-        self.assertEqual(update_status.call_args.args[1], "in_progress")
-        self.assertEqual(update_status.call_args.kwargs["expected_status"], "approved")
+        update_status.assert_not_called()
         self.assertGreaterEqual(update_vault.call_count, 1)
-        lease = update_vault.call_args.args[1]["execution_lease"]
+        lease = update_vault.call_args_list[0].args[1]["execution_lease"]
+        self.assertEqual(update_vault.call_args_list[0].kwargs["status"], "in_progress")
+        self.assertEqual(update_vault.call_args_list[0].kwargs["expected_status"], "approved")
         self.assertEqual(lease["mission_id"], "CHARLIE-MISSION-123")
         self.assertIn("lease_id", lease)
         self.assertTrue(result["execution_lease"]["persisted"])
@@ -527,9 +781,81 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    def test_marker_appearing_after_claim_prevents_branch_and_later_mutation(
+        self, list_owner_work_missions, get_mission
+    ):
+        list_owner_work_missions.return_value = (
+            {"success": True, "status": "ok", "missions": [MISSION]}, 200
+        )
+        get_mission.return_value = (
+            {"success": True, "status": "ok", "mission": MISSION}, 200
+        )
+        with patch.object(
+            charlie_mission_pickup,
+            "_runtime_pickup_authorized",
+            side_effect=[
+                (True, "authorized"),
+                (True, "authorized"),
+                (False, "governed_stop_active"),
+            ],
+        ), patch.object(
+            charlie_mission_pickup,
+            "_ensure_base_branch",
+            return_value={"success": True},
+        ), patch.object(
+            charlie_mission_pickup,
+            "_refresh_core_plan_for_pickup",
+            return_value={"refreshed": False, "blocked": False},
+        ) as refresh, patch.object(
+            charlie_mission_pickup, "_restore_mission_branch_for_resume"
+        ) as restore, patch.object(
+            charlie_mission_pickup,
+            "update_mission_vault",
+            return_value=(
+                {"success": True, "status": "ok", "mission_status": "in_progress"},
+                200,
+            ),
+        ) as update_vault:
+            result, status = charlie_mission_pickup.pick_up_next_mission()
+        self.assertEqual(status, 423)
+        self.assertEqual(result["reason"], "governed_stop_active")
+        refresh.assert_called_once()
+        restore.assert_not_called()
+        update_vault.assert_called_once()
+
+    @patch("scripts.charlie_mission_pickup.get_mission")
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
-    def test_pickup_uses_authoritative_coordinator_state_not_compact_queue_row(
+    def test_new_adaptive_mission_without_durable_packet_cannot_be_claimed(
         self, update_status, list_owner_work_missions, get_mission
+    ):
+        mission = {
+            **MISSION,
+            "metadata": {
+                "intake": {"adaptive_orchestration_required": True},
+                "orchestration": None,
+                "orchestration_binding": None,
+            },
+            "agent_workflow": [{"agent": "source_mapper", "status": "active"}],
+        }
+        list_owner_work_missions.return_value = (
+            {"success": True, "status": "ok", "missions": [mission]},
+            200,
+        )
+        get_mission.return_value = (
+            {"success": True, "status": "ok", "mission": mission},
+            200,
+        )
+        result, status_code = charlie_mission_pickup.pick_up_next_mission()
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "adaptive_orchestration_not_durably_bound")
+        update_status.assert_not_called()
+
+    @patch("scripts.charlie_mission_pickup.get_mission")
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    def test_pickup_uses_authoritative_coordinator_state_not_compact_queue_row(
+        self, update_vault, list_owner_work_missions, get_mission
     ):
         compact = {
             **MISSION,
@@ -562,17 +888,14 @@ class CharlieMissionPickupTests(unittest.TestCase):
             {"success": True, "status": "ok", "mission": authoritative},
             200,
         )
-        update_status.return_value = (
+        update_vault.return_value = (
             {"success": True, "status": "ok", "mission_status": "in_progress"},
             200,
         )
 
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "CODEX_CHAT.md"
-            with patch("scripts.charlie_mission_pickup.CODEX_CHAT_PATH", target), patch(
-                "scripts.charlie_mission_pickup._write_execution_lease",
-                return_value={"persisted": True},
-            ):
+            with patch("scripts.charlie_mission_pickup.CODEX_CHAT_PATH", target):
                 result, status_code = charlie_mission_pickup.pick_up_next_mission()
             content = target.read_text(encoding="utf-8")
 
@@ -585,7 +908,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
-    def test_pickup_refreshes_old_workflow_before_claim(self, update_status, update_vault, list_owner_work_missions, get_mission):
+    def test_pickup_refreshes_old_workflow_after_atomic_claim(self, update_status, update_vault, list_owner_work_missions, get_mission):
         old_mission = {
             **MISSION,
             "metadata": {"charlie_core": {"project_truth": {"pipeline_profile": "full", "workflow_right_sized": False}}},
@@ -611,11 +934,12 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
         self.assertEqual(status_code, 200)
         self.assertTrue(result["workflow_refresh"]["refreshed"])
-        refresh_payload = update_vault.call_args_list[0].args[1]
+        self.assertIn("execution_lease", update_vault.call_args_list[0].args[1])
+        refresh_payload = update_vault.call_args_list[1].args[1]
         self.assertIn("agent_workflow", refresh_payload)
         self.assertIn("mission_context_pack", refresh_payload)
         self.assertIn("charlie_core", refresh_payload)
-        self.assertEqual(update_status.call_args.kwargs["expected_status"], "approved")
+        update_status.assert_not_called()
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
@@ -791,11 +1115,11 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
-    @patch("scripts.charlie_mission_pickup.update_mission_status")
-    def test_pickup_claim_lost_does_not_write_codex_chat(self, update_status, list_owner_work_missions, get_mission):
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    def test_pickup_claim_lost_does_not_write_codex_chat(self, update_vault, list_owner_work_missions, get_mission):
         list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [MISSION]}, 200)
         get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
-        update_status.return_value = ({"success": False, "status": "status_claim_lost"}, 409)
+        update_vault.return_value = ({"success": False, "status": "status_claim_lost"}, 409)
 
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "CODEX_CHAT.md"
@@ -865,6 +1189,43 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertGreaterEqual(write_heartbeat.call_count, 2)
         sleep.assert_called_once_with(5)
 
+    @patch("scripts.charlie_mission_pickup.reconcile_blocked_pr_missions")
+    @patch("scripts.charlie_mission_pickup._run_domain_observers")
+    @patch("scripts.charlie_mission_pickup.run_executive_cycle")
+    @patch("scripts.charlie_mission_pickup.recover_stranded_missions")
+    @patch("scripts.charlie_mission_pickup._active_mission", return_value=None)
+    @patch("scripts.charlie_mission_pickup.pick_up_next_mission")
+    @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
+    def test_first_continuous_cycle_reaches_pickup_before_slow_maintenance(
+        self,
+        write_heartbeat,
+        pickup,
+        _active,
+        recover,
+        executive,
+        observers,
+        reconcile,
+    ):
+        recover.return_value = {"recovered_count": 0}
+        executive.return_value = ({"status": "executive_cycle_complete", "results": []}, 200)
+        pickup.return_value = (
+            {"success": True, "status": "dry_run", "mission_id": "REPLACEMENT"},
+            200,
+        )
+
+        result, status_code = charlie_mission_pickup.watch_for_mission(
+            continuous=True,
+            dry_run=True,
+            max_checks=1,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["mission_id"], "REPLACEMENT")
+        pickup.assert_called_once()
+        observers.assert_not_called()
+        reconcile.assert_not_called()
+        write_heartbeat.assert_called()
+
     @patch("scripts.charlie_mission_pickup.time.sleep")
     @patch("scripts.charlie_mission_pickup.execute_codex_for_mission")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
@@ -899,8 +1260,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
         sleep.assert_not_called()
 
     @patch.dict("os.environ", {}, clear=True)
+    @patch("scripts.charlie_mission_pickup._runtime_pickup_authorized", return_value=(True, "test"))
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
-    def test_watch_notify_preflight_blocks_mute_runner(self, write_heartbeat):
+    def test_watch_notify_preflight_blocks_mute_runner(self, write_heartbeat, _authorized):
         result, status_code = charlie_mission_pickup.watch_for_mission(
             notify=True,
             continuous=True,
@@ -962,7 +1324,28 @@ class CharlieMissionPickupTests(unittest.TestCase):
         result = charlie_mission_pickup._active_mission()
 
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-SYSTEM-ACTIVE")
-        list_missions.assert_called_once_with(status="in_progress", limit=1, compact=False)
+        list_missions.assert_called_once_with(
+            status="in_progress",
+            limit=1,
+            compact=False,
+            exclude_superseded=True,
+            exclude_execution_held=True,
+        )
+
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_stranded_recovery_query_excludes_superseded_legacy_rows(self, list_missions):
+        list_missions.return_value = ({"success": True, "missions": []}, 200)
+
+        result = charlie_mission_pickup.recover_stranded_missions()
+
+        self.assertEqual(result["recovered_count"], 0)
+        list_missions.assert_called_once_with(
+            status="in_progress",
+            limit=100,
+            compact=False,
+            exclude_superseded=True,
+            exclude_execution_held=True,
+        )
 
     def test_live_process_is_never_recovered_from_idle_observer_shape(self):
         decision = charlie_mission_pickup._stranded_recovery_decision(

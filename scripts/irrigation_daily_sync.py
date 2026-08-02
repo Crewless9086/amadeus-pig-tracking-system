@@ -15,6 +15,7 @@ from scripts.irrigation_import_dry_run import (
     DEFAULT_IRRIGATION_SHEET_NAME,
     LOG_SHEET,
     PLAN_ONLY_BATCH_ID,
+    SOURCE_SHEET_ROW_KEY,
     STATE_SHEET,
     TABLE_INSERT_ORDER,
     ZONES_SHEET,
@@ -49,12 +50,14 @@ def filter_daily_sync_records(records, sync_date):
     ]
     today_plan_ids = {_clean(row.get("plan_id")) for row in plan_rows}
     log_rows = []
-    for row in records.get(LOG_SHEET, []):
+    for source_sheet_row, row in enumerate(records.get(LOG_SHEET, []), start=2):
         timestamp_date = _date_part(row.get("timestamp"))
         plan_id = _clean(row.get("plan_id"))
         reason = _clean(row.get("reason"))
         if timestamp_date == sync_date or plan_id in today_plan_ids or sync_date in reason:
-            log_rows.append(row)
+            traced_row = dict(row)
+            traced_row.setdefault(SOURCE_SHEET_ROW_KEY, source_sheet_row)
+            log_rows.append(traced_row)
 
     return {
         ZONES_SHEET: records.get(ZONES_SHEET, []),

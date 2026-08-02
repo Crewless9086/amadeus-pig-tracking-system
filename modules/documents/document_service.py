@@ -15,6 +15,11 @@ from services.google_sheets_service import (
 )
 from modules.documents import document_supabase_read
 from modules.documents import document_supabase_write
+from modules.sales.sam_delivery_truth import (
+    CHATWOOT_ACCEPTED_UNVERIFIED,
+    CONFIRMED_STATES,
+    classify_chatwoot_response,
+)
 from services.google_drive_service import download_drive_file
 
 SYSTEM_SETTINGS_SHEET = "SYSTEM_SETTINGS"
@@ -490,7 +495,6 @@ def _send_document_direct_to_chatwoot(document, conversation_id, sent_by, accoun
                         "content": message,
                         "message_type": "outgoing",
                         "private": "false",
-                        "source_id": f"order_document:{document_id}",
                         "content_attributes[amadeus_source]": "order_document_delivery",
                         "content_attributes[document_id]": document_id,
                         "content_attributes[document_ref]": document_ref,
@@ -510,12 +514,30 @@ def _send_document_direct_to_chatwoot(document, conversation_id, sent_by, accoun
         with urllib_request.urlopen(request, timeout=30) as response:
             response_body = response.read().decode("utf-8", errors="ignore")
             status_code = getattr(response, "status", 200)
-            return {
-                "sent": 200 <= status_code < 300,
+            try:
+                parsed_body = json.loads(response_body or "{}")
+            except json.JSONDecodeError:
+                parsed_body = {}
+            delivery = classify_chatwoot_response({
                 "status_code": status_code,
-                "body": response_body,
+                "body": parsed_body,
+            })
+            confirmed = delivery.get("delivery_state") in CONFIRMED_STATES
+            return {
+                "sent": confirmed,
+                "status_code": status_code,
+                "body": {
+                    "outgoing_message_id": delivery.get("chatwoot_outgoing_message_id"),
+                    "response_status": delivery.get("chatwoot_response_status"),
+                    "provider_identity_class": delivery.get("provider_identity_class"),
+                    "contains_raw_provider_identity": False,
+                },
                 "delivery_channel": "chatwoot_direct_attachment",
-                "attachment_sent": 200 <= status_code < 300,
+                "attachment_sent": confirmed,
+                "chatwoot_accepted": delivery.get("delivery_state") == CHATWOOT_ACCEPTED_UNVERIFIED,
+                "delivery_state": delivery.get("delivery_state"),
+                "customer_send_confirmed": confirmed,
+                "automatic_retry_prohibited": 200 <= status_code < 300,
                 "file_name": pdf_path.name,
                 "message_text": message,
                 "error": "" if 200 <= status_code < 300 else response_body[:240],

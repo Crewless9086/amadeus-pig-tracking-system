@@ -20,6 +20,66 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
     def tearDown(self):
         self._supabase_available_patch.stop()
 
+    def test_preloaded_canonical_snapshot_avoids_a_second_reader_and_preserves_order(self):
+        canonical_inputs = {
+            "overview_rows": [
+                {
+                    "Pig_ID": "PIG-2", "Tag_Number": "2", "Animal_Type": "Sow",
+                    "Sex": "Female", "Status": "Active", "On_Farm": "Yes",
+                    "Purpose": "Breeding", "Current_Pen_ID": "PEN-1",
+                    "Current_Weight_Kg": 100, "Last_Weight_Date": "2026-07-27",
+                },
+                {
+                    "Pig_ID": "PIG-1", "Tag_Number": "1", "Animal_Type": "Gilt",
+                    "Sex": "Female", "Status": "Active", "On_Farm": "Yes",
+                    "Purpose": "Breeding", "Current_Pen_ID": "PEN-1",
+                    "Current_Weight_Kg": 90, "Last_Weight_Date": "2026-07-27",
+                },
+            ],
+            "pig_master_rows": [], "weight_rows": [], "sales_rows": [],
+            "litter_rows": [], "pen_lookup": {"PEN-1": {"pen_name": "Breeding"}},
+            "source": "supabase_canonical", "allocation_query_status": "known",
+            "medical_query_status": "known",
+            "read_progress": {"status": "complete", "query_count": 8, "connection_count": 1},
+        }
+        with patch.object(
+            farm_supabase_read_service,
+            "get_allocation_input_rows",
+            side_effect=AssertionError("snapshot must not be re-read"),
+        ):
+            result = pig_weights_service.get_pig_allocation_readiness(
+                today=date(2026, 7, 27),
+                allow_sheet_fallback=False,
+                canonical_inputs=canonical_inputs,
+            )
+        self.assertEqual([row["pig_id"] for row in result["pigs"]], ["PIG-1", "PIG-2"])
+        self.assertEqual(result["source_read_progress"]["query_count"], 8)
+
+    def test_malformed_or_partial_preloaded_snapshot_is_unavailable_not_zero(self):
+        cases = (
+            {},
+            {
+                "overview_rows": [], "pig_master_rows": [], "weight_rows": [],
+                "sales_rows": [], "litter_rows": [], "pen_lookup": {},
+                "allocation_query_status": "known", "medical_query_status": "known",
+                "read_progress": {"status": "partial"},
+            },
+            {
+                "overview_rows": [], "pig_master_rows": [], "weight_rows": [],
+                "sales_rows": [], "pen_lookup": {},
+                "allocation_query_status": "known", "medical_query_status": "known",
+                "read_progress": {"status": "complete"},
+            },
+        )
+        for canonical_inputs in cases:
+            with self.subTest(canonical_inputs=canonical_inputs):
+                result = pig_weights_service.get_pig_allocation_readiness(
+                    allow_sheet_fallback=False,
+                    canonical_inputs=canonical_inputs,
+                )
+                self.assertFalse(result["success"])
+                self.assertEqual(result["status"], "malformed_or_partial_canonical_snapshot")
+
     def test_allocation_readiness_groups_pigs_with_explainable_buckets(self):
         overview_rows = [
             {
@@ -179,6 +239,10 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
     def test_allocation_readiness_can_use_supabase_input_rows(self):
         supabase_inputs = {
             "source": "supabase_canonical",
+            "read_progress": {
+                "status": "complete", "shared_snapshot": True,
+                "connection_count": 1, "query_count": 6, "stages": [],
+            },
             "overview_rows": [{
                 "Pig_ID": "PIG-1",
                 "Tag_Number": "1",
@@ -223,6 +287,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
 
         self.assertTrue(result["success"])
         self.assertEqual(result["source"], "supabase_canonical")
+        self.assertTrue(result["source_read_progress"]["shared_snapshot"])
+        self.assertEqual(result["source_read_progress"]["query_count"], 6)
         self.assertEqual(result["pigs"][0]["pig_id"], "PIG-1")
         self.assertEqual(result["pigs"][0]["current_pen_name"], "Grower Pen")
         self.assertEqual(result["pigs"][0]["litter_quality"], "Good")
@@ -232,6 +298,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
     def test_sales_stock_outputs_can_use_supabase_allocation(self):
         allocation = {
             "source": "supabase_canonical",
+            "allocation_query_status": "known",
             "pigs": [
                 {
                     "pig_id": "PIG-MEAT",
@@ -295,6 +362,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
     def test_sales_availability_only_marks_purpose_sale_weaned_price_band_rows_ready_for_sam_live(self):
         allocation = {
             "source": "supabase_canonical",
+            "allocation_query_status": "known",
             "pigs": [
                 {
                     "pig_id": "PIG-WEANER",
@@ -311,6 +379,10 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "weight_band": "10_to_14_Kg",
                     "wean_date": "2026-06-01",
                     "withdrawal_clear": "Yes",
+                    "withdrawal_evidence_state": "not_applicable",
+                    "allocation_evidence_state": "known_unallocated",
+                    "reserved_status": "Not_Reserved",
+                    "medical_status": "Clear",
                     "media_references": [{"type": "photo", "reference": "/pigs/pig-weaner.jpg"}],
                 },
                 {
@@ -376,7 +448,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(by_id["PIG-WEANER"]["latest_weight_date"], "2026-06-22")
         self.assertEqual(by_id["PIG-WEANER"]["media_references"][0]["type"], "photo")
         self.assertEqual(by_id["PIG-NEWBORN"]["available_for_sale"], "No")
-        self.assertIn("still with the sow", by_id["PIG-NEWBORN"]["live_stock_sale_reason"])
+        self.assertIn("allocation evidence", by_id["PIG-NEWBORN"]["live_stock_sale_reason"])
         self.assertEqual(by_id["PIG-BREEDING"]["available_for_sale"], "No")
         self.assertIn("Purpose = Sale", by_id["PIG-BREEDING"]["live_stock_sale_reason"])
         self.assertEqual(by_id["PIG-WITHDRAWAL"]["available_for_sale"], "No")

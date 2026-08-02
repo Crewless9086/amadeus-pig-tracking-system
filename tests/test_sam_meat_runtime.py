@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from modules.sales import sam_meat_runtime
@@ -25,6 +26,23 @@ def inbound_payload(**overrides):
 
 
 class SamMeatRuntimeTests(unittest.TestCase):
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_general_greeting_terminates_before_meat_tools_or_lead(self, record_lead):
+        extractor = Mock(side_effect=AssertionError("Meat extraction must not run"))
+        result, status = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Hi"),
+            environ={},
+            llm_extractor=extractor,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "sam_meat_general_first_withheld")
+        self.assertFalse(result["processed"])
+        self.assertFalse(result["sent"])
+        self.assertEqual(result["lane_route"]["lane"], "unclear")
+        self.assertFalse(result["sam_decision"]["specialist_lane_selected"])
+        extractor.assert_not_called()
+        record_lead.assert_not_called()
+
     def test_authorize_webhook_is_default_off_and_token_gated(self):
         allowed, denied = sam_meat_runtime.authorize_sam_meat_webhook(
             {},
@@ -443,8 +461,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
             201,
         )
 
-        self.assertIn("Set A is the Family Freezer Pack", decision["reply_text"])
-        self.assertIn("pork chops", decision["reply_text"])
+        self.assertIn("Set A is the Amadeus Signature Collection", decision["reply_text"])
+        self.assertIn("boneless neck steaks", decision["reply_text"].lower())
         self.assertIn("before quoting or booking", decision["reply_text"])
         self.assertNotIn("R100", decision["reply_text"])
 
@@ -469,10 +487,19 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertEqual(decision["reply_source"], "hard_product_knowledge")
         self.assertIn("Set A", decision["reply_text"])
-        self.assertIn("Set D", decision["reply_text"])
-        self.assertIn("Slow-Cook Family Roast Pack", decision["reply_text"])
+        self.assertNotIn("Set D", decision["reply_text"])
+        self.assertIn("Amadeus Grand Cut Collection", decision["reply_text"])
         self.assertNotIn("Budget", decision["reply_text"])
 
+    def test_retired_set_d_is_not_retained_or_offered_for_new_sale(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(content="I want a full carcass Set D"))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound, facts, {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"}, 201,
+        )
+        self.assertEqual(facts["cut_set"], "")
+        self.assertIn("Set D is retired", decision["reply_text"])
+        self.assertIn("Set C Amadeus Grand Cut", decision["reply_text"])
     def test_non_pork_request_is_redirected_without_pretending_to_sell_it(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Can I order beef mince from you?",
@@ -641,8 +668,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
             )
 
         self.assertEqual(status_code, 200)
-        self.assertEqual(result["status"], "sam_meat_live_stock_handoff")
-        self.assertEqual(result["send_status"], "wrong_lane_live_stock_no_meat_reply")
+        self.assertEqual(result["status"], "sam_meat_lane_clarification_required")
+        self.assertEqual(result["send_status"], "ambiguous_lane_no_automatic_reply")
         self.assertTrue(result["live_stock_context"]["active"])
         self.assertFalse(result["sent"])
         self.assertEqual(calls, {"record": 0, "send": 0})
@@ -724,7 +751,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
             prior_context={"lead_id": "OSK-SALES-LEAD-TEST", "latest_event": "estimated_quote_chatwoot_accepted"},
         )
 
-        self.assertIn("place in the preorder run", decision["reply_text"])
+        self.assertIn("50% deposit", decision["reply_text"])
+        self.assertIn("butcher-confirmed packed weight", decision["reply_text"])
         self.assertIn("money reflects", decision["reply_text"])
         self.assertNotIn("Is EFT fine", decision["reply_text"])
 
@@ -1793,6 +1821,160 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertFalse(review["safe_to_send"])
         self.assertIn("confirms_booking_without_gate", review["blocked_reasons"])
         self.assertIn("confirms_payment_without_bank_gate", review["blocked_reasons"])
+    def test_definitive_meat_outranks_stale_livestock_context(self):
+        phrases = (
+            "I want a half carcass, Set A.",
+            "Ek wil 'n halwe karkas, Stel A.",
+            "Half carcass asseblief, Set A.",
+        )
+        for content in phrases:
+            with self.subTest(content=content), \
+                 patch.object(sam_meat_runtime, "_conversation_live_stock_context") as livestock_context, \
+                 patch.object(sam_meat_runtime, "record_sam_meat_intake_lead", return_value=({"success": True, "lead_id": "MEAT-1"}, 201)):
+                result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                    inbound_payload(content=content),
+                    environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+                )
+            self.assertEqual(status_code, 200)
+            self.assertNotEqual(result["status"], "sam_meat_live_stock_handoff")
+            self.assertEqual(result["lane_decision"]["final_route"], "meat_sales")
+            self.assertFalse(result["lane_decision"]["cross_lane_handoff_allowed"])
+            livestock_context.assert_not_called()
+
+    def test_failed_livestock_context_cannot_convert_explicit_meat_to_livestock(self):
+        with patch.object(sam_meat_runtime, "_conversation_live_stock_context", side_effect=RuntimeError("must not read")) as livestock_context, \
+             patch.object(sam_meat_runtime, "record_sam_meat_intake_lead", return_value=({"success": True, "lead_id": "MEAT-2"}, 201)):
+            result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                inbound_payload(content="Carcass Set A"),
+                environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+            )
+        self.assertEqual(status_code, 200)
+        self.assertNotEqual(result["status"], "sam_meat_live_stock_handoff")
+        livestock_context.assert_not_called()
+
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_delivery_orders_review_claim_dispatch_and_acceptance(self, record_lead):
+        record_lead.return_value = ({"success": True, "lead_id": "MEAT-DELIVERY-1"}, 201)
+        order = []
+
+        def packet_builder(*_args, **_kwargs):
+            order.append("packet")
+            return {
+                "success": True,
+                "review_event": {"event_id": "SAM-MEAT-REVIEW-1"},
+                "owner_packet": {"protected_owner_decision": "review_reply"},
+            }
+
+        def evidence_recorder(_packet, _lead_id):
+            order.append("review_persisted")
+            return {"success": True, "persisted": True, "status": "persisted"}, 200
+
+        def claim(_inbound, _decision, review):
+            self.assertEqual(review["review_event_id"], "SAM-MEAT-REVIEW-1")
+            order.append("attempt_claimed")
+            return {"success": True, "created": True, "delivery_attempt_id": "ATTEMPT-1"}
+
+        def sender(_conversation_id, _reply):
+            order.append("dispatch")
+            return {"status_code": 200, "body": {"id": "OUT-1", "status": "sent"}}
+
+        def outcome(_claim, value):
+            order.append("acceptance_persisted")
+            self.assertEqual(value["delivery_state"], "chatwoot_accepted_unverified")
+            return {"success": True, "created": True}
+
+        with patch.object(sam_meat_runtime, "sam_meat_control_policy", return_value={"customer_public_output_enabled": True}):
+            result, status = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                inbound_payload(conversation={"id": 1808, "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"}}),
+                environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1"},
+                chatwoot_sender=sender,
+                launch_packet_builder=packet_builder,
+                launch_evidence_recorder=evidence_recorder,
+                routine_delivery_claim=claim,
+                routine_delivery_evidence_recorder=outcome,
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(order, ["packet", "review_persisted", "attempt_claimed", "dispatch", "acceptance_persisted"])
+        self.assertEqual(result["send_status"], "chatwoot_accepted_unverified")
+        self.assertFalse(result["routine_reply_delivery"]["customer_send_confirmed"])
+        self.assertFalse(result["routine_reply_delivery"]["handled_autonomously"])
+
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_review_or_claim_failure_prevents_dispatch_and_replay(self, record_lead):
+        record_lead.return_value = ({"success": True, "lead_id": "MEAT-DELIVERY-2"}, 201)
+        sender = Mock()
+        packet = {"success": True, "review_event": {"event_id": "SAM-MEAT-REVIEW-2"}, "owner_packet": {}}
+        common = dict(
+            payload=inbound_payload(),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1"},
+            chatwoot_sender=sender,
+            launch_packet_builder=Mock(return_value=packet),
+        )
+        with patch.object(sam_meat_runtime, "sam_meat_control_policy", return_value={"customer_public_output_enabled": True}):
+            failed_review, _ = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                **common,
+                launch_evidence_recorder=Mock(return_value=({"success": False, "persisted": False}, 503)),
+                routine_delivery_claim=Mock(),
+                routine_delivery_evidence_recorder=Mock(),
+            )
+            replay, _ = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                **common,
+                launch_evidence_recorder=Mock(return_value=({"success": True, "persisted": True}, 200)),
+                routine_delivery_claim=Mock(return_value={"success": True, "created": False, "delivery_attempt_id": "ATTEMPT-2"}),
+                routine_delivery_evidence_recorder=Mock(),
+            )
+        self.assertEqual(failed_review["send_status"], "review_evidence_not_persisted")
+        self.assertEqual(replay["send_status"], "delivery_attempt_already_claimed_no_retry")
+        sender.assert_not_called()
+
+
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_level1_authoritative_history_dispatches_through_existing_rail(self, record_lead):
+        record_lead.return_value = ({"success": True, "lead_id": "MEAT-L1-1"}, 201)
+        order = []
+        observed_at = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        payload = inbound_payload(id="M-L1-1", created_at=observed_at,
+            content="I want a half carcass, Set A.", conversation={"id": 2033,
+            "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"}},
+            sender={"id": 699428938, "name": "Test customer"})
+        history = [{"id": "M-L1-1", "message_type": 0, "private": False,
+                    "created_at": observed_at}]
+        packet = {"success": True, "availability": {"status": "Unavailable", "evidence_complete": False,
+                  "verified_zero": False, "freshness": "Unavailable"},
+                  "review_event": {"event_id": "SAM-MEAT-L1-REVIEW-1"}, "owner_packet": {}}
+        result, status = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            payload, environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0", "SAM_SALES_AUTONOMY_LEVEL": "1",
+                "SAM_SALES_LEVEL1_MEAT_ENABLED": "1", "SAM_SALES_LEVEL1_COHORT_ENABLED": "1",
+                "SAM_SALES_LEVEL1_COHORT_BINDINGS": "2033:M-L1-1"},
+            conversation_history_loader=lambda *_args, **_kwargs: history,
+            launch_packet_builder=Mock(return_value=packet),
+            launch_evidence_recorder=lambda *_args: (order.append("review") or {"success": True, "persisted": True}, 200),
+            routine_delivery_claim=lambda *_args: (order.append("claim") or {"success": True, "created": True}),
+            routine_delivery_evidence_recorder=lambda *_args: (order.append("accepted") or {"success": True, "created": True}),
+            chatwoot_sender=lambda *_args: (order.append("dispatch") or {"status_code": 200, "body": {"id": "OUT-L1-1", "status": "sent"}}))
+        self.assertEqual(status, 200)
+        self.assertTrue(result["sales_autonomy_level1"]["dispatch_authorized"])
+        self.assertEqual(order, ["review", "claim", "dispatch", "accepted"])
+        self.assertEqual(result["send_status"], "chatwoot_accepted_unverified")
+        self.assertFalse(result["routine_reply_delivery"]["customer_send_confirmed"])
+
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_level1_authoritative_history_failure_sends_nothing(self, record_lead):
+        record_lead.return_value = ({"success": True, "lead_id": "MEAT-L1-2"}, 201)
+        claim, sender = Mock(), Mock()
+        result, _status = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(id="M-L1-2", conversation={"id": 2034, "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"}}),
+            environ={"SAM_SALES_AUTONOMY_LEVEL": "1", "SAM_SALES_LEVEL1_MEAT_ENABLED": "1",
+                     "SAM_SALES_LEVEL1_COHORT_ENABLED": "1", "SAM_SALES_LEVEL1_COHORT_BINDINGS": "2034:M-L1-2"},
+            conversation_history_loader=Mock(side_effect=RuntimeError("unavailable")),
+            launch_packet_builder=Mock(return_value={"success": True, "availability": {}, "review_event": {"event_id": "R-2"}, "owner_packet": {}}),
+            launch_evidence_recorder=Mock(return_value=({"success": True, "persisted": True}, 200)),
+            routine_delivery_claim=claim, routine_delivery_evidence_recorder=Mock(), chatwoot_sender=sender)
+        self.assertFalse(result["sales_autonomy_level1"]["dispatch_authorized"])
+        self.assertIn("chronology_current", result["sales_autonomy_level1"]["blockers"])
+        claim.assert_not_called()
+        sender.assert_not_called()
+
 if __name__ == "__main__":
 
     unittest.main()

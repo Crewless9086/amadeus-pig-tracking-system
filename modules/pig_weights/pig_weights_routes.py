@@ -5,6 +5,7 @@ from modules.auth.owner_access import (
     require_correction_batch_owner_admin_access,
     require_owner_admin_access,
     require_owner_read_access,
+    owner_admin_principal,
 )
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
@@ -20,6 +21,10 @@ from modules.pig_weights.pig_weights_controller import (
     get_pig_allocation_readiness_data,
     get_pig_allocation_alerts_data,
     get_riversdale_auction_recommendation_data,
+    record_riversdale_auction_decision_data,
+    record_riversdale_candidate_review_data,
+    get_riversdale_auction_list_data,
+    update_riversdale_auction_list_data,
     get_purpose_review_queue_data,
     apply_purpose_review_queue_decisions,
     create_purpose_correction_batch,
@@ -134,6 +139,48 @@ def riversdale_auction_recommendation():
     if denied:
         return denied
     return jsonify(get_riversdale_auction_recommendation_data())
+
+
+@pig_weights_bp.route("/riversdale-auction-confirmation", methods=["POST"])
+def riversdale_auction_confirmation():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_riversdale_auction_decision_data(
+        request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/riversdale-auction-candidate-reviews", methods=["POST"])
+def riversdale_auction_candidate_review():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_riversdale_candidate_review_data(
+        request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/riversdale-auction-list", methods=["GET"])
+def riversdale_auction_list():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = get_riversdale_auction_list_data()
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/riversdale-auction-list/events", methods=["POST"])
+def riversdale_auction_list_events():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = update_riversdale_auction_list_data(
+        request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
+    )
+    return jsonify(result), status_code
 
 
 @pig_weights_bp.route("/purpose-review", methods=["GET"])
@@ -302,7 +349,13 @@ def mark_litter_weaned_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/weaning-day", methods=["POST"])
 def litter_weaning_day_route(litter_id):
-    payload = request.get_json(silent=True) or {}
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    payload = dict(request.get_json(silent=True) or {})
+    # Audit identity is always derived from the authenticated server session.
+    # A browser-supplied changed_by value has no authority.
+    payload["changed_by"] = owner_admin_principal()
     try:
         result, status_code = process_litter_profile_weaning_day(litter_id, payload)
         return jsonify(result), status_code
@@ -310,10 +363,17 @@ def litter_weaning_day_route(litter_id):
         current_app.logger.exception("Weaning day workflow failed for litter %s", litter_id)
         return jsonify({
             "success": False,
-            "errors": [f"Weaning day workflow failed: {exc}"],
+            "status": "weaning_day_unexpected_failure",
+            "errors": [
+                "The Weaning Day request could not be completed. Reload the "
+                "litter to verify its current state before any retry."
+            ],
+            "error_type": type(exc).__name__,
             "litter_id": litter_id,
-            "writes_to_sheets": False,
-            "writes_to_supabase": False,
+            "operation_committed": None,
+            "operation_state": "unknown_verify_before_retry",
+            "writes_to_sheets": None,
+            "writes_to_supabase": None,
         }), 500
 
 

@@ -1,11 +1,67 @@
+import json
+import inspect
+import types
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from pathlib import Path
+from threading import Lock
+from unittest.mock import patch
 
 from modules.sales import sam_live_stock_launch_control as launch
+
+
+class ChatwootFilterResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
+
+
+class MessageListResponse(ChatwootFilterResponse):
+    status = 200
+
+
+def human_conversation(
+    conversation_id,
+    *,
+    inbox_id=77,
+    review_state=None,
+    timestamp="2026-07-24T09:00:00Z",
+    lane="livestock",
+):
+    attributes = {"conversation_mode": "HUMAN"}
+    labels = []
+    if lane == "livestock":
+        attributes.update({"sales_lane": "live_stock_sales", "sam_live_stock_gate": "owner_review"})
+        labels.append("sam_live_stock")
+    elif lane == "meat":
+        attributes["sales_lane"] = "meat_sales"
+        labels.append("sam_meat")
+    conversation = {
+        "id": conversation_id,
+        "inbox_id": inbox_id,
+        "custom_attributes": attributes,
+        "labels": labels,
+        "messages": [{"message_type": "outgoing", "created_at": timestamp, "sender": {"type": "user"}}],
+    }
+    if review_state:
+        conversation["sam_live_stock_review"] = {"state": review_state}
+    return conversation
 
 
 def review_inputs(message="I need 2 weaners in Riversdale next week."):
     inbound = {
         "conversation_id": "2401",
+        "contact_id": "99",
+        "inbox_id": "77",
         "message_id": "901",
         "customer_name": "Charl N",
         "customer_phone": "+27820000000",
@@ -59,6 +115,27 @@ def review_inputs(message="I need 2 weaners in Riversdale next week."):
         },
     }
     return inbound, facts, decision
+
+
+def send_action_fixture():
+    inbound, facts, decision = review_inputs()
+    event = launch.build_sam_live_stock_review_event(
+        inbound,
+        facts,
+        decision,
+        {"score": 99, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"},
+    )
+    lifecycle_id = "SAM-LIVE-CARD-LIFECYCLE-1"
+    card = {
+        "conversation_id": "2401",
+        "telegram_chat_id": "555",
+        "telegram_message_id": "991",
+        "lifecycle_card_identity": lifecycle_id,
+    }
+    action = launch.build_sam_live_stock_send_reply_action(
+        event, card, decision["suggested_reply_text"]
+    )
+    return event, action, card
 
 
 class SamLiveStockLaunchControlTests(unittest.TestCase):
@@ -226,6 +303,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
                 "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID": "555",
             },
             telegram_sender=lambda token, chat_id, text, reply_markup: calls.append((token, chat_id, text, reply_markup)) or {"ok": True},
+            telegram_editor=lambda token, chat_id, message_id, text, reply_markup: calls.append(("edit", chat_id, message_id, text, reply_markup)) or {"ok": True},
         )
 
         self.assertEqual(sent_status, 200)
@@ -244,19 +322,20 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("Draft source: Fact-aware fallback", calls[0][2])
         self.assertIn("Draft reply:", calls[0][2])
         self.assertIn("\n- 2 x Female Weaner", calls[0][2])
-        buttons = calls[0][3]["inline_keyboard"]
-        self.assertEqual(buttons[0][0]["text"], "Approve Send")
-        self.assertTrue(buttons[0][0]["callback_data"].startswith("sam_live_review_approve:SAM-LIVE-REVIEW-"))
-        self.assertEqual(buttons[1][0]["text"], "Edit in Chatwoot")
+        self.assertNotIn("Send Reply", [button["text"] for row in calls[0][3]["inline_keyboard"] for button in row])
+        buttons = calls[1][4]["inline_keyboard"]
+        self.assertEqual(buttons[0][0]["text"], "Send Reply")
+        self.assertTrue(buttons[0][0]["callback_data"].startswith("sam_live_card_send:SAM-LIVE-CARD-SEND-"))
+        self.assertEqual(buttons[1][0]["text"], "Open Chatwoot")
         self.assertEqual(buttons[1][0]["url"], "https://app.chatwoot.com/app/accounts/147387/conversations/2401")
         button_labels = [button["text"] for row in buttons for button in row]
         callback_values = [button.get("callback_data", "") for row in buttons for button in row]
-        self.assertIn("Keep Human", button_labels)
-        self.assertIn("No Reply Needed", button_labels)
+        self.assertIn("Keep With Me", button_labels)
+        self.assertIn("No Reply — Done", button_labels)
         self.assertIn("Prepare Quote", button_labels)
-        self.assertIn("Close", button_labels)
+        self.assertNotIn("Done — Return to SAM", button_labels)
         self.assertTrue(any(value.startswith("sam_live_review_prepare_quote:SAM-LIVE-REVIEW-") for value in callback_values))
-        self.assertTrue(any(value.startswith("sam_live_review_no_reply:SAM-LIVE-REVIEW-") for value in callback_values))
+        self.assertTrue(any(value.startswith("sam_live_card_no_reply:SAM-LIVE-REVIEW-") for value in callback_values))
         self.assertTrue(all(not value or value.startswith("sam_live_") for value in callback_values))
         self.assertNotIn("n8n", str(calls[0][3]).lower())
 
@@ -282,12 +361,12 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             for row in packet["telegram_packet"]["reply_markup"]["inline_keyboard"]
             for button in row
         ]
-        self.assertEqual(labels.count("Approve Send"), 1)
-        self.assertIn("Edit in Chatwoot", labels)
-        self.assertIn("Keep Human", labels)
-        self.assertIn("No Reply Needed", labels)
+        self.assertEqual(labels.count("Send Reply"), 0)
+        self.assertIn("Open Chatwoot", labels)
+        self.assertIn("Keep With Me", labels)
+        self.assertIn("No Reply — Done", labels)
         self.assertIn("Prepare Quote", labels)
-        self.assertIn("Close", labels)
+        self.assertNotIn("Done — Return to SAM", labels)
         self.assertNotIn("Prepare Draft Order", labels)
 
         decision["owner_action_packet"].update({
@@ -358,7 +437,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("Owner decision needed: approve or decline the negotiated price", text)
         self.assertIn("approve or decline the reservation through the protected order/stock rail", text)
         self.assertIn("Customer reply: already sent by SAM", text)
-        self.assertNotIn("Approve Send", labels)
+        self.assertNotIn("Send Reply", labels)
 
     def test_fact_aware_fallback_label_maps_the_llm_disabled_status(self):
         inbound, facts, decision = review_inputs()
@@ -706,6 +785,2484 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(ready["score"], 98)
         self.assertEqual(ready["must_fix_before_boost"], [])
 
+    def test_repeated_owner_card_updates_edit_the_exact_active_message(self):
+        inbound, facts, decision = review_inputs()
+        event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
+        sent = []
+        edited = []
+        evidence = []
+        result, status = launch.send_sam_live_stock_owner_review_telegram(
+            event,
+            environ={"SAM_LIVE_STOCK_TELEGRAM_OWNER_REVIEW_SEND_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token", "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID": "555"},
+            telegram_sender=lambda *args: sent.append(args),
+            telegram_editor=lambda token, chat, message, text, markup: edited.append((chat, message, text)) or {"ok": True},
+            active_card_loader=lambda conversation_id: ({"success": True, "card": {"telegram_chat_id": "555", "telegram_message_id": "991", "state": "active"}}, 200),
+            evidence_recorder=lambda item: evidence.append(item) or ({"success": True, "created": True}, 200),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "sam_live_stock_owner_card_edited")
+        self.assertEqual(sent, [])
+        self.assertEqual(edited[0][:2], ("555", "991"))
+        self.assertEqual(evidence[0]["review_json"]["owner_card"]["telegram_message_id"], "991")
 
+    def test_legacy_review_identity_send_is_withheld_without_dispatch_or_cleanup(self):
+        event = {"review_event_id": "SAM-LIVE-REVIEW-1", "chatwoot_conversation_id": "2401", "sam_reply_excerpt": "Safe reply", "decision_json": {}}
+        calls = []
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_card_send:SAM-LIVE-REVIEW-1", "telegram_chat_id": "555", "telegram_message_id": "991"},
+            environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1", "SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            review_event_loader=lambda _: ({"success": True, "event": event}, 200),
+            evidence_recorder=lambda item: calls.append(("evidence", item)) or ({"success": True, "created": True}, 200),
+            chatwoot_sender=lambda conversation, message, source: calls.append(("send", conversation)) or {"ok": True},
+            chatwoot_writer=lambda conversation, attrs, source: calls.append(("mode", attrs["conversation_mode"])) or {"ok": True},
+            telegram_deleter=lambda token, chat, message: calls.append(("delete", chat, message)) or {"ok": True},
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_card_send_legacy_identity_withheld")
+        self.assertEqual(calls, [])
+
+    def test_failed_send_retains_card_and_never_returns_auto_or_deletes(self):
+        event = {"review_event_id": "SAM-LIVE-REVIEW-2", "chatwoot_conversation_id": "2401", "sam_reply_excerpt": "Safe reply", "decision_json": {}}
+        calls = []
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_card_send:SAM-LIVE-REVIEW-2", "telegram_chat_id": "555", "telegram_message_id": "992"},
+            environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1", "SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            review_event_loader=lambda _: ({"success": True, "event": event}, 200),
+            evidence_recorder=lambda item: ({"success": True, "created": True}, 200),
+            chatwoot_sender=lambda *args: (_ for _ in ()).throw(RuntimeError("send failed")),
+            chatwoot_writer=lambda *args: calls.append("mode") or {"ok": True},
+            telegram_deleter=lambda *args: calls.append("delete") or {"ok": True},
+            telegram_editor=lambda *args: calls.append("edit") or {"ok": True},
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_card_send_legacy_identity_withheld")
+        self.assertEqual(calls, [])
+
+    def test_no_reply_done_returns_auto_then_cleans_exact_card(self):
+        event = {"review_event_id": "SAM-LIVE-REVIEW-3", "chatwoot_conversation_id": "2401", "decision_json": {}}
+        calls = []
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_card_no_reply:SAM-LIVE-REVIEW-3", "telegram_chat_id": "555", "telegram_message_id": "993"},
+            environ={"SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            review_event_loader=lambda _: ({"success": True, "event": event}, 200),
+            evidence_recorder=lambda item: ({"success": True, "created": True}, 200),
+            chatwoot_sender=lambda *args: self.fail("no customer send"),
+            chatwoot_writer=lambda conversation, attrs, source: calls.append(("mode", attrs["conversation_mode"])) or {"ok": True},
+            telegram_deleter=lambda token, chat, message: calls.append(("delete", chat, message)) or {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertFalse(result["sends_customer_message"])
+        self.assertEqual(calls, [("delete", "555", "993")])
+
+    def test_duplicate_callback_is_withheld_before_send_or_telegram(self):
+        event = {"review_event_id": "SAM-LIVE-REVIEW-4", "chatwoot_conversation_id": "2401", "sam_reply_excerpt": "Reply", "decision_json": {}}
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_card_send:SAM-LIVE-REVIEW-4", "telegram_chat_id": "555", "telegram_message_id": "994"},
+            review_event_loader=lambda _: ({"success": True, "event": event}, 200),
+            evidence_recorder=lambda item: ({"success": True, "created": False}, 200),
+            chatwoot_sender=lambda *args: self.fail("duplicate send"),
+            telegram_deleter=lambda *args: self.fail("duplicate cleanup"),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_card_send_legacy_identity_withheld")
+
+    def test_candidate_bound_send_claims_before_dispatch_and_retains_pending_card(self):
+        review, action, card = send_action_fixture()
+        calls = []
+        events = []
+
+        def load(event_id):
+            event = action["event"] if event_id == action["action_identity"] else review
+            return {"success": True, "event": event}, 200
+
+        def record(event):
+            events.append(event)
+            calls.append(event["event_source"])
+            return {"success": True, "created": True, "review_event_id": event["review_event_id"]}, 201
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": f"sam_live_card_send:{action['action_identity']}",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "991",
+            },
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token", "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+            review_event_loader=load,
+            active_card_loader=lambda _: ({
+                "success": True,
+                "card": {**card, "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401",
+                "contact_id": "99",
+                "inbox_id": "77",
+                "can_reply": True,
+                "messages": [{"id": "901", "message_type": "incoming"}],
+            },
+            evidence_recorder=record,
+            chatwoot_sender=lambda *_args: calls.append("chatwoot") or {
+                "status_code": 200,
+                "body": {"id": "902", "status": "sent", "source_id": "wamid.SECRET"},
+            },
+            telegram_editor=lambda *_args: calls.append("telegram_edit") or {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["delivery_state"], "chatwoot_accepted_unverified")
+        self.assertFalse(result["customer_send_confirmed"])
+        self.assertTrue(result["card_retained"])
+        self.assertLess(calls.index("sam_outbound_delivery_attempt_claim"), calls.index("chatwoot"))
+        self.assertLess(calls.index("chatwoot"), calls.index("sam_outbound_delivery_transition"))
+        self.assertNotIn("Hi Charl", str(events))
+        self.assertNotIn("wamid.SECRET", str(events))
+
+    def test_owner_send_transport_omits_application_source_id(self):
+        from modules.sales import sam_live_stock_runtime
+        source = inspect.getsource(sam_live_stock_runtime._send_chatwoot_message)
+        body_source = source[source.index("body = {"):source.index("request = urllib_request.Request")]
+        self.assertNotIn('"source_id"', body_source)
+        self.assertIn('"amadeus_source"', body_source)
+
+    def test_candidate_bound_duplicate_claim_sends_nothing(self):
+        review, action, card = send_action_fixture()
+
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": f"sam_live_card_send:{action['action_identity']}",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "991",
+            },
+            environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+            review_event_loader=load,
+            active_card_loader=lambda _: ({
+                "success": True,
+                "card": {**card, "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401", "contact_id": "99", "inbox_id": "77",
+                "messages": [{"id": "901", "message_type": "incoming"}],
+            },
+            evidence_recorder=lambda _event: ({"success": True, "created": False}, 200),
+            chatwoot_sender=lambda *_args: self.fail("duplicate must not dispatch"),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_card_send_duplicate_withheld")
+
+    def test_concurrent_candidate_callbacks_dispatch_exactly_once(self):
+        review, action, card = send_action_fixture()
+        claimed = set()
+        lock = Lock()
+        sends = []
+
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+
+        def record(event):
+            if event["event_source"] != "sam_outbound_delivery_attempt_claim":
+                return {"success": True, "created": True}, 201
+            with lock:
+                created = event["review_event_id"] not in claimed
+                claimed.add(event["review_event_id"])
+            return {"success": True, "created": created}, 201 if created else 200
+
+        def invoke():
+            return launch.process_sam_live_stock_owner_callback(
+                {"callback_data": f"sam_live_card_send:{action['action_identity']}", "telegram_chat_id": "555", "telegram_message_id": "991"},
+                environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token", "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+                review_event_loader=load,
+                active_card_loader=lambda _: ({"success": True, "card": {**card, "state": "active"}, "lifecycle_card_identity": card["lifecycle_card_identity"]}, 200),
+                chronology_loader=lambda *_args, **_kwargs: {"id": "2401", "contact_id": "99", "inbox_id": "77", "can_reply": True, "messages": [{"id": "901", "message_type": "incoming"}]},
+                evidence_recorder=record,
+                chatwoot_sender=lambda *_args: sends.append("send") or {"status_code": 200, "body": {"id": "902", "status": "sent"}},
+                telegram_editor=lambda *_args: {"ok": True},
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _index: invoke(), range(2)))
+        self.assertEqual(sends, ["send"])
+        self.assertEqual(sorted(status for _body, status in results), [200, 409])
+
+    def test_candidate_delivery_claim_failure_dispatches_nothing(self):
+        review, action, card = send_action_fixture()
+
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": f"sam_live_card_send:{action['action_identity']}", "telegram_chat_id": "555", "telegram_message_id": "991"},
+            environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+            review_event_loader=load,
+            active_card_loader=lambda _: ({"success": True, "card": {**card, "state": "active"}, "lifecycle_card_identity": card["lifecycle_card_identity"]}, 200),
+            chronology_loader=lambda *_args, **_kwargs: {"id": "2401", "contact_id": "99", "inbox_id": "77", "messages": [{"id": "901", "message_type": "incoming"}]},
+            evidence_recorder=lambda _event: ({"success": False, "created": False}, 503),
+            chatwoot_sender=lambda *_args: self.fail("claim failure must not dispatch"),
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "sam_live_card_send_delivery_claim_failed")
+
+    def test_candidate_bound_send_fails_closed_on_stale_or_wrong_identity(self):
+        review, action, card = send_action_fixture()
+
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+
+        for chronology in (
+            {"id": "2401", "contact_id": "wrong", "inbox_id": "77", "messages": [{"id": "901", "message_type": "incoming"}]},
+            {"id": "2401", "contact_id": "99", "inbox_id": "77", "messages": [{"id": "901", "message_type": "incoming"}, {"id": "newer", "message_type": "incoming"}]},
+        ):
+            with self.subTest(chronology=chronology):
+                result, status = launch.process_sam_live_stock_owner_callback(
+                    {"callback_data": f"sam_live_card_send:{action['action_identity']}", "telegram_chat_id": "555", "telegram_message_id": "991"},
+                    environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+                    review_event_loader=load,
+                    active_card_loader=lambda _: ({"success": True, "card": {**card, "state": "active"}, "lifecycle_card_identity": card["lifecycle_card_identity"]}, 200),
+                    chronology_loader=lambda *_args, value=chronology, **_kwargs: value,
+                    chatwoot_sender=lambda *_args: self.fail("stale action must not dispatch"),
+                )
+                self.assertEqual(status, 409)
+                self.assertEqual(result["status"], "sam_live_card_send_fresh_identity_or_message_mismatch")
+
+    def test_provider_webhook_confirms_exact_attempt_then_cleans_exact_card(self):
+        review, action, card = send_action_fixture()
+        attempt = launch.build_delivery_attempt(
+            {"conversation_id": "2401", "contact_id": "99", "inbox_id": "77", "message_id": "901"},
+            {"suggested_reply_text": review["decision_json"]["suggested_reply_text"]},
+            {"review_event_id": review["review_event_id"], "owner_action_identity": action["action_identity"]},
+            response_class="owner_approved_reply",
+        )
+        attempt["chatwoot_outgoing_message_id"] = "902"
+        records = []
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {
+                "event": "message_updated",
+                "message": {
+                    "id": "902", "conversation_id": "2401", "message_type": 1,
+                    "status": "delivered", "source_id": "wamid.SECRET",
+                },
+            },
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token", "SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED": "1"},
+            attempt_loader=lambda *_: {"success": True, "attempt": attempt},
+            evidence_recorder=lambda event: records.append(event) or ({"success": True, "created": True}, 201),
+            review_event_loader=lambda _: ({"success": True, "event": action["event"]}, 200),
+            active_card_loader=lambda _: ({"success": True, "card": {**card, "state": "active"}, "lifecycle_card_identity": card["lifecycle_card_identity"]}, 200),
+            telegram_deleter=lambda token, chat, message: {"ok": (chat, message)},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "sam_delivery_confirmed_card_cleaned")
+        self.assertTrue(result["customer_send_confirmed"])
+        self.assertEqual(records[0]["review_json"]["provider_identity_class"], "whatsapp_provider")
+        self.assertNotIn("wamid.SECRET", str(records))
+
+    def test_provider_webhook_missing_identity_is_ambiguous_and_retains_card(self):
+        review, action, card = send_action_fixture()
+        attempt = launch.build_delivery_attempt(
+            {"conversation_id": "2401", "contact_id": "99", "inbox_id": "77", "message_id": "901"},
+            {"suggested_reply_text": review["decision_json"]["suggested_reply_text"]},
+            {"review_event_id": review["review_event_id"], "owner_action_identity": action["action_identity"]},
+            response_class="owner_approved_reply",
+        )
+        attempt["chatwoot_outgoing_message_id"] = "902"
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {"event": "message_updated", "message": {"id": "902", "conversation_id": "2401", "message_type": 1, "status": "read"}},
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            attempt_loader=lambda *_: {"success": True, "attempt": attempt},
+            evidence_recorder=lambda _event: ({"success": True, "created": True}, 201),
+            review_event_loader=lambda _: ({"success": True, "event": action["event"]}, 200),
+            active_card_loader=lambda _: ({"success": True, "card": {**card, "state": "active"}, "lifecycle_card_identity": card["lifecycle_card_identity"]}, 200),
+            telegram_deleter=lambda *_: self.fail("ambiguous delivery must not clean"),
+            telegram_editor=lambda *_: {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["delivery_state"], "provider_outcome_ambiguous")
+        self.assertFalse(result["customer_send_confirmed"])
+        self.assertTrue(result["card_retained"])
+
+    def test_provider_webhook_projects_exact_non_owner_operational_state(self):
+        attempt = launch.build_delivery_attempt(
+            {
+                "account_id": "147387",
+                "conversation_id": "2100",
+                "contact_id": "99",
+                "inbox_id": "77",
+                "message_id": "901",
+            },
+            {
+                "suggested_reply_text": "What area are you in?",
+                "missing_fields": ["location"],
+            },
+            {"review_event_id": "REVIEW-EXACT"},
+        )
+        attempt["chatwoot_outgoing_message_id"] = "902"
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {
+                "event": "message_updated",
+                "message": {
+                    "id": "902",
+                    "conversation_id": "2100",
+                    "message_type": 1,
+                    "status": "delivered",
+                    "source_id": "wamid.SECRET",
+                },
+            },
+            environ={launch.CHATWOOT_ACCOUNT_ID_ENV: "147387"},
+            attempt_loader=lambda *_: {
+                "success": True,
+                "attempt": attempt,
+            },
+            evidence_recorder=lambda _event: (
+                {"success": True, "created": True},
+                201,
+            ),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            result["operational_state"]["provider_state"],
+            "provider_delivered",
+        )
+        self.assertEqual(
+            result["operational_state"]["inbound"]["message_id"], "901"
+        )
+        self.assertEqual(
+            result["operational_state"]["decision"]["missing_fields"],
+            ["location"],
+        )
+        self.assertNotIn("wamid.SECRET", str(result))
+
+    def test_provider_webhook_rejects_attempt_from_other_account(self):
+        attempt = launch.build_delivery_attempt(
+            {
+                "account_id": "OTHER",
+                "conversation_id": "2100",
+                "contact_id": "99",
+                "inbox_id": "77",
+                "message_id": "901",
+            },
+            {"suggested_reply_text": "What area are you in?"},
+            {"review_event_id": "REVIEW-EXACT"},
+        )
+        attempt["chatwoot_outgoing_message_id"] = "902"
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {
+                "event": "message_updated",
+                "message": {
+                    "id": "902",
+                    "conversation_id": "2100",
+                    "message_type": 1,
+                    "status": "delivered",
+                    "source_id": "wamid.SECRET",
+                },
+            },
+            environ={launch.CHATWOOT_ACCOUNT_ID_ENV: "147387"},
+            attempt_loader=lambda *_: {
+                "success": True,
+                "attempt": attempt,
+            },
+            evidence_recorder=lambda _event: self.fail(
+                "cross-account transition must not persist"
+            ),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(
+            result["status"],
+            "sam_delivery_webhook_identity_or_status_conflict",
+        )
+
+    def _delivery_reader_source(self):
+        return {
+            launch.CHATWOOT_BASE_URL_ENV: "https://chatwoot.test",
+            launch.CHATWOOT_ACCOUNT_ID_ENV: "147387",
+            launch.CHATWOOT_TOKEN_ENV: "secret-token",
+            launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "96568",
+        }
+
+    def _delivery_message(self, message_id="759675071", **overrides):
+        row = {
+            "id": int(message_id),
+            "account_id": 147387,
+            "conversation_id": 2017,
+            "inbox_id": 96568,
+            "message_type": 1,
+            "private": False,
+            "status": "read",
+            "source_id": "wamid.SANITIZED_FIXTURE",
+            "updated_at": "2026-07-25T18:00:00Z",
+        }
+        row.update(overrides)
+        return row
+
+    def test_exact_delivery_reader_uses_supported_message_list_and_one_page(self):
+        urls = []
+        def urlopen(request, timeout):
+            urls.append((request.full_url, timeout))
+            return MessageListResponse({"payload": [self._delivery_message()]})
+        result = launch._chatwoot_read_exact_outgoing_message(
+            "2017", "759675071", self._delivery_reader_source(), urlopen=urlopen
+        )
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["body"]["id"], 759675071)
+        self.assertEqual(result["reader_provenance"]["pages_read"], 1)
+        self.assertIn("/conversations/2017/messages?after=0", urls[0][0])
+        self.assertNotIn("/messages/759675071", urls[0][0])
+        self.assertLessEqual(urls[0][1], 5)
+
+    def test_exact_delivery_reader_finds_later_bounded_page(self):
+        first = [self._delivery_message(str(value), status="sent") for value in range(1, 101)]
+        pages = iter([
+            {"payload": first},
+            {"payload": [self._delivery_message("150")]},
+        ])
+        result = launch._chatwoot_read_exact_outgoing_message(
+            "2017", "150", self._delivery_reader_source(),
+            urlopen=lambda *_args, **_kwargs: MessageListResponse(next(pages)),
+        )
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["body"]["id"], 150)
+        self.assertEqual(result["reader_provenance"]["pages_read"], 2)
+        self.assertEqual(result["reader_provenance"]["rows_read"], 101)
+
+    def test_exact_delivery_reader_zero_duplicate_incomplete_and_malformed_fail_closed(self):
+        cases = {
+            "zero": ([{"payload": []}], "reader_exact_message_not_found"),
+            "duplicate": ([{"payload": [self._delivery_message(), self._delivery_message()]}], "reader_duplicate_exact_message"),
+            "malformed": ([{"unexpected": []}], "reader_envelope_malformed"),
+            "incomplete": (
+                [
+                    {"payload": [self._delivery_message(str(value), status="sent") for value in range(1, 101)]},
+                    {"payload": [self._delivery_message(str(value), status="sent") for value in range(101, 201)]},
+                    {"payload": [self._delivery_message(str(value), status="sent") for value in range(201, 301)]},
+                ],
+                "reader_pagination_incomplete",
+            ),
+        }
+        for name, (payloads, reason) in cases.items():
+            with self.subTest(name=name):
+                pages = iter(payloads)
+                result = launch._chatwoot_read_exact_outgoing_message(
+                    "2017", "759675071", self._delivery_reader_source(),
+                    urlopen=lambda *_args, **_kwargs: MessageListResponse(next(pages)),
+                )
+                self.assertIsNone(result["status_code"])
+                self.assertEqual(result["reader_provenance"]["failure_class"], reason)
+
+    def test_exact_delivery_reader_rejects_identity_direction_private_and_status_collisions(self):
+        cases = {
+            "account": ({"account_id": 999}, "reader_account_mismatch"),
+            "conversation": ({"conversation_id": 999}, "reader_exact_identity_mismatch"),
+            "inbox": ({"inbox_id": 999}, "reader_inbox_mismatch"),
+            "incoming": ({"message_type": 0}, "reader_message_not_outgoing"),
+            "private": ({"private": True}, "reader_message_not_public"),
+            "wrong_id_same_content": ({"id": 759675999, "content": "same"}, "reader_exact_message_not_found"),
+            "missing_status": ({"status": ""}, "reader_status_malformed"),
+            "unknown_status": ({"status": "mystery"}, "reader_status_malformed"),
+            "conflicting_status": ({"status": "read", "delivery_status": "failed"}, "reader_identity_or_status_conflict"),
+        }
+        for name, (patch, reason) in cases.items():
+            with self.subTest(name=name):
+                result = launch._chatwoot_read_exact_outgoing_message(
+                    "2017", "759675071", self._delivery_reader_source(),
+                    urlopen=lambda *_args, value=patch, **_kwargs: MessageListResponse({
+                        "payload": [self._delivery_message(**value)]
+                    }),
+                )
+                self.assertIsNone(result["status_code"])
+                self.assertEqual(result["reader_provenance"]["failure_class"], reason)
+
+    def test_conversation_2017_malformed_webhook_recovers_exact_delivered_message(self):
+        review, action, card = send_action_fixture()
+        attempt = launch.build_delivery_attempt(
+            {"conversation_id": "2017", "contact_id": "699428938", "inbox_id": "96568", "message_id": "759674171"},
+            {"suggested_reply_text": review["decision_json"]["suggested_reply_text"]},
+            {"review_event_id": review["review_event_id"], "owner_action_identity": action["action_identity"]},
+            response_class="owner_approved_reply",
+        )
+        attempt["conversation_id"] = "2017"
+        attempt["inbox_id"] = "96568"
+        attempt["chatwoot_outgoing_message_id"] = "759675071"
+        action["event"]["review_json"]["send_reply_action"].update({
+            "conversation_id": "2017",
+            "telegram_chat_id": card["telegram_chat_id"],
+            "telegram_message_id": card["telegram_message_id"],
+        })
+        records = []
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {
+                "event": "message_updated",
+                "account": {"id": "147387"},
+                "conversation": {"id": "2017", "inbox_id": "96568"},
+                "message": {
+                    "id": "759675071", "conversation_id": "2017",
+                    "message_type": "outgoing",
+                    "source_id": "wamid.SANITIZED_FIXTURE",
+                },
+            },
+            environ={
+                launch.CHATWOOT_ACCOUNT_ID_ENV: "147387",
+                launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+                launch.TELEGRAM_CLEANUP_ENABLED_ENV: "1",
+            },
+            attempt_loader=lambda *_: {"success": True, "attempt": attempt},
+            reconciliation_loader=lambda *_: {
+                "status_code": 200,
+                "body": {
+                    "id": "759675071", "conversation_id": "2017",
+                    "status": "delivered", "source_id": "wamid.SANITIZED_FIXTURE",
+                },
+            },
+            evidence_recorder=lambda event: records.append(event) or ({"success": True, "created": True}, 201),
+            review_event_loader=lambda _: ({"success": True, "event": action["event"]}, 200),
+            active_card_loader=lambda _: ({
+                "success": True,
+                "card": {**card, "conversation_id": "2017", "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            telegram_deleter=lambda *_: {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["delivery_state"], "provider_delivered")
+        self.assertEqual(
+            records[0]["review_json"]["reconciliation_source"],
+            "chatwoot_exact_outgoing_message_read",
+        )
+
+    def test_accepted_dispatch_card_edit_ambiguity_returns_no_retry_business_truth(self):
+        review, action, card = send_action_fixture()
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": f"sam_live_card_send:{action['action_identity']}",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "991",
+            },
+            environ={
+                launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+                "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1",
+            },
+            review_event_loader=load,
+            active_card_loader=lambda _: ({
+                "success": True, "card": {**card, "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401", "contact_id": "99", "inbox_id": "77",
+                "can_reply": True,
+                "messages": [{"id": "901", "message_type": "incoming"}],
+            },
+            evidence_recorder=lambda _event: ({"success": True, "created": True}, 201),
+            chatwoot_sender=lambda *_: {
+                "status_code": 200, "body": {"id": "902", "status": "sent"},
+            },
+            telegram_editor=lambda *_: (_ for _ in ()).throw(TimeoutError("ambiguous edit")),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["delivery_state"], "chatwoot_accepted_unverified")
+        self.assertTrue(result["card_update_ambiguous"])
+        self.assertTrue(result["automatic_retry_prohibited"])
+
+    def test_keep_with_me_retains_human_and_open_chatwoot_is_no_mutation(self):
+        event = {"review_event_id": "SAM-LIVE-REVIEW-5", "chatwoot_conversation_id": "2401", "decision_json": {}}
+        calls = []
+        common = {
+            "review_event_loader": lambda _: ({"success": True, "event": event}, 200),
+            "evidence_recorder": lambda item: ({"success": True, "created": True}, 200),
+        }
+        opened, open_status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_card_open:SAM-LIVE-REVIEW-5"}, **common,
+        )
+        self.assertEqual(open_status, 200)
+        self.assertEqual(opened["status"], "sam_live_stock_owner_card_open_no_mutation")
+        kept, keep_status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_card_keep:SAM-LIVE-REVIEW-5", "telegram_chat_id": "555", "telegram_message_id": "995"},
+            environ={"SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            chatwoot_writer=lambda conversation, attrs, source: calls.append(("mode", attrs["conversation_mode"])) or {"ok": True},
+            telegram_editor=lambda token, chat, message, text, markup: calls.append(("edit", chat, message, text)) or {"ok": True},
+            telegram_deleter=lambda *args: self.fail("keep must not delete"),
+            **common,
+        )
+        self.assertEqual(keep_status, 200)
+        self.assertEqual(calls[0], ("mode", "HUMAN"))
+        self.assertIn("With Charl", calls[1][3])
+        self.assertEqual(kept["status"], "sam_live_stock_owner_card_with_charl")
+
+    def test_delete_failure_marks_exact_card_resolved_and_removes_keyboard(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-6",
+            "chatwoot_conversation_id": "2401",
+            "chatwoot_message_id": "7001",
+            "chatwoot_contact_id": "8100",
+            "chatwoot_inbox_id": "96568",
+            "decision_json": {},
+        }
+        edits = []
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_card_done:SAM-LIVE-REVIEW-6", "telegram_chat_id": "555", "telegram_message_id": "996"},
+            environ={"SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            review_event_loader=lambda _: ({"success": True, "event": event}, 200),
+            evidence_recorder=lambda item: ({"success": True, "created": True}, 200),
+            chatwoot_writer=lambda *args: {"ok": True},
+            telegram_deleter=lambda *args: (_ for _ in ()).throw(RuntimeError("delete unavailable")),
+            telegram_editor=lambda token, chat, message, text, markup: edits.append((chat, message, text, markup)) or {"ok": True},
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401",
+                "contact_id": "8100",
+                "inbox_id": "96568",
+                "custom_attributes": {"conversation_mode": "HUMAN"},
+                "messages": [
+                    {"id": "7001", "message_type": "incoming", "created_at": 1},
+                    {"id": "7002", "message_type": "outgoing", "created_at": 2},
+                ],
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["telegram_cleanup"]["status"], "sam_live_stock_owner_card_resolved_by_edit")
+        self.assertEqual(edits, [("555", "996", "Resolved", {"inline_keyboard": []})])
+
+    def test_done_return_to_sam_requires_proven_human_before_auto_or_cleanup(self):
+        event = {"review_event_id": "SAM-LIVE-REVIEW-HUMAN", "chatwoot_conversation_id": "2401", "decision_json": {}}
+        calls = []
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_card_done:SAM-LIVE-REVIEW-HUMAN", "telegram_chat_id": "555", "telegram_message_id": "996"},
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            review_event_loader=lambda _: ({"success": True, "event": event}, 200),
+            evidence_recorder=lambda _item: ({"success": True, "created": True}, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401", "custom_attributes": {"conversation_mode": "AUTO"}, "messages": [],
+            },
+            chatwoot_writer=lambda *_args: calls.append("auto") or {"ok": True},
+            telegram_deleter=lambda *_args: calls.append("delete") or {"ok": True},
+            telegram_editor=lambda *_args: calls.append("retain_edit") or {"ok": True},
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["failed_step"], "human_reassessment_withheld")
+        self.assertEqual(calls, [])
+        self.assertFalse(result["ownership_mutated"])
+        self.assertFalse(result["card_mutated"])
+
+    def test_done_reassessment_rejects_newer_inbound_and_sends_nothing(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-HUMAN-2",
+            "chatwoot_conversation_id": "2402",
+            "chatwoot_message_id": "7101",
+            "chatwoot_contact_id": "8101",
+            "chatwoot_inbox_id": "96568",
+            "decision_json": {},
+        }
+        calls = []
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": "sam_live_card_done:SAM-LIVE-REVIEW-HUMAN-2",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "997",
+            },
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            review_event_loader=lambda _: ({"success": True, "event": event}, 200),
+            evidence_recorder=lambda _item: ({"success": True, "created": True}, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2402",
+                "contact_id": "8101",
+                "inbox_id": "96568",
+                "custom_attributes": {"conversation_mode": "HUMAN"},
+                "messages": [
+                    {"id": "7101", "message_type": "incoming", "created_at": 1},
+                    {"id": "7102", "message_type": "outgoing", "created_at": 2},
+                    {"id": "7103", "message_type": "incoming", "created_at": 3},
+                ],
+            },
+            chatwoot_writer=lambda *_args: calls.append("auto") or {"ok": True},
+            telegram_deleter=lambda *_args: calls.append("delete") or {"ok": True},
+            telegram_editor=lambda *_args: calls.append("retain_edit") or {"ok": True},
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["failed_step"], "human_reassessment_withheld")
+        self.assertEqual(calls, [])
+        self.assertFalse(result["detail"]["gates"]["exact_latest_inbound"])
+        self.assertFalse(result["sends_customer_message"])
+
+    def test_done_reassessment_preserves_explicit_human_and_protected_work(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-HUMAN-3",
+            "chatwoot_conversation_id": "2403",
+            "chatwoot_message_id": "7201",
+        }
+        chronology = {
+            "id": "2403",
+            "custom_attributes": {
+                "conversation_mode": "HUMAN",
+                "explicit_human_request": True,
+                "payment_required": True,
+                "specialist_review_required": True,
+            },
+            "messages": [
+                {"id": "7201", "message_type": "incoming", "created_at": 1},
+                {"id": "7202", "message_type": "outgoing", "created_at": 2},
+            ],
+        }
+        assessed = launch.assess_sam_live_stock_human_reassessment(
+            event,
+            chronology,
+            {
+                "conversation_id": "2403",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "998",
+            },
+        )
+        self.assertFalse(assessed["eligible"])
+        self.assertFalse(assessed["gates"]["no_explicit_human_request"])
+        self.assertFalse(assessed["gates"]["no_protected_work"])
+        self.assertFalse(assessed["gates"]["no_specialist_work"])
+        evidence = launch.build_sam_live_stock_human_reassessment_event(
+            event, assessed, "withheld"
+        )
+        self.assertEqual(evidence["customer_message_excerpt"], "")
+        self.assertEqual(evidence["sam_reply_excerpt"], "")
+
+    def test_human_mode_audit_classifies_without_bulk_reset(self):
+        conversations = [
+            {**human_conversation(1), "custom_attributes": {**human_conversation(1)["custom_attributes"], "unrelated": "keep"}, "messages": [{"message_type": "incoming", "created_at": "2026-07-24T09:00:00Z", "sender": {"type": "contact"}}]},
+            {"id": 2, "custom_attributes": {"conversation_mode": "HUMAN"}, "sam_live_stock_review": {"state": "resolved"}, "messages": [{"message_type": "outgoing", "created_at": "2026-07-24T09:00:00Z", "sender": {"type": "user"}}]},
+            human_conversation(3, timestamp="2026-07-20T09:00:00Z"),
+            human_conversation(4),
+        ]
+        result, status = launch.audit_sam_live_stock_human_conversations(chatwoot_reader=lambda source: conversations, now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc))
+        self.assertEqual(status, 200)
+        self.assertEqual([row["classification"] for row in result["conversations"]], ["awaiting_owner", "resolved_but_stuck", "stale_unknown", "active_manual"])
+        self.assertFalse(result["bulk_reset_allowed"])
+        self.assertFalse(result["writes_performed"])
+
+    def test_human_mode_audit_production_null_item_fails_structured_not_zero(self):
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [None],
+        )
+
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_conversation_shape_invalid")
+        self.assertEqual(result["failure_stage"], "conversation_item")
+        self.assertEqual(result["error_type"], "NoneType")
+        self.assertFalse(result["evidence_available"])
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+        self.assertFalse(result["bulk_reset_allowed"])
+
+    def test_human_mode_audit_tolerates_partial_latest_message_sender_and_timestamp_shapes(self):
+        conversations = [
+            {
+                "id": 1826,
+                "custom_attributes": {"conversation_mode": "HUMAN", "sales_lane": "live_stock_sales", "sam_live_stock_gate": "owner_review"},
+                "labels": ["sam_live_stock"],
+                "messages": [None],
+                "last_activity_at": {"unexpected": "shape"},
+            },
+            {
+                "id": 1827,
+                "custom_attributes": {"conversation_mode": "HUMAN"},
+                "sam_live_stock_review": {"state": "resolved"},
+                "messages": [{"message_type": "outgoing", "sender": ["unexpected"]}],
+            },
+        ]
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["conversations"][0]["classification"], "stale_unknown")
+        self.assertIsNone(result["conversations"][0]["latest_message_at"])
+        self.assertFalse(result["conversations"][0]["shape_complete"])
+        self.assertEqual(result["conversations"][1]["classification"], "resolved_but_stuck")
+
+    def test_human_mode_audit_malformed_response_and_attributes_fail_closed(self):
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: {"payload": []},
+        )
+        self.assertEqual(status, 502)
+        self.assertEqual(result["failure_stage"], "chatwoot_response_shape")
+        self.assertFalse(result["conversation_count_known"])
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [{"id": 1826, "custom_attributes": []}],
+        )
+        self.assertEqual(status, 502)
+        self.assertEqual(result["failure_stage"], "custom_attributes")
+
+    def test_human_mode_audit_review_loader_failures_are_sanitized_and_unavailable(self):
+        conversations = [{"id": 1826, "custom_attributes": {"conversation_mode": "HUMAN"}}]
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            review_loader=lambda conversation_id: (_ for _ in ()).throw(RuntimeError("postgres://secret")),
+        )
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["failure_stage"], "review_event_load")
+        self.assertEqual(result["error_type"], "RuntimeError")
+        self.assertNotIn("postgres://secret", str(result))
+        self.assertFalse(result["evidence_available"])
+
+    def test_chatwoot_reader_rejects_malformed_pagination_shape(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"data":{"payload":{},"meta":[]}}'
+
+        with patch.object(launch.urllib_request, "urlopen", return_value=Response()):
+            result, status = launch.audit_sam_live_stock_human_conversations(
+                environ={launch.CHATWOOT_TOKEN_ENV: "configured-secret", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"},
+            )
+
+        self.assertEqual(status, 502)
+        self.assertEqual(result["failure_stage"], "chatwoot_pagination")
+        self.assertNotIn("configured-secret", str(result))
+        self.assertTrue(result["diagnostics"]["chatwoot_token_configured"])
+        self.assertFalse(result["diagnostics"]["secrets_exposed"])
+
+    def test_human_mode_audit_classifies_chatwoot_http_and_timeout_failures(self):
+        http_error = launch.urllib_error.HTTPError(
+            "https://example.invalid", 503, "upstream", {}, None
+        )
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: (_ for _ in ()).throw(http_error),
+        )
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_chatwoot_http_error")
+        self.assertEqual(result["error_type"], "HTTPError")
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: (_ for _ in ()).throw(TimeoutError("token-value")),
+        )
+        self.assertEqual(status, 504)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_chatwoot_timeout")
+        self.assertNotIn("token-value", str(result))
+
+    def test_human_audit_uses_documented_server_filter_and_sam_inbox(self):
+        calls = []
+
+        def urlopen(request, timeout):
+            calls.append((request, timeout))
+            return ChatwootFilterResponse({
+                "meta": {"all_count": 1},
+                "payload": [human_conversation(1826)],
+            })
+
+        source = {
+            launch.CHATWOOT_TOKEN_ENV: "configured-secret",
+            launch.CHATWOOT_ACCOUNT_ID_ENV: "account-secret",
+            launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77",
+        }
+        with patch.object(launch.urllib_request, "urlopen", side_effect=urlopen):
+            result, status = launch.audit_sam_live_stock_human_conversations(
+                environ=source,
+                review_loader=lambda conversation_id: ({"success": False}, 404),
+                now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc),
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["counts"]["active_manual"], 1)
+        self.assertEqual(result["diagnostics"]["coverage"], "sam_livestock_inbox_human_custom_attribute")
+        self.assertTrue(result["diagnostics"]["pagination_complete"])
+        self.assertEqual(len(calls), 1)
+        request, timeout = calls[0]
+        self.assertEqual(request.method, "POST")
+        self.assertEqual(timeout, 10)
+        self.assertTrue(request.full_url.endswith("/conversations/filter?page=1"))
+        body = json.loads(request.data)
+        self.assertEqual(body, {"payload": [
+            {"attribute_key": "conversation_mode", "filter_operator": "equal_to", "values": ["HUMAN"], "query_operator": "AND"},
+            {"attribute_key": "inbox_id", "filter_operator": "equal_to", "values": [77], "query_operator": None},
+        ]})
+        self.assertNotIn("configured-secret", str(result))
+        self.assertNotIn("account-secret", str(result))
+        self.assertNotIn("77", str(result["diagnostics"]))
+
+    def test_human_audit_requires_authoritative_sam_inbox_without_calling_chatwoot(self):
+        with patch.object(launch.urllib_request, "urlopen") as reader:
+            result, status = launch.audit_sam_live_stock_human_conversations(
+                environ={launch.CHATWOOT_TOKEN_ENV: "configured-secret"},
+            )
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_inbox_not_configured")
+        self.assertEqual(result["failure_stage"], "chatwoot_configuration")
+        self.assertFalse(result["evidence_available"])
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+        self.assertFalse(result["bulk_reset_allowed"])
+        reader.assert_not_called()
+
+    def test_human_audit_reads_multiple_pages_and_deduplicates_ids(self):
+        responses = [
+            ChatwootFilterResponse({"meta": {"all_count": 3}, "payload": [human_conversation(1), human_conversation(2)]}),
+            ChatwootFilterResponse({"meta": {"all_count": 3}, "payload": [human_conversation(2), human_conversation(3)]}),
+        ]
+        source = {launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"}
+        with patch.object(launch.urllib_request, "urlopen", side_effect=responses):
+            result, status = launch.audit_sam_live_stock_human_conversations(
+                environ=source,
+                review_loader=lambda conversation_id: ({"success": False}, 404),
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(len(result["conversations"]), 3)
+        self.assertEqual(result["diagnostics"]["pages_read"], 2)
+        self.assertEqual(result["diagnostics"]["duplicates_removed"], 1)
+        self.assertEqual(result["diagnostics"]["filtered_conversation_count"], 3)
+
+    def test_human_audit_rejects_malformed_or_changing_meta(self):
+        source = {launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"}
+        with patch.object(
+            launch.urllib_request,
+            "urlopen",
+            return_value=ChatwootFilterResponse({"meta": {"all_count": "1"}, "payload": []}),
+        ):
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+        self.assertEqual(status, 502)
+        self.assertEqual(result["failure_stage"], "chatwoot_pagination")
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+
+        responses = [
+            ChatwootFilterResponse({"meta": {"all_count": 2}, "payload": [human_conversation(1)]}),
+            ChatwootFilterResponse({"meta": {"all_count": 3}, "payload": [human_conversation(2)]}),
+        ]
+        with patch.object(launch.urllib_request, "urlopen", side_effect=responses):
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_pagination_meta_changed")
+
+    def test_human_audit_filter_http_400_is_unsupported_and_fail_closed(self):
+        error = launch.urllib_error.HTTPError("https://example.invalid", 400, "bad filter", {}, None)
+        with patch.object(launch.urllib_request, "urlopen", side_effect=error):
+            result, status = launch.audit_sam_live_stock_human_conversations(
+                environ={launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"},
+            )
+
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_filter_unsupported")
+        self.assertEqual(result["failure_stage"], "chatwoot_filter_contract")
+        self.assertEqual(result["diagnostics"]["fallback_coverage"], "known_sam_evidence_only_not_executed")
+        self.assertFalse(result["evidence_available"])
+
+    def test_human_audit_pagination_limit_and_partial_evidence_remain_unknown(self):
+        source = {launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"}
+        responses = [
+            ChatwootFilterResponse({"meta": {"all_count": 3}, "payload": [human_conversation(1)]}),
+            ChatwootFilterResponse({"meta": {"all_count": 3}, "payload": [human_conversation(2)]}),
+        ]
+        with patch.object(launch, "HUMAN_AUDIT_MAX_PAGES", 2), patch.object(
+            launch.urllib_request, "urlopen", side_effect=responses
+        ):
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_pagination_limit_reached")
+        self.assertEqual(result["diagnostics"]["partial_filtered_count"], 2)
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+        self.assertFalse(result["bulk_reset_allowed"])
+
+        responses = [
+            ChatwootFilterResponse({"meta": {"all_count": 2}, "payload": [human_conversation(1)]}),
+            ChatwootFilterResponse({"meta": {"all_count": 2}, "payload": []}),
+        ]
+        with patch.object(launch.urllib_request, "urlopen", side_effect=responses):
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_partial_evidence")
+        self.assertFalse(result["evidence_available"])
+
+    def test_human_audit_total_timeout_is_bounded_and_sanitized(self):
+        source = {launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"}
+        response = ChatwootFilterResponse({
+            "meta": {"all_count": 2},
+            "payload": [human_conversation(1)],
+        })
+        with patch.object(launch.urllib_request, "urlopen", return_value=response), patch.object(
+            launch.time, "monotonic", side_effect=[0, 0, 31]
+        ):
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+
+        self.assertEqual(status, 504)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_total_timeout")
+        self.assertFalse(result["conversation_count_known"])
+        self.assertFalse(result["writes_performed"])
+
+    def test_human_audit_conclusive_zero_and_review_classification_do_no_writes(self):
+        source = {launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"}
+        with patch.object(
+            launch.urllib_request,
+            "urlopen",
+            return_value=ChatwootFilterResponse({"meta": {"all_count": 0}, "payload": []}),
+        ) as reader:
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+        self.assertEqual(status, 200)
+        self.assertEqual(result["conversations"], [])
+        self.assertEqual(
+            result["counts"],
+            {key: 0 for key in (*launch.HUMAN_AUDIT_CLASSIFICATIONS, *launch.HUMAN_AUDIT_LANE_COUNTS)},
+        )
+        self.assertTrue(result["conversation_count_known"])
+        self.assertTrue(result["evidence_available"])
+        self.assertFalse(result["writes_performed"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["reserves_stock"])
+        self.assertEqual(reader.call_count, 1)
+
+        conversations = [
+            human_conversation(1, review_state="resolved"),
+            human_conversation(2, timestamp="2026-07-20T09:00:00Z"),
+        ]
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda environ: conversations,
+            now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            [row["classification"] for row in result["conversations"]],
+            ["resolved_but_stuck", "stale_unknown"],
+        )
+
+
+    def test_human_audit_shared_inbox_qualifies_livestock_and_excludes_meat_and_unknown(self):
+        conversations = [
+            human_conversation(301, inbox_id=96568),
+            human_conversation(302, inbox_id=96568, lane="meat"),
+            human_conversation(303, inbox_id=96568, lane="unknown"),
+        ]
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["evidence_complete"])
+        self.assertEqual([row["conversation_id"] for row in result["conversations"]], ["301"])
+        self.assertTrue(result["conversations"][0]["authoritative_livestock_lane"])
+        self.assertEqual(result["conversations"][0]["lane_proof"], "backend_native_livestock_takeover")
+        self.assertEqual(result["counts"]["excluded_non_livestock"], 1)
+        self.assertEqual(result["counts"]["lane_unknown"], 1)
+        self.assertFalse(result["bulk_reset_allowed"])
+        self.assertFalse(result["action_contract"]["automatic_reset_allowed"])
+        self.assertTrue(result["action_contract"]["conversation_ownership_independent_of_business_lane"])
+        self.assertTrue(result["action_contract"]["business_lane_required_only_before_specialist_tools_or_protected_claims"])
+
+    def test_human_audit_exact_persisted_review_is_authoritative_lane_proof(self):
+        conversation = human_conversation(401, inbox_id=96568, lane="unknown")
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [conversation],
+            review_loader=lambda conversation_id: (
+                {"success": True, "event": {"chatwoot_conversation_id": "401", "review_state": "active"}}, 200
+            ),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(result["conversations"]), 1)
+        self.assertEqual(result["conversations"][0]["lane_proof"], "persisted_livestock_review")
+
+    def test_human_audit_mismatched_or_conflicting_lane_evidence_is_non_actionable(self):
+        unknown = human_conversation(501, inbox_id=96568, lane="unknown")
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [unknown],
+            review_loader=lambda conversation_id: (
+                {"success": True, "event": {"chatwoot_conversation_id": "other-conversation"}}, 200
+            ),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["conversations"], [])
+        self.assertEqual(result["counts"]["lane_unknown"], 1)
+        meat = human_conversation(502, inbox_id=96568, lane="meat")
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [meat],
+            review_loader=lambda conversation_id: (
+                {"success": True, "event": {"chatwoot_conversation_id": "502"}}, 200
+            ),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["conversations"], [])
+        self.assertEqual(result["counts"]["lane_unknown"], 1)
+
+    def test_human_audit_lane_output_is_secret_free_and_private_content_free(self):
+        private = human_conversation(601, inbox_id=96568, lane="meat")
+        private["messages"][0]["content"] = "PRIVATE-CUSTOMER-CONTENT"
+        private["custom_attributes"]["phone_number"] = "+27000000000"
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [private],
+            environ={
+                launch.CHATWOOT_TOKEN_ENV: "CHATWOOT-SECRET-TOKEN",
+                launch.CHATWOOT_ACCOUNT_ID_ENV: "PRIVATE-ACCOUNT-ID",
+                launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "96568",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["conversations"], [])
+        serialized = json.dumps(result)
+        self.assertNotIn("PRIVATE-CUSTOMER-CONTENT", serialized)
+        self.assertNotIn("+27000000000", serialized)
+        self.assertNotIn("CHATWOOT-SECRET-TOKEN", serialized)
+        self.assertNotIn("PRIVATE-ACCOUNT-ID", serialized)
+        self.assertNotIn("96568", serialized)
+
+    def test_human_audit_incomplete_evidence_never_returns_complete_counts(self):
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: (_ for _ in ()).throw(TimeoutError("bounded timeout")),
+        )
+        self.assertEqual(status, 504)
+        self.assertFalse(result["evidence_complete"])
+        self.assertFalse(result["evidence_available"])
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+        self.assertFalse(result["bulk_reset_allowed"])
+
+    def test_human_mode_audit_never_swallows_process_control_exceptions(self):
+        for exception in (SystemExit("worker abort"), KeyboardInterrupt()):
+            with self.subTest(exception=type(exception).__name__):
+                with self.assertRaises(type(exception)):
+                    launch.audit_sam_live_stock_human_conversations(
+                        chatwoot_reader=lambda source: [human_conversation(1826)],
+                        review_loader=lambda conversation_id, exc=exception: (_ for _ in ()).throw(exc),
+                    )
+    def test_human_mode_audit_batches_review_loading_once(self):
+        conversations = [
+            human_conversation(1826, lane="unknown"),
+            human_conversation(1827, lane="meat"),
+            human_conversation(1828, lane="unknown"),
+        ]
+        calls = []
+
+        def batch_loader(conversation_ids):
+            calls.append(list(conversation_ids))
+            return {
+                "success": True,
+                "events_by_conversation_id": {
+                    "1826": {
+                        "chatwoot_conversation_id": "1826",
+                        "review_state": "active",
+                    }
+                },
+            }, 200
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            review_batch_loader=batch_loader,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(calls, [["1826", "1827", "1828"]])
+        self.assertEqual(result["diagnostics"]["review_load_mode"], "single_bounded_batch")
+        self.assertEqual([row["conversation_id"] for row in result["conversations"]], ["1826"])
+        self.assertEqual(result["counts"]["excluded_non_livestock"], 1)
+        self.assertEqual(result["counts"]["lane_unknown"], 1)
+        self.assertFalse(result["bulk_reset_allowed"])
+
+    def test_review_batch_query_is_once_bound_and_time_bounded(self):
+        observed = {"execute_calls": 0}
+
+        class Cursor:
+            description = []
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def execute(self, query, params):
+                observed["execute_calls"] += 1
+                observed["query"] = query
+                observed["params"] = params
+            def fetchall(self): return []
+
+        class Connection:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def cursor(self): return Cursor()
+
+        def connect(database_url, **kwargs):
+            observed["connect_kwargs"] = kwargs
+            return Connection()
+
+        with patch.dict("sys.modules", {"psycopg": types.SimpleNamespace(connect=connect)}):
+            result, status = launch.load_latest_sam_live_stock_review_events_for_conversations(
+                ["1978", "1978", "1980"], database_url="postgresql://configured"
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(observed["execute_calls"], 1)
+        self.assertIn("chatwoot_conversation_id = any(%s)", observed["query"])
+        self.assertNotIn("1978", observed["query"])
+        self.assertEqual(observed["params"], (["1978", "1980"],))
+        self.assertEqual(observed["connect_kwargs"]["connect_timeout"], launch.HUMAN_AUDIT_DATABASE_CONNECT_TIMEOUT_SECONDS)
+        self.assertEqual(observed["connect_kwargs"]["options"], f"-c statement_timeout={launch.HUMAN_AUDIT_DATABASE_STATEMENT_TIMEOUT_MILLISECONDS}")
+
+    def test_human_mode_audit_maximum_batch_is_deduplicated_and_loaded_once(self):
+        conversations = [human_conversation(i, lane="livestock") for i in range(1, launch.HUMAN_AUDIT_MAX_CONVERSATIONS + 1)]
+        conversations.append(human_conversation(1, lane="livestock"))
+        calls = []
+
+        def batch_loader(conversation_ids):
+            calls.append(list(conversation_ids))
+            return {"success": True, "events_by_conversation_id": {}}, 200
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations, review_batch_loader=batch_loader,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls[0]), launch.HUMAN_AUDIT_MAX_CONVERSATIONS)
+        self.assertEqual(len(set(calls[0])), launch.HUMAN_AUDIT_MAX_CONVERSATIONS)
+        self.assertEqual(len(result["conversations"]), launch.HUMAN_AUDIT_MAX_CONVERSATIONS)
+        self.assertLess(len(json.dumps(result)), 1_000_000)
+
+    def test_human_mode_audit_rejects_oversized_batch_before_query(self):
+        conversations = [human_conversation(i) for i in range(1, launch.HUMAN_AUDIT_MAX_CONVERSATIONS + 2)]
+        calls = []
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            review_batch_loader=lambda ids: calls.append(ids),
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(calls, [])
+        self.assertFalse(result["evidence_complete"])
+        self.assertIsNone(result["counts"])
+
+    def test_human_mode_audit_healthy_process_deadline_is_structured(self):
+        ticks = iter((0.0, 21.0))
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [], clock=lambda: next(ticks),
+        )
+        self.assertEqual(status, 504)
+        self.assertEqual(result["failure_stage"], "chatwoot_request")
+        self.assertEqual(result["error_type"], "TimeoutError")
+        self.assertFalse(result["evidence_complete"])
+        self.assertFalse(result["writes_performed"])
+
+    def test_conversation_1983_resolves_exact_card_only_when_human_is_unproven(self):
+        conversation = {
+            "id": 1983,
+            "review_event_id": "SAM-LIVE-REVIEW-1983",
+            "custom_attributes": {"conversation_mode": "HUMAN", "sales_lane": "unknown"},
+            "messages": [
+                {"id": 758530001, "message_type": "incoming", "created_at": "2026-07-25T08:00:00Z"},
+                {"id": 758530099, "message_type": "outgoing", "created_at": "2026-07-25T08:05:00Z"},
+            ],
+        }
+        cards = [{
+            "conversation_id": 1983,
+            "review_event_id": "SAM-LIVE-REVIEW-1983",
+            "customer_message_id": 758530001,
+            "telegram_message_id": 2865,
+            "created_at": "2026-07-25T08:01:00Z",
+            "authoritative": True,
+        }]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["ownership"], "AUTO_GENERAL")
+        self.assertFalse(result["human_ownership_proven"])
+        self.assertEqual(result["business_lane"], "unknown")
+        self.assertEqual(result["newest_authoritative_actionable_telegram_message_id"], "2865")
+        self.assertEqual(result["cards"], [{
+            "telegram_message_id": "2865",
+            "customer_message_id": "758530001",
+            "classification": "answered_already_auto_or_unproven",
+            "business_lane": "unknown",
+            "action": "resolve_card_only",
+            "chatwoot_mode_mutation": False,
+            "customer_send": False,
+            "specialist_or_business_rail": False,
+        }])
+        self.assertFalse(result["writes_performed"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["calls_specialist_rail"])
+        self.assertFalse(result["calls_business_rail"])
+        self.assertEqual(result, launch.reconcile_sam_live_stock_exact_cards(conversation, cards))
+
+    def test_exact_card_reconciliation_requires_proven_human_before_auto_candidate(self):
+        conversation = {
+            "id": "2001",
+            "review_event_id": "SAM-LIVE-REVIEW-2001",
+            "custom_attributes": {"conversation_mode": "HUMAN", "sales_lane": "meat_sales"},
+            "ownership_evidence": {"human_takeover_proven": True},
+            "messages": [
+                {"id": "customer-1", "direction": "incoming", "created_at": 100},
+                {"id": "owner-1", "direction": "outgoing", "created_at": 120},
+            ],
+        }
+        cards = [{
+            "conversation_id": "2001", "customer_message_id": "customer-1",
+            "review_event_id": "SAM-LIVE-REVIEW-2001",
+            "telegram_message_id": "3001", "created_at": 110, "authoritative": True,
+        }]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertEqual(result["ownership"], "HUMAN")
+        self.assertEqual(result["business_lane"], "meat")
+        self.assertEqual(result["cards"][0]["classification"], "answered_still_human")
+        self.assertEqual(result["cards"][0]["action"], "candidate_auto_then_resolve")
+        self.assertFalse(result["cards"][0]["chatwoot_mode_mutation"])
+
+    def test_exact_card_reconciliation_retains_card_for_newer_unanswered_message(self):
+        conversation = {
+            "id": "2002",
+            "review_event_id": "SAM-LIVE-REVIEW-2002",
+            "custom_attributes": {"conversation_ownership": "AUTO_SPECIALIST", "sales_lane": "live_stock_sales"},
+            "messages": [
+                {"id": "customer-1", "direction": "incoming", "created_at": 100},
+                {"id": "owner-1", "direction": "outgoing", "created_at": 120},
+                {"id": "customer-2", "direction": "incoming", "created_at": 130},
+            ],
+        }
+        cards = [{
+            "conversation_id": "2002", "customer_message_id": "customer-1",
+            "review_event_id": "SAM-LIVE-REVIEW-2002",
+            "telegram_message_id": "3002", "created_at": 110, "authoritative": True,
+        }]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertEqual(result["cards"][0]["classification"], "unanswered")
+        self.assertEqual(result["cards"][0]["action"], "retain_exact_card")
+
+    def test_duplicate_card_cleanup_needs_exact_supersession_and_protects_newest(self):
+        conversation = {
+            "id": "2003",
+            "review_event_id": "SAM-LIVE-REVIEW-2003",
+            "custom_attributes": {"conversation_ownership": "AUTO_GENERAL"},
+            "messages": [
+                {"id": "customer-1", "direction": "incoming", "created_at": 100},
+                {"id": "owner-1", "direction": "outgoing", "created_at": 140},
+            ],
+        }
+        cards = [
+            {
+                "conversation_id": "2003", "customer_message_id": "customer-1",
+                "review_event_id": "SAM-LIVE-REVIEW-2003",
+                "telegram_message_id": "3003", "created_at": 110, "authoritative": True,
+            },
+            {
+                "conversation_id": "2003", "customer_message_id": "customer-1",
+                "review_event_id": "SAM-LIVE-REVIEW-2003",
+                "telegram_message_id": "3004", "created_at": 120, "authoritative": True,
+                "supersedes_telegram_message_id": "3003",
+            },
+        ]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertEqual(result["newest_authoritative_actionable_telegram_message_id"], "3004")
+        self.assertEqual(result["cards"][0]["classification"], "duplicate_superseded")
+        self.assertEqual(result["cards"][0]["action"], "resolve_card_only")
+        self.assertEqual(result["cards"][1]["classification"], "answered_already_auto_or_unproven")
+
+        without_exact_evidence = launch.reconcile_sam_live_stock_exact_cards(
+            conversation, [{**cards[0]}, {**cards[1], "supersedes_telegram_message_id": ""}],
+        )
+        self.assertNotIn("duplicate_superseded", [row["classification"] for row in without_exact_evidence["cards"]])
+
+    def test_incomplete_or_conflicting_exact_card_evidence_is_no_action(self):
+        malformed = launch.reconcile_sam_live_stock_exact_cards(
+            {
+                "id": "2004", "review_event_id": "SAM-LIVE-REVIEW-2004",
+                "messages": [{"id": "customer", "direction": "incoming"}],
+            },
+            [],
+        )
+        self.assertFalse(malformed["success"])
+        self.assertEqual(malformed["status"], "message_evidence_conflicting")
+        self.assertEqual(malformed["cards"], [])
+
+        conflicting = launch.reconcile_sam_live_stock_exact_cards(
+            {
+                "id": "2004",
+                "review_event_id": "SAM-LIVE-REVIEW-2004",
+                "messages": [
+                    {"id": "customer", "direction": "incoming", "created_at": 100},
+                    {"id": "owner", "direction": "outgoing", "created_at": 120},
+                ],
+            },
+            [{
+                "conversation_id": "2004", "customer_message_id": "customer",
+                "review_event_id": "SAM-LIVE-REVIEW-2004",
+                "telegram_message_id": "3005", "created_at": 110,
+                "authoritative": True, "evidence_conflicting": True,
+            }],
+        )
+        self.assertEqual(conflicting["cards"][0]["classification"], "uncertain")
+        self.assertEqual(conflicting["cards"][0]["action"], "no_action")
+
+    def test_general_and_unknown_ownership_model_never_invokes_specialist_rails(self):
+        for lane in ("general", "unknown", "other_enquiry"):
+            with self.subTest(lane=lane):
+                result = launch.reconcile_sam_live_stock_exact_cards(
+                    {
+                        "id": f"general-{lane}",
+                        "review_event_id": f"SAM-LIVE-REVIEW-{lane}",
+                        "custom_attributes": {"conversation_ownership": "AUTO_GENERAL", "sales_lane": lane},
+                        "messages": [
+                            {"id": "customer", "direction": "incoming", "created_at": 100},
+                            {"id": "owner", "direction": "outgoing", "created_at": 120},
+                        ],
+                    },
+                    [{
+                        "conversation_id": f"general-{lane}", "customer_message_id": "customer",
+                        "review_event_id": f"SAM-LIVE-REVIEW-{lane}",
+                        "telegram_message_id": "4001", "created_at": 110, "authoritative": True,
+                    }],
+                )
+                self.assertFalse(result["calls_specialist_rail"])
+                self.assertFalse(result["calls_business_rail"])
+                self.assertFalse(result["sends_customer_message"])
+
+    def test_human_unproven_unanswered_retains_card_and_never_enables_send(self):
+        conversation = {
+            "id": "2005",
+            "review_event_id": "SAM-LIVE-REVIEW-2005",
+            "custom_attributes": {"conversation_mode": "HUMAN", "sales_lane": "unknown"},
+            "messages": [{"id": "customer", "direction": "incoming", "created_at": 100}],
+        }
+        cards = [{
+            "conversation_id": "2005", "review_event_id": "SAM-LIVE-REVIEW-2005",
+            "customer_message_id": "customer", "telegram_message_id": "4002",
+            "created_at": 110, "authoritative": True,
+        }]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertEqual(result["ownership"], "AUTO_GENERAL")
+        self.assertFalse(result["human_ownership_proven"])
+        self.assertEqual(result["cards"][0]["classification"], "unanswered")
+        self.assertEqual(result["cards"][0]["action"], "retain_exact_card")
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["cards"][0]["customer_send"])
+        self.assertFalse(result["writes_performed"])
+
+    def test_exact_card_or_review_identity_mismatch_fails_closed(self):
+        conversation = {
+            "id": "2006",
+            "review_event_id": "SAM-LIVE-REVIEW-2006",
+            "messages": [{"id": "customer", "direction": "incoming", "created_at": 100}],
+        }
+        exact_card = {
+            "conversation_id": "2006", "review_event_id": "SAM-LIVE-REVIEW-2006",
+            "customer_message_id": "customer", "telegram_message_id": "4003",
+            "created_at": 110, "authoritative": True,
+        }
+        for changed, expected in (
+            ({"conversation_id": "other"}, "card_evidence_incomplete"),
+            ({"review_event_id": "SAM-LIVE-REVIEW-OTHER"}, "card_evidence_incomplete"),
+            ({"customer_message_id": "other"}, "card_evidence_mismatch"),
+        ):
+            with self.subTest(changed=changed, expected=expected):
+                result = launch.reconcile_sam_live_stock_exact_cards(
+                    conversation, [{**exact_card, **changed}],
+                )
+                self.assertFalse(result["success"])
+                self.assertEqual(result["status"], expected)
+                self.assertEqual(result["cards"], [])
+                self.assertFalse(result["writes_performed"])
+                self.assertFalse(result["sends_customer_message"])
+
+    def test_missing_conversation_card_or_review_identity_fails_closed(self):
+        conversation = {
+            "id": "2007",
+            "review_event_id": "SAM-LIVE-REVIEW-2007",
+            "messages": [{"id": "customer", "direction": "incoming", "created_at": 100}],
+        }
+        card = {
+            "conversation_id": "2007", "review_event_id": "SAM-LIVE-REVIEW-2007",
+            "customer_message_id": "customer", "telegram_message_id": "4004",
+            "created_at": 110, "authoritative": True,
+        }
+        cases = (
+            ({**conversation, "id": ""}, card, "reconciliation_identity_incomplete"),
+            ({**conversation, "review_event_id": ""}, card, "reconciliation_identity_incomplete"),
+            (conversation, {**card, "telegram_message_id": ""}, "card_evidence_incomplete"),
+            (conversation, {**card, "review_event_id": ""}, "card_evidence_incomplete"),
+        )
+        for changed_conversation, changed_card, expected in cases:
+            with self.subTest(expected=expected):
+                result = launch.reconcile_sam_live_stock_exact_cards(changed_conversation, [changed_card])
+                self.assertFalse(result["success"])
+                self.assertEqual(result["status"], expected)
+                self.assertEqual(result["cards"], [])
+
+    def test_cross_conversation_card_cannot_supersede_exact_card(self):
+        conversation = {
+            "id": "2008",
+            "review_event_id": "SAM-LIVE-REVIEW-2008",
+            "messages": [
+                {"id": "customer", "direction": "incoming", "created_at": 100},
+                {"id": "owner", "direction": "outgoing", "created_at": 140},
+            ],
+        }
+        cards = [
+            {
+                "conversation_id": "2008", "review_event_id": "SAM-LIVE-REVIEW-2008",
+                "customer_message_id": "customer", "telegram_message_id": "4005",
+                "created_at": 110, "authoritative": True,
+            },
+            {
+                "conversation_id": "other", "review_event_id": "SAM-LIVE-REVIEW-2008",
+                "customer_message_id": "customer", "telegram_message_id": "4006",
+                "created_at": 120, "authoritative": True,
+                "supersedes_telegram_message_id": "4005",
+            },
+        ]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "card_evidence_incomplete")
+        self.assertEqual(result["cards"], [])
+        self.assertFalse(result["writes_performed"])
+
+    def _resolve_card_fixture(self, generation="reconcile-1983-recovery-2"):
+        conversation = {
+            "account_id": "147387",
+            "id": "1983",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "review_event_id": "SAM-LIVE-REVIEW-FD17FD894C2B",
+            "custom_attributes": {"conversation_mode": "HUMAN", "sales_lane": "unknown"},
+            "messages": [
+                {"id": "758530001", "message_type": 0, "created_at": 100},
+                {"id": "758530099", "message_type": 1, "created_at": 120},
+            ],
+        }
+        card = {
+            "conversation_id": "1983",
+            "review_event_id": "SAM-LIVE-REVIEW-FD17FD894C2B",
+            "customer_message_id": "758530001",
+            "telegram_chat_id": "555",
+            "telegram_message_id": "2865",
+            "created_at": 110,
+            "authoritative": True,
+        }
+        built = launch.build_sam_live_stock_resolve_card_candidate(
+            conversation,
+            card,
+            reconciliation_generation=generation,
+            lifecycle_card_identity="SAM-LIVE-CARD-8FF523977E92",
+        )
+        original = {
+            "review_event_id": "SAM-LIVE-REVIEW-FD17FD894C2B",
+            "chatwoot_conversation_id": "1983",
+            "chatwoot_message_id": "758530001",
+            "decision_json": {
+                "inbound": {
+                    "account_id": "147387",
+                    "conversation_id": "1983",
+                    "contact_id": "699428938",
+                    "inbox_id": "96568",
+                    "message_id": "758530001",
+                },
+            },
+        }
+        candidate_event = launch.build_sam_live_stock_resolve_candidate_event(
+            original, built.get("candidate"),
+        )
+        return conversation, card, built, original, candidate_event
+
+    def _resolve_environ(self, **extra):
+        return {
+            launch.RESOLVE_CARD_CANARY_ENABLED_ENV: "1",
+            launch.RESOLVE_CARD_CANARY_CONVERSATION_ID_ENV: "1983",
+            launch.RESOLVE_CARD_CANARY_CONTACT_ID_ENV: "699428938",
+            launch.RESOLVE_CARD_CANARY_INBOX_ID_ENV: "96568",
+            launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+            **extra,
+        }
+
+    def _resolve_active_card_loader(self, built):
+        candidate = built["candidate"]
+        return lambda conversation_id: ({
+            "success": True,
+            "lifecycle_card_identity": candidate["lifecycle_card_identity"],
+            "card": {
+                "conversation_id": candidate["conversation_id"],
+                "telegram_chat_id": candidate["telegram_chat_id"],
+                "telegram_message_id": candidate["telegram_message_id"],
+                "state": "action_failed",
+            },
+        }, 200)
+
+    def test_resolve_card_planner_renderer_callback_and_executor_share_one_action(self):
+        conversation, card, built, original, candidate_event = self._resolve_card_fixture()
+        self.assertTrue(built["success"])
+        self.assertEqual(built["reconciliation"]["cards"][0]["action"], "resolve_card_only")
+        self.assertEqual(built["button"]["text"], "Resolve Card Only")
+        self.assertEqual(built["button"]["action"], "resolve_card_only")
+        self.assertEqual(
+            built["button"]["callback_data"],
+            f"sam_live_card_resolve:{built['candidate']['action_identity']}",
+        )
+        parsed = launch._callback_action(built["button"]["callback_data"])
+        self.assertEqual(parsed, {
+            "action": "resolve_card_only",
+            "escalation_id": built["candidate"]["action_identity"],
+        })
+
+        calls = {"records": [], "deletes": [], "chatwoot": [], "customers": []}
+
+        def loader(identity):
+            event = candidate_event if identity == built["candidate"]["action_identity"] else original
+            return {"success": True, "event": event}, 200
+
+        def recorder(event):
+            calls["records"].append(event)
+            return {"success": True, "created": True, "review_event_id": event["review_event_id"]}, 201
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": built["button"]["callback_data"],
+                "telegram_chat_id": "555",
+                "telegram_message_id": "2865",
+            },
+            environ=self._resolve_environ(),
+            review_event_loader=loader,
+            active_card_loader=self._resolve_active_card_loader(built),
+            chronology_loader=lambda conversation_id, source: conversation,
+            evidence_recorder=recorder,
+            telegram_deleter=lambda token, chat_id, message_id: calls["deletes"].append(
+                (chat_id, message_id)
+            ) or {"ok": True},
+            chatwoot_writer=lambda *args: calls["chatwoot"].append(args),
+            chatwoot_sender=lambda *args: calls["customers"].append(args),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["action"], "resolve_card_only")
+        self.assertEqual(result["cleanup_mode"], "deleted")
+        self.assertEqual(calls["deletes"], [("555", "2865")])
+        self.assertEqual(calls["chatwoot"], [])
+        self.assertEqual(calls["customers"], [])
+        self.assertFalse(result["calls_chatwoot"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["reserves_stock"])
+        self.assertFalse(result["changes_stock"])
+        self.assertFalse(result["writes_farm_data"])
+        self.assertEqual(calls["records"][0]["review_json"]["resolve_card_only"]["state"], "action_claimed")
+        self.assertEqual(calls["records"][1]["review_json"]["owner_card"]["state"], "resolved")
+        self.assertEqual(calls["records"][1]["review_json"]["owner_card"]["action"], "resolve_card_only")
+        self.assertEqual(calls["records"][2]["review_json"]["resolve_card_only"]["state"], "resolved")
+        self.assertEqual(calls["records"][2]["recommended_action"], "resolve_card_only_deleted")
+
+    def test_resolve_card_delete_unavailable_edits_only_exact_card_resolved_without_keyboard(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        edits = []
+        records = []
+
+        def loader(identity):
+            return {
+                "success": True,
+                "event": candidate_event if identity == built["candidate"]["action_identity"] else original,
+            }, 200
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": built["button"]["callback_data"],
+                "telegram_chat_id": "555",
+                "telegram_message_id": "2865",
+            },
+            environ=self._resolve_environ(),
+            review_event_loader=loader,
+            active_card_loader=self._resolve_active_card_loader(built),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda event: records.append(event) or (
+                {"success": True, "created": True}, 201
+            ),
+            telegram_deleter=lambda *_args: {"ok": False},
+            telegram_editor=lambda token, chat_id, message_id, text, markup: edits.append(
+                (chat_id, message_id, text, markup)
+            ) or {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["cleanup_mode"], "resolved_edit")
+        self.assertEqual(edits, [("555", "2865", "Resolved", {"inline_keyboard": []})])
+        self.assertEqual(records[-2]["review_json"]["owner_card"]["state"], "resolved")
+        self.assertEqual(records[-1]["review_json"]["resolve_card_only"]["state"], "resolved")
+        self.assertEqual(records[-1]["recommended_action"], "resolve_card_only_resolved_edit")
+
+    def test_resolve_card_button_is_exposed_only_after_candidate_persistence(self):
+        conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
+        records = []
+        prepared = launch.prepare_sam_live_stock_resolve_card_action(
+            conversation,
+            card,
+            reconciliation_generation=built["candidate"]["reconciliation_generation"],
+            lifecycle_card_identity=built["candidate"]["lifecycle_card_identity"],
+            original_event=original,
+            evidence_recorder=lambda event: records.append(event) or (
+                {"success": True, "created": True}, 201
+            ),
+        )
+        self.assertTrue(prepared["success"])
+        self.assertEqual(prepared["status"], "resolve_card_candidate_persisted")
+        self.assertEqual(prepared["button"]["text"], "Resolve Card Only")
+        self.assertEqual(records[0]["review_event_id"], prepared["candidate"]["action_identity"])
+
+        withheld = launch.prepare_sam_live_stock_resolve_card_action(
+            conversation,
+            card,
+            reconciliation_generation="new-generation",
+            lifecycle_card_identity=built["candidate"]["lifecycle_card_identity"],
+            original_event=original,
+            evidence_recorder=lambda event: ({"success": False}, 503),
+        )
+        self.assertFalse(withheld["success"])
+        self.assertEqual(withheld["button"], {})
+
+    def test_resolve_card_newer_customer_message_invalidates_before_claim(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        conversation["messages"].append(
+            {"id": "new-customer", "message_type": 0, "created_at": 130}
+        )
+        records = []
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            candidate_event,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+            environ=self._resolve_environ(),
+            review_event_loader=lambda identity: ({"success": True, "event": original}, 200),
+            active_card_loader=self._resolve_active_card_loader(built),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda event: records.append(event),
+            telegram_deleter=lambda *args: self.fail("cleanup must not run"),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "resolve_card_fresh_chronology_invalidated")
+        self.assertTrue(result["card_retained"])
+        self.assertEqual(records, [])
+
+    def test_resolve_card_identity_mismatch_and_missing_evidence_retain_card(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        for payload in (
+            {"telegram_chat_id": "other", "telegram_message_id": "2865"},
+            {"telegram_chat_id": "555", "telegram_message_id": "other"},
+            {"telegram_chat_id": "", "telegram_message_id": ""},
+        ):
+            with self.subTest(payload=payload):
+                result, status = launch.execute_sam_live_stock_resolve_card_only(
+                    candidate_event,
+                    payload,
+                    environ=self._resolve_environ(),
+                    review_event_loader=lambda identity: ({"success": True, "event": original}, 200),
+                    chronology_loader=lambda *_args: conversation,
+                )
+                self.assertEqual(status, 409)
+                self.assertEqual(result["status"], "resolve_card_exact_telegram_identity_mismatch")
+                self.assertTrue(result["card_retained"])
+
+        tampered = json.loads(json.dumps(candidate_event))
+        tampered["review_json"]["resolve_card_only"]["lifecycle_card_identity"] = "other"
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            tampered,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+            environ=self._resolve_environ(),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "resolve_card_candidate_invalid")
+
+    def test_resolve_card_latest_active_card_mismatch_fails_before_claim(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        records = []
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            candidate_event,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+            environ=self._resolve_environ(),
+            review_event_loader=lambda identity: ({"success": True, "event": original}, 200),
+            active_card_loader=lambda conversation_id: ({
+                "success": True,
+                "lifecycle_card_identity": "SAM-LIVE-CARD-NEWER",
+                "card": {
+                    "conversation_id": conversation_id,
+                    "telegram_chat_id": "555",
+                    "telegram_message_id": "9999",
+                },
+            }, 200),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda event: records.append(event),
+            telegram_deleter=lambda *args: self.fail("cleanup must not run"),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "resolve_card_active_identity_mismatch")
+        self.assertTrue(result["card_retained"])
+        self.assertEqual(records, [])
+
+    def test_resolve_card_ambiguous_delete_records_failure_and_never_falls_back_or_retries(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        records = []
+        edits = []
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            candidate_event,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+            environ=self._resolve_environ(),
+            review_event_loader=lambda identity: ({"success": True, "event": original}, 200),
+            active_card_loader=self._resolve_active_card_loader(built),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda event: records.append(event) or (
+                {"success": True, "created": True}, 201
+            ),
+            telegram_deleter=lambda *args: (_ for _ in ()).throw(TimeoutError("unknown outcome")),
+            telegram_editor=lambda *args: edits.append(args),
+        )
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "resolve_card_cleanup_outcome_ambiguous")
+        self.assertTrue(result["automatic_retry_prohibited"])
+        self.assertEqual(edits, [])
+        self.assertEqual(records[-1]["review_json"]["resolve_card_only"]["state"], "cleanup_failed")
+        self.assertEqual(
+            records[-1]["review_json"]["resolve_card_only"]["outcome"],
+            "telegram_delete_outcome_ambiguous",
+        )
+
+    def test_resolve_card_replay_and_concurrent_duplicate_are_withheld_by_one_claim(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        created_ids = set()
+        deletes = []
+        record_lock = Lock()
+
+        def recorder(event):
+            with record_lock:
+                created = event["review_event_id"] not in created_ids
+                created_ids.add(event["review_event_id"])
+            return {"success": True, "created": created}, 201 if created else 200
+
+        def execute():
+            return launch.execute_sam_live_stock_resolve_card_only(
+                candidate_event,
+                {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+                environ=self._resolve_environ(),
+                review_event_loader=lambda identity: ({"success": True, "event": original}, 200),
+                active_card_loader=self._resolve_active_card_loader(built),
+                chronology_loader=lambda *_args: conversation,
+                evidence_recorder=recorder,
+                telegram_deleter=lambda *args: deletes.append(args) or {"ok": True},
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _index: execute(), range(2)))
+        statuses = sorted(status for _result, status in results)
+        self.assertEqual(statuses, [200, 409])
+        replay = next(result for result, status in results if status == 409)
+        self.assertEqual(replay["status"], "resolve_card_replay_withheld")
+        self.assertTrue(replay["automatic_retry_prohibited"])
+        self.assertEqual(len(deletes), 1)
+
+        replay_again, replay_again_status = execute()
+        self.assertEqual(replay_again_status, 409)
+        self.assertEqual(replay_again["status"], "resolve_card_replay_withheld")
+        self.assertEqual(len(deletes), 1)
+
+    def test_failed_legacy_card_done_claim_is_immutable_and_new_generation_is_distinct(self):
+        _conversation, _card, first, _original, _event = self._resolve_card_fixture(
+            generation="reconcile-1983-original"
+        )
+        _conversation, _card, recovery, _original, _event = self._resolve_card_fixture(
+            generation="reconcile-1983-recovery-2"
+        )
+        legacy_claim = {
+            "review_event_id": "SAM-LIVE-CARD-22F84CA344BB",
+            "state": "action_claimed",
+            "action": "card_done",
+        }
+        legacy_failure = {
+            "review_event_id": "SAM-LIVE-CARD-4CC9101B8670",
+            "state": "action_failed",
+            "action": "card_done:chatwoot_auto_failed",
+        }
+        before = json.dumps([legacy_claim, legacy_failure], sort_keys=True)
+        self.assertNotEqual(
+            first["candidate"]["action_identity"],
+            recovery["candidate"]["action_identity"],
+        )
+        self.assertTrue(recovery["button"]["callback_data"].startswith("sam_live_card_resolve:"))
+        self.assertEqual(json.dumps([legacy_claim, legacy_failure], sort_keys=True), before)
+
+    def test_proven_human_keeps_done_return_to_sam_button_and_ordering(self):
+        row = {"action": "candidate_auto_then_resolve"}
+        button = launch.build_sam_live_stock_reconciliation_button(
+            row, review_event_id="SAM-LIVE-REVIEW-HUMAN"
+        )
+        self.assertEqual(button, {
+            "text": "Done - Return to SAM",
+            "callback_data": "sam_live_card_done:SAM-LIVE-REVIEW-HUMAN",
+            "action": "return_to_auto_then_resolve",
+        })
+        source = inspect.getsource(launch._process_canonical_owner_card_action)
+        self.assertLess(source.index("apply_sam_live_stock_chatwoot_takeover"), source.index("delete_sam_live_stock_telegram_escalation"))
+
+    def test_planner_executor_contract_cannot_pass_when_actions_disagree(self):
+        _conversation, _card, built, _original, candidate_event = self._resolve_card_fixture()
+        self.assertEqual(built["reconciliation"]["cards"][0]["action"], "resolve_card_only")
+        mismatched = json.loads(json.dumps(candidate_event))
+        mismatched["review_json"]["resolve_card_only"]["action_type"] = "card_done"
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            mismatched,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+            environ=self._resolve_environ(),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "resolve_card_candidate_invalid")
+
+    def test_resolve_card_global_cleanup_without_dedicated_canary_is_insufficient(self):
+        conversation, _card, built, _original, candidate_event = self._resolve_card_fixture()
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            candidate_event,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+            environ={
+                launch.TELEGRAM_CLEANUP_ENABLED_ENV: "1",
+                launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+            },
+            telegram_deleter=lambda *_args: self.fail("legacy cleanup must not authorize resolve-only"),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "resolve_card_canary_disabled")
+
+    def test_resolve_card_allowlist_cannot_manufacture_missing_candidate_identity(self):
+        _conversation, _card, _built, _original, candidate_event = self._resolve_card_fixture()
+        candidate_event["review_json"]["resolve_card_only"]["contact_id"] = ""
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            candidate_event,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+            environ=self._resolve_environ(),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "resolve_card_candidate_invalid")
+
+    def test_resolve_card_exact_triple_mismatch_fails_before_claim_or_cleanup(self):
+        _conversation, _card, built, _original, candidate_event = self._resolve_card_fixture()
+        records = []
+        for key, value in (
+            (launch.RESOLVE_CARD_CANARY_CONVERSATION_ID_ENV, "other"),
+            (launch.RESOLVE_CARD_CANARY_CONTACT_ID_ENV, "other"),
+            (launch.RESOLVE_CARD_CANARY_INBOX_ID_ENV, "other"),
+        ):
+            with self.subTest(key=key):
+                result, status = launch.execute_sam_live_stock_resolve_card_only(
+                    candidate_event,
+                    {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+                    environ=self._resolve_environ(**{key: value}),
+                    evidence_recorder=lambda event: records.append(event),
+                    telegram_deleter=lambda *_args: self.fail("cleanup must not run"),
+                )
+                self.assertEqual(status, 409)
+                self.assertEqual(result["status"], "resolve_card_canary_identity_mismatch")
+        self.assertEqual(records, [])
+
+    def test_exact_outgoing_refresh_persists_candidate_before_rendering_one_button(self):
+        conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
+        active_card = {
+            **card,
+            "account_id": "147387",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+        }
+        records = []
+        edits = []
+
+        def recorder(event):
+            records.append(event)
+            return {"success": True, "created": True}, 201
+
+        result = launch.refresh_sam_live_stock_resolve_card_from_outgoing_event(
+            {
+                "account_id": "147387",
+                "conversation_id": "1983",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+                "message_id": "758530099",
+                "public": True,
+            },
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: ({
+                "success": True,
+                "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+                "card": active_card,
+            }, 200),
+            review_event_loader=lambda _review_id: ({"success": True, "event": original}, 200),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=recorder,
+            telegram_editor=lambda token, chat_id, message_id, text, markup: edits.append(
+                (len(records), chat_id, message_id, text, markup)
+            ) or {"ok": True},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["card_refreshed"])
+        self.assertEqual(records[0]["event_source"], launch.RESOLVE_CARD_CANDIDATE_EVENT_SOURCE)
+        self.assertEqual(edits[0][0], 1)
+        keyboard = edits[0][4]["inline_keyboard"]
+        self.assertEqual(
+            [button["text"] for row in keyboard for button in row],
+            ["Resolve Card Only", "Open Chatwoot"],
+        )
+        self.assertEqual(result["candidate"]["outgoing_message_id"], "758530099")
+
+    def test_exact_outgoing_refresh_rejects_newer_inbound_and_legacy_card(self):
+        conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
+        active_card = {
+            **card,
+            "account_id": "147387",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+        }
+        conversation["messages"].append({"id": "new", "message_type": 0, "created_at": 130})
+        common = {
+            "environ": self._resolve_environ(),
+            "review_event_loader": lambda _review_id: ({"success": True, "event": original}, 200),
+            "chronology_loader": lambda *_args: conversation,
+            "evidence_recorder": lambda _event: self.fail("candidate must not persist"),
+            "telegram_editor": lambda *_args: self.fail("card must not refresh"),
+        }
+        result = launch.refresh_sam_live_stock_resolve_card_from_outgoing_event(
+            {
+                "account_id": "147387", "conversation_id": "1983",
+                "contact_id": "699428938", "inbox_id": "96568",
+                "message_id": "758530099", "public": True,
+            },
+            active_card_loader=lambda _conversation_id: ({
+                "success": True,
+                "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+                "card": active_card,
+            }, 200),
+            **common,
+        )
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "resolve_card_candidate_not_planner_approved")
+
+        legacy = {key: value for key, value in active_card.items() if key not in {
+            "account_id", "contact_id", "inbox_id", "review_event_id", "customer_message_id"
+        }}
+        result = launch.refresh_sam_live_stock_resolve_card_from_outgoing_event(
+            {
+                "account_id": "147387", "conversation_id": "1983",
+                "contact_id": "699428938", "inbox_id": "96568",
+                "message_id": "758530099", "public": True,
+            },
+            active_card_loader=lambda _conversation_id: ({
+                "success": True,
+                "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+                "card": legacy,
+            }, 200),
+            **common,
+        )
+        self.assertEqual(result["status"], "resolve_card_refresh_active_card_identity_mismatch")
+
+    def test_production_shaped_refresh_accepts_only_missing_historical_account_when_authorities_agree(self):
+        conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
+        original["decision_json"]["inbound"]["account_id"] = ""
+        active_card = {
+            **card,
+            "account_id": "",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+        }
+        records = []
+        edits = []
+        result = launch.refresh_sam_live_stock_resolve_card_from_outgoing_event(
+            {
+                "account_id": "147387",
+                "conversation_id": "1983",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+                "message_id": "758530099",
+                "public": True,
+                "identity_conflicting": False,
+            },
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: ({
+                "success": True,
+                "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+                "card": active_card,
+            }, 200),
+            review_event_loader=lambda _review_id: ({"success": True, "event": original}, 200),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda event: records.append(event) or (
+                {"success": True, "created": True}, 201
+            ),
+            telegram_editor=lambda *args: edits.append(args) or {"ok": True},
+        )
+        self.assertTrue(result["success"])
+        self.assertTrue(result["card_refreshed"])
+        self.assertEqual(result["candidate"]["account_id"], "147387")
+        self.assertEqual(records[0]["review_json"]["resolve_card_only"]["account_id"], "147387")
+        self.assertEqual(len(edits), 1)
+
+        for field in ("contact_id", "inbox_id", "review_event_id", "customer_message_id"):
+            with self.subTest(field=field):
+                invalid = {**active_card, field: ""}
+                rejected = launch.refresh_sam_live_stock_resolve_card_from_outgoing_event(
+                    {
+                        "account_id": "147387",
+                        "conversation_id": "1983",
+                        "contact_id": "699428938",
+                        "inbox_id": "96568",
+                        "message_id": "758530099",
+                        "public": True,
+                    },
+                    environ=self._resolve_environ(),
+                    active_card_loader=lambda _conversation_id, card=invalid: ({
+                        "success": True,
+                        "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+                        "card": card,
+                    }, 200),
+                    evidence_recorder=lambda _event: self.fail("must not persist"),
+                    telegram_editor=lambda *_args: self.fail("must not edit"),
+                )
+                self.assertEqual(
+                    rejected["status"],
+                    "resolve_card_refresh_active_card_identity_mismatch",
+                )
+
+    def test_exact_owner_refresh_fallback_reads_once_and_shares_event_service(self):
+        conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
+        original["decision_json"]["inbound"]["account_id"] = ""
+        active = {
+            "success": True,
+            "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+            "card": {
+                **card,
+                "account_id": "",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+            },
+        }
+        reads = []
+        records = []
+        edits = []
+        request_identity = {
+            "account_id": "147387",
+            "conversation_id": "1983",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "customer_message_id": "758530001",
+            "outgoing_message_id": "758530099",
+            "review_event_id": "SAM-LIVE-REVIEW-FD17FD894C2B",
+            "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+            "telegram_chat_id": "555",
+            "telegram_message_id": "2865",
+        }
+        result = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: (active, 200),
+            review_event_loader=lambda _review_id: ({"success": True, "event": original}, 200),
+            chronology_loader=lambda *_args: reads.append("read") or conversation,
+            evidence_recorder=lambda event: records.append(event) or (
+                {"success": True, "created": True}, 201
+            ),
+            telegram_editor=lambda *args: edits.append(args) or {"ok": True},
+        )
+        self.assertTrue(result["success"])
+        self.assertTrue(result["card_refreshed"])
+        self.assertTrue(result["owner_authenticated_refresh"])
+        self.assertEqual(result["bounded_chronology_reads"], 1)
+        self.assertEqual(reads, ["read"])
+        self.assertEqual(records[0]["event_source"], launch.RESOLVE_CARD_CANDIDATE_EVENT_SOURCE)
+        self.assertEqual(records[1]["event_source"], launch.RESOLVE_CARD_LIFECYCLE_EVENT_SOURCE)
+        self.assertEqual(
+            records[1]["review_json"]["resolve_card_only"]["state"],
+            "refreshed",
+        )
+        self.assertTrue(result["refresh_lifecycle"]["created"])
+        self.assertEqual(len(edits), 1)
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["calls_chatwoot"])
+        self.assertFalse(result["changes_conversation_ownership"])
+
+        replay = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: (active, 200),
+            review_event_loader=lambda _review_id: ({"success": True, "event": original}, 200),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda _event: (
+                {"success": True, "created": False}, 200
+            ),
+            telegram_editor=lambda *_args: self.fail("replay must not edit"),
+        )
+        self.assertTrue(replay["success"])
+        self.assertEqual(replay["status"], "resolve_card_refresh_replay_withheld")
+        self.assertFalse(replay["card_refreshed"])
+
+    def test_resolve_chronology_accepts_production_activity_rows(self):
+        fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "sam_chatwoot_outgoing_2021_sanitized.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(self.payload).encode()
+
+        responses = iter([
+            Response(fixture["conversation_snapshot"]),
+            Response(fixture["message_list"]),
+        ])
+        with patch.object(
+            launch.urllib_request,
+            "urlopen",
+            side_effect=lambda *_args, **_kwargs: next(responses),
+        ):
+            chronology = launch._chatwoot_read_resolve_chronology(
+                "2021",
+                {
+                    launch.CHATWOOT_ACCOUNT_ID_ENV: "147387",
+                    launch.CHATWOOT_TOKEN_ENV: "configured-token",
+                },
+            )
+
+        self.assertEqual(
+            [row["id"] for row in chronology["messages"]],
+            [760211638, 760224858],
+        )
+        self.assertEqual(
+            [row["message_type"] for row in chronology["messages"]],
+            ["incoming", "outgoing"],
+        )
+
+    def test_conversation_2021_production_shape_persists_json_safe_candidate_before_exact_edit(self):
+        fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "sam_chatwoot_outgoing_2021_sanitized.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(self.payload).encode()
+
+        responses = iter([
+            Response(fixture["conversation_snapshot"]),
+            Response(fixture["message_list"]),
+        ])
+        with patch.object(
+            launch.urllib_request,
+            "urlopen",
+            side_effect=lambda *_args, **_kwargs: next(responses),
+        ):
+            chronology = launch._chatwoot_read_resolve_chronology(
+                "2021",
+                {
+                    launch.CHATWOOT_ACCOUNT_ID_ENV: "147387",
+                    launch.CHATWOOT_TOKEN_ENV: "configured-token",
+                },
+            )
+
+        self.assertEqual(
+            [str(row["id"]) for row in chronology["messages"]],
+            ["760211638", "760224858"],
+        )
+        active_card = {
+            **fixture["active_card"],
+            "created_at": datetime.fromisoformat(
+                fixture["active_card"]["created_at"]
+            ),
+        }
+        active = {
+            "success": True,
+            "lifecycle_card_identity": fixture["active_card"][
+                "lifecycle_card_identity"
+            ],
+            "card": active_card,
+        }
+        request_identity = {
+            "account_id": "147387",
+            "conversation_id": "2021",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "customer_message_id": "760211638",
+            "outgoing_message_id": "760224858",
+            "review_event_id": "SAM-LIVE-REVIEW-85A567BA6AC1",
+            "lifecycle_card_identity": "SAM-LIVE-CARD-9AC5E2FD901D",
+            "telegram_chat_id": "sanitized-owner-chat",
+            "telegram_message_id": "2913",
+        }
+        sequence = []
+        persisted = set()
+        serialized = {}
+
+        def recorder(event):
+            params = launch._review_event_params(event)
+            sequence.append(("persist", event["event_source"]))
+            serialized[event["review_event_id"]] = params["review_json"]
+            created = event["review_event_id"] not in persisted
+            persisted.add(event["review_event_id"])
+            return {"success": True, "created": created}, 201 if created else 200
+
+        edits = []
+        production_environ = self._resolve_environ(**{
+            launch.RESOLVE_CARD_CANARY_CONVERSATION_ID_ENV: "2021",
+        })
+
+        def editor(*args):
+            sequence.append(("edit", args[2]))
+            edits.append(args)
+            return {"ok": True}
+
+        result = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=production_environ,
+            active_card_loader=lambda _conversation_id: (active, 200),
+            review_event_loader=lambda _review_id: ({
+                "success": True,
+                "event": fixture["review_event"],
+            }, 200),
+            chronology_loader=lambda *_args: chronology,
+            evidence_recorder=recorder,
+            telegram_editor=editor,
+        )
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["candidate"]["customer_message_id"], "760211638")
+        self.assertEqual(result["candidate"]["outgoing_message_id"], "760224858")
+        self.assertEqual(
+            result["candidate"]["card_created_at"],
+            "2026-07-26T05:50:00Z",
+        )
+        self.assertTrue(launch._is_json_safe_primitive_tree(result["candidate"]))
+        json.dumps(result["candidate"], ensure_ascii=True)
+        self.assertEqual(
+            sequence,
+            [
+                ("persist", launch.RESOLVE_CARD_CANDIDATE_EVENT_SOURCE),
+                ("edit", "2913"),
+                ("persist", launch.RESOLVE_CARD_LIFECYCLE_EVENT_SOURCE),
+            ],
+        )
+        self.assertEqual(len(edits), 1)
+        self.assertEqual(edits[0][2], "2913")
+        self.assertIn(result["candidate"]["action_identity"], serialized)
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["changes_conversation_ownership"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["changes_stock"])
+
+        replay = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=production_environ,
+            active_card_loader=lambda _conversation_id: (active, 200),
+            review_event_loader=lambda _review_id: ({
+                "success": True,
+                "event": fixture["review_event"],
+            }, 200),
+            chronology_loader=lambda *_args: chronology,
+            evidence_recorder=recorder,
+            telegram_editor=lambda *_args: self.fail("replay must not edit"),
+        )
+        self.assertTrue(replay["success"])
+        self.assertEqual(replay["status"], "resolve_card_refresh_replay_withheld")
+        self.assertEqual(
+            replay["candidate"]["action_identity"],
+            result["candidate"]["action_identity"],
+        )
+        self.assertEqual(len(edits), 1)
+
+        for malformed in (
+            object(),
+            "not-a-timestamp",
+            "2026-07-26T06:48:00",
+        ):
+            with self.subTest(malformed=type(malformed).__name__):
+                invalid_active = {
+                    **active,
+                    "card": {**active_card, "created_at": malformed},
+                }
+                rejected = launch.refresh_sam_live_stock_resolve_card_exact(
+                    request_identity,
+                    environ=production_environ,
+                    active_card_loader=lambda _conversation_id, value=invalid_active: (
+                        value,
+                        200,
+                    ),
+                    review_event_loader=lambda _review_id: ({
+                        "success": True,
+                        "event": fixture["review_event"],
+                    }, 200),
+                    chronology_loader=lambda *_args: chronology,
+                    evidence_recorder=lambda _event: self.fail(
+                        "invalid timestamp must not persist"
+                    ),
+                    telegram_editor=lambda *_args: self.fail(
+                        "invalid timestamp must not edit"
+                    ),
+                )
+                self.assertFalse(rejected["success"])
+                self.assertEqual(
+                    rejected["status"],
+                    "resolve_card_candidate_timestamp_invalid",
+                )
+
+    def test_exact_owner_refresh_rejects_wrong_card_or_chronology_without_side_effect(self):
+        conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
+        request_identity = {
+            "account_id": "147387",
+            "conversation_id": "1983",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "customer_message_id": "758530001",
+            "outgoing_message_id": "758530099",
+            "review_event_id": "SAM-LIVE-REVIEW-FD17FD894C2B",
+            "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+            "telegram_chat_id": "555",
+            "telegram_message_id": "wrong",
+        }
+        active = {
+            "success": True,
+            "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+            "card": {
+                **card,
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+            },
+        }
+        result = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: (active, 200),
+            chronology_loader=lambda *_args: self.fail("must fail before read"),
+            evidence_recorder=lambda _event: self.fail("must not persist"),
+            telegram_editor=lambda *_args: self.fail("must not edit"),
+        )
+        self.assertEqual(result["status"], "resolve_card_exact_refresh_active_card_mismatch")
+
+        request_identity["telegram_message_id"] = "2865"
+        wrong = {**conversation, "account_id": "other"}
+        result = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: (active, 200),
+            review_event_loader=lambda _review_id: ({"success": True, "event": original}, 200),
+            chronology_loader=lambda *_args: wrong,
+            evidence_recorder=lambda _event: self.fail("must not persist"),
+            telegram_editor=lambda *_args: self.fail("must not edit"),
+        )
+        self.assertEqual(result["status"], "resolve_card_exact_refresh_chronology_mismatch")
 if __name__ == "__main__":
     unittest.main()

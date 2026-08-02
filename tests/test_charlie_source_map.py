@@ -182,6 +182,37 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertIn("tests/test_sam_meat_runtime.py", packet["required_inspection_paths"])
         self.assertIn("/api/sales/channels/chatwoot/sam-meat/inbound", packet["required_routes"])
 
+    def test_sam_general_conversation_maps_complete_journey_surfaces(self):
+        mission = {
+            "mission_type": "agent behavior",
+            "title": "SAM general conversation and progressive lane discovery",
+            "raw_text": (
+                "Prove a multi-turn ordinary conversation, unknown intent, topic change "
+                "without stale lane state, AUTO_GENERAL ownership, and no premature specialist tool."
+            ),
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("sam_general_conversation", keys)
+        for path in (
+            "docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md",
+            "modules/sales/sam_sales_router.py",
+            "modules/sales/sam_shared_context.py",
+            "modules/sales/sam_meat_runtime.py",
+            "modules/sales/sam_live_stock_runtime.py",
+            "tests/test_sam_v3_replay_stress.py",
+            "tests/test_sam_live_stock_replay.py",
+        ):
+            self.assertIn(path, packet["required_inspection_paths"])
+
+        missing_paths = [
+            path for path in packet["required_inspection_paths"]
+            if not (REPO_ROOT / Path(path)).exists()
+        ]
+        self.assertEqual([], missing_paths)
+
     def test_live_pig_sales_maps_legacy_and_current_app_sources(self):
         mission = {
             "mission_type": "income stream",

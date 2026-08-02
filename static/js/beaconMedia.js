@@ -10,6 +10,9 @@
     meatCapReady: false,
     exactImageReady: false,
     performanceEvents: [],
+    metaImportPacket: null,
+    currentReviewPacket: null,
+    intakeItems: [],
   };
 
   const byId = (id) => document.getElementById(id);
@@ -143,6 +146,16 @@
     packetCopy: byId("beacon_packet_copy"),
     packetOptions: byId("beacon_packet_options"),
     packetMeta: byId("beacon_packet_meta"),
+    packetDecision: byId("beacon_packet_decision"),
+    packetProposedDatetime: byId("beacon_packet_proposed_datetime"),
+    packetProposedTimezone: byId("beacon_packet_proposed_timezone"),
+    packetOwnerNotes: byId("beacon_packet_owner_notes"),
+    packetApprove: byId("beacon_packet_approve"),
+    packetRequestChanges: byId("beacon_packet_request_changes"),
+    packetReject: byId("beacon_packet_reject"),
+    packetDecisionResult: byId("beacon_packet_decision_result"),
+    learningState: byId("beacon_learning_state"),
+    learningReport: byId("beacon_learning_report"),
     metaPreviewState: byId("beacon_meta_preview_state"),
     metaPreviewRefresh: byId("beacon_meta_preview_refresh"),
     metaPreviewStart: byId("beacon_meta_preview_start"),
@@ -153,6 +166,18 @@
     metaPreviewMetrics: byId("beacon_meta_preview_metrics"),
     metaPreviewBlockers: byId("beacon_meta_preview_blockers"),
     metaPreviewEvents: byId("beacon_meta_preview_events"),
+    metaImportState: byId("beacon_meta_import_state"),
+    metaImportPrepare: byId("beacon_meta_import_prepare"),
+    metaImportSummary: byId("beacon_meta_import_summary"),
+    metaImportApproval: byId("beacon_meta_import_approval"),
+    metaImportExecute: byId("beacon_meta_import_execute"),
+    metaImportResult: byId("beacon_meta_import_result"),
+    intakeRefresh: byId("beacon_intake_refresh"),
+    intakeState: byId("beacon_intake_state"),
+    intakeContactSheet: byId("beacon_intake_contact_sheet"),
+    intakePreview: byId("beacon_intake_preview"),
+    intakePreviewImage: byId("beacon_intake_preview_image"),
+    intakePreviewClose: byId("beacon_intake_preview_close"),
   };
 
   const safe = (value, fallback = "--") => {
@@ -224,12 +249,14 @@
 
   function renderContentOperations(payload) {
     const quality = payload.evidence_quality || {};
-    const packet = payload.owner_review_packet || {};
+    const packet = payload.featured_owner_review_packet || payload.owner_review_packet || {};
     const media = packet.media || {};
     const runtime = payload.runtime_status || {};
     const ideas = payload.ranked_ideas || [];
     const explanations = payload.owner_explanations || {};
     const mediaSummary = payload.media_summary || {};
+    const recordedDecision = payload.weekly_owner_review_decision || null;
+    state.currentReviewPacket = packet;
     elements.contentState.textContent = payload.status === "owner_review_packet_ready"
       ? "Owner-review draft ready"
       : safe(payload.status, "Evidence incomplete");
@@ -269,12 +296,26 @@
       <p><strong>Opportunity:</strong> ${escapeHtml(safe(explanations.current_opportunity, "Current opportunity status unavailable."))}</p>
       <p><strong>Performance:</strong> ${escapeHtml(safe(explanations.performance, "Performance import status unavailable."))}</p>
     `;
-    elements.packetStatus.textContent = safe(packet.review_status, "Unavailable");
-    elements.packetStatus.dataset.state = packet.review_status === "awaiting_owner_review" ? "proposed" : "blocked";
-    elements.packetMedia.innerHTML = media.status === "approved_media_selected"
+    const displayedStatus = recordedDecision?.decision_status || packet.review_status;
+    elements.packetStatus.textContent = safe(displayedStatus, "Unavailable");
+    elements.packetStatus.dataset.state = recordedDecision?.decision_status || (["awaiting_owner_review", "awaiting_exact_owner_review"].includes(packet.review_status) ? "proposed" : "blocked");
+    elements.packetMedia.innerHTML = (media.assets || []).length
+      ? `<div class="beacon-content-media-sequence">${(media.assets || []).map((asset) => `
+          <figure>
+            <img src="${escapeHtml(asset.thumbnail_url)}" alt="Approved farm image ${escapeHtml(String(asset.order))}" loading="lazy" />
+            <figcaption>
+              <strong>${escapeHtml(String(asset.order))}. ${escapeHtml(asset.asset_id)}</strong>
+              <span>${escapeHtml(asset.dimensions)} · approved public use · trusted server hash</span>
+              <span>Owner-confirmed subject: ${escapeHtml(asset.owner_confirmed_subject)}</span>
+              <span>Capture: around 21 July 2026 · camera evidence · timezone unknown</span>
+              <span>Prior confirmed use: none evidenced</span>
+            </figcaption>
+          </figure>
+        `).join("")}</div>`
+      : media.status === "approved_media_selected"
       ? `<strong>${escapeHtml(media.title)}</strong><span>${escapeHtml(media.media_type)} · ${escapeHtml(media.asset_id)}</span><small>Approved public use · ${escapeHtml(media.content_hash_provenance)}</small>`
-      : `<strong>Media gap</strong><span>${escapeHtml(media.reason)}</span>`;
-    elements.packetCopy.textContent = safe(packet.draft_copy, "No exact copy available.");
+      : `<strong>Media gap</strong><span>${escapeHtml(media.reason || "Exact media sequence unavailable.")}</span>`;
+    elements.packetCopy.textContent = safe(packet.caption || packet.draft_copy, "No exact copy available.");
     elements.packetOptions.innerHTML = (packet.draft_options || []).map((option) => `
       <article class="beacon-recommendation-card">
         <div class="beacon-recommendation-title"><span>#${escapeHtml(option.rank)} · ${escapeHtml(option.title)}</span><small>Owner-review option</small></div>
@@ -282,11 +323,116 @@
       </article>
     `).join("");
     elements.packetMeta.innerHTML = `
-      <div><strong>${escapeHtml(packet.channel)}</strong><span>${escapeHtml(packet.audience)}</span></div>
-      <div><strong>CTA</strong><span>${escapeHtml(packet.call_to_action)}</span></div>
-      <div><strong>Objective</strong><span>${escapeHtml(packet.measurable_objective?.metric)} · ${escapeHtml(packet.measurable_objective?.measurement_window)}</span></div>
+      <div><strong>${escapeHtml(packet.channel)}</strong><span>No publication time scheduled</span></div>
+      <div><strong>Packet</strong><span>${escapeHtml(packet.packet_id)} · ${escapeHtml(packet.canonical_sha256)}</span></div>
+      <div><strong>Album/story</strong><span>${escapeHtml(packet.album_story)}</span></div>
+      <div><strong>Capture evidence</strong><span>${escapeHtml(packet.capture_date_display)}</span></div>
+      <div><strong>Confirmed publication</strong><span>${escapeHtml(String(packet.confirmed_publication_count))} · prior confirmed use ${escapeHtml(packet.prior_confirmed_use)}</span></div>
+      <div><strong>Supersedes</strong><span>${escapeHtml(packet.supersedes?.packet_id)} · historical hash ${escapeHtml(packet.supersedes?.canonical_sha256)}</span></div>
+      <div><strong>Safety</strong><span>Publish false · Meta call false · upload false · send false · spend false · writes false</span></div>
       <p>${escapeHtml(packet.next_gate)}</p>
     `;
+    renderWeeklyOwnerDecision(recordedDecision, payload.weekly_owner_review_decision_state);
+    renderOrganicLearning(payload.organic_media_learning || {});
+  }
+
+  function renderOrganicLearning(learning) {
+    if (!elements.learningState || !elements.learningReport) return;
+    const media = learning.media_understanding?.packets || [];
+    const performance = learning.performance_learning || {};
+    const graduation = learning.graduation || {};
+    elements.learningState.textContent = graduation.eligible_for_owner_review_candidate
+      ? "Owner-review candidate evidence"
+      : "Foundation · not graduated";
+    elements.learningState.dataset.state = graduation.eligible_for_owner_review_candidate ? "proposed" : "blocked";
+    elements.learningReport.innerHTML = `
+      <article class="beacon-recommendation-card">
+        <div class="beacon-recommendation-title"><span>First production case</span><small>${escapeHtml(learning.publication?.facebook_post_id || "Unavailable")}</small></div>
+        <p>${escapeHtml(learning.post_understanding?.opening_hook || "")}</p>
+        <p><strong>Alignment:</strong> ${escapeHtml(learning.post_understanding?.caption_media_alignment || "Unavailable")} · <strong>Intent:</strong> ${escapeHtml(learning.post_understanding?.intent || "Unavailable")}</p>
+      </article>
+      ${media.map((item) => `<article class="beacon-recommendation-card">
+        <div class="beacon-recommendation-title"><span>Image ${escapeHtml(item.position)}</span><small>${escapeHtml(item.asset_id)}</small></div>
+        <p>${escapeHtml(item.visible_subject)}</p>
+        <p>${escapeHtml(item.composition_quality)}</p>
+        <small>${escapeHtml((item.does_not_support || []).join(", "))}</small>
+      </article>`).join("")}
+      <article class="beacon-recommendation-card">
+        <div class="beacon-recommendation-title"><span>Performance evidence</span><small>${escapeHtml(performance.available_snapshot_count || 0)} compatible snapshots</small></div>
+        <p>${escapeHtml(performance.baseline_state || "Unavailable")}</p>
+        <p>${escapeHtml(performance.comparison_rule || "")}</p>
+      </article>
+      <article class="beacon-recommendation-card">
+        <div class="beacon-recommendation-title"><span>Graduation</span><small>${escapeHtml(graduation.status || "Unavailable")}</small></div>
+        <p>${escapeHtml(graduation.reason || "")}</p>
+        <p>Automatic publishing, scheduling, retry, boosting, advertising and spend authority: none.</p>
+      </article>`;
+  }
+
+  function setWeeklyDecisionDisabled(disabled) {
+    [elements.packetApprove, elements.packetRequestChanges, elements.packetReject].forEach((button) => {
+      button.disabled = disabled;
+    });
+    elements.packetProposedDatetime.disabled = disabled;
+    elements.packetProposedTimezone.disabled = disabled;
+    elements.packetOwnerNotes.disabled = disabled;
+  }
+
+  function renderWeeklyOwnerDecision(decision, readState) {
+    if (decision) {
+      setWeeklyDecisionDisabled(true);
+      elements.packetDecision.dataset.state = "recorded";
+      elements.packetDecisionResult.innerHTML = `
+        <strong>${escapeHtml(decision.decision_status.replaceAll("_", " "))}</strong>
+        <span>Recorded ${escapeHtml(decision.decision_at)} by ${escapeHtml(decision.owner_identity)}.</span>
+        ${decision.owner_notes ? `<span>Owner note: ${escapeHtml(decision.owner_notes)}</span>` : ""}
+        ${decision.proposed_publication_datetime ? `<span>Proposed timing: ${escapeHtml(decision.proposed_publication_datetime)} · ${escapeHtml(decision.proposed_timezone)}</span>` : "<span>No publication time proposed.</span>"}
+        <span>${escapeHtml(decision.next_gate || "Approval does not publish this post.")}</span>
+        <span>Publish false · Meta call false · upload false · scheduled false · send false · spend false</span>
+      `;
+      return;
+    }
+    const ready = state.currentReviewPacket?.review_status === "awaiting_exact_owner_review"
+      && readState !== "persistence_unavailable";
+    setWeeklyDecisionDisabled(!ready);
+    elements.packetDecision.dataset.state = ready ? "awaiting" : "blocked";
+    elements.packetDecisionResult.innerHTML = readState === "persistence_unavailable"
+      ? "<strong>Decision storage unavailable</strong><span>Approval is fail-closed. No decision or publication action can occur.</span>"
+      : "<span>No owner decision recorded. Approval does not publish this post.</span>";
+  }
+
+  async function recordWeeklyOwnerDecision(decision) {
+    const packet = state.currentReviewPacket;
+    if (!packet?.packet_id) throw new Error("No exact weekly packet is available.");
+    const payload = {
+      decision,
+      packet_id: packet.packet_id,
+      packet_version: "S1",
+      canonical_sha256: packet.canonical_sha256,
+      caption_sha256: packet.caption_sha256,
+      exact_caption: packet.caption,
+      ordered_media_ids: packet.media?.exact_order || [],
+      owner_confirmed_subject: packet.media?.assets?.[0]?.owner_confirmed_subject || "",
+      album_story: packet.album_story,
+      channel: packet.channel,
+      supersedes_packet_id: packet.supersedes?.packet_id || "",
+      proposed_publication_datetime: elements.packetProposedDatetime.value,
+      proposed_timezone: elements.packetProposedDatetime.value ? elements.packetProposedTimezone.value : "",
+      owner_notes: elements.packetOwnerNotes.value,
+    };
+    setWeeklyDecisionDisabled(true);
+    try {
+      const result = await fetchJson(`/api/beacon/weekly-owner-review/${encodeURIComponent(packet.packet_id)}/decision`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+      });
+      elements.packetDecisionResult.innerHTML = `<strong>${escapeHtml(result.decision_status.replaceAll("_", " "))}</strong><span>${escapeHtml(result.next_gate)}</span><span>Approval does not publish this post. Publish false · Meta call false · upload false · scheduled false.</span>`;
+      await loadContentOperations();
+    } catch (error) {
+      setWeeklyDecisionDisabled(false);
+      throw error;
+    }
   }
 
   async function loadContentOperations() {
@@ -744,6 +890,72 @@
     }
   }
 
+  function renderMetaImportPacket(payload) {
+    state.metaImportPacket = payload.success ? payload : null;
+    elements.metaImportState.textContent = payload.success ? "Exact packet ready" : "Packet blocked";
+    elements.metaImportState.dataset.state = payload.success ? "ready" : "blocked";
+    elements.metaImportApproval.checked = false;
+    elements.metaImportApproval.disabled = !payload.success;
+    elements.metaImportExecute.disabled = true;
+    if (!payload.success) {
+      elements.metaImportSummary.innerHTML = `<p>${escapeHtml(safe(payload.status, "Packet preparation failed"))}</p>`;
+      return;
+    }
+    const packet = payload.packet || {};
+    const database = packet.database_snapshot || {};
+    elements.metaImportSummary.innerHTML = `
+      <p><strong>Exact packet hash:</strong> <code>${escapeHtml(payload.packet_hash)}</code></p>
+      <p><strong>Expires:</strong> ${escapeHtml(payload.approval_expires_at)}</p>
+      <p>${escapeHtml(payload.proposed_insert_count)} proposed insert(s); ${escapeHtml(payload.existing_duplicate_count)} duplicate(s) withheld; ${escapeHtml(payload.correction_supersession_count)} correction/supersession(s); ${escapeHtml(payload.excluded_count)} exclusion(s).</p>
+      <p>False-zero exclusions: ${escapeHtml(payload.false_zero_exclusion_count)}. Compatibility-only scalar fields: ${escapeHtml((payload.compatibility_placeholder_fields || []).join(", ") || "None")}.</p>
+      <p>Existing performance rows: ${escapeHtml(database.total_performance_rows)}; legacy rows protected: ${escapeHtml(database.legacy_row_count)}.</p>
+      <p><strong>Nothing imported by preparation.</strong> Missing remains distinct from verified zero. Meta actions are not leads, sales or revenue.</p>
+    `;
+  }
+
+  async function prepareMetaImportPacket() {
+    elements.metaImportPrepare.disabled = true;
+    elements.metaImportState.textContent = "Preparing bounded packet";
+    elements.metaImportState.dataset.state = "loading";
+    const params = new URLSearchParams({
+      start: elements.metaPreviewStart.value,
+      end: elements.metaPreviewEnd.value,
+      level: elements.metaPreviewLevel.value,
+    });
+    try {
+      const response = await fetch(`/api/beacon/meta-ads-import-packet?${params.toString()}`, {method: "GET"});
+      const payload = await response.json().catch(() => ({}));
+      renderMetaImportPacket(payload);
+    } finally {
+      elements.metaImportPrepare.disabled = false;
+    }
+  }
+
+  async function executeMetaImportPacket() {
+    const prepared = state.metaImportPacket;
+    if (!prepared || !elements.metaImportApproval.checked) throw new Error("Approve the exact prepared packet first.");
+    elements.metaImportExecute.disabled = true;
+    const response = await fetch("/api/beacon/meta-ads-import-packet/execute", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        owner_approved: true,
+        packet: prepared.packet,
+        packet_hash: prepared.packet_hash,
+        approved_packet_hash: prepared.packet_hash,
+        approval_signature: prepared.approval_signature,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(safe(result.status, "Import rejected"));
+    state.metaImportPacket = null;
+    elements.metaImportApproval.checked = false;
+    elements.metaImportApproval.disabled = true;
+    elements.metaImportState.textContent = "Approved evidence appended";
+    elements.metaImportState.dataset.state = "ready";
+    elements.metaImportResult.innerHTML = `<p>${escapeHtml(result.created_count)} event(s) appended; ${escapeHtml(result.duplicate_withheld_count)} duplicate(s) withheld. Legacy rows untouched: ${result.legacy_rows_untouched ? "Yes" : "No"}.</p>`;
+  }
+
   function verifiedMetric(event, name) {
     const item = event?.metric_evidence?.[name];
     if (!item || !["verified", "owner_correction"].includes(item.status)) return null;
@@ -1049,9 +1261,9 @@
       const selected = asset.asset_id === state.selectedAssetId ? " is-selected" : "";
       return `
         <button type="button" class="beacon-media-asset-row${selected}" data-asset-id="${escapeHtml(asset.asset_id)}">
-          <strong>${escapeHtml(safe(asset.title || asset.original_filename, asset.asset_id))}</strong>
+          <strong>${escapeHtml(safe(asset.title, asset.asset_id))}</strong>
           <span>${escapeHtml(statusOf(asset))} | ${escapeHtml(safe(asset.media_type))} | ${escapeHtml(listText(asset.subject_tags))}</span>
-          <span>${escapeHtml(safe(asset.storage_bucket))}/${escapeHtml(safe(asset.storage_path))}</span>
+          <span>Owner review evidence only; private storage details withheld.</span>
         </button>
       `;
     }).join("");
@@ -1083,14 +1295,11 @@
       return;
     }
     setReviewDisabled(false);
-    elements.detailTitle.textContent = safe(asset.title || asset.original_filename, asset.asset_id);
+    elements.detailTitle.textContent = safe(asset.title, asset.asset_id);
     elements.detailStatus.textContent = `${statusOf(asset)} | ${safe(asset.media_type)} | public use ${asset.effective_public_use_approved ? "approved" : "locked"}`;
     elements.facts.innerHTML = [
       ["Asset ID", asset.asset_id],
-      ["File", asset.original_filename],
       ["Source", asset.source],
-      ["Bucket", asset.storage_bucket],
-      ["Path", asset.storage_path],
       ["Tags", listText(asset.subject_tags)],
       ["Relevance", listText(asset.sale_stream_relevance)],
       ["Latest Event", asset.latest_event?.event_type || "none"],
@@ -1160,6 +1369,123 @@
     await loadBeaconMedia();
   }
 
+  function intakeDate(item) {
+    if (item.capture_time_state === "unknown" || !item.capture_time) return "Capture: Unknown";
+    return `Capture: ${safe(item.capture_time)} (${safe(item.capture_time_state)})`;
+  }
+
+  function renderIntakeItems(items) {
+    state.intakeItems = Array.isArray(items) ? items : [];
+    elements.intakeState.textContent = state.intakeItems.length
+      ? `${state.intakeItems.length} private item${state.intakeItems.length === 1 ? "" : "s"} awaiting or carrying review evidence.`
+      : "No durable Telegram intake items yet. The gateway remains inactive until separately activated.";
+    elements.intakeContactSheet.innerHTML = state.intakeItems.map((item) => {
+      const observation = item.observation && typeof item.observation === "object" ? item.observation : {};
+      const tags = Array.isArray(observation.suggested_tags) ? observation.suggested_tags.join(", ") : "Unavailable";
+      const warnings = Array.isArray(observation.warnings) ? observation.warnings.join("; ") : "No evidence-qualified warnings recorded";
+      return `
+      <article class="beacon-intake-card" data-binary-id="${escapeHtml(item.binary_asset_id || "")}" data-intake-group-id="${escapeHtml(item.intake_group_id || "")}">
+        ${item.thumbnail_url
+          ? `<button type="button" class="beacon-intake-thumb" data-preview="${escapeHtml(item.thumbnail_url)}" aria-label="Enlarge private thumbnail"><img src="${escapeHtml(item.thumbnail_url)}" alt="Private BEACON intake thumbnail, album position ${escapeHtml(item.album_position || "pending")}" loading="lazy" /></button>`
+          : `<div class="table-empty">Private thumbnail pending</div>`}
+        <div class="beacon-intake-card-body">
+          <strong>${escapeHtml(item.owner_explanation || "No owner explanation supplied")}</strong>
+          <dl>
+            <dt>Album order</dt><dd>${escapeHtml(item.album_position || "Pending explicit completion")}</dd>
+            <dt>Media</dt><dd>${escapeHtml(`${item.width || "?"} × ${item.height || "?"} · ${item.observed_mime_type || "pending"}`)}</dd>
+            <dt>Capture</dt><dd>${escapeHtml(intakeDate(item).replace("Capture: ", ""))}</dd>
+            <dt>Intake</dt><dd>${escapeHtml(item.intake_at || "Unavailable")}</dd>
+            <dt>Duplicate</dt><dd>${item.exact_duplicate ? "Exact-byte duplicate retained as source provenance" : "No exact duplicate linked"}</dd>
+            <dt>Observations</dt><dd>${escapeHtml(observation.summary || "Unavailable until evidence-qualified understanding is recorded")} (${escapeHtml(item.observation_confidence || "unavailable")})</dd>
+            <dt>Suggested tags</dt><dd>${escapeHtml(tags)}</dd>
+            <dt>Warnings</dt><dd>${escapeHtml(warnings)}</dd>
+            <dt>Library state</dt><dd>${escapeHtml(item.latest_library_event || "Intake only—not accepted")}</dd>
+            <dt>Public use</dt><dd>${item.effective_public_use_approved ? "Owner approved (publication still separate)" : "Not approved"}</dd>
+            <dt>Prior use</dt><dd>${Number(item.prior_campaign_use_count || 0)} recorded campaign use(s); confirmed publication requires separate final-post evidence</dd>
+          </dl>
+          <p><strong>Authority:</strong> private review only. Library acceptance, public use, and publication are separate.</p>
+          <div class="beacon-intake-card-actions">
+            <button type="button" data-intake-review="library_accepted" class="button-link">Library Accept</button>
+            <button type="button" data-intake-review="public_use_approved" class="button-link button-link-secondary">Public-use Approve</button>
+            <button type="button" data-intake-review="library_rejected" class="button-link button-link-secondary">Reject</button>
+            <button type="button" data-intake-review="archived" class="button-link button-link-secondary">Archive</button>
+            <button type="button" data-intake-review="owner_context_recorded" class="button-link button-link-secondary">Edit owner context</button>
+            ${item.album_completed ? `
+              <button type="button" data-intake-group-review="library_accepted" class="button-link button-link-secondary">Accept whole album</button>
+              <button type="button" data-intake-group-review="library_rejected" class="button-link button-link-secondary">Reject whole album</button>
+            ` : `<span class="beacon-status-chip" data-state="blocked">Whole-album review waits for explicit completion</span>`}
+          </div>
+        </div>
+      </article>
+    `;
+    }).join("");
+  }
+
+  async function loadMediaIntakes() {
+    const result = await fetchJson("/api/oom-sakkie/beacon/media-intakes?limit=100");
+    renderIntakeItems(result.items);
+  }
+
+  async function recordIntakeReview(binaryAssetId, eventType) {
+    if (!binaryAssetId) throw new Error("Private binary identity is unavailable.");
+    let notes = "";
+    if (eventType === "owner_context_recorded") {
+      notes = window.prompt("Record corrected owner context. This appends evidence; it does not rewrite intake history.") || "";
+      if (!notes.trim()) return;
+    }
+    const result = await fetchJson(
+      `/api/oom-sakkie/beacon/media-intakes/${encodeURIComponent(binaryAssetId)}/review`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: eventType,
+          notes,
+          owner_action_id: crypto.randomUUID(),
+          expected_predecessor_event_id: state.intakeItems.find(
+            (item) => item.binary_asset_id === binaryAssetId,
+          )?.latest_review_event_id || "",
+        }),
+      },
+    );
+    showMessage(`${safe(result.status)}. No publication action occurred.`, "success");
+    await loadMediaIntakes();
+  }
+
+  async function recordIntakeGroupReview(intakeGroupId, eventType) {
+    if (!intakeGroupId) throw new Error("Private album identity is unavailable.");
+    const result = await fetchJson(
+      `/api/oom-sakkie/beacon/media-intakes/groups/${encodeURIComponent(intakeGroupId)}/review`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: eventType,
+          notes: "",
+          owner_action_id: crypto.randomUUID(),
+          expected_predecessors: Object.fromEntries(
+            state.intakeItems
+              .filter((item) => item.intake_group_id === intakeGroupId)
+              .map((item) => [
+                item.binary_asset_id,
+                item.latest_review_event_id || "",
+              ]),
+          ),
+        }),
+      },
+    );
+    showMessage(`${safe(result.status)}. No publication action occurred.`, "success");
+    await loadMediaIntakes();
+  }
+
+  let intakePreviewOpener = null;
+  function closeIntakePreview() {
+    elements.intakePreview.classList.add("hidden");
+    elements.intakePreviewImage.removeAttribute("src");
+    if (intakePreviewOpener) intakePreviewOpener.focus();
+    intakePreviewOpener = null;
+  }
+
   async function uploadAsset(event) {
     event.preventDefault();
     clearMessage();
@@ -1193,16 +1519,69 @@
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
+    elements.intakeRefresh.addEventListener("click", () => loadMediaIntakes().catch((error) => {
+      elements.intakeState.textContent = "Private intake unavailable";
+      showMessage(error.message);
+    }));
+    elements.intakePreviewClose.addEventListener("click", closeIntakePreview);
+    elements.intakePreview.addEventListener("click", (event) => {
+      if (event.target === elements.intakePreview) closeIntakePreview();
+    });
+    elements.intakePreview.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeIntakePreview();
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        elements.intakePreviewClose.focus();
+      }
+    });
+    elements.intakeContactSheet.addEventListener("click", (event) => {
+      const preview = event.target.closest("[data-preview]");
+      if (preview) {
+        intakePreviewOpener = preview;
+        elements.intakePreviewImage.src = preview.dataset.preview;
+        elements.intakePreview.classList.remove("hidden");
+        elements.intakePreviewClose.focus();
+        return;
+      }
+      const groupDecision = event.target.closest("[data-intake-group-review]");
+      if (groupDecision) {
+        const card = groupDecision.closest("[data-intake-group-id]");
+        recordIntakeGroupReview(
+          card?.dataset.intakeGroupId || "",
+          groupDecision.dataset.intakeGroupReview,
+        ).catch((error) => showMessage(error.message));
+        return;
+      }
+      const decision = event.target.closest("[data-intake-review]");
+      if (!decision) return;
+      const card = decision.closest("[data-binary-id]");
+      recordIntakeReview(card?.dataset.binaryId || "", decision.dataset.intakeReview)
+        .catch((error) => showMessage(error.message));
+    });
     elements.metaPreviewRefresh.addEventListener("click", () => loadMetaAdsPreview().catch((error) => {
       elements.metaPreviewState.textContent = "Preview unavailable";
       elements.metaPreviewState.dataset.state = "blocked";
       showMessage(error.message);
     }));
+    elements.metaImportPrepare.addEventListener("click", () => prepareMetaImportPacket().catch((error) => {
+      elements.metaImportState.textContent = "Packet unavailable";
+      elements.metaImportState.dataset.state = "blocked";
+      showMessage(error.message);
+    }));
+    elements.metaImportApproval.addEventListener("change", () => {
+      elements.metaImportExecute.disabled = !elements.metaImportApproval.checked || !state.metaImportPacket;
+    });
+    elements.metaImportExecute.addEventListener("click", () => executeMetaImportPacket().catch((error) => showMessage(error.message)));
     elements.contentRefresh.addEventListener("click", () => loadContentOperations().catch((error) => {
       elements.contentState.textContent = "Evidence unavailable";
       elements.contentState.dataset.state = "blocked";
       showMessage(error.message);
     }));
+    elements.packetApprove.addEventListener("click", () => recordWeeklyOwnerDecision("approve").catch((error) => showMessage(error.message)));
+    elements.packetRequestChanges.addEventListener("click", () => recordWeeklyOwnerDecision("request_changes").catch((error) => showMessage(error.message)));
+    elements.packetReject.addEventListener("click", () => recordWeeklyOwnerDecision("reject").catch((error) => showMessage(error.message)));
     elements.refresh.addEventListener("click", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.campaignLane.addEventListener("change", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
@@ -1243,5 +1622,9 @@
       showMessage(error.message);
     });
     await loadBeaconMedia().catch((error) => showMessage(error.message));
+    await loadMediaIntakes().catch((error) => {
+      elements.intakeState.textContent = "Private intake persistence is not operational yet.";
+      elements.intakeContactSheet.innerHTML = `<div class="table-empty">${escapeHtml(error.message)}</div>`;
+    });
   });
 })();

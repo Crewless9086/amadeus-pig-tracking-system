@@ -102,7 +102,7 @@ DEFAULT_MEAT_PRICE_BOOK = [
         "price_amount": 130.00,
         "currency": "ZAR",
         "deposit_rule": "50% deposit to confirm",
-        "balance_rule": "Balance due before delivery or collection",
+        "balance_rule": "Balance due before delivery",
         "yield_basis": "Estimated packed half-carcass weight from 60kg live pig: 19-21kg; final amount uses actual packed weight.",
         "effective_from": "2026-06-16T00:00:00+02:00",
         "active": True,
@@ -119,7 +119,7 @@ DEFAULT_MEAT_PRICE_BOOK = [
         "price_amount": 130.00,
         "currency": "ZAR",
         "deposit_rule": "50% deposit to confirm",
-        "balance_rule": "Balance due before delivery or collection",
+        "balance_rule": "Balance due before delivery",
         "yield_basis": "Estimated packed half-carcass weight from 60kg live pig: 19-21kg; final amount uses actual packed weight.",
         "effective_from": "2026-06-16T00:00:00+02:00",
         "active": True,
@@ -136,8 +136,8 @@ DEFAULT_MEAT_PRICE_BOOK = [
         "price_amount": 130.00,
         "currency": "ZAR",
         "deposit_rule": "50% deposit to confirm",
-        "balance_rule": "Balance due before delivery or collection",
-        "yield_basis": "Estimated packed full-carcass weight from 60kg live pig: 38-42kg; final amount uses actual packed weight.",
+        "balance_rule": "Balance due before delivery",
+        "yield_basis": "Estimated packed full-carcass weight from 60kg live pig: 38–42 kg; final amount uses actual packed weight.",
         "effective_from": "2026-06-16T00:00:00+02:00",
         "active": True,
         "notes": "Code fallback standard full-carcass rule.",
@@ -153,7 +153,7 @@ DEFAULT_MEAT_PRICE_BOOK = [
         "price_amount": 145.00,
         "currency": "ZAR",
         "deposit_rule": "70% deposit to confirm custom cut order",
-        "balance_rule": "Balance due before delivery or collection",
+        "balance_rule": "Balance due before delivery",
         "yield_basis": "Custom cut yield is estimated before slaughter and finalized from actual packed weight.",
         "effective_from": "2026-06-16T00:00:00+02:00",
         "active": True,
@@ -627,7 +627,7 @@ def record_sam_meat_intake_lead(payload, database_url=None):
     return result, status_code
 
 
-def list_meat_price_book_entries(limit=50, database_url=None):
+def list_meat_price_book_entries(limit=50, database_url=None, database_deadline=None):
     parsed_limit = _bounded_limit(limit)
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -648,7 +648,12 @@ def list_meat_price_book_entries(limit=50, database_url=None):
         return _price_book_unavailable("dependency_missing", configured=True), 500
 
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -834,7 +839,7 @@ def build_meat_pricing_estimate_from_contract(lead, contract, price_entries=None
         "deposit_rule": combined_deposit_rule,
         "payment_method": _clean_text(required.get("payment_method") or interest.get("payment_method") or "EFT", 80),
         "delivery_or_collection": _clean_text(
-            required.get("delivery_or_collection") or interest.get("delivery_or_collection") or "collection",
+            required.get("delivery_or_collection") or interest.get("delivery_or_collection") or "delivery",
             80,
         ),
         "owner_final_approval": "Yes",
@@ -1063,7 +1068,7 @@ def list_sales_leads(limit=20, status_filter=None, database_url=None):
     }, 200
 
 
-def get_sales_lead_preorder_contract(lead_id, database_url=None):
+def get_sales_lead_preorder_contract(lead_id, database_url=None, database_deadline=None):
     lead_id = _clean_text(lead_id, 100)
     if not lead_id:
         return {"success": False, "status": "lead_id_required", **_false_flags()}, 400
@@ -1078,7 +1083,12 @@ def get_sales_lead_preorder_contract(lead_id, database_url=None):
         return {"success": False, "configured": True, "status": "dependency_missing", **_false_flags()}, 500
 
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -1733,13 +1743,13 @@ def build_customer_followup_draft_from_contract(contract):
     buyer = summary.get("buyer_or_contact") or "there"
     product = summary.get("product") or "pork preorder"
     cut_set = summary.get("cut_set") or "selected cut set"
-    location = summary.get("location") or "your selected collection area"
+    location = summary.get("location") or "your delivery area"
     price = required.get("price_per_kg") or "the approved price/kg"
     week = required.get("available_week") or "the approved week"
     size = required.get("estimated_weight_or_size") or "final weight to be confirmed"
     deposit = required.get("deposit_amount_or_rule") or "the approved deposit rule"
     payment = required.get("payment_method") or "your selected payment method"
-    delivery = required.get("delivery_or_collection") or "collection/delivery to be confirmed"
+    delivery = required.get("delivery_or_collection") or "delivery details to be confirmed"
 
     message = (
         f"Hi {buyer}, I checked with the farm. For the {product} {cut_set} in {location}, "
@@ -1812,7 +1822,7 @@ def build_preorder_deposit_contract_from_lead(lead):
         "Which available week or slaughter window can Charl offer?",
         "What estimated half-carcass size/range should be discussed?",
         "What deposit rule should apply before any slaughter booking?",
-        "Will this be collection or delivery, and where?",
+        "Which town or area is the delivery for?",
     ]
     return {
         "contract_status": status,
@@ -3277,7 +3287,7 @@ def _meat_yield_estimate(product_type, live_weight):
     elif product_type == "full_carcass":
         min_kg = full_min
         max_kg = full_max
-        display = f"estimated {min_kg:g}-{max_kg:g}kg packed full carcass"
+        display = f"estimated {min_kg:g}\u2013{max_kg:g} kg packed full carcass"
     elif product_type == "custom_cut":
         min_kg = full_min
         max_kg = full_max
@@ -3370,7 +3380,7 @@ def _meat_price_book_params(payload):
         "price_amount": round(price_amount, 2),
         "deposit_rule": _clean_text(payload.get("deposit_rule") or _default_deposit_rule(product_type), 180),
         "balance_rule": _clean_text(
-            payload.get("balance_rule") or "Balance due before delivery or collection",
+            payload.get("balance_rule") or "Balance due before delivery",
             180,
         ),
         "yield_basis": _clean_text(payload.get("yield_basis") or _default_yield_basis(product_type), 260),
@@ -3395,7 +3405,7 @@ def _default_yield_basis(product_type):
     if product_type == "half_carcass":
         return "Estimated packed half-carcass weight from 60kg live pig: 19-21kg; final amount uses actual packed weight."
     if product_type == "full_carcass":
-        return "Estimated packed full-carcass weight from 60kg live pig: 38-42kg; final amount uses actual packed weight."
+        return "Estimated packed full-carcass weight from 60kg live pig: 38–42 kg; final amount uses actual packed weight."
     if product_type == "custom_cut":
         return "Custom cut yield is estimated before slaughter and finalized from actual packed weight."
     return "No packed-weight estimate."
@@ -3405,10 +3415,10 @@ def _sam_meat_next_question(missing_core, missing_before_money_path):
     question_map = {
         "customer_name": "Who should I put this interest under?",
         "product_type": "Are you interested in a half carcass, full carcass, custom cuts, or assisted slaughter?",
-        "location": "Where would this need to be delivered or collected?",
-        "cut_set": "Which cut set are you interested in: Set A, Set B, Set C, or Set D?",
+        "location": "Which town or area is the delivery for?",
+        "cut_set": "Which collection are you interested in: Set A Amadeus Signature, Set B Amadeus Ember, or Set C Amadeus Grand Cut?",
         "timing": "When would you ideally want this pork?",
-        "delivery_or_collection": "Would you prefer collection or delivery?",
+        "delivery_or_collection": "Which town or area should we plan the delivery for?",
         "price_per_kg": "I need to confirm the current price with the farm before quoting.",
         "deposit_rule": "I need to confirm the deposit rule with the farm before booking anything.",
         "payment_method": "Would you prefer EFT or cash once the farm confirms availability?",

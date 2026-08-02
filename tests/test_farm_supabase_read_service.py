@@ -7,6 +7,173 @@ from modules.pig_weights import pig_weights_service
 
 
 class FarmSupabaseReadServiceTests(unittest.TestCase):
+    class _Column:
+        def __init__(self, name):
+            self.name = name
+
+    class _SnapshotCursor:
+        def __init__(self, fail_fragment=None):
+            self.fail_fragment = fail_fragment
+            self.description = [FarmSupabaseReadServiceTests._Column("placeholder")]
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, sql, _params=()):
+            text = str(sql).lower()
+            if self.fail_fragment and self.fail_fragment in text:
+                raise TimeoutError("bounded statement timeout")
+            self.rows = []
+            return self
+
+        def fetchall(self):
+            return self.rows
+
+    class _SnapshotConnection:
+        def __init__(self, fail_fragment=None):
+            self.fail_fragment = fail_fragment
+            self.cursor_count = 0
+            self.exit_count = 0
+            self.exit_exception = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, _exc, _tb):
+            self.exit_count += 1
+            self.exit_exception = exc_type
+            return False
+
+        def cursor(self):
+            self.cursor_count += 1
+            return FarmSupabaseReadServiceTests._SnapshotCursor(self.fail_fragment)
+
+    def test_allocation_readiness_uses_one_bounded_consistent_snapshot(self):
+        connection = self._SnapshotConnection()
+        calls = []
+
+        def factory(_url):
+            calls.append(connection)
+            return connection
+
+        result = farm_supabase_read_service.get_allocation_input_rows(
+            connect_factory=factory, deadline_seconds=20,
+        )
+        progress = result["read_progress"]
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(progress["shared_snapshot"])
+        self.assertEqual(progress["connection_count"], 1)
+        self.assertEqual(progress["query_count"], 6)
+        self.assertEqual(progress["status"], "complete")
+        self.assertTrue(all(stage["state"] == "complete" for stage in progress["stages"]))
+        self.assertEqual(connection.exit_count, 1)
+        self.assertIsNone(connection.exit_exception)
+
+    def test_breeding_attention_snapshot_uses_one_connection_and_eight_queries(self):
+        connection = self._SnapshotConnection()
+        calls = []
+
+        result = farm_supabase_read_service.get_breeding_attention_source_snapshot(
+            connect_factory=lambda _url: calls.append(connection) or connection,
+            deadline_seconds=20,
+        )
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result["read_progress"]["connection_count"], 1)
+        self.assertEqual(result["read_progress"]["query_count"], 8)
+        self.assertEqual(result["read_progress"]["status"], "complete")
+        self.assertEqual(
+            [stage["stage"] for stage in result["read_progress"]["stages"]],
+            list(farm_supabase_read_service.BREEDING_ATTENTION_READ_STAGES),
+        )
+        self.assertEqual(connection.exit_count, 1)
+
+    def test_breeding_attention_snapshot_fails_whole_inventory_on_slow_supporting_stage(self):
+        connection = self._SnapshotConnection("from public.mating_events")
+        with self.assertRaises(TimeoutError):
+            farm_supabase_read_service.get_breeding_attention_source_snapshot(
+                connect_factory=lambda _url: connection,
+            )
+        self.assertEqual(connection.exit_count, 1)
+        self.assertIs(connection.exit_exception, TimeoutError)
+
+    def test_allocation_snapshot_connection_failure_fails_closed(self):
+        def factory(_url):
+            raise ConnectionError("unavailable")
+
+        with self.assertRaises(ConnectionError):
+            farm_supabase_read_service.get_allocation_input_rows(connect_factory=factory)
+
+    def test_allocation_snapshot_exposes_slow_connection_acquisition(self):
+        connection = self._SnapshotConnection()
+        clock = [0.0]
+
+        def factory(_url):
+            clock[0] = 0.5
+            return connection
+
+        result = farm_supabase_read_service.get_allocation_input_rows(
+            connect_factory=factory,
+            now_fn=lambda: clock[0],
+        )
+        first = result["read_progress"]["stages"][0]
+        self.assertEqual(first["connection_acquisition_seconds"], 0.5)
+        self.assertEqual(result["read_progress"]["connection_count"], 1)
+
+    def test_allocation_snapshot_individual_statement_timeout_fails_closed(self):
+        connection = self._SnapshotConnection("from public.pig_medical_events")
+        with self.assertRaises(TimeoutError):
+            farm_supabase_read_service.get_allocation_input_rows(
+                connect_factory=lambda _url: connection,
+            )
+        self.assertEqual(connection.exit_count, 1)
+        self.assertIs(connection.exit_exception, TimeoutError)
+
+    def test_allocation_snapshot_total_deadline_exhaustion_fails_closed(self):
+        connection = self._SnapshotConnection()
+        clock = iter([0.0, 0.0, 0.0, 2.0, 2.0, 2.0])
+        with self.assertRaises(TimeoutError):
+            farm_supabase_read_service.get_allocation_input_rows(
+                connect_factory=lambda _url: connection,
+                deadline_seconds=1.0,
+                now_fn=lambda: next(clock),
+            )
+
+    def test_allocation_snapshot_connection_acquisition_consumes_total_deadline(self):
+        connection = self._SnapshotConnection()
+        clock = iter([0.0, 2.0, 2.0])
+        with self.assertRaisesRegex(TimeoutError, "connection acquisition"):
+            farm_supabase_read_service.get_allocation_input_rows(
+                connect_factory=lambda _url: connection,
+                deadline_seconds=1.0,
+                now_fn=lambda: next(clock),
+            )
+        self.assertEqual(connection.exit_count, 1)
+
+    def test_allocation_snapshot_final_fetch_overrun_fails_closed(self):
+        snapshot = farm_supabase_read_service._AllocationSnapshot(
+            self._SnapshotConnection(),
+            0.0,
+            deadline_seconds=1.0,
+            now_fn=lambda: 2.0,
+            started_at=0.0,
+        )
+        with self.assertRaises(TimeoutError):
+            snapshot.finish_rows("pens", 20)
+        self.assertEqual(snapshot.records["pens"]["state"], "total_deadline_exhausted")
+
+    def test_allocation_snapshot_preserves_managed_transaction_ownership(self):
+        connection = self._SnapshotConnection()
+        factory = pig_weights_service._ManagedReadFactory(connection)
+        result = farm_supabase_read_service.get_allocation_input_rows(connect_factory=factory)
+        self.assertEqual(result["read_progress"]["connection_count"], 1)
+        self.assertEqual(result["read_progress"]["query_count"], 6)
+        self.assertEqual(connection.exit_count, 0)
+
     def test_allocation_inputs_join_active_order_assignments(self):
         calls = []
         def fetch(sql, params=(), connect_factory=None):
@@ -17,7 +184,10 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                 return []
             if "from public.pig_weight_events" in sql:
                 return []
-            if "from public.litters" in sql or "from public.pens" in sql:
+            if (
+                "from public.current_canonical_litters" in sql
+                or "from public.pens" in sql
+            ):
                 return []
             return []
         with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[{"pig_id": "PIG-1"}]), patch.object(
@@ -26,12 +196,50 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             result = farm_supabase_read_service.get_allocation_input_rows()
         self.assertEqual(result["overview_rows"][0]["Reserved_Status"], "Allocated")
         self.assertEqual(result["overview_rows"][0]["Reserved_For_Order_ID"], "ORD-1")
+        self.assertEqual(result["overview_rows"][0]["Allocation_Evidence_State"], "allocated")
+        self.assertEqual(result["allocation_query_status"], "known")
         self.assertTrue(any("customer_order.order_status" in sql for sql in calls))
         allocation_sql = next(sql for sql in calls if "from public.order_lines line" in sql)
         self.assertIn("lower(btrim(line.line_status))", allocation_sql)
         self.assertIn("lower(btrim(customer_order.order_status))", allocation_sql)
         self.assertIn("'cancelled', 'collected'", allocation_sql)
         self.assertIn("'cancelled', 'completed', 'rejected'", allocation_sql)
+
+    def test_allocation_inputs_model_withdrawal_evidence_states(self):
+        current = [
+            {"pig_id": "PIG-NONE"},
+            {"pig_id": "PIG-NA"},
+            {"pig_id": "PIG-CLEAR"},
+            {"pig_id": "PIG-HOLD"},
+            {"pig_id": "PIG-UNKNOWN"},
+        ]
+        medical = [
+            {"pig_id": "PIG-NA", "withdrawal_days": 0},
+            {"pig_id": "PIG-CLEAR", "withdrawal_days": 7, "withdrawal_end_date": date.today() - timedelta(days=1)},
+            {"pig_id": "PIG-HOLD", "withdrawal_days": 7, "withdrawal_end_date": date.today() + timedelta(days=1)},
+            {"pig_id": "PIG-UNKNOWN", "withdrawal_days": None, "withdrawal_end_date": None},
+        ]
+
+        def fetch(sql, params=(), connect_factory=None):
+            if "from public.order_lines line" in sql:
+                return []
+            if "from public.pig_medical_events" in sql:
+                return medical
+            return []
+
+        with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=current), patch.object(
+            farm_supabase_read_service, "_fetch_all", side_effect=fetch,
+        ):
+            result = farm_supabase_read_service.get_allocation_input_rows()
+
+        states = {row["Pig_ID"]: row["Withdrawal_Evidence_State"] for row in result["overview_rows"]}
+        self.assertEqual(states, {
+            "PIG-NONE": "unknown",
+            "PIG-NA": "not_applicable",
+            "PIG-CLEAR": "cleared",
+            "PIG-HOLD": "hold",
+            "PIG-UNKNOWN": "unknown",
+        })
 
     def test_allocation_read_failure_fails_closed(self):
         with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[{"pig_id": "PIG-1"}]), patch.object(
@@ -423,7 +631,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         def fake_fetch_all(sql, params=(), connect_factory=None):
             if "from public.pig_weight_events" in sql:
                 return [{"pig_id": "PIG-1", "weight_date": date(2026, 6, 22), "weight_kg": 61.5}]
-            if "from public.litters" in sql:
+            if "from public.current_canonical_litters" in sql:
                 return [{
                     "litter_id": "LIT-1",
                     "sow_pig_id": "SOW-1",
@@ -1138,6 +1346,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             "litter_id": "LIT-1", "sex": "Female", "current_weight_kg": 120.0,
             "last_weight_date": date(2026, 7, 23), "current_pen_id": "PEN-SOW",
             "pig_name": "Sow One", "animal_type": "Sow", "date_of_birth": date(2024, 1, 1),
+            "mother_pig_id": "DAM-1", "father_pig_id": "SIRE-1",
             "purpose": "Breeding", "notes": "good condition", "exit_date": None,
             "exit_reason": "", "exit_order_id": "", "litter_size_born": 10,
             "litter_size_weaned": 9, "wean_date": None, "wean_weight_kg": None,
@@ -1151,6 +1360,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(row["Available_For_Breeding"], "Unknown")
         self.assertEqual(row["Reserved_Status"], "Unknown")
         self.assertEqual(row["Source_Conflict"], "Unknown")
+        self.assertEqual(row["Mother_Pig_ID"], "DAM-1")
+        self.assertEqual(row["Father_Pig_ID"], "SIRE-1")
         self.assertEqual(row["source"], "supabase_canonical")
 
     def test_breeding_reads_map_supabase_mating_and_litter_data(self):

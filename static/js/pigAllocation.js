@@ -12,13 +12,43 @@ const purposeFilter = document.getElementById("purpose_filter");
 const searchFilter = document.getElementById("search_filter");
 const resetFiltersButton = document.getElementById("reset_allocation_filters");
 const reviewPanel = document.getElementById("allocation_review_panel");
+const reviewHeading = document.getElementById("allocation_review_heading");
 const reviewStatus = document.getElementById("allocation_review_status");
 const reviewDetail = document.getElementById("allocation_review_detail");
+const auctionPanel = document.getElementById("riversdale_auction_panel");
+const auctionStatus = document.getElementById("riversdale_auction_status");
+const auctionSummary = document.getElementById("riversdale_auction_summary");
+const auctionEvidence = document.getElementById("riversdale_auction_evidence");
+const auctionForm = document.getElementById("riversdale_auction_form");
+const auctionActions = document.getElementById("auction_table_actions");
+const auctionSelectedCount = document.getElementById("auction_selected_count");
+const auctionAddButton = document.getElementById("auction_add_selected");
+const auctionRemoveButton = document.getElementById("auction_remove_selected");
+const auctionPrintButton = document.getElementById("auction_print_list");
+const auctionPrintHeading = document.getElementById("auction_print_heading");
+const allocationCard = document.querySelector(".allocation-card");
+const allocationTable = document.querySelector(".allocation-table");
+const allocationTableHead = document.getElementById("allocation_table_head");
+const allocationTableHeading = document.getElementById("allocation_table_heading");
+const auctionCompactWhen = document.getElementById("auction_compact_when");
+const auctionCompactCount = document.getElementById("auction_compact_count");
+const auctionCompactBlockers = document.getElementById("auction_compact_blockers");
 
 let allocationRows = [];
 let allocationSummary = {};
 let selectedReviewPigId = "";
 let latestAllocationPurposePreview = null;
+let auctionPacket = {};
+let auctionCandidateIds = new Set();
+let auctionSelectableIds = new Set();
+let auctionListIds = new Set();
+let auctionListNotes = new Map();
+let auctionEligibilityTokens = new Map();
+let auctionCausalHeads = new Map();
+let auctionCycleId = "";
+let auctionListAvailability = "Unavailable";
+let auctionSelection = new Set();
+let auctionEvidenceByPigId = new Map();
 
 const ALLOCATION_PURPOSE_OPTIONS = [
   ["Grow_Out", "Grow out / meat pipeline"],
@@ -126,6 +156,12 @@ function setSelectOptions(select, values, firstLabel) {
 
 function populateFilters(rows) {
   setSelectOptions(bucketFilter, BUCKET_ORDER.filter((bucket) => rows.some((row) => row.readiness_bucket === bucket)), "All buckets");
+  ["Auction Candidates", "Auction List"].forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    bucketFilter.appendChild(option);
+  });
   setSelectOptions(penFilter, uniqueOptions(rows, formatPen), "All pens");
   setSelectOptions(typeFilter, uniqueOptions(rows, (row) => row.animal_type), "All types");
   setSelectOptions(sexFilter, uniqueOptions(rows, (row) => row.sex), "All sexes");
@@ -213,7 +249,9 @@ function filteredRows() {
   const search = searchFilter.value.trim().toLowerCase();
 
   return allocationRows.filter((row) => {
-    if (bucket && row.readiness_bucket !== bucket) return false;
+    if (bucket === "Auction Candidates" && !auctionCandidateIds.has(row.pig_id)) return false;
+    if (bucket === "Auction List" && !auctionListIds.has(row.pig_id)) return false;
+    if (bucket && !bucket.startsWith("Auction ") && row.readiness_bucket !== bucket) return false;
     if (pen && formatPen(row) !== pen) return false;
     if (type && row.animal_type !== type) return false;
     if (sex && row.sex !== sex) return false;
@@ -448,20 +486,119 @@ function bucketClass(bucket) {
   return "status-pill status-pill-muted";
 }
 
+const NORMAL_TABLE_HEAD = `
+  <tr>
+    <th class="auction-select-column">Select</th><th>Pig</th><th>Recommended Action</th>
+    <th>Weight</th><th>Growth</th><th>Timing</th><th>Pen</th><th>Purpose</th><th>More</th>
+  </tr>`;
+
+const AUCTION_TABLE_HEAD = `
+  <tr>
+    <th class="auction-select-column">Select</th><th>Pig/tag</th><th>Sex</th>
+    <th>Weight / date</th><th>Age</th><th>Pen</th><th>Growth</th>
+    <th>Health / withdrawal</th><th>Eligibility</th><th class="auction-screen-only">Details</th>
+  </tr>`;
+
+function isAuctionMode() {
+  return bucketFilter.value === "Auction Candidates" || bucketFilter.value === "Auction List";
+}
+
+function updateAuctionCompactStatus() {
+  const confirmation = auctionPacket.confirmation || {};
+  const surface = auctionPacket.owner_surface || {};
+  const listMode = bucketFilter.value === "Auction List";
+  if (auctionCompactWhen) {
+    auctionCompactWhen.textContent = `${confirmation.confirmed_date || surface.confirmed_date || "Date Unknown"} · ${confirmation.location || "Location Unknown"}`;
+  }
+  if (auctionCompactCount) {
+    const count = listMode ? auctionListIds.size : auctionCandidateIds.size;
+    auctionCompactCount.textContent = `${count} ${listMode ? "currently listed" : "candidate"}${count === 1 ? "" : "s"}`;
+  }
+  if (auctionCompactBlockers) {
+    const missing = surface.missing_evidence || [];
+    const excluded = Number(surface.excluded_count || 0);
+    auctionCompactBlockers.textContent = auctionListAvailability !== "Available"
+      ? "Auction List unavailable; candidates remain read-only"
+      : missing.length
+      ? `Owner review: ${missing.slice(0, 2).join(", ")}`
+      : (excluded ? `${excluded} blocked by current evidence` : "No blocking evidence reported");
+  }
+}
+
+function renderAuctionRow(row) {
+  const evidence = auctionEvidenceByPigId.get(row.pig_id) || {};
+  const currentlyEligible = auctionSelectableIds.has(row.pig_id);
+  const selectable = bucketFilter.value === "Auction List"
+    ? auctionListIds.has(row.pig_id)
+    : currentlyEligible;
+  const health = evidence.health_status || row.health_status || row.medical_status || "Unknown";
+  const withdrawal = evidence.withdrawal_evidence_state || row.withdrawal_evidence_state || "Unknown";
+  const quality = evidence.observed_quality || "Unknown";
+  const eligibility = currentlyEligible
+    ? "Eligible for owner shortlist"
+    : (bucketFilter.value === "Auction List"
+      ? "Listed; current evidence is blocked. Removal remains available."
+      : "Blocked: health, withdrawal, or quality evidence is Unknown/insufficient");
+  const note = auctionListNotes.get(row.pig_id) || "None";
+  return `
+    <tr>
+      <td class="auction-select-column"><input type="checkbox" data-auction-pig-id="${escapeHtml(row.pig_id)}"
+        ${auctionSelection.has(row.pig_id) ? "checked" : ""} ${selectable ? "" : "disabled"}
+        aria-label="Select ${escapeHtml(pigLabel(row))}"></td>
+      <td><a class="detail-link allocation-pig-link" href="/pig/${encodeURIComponent(row.pig_id)}">${escapeHtml(pigLabel(row))}</a></td>
+      <td>${escapeHtml(row.sex || "Unknown")}</td>
+      <td><strong>${escapeHtml(formatKg(row.latest_weight_kg))}</strong><span class="table-subtext">${escapeHtml(row.latest_weight_date || "Unknown date")}</span></td>
+      <td>${escapeHtml(row.age_days ?? "Unknown")}${row.age_days === null || row.age_days === undefined ? "" : " days"}</td>
+      <td>${escapeHtml(formatPen(row))}</td>
+      <td><strong>${escapeHtml(row.growth_class || "Unknown")}</strong><span class="table-subtext">${escapeHtml(formatAdg(row.average_daily_gain_kg))}</span></td>
+      <td class="auction-row-health"><strong>${escapeHtml(health)}</strong><span class="table-subtext">Withdrawal: ${escapeHtml(withdrawal)}</span><span class="table-subtext">Quality: ${escapeHtml(quality)}</span></td>
+      <td class="auction-row-eligibility ${currentlyEligible ? "" : "is-blocked"}">${escapeHtml(eligibility)}
+        ${bucketFilter.value === "Auction List" ? `<span class="print-only">Owner note: ${escapeHtml(note)}</span>` : ""}</td>
+      <td class="auction-screen-only"><button type="button" class="button-link button-link-secondary allocation-review-button auction-row-details-button"
+        data-review-pig-id="${escapeHtml(row.pig_id || "")}">Details / Review</button></td>
+    </tr>`;
+}
+
 function renderRows(rows) {
+  const auctionMode = isAuctionMode();
+  allocationCard?.classList.toggle("auction-mode", auctionMode);
+  if (!auctionMode) allocationCard?.classList.remove("auction-review-open");
+  allocationTable?.classList.toggle("auction-selection-mode", auctionMode);
+  if (allocationTableHead) allocationTableHead.innerHTML = auctionMode ? AUCTION_TABLE_HEAD : NORMAL_TABLE_HEAD;
+  if (allocationTableHeading) {
+    allocationTableHeading.textContent = bucketFilter.value === "Auction Candidates"
+      ? "Auction Candidates"
+      : (bucketFilter.value === "Auction List" ? "Current Auction List" : "Readiness Table");
+  }
+  auctionActions?.classList.toggle("hidden", !auctionMode);
+  auctionAddButton?.classList.toggle("hidden", bucketFilter.value !== "Auction Candidates");
+  auctionRemoveButton?.classList.toggle("hidden", bucketFilter.value !== "Auction List");
+  auctionPrintButton?.classList.toggle("hidden", bucketFilter.value !== "Auction List");
+  updateAuctionCompactStatus();
+
   if (!rows.length) {
-    bodyEl.innerHTML = '<tr><td colspan="8" class="table-empty">No pigs match the selected filters.</td></tr>';
+    bodyEl.innerHTML = `<tr><td class="auction-select-column"></td><td colspan="${auctionMode ? 9 : 8}" class="table-empty">No pigs match the selected filters.</td></tr>`;
     countEl.textContent = "No pigs in this view.";
     return;
   }
 
   countEl.textContent = `Showing ${rows.length} of ${allocationRows.length} pigs.`;
+  if (auctionMode) {
+    bodyEl.innerHTML = rows.map(renderAuctionRow).join("");
+    return;
+  }
   bodyEl.innerHTML = rows.map((row) => {
     const profileHref = `/pig/${encodeURIComponent(row.pig_id)}`;
     const parentText = [row.mother_id, row.father_id].filter(Boolean).join(" / ");
     const linkText = row.existing_link || row.reserved_for_order_id || "-";
     return `
       <tr>
+        <td class="auction-select-column">
+          ${auctionMode ? `<input type="checkbox" data-auction-pig-id="${escapeHtml(row.pig_id)}"
+            ${auctionSelection.has(row.pig_id) ? "checked" : ""}
+            ${bucketFilter.value === "Auction Candidates" && !auctionSelectableIds.has(row.pig_id) ? "disabled" : ""}
+            aria-label="Select ${escapeHtml(pigLabel(row))}">` : ""}
+        </td>
         <td>
           <a class="detail-link allocation-pig-link" href="${profileHref}">${escapeHtml(pigLabel(row))}</a>
           <span class="table-subtext">${escapeHtml(row.animal_type || "-")} / ${escapeHtml(row.sex || "-")}</span>
@@ -471,6 +608,8 @@ function renderRows(rows) {
           <strong class="allocation-action-text">${escapeHtml(row.outlet_priority || row.recommended_action || "-")}</strong>
           <span class="table-subtext">${escapeHtml(row.recommended_action || "-")}</span>
           <span class="table-subtext">${escapeHtml(row.marketing_readiness || "-")}</span>
+          ${bucketFilter.value === "Auction Candidates" ? `<span class="table-subtext auction-eligibility">${auctionSelectableIds.has(row.pig_id) ? "Eligible for owner shortlist" : "Blocked: health, withdrawal, or quality evidence is Unknown/insufficient"}</span>` : ""}
+          ${bucketFilter.value === "Auction List" ? `<span class="table-subtext">Health: ${escapeHtml(row.health_status || row.medical_status || "Unknown")} · Withdrawal: ${escapeHtml(row.withdrawal_evidence_state || row.withdrawal_clear || "Unknown")}</span>` : ""}
           <button type="button" class="button-link button-link-secondary allocation-review-button" data-review-pig-id="${escapeHtml(row.pig_id || "")}">Review</button>
         </td>
         <td>
@@ -486,6 +625,7 @@ function renderRows(rows) {
           <strong>${escapeHtml(row.meat_window_status || "-")}</strong>
           <span class="table-subtext">Meat: ${escapeHtml(row.estimated_meat_ready_date || "-")} (${escapeHtml(row.days_until_meat_ready ?? "-")} days)</span>
           <span class="table-subtext">Abattoir: ${escapeHtml(row.estimated_abattoir_ready_date || "-")} (${escapeHtml(row.days_until_abattoir_ready ?? "-")} days)</span>
+          ${bucketFilter.value === "Auction List" ? `<span class="table-subtext">Age: ${escapeHtml(row.age_days ?? "Unknown")} days</span>` : ""}
         </td>
         <td>${escapeHtml(formatPen(row))}</td>
         <td>
@@ -494,6 +634,7 @@ function renderRows(rows) {
           <span class="table-subtext">Confidence: ${escapeHtml(row.suggested_purpose_confidence || "-")}</span>
         </td>
         <td>
+          ${bucketFilter.value === "Auction List" ? `<span class="print-only">Owner note: ${escapeHtml(auctionListNotes.get(row.pig_id) || "None")}</span>` : ""}
           <details class="allocation-row-details">
             <summary>Details</summary>
             <dl>
@@ -504,6 +645,7 @@ function renderRows(rows) {
               <div><dt>Litter / Parents</dt><dd>${escapeHtml(row.litter_id || "-")} / ${escapeHtml(parentText || "No parent links")}</dd></div>
               <div><dt>Litter quality</dt><dd>${escapeHtml(row.litter_quality || "Unknown")} / ${escapeHtml(formatPercent(row.litter_survival_rate))} survival</dd></div>
               <div><dt>Existing link</dt><dd>${escapeHtml(linkText)}</dd></div>
+              ${bucketFilter.value === "Auction List" ? `<div><dt>Owner note</dt><dd>${escapeHtml(auctionListNotes.get(row.pig_id) || "None")}</dd></div>` : ""}
             </dl>
           </details>
         </td>
@@ -513,7 +655,9 @@ function renderRows(rows) {
 }
 
 function applyFilters() {
+  if (!bucketFilter.value.startsWith("Auction ")) auctionSelection.clear();
   renderRows(filteredRows());
+  updateAuctionSelectionCount();
 }
 
 async function loadAllocationReadiness() {
@@ -538,8 +682,242 @@ async function loadAllocationReadiness() {
   }
 }
 
-[bucketFilter, penFilter, typeFilter, sexFilter, purposeFilter].forEach((select) => {
+function auctionMetric(label, value) {
+  return `<div class="summary-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? "Unavailable")}</strong></div>`;
+}
+
+function renderAuctionSurface(surface) {
+  if (!surface || surface.version !== "riversdale_auction_owner_surface_v1") {
+    throw new Error("Auction evidence is unavailable.");
+  }
+  auctionStatus.textContent = `${surface.auction_operating || "Unknown"} · confirmation ${surface.confirmation_freshness || "Unavailable"}`;
+  auctionSummary.innerHTML = [
+    auctionMetric("Confirmed date", surface.confirmed_date || "Unavailable"),
+    auctionMetric("Expected date", surface.expected_date || "Unavailable"),
+    auctionMetric("Candidate preview", surface.candidate_preview_count),
+    auctionMetric("Eligible cohort", surface.eligible_cohort_count),
+    auctionMetric("Excluded", surface.excluded_count),
+    auctionMetric("Financial evidence", surface.financials?.state || "Unavailable"),
+  ].join("");
+  const reasons = Object.entries(surface.exclusion_reason_counts || {})
+    .map(([reason, count]) => `${escapeHtml(reason)}: ${escapeHtml(count)}`).join("<br>");
+  const missing = (surface.missing_evidence || []).map(escapeHtml).join(", ");
+  auctionEvidence.innerHTML = `<div class="allocation-rule"><strong>Excluded</strong><span>${reasons || "None evidenced"}</span></div>
+    <div class="allocation-rule"><strong>Missing evidence</strong><span>${missing || "None evidenced"}</span></div>
+    <div class="allocation-rule"><strong>Reminder delivery</strong><span>${surface.reminders?.delivery_operational ? "Available" : "Unavailable"} (deduplicated code only)</span></div>`;
+  updateAuctionCompactStatus();
+}
+
+async function loadRiversdaleAuction() {
+  if (!auctionPanel) return;
+  try {
+    const response = await fetch("/api/pig-weights/riversdale-auction-recommendation");
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.message || "Could not load auction evidence.");
+    auctionPacket = data;
+    auctionEvidenceByPigId = new Map(
+      (data.candidate_preview || []).map(item => [
+        item.pig_id, item.herdmaster_evidence || {},
+      ])
+    );
+    auctionCandidateIds = new Set((data.candidate_preview || []).map(item => item.pig_id));
+    renderAuctionSurface(data.owner_surface);
+    populateFilters(allocationRows);
+    applyFilters();
+    try {
+      const listResponse = await fetch("/api/pig-weights/riversdale-auction-list");
+      const listData = await listResponse.json();
+      if (!listResponse.ok || !listData.success) {
+        throw new Error(listData.status || "auction_list_store_unavailable");
+      }
+      auctionListAvailability = "Available";
+      auctionCycleId = listData.auction_cycle_id || "";
+      auctionSelectableIds = new Set(listData.selectable_pig_ids || []);
+      auctionEligibilityTokens = new Map(Object.entries(listData.eligibility_tokens || {}));
+      auctionCausalHeads = new Map(Object.entries(listData.causal_heads || {}));
+      auctionListIds = new Set((listData.items || []).map(item => item.pig_id));
+      auctionListNotes = new Map((listData.items || []).map(item => [item.pig_id, item.owner_note || ""]));
+      applyFilters();
+    } catch (listError) {
+      auctionListAvailability = "Unavailable";
+      auctionSelectableIds = new Set();
+      auctionListIds = new Set();
+      auctionListNotes = new Map();
+      updateAuctionCompactStatus();
+    }
+  } catch (error) {
+    auctionStatus.textContent = "Unavailable";
+    auctionSummary.innerHTML = auctionMetric("Auction evidence", "Unavailable");
+    auctionEvidence.textContent = error.message || "Auction evidence is unavailable.";
+  }
+}
+
+function renderAuctionEvidenceReview(row) {
+  const evidence = auctionEvidenceByPigId.get(row?.pig_id) || {};
+  const withdrawal = evidence.withdrawal_evidence_state || "unknown";
+  const quality = evidence.observed_quality || "unknown";
+  const review = evidence.auction_review || {};
+  if (reviewHeading) reviewHeading.textContent = "Auction Evidence Review";
+  reviewStatus.textContent = `Owner-only factual review for ${pigLabel(row || {})}. Recording does not add the animal to the Auction List.`;
+  reviewDetail.innerHTML = `
+    <div class="allocation-review-grid auction-evidence-review" data-auction-evidence-review>
+      <div><strong>Pig/tag</strong><span>${escapeHtml(pigLabel(row || {}))}</span></div>
+      <div><strong>Health</strong><span>${escapeHtml(evidence.health_status || row?.medical_status || "Unknown")}</span></div>
+      <div><strong>Authoritative withdrawal</strong><span>${escapeHtml(withdrawal)}</span></div>
+      <div><strong>Latest quality review</strong><span>${escapeHtml(quality)}</span></div>
+      <div><strong>Observed at</strong><input id="auction_review_observed_at" type="datetime-local" required></div>
+      <div><strong>Physical quality</strong><select id="auction_review_quality" required>
+        <option value="unknown"${quality === "unknown" ? " selected" : ""}>Unknown</option>
+        <option value="suitable"${quality === "suitable" ? " selected" : ""}>Suitable</option>
+        <option value="hold"${quality === "hold" ? " selected" : ""}>Hold</option>
+      </select></div>
+      <label>Factual physical observation<textarea id="auction_review_observation" required></textarea></label>
+      <label>Necessary follow-up<textarea id="auction_review_follow_up">${escapeHtml(review.follow_up || "")}</textarea></label>
+      <p class="form-helper">Withdrawal is derived server-side from canonical medical evidence. This review cannot clear a hold, assign an outlet, reserve, book or sell an animal.</p>
+      <button type="button" class="btn-primary" data-auction-review-record>Record append-only review</button>
+    </div>`;
+}
+
+async function submitAuctionEvidenceReview() {
+  const row = allocationRows.find(item => item.pig_id === selectedReviewPigId);
+  const evidence = auctionEvidenceByPigId.get(selectedReviewPigId) || {};
+  const observedLocal = document.getElementById("auction_review_observed_at")?.value || "";
+  const observation = document.getElementById("auction_review_observation")?.value.trim() || "";
+  if (!row || !observedLocal || !observation) {
+    showMessage("Observation time and factual physical observation are required.");
+    return;
+  }
+  const payload = {
+    pig_id:selectedReviewPigId,
+    auction_cycle_id:auctionCycleId,
+    withdrawal_state:evidence.withdrawal_evidence_state || "unknown",
+    quality_state:document.getElementById("auction_review_quality")?.value || "unknown",
+    observed_at:new Date(observedLocal).toISOString(),
+    physical_observation:observation,
+    follow_up:document.getElementById("auction_review_follow_up")?.value.trim() || "",
+    idempotency_key:`riversdale-review-${crypto.randomUUID()}`,
+  };
+  const response = await fetch("/api/pig-weights/riversdale-auction-candidate-reviews", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    showMessage(result.status || "Auction evidence review was not recorded.");
+    return;
+  }
+  showMessage("Append-only auction evidence review recorded.", "success");
+  await loadRiversdaleAuction();
+  renderAuctionEvidenceReview(row);
+}
+
+function optionalNumber(id) {
+  const value = document.getElementById(id).value;
+  return value === "" ? null : Number(value);
+}
+
+if (auctionForm) {
+  auctionForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const operating = document.getElementById("auction_operating").value;
+    if (!operating) return;
+    const payload = {
+      operating: operating === "yes",
+      confirmed_date: document.getElementById("auction_confirmed_date").value || null,
+      location: document.getElementById("auction_location").value,
+      organizer_details: document.getElementById("auction_organizer").value,
+      entry_deadline: document.getElementById("auction_entry_deadline").value || null,
+      commission_percent: optionalNumber("auction_commission"),
+      auction_fees: optionalNumber("auction_fees"),
+      transport_estimate: optionalNumber("auction_transport"),
+      owner_note: document.getElementById("auction_owner_note").value,
+      idempotency_key: `riversdale-owner-${crypto.randomUUID()}`,
+    };
+    try {
+      const response = await fetch("/api/pig-weights/riversdale-auction-confirmation", {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.status || "Owner decision was not recorded.");
+      auctionStatus.textContent = "Owner decision recorded. Refreshing evidence...";
+      await loadRiversdaleAuction();
+    } catch (error) {
+      auctionStatus.textContent = error.message || "Owner decision was not recorded.";
+    }
+  });
+}
+
+loadAllocationReadiness();
+loadRiversdaleAuction();
+
+function updateAuctionSelectionCount() {
+  if (auctionSelectedCount) auctionSelectedCount.textContent = `${auctionSelection.size} selected`;
+  if (auctionAddButton) auctionAddButton.disabled = auctionSelection.size === 0;
+  if (auctionRemoveButton) auctionRemoveButton.disabled = auctionSelection.size === 0;
+}
+
+async function submitAuctionListAction(action) {
+  if (!auctionSelection.size) return;
+  if (action === "remove" && !window.confirm(`Remove ${auctionSelection.size} selected animal(s) from the Auction List?`)) return;
+  const response = await fetch("/api/pig-weights/riversdale-auction-list/events", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      action,
+      pig_ids:Array.from(auctionSelection),
+      auction_cycle_id:auctionCycleId,
+      eligibility_tokens:Object.fromEntries(Array.from(auctionSelection).map(
+        pigId => [pigId, auctionEligibilityTokens.get(pigId) || ""]
+      )),
+      prior_event_ids:Object.fromEntries(Array.from(auctionSelection).map(
+        pigId => [pigId, auctionCausalHeads.get(pigId)?.event_id || ""]
+      )),
+      idempotency_key:crypto.randomUUID(),
+    }),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    showMessage(result.status || "Auction List was not updated.");
+    return;
+  }
+  auctionSelection.clear();
+  await loadRiversdaleAuction();
+  showMessage(action === "add" ? "Selected animals added to the Auction List." : "Selected animals removed from the Auction List.", "success");
+}
+
+bodyEl.addEventListener("change", (event) => {
+  const checkbox = event.target.closest("[data-auction-pig-id]");
+  if (!checkbox) return;
+  if (checkbox.checked) auctionSelection.add(checkbox.dataset.auctionPigId);
+  else auctionSelection.delete(checkbox.dataset.auctionPigId);
+  updateAuctionSelectionCount();
+});
+
+document.getElementById("auction_select_all")?.addEventListener("click", () => {
+  bodyEl.querySelectorAll("[data-auction-pig-id]:not(:disabled)").forEach((box) => {
+    box.checked = true; auctionSelection.add(box.dataset.auctionPigId);
+  });
+  updateAuctionSelectionCount();
+});
+document.getElementById("auction_clear_selection")?.addEventListener("click", () => {
+  auctionSelection.clear(); bodyEl.querySelectorAll("[data-auction-pig-id]").forEach(box => { box.checked = false; });
+  updateAuctionSelectionCount();
+});
+auctionAddButton?.addEventListener("click", () => submitAuctionListAction("add"));
+auctionRemoveButton?.addEventListener("click", () => submitAuctionListAction("remove"));
+auctionPrintButton?.addEventListener("click", () => {
+  const confirmation = auctionPacket.confirmation || {};
+  auctionPrintHeading.innerHTML = `<h1>Riversdale Auction List</h1>
+    <p>Auction: ${escapeHtml(confirmation.confirmed_date || "Unknown")} · ${escapeHtml(confirmation.location || "Unknown location")}</p>
+    <p>Generated: ${escapeHtml(new Date().toLocaleString())}. Unknown evidence requires owner verification.</p>`;
+  window.print();
+});
+
+[penFilter, typeFilter, sexFilter, purposeFilter].forEach((select) => {
   select.addEventListener("change", applyFilters);
+});
+bucketFilter.addEventListener("change", () => {
+  allocationCard?.classList.remove("auction-review-open");
+  applyFilters();
 });
 
 searchFilter.addEventListener("input", applyFilters);
@@ -560,7 +938,13 @@ bodyEl.addEventListener("click", (event) => {
   if (!button) return;
   selectedReviewPigId = button.dataset.reviewPigId || "";
   const row = allocationRows.find((item) => item.pig_id === selectedReviewPigId);
-  renderPurposeReview(row || null);
+  if (isAuctionMode()) {
+    allocationCard?.classList.add("auction-review-open");
+    renderAuctionEvidenceReview(row || null);
+  } else {
+    if (reviewHeading) reviewHeading.textContent = "Purpose Review";
+    renderPurposeReview(row || null);
+  }
   if (reviewPanel && typeof reviewPanel.scrollIntoView === "function") {
     reviewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -568,6 +952,10 @@ bodyEl.addEventListener("click", (event) => {
 
 if (reviewDetail) {
   reviewDetail.addEventListener("click", (event) => {
+    if (event.target.closest("[data-auction-review-record]")) {
+      submitAuctionEvidenceReview();
+      return;
+    }
     if (event.target.closest("[data-allocation-review-preview]")) {
       submitAllocationPurposeDecision(true);
       return;
