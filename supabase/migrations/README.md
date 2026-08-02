@@ -101,3 +101,12 @@ Manual run process for RLS security hardening:
 4. Run it once.
 5. In Supabase, open Database -> Advisors / Security Advisor again and confirm `rls_disabled_in_public` is cleared for the listed tables.
 6. Smoke test the deployed backend pages/endpoints that read Supabase-backed data, especially the home dashboard and `/sales/slaughter`.
+
+## CHARLIE many-to-one replacement rail
+
+`202608020001_create_charlie_many_to_one_replacements.sql` is additive and
+migration-first. It creates append-only replacement batches, bindings and audit
+events plus a dedicated security-definer function/role. Applying it creates no
+successor and changes no existing mission. Do not apply or provision the writer
+until separately owner-authorized. See
+`docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md`.

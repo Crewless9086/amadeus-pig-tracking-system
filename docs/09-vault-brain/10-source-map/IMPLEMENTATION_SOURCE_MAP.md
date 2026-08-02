@@ -120,6 +120,18 @@ For income, SAM, Beacon, order, WhatsApp, Chatwoot, n8n, or live-sales missions,
 
 Current implementation and review surface:
 
+- atomic many-to-one fresh-start replacement candidate:
+  `modules/charlie/mission_replacement.py`,
+  `supabase/migrations/202608020001_create_charlie_many_to_one_replacements.sql`,
+  `scripts/charlie_many_to_one_replacement.py`,
+  `tests/test_charlie_mission_replacement.py`,
+  `tests/test_charlie_mission_replacement_postgres.py`, and
+  `docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md`;
+- replacement rule: migration-first, exact owner authorization and one
+  serializable transaction create only a paused successor plus immutable
+  predecessor bindings. Replacement never grants approval, pickup, release or
+  operational authority;
+
 - operating contract:
   `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`;
 - scoring and packet construction:
