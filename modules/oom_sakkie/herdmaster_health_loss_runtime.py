@@ -21,6 +21,7 @@ from modules.pig_weights.farm_supabase_read_service import (
     get_mating_overview,
     get_pig_master_rows,
 )
+from modules.pig_weights.herdmaster_health_loss_recording import confirm_health_loss_preview
 
 
 EVENT_SOURCE = "oom_sakkie_herdmaster_health_loss_runtime"
@@ -51,13 +52,39 @@ def handle_authenticated_health_loss_message(
     )
     explicit_health = bool(HEALTH_PATTERN.search(text))
     follow_up = bool(active and FOLLOW_UP_PATTERN.search(text))
-    if not explicit_health and not follow_up:
+    confirmation = bool(active and str(active.get("status") or "") == "preview_ready"
+                        and text == "CONFIRM " + str(active.get("operation_id") or ""))
+    if not explicit_health and not follow_up and not confirmation:
         return {"handled": False, "status": "health_loss_intake_not_applicable"}, 200
 
     provider_message_id = str(parsed.get("provider_message_id") or "").strip()
     provider_timestamp = str(parsed.get("provider_timestamp") or "").strip()
     if not provider_message_id or not provider_timestamp:
         return {"handled": True, "success": False, "status": "health_loss_provider_identity_required"}, 409
+
+    if confirmation:
+        recorded, recorded_status = confirm_health_loss_preview(
+            active, text, actor_id=str(parsed.get("telegram_user_id") or ""),
+            evidence_loader=lambda: load_canonical_health_loss_evidence(connect_factory=connect_factory),
+            connect_factory=connect_factory,
+        )
+        mission_id = str(active.get("mission_id") or "")
+        answer = ("✅ <b>HERDMASTER OBSERVATION RECORDED</b>\n\n"
+                  "The exact confirmed factual welfare observation was recorded once. "
+                  "No diagnosis or treatment was added. HERDMASTER will reassess from the refreshed evidence."
+                  if recorded.get("success") else
+                  "⚠️ <b>HERDMASTER RECORDING CONTAINED</b>\n\nNothing was written. The exact preview must be refreshed before confirmation.")
+        lifecycle = {**dict(active), "provider_message_id": provider_message_id,
+            "provider_timestamp": provider_timestamp,
+            "status": "completed" if recorded.get("success") else "contained",
+            "owner_text": answer, "recording_result": recorded}
+        _record_lifecycle_event(lifecycle, context_store=context_store)
+        return {"handled": True, "success": recorded.get("success") is True,
+            "status": lifecycle["status"], "answer": answer, "mission_id": mission_id,
+            "card_mission_id": mission_id, "records_audit_trace": True,
+            "writes_farm_data": bool(recorded.get("writes_farm_data")),
+            "rows_created": int(recorded.get("rows_created") or 0),
+            "protected_actions_performed": bool(recorded.get("writes_farm_data"))}, recorded_status
 
     context_text = str((active or {}).get("combined_text") or "").strip() if follow_up else ""
     combined_text = f"{context_text} Follow-up: {text}".strip() if context_text else text
@@ -71,6 +98,9 @@ def handle_authenticated_health_loss_message(
     }
     preview = prepare_health_loss_owner_preview(envelope, evidence)
     owner_text = _owner_message(preview)
+    mission_id = str((active or {}).get("mission_id") or "") or "OOM-HERDMASTER-" + hashlib.sha256(
+        f"{parsed.get('telegram_user_id')}|{parsed.get('telegram_chat_id')}|{provider_message_id}".encode()
+    ).hexdigest()[:24].upper()
     lifecycle = {
         "chat_id": str(parsed.get("telegram_chat_id") or ""),
         "owner_user_id": str(parsed.get("telegram_user_id") or ""),
@@ -82,6 +112,7 @@ def handle_authenticated_health_loss_message(
         "evidence_generation": str(evidence.get("evidence_generation") or ""),
         "owner_text": owner_text,
         "preview": preview,
+        "mission_id": mission_id,
     }
     stored = _record_lifecycle_event(lifecycle, context_store=context_store)
     if stored.get("success") is not True:
@@ -94,6 +125,8 @@ def handle_authenticated_health_loss_message(
         "tool_used": "herdmaster_health_loss_preview",
         "question_count": int(preview.get("question_count") or 0),
         "operation_id": lifecycle["operation_id"],
+        "mission_id": mission_id,
+        "card_mission_id": mission_id,
         "records_audit_trace": True,
         "writes_farm_data": False,
         "protected_actions_performed": False,
@@ -205,7 +238,7 @@ def _load_active_context(chat_id: str, *, context_store=None):
         created_at = row[1]
         if created_at and datetime.now(timezone.utc) - created_at.astimezone(timezone.utc) > CONTEXT_WINDOW:
             return None
-        if str(row[0].get("status") or "") != "waiting_for_input":
+        if str(row[0].get("status") or "") not in {"waiting_for_input", "preview_ready"}:
             return None
         return row[0]
     except Exception:

@@ -245,8 +245,11 @@ class OomSakkieRouteTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
     }, clear=True)
+    @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result", return_value={
+        "success": True, "status": "family_message_delivered", "telegram_sends": 1,
+        "telegram_edits": 0, "telegram_message_id": "4001"})
     @patch("modules.oom_sakkie.telegram_gateway.handle_message")
-    def test_telegram_gateway_route_returns_read_only_reply_payload(self, mock_handle):
+    def test_telegram_gateway_route_returns_read_only_reply_payload(self, mock_handle, _deliver):
         mock_handle.return_value = ({
             "success": True,
             "answer": "Read-only answer.",
@@ -276,7 +279,8 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(data["answer"], "Read-only answer.")
         self.assertEqual(data["reply"]["chat_id"], "67890")
         self.assertFalse(data["reply"]["sends_telegram"])
-        self.assertFalse(data["sends_telegram"])
+        self.assertTrue(data["sends_telegram"])
+        self.assertEqual(data["reply_transport"], "backend_handles_owner_task_delivery")
         self.assertFalse(data["writes"])
         self.assertTrue(data["records_audit_trace"])
         self.assertEqual(data["audit_trace_mode"], "tool_dependent")
@@ -299,11 +303,14 @@ class OomSakkieRouteTests(unittest.TestCase):
         "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
+    @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result", return_value={
+        "success": True, "status": "family_message_delivered", "telegram_sends": 1,
+        "telegram_edits": 0, "telegram_message_id": "4002"})
     @patch("modules.oom_sakkie.service.compose_answer_with_llm")
     @patch("modules.oom_sakkie.service.route_with_llm")
     @patch("modules.oom_sakkie.service.get_tool")
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
-    def test_telegram_gateway_route_suppresses_llm_egress_when_llm_enabled(self, _write_trace, mock_get_tool, mock_route, mock_compose):
+    def test_telegram_gateway_route_suppresses_llm_egress_when_llm_enabled(self, _write_trace, mock_get_tool, mock_route, mock_compose, _deliver):
         mock_get_tool.return_value = _fake_farm_attention_tool()
 
         response = self.client.post(

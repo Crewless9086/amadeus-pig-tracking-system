@@ -7,6 +7,7 @@ from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY, handle_message
 from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
+from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -207,11 +208,22 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     )
     if health_result.get("handled"):
         answer = str(health_result.get("answer") or "")
+        if not answer and health_result.get("success") is not True:
+            answer = ("⚠️ <b>HERDMASTER FOLLOW-UP CONTAINED</b>\n\n"
+                      "Your message reached Oom Sakkie, but safe HERDMASTER processing was not proven. "
+                      "Nothing was recorded; one technical follow-up is required.")
+            health_result = {**health_result, "answer": answer,
+                             "status": str(health_result.get("status") or "contained")}
         body, _ = _gateway_result(
             health_result.get("success") is True,
             str(health_result.get("status") or "health_loss_contained"),
             policy,
             health_status,
+        )
+        delivery = deliver_family_result(
+            parsed, health_result, specialist="HERDMASTER",
+            mission_id=str(health_result.get("mission_id") or ""),
+            card_mission_id=str(health_result.get("card_mission_id") or ""),
         )
         body.update({
             "telegram_user_id": parsed["telegram_user_id"],
@@ -227,8 +239,11 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                 "parse_mode": "HTML",
                 "sends_telegram": False,
             },
+            "delivery": delivery,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
         })
-        return body, health_status
+        return body, health_status if delivery.get("success") else 202
 
     message_result, message_status = handle_message({
         "text": parsed["text"],
@@ -269,6 +284,14 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": False,
         },
     })
+    if body.get("success") and str(body.get("answer") or "").strip():
+        specialist = str(message_result.get("tool_used") or "OOM_SAKKIE").upper()
+        delivery = deliver_family_result(parsed, message_result, specialist=specialist)
+        body.update({"delivery": delivery,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        if not delivery.get("success"):
+            return body, 202
     return body, response_code
 
 
