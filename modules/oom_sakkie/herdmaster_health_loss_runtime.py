@@ -52,7 +52,8 @@ def handle_authenticated_health_loss_message(
     )
     explicit_health = bool(HEALTH_PATTERN.search(text))
     active_status = str((active or {}).get("status") or "")
-    follow_up = bool(active and active_status in {"waiting_for_input", "preview_ready"}
+    follow_up = bool(not explicit_health and active
+                     and active_status in {"waiting_for_input", "preview_ready"}
                      and FOLLOW_UP_PATTERN.search(text))
     confirmation = bool(active and active_status in {"preview_ready", "completed"}
                         and text == "CONFIRM " + str(active.get("operation_id") or ""))
