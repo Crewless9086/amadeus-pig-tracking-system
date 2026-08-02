@@ -46,6 +46,12 @@ UNRELATED_OPERATIONAL_PATTERN = re.compile(
 )
 ENTITY_PATTERN = re.compile(r"\b(?:pig|tag)\s*([a-z0-9-]+)\b", re.I)
 CONFIRMATION_PATTERN = re.compile(r"^CONFIRM HERD-[A-Z0-9-]+$")
+CORRECTION_PATTERN = re.compile(
+    r"\b(?:correction|incorrect|wrong|must be|should be|mark(?:ed)? as|"
+    r"no longer|exact time .{0,24}unknown|do not record this yet|don't record this yet)\b",
+    re.I,
+)
+DECLINE_PATTERN = re.compile(r"^(?:cancel|decline|stop|do not record|don't record)[.! ]*$", re.I)
 
 
 class ActiveContextLoadError(RuntimeError):
@@ -82,6 +88,19 @@ def handle_authenticated_health_loss_message(
                        "I could not safely read the active animal-case chronology. Your message was retained by the authenticated intake, but no new case or farm record was created."),
             "records_audit_trace": False, "writes_farm_data": False,
             "protected_actions_performed": False}, 503
+    stale_confirmation = next((row for row in contexts
+        if confirmation_shaped and text.removeprefix("CONFIRM ") in {
+            str(value) for value in row.get("invalidated_operation_ids") or []
+        }), None)
+    if stale_confirmation:
+        return {"handled": True, "success": False,
+            "status": "health_loss_stale_confirmation_invalidated",
+            "answer": ("⚠️ <b>OLD HERDMASTER PREVIEW EXPIRED</b>\n\n"
+                       "That confirmation belongs to an earlier corrected preview. Nothing was recorded. Use the confirmation identity shown on the current preview."),
+            "mission_id": str(stale_confirmation.get("mission_id") or ""),
+            "card_mission_id": str(stale_confirmation.get("mission_id") or ""),
+            "records_audit_trace": True, "writes_farm_data": False,
+            "protected_actions_performed": False}, 409
     active, ambiguity, superseded = _resolve_active_context(text, contexts, provider_message_id)
     if ambiguity:
         return {"handled": True, "success": False, "status": "health_loss_active_context_ambiguous",
@@ -104,9 +123,12 @@ def handle_authenticated_health_loss_message(
             superseded_bindings.append({"mission_id": mission,
                 "provider_message_id": str(target.get("provider_message_id") or ""),
                 "tag_number": active_tag})
-    confirmation = bool(active and active_status in {"preview_ready", "completed"}
+    confirmation = bool(active and active_status in {"preview_ready", "waiting_for_confirmation", "completed"}
                         and text == "CONFIRM " + str(active.get("operation_id") or ""))
-    follow_up = bool(active and not confirmation and active_status in {"waiting_for_input", "preview_ready"})
+    follow_up = bool(active and not confirmation and active_status in {
+        "waiting_for_input", "preview_ready", "waiting_for_confirmation",
+        "preview_correction_pending",
+    })
     if not explicit_health and not follow_up and not confirmation:
         return {"handled": False, "status": "health_loss_intake_not_applicable"}, 200
 
@@ -133,11 +155,28 @@ def handle_authenticated_health_loss_message(
                   "No diagnosis or treatment was added. HERDMASTER will reassess from the refreshed evidence."
                   if recorded.get("success") else
                   "⚠️ <b>HERDMASTER RECORDING CONTAINED</b>\n\nNothing was written. The exact preview must be refreshed before confirmation.")
+        if recorded.get("success") and str(recorded.get("status") or "").startswith("mortality_lifecycle_"):
+            answer = ("✅ <b>PIG LIFECYCLE UPDATED</b>\n\n"
+                      "The confirmed outcome was recorded once: the pig is Deceased and no longer current/on farm. "
+                      "The current pen and availability projections will exclude the pig. Historical records remain preserved. "
+                      "Exact time of death, cause, diagnosis and treatment remain Unknown.")
         lifecycle = {**dict(active), "provider_message_id": provider_message_id,
             "provider_timestamp": provider_timestamp,
             "status": "completed" if recorded.get("success") else "contained",
-            "owner_text": answer, "recording_result": recorded}
-        _record_lifecycle_event(lifecycle, context_store=context_store)
+            "owner_text": answer, "recording_result": recorded,
+            "event_phase": "recording_completed" if recorded.get("success") else "recording_contained"}
+        persisted = _record_lifecycle_event(lifecycle, context_store=context_store)
+        if persisted.get("success") is not True:
+            return {"handled": True, "success": False,
+                "status": "health_loss_completion_persistence_pending",
+                "answer": ("⚠️ <b>HERDMASTER COMPLETION NEEDS RECOVERY</b>\n\n"
+                           "The governed farm operation completed, but Oom Sakkie could not yet persist the visible completion state. "
+                           "Do not repeat the farm action; the exact confirmation can be recovered safely."),
+                "mission_id": mission_id, "card_mission_id": mission_id,
+                "records_audit_trace": False,
+                "writes_farm_data": bool(recorded.get("writes_farm_data")),
+                "rows_created": int(recorded.get("rows_created") or 0),
+                "protected_actions_performed": bool(recorded.get("writes_farm_data"))}, 503
         return {"handled": True, "success": recorded.get("success") is True,
             "status": lifecycle["status"], "answer": answer, "mission_id": mission_id,
             "card_mission_id": mission_id, "records_audit_trace": True,
@@ -146,8 +185,67 @@ def handle_authenticated_health_loss_message(
             "protected_actions_performed": bool(recorded.get("writes_farm_data"))}, recorded_status
 
     active_for_message = active if follow_up else None
+    owner_intent = _classify_preview_owner_intent(text, active_for_message)
+    correction_digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if (active_for_message and owner_intent == "corrects_preview"
+            and str(active_for_message.get("provider_message_id") or "") == provider_message_id
+            and str(active_for_message.get("correction_digest") or "") == correction_digest
+            and active_status == "preview_ready"):
+        return _existing_lifecycle_result(active_for_message), 200
+    if active_for_message and owner_intent == "declines_preview":
+        mission_id = str(active_for_message.get("mission_id") or "")
+        lifecycle = {**dict(active_for_message), "provider_message_id": provider_message_id,
+            "provider_timestamp": provider_timestamp, "status": "contained",
+            "owner_intent": owner_intent,
+            "invalidated_operation_ids": sorted(set(
+                list(active_for_message.get("invalidated_operation_ids") or [])
+                + [str(active_for_message.get("operation_id") or "")]
+            )),
+            "owner_text": "⛔ <b>HERDMASTER PREVIEW CANCELLED</b>\n\nNothing was recorded.",
+            "event_phase": "preview_declined"}
+        stored = _record_lifecycle_event(lifecycle, context_store=context_store)
+        if stored.get("success") is not True:
+            return {"handled": True, "success": False,
+                    "status": "health_loss_lifecycle_persistence_failed"}, 503
+        return {"handled": True, "success": True, "status": "contained",
+            "answer": lifecycle["owner_text"], "mission_id": mission_id,
+            "card_mission_id": mission_id, "records_audit_trace": True,
+            "writes_farm_data": False, "protected_actions_performed": False}, 200
+
+    previous_operation_id = ""
+    preview_history = list((active_for_message or {}).get("preview_history") or [])
+    resuming_correction = bool(active_for_message
+        and active_status == "preview_correction_pending"
+        and str(active_for_message.get("provider_message_id") or "") == provider_message_id
+        and str(active_for_message.get("correction_digest") or "") == correction_digest)
+    if active_for_message and owner_intent == "corrects_preview":
+        previous_operation_id = str(active_for_message.get("operation_id") or "")
+        old_preview = active_for_message.get("preview") if isinstance(active_for_message.get("preview"), Mapping) else {}
+        if not resuming_correction:
+            preview_history.append({
+                "operation_id": previous_operation_id,
+                "preview_sha256": str((old_preview.get("confirmation_binding") or {}).get("preview_sha256") or ""),
+                "provider_message_id": str(active_for_message.get("provider_message_id") or ""),
+                "status": "invalidated_by_owner_correction",
+                "invalidated_by_provider_message_id": provider_message_id,
+                "preview": old_preview,
+            })
+            pending = {**dict(active_for_message), "provider_message_id": provider_message_id,
+                "provider_timestamp": provider_timestamp, "status": "preview_correction_pending",
+                "owner_intent": owner_intent, "correction_digest": correction_digest,
+                "preview_history": preview_history,
+                "invalidated_operation_ids": sorted(set(
+                    list(active_for_message.get("invalidated_operation_ids") or [])
+                    + ([previous_operation_id] if previous_operation_id else [])
+                )), "event_phase": "preview_invalidated"}
+            invalidated = _record_lifecycle_event(pending, context_store=context_store)
+            if invalidated.get("success") is not True:
+                return {"handled": True, "success": False,
+                        "status": "health_loss_preview_invalidation_failed",
+                        "writes_farm_data": False, "protected_actions_performed": False}, 503
     context_text = str((active_for_message or {}).get("combined_text") or "").strip()
-    combined_text = f"{context_text} Follow-up: {text}".strip() if context_text else text
+    joiner = "Owner correction:" if owner_intent == "corrects_preview" else "Follow-up:"
+    combined_text = f"{context_text} {joiner} {text}".strip() if context_text else text
     evidence = load_canonical_health_loss_evidence(connect_factory=connect_factory)
     envelope = {
         "gateway_authority": gateway_authority,
@@ -173,6 +271,14 @@ def handle_authenticated_health_loss_message(
         "owner_text": owner_text,
         "preview": preview,
         "mission_id": mission_id,
+        "owner_intent": owner_intent,
+        "correction_digest": correction_digest if owner_intent == "corrects_preview" else "",
+        "preview_history": preview_history,
+        "invalidated_operation_ids": sorted(set(
+            list((active_for_message or {}).get("invalidated_operation_ids") or [])
+            + ([previous_operation_id] if previous_operation_id else [])
+        )),
+        "event_phase": "preview_corrected" if owner_intent == "corrects_preview" else "preview_generated",
         "superseded_duplicate_missions": superseded,
         "superseded_duplicate_bindings": superseded_bindings,
     }
@@ -187,6 +293,8 @@ def handle_authenticated_health_loss_message(
         "tool_used": "herdmaster_health_loss_preview",
         "question_count": int(preview.get("question_count") or 0),
         "operation_id": lifecycle["operation_id"],
+        "owner_intent": owner_intent,
+        "invalidated_operation_ids": lifecycle["invalidated_operation_ids"],
         "mission_id": mission_id,
         "card_mission_id": mission_id,
         "superseded_duplicate_missions": superseded,
@@ -195,6 +303,34 @@ def handle_authenticated_health_loss_message(
         "writes_farm_data": False,
         "protected_actions_performed": False,
     }, 200
+
+
+def _classify_preview_owner_intent(text: str, active: Mapping[str, Any] | None) -> str:
+    if not active:
+        return "new_report"
+    if DECLINE_PATTERN.fullmatch(text.strip()):
+        return "declines_preview"
+    if CORRECTION_PATTERN.search(text):
+        return "corrects_preview"
+    if text.strip().endswith("?"):
+        return "asks_question"
+    return "adds_evidence"
+
+
+def _existing_lifecycle_result(active: Mapping[str, Any]) -> dict:
+    preview = active.get("preview") if isinstance(active.get("preview"), Mapping) else {}
+    return {"handled": True, "success": True,
+        "status": str(active.get("status") or "preview_ready"),
+        "answer": str(active.get("owner_text") or ""),
+        "tool_used": "herdmaster_health_loss_preview",
+        "question_count": int(preview.get("question_count") or 0),
+        "operation_id": str(active.get("operation_id") or ""),
+        "mission_id": str(active.get("mission_id") or ""),
+        "card_mission_id": str(active.get("mission_id") or ""),
+        "owner_intent": str(active.get("owner_intent") or "adds_evidence"),
+        "invalidated_operation_ids": list(active.get("invalidated_operation_ids") or []),
+        "records_audit_trace": True, "writes_farm_data": False,
+        "protected_actions_performed": False}
 
 
 def load_canonical_health_loss_evidence(*, connect_factory=None):
@@ -255,7 +391,7 @@ def _record_lifecycle_event(lifecycle: Mapping[str, Any], *, context_store=None)
     event_id = "OOM-HERD-HEALTH-" + hashlib.sha256(
         (
             f"{lifecycle.get('chat_id')}|{lifecycle.get('provider_message_id')}|"
-            f"{lifecycle.get('mission_id')}"
+            f"{lifecycle.get('mission_id')}|{lifecycle.get('event_phase') or 'lifecycle'}"
         ).encode()
     ).hexdigest()[:24].upper()
     if context_store is not None:
@@ -336,7 +472,8 @@ def _dedupe_active_contexts(rows, *, owner_user_id=""):
         bound_owner = str(row.get("owner_user_id") or "")
         if owner_user_id and bound_owner and bound_owner != owner_user_id:
             continue
-        if status not in {"waiting_for_input", "preview_ready", "completed"} or not mission or mission in latest:
+        if status not in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
+                          "preview_correction_pending", "completed"} or not mission or mission in latest:
             continue
         latest[mission] = row
     superseded = set(); validated_by_source = {mission: [] for mission in latest}
@@ -384,7 +521,8 @@ def _resolve_active_context(text, contexts, provider_message_id=""):
     entity = ENTITY_PATTERN.search(text)
     if entity:
         matches = [row for row in contexts if _context_tag(row) == entity.group(1).casefold()
-                   and str(row.get("status") or "") in {"waiting_for_input", "preview_ready"}]
+                   and str(row.get("status") or "") in {"waiting_for_input", "preview_ready",
+                                                          "waiting_for_confirmation", "preview_correction_pending"}]
         if len(matches) == 1:
             return matches[0], False, []
         prior = [row for row in matches
@@ -397,7 +535,8 @@ def _resolve_active_context(text, contexts, provider_message_id=""):
     if UNRELATED_OPERATIONAL_PATTERN.search(text) or not FOLLOW_UP_PATTERN.search(text):
         return None, False, []
     candidates = [row for row in contexts
-        if str(row.get("status") or "") in {"waiting_for_input", "preview_ready"}]
+        if str(row.get("status") or "") in {"waiting_for_input", "preview_ready",
+                                              "waiting_for_confirmation", "preview_correction_pending"}]
     if re.search(r"\b(?:removed|buried|disposed|cremated|body)\b", text, re.I):
         removal = [row for row in candidates
                    if "physical removal/disposal evidence" in _context_missing(row)]

@@ -189,8 +189,7 @@ def test_new_found_dead_report_does_not_reuse_another_pigs_active_lifecycle(load
     assert recorded[0]["provider_message_id"] == "3179"
     assert recorded[0]["combined_text"] == "Pig 125 is found dead in the pen."
     assert recorded[0]["preview"]["writes_farm_data"] is False
-    assert "last seen alive" in result["answer"].lower()
-    assert "when was the body found" in result["answer"].lower()
+    assert "removed from the pen" in result["answer"].lower()
 
 
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
@@ -226,8 +225,106 @@ def test_exact_natural_answer_reenters_existing_pig125_mission_without_repeating
     facts = recorded[0]["preview"]["evaluator"]["observed_facts"]
     assert {row["fact"]: row["value"] for row in facts}["last_seen_alive_context_reported"] == "this morning"
     assert {row["fact"]: row["value"] for row in facts}["body_found_time_context_reported"] == "this evening"
-    assert {row["fact"]: row["value"] for row in facts}["future_biosecurity_intention_reported"] == "spray the pens with lab tomorrow"
+    biosecurity = next(row for row in facts if row["fact"] == "future_biosecurity_intention_reported")
+    assert biosecurity["value"] == "spray the pens with LAB tomorrow"
+    assert biosecurity["classification"] == "unverified_owner_wording_not_canonical_effect"
     assert recorded[0]["combined_text"].startswith(pig_125_active()["combined_text"])
+
+
+def pig_125_removal_preview():
+    return {**pig_125_active(),
+        "status": "preview_ready", "provider_message_id": "3188",
+        "provider_timestamp": "2026-08-02T18:28:00+00:00",
+        "combined_text": ("Pig 125 is found dead in pen. No conclusion on what it might be. "
+            "Follow-up: Pig 125 was seen alive this morning, but he seemed off. When I went to feed them this evening I found him dead in the pen. "
+            "I'm going to spray the pens with LAB tomorrow. Follow-up: Pig 125 was removed and buried."),
+        "operation_id": "HERD-OLD-PREVIEW",
+        "owner_text": "old preview",
+        "preview": {"question_count": 0, "confirmation_ready": True,
+            "confirmation_binding": {"operation_id": "HERD-OLD-PREVIEW", "preview_sha256": "OLD-SHA"},
+            "evaluator": {"identity": {"pig_id": "PIG-2026-125A", "tag_number": "125"}}},
+    }
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_natural_preview_correction_invalidates_old_identity_and_proposes_deceased(loader):
+    loader.return_value = {**pig_125_evidence(), "as_of_timestamp": "2026-08-02T18:34:00+00:00"}
+    store, recorded = memory_store(pig_125_removal_preview())
+    correction = {**parsed("Don’t record this yet. Pig 125 must be marked as deceased and no longer on the farm. She was found dead today, removed and buried. The exact time of death is unknown.", "3189"),
+        "provider_timestamp": "2026-08-02T18:33:22+00:00"}
+    result, status = handle_authenticated_health_loss_message(
+        correction, issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["status"] == "preview_ready"
+    assert result["owner_intent"] == "corrects_preview"
+    assert result["operation_id"] != "HERD-OLD-PREVIEW"
+    assert result["invalidated_operation_ids"] == ["HERD-OLD-PREVIEW"]
+    assert len(recorded) == 2
+    assert recorded[0]["status"] == "preview_correction_pending"
+    assert recorded[0]["preview_history"][0]["preview"]["confirmation_ready"] is True
+    corrected = recorded[1]
+    assert corrected["event_phase"] == "preview_corrected"
+    effects = {row["area"]: row for row in corrected["preview"]["evaluator"]["canonical_effects"]}
+    assert effects["lifecycle"]["action"] == "record_death"
+    assert effects["lifecycle"]["facts"]["date"] == "2026-08-02"
+    assert effects["lifecycle"]["facts"]["time"] == "Unknown"
+    assert effects["lifecycle"]["facts"]["resulting_on_farm"] is False
+    assert effects["movement_pen"]["facts"]["current_pen_occupancy"] == "remove animal"
+    assert result["question_count"] == 0
+    assert result["writes_farm_data"] is False
+
+
+def test_stale_confirmation_for_invalidated_preview_fails_closed():
+    active = {**pig_125_removal_preview(),
+        "operation_id": "HERD-NEW-PREVIEW",
+        "invalidated_operation_ids": ["HERD-OLD-PREVIEW"]}
+    store, recorded = memory_store(active)
+    result, status = handle_authenticated_health_loss_message(
+        {**parsed("CONFIRM HERD-OLD-PREVIEW", "3190"),
+         "provider_timestamp": "2026-08-02T18:35:00+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 409
+    assert result["status"] == "health_loss_stale_confirmation_invalidated"
+    assert result["writes_farm_data"] is False
+    assert recorded == []
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_repeated_correction_replay_creates_no_new_preview(loader):
+    correction = "Pig 125 must be marked as deceased and no longer on the farm."
+    active = {**pig_125_removal_preview(), "provider_message_id": "3189",
+        "provider_timestamp": "2026-08-02T18:33:22+00:00", "operation_id": "HERD-NEW",
+        "correction_digest": __import__("hashlib").sha256(correction.encode()).hexdigest(),
+        "owner_intent": "corrects_preview", "invalidated_operation_ids": ["HERD-OLD-PREVIEW"]}
+    store, recorded = memory_store(active)
+    result, status = handle_authenticated_health_loss_message(
+        {**parsed(correction, "3189"), "provider_timestamp": "2026-08-02T18:33:22+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["operation_id"] == "HERD-NEW"
+    assert recorded == []
+    loader.assert_not_called()
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_interrupted_correction_resumes_from_durable_pending_state(loader):
+    loader.return_value = {**pig_125_evidence(), "as_of_timestamp": "2026-08-02T18:34:00+00:00"}
+    correction = "Pig 125 must be marked as deceased and no longer on the farm. She was found dead today, removed and buried."
+    pending = {**pig_125_removal_preview(), "status": "preview_correction_pending",
+        "provider_message_id": "3189", "provider_timestamp": "2026-08-02T18:33:22+00:00",
+        "owner_intent": "corrects_preview",
+        "correction_digest": __import__("hashlib").sha256(correction.encode()).hexdigest(),
+        "invalidated_operation_ids": ["HERD-OLD-PREVIEW"], "event_phase": "preview_invalidated",
+        "preview_history": [{"operation_id": "HERD-OLD-PREVIEW",
+            "preview_sha256": "OLD-SHA", "provider_message_id": "3188",
+            "status": "invalidated_by_owner_correction", "preview": {"confirmation_ready": True}}]}
+    store, recorded = memory_store(pending)
+    result, status = handle_authenticated_health_loss_message(
+        {**parsed(correction, "3189"), "provider_timestamp": "2026-08-02T18:33:22+00:00"},
+        issue_gateway_owner_authority("42", "42"), context_store=store)
+    assert status == 200 and result["status"] == "preview_ready"
+    assert recorded[-1]["event_phase"] == "preview_corrected"
+    assert len(recorded) == 1
+    assert len(recorded[0]["preview_history"]) == 1
+    assert result["invalidated_operation_ids"] == ["HERD-OLD-PREVIEW"]
 
 
 def test_unrelated_reservoir_message_cannot_claim_pig125_context():
@@ -441,3 +538,35 @@ def test_completed_context_accepts_only_exact_confirmation_replay(confirm):
     unrelated,status=handle_authenticated_health_loss_message(
         parsed("yes she can stand","3175"),issue_gateway_owner_authority("42","42"),context_store=store)
     assert status==200 and unrelated["handled"] is False
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.confirm_health_loss_preview")
+def test_mortality_write_success_with_lifecycle_store_failure_is_visible_and_recoverable(confirm):
+    active = {**pig_125_removal_preview(), "operation_id": "HERD-DEATH-NEW",
+        "owner_user_id": "42", "preview": {"confirmation_ready": True,
+            "confirmation_binding": {"operation_id": "HERD-DEATH-NEW"}}}
+    confirm.side_effect = [
+        ({"success": True, "status": "mortality_lifecycle_recorded",
+          "writes_farm_data": True, "rows_created": 1, "operation_id": "HERD-DEATH-NEW"}, 201),
+        ({"success": True, "status": "mortality_lifecycle_replayed_withheld",
+          "writes_farm_data": False, "rows_created": 0, "operation_id": "HERD-DEATH-NEW"}, 200),
+    ]
+    def failed_store(action, _identity, _payload):
+        if action == "load": return active
+        return {"success": False, "created": False}
+    message = {**parsed("CONFIRM HERD-DEATH-NEW", "3190"),
+        "provider_timestamp": "2026-08-02T18:40:00+00:00"}
+    failed, failed_status = handle_authenticated_health_loss_message(
+        message, issue_gateway_owner_authority("42", "42"), context_store=failed_store)
+    assert failed_status == 503
+    assert failed["status"] == "health_loss_completion_persistence_pending"
+    assert failed["rows_created"] == 1 and failed["writes_farm_data"] is True
+    assert "Do not repeat the farm action" in failed["answer"]
+    good_store, recorded = memory_store(active)
+    recovered, recovered_status = handle_authenticated_health_loss_message(
+        message, issue_gateway_owner_authority("42", "42"), context_store=good_store)
+    assert recovered_status == 200 and recovered["status"] == "completed"
+    assert recovered["rows_created"] == 0
+    assert "Deceased" in recovered["answer"] and "no longer current/on farm" in recovered["answer"]
+    assert recorded[0]["status"] == "completed"
+    assert confirm.call_count == 2
