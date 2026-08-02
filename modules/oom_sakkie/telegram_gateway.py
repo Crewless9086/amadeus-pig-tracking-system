@@ -284,7 +284,10 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": False,
         },
     })
-    if body.get("success") and str(body.get("answer") or "").strip():
+    durable_delivery_ready = bool(str(os.environ.get("DATABASE_URL") or "").strip()
+                                  and str(parsed.get("provider_message_id") or "").strip()
+                                  and str(parsed.get("provider_timestamp") or "").strip())
+    if body.get("success") and str(body.get("answer") or "").strip() and durable_delivery_ready:
         specialist = str(message_result.get("tool_used") or "OOM_SAKKIE").upper()
         delivery = deliver_family_result(parsed, message_result, specialist=specialist)
         body.update({"delivery": delivery,

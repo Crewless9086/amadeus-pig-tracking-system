@@ -244,6 +244,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+        "DATABASE_URL": "postgresql://test.invalid/db",
     }, clear=True)
     @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result", return_value={
         "success": True, "status": "family_message_delivered", "telegram_sends": 1,
@@ -264,6 +265,8 @@ class OomSakkieRouteTests(unittest.TestCase):
             "/api/oom-sakkie/channels/telegram/message",
             json={
                 "message": {
+                    "message_id": 9001,
+                    "date": 1785668400,
                     "text": "what needs attention today",
                     "from": {"id": 12345},
                     "chat": {"id": 67890},
