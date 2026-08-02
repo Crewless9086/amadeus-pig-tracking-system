@@ -215,7 +215,7 @@ def _identity_result(matches):
     if not matches:
         return {
             "resolved": False, "pig_id": "", "tag_number": "",
-            "question": "Which exact pig is thisâ€”please give its Pig ID or tag?",
+            "question": "Which exact pig is this—please give its Pig ID or tag?",
             "candidate_pig_ids": [],
         }
     candidates = [_animal_identity(row) for row in matches]
@@ -261,7 +261,7 @@ def _parse_report(text, provider_time):
     def current_sign(pattern):
         return latest_positive(
             rf"\b(?:{pattern})\w*\b",
-            rf"\b(?:no|not|without)\s+(?:any\s+)?(?:{pattern})\w*\b",
+            rf"\b(?:no|not|without)\s+(?:any\s+)?(?:(?:\w+)\s*(?:,\s*(?:and\s+|or\s+)?|and\s+|or\s+)){{0,4}}(?:{pattern})\w*\b",
             lower,
         )
 
@@ -326,22 +326,22 @@ def _parse_report(text, provider_time):
     welfare_checks = {
         "standing": latest_positive(
             r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b",
-            r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped) stand(?:ing)?\b",
+            r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b",
             lower,
         ),
         "moving": latest_positive(
             r"\bmoving(?: around)?\b",
-            r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped) mov(?:e|ing)\b",
+            r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) mov(?:e|ing)\b",
             lower,
         ),
         "breathing": latest_positive(
             r"\bbreath(?:ing|es) normal(?:ly)?\b",
-            r"\b(?:not|no longer|isn't|wasn't|without) breathing normal(?:ly)?\b|\b(?:cannot|can't|unable to|stopped) breath(?:e|ing)(?: normal(?:ly)?)?\b|\b(?:breathing abnormally|struggling to breathe)\b",
+            r"\b(?:not|no longer|isn't|wasn't|without) breathing normal(?:ly)?\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) breath(?:e|ing)(?: normal(?:ly)?)?\b|\b(?:breathing abnormally|struggling to breathe)\b",
             lower,
         ),
         "drinking": latest_positive(
             r"\bdrinking(?: water)?\b",
-            r"\b(?:not|no longer|isn't|wasn't|without) drinking\b|\b(?:cannot|can't|unable to|stopped) drink(?:ing)?\b",
+            r"\b(?:not|no longer|isn't|wasn't|without) drinking\b|\bdrinking no water\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) drink(?:ing)?\b",
             lower,
         ),
     }

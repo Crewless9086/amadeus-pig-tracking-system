@@ -395,3 +395,43 @@ def test_latest_positive_serious_sign_after_negation_remains_urgent():
         "moving around, drinking water and breathing normal."
     ), evidence(pig))
     assert result["immediate_welfare_priority"]["level"] == "urgent_assessment"
+@pytest.mark.parametrize("compound_negative", [
+    "no fever or bleeding",
+    "no vomiting, diarrhea, or coughing",
+])
+def test_coordinated_negated_serious_signs_remain_reassuring(compound_negative):
+    pig = animal("PIG-2026-OTHER", "", "12")
+    result = evaluate_health_loss_intake(report(
+        "Pig 12 is not eating. She is standing, moving around, drinking water "
+        f"and breathing normal. She has {compound_negative}."
+    ), evidence(pig))
+    assert result["immediate_welfare_priority"]["level"] == "monitor_closely"
+
+
+def test_positive_serious_sign_after_coordinated_negation_remains_urgent():
+    pig = animal("PIG-2026-OTHER", "", "12")
+    result = evaluate_health_loss_intake(report(
+        "Pig 12 had no fever or bleeding earlier, but is bleeding now. She is "
+        "standing, drinking water and breathing normal."
+    ), evidence(pig))
+    assert result["immediate_welfare_priority"]["level"] == "urgent_assessment"
+
+
+@pytest.mark.parametrize("limited", [
+    "drinking no water",
+    "barely drinking",
+    "hardly drinking",
+    "barely able to stand",
+    "hardly able to stand",
+])
+def test_limited_core_welfare_phrasing_cannot_prove_reassurance(limited):
+    pig = animal("PIG-2026-E88A", "", "11")
+    result = evaluate_health_loss_intake(report(
+        f"Pig 11 is not eating. It is standing, drinking water and breathing normally but is {limited}."
+    ), evidence(pig))
+    assert result["immediate_welfare_priority"]["level"] != "monitor_closely"
+
+
+def test_unknown_identity_question_preserves_unicode_punctuation():
+    result = evaluate_health_loss_intake(report("A pig is not eating."), evidence())
+    assert result["identity"]["question"] == "Which exact pig is this—please give its Pig ID or tag?"
