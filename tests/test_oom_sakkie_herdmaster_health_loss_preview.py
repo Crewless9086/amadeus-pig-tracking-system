@@ -142,9 +142,10 @@ def test_enriched_sick_report_does_not_repeat_supplied_welfare_facts():
     assert "medical observation" in result["owner_text"]
     assert "Provider message: telegram-update-700-message-9" in result["owner_text"]
     assert "Observed at: 2026-08-01T08:30:00+02:00" in result["owner_text"]
-    assert "Diagnosis: Unknown" in result["owner_text"]
+    assert "Agent diagnosis: Unknown (none inferred)" in result["owner_text"]
     assert "Suspected cause: Unknown" in result["owner_text"]
-    assert "Treatment: none reported" in result["owner_text"]
+    assert "Treatment evidence: none reported in this owner message" in result["owner_text"]
+    assert f"Reply exactly: CONFIRM {result['evaluator']['operation_id']}" in result["owner_text"]
     assert (
         "lifecycle, medication, withdrawal, feeding, movement_pen, availability, "
         "reservation, sales, mating, litter, downstream_work"
@@ -182,3 +183,27 @@ def test_supplied_found_chronology_and_disposal_are_not_asked_again():
     assert result["question_count"] == 0
     assert "record reported removal or disposal context [proposed]" in result["owner_text"]
     assert "One clarification:" not in result["owner_text"]
+
+
+def test_veterinary_diagnosis_is_not_contradicted_by_agent_diagnosis_copy():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Tag 51 is sick. The vet diagnosed pneumonia. She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    text = result["owner_text"]
+    assert "Agent diagnosis: Unknown (none inferred)" in text
+    assert "pneumonia - owner reported veterinary evidence" in text
+    assert "Diagnosis: Unknown" not in text
+
+
+def test_owner_mentioned_treatment_is_preserved_without_interpretation():
+    animal = pig("Tag 51", "PIG-2026-0051", "51")
+    result = prepare_health_loss_owner_preview(envelope(
+        "Tag 51 is sick and we gave antibiotics. She is standing, drinking water and breathing normally."
+    ), evidence(animal))
+    assert (
+        "Treatment evidence: mentioned by owner; details Unknown / not evaluated by this intake"
+        in result["owner_text"]
+    )
+    assert "Treatment evidence: none reported" not in result["owner_text"]
+    assert result["writes_farm_data"] is False

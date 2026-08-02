@@ -7,6 +7,7 @@ It performs no I/O, routing, confirmation consumption, or persistence.
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Mapping
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
@@ -110,10 +111,10 @@ def _render_preview(value, report):
         "",
         "Observed facts:",
         *_facts(value["observed_facts"], "None"),
-        "Diagnosis: Unknown",
+        "Agent diagnosis: Unknown (none inferred)",
         "Suspected cause: Unknown" if not value["owner_suspected_cause"] else "Owner-suspected cause (not a diagnosis):",
         *_causes(value["owner_suspected_cause"], "None reported"),
-        "Treatment: none reported",
+        _treatment_line(value["owner_report_text"]),
         "Veterinary evidence:",
         *_diagnoses(value["veterinary_evidence"], "None reported"),
         "Agent inference: None",
@@ -133,10 +134,19 @@ def _render_preview(value, report):
         lines.extend([
             "",
             f"Protected confirmations covered: {confirmations or 'None'}",
-            "Reply with explicit confirmation of this exact preview before any governed write.",
+            f"Reply exactly: CONFIRM {value['operation_id']}",
         ])
     return "\n".join(lines)
 
+
+def _treatment_line(owner_report_text):
+    mentioned = bool(re.search(
+        r"\b(?:treat(?:ed|ment)?|medicat(?:ed|ion)?|antibiotic\w*|inject(?:ed|ion)?|dos(?:e|ed|ing)|gave\s+\w+)\b",
+        str(owner_report_text or "").casefold(),
+    ))
+    if mentioned:
+        return "Treatment evidence: mentioned by owner; details Unknown / not evaluated by this intake"
+    return "Treatment evidence: none reported in this owner message"
 
 def _facts(rows, empty):
     return [f"- {row['fact'].replace('_', ' ')}: {row['value']}" for row in rows] or [f"- {empty}"]
