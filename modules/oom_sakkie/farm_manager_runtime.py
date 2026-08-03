@@ -23,7 +23,7 @@ from modules.pig_weights.herdmaster_whole_herd_packet import build_whole_herd_pa
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
 
-CONTRACT_VERSION = "oom_sakkie_farm_manager_round_v2"
+CONTRACT_VERSION = "oom_sakkie_farm_manager_round_v3"
 EVENT_SOURCE = "oom_sakkie_farm_manager_round"
 SPECIALIST_BUDGET_SECONDS = 12.0
 _SPECIALIST_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="oom-manager")
@@ -58,14 +58,17 @@ def is_farm_manager_round(text: str) -> bool:
 def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=None,
                               loaders: dict[str, Callable] | None = None,
                               event_store=None, weighing_loader=None,
-                              specialist_budget_seconds=SPECIALIST_BUDGET_SECONDS):
+                              specialist_budget_seconds=SPECIALIST_BUDGET_SECONDS,
+                              clock=None):
     if not is_farm_manager_round(parsed.get("text", "")):
         return {"handled": False}, 200
     # The durable manager lifecycle is provider-bound. Legacy/local callers
     # without Telegram chronology continue through the existing read-only tool.
     if not parsed.get("provider_message_id") or not parsed.get("provider_timestamp"):
         return {"handled": False}, 200
-    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    explicit_now = now is not None
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    now = (now or clock()).astimezone(timezone.utc)
     owner = str(parsed.get("telegram_user_id") or "")
     chat = str(parsed.get("telegram_chat_id") or "")
     bound = bind_gateway_owner_authority(authority, "farm_manager_round")
@@ -137,7 +140,11 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
             exceptions["herdmaster_weighing"] = "current_active_on_farm_worklist_unavailable"
             results.append(_missing("herdmaster_weighing", now, SpecialistAvailability.CONTAINED))
             results[0] = _consolidate_herdmaster(results[0], weighing_worklist, weighing_available=False)
-    brief = build_family_brief(results, now=now)
+    # A live specialist result is normally generated after manager invocation.
+    # Validate freshness against composition time, not the earlier inbound or
+    # invocation instant. Explicit test/replay clocks remain deterministic.
+    composition_now = now if explicit_now else clock().astimezone(timezone.utc)
+    brief = build_family_brief(results, now=composition_now)
     try:
         answer = _render(brief)
     except ValueError:
@@ -470,11 +477,17 @@ def _material_recomposition_allowed(prior, binding):
     prior_result = prior.get("result") if isinstance(prior, dict) else {}
     same_provider = all(prior_binding.get(key) == binding.get(key) for key in (
         "owner", "chat", "provider_message_id", "provider_timestamp", "content_digest"))
-    return (same_provider
-        and prior_binding.get("contract_version") == "oom_sakkie_farm_manager_round_v1"
-        and binding.get("contract_version") == CONTRACT_VERSION
-        and int((prior_result or {}).get("action_count") or 0) == 0
-        and "BOUNDED WAITING" in str((prior_result or {}).get("answer") or ""))
+    if not same_provider or binding.get("contract_version") != CONTRACT_VERSION:
+        return False
+    prior_version = prior_binding.get("contract_version")
+    if prior_version == "oom_sakkie_farm_manager_round_v1":
+        return (int((prior_result or {}).get("action_count") or 0) == 0
+            and "BOUNDED WAITING" in str((prior_result or {}).get("answer") or ""))
+    if prior_version == "oom_sakkie_farm_manager_round_v2":
+        gaps = (prior_result or {}).get("specialist_gaps") or {}
+        return (gaps.get("herdmaster") == "invalid_future_evidence"
+            and "Pig 127" not in str((prior_result or {}).get("answer") or ""))
+    return False
 
 
 def _render(brief):

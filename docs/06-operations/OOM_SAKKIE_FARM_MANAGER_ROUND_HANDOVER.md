@@ -199,7 +199,7 @@ runtime or containment language and grants no irrigation or commissioning
 authority. SAM's supported zero-action state and BEACON's absent owner-relevant
 work are suppressed.
 
-Focused source verification: `831 passed, 7 skipped, 351 subtests passed` across
+Focused source verification: `833 passed, 7 skipped, 351 subtests passed` across
 all Oom Sakkie tests. The exact reviewed head still requires normal CI,
 integration, exact-merge CI and exact deployment lineage.
 
@@ -237,3 +237,18 @@ canonical mating ID in the matching case history. The reviewed follow-up joins
 those fields only for the same pig, exact date, `canonical_mating=true`, nonempty
 ID and one unique match. Missing or ambiguous history suppresses only that pig's
 reproductive conclusion; Pig 127 and Monday weighing remain available.
+
+The first guarded correction then edited card `3209` once but was contained as
+an incomplete business result: HERDMASTER's newly generated evidence timestamp
+fell a few seconds after the manager's pre-loader invocation clock and was
+incorrectly classified as future evidence. Guard
+`OOM-PROOF-B-3208-CORRECTION-6F4F6A3A` remains consumed and must not be reused.
+It wrote zero farm rows and left Pig 127 unchanged.
+
+The v3 correction validates accepted specialist freshness at post-loader
+composition time for live calls while preserving explicit deterministic clocks
+for tests/replay. It permits one new revision only for the exact provider-bound
+v2 result carrying HERDMASTER `invalid_future_evidence` and lacking Pig 127.
+All ordinary v3 replays remain suppressed. The next production recovery must
+use a distinct guard and update the same card `3209`; it must not create a new
+brief.
