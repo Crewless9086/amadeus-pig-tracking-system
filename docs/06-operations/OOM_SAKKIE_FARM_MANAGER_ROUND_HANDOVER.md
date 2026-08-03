@@ -199,7 +199,7 @@ runtime or containment language and grants no irrigation or commissioning
 authority. SAM's supported zero-action state and BEACON's absent owner-relevant
 work are suppressed.
 
-Focused source verification: `829 passed, 7 skipped, 351 subtests passed` across
+Focused source verification: `831 passed, 7 skipped, 351 subtests passed` across
 all Oom Sakkie tests. The exact reviewed head still requires normal CI,
 integration, exact-merge CI and exact deployment lineage.
 
@@ -230,3 +230,10 @@ recomposition winner, bounded loaders, existing-card editing and zero authority.
 Proof B is business-complete only after Telegram provider evidence proves Charl
 can see the corrected useful card. Source, CI, merge, deployment or containment
 alone is insufficient.
+
+The first post-deployment preflight correctly performed no recovery because the
+live HERDMASTER producer exposes `latest_mating_date` on each task and the exact
+canonical mating ID in the matching case history. The reviewed follow-up joins
+those fields only for the same pig, exact date, `canonical_mating=true`, nonempty
+ID and one unique match. Missing or ambiguous history suppresses only that pig's
+reproductive conclusion; Pig 127 and Monday weighing remain available.

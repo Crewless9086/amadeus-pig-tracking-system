@@ -231,7 +231,7 @@ def _active_welfare_result(active, now):
 
 
 def _whole_herd_specialist_result(canonical, observations, active, weights, now):
-    tasks = {str(row.get("pig_id") or ""): row for row in canonical.get("tasks") or ()}
+    tasks = _canonical_tasks_with_current_mating(canonical)
     observations = _current_cycle_observations(
         tasks, observations, _time(canonical.get("generated_at"), now))
     active_packet = [{
@@ -319,6 +319,26 @@ def _whole_herd_specialist_result(canonical, observations, active, weights, now)
     rebound = tuple(replace(item, provenance=provenance) for item in items)
     return SpecialistResult("herdmaster", result_id, observed,
         SpecialistAvailability.AVAILABLE, work_items=rebound)
+
+
+def _canonical_tasks_with_current_mating(canonical):
+    tasks = {str(row.get("pig_id") or ""): dict(row) for row in canonical.get("tasks") or ()}
+    cases = {str(row.get("pig_id") or ""): row for row in canonical.get("cases") or ()}
+    for pig_id, task in tasks.items():
+        known = dict(task.get("known_evidence") or {})
+        if known.get("current_mating_id") and known.get("current_mating_date"):
+            task["known_evidence"] = known
+            continue
+        latest_date = str(known.get("latest_mating_date") or "")
+        matching = [row for row in (cases.get(pig_id) or {}).get("mating_history") or ()
+                    if row.get("canonical_mating") is True
+                    and str(row.get("date") or "") == latest_date
+                    and str(row.get("mating_id") or "")]
+        if len(matching) == 1:
+            known["current_mating_id"] = str(matching[0]["mating_id"])
+            known["current_mating_date"] = latest_date
+        task["known_evidence"] = known
+    return tasks
 
 
 def _current_cycle_observations(tasks, observations, generated_at):
