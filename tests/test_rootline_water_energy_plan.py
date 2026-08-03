@@ -296,6 +296,19 @@ class WaterEnergyPlanTests(unittest.TestCase):
         self.assertEqual(plan["tank_evidence"]["storage_freshness"], "fresh")
         self.assertEqual(plan["tank_evidence"]["reservoir_freshness"], "Unavailable")
 
+    def test_fraction_evidence_preserves_half_storage_and_full_reservoir(self):
+        tanks=evidence()["tanks"] | {"storage_reported_count":None,"reservoir_reported_count":None,
+            "storage_fraction":[2,4],"reservoir_fraction":[4,4],
+            "storage_state":"OK","reservoir_state":"FULL"}
+        plan=self.build(tanks=tanks)
+        self.assertEqual(plan["tank_evidence"]["storage_reported_count"],2)
+        self.assertEqual(plan["tank_evidence"]["storage_total_count"],4)
+        self.assertEqual(plan["tank_evidence"]["reservoir_reported_count"],4)
+        self.assertEqual(plan["tank_evidence"]["reservoir_total_count"],4)
+        self.assertEqual(plan["tank_evidence"]["reservoir_state"],"FULL")
+        self.assertNotEqual(self.task(plan,"borehole")["recommendation"],"Needs Data")
+        self.assertNotEqual(self.task(plan,"solar_transfer_pump")["recommendation"],"Needs Data")
+
     def test_independent_tank_rows_are_composed_with_exact_timestamps(self):
         connection = mock.MagicMock()
         cursor = connection.cursor.return_value.__enter__.return_value

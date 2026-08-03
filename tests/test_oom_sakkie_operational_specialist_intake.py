@@ -18,6 +18,9 @@ def operation_store(monkeypatch):
         if identity in events: return {"success":True,"created":False}
         events[identity]=dict(payload); return {"success":True,"created":True}
     monkeypatch.setattr(operational_specialist_intake,"_operation_event_store",store)
+    monkeypatch.setattr(operational_specialist_intake,"persist_rootline_observations",
+        lambda _context,_authority:{"success":True,"contract_version":"rootline_owner_observation_bridge_v1",
+                         "status":"exact_replay","created":False,"canonical_writes":0})
     return events
 
 def parsed(at=NOW, message="3181"):
@@ -168,6 +171,46 @@ def test_operational_replay_identity_and_partial_rootline_result_are_determinist
     assert status==409 and conflict["systemic_exception"]=="rootline_operational_replay_binding_conflict"
     assert len(calls)==1
 
+def test_3213_canonical_observation_write_and_dispatch_are_exactly_once(monkeypatch):
+    writes=[];dispatches=[]
+    monkeypatch.setattr(operational_specialist_intake,"persist_rootline_observations",
+        lambda context,authority:(writes.append((context["mission_id"],authority.provider_message_id)) or
+            {"success":True,"contract_version":"rootline_owner_observation_bridge_v1",
+             "status":"recorded","created":True,"canonical_writes":1,"observation_id":"ROOTLINE-TANK-3213"}))
+    dispatcher=lambda context:(dispatches.append(context["mission_id"]) or operational_result())
+    first,status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("42","42"),
+        now=NOW,rootline_operations_dispatcher=dispatcher)
+    replay,replay_status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("42","42"),
+        now=NOW,rootline_operations_dispatcher=dispatcher)
+    assert status==200 and first["writes_farm_data"] is True
+    assert replay_status==200 and replay["replay_suppressed"] is True
+    assert len(writes)==1 and len(dispatches)==1
+
+def test_committed_observation_truth_survives_invalid_dispatch_and_completion_failure(monkeypatch,operation_store):
+    committed={"success":True,"contract_version":"rootline_owner_observation_bridge_v1",
+        "status":"recorded","created":True,"canonical_writes":1,"observation_id":"ROOTLINE-TANK-3213"}
+    monkeypatch.setattr(operational_specialist_intake,"persist_rootline_observations",lambda *_:committed)
+    invalid,status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("42","42"),
+        now=NOW,rootline_operations_dispatcher=lambda _:{} )
+    assert status==503 and invalid["writes_farm_data"] is True
+    operation_store.clear()
+    def completion_fails(action,identity,payload):
+        if action=="load": return []
+        if payload["state"]=="claimed": return {"success":True,"created":True}
+        raise RuntimeError("completion unavailable")
+    failed,status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("42","42"),
+        now=NOW,rootline_operations_dispatcher=lambda _:operational_result(),operation_store=completion_fails)
+    assert status==503 and failed["writes_farm_data"] is True
+    assert failed["canonical_observation_id"]=="ROOTLINE-TANK-3213"
+
+def test_malformed_successful_writer_result_is_unknown_not_false(monkeypatch):
+    monkeypatch.setattr(operational_specialist_intake,"persist_rootline_observations",lambda *_:{
+        "success":True,"contract_version":"rootline_owner_observation_bridge_v1","status":"recorded"})
+    value,status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("42","42"),
+        now=NOW,rootline_operations_dispatcher=lambda _:pytest.fail("must not dispatch"))
+    assert status==503 and value["writes_farm_data"] is None
+    assert value["writes_farm_data_unknown"] is True
+
 def test_operational_authority_is_request_bound_and_escalation_fails_closed(operation_store):
     denied,status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("99","99"),
         now=NOW,rootline_operations_dispatcher=lambda _:operational_result())
@@ -225,3 +268,19 @@ def test_visible_containment_is_transport_success_not_silent_backend_failure(own
     assert status==200 and value["success"] is True
     assert value["message"]["success"] is False and value["delivery"]["success"] is True
     assert value["reply_transport"]=="backend_handles_owner_task_delivery"
+
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+@patch("modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message")
+@patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
+def test_gateway_preserves_indeterminate_write_truth(owner_task,operational,deliver):
+    owner_task.return_value=({"handled":False},200)
+    operational.return_value=({"handled":True,"success":False,"status":"contained",
+        "answer":"Visible exception","specialist_identity":"ROOTLINE","mission_id":"ROOT-1",
+        "card_mission_id":"ROOT-1","writes_farm_data":None,"writes_farm_data_unknown":True},503)
+    deliver.return_value={"success":True,"status":"family_message_delivered","telegram_sends":1,"telegram_edits":0}
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"1","OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
+         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
+    payload={"message":{"message_id":3213,"date":1785774127,"text":"Storage tanks 2/4",
+        "from":{"id":42},"chat":{"id":42,"type":"private"}}}
+    value,status=handle_telegram_gateway_message(payload,headers={"Authorization":"Bearer "+"x"*40},environ=env)
+    assert status==200 and value["writes"] is None and value["writes_unknown"] is True

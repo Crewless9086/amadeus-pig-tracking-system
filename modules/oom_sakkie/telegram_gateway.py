@@ -232,6 +232,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "answer": answer, "message": operational_result, "delivery": delivery,
             "records_audit_trace": True, "reply_transport": "backend_handles_owner_task_delivery",
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        body["writes"] = operational_result.get("writes_farm_data")
+        body["writes_unknown"] = operational_result.get("writes_farm_data_unknown") is True
         return body, 200 if delivery.get("success") else 202
 
     health_result, health_status = handle_authenticated_health_loss_message(
