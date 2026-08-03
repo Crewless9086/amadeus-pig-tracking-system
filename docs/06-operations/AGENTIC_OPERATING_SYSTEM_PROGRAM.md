@@ -39,6 +39,15 @@ Every capability must be classified before build:
 
 Code is required for canonical reads, calculations, validation, permissions, audit, idempotency and safe execution. It must not become a hidden substitute for agent reasoning.
 
+Natural owner language enters Oom Sakkie through an LLM-first semantic front
+door after private-owner authentication. The LLM receives bounded recent and
+active-case context and interprets English, Afrikaans, typos, entities,
+observations, requests and follow-ups. It does not execute tools or gain
+authority. Typed output is validated and handed to the existing deterministic
+specialist, confirmation, replay and action rails. Broad keyword routing may be
+used only as a degraded fallback when semantic interpretation is unavailable;
+it may not override a proven active lifecycle.
+
 ## Two Brains
 
 ### Doctrine Vault

@@ -43,7 +43,9 @@ def handle_operational_specialist_message(
     operation_store=None,
 ) -> tuple[dict[str, Any], int]:
     text = str((parsed or {}).get("text") or "").strip()
-    if _ROOTLINE_OPERATIONAL.search(text) and not _ROOTLINE_PRESENCE.search(text):
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
+    semantic_rootline = semantic.get("domain") == "rootline" and not semantic.get("needs_clarification")
+    if (semantic_rootline or _ROOTLINE_OPERATIONAL.search(text)) and not _ROOTLINE_PRESENCE.search(text):
         return _handle_rootline_operation(parsed, gateway_authority, rootline_operations_dispatcher,
                                           rootline_observation_writer or persist_rootline_observations, now,
                                           operation_store or _operation_event_store)
@@ -124,8 +126,10 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
             "provider_message_id": provider_id, "observed_at": provider_at.isoformat(),
         })
     raw_text = str(parsed.get("text") or "")
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     visible_need = "C12345" if _C_NEED.search(raw_text) and not _C_NO_NEED.search(raw_text) else None
-    if not observations and not visible_need:
+    semantic_observation = str(semantic.get("observation") or "").strip()
+    if not observations and not visible_need and not semantic_observation:
         return {"handled": False, "status": "operational_specialist_intake_not_applicable"}, 200
     mission = _mission(parsed)
     context = {
@@ -134,6 +138,8 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         "chat_id": str(parsed.get("telegram_chat_id") or ""), "provider_message_id": provider_id,
         "provider_timestamp": provider_at.isoformat(), "observations": observations,
         "visible_irrigation_need_zone": visible_need,
+        "semantic_observation": semantic_observation,
+        "semantic_intent": str(semantic.get("intent") or "")[:100],
         "content_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
         "authority": {"farm_observation_write": False, "hardware_control": False,
                       "telegram_send": False, "automatic_on_retry": False},

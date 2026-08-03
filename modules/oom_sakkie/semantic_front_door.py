@@ -104,7 +104,35 @@ def load_bounded_owner_context(parsed: Mapping[str, Any]) -> dict[str, Any]:
             "status": str(row.get("status") or "")[:40],
             "tag": str(identity.get("tag_number") or row.get("tag_number") or "")[:40],
             "card_message_id": str(row.get("card_message_id") or "")[:40]})
-    return {"reply_to_message_id": str(parsed.get("reply_to_message_id") or "")[:40], "active_cases": active}
+    recent = _load_recent_specialist_context(parsed)
+    return {"reply_to_message_id": str(parsed.get("reply_to_message_id") or "")[:40],
+            "active_cases": active, "recent_turns": recent}
+
+
+def _load_recent_specialist_context(parsed):
+    if not str(os.environ.get("DATABASE_URL") or "").strip():
+        return []
+    try:
+        import psycopg
+        with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=5) as connection:
+            connection.read_only = True
+            with connection.cursor() as cursor:
+                cursor.execute("""select review_json->'family_message_lifecycle'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='oom_sakkie_family_message_lifecycle'
+                      and review_json->'family_message_lifecycle'->>'owner_user_id'=%s
+                      and review_json->'family_message_lifecycle'->>'chat_id'=%s
+                    order by created_at desc,review_event_id desc limit %s""",
+                    (str(parsed.get("telegram_user_id") or ""),
+                     str(parsed.get("telegram_chat_id") or ""), MAX_CONTEXT_ITEMS))
+                rows = [row[0] for row in cursor.fetchall()]
+    except Exception:
+        return []
+    return [{"specialist": str(row.get("specialist_identity") or "")[:40],
+             "task_state": str(row.get("task_state") or "")[:40],
+             "card_mission_id": str(row.get("card_mission_id") or "")[:80],
+             "provider_message_id": str(row.get("provider_message_id") or "")[:40]}
+            for row in rows if isinstance(row, Mapping)]
 
 
 def _payload(parsed, context, source):
