@@ -1,4 +1,6 @@
 from datetime import date
+import json
+from pathlib import Path
 
 from modules.pig_weights.herdmaster_mortality_intelligence import build_mortality_intelligence, build_oom_sakkie_mortality_packet
 
@@ -84,6 +86,7 @@ def test_authenticated_owner_report_is_not_canonical_mortality():
     result = build_mortality_intelligence(evidence, analysis_end=END)
     assert result["rolling_counts"]["7"]["total"] == 0
     assert result["owner_reported_not_canonical"][0]["canonical_mortality"] is False
+    assert result["owner_reported_not_canonical"][0]["authenticated_private_owner"] is False
 
 
 def test_missing_herd_at_risk_denominator_is_explicit():
@@ -108,3 +111,58 @@ def test_typed_oom_sakkie_packet_is_bilingual_bounded_and_zero_write():
     assert packet["question"].count("?") <= 1
     assert not any(packet["authority"].values())
     assert build_oom_sakkie_mortality_packet(evidence, analysis_end=END) == packet
+
+
+def test_first_real_assessment_fixture_preserves_exact_counts_and_accounting():
+    evidence = json.loads((Path(__file__).parent / "fixtures" / "herdmaster_mortality_20260803.json").read_text(encoding="utf-8"))
+    packet = build_oom_sakkie_mortality_packet(evidence, analysis_end=END)
+    assert packet["rolling_counts"]["7"]["total"] == 1
+    assert packet["rolling_counts"]["30"]["total"] == 13
+    assert packet["rolling_counts"]["90"]["total"] == 16
+    assert len(packet["proven_facts"]) == 16
+    assert len(packet["excluded_dated_or_superseded"]) == 1
+    assert len(packet["undated_identity_accounting"]) == 30
+    assert len(packet["owner_reported_not_canonical"]) == 1
+    assert packet["owner_reported_not_canonical"][0]["pig_id"] == "PIG-2026-D13C"
+    assert packet["unchanged_replay_action"] == "suppress_duplicate_alert"
+    assert "16 dated losses" in packet["english"] and "12 are supported" in packet["english"]
+    assert "16 gedateerde verliese" in packet["afrikaans"] and "12 as historiese" in packet["afrikaans"]
+
+
+def test_packet_rejects_unverified_owner_report_and_sanitizes_raw_fields():
+    unsafe = {"mortality_events": [{**event("E1", "P1", "2026-08-01"), "private_note": "SECRET", "provider_payload": {"token": "SECRET"}}],
+              "owner_reported_events": [{"report_identity": "R", "pig_id": "P2", "authenticated": False}]}
+    try:
+        build_oom_sakkie_mortality_packet(unsafe, analysis_end=END)
+        assert False, "unverified owner report must fail closed"
+    except ValueError:
+        pass
+    safe = build_oom_sakkie_mortality_packet({"mortality_events": unsafe["mortality_events"]}, analysis_end=END)
+    assert "private_note" not in safe["proven_facts"][0]
+    assert "provider_payload" not in safe["proven_facts"][0]
+
+
+def test_reordered_set_evidence_has_same_digest_and_dedup_key():
+    one = event("E1", "P1", "2026-08-01")
+    two = event("E2", "P2", "2026-08-02")
+    first = build_mortality_intelligence({"mortality_events": [one, two]}, analysis_end=END)
+    reordered = build_mortality_intelligence({"mortality_events": [two, one]}, analysis_end=END)
+    assert reordered["evidence_digest"] == first["evidence_digest"]
+    assert reordered["deduplication_key"] == first["deduplication_key"]
+
+
+def test_accounting_rejects_duplicate_identity_and_bad_cohort_arithmetic():
+    bad = {"mortality_events": [], "undated_identity_accounting": [
+        {"pig_id": "P1", "classification": "conflicting", "effective_date": None},
+        {"pig_id": "P1", "classification": "conflicting", "effective_date": None}]}
+    try:
+        build_mortality_intelligence(bad, analysis_end=END)
+        assert False, "duplicate accounting identity must fail"
+    except ValueError:
+        pass
+    bad_cohort = {"mortality_events": [], "cohort_reconciliations": [{"born_alive": 10, "weaned_count": 8, "undated_loss_rows": 2, "dated_later_deaths": 0, "outcome": "conflicting"}]}
+    try:
+        build_mortality_intelligence(bad_cohort, analysis_end=END)
+        assert False, "unsupported cohort outcome must fail"
+    except ValueError:
+        pass

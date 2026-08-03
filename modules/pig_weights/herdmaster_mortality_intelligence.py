@@ -32,6 +32,40 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest().upper()
 
 
+def _canonicalize(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _canonicalize(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        items = [_canonicalize(item) for item in value]
+        return sorted(items, key=lambda item: json.dumps(item, sort_keys=True, default=str))
+    return value
+
+
+def _public_event(event: dict[str, Any]) -> dict[str, Any]:
+    allowed = ("event_id", "pig_id", "effective_date", "event_kind", "confirmation", "canonical_status", "litter_id", "pen_id", "exclusion_reasons")
+    return {key: event.get(key) for key in allowed if event.get(key) is not None}
+
+
+def _validate_accounting(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    allowed = {"attributable_dated_loss", "legitimate_undated_historical_loss", "duplicate_superseded_representation", "conflicting", "insufficient_evidence"}
+    rows = []
+    seen = set()
+    for raw in evidence.get("undated_identity_accounting") or []:
+        pig_id = str(raw.get("pig_id") or "")
+        classification = str(raw.get("classification") or "")
+        if not pig_id or pig_id in seen or classification not in allowed or raw.get("effective_date") is not None:
+            raise ValueError("undated identity accounting must be unique, classified, and biologically undated")
+        seen.add(pig_id)
+        rows.append({"pig_id": pig_id, "classification": classification, "effective_date": None})
+    for cohort in evidence.get("cohort_reconciliations") or []:
+        expected = int(cohort["born_alive"]) - int(cohort["weaned_count"])
+        represented = int(cohort["undated_loss_rows"]) + int(cohort["dated_later_deaths"])
+        expected_outcome = "supported" if represented == expected else "conflicting"
+        if cohort.get("outcome") != expected_outcome:
+            raise ValueError("cohort loss arithmetic does not support the declared outcome")
+    return rows
+
+
 def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date) -> dict[str, Any]:
     """Return a deterministic, read-only mortality assessment.
 
@@ -150,7 +184,8 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
     if forecasts:
         unknowns.append("forecasts are retained separately and do not prove observed exposure")
 
-    evidence_digest = _digest(evidence)
+    accounting = _validate_accounting(evidence)
+    evidence_digest = _digest(_canonicalize(evidence))
     review_identity = f"HERDMASTER-MORTALITY-{analysis_end.isoformat()}"
     question = (
         "Please check the surviving littermates and penmates once: are they eating, drinking, moving and breathing normally, "
@@ -169,13 +204,17 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
     )
     owner_reported = []
     for report in evidence.get("owner_reported_events") or []:
+        authenticated = bool(report.get("authenticated") is True and report.get("private_chat") is True and report.get("sender_role") == "owner" and report.get("provider_message_id") and report.get("provider_timestamp"))
         owner_reported.append({
             "report_identity": report.get("report_identity"),
             "pig_id": report.get("pig_id"),
             "reported_at": report.get("reported_at"),
             "reported_facts": list(report.get("reported_facts") or []),
             "canonical_mortality": False,
-            "status": "authenticated_owner_report_pending_governed_lifecycle",
+            "provider_message_id": report.get("provider_message_id"),
+            "provider_timestamp": report.get("provider_timestamp"),
+            "authenticated_private_owner": authenticated,
+            "status": "authenticated_owner_report_pending_governed_lifecycle" if authenticated else "unverified_report_excluded_from_owner_handoff",
         })
     actions = [
         "Observe surviving affected penmates and littermates for appetite, drinking, movement and breathing.",
@@ -192,7 +231,7 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
         "detected_patterns": patterns,
         "hypotheses": hypotheses,
         "unknown_or_missing": unknowns,
-        "undated_identity_accounting": list(evidence.get("undated_identity_accounting") or []),
+        "undated_identity_accounting": accounting,
         "owner_reported_not_canonical": owner_reported,
         "herd_at_risk_denominator": evidence.get("herd_at_risk_denominator") or {
             "reconstructable": False,
@@ -215,6 +254,27 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
 def build_oom_sakkie_mortality_packet(evidence: dict[str, Any], *, analysis_end: date) -> dict[str, Any]:
     """Shape the typed result for the existing Oom Sakkie consumption boundary."""
     result = build_mortality_intelligence(evidence, analysis_end=analysis_end)
+    if any(not report["authenticated_private_owner"] for report in result["owner_reported_not_canonical"]):
+        raise ValueError("owner-reported mortality requires authenticated private-owner provenance")
+    classifications = Counter(row["classification"] for row in result["undated_identity_accounting"])
+    owner_pending = bool(result["owner_reported_not_canonical"])
+    counts = result["rolling_counts"]
+    patterns = result["detected_patterns"]
+    signal = ", ".join(p["pattern"].replace("_", " ") for p in patterns[:3]) or "no reliable shared pattern"
+    english = (
+        f"We can confirm {counts['90']['total']} dated losses in 90 days, {counts['30']['total']} in 30 days and {counts['7']['total']} in seven days. "
+        f"Among older undated records, {classifications['legitimate_undated_historical_loss']} are supported historical losses, "
+        f"{classifications['conflicting']} conflict with cohort or dated evidence, and {classifications['insufficient_evidence']} remain insufficient. "
+        f"The reproducible signals are {signal}; these are associations, not proven causes."
+        + (" Pig 127's authenticated owner report remains separate until its governed lifecycle completes." if owner_pending else "")
+    )
+    afrikaans = (
+        f"Ons kan {counts['90']['total']} gedateerde verliese in 90 dae bevestig, {counts['30']['total']} in 30 dae en {counts['7']['total']} in sewe dae. "
+        f"Onder ouer ongedateerde rekords word {classifications['legitimate_undated_historical_loss']} as historiese verliese ondersteun, "
+        f"{classifications['conflicting']} bots met kohort- of gedateerde bewyse, en {classifications['insufficient_evidence']} bly onvoldoende. "
+        f"Die herhaalbare seine is {signal}; dit is verbande, nie bewese oorsake nie."
+        + (" Pig 127 se geverifieerde eienaarsverslag bly apart totdat die beheerde lewensiklus voltooi is." if owner_pending else "")
+    )
     return {
         "packet_type": "herdmaster.mortality_intelligence.v1",
         "review_identity": result["review_identity"],
@@ -223,8 +283,9 @@ def build_oom_sakkie_mortality_packet(evidence: dict[str, Any], *, analysis_end:
         "analysis_period": result["analysis_period"],
         "rolling_counts": result["rolling_counts"],
         "baseline": result["historical_baseline"],
-        "proven_facts": result["included_events"],
-        "excluded_or_unresolved": result["excluded_events"] + result["undated_identity_accounting"],
+        "proven_facts": [_public_event(event) for event in result["included_events"]],
+        "excluded_dated_or_superseded": [_public_event(event) for event in result["excluded_events"]],
+        "undated_identity_accounting": result["undated_identity_accounting"],
         "owner_reported_not_canonical": result["owner_reported_not_canonical"],
         "patterns": result["detected_patterns"],
         "hypotheses": result["hypotheses"],
@@ -232,8 +293,8 @@ def build_oom_sakkie_mortality_packet(evidence: dict[str, Any], *, analysis_end:
         "question": result["smallest_grouped_question"],
         "actions": result["recommendations"][:3],
         "reassessment_trigger": result["automatic_reassessment_trigger"],
-        "english": result["family_assessment_en"],
-        "afrikaans": result["family_assessment_af"],
+        "english": english,
+        "afrikaans": afrikaans,
         "unchanged_replay_action": result["unchanged_replay_action"],
         "authority": result["authority"],
     }
