@@ -11,6 +11,7 @@ from modules.oom_sakkie.operational_specialist_intake import handle_operational_
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 from modules.oom_sakkie.owner_conversation_front_door import build_owner_clarification
+from modules.oom_sakkie.owner_operational_continuation import handle_owner_operational_continuation
 from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
 
 
@@ -219,6 +220,26 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if semantic is not None:
         parsed = {**parsed, "semantic": semantic.as_hint()}
 
+    continuation_result, continuation_status = handle_owner_operational_continuation(
+        parsed, gateway_authority,
+    )
+    if continuation_result.get("handled"):
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                     "status": "owner_delivery_suppressed_replay_or_metadata"}
+                    if continuation_result.get("suppress_owner_delivery") else
+                    deliver_family_result(parsed, continuation_result, specialist="ROOTLINE",
+                        mission_id=str(continuation_result.get("mission_id") or ""),
+                        card_mission_id=str(continuation_result.get("card_mission_id") or "")))
+        body, _ = _gateway_result(delivery.get("success") is True,
+            str(continuation_result.get("status") or "contained"), policy, continuation_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": continuation_result.get("answer", ""), "message": continuation_result,
+            "delivery": delivery, "records_audit_trace": True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        return body, 200 if delivery.get("success") else 202
+
     operational_result, operational_status = handle_operational_specialist_message(
         parsed, gateway_authority,
     )
@@ -408,9 +429,13 @@ def _send_owner_task_telegram(chat_id, text, source):
         return {"success": False, "status": "owner_task_telegram_delivery_ambiguous"}
     result = response.get("result") if isinstance(response, dict) else {}
     message_id = str((result or {}).get("message_id") or "")
+    provider_date = (result or {}).get("date")
+    provider_timestamp = (datetime.fromtimestamp(int(provider_date), tz=timezone.utc).isoformat()
+                          if provider_date is not None else "")
     return {"success": response.get("ok") is True and bool(message_id),
             "status": "owner_task_telegram_delivered" if message_id else "owner_task_telegram_delivery_unconfirmed",
-            "telegram_message_id": message_id}
+            "telegram_message_id": message_id,
+            "provider_timestamp": provider_timestamp}
 
 
 def _owner_task_bot_token(source):

@@ -12,6 +12,7 @@ ROOTLINE_OBSERVATION_WRITE_TOOL = "rootline_owner_water_observation"
 MAX_AUTHORITY_AGE_SECONDS = 120
 _AUTHORITY_SEAL = object()
 _OBSERVATION_WRITE_SEAL = object()
+_OPERATIONAL_OUTCOME_SEAL = object()
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,19 @@ class RootlineObservationWriteAuthority:
     owner_user_id: str
     private_chat_id: str
     mission_id: str
+    provider_message_id: str
+    provider_timestamp: str
+    content_sha256: str
+    issued_monotonic: float
+    _seal: object
+
+
+@dataclass(frozen=True)
+class OwnerOperationalOutcomeAuthority:
+    owner_user_id: str
+    private_chat_id: str
+    mission_id: str
+    execution_id: str
     provider_message_id: str
     provider_timestamp: str
     content_sha256: str
@@ -77,6 +91,10 @@ def validates_rootline_gateway_authority(authority):
     )
 
 
+def validates_gateway_owner_authority(authority):
+    return _valid_base_authority(authority) and not authority.tool_name
+
+
 def issue_rootline_observation_write_authority(authority, *, mission_id, provider_message_id,
                                                provider_timestamp, content_sha256):
     if not _valid_base_authority(authority) or authority.tool_name:
@@ -92,6 +110,26 @@ def validates_rootline_observation_write_authority(authority):
     return (isinstance(authority,RootlineObservationWriteAuthority)
             and authority._seal is _OBSERVATION_WRITE_SEAL
             and 0 <= time.monotonic()-authority.issued_monotonic <= MAX_AUTHORITY_AGE_SECONDS
+            and authority.owner_user_id == authority.private_chat_id)
+
+
+def issue_owner_operational_outcome_authority(authority, *, mission_id, execution_id,
+                                              provider_message_id, provider_timestamp,
+                                              content_sha256):
+    if not _valid_base_authority(authority) or authority.tool_name:
+        return None
+    values = (mission_id, execution_id, provider_message_id, provider_timestamp, content_sha256)
+    if not all(str(value or "").strip() for value in values):
+        return None
+    return OwnerOperationalOutcomeAuthority(authority.owner_user_id, authority.private_chat_id,
+        str(mission_id), str(execution_id), str(provider_message_id), str(provider_timestamp),
+        str(content_sha256), authority.issued_monotonic, _OPERATIONAL_OUTCOME_SEAL)
+
+
+def validates_owner_operational_outcome_authority(authority):
+    return (isinstance(authority, OwnerOperationalOutcomeAuthority)
+            and authority._seal is _OPERATIONAL_OUTCOME_SEAL
+            and 0 <= time.monotonic() - authority.issued_monotonic <= MAX_AUTHORITY_AGE_SECONDS
             and authority.owner_user_id == authority.private_chat_id)
 
 

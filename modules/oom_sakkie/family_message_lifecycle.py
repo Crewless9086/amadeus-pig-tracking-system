@@ -45,6 +45,9 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
 
     payload = _event(parsed, mission_id, card_mission_id, specialist,
                      str(result.get("status") or "working"), text_sha)
+    for key in ("execution_id", "entity_id", "domain"):
+        if str(result.get(key) or "").strip():
+            payload[key] = str(result.get(key))
     if card_id:
         update_id = card_mission_id + "-UPDATE-" + text_sha[:20].upper()
         claimed = store("record", update_id, {**payload, "event_id": update_id,
@@ -78,7 +81,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
     delivered_id = card_mission_id + "-DELIVERED"
     store("record", delivered_id, {**payload, "event_id": delivered_id, "state": "delivered",
-        "telegram_message_id": message_id})
+        "telegram_message_id": message_id,
+        "delivery_provider_timestamp": str(response.get("provider_timestamp") or "")})
     return {"success": True, "status": "family_message_delivered",
             "mission_id": mission_id, "card_mission_id": card_mission_id,
             "telegram_message_id": message_id, "telegram_sends": 1, "telegram_edits": 0}
