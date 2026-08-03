@@ -8,7 +8,9 @@ Prepared source only. The evaluator consumes complete, already-canonical evidenc
 
 The bounded read-only reconciliation used an inclusive 90-day period of 2026-05-06 through 2026-08-03; the rolling 30-day window begins 2026-07-05 and the 7-day window begins 2026-07-28.
 
-Canonical rows contain 16 dated current loss identities in the 90-day period after excluding superseded Zigay representation PIG-2026-1AC2 / LIT-2026-A523. These comprise 3 stillborn identities, 2 deaths after live birth, 2 crushed deaths, and 9 other dated deaths. The resulting dated counts are 1 in 7 days, 13 in 30 days, and 16 in 90 days. At least 29 additional Dead/Died identities have no attributable exit date and are excluded from rolling counts, not silently assigned a date.
+Canonical rows contain 16 dated current loss identities in the 90-day period after excluding superseded Zigay representation PIG-2026-1AC2 / LIT-2026-A523. These comprise 3 stillborn identities, 2 deaths after live birth, 2 crushed deaths, and 9 other dated deaths. The resulting dated counts are 1 in 7 days, 13 in 30 days, and 16 in 90 days. Thirty additional Dead/Died identities have no attributable exit date and are excluded from rolling counts, not silently assigned a date.
+
+The 16 included identities are PIG-2026-0136, PIG-2026-24EF, PIG-2026-1159, PIG-2026-6065, PIG-2026-0632, PIG-2026-C124, PIG-2026-0F1F, PIG-2026-3F59, PIG-2026-72B7, PIG-2026-BC94, PIG-2026-69B2, PIG-2026-44C1, PIG-2026-6D24, PIG-2026-6F78, PIG-2026-CA66 and PIG-2026-BCEB. PIG-2026-1AC2 is excluded as superseded A523 history. PIG-2026-4631 and PIG-2026-D4D5 are dated stillbirths outside the period. The 30 undated exclusions are PIG-2026-0BDD, PIG-2026-0D33, PIG-2026-15E2, PIG-2026-2186, PIG-2026-2516, PIG-2026-2ED8, PIG-2026-2FE0, PIG-2026-31D2, PIG-2026-3AEA, PIG-2026-465B, PIG-2026-4972, PIG-2026-5B63, PIG-2026-5B64, PIG-2026-5B65, PIG-2026-63C7, PIG-2026-6617, PIG-2026-6711, PIG-2026-6E8D, PIG-2026-6E8F, PIG-2026-8EA1, PIG-2026-8FEC, PIG-2026-98AE, PIG-2026-AC21, PIG-2026-C4D8, PIG-2026-C60A, PIG-2026-CD55, PIG-2026-CD56, PIG-2026-D5EE, PIG-2026-E926 and PIG-2026-F870.
 
 Reproducible current signals include:
 
