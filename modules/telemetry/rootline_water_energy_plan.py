@@ -15,6 +15,9 @@ import os
 from zoneinfo import ZoneInfo
 
 from services.database_service import DATABASE_URL_ENV
+from modules.telemetry.rootline_adaptive_irrigation import (
+    build_adaptive_irrigation_decisions,
+)
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
@@ -142,7 +145,8 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
     tasks = [
         _borehole_task(tanks, tank_state, water_demand, rain, reserve),
         _transfer_task(tanks, tank_state, water_demand, reserve),
-        *_irrigation_tasks(irrigation, irrigation_history, reserve, rain, tanks,
+        *_irrigation_tasks(irrigation, irrigation_history, reserve, rain,
+                           weather, forecast, tanks,
                            tank_state, power, power_state, weather_state, now,
                            selected_date),
         _fertilizer_injection_task(irrigation),
@@ -874,9 +878,68 @@ def _transfer_task(tanks, tank_state, demand, reserve):
     ], reserve)
 
 
-def _irrigation_tasks(irrigation, irrigation_history, reserve, rain, tanks,
+def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
+                      weather, forecast, tanks,
                       tank_state, power, power_state, weather_state, now,
                       operating_date):
+    adaptive = _dict(irrigation.get("adaptive_management"))
+    if adaptive.get("enabled") is True:
+        allowed_zone_fields = {
+            "zone_id", "visible_need", "visible_need_observed_at",
+            "visible_need_source", "completion_events",
+            "completed_days_last_7_days", "latest_segment", "owner_correction",
+        }
+        payload = {
+            "zones": [
+                {key: deepcopy(value) for key, value in item.items()
+                 if key in allowed_zone_fields}
+                for item in adaptive.get("zones", []) if isinstance(item, dict)
+            ],
+            "power": deepcopy(power),
+            "local_weather": deepcopy(weather),
+            "forecast": deepcopy(forecast),
+            "water": {
+            "observed_at": tanks.get("reservoir_observed_at"),
+            "reservoir_available": (
+                tank_state.get("reservoir") in {"fresh", "aging"}
+                and (_number(_tank_amount(tanks, "reservoir")) or 0) > 0
+            ),
+            },
+            "policy": {
+                "season": _irrigation_season(now),
+                "target_days_per_week": 4,
+                "governing_reserve_soc_pct": reserve["governing_reserve_soc_pct"],
+                "absolute_floor_soc_pct": reserve["absolute_floor_soc_pct"],
+            },
+        }
+        decisions = build_adaptive_irrigation_decisions(payload, now=now)
+        tasks = []
+        recommendation_map = {
+            "Run now": "Recommend", "Run later": "Recommend", "Hold": "Hold",
+            "Needs Data": "Needs Data", "Completed": "Hold",
+            "Reassess after segment one": "Hold",
+        }
+        for decision in decisions["zones"]:
+            task = _task(
+                f"irrigation_{decision['zone_id']}",
+                recommendation_map[decision["decision"]], decision["reason"],
+                decision["preferred_window"], decision["evidence_gaps"], reserve,
+            )
+            task.update({
+                "zone_decision": decision["decision"],
+                "need_score": decision["need_score"],
+                "confidence": decision["confidence"],
+                "rank": decision["rank"],
+                "planned_duration_minutes": decision["proposed_segment_minutes"],
+                "max_execution_minutes": 60,
+                "fresh_decision_before_second_segment": True,
+                "simultaneous_with_other_zone": False,
+                "advisory_plan_supported": decision["decision"] in {"Run now", "Run later"},
+                "actuation_blocked": True,
+                "command_created": False,
+            })
+            tasks.append(task)
+        return tasks
     zones = irrigation.get("zones") if isinstance(irrigation.get("zones"), list) else []
     result = []
     for zone in zones:
@@ -960,6 +1023,14 @@ def _adaptive_irrigation_start(now, power, power_state, reserve):
         hour = now.hour if minute == 30 else now.hour + 1
         return f"{hour:02d}:{minute:02d} SAST"
     return "22:00 SAST"
+
+
+def _irrigation_season(now):
+    if now.month in {12, 1, 2}:
+        return "summer"
+    if now.month in {6, 7, 8}:
+        return "winter"
+    return "shoulder"
 
 
 def _fertilizer_injection_task(irrigation):
