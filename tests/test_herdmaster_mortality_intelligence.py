@@ -142,6 +142,25 @@ def test_packet_rejects_unverified_owner_report_and_sanitizes_raw_fields():
     assert "provider_payload" not in safe["proven_facts"][0]
 
 
+def test_forged_true_fields_mismatched_receipt_and_malformed_timestamp_fail_closed():
+    base = {"report_identity": "R", "pig_id": "P2", "authenticated": True, "private_chat": True,
+            "sender_role": "owner", "provider_message_id": "M", "provider_timestamp": "2026-08-03T10:00:00+02:00"}
+    receipt = {"verified_by": "oom_sakkie_authenticated_gateway", "authority_scope": "private_owner_health_loss",
+               "principal_id": "OWNER", "private_chat_id": "CHAT", "bound_principal_id": "OWNER",
+               "bound_private_chat_id": "CHAT", "receipt_digest": "a" * 64}
+    for report in (
+        base,
+        {**base, "authentication_receipt": {**receipt, "bound_private_chat_id": "OTHER"}},
+        {**base, "provider_timestamp": "not-a-time", "authentication_receipt": receipt},
+        {**base, "pig_id": "", "authentication_receipt": receipt},
+    ):
+        try:
+            build_oom_sakkie_mortality_packet({"mortality_events": [], "owner_reported_events": [report]}, analysis_end=END)
+            assert False, "unbound or malformed authentication evidence must fail closed"
+        except ValueError:
+            pass
+
+
 def test_reordered_set_evidence_has_same_digest_and_dedup_key():
     one = event("E1", "P1", "2026-08-01")
     two = event("E2", "P2", "2026-08-02")
