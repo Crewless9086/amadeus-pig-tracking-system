@@ -222,7 +222,7 @@ def test_v2_precomposition_clock_defect_recomposes_under_v3():
         issue_gateway_owner_authority(OWNER, OWNER), now=NOW, loaders=loaders,
         event_store=store, weighing_loader=weights)
     assert status == 200 and "Pig 127" in result["answer"]
-    assert result["binding"]["contract_version"] == "oom_sakkie_farm_manager_round_v3"
+    assert result["binding"]["contract_version"] == "oom_sakkie_farm_manager_round_v4"
 
 
 def test_live_composition_clock_accepts_result_generated_after_invocation():
@@ -240,6 +240,57 @@ def test_live_composition_clock_accepts_result_generated_after_invocation():
         weighing_loader=weights, clock=lambda: next(ticks))
     assert status == 200 and "Pig 127" in result["answer"]
     assert "invalid_future_evidence" not in result["specialist_gaps"].values()
+
+
+def test_large_weighing_journey_is_concise_and_unlabelled_pigs_fail_closed():
+    herd_weights = tuple({"pig_id": f"PIG-{index:03d}",
+                          "tag_number": None if index < 4 else str(index)}
+                         for index in range(30))
+    result = _whole_herd_specialist_result(
+        canonical(), observations(), active(), herd_weights, NOW)
+    action = next(item for item in result.work_items if "Monday weighing" in item.title)
+    assert "26 identified active/on-farm pigs" in action.next_action
+    assert "4 unlabelled pigs" in action.next_action
+    assert "None" not in action.next_action
+    assert len(action.next_action) < 450
+
+
+def test_all_unlabelled_weighing_candidates_remain_visible_but_unrecordable():
+    no_reproductive = []
+    unlabelled = tuple({"pig_id": f"PIG-U-{index}", "tag_number": None}
+                       for index in range(5))
+    result = _whole_herd_specialist_result(
+        canonical(), no_reproductive, (), unlabelled, NOW)
+    assert len(result.work_items) == 1
+    item = result.work_items[0]
+    assert item.state.value == "waiting_for_evidence"
+    assert item.title == "Identify unlabelled pigs before weighing"
+    assert "5 current weighing candidates" in item.why
+    assert "Keep 5 unlabelled pigs out of the recording preview" in item.next_action
+    assert "None" not in item.next_action
+
+
+def test_v3_truncated_large_herd_result_can_recompose_once_under_v4():
+    mission = "OOM-FARM-ROUND-0FCB0C799AFC160886B57077"
+    prior = {"binding": {"owner": OWNER, "chat": OWNER, "provider_message_id": "3208",
+        "provider_timestamp": NOW.isoformat(),
+        "content_digest": __import__("hashlib").sha256(TEXT.encode()).hexdigest(),
+        "contract_version": "oom_sakkie_farm_manager_round_v3"},
+        "result": {"action_count": 3, "answer": "Pig 127. Weigh these 137 pigs: 1, None, 2…"}}
+    rows = {mission: prior}
+    def store(action, identity, payload):
+        if action == "load": return rows.get(identity)
+        rows[identity] = payload; return {"success": True, "created": True}
+    herd = _whole_herd_specialist_result(canonical(), observations(), active(), weights(), NOW)
+    loaders = {"herdmaster": lambda: herd,
+        "rootline": lambda: SpecialistResult("rootline", "zero", NOW),
+        "sam": lambda: SpecialistResult("sam", "zero", NOW),
+        "beacon": lambda: SpecialistResult("beacon", "zero", NOW)}
+    result, status = handle_farm_manager_round(parsed(),
+        issue_gateway_owner_authority(OWNER, OWNER), now=NOW, loaders=loaders,
+        event_store=store, weighing_loader=weights)
+    assert status == 200 and result["binding"]["contract_version"] == "oom_sakkie_farm_manager_round_v4"
+    assert "Pig 127" in result["answer"] and "None" not in result["answer"]
 
 
 def test_whole_herd_packet_does_not_repeat_the_unbounded_weighing_read():

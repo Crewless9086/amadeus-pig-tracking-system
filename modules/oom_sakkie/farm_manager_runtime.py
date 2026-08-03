@@ -23,7 +23,7 @@ from modules.pig_weights.herdmaster_whole_herd_packet import build_whole_herd_pa
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
 
-CONTRACT_VERSION = "oom_sakkie_farm_manager_round_v3"
+CONTRACT_VERSION = "oom_sakkie_farm_manager_round_v4"
 EVENT_SOURCE = "oom_sakkie_farm_manager_round"
 SPECIALIST_BUDGET_SECONDS = 12.0
 _SPECIALIST_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="oom-manager")
@@ -277,8 +277,13 @@ def _whole_herd_specialist_result(canonical, observations, active, weights, now)
         reproductive.append(row)
     active_ids = {row["pig_id"] for row in active_packet}
     weighing = []
+    unidentified_weighing_count = 0
     for row in weights:
         if row["pig_id"] in active_ids:
+            continue
+        tag_number = str(row.get("tag_number") or "").strip()
+        if not tag_number or tag_number.casefold() == "none":
+            unidentified_weighing_count += 1
             continue
         weighing.append({"pig_id": row["pig_id"], "tag_number": row["tag_number"],
             "why_now": "Monday whole-herd weighing supports current welfare, breeding and sale decisions.",
@@ -296,16 +301,20 @@ def _whole_herd_specialist_result(canonical, observations, active, weights, now)
     assumed = [row for row in packet["reproductive_reviews"]
                if row["operational_status"] == "Assumed Pregnant"]
     journey = packet["monday_weighing_journey"]
-    if assumed or journey["candidate_count"]:
-        weighing_tags = ", ".join(str(row["tag_number"]) for row in journey["candidates"])
-        weighing_instruction = (f"Weigh these {journey['candidate_count']} pigs: {weighing_tags}. "
-            if journey["candidate_count"] else "No Monday reweigh is currently required. ")
+    if assumed or journey["candidate_count"] or unidentified_weighing_count:
+        weighing_instruction = _weighing_instruction(journey, unidentified_weighing_count)
         weighing_reply = ("Send one natural message with each listed tag and measured kg, "
             "the weighing date once, and observation time only if known. Oom Sakkie will preview every mapping before any write."
             if journey["candidate_count"] else "")
         title = "Complete Monday weighing"
         why = "Fresh weights will support the next welfare, breeding and sales reassessment."
         preparation = ""
+        state = WorkState.DUE_TODAY
+        if not assumed and not journey["candidate_count"]:
+            title = "Identify unlabelled pigs before weighing"
+            why = (f"All {unidentified_weighing_count} current weighing candidates lack a proven visible tag or name, "
+                   "so Oom Sakkie cannot safely map their weights yet.")
+            state = WorkState.WAITING_EVIDENCE
         labels = " and ".join(str(row["tag_number"]) for row in assumed)
         if assumed:
             window = assumed[0]["projected_farrowing_range"]
@@ -321,11 +330,27 @@ def _whole_herd_specialist_result(canonical, observations, active, weights, now)
             domain="herd", title=title, why=why,
             next_action=(preparation + weighing_instruction
                          + weighing_reply),
-            assignee="charl", state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
+            assignee="charl", state=state, authority=Authority.ADVISORY,
             provenance=provenance, business_value=110))
     rebound = tuple(replace(item, provenance=provenance) for item in items)
     return SpecialistResult("herdmaster", result_id, observed,
         SpecialistAvailability.AVAILABLE, work_items=rebound)
+
+
+def _weighing_instruction(journey, unidentified_count):
+    count = int(journey.get("candidate_count") or 0)
+    candidates = journey.get("candidates") or ()
+    if not count:
+        instruction = "No identified Monday reweigh is currently required. "
+    elif count <= 20:
+        tags = ", ".join(str(row["tag_number"]) for row in candidates)
+        instruction = f"Weigh these {count} pigs: {tags}. "
+    else:
+        instruction = (f"Weigh the {count} identified active/on-farm pigs on Oom Sakkie's canonical worklist, "
+            "using each visible tag or name with its measured kg. ")
+    if unidentified_count:
+        instruction += (f"Keep {unidentified_count} unlabelled pigs out of the recording preview until their identities are proven. ")
+    return instruction
 
 
 def _canonical_tasks_with_current_mating(canonical):
@@ -487,6 +512,10 @@ def _material_recomposition_allowed(prior, binding):
         gaps = (prior_result or {}).get("specialist_gaps") or {}
         return (gaps.get("herdmaster") == "invalid_future_evidence"
             and "Pig 127" not in str((prior_result or {}).get("answer") or ""))
+    if prior_version == "oom_sakkie_farm_manager_round_v3":
+        answer = str((prior_result or {}).get("answer") or "")
+        defective_weighing = re.search(r"Weigh these[^\n]*(?:None|…|\.\.\.)", answer)
+        return "Pig 127" in answer and defective_weighing is not None
     return False
 
 
