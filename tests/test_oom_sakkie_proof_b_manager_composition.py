@@ -3,7 +3,8 @@ from threading import Barrier, Lock, Thread
 
 from modules.oom_sakkie.farm_manager_loop import SpecialistAvailability, SpecialistResult
 from modules.oom_sakkie.farm_manager_runtime import (
-    _current_cycle_observations, _whole_herd_specialist_result, handle_farm_manager_round,
+    _canonical_tasks_with_current_mating, _current_cycle_observations,
+    _whole_herd_specialist_result, handle_farm_manager_round,
 )
 from modules.oom_sakkie.family_message_lifecycle import bind_existing_card, deliver_family_result
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
@@ -24,6 +25,21 @@ def canonical():
         "tasks": [task("PIG-2026-D050", "Mona", "MAT-MONA", "2026-05-02"),
                   task("PIG-2026-21BE", "Mysikind", "MAT-MYSI", "2026-05-02"),
                   task("PIG-2026-7DAA", "Baby", "MAT-BABY", "2026-05-19")]}
+
+
+def deployed_shape_canonical():
+    value = canonical()
+    cases = []
+    for task in value["tasks"]:
+        known = task["known_evidence"]
+        mating_id = known.pop("current_mating_id")
+        mating_date = known.pop("current_mating_date")
+        known["latest_mating_date"] = mating_date
+        cases.append({"pig_id": task["pig_id"], "mating_history": [
+            {"mating_id": mating_id, "date": mating_date, "canonical_mating": True,
+             "status": "Open"}]})
+    value["cases"] = cases
+    return value
 
 
 def observations():
@@ -90,6 +106,25 @@ def test_reproductive_observations_require_newest_exact_current_mating_cycle():
     assert mona[0]["source_identity"] == "TELEGRAM-3151-C19F2C2B-MONA"
     result = _whole_herd_specialist_result(canonical(), rows, active(), weights(), NOW)
     assert any("Mona" in item.title for item in result.work_items)
+
+
+def test_deployed_task_and_case_shape_supplies_exact_current_mating_binding():
+    shaped = deployed_shape_canonical()
+    tasks = _canonical_tasks_with_current_mating(shaped)
+    assert tasks["PIG-2026-D050"]["known_evidence"] == {
+        "latest_mating_date": "2026-05-02", "current_mating_id": "MAT-MONA",
+        "current_mating_date": "2026-05-02"}
+    result = _whole_herd_specialist_result(shaped, observations(), active(), weights(), NOW)
+    assert any("Mona" in item.title and "Mysikind" in item.title for item in result.work_items)
+
+
+def test_ambiguous_canonical_mating_history_does_not_promote_observation():
+    shaped = deployed_shape_canonical()
+    mona = next(row for row in shaped["cases"] if row["pig_id"] == "PIG-2026-D050")
+    mona["mating_history"].append({**mona["mating_history"][0], "mating_id": "MAT-CONFLICT"})
+    result = _whole_herd_specialist_result(shaped, observations(), active(), weights(), NOW)
+    assert all("Mona" not in item.title for item in result.work_items)
+    assert "Pig 127" in result.work_items[0].title
 
 
 def test_prior_cycle_or_conflicting_same_time_observation_is_section_local():
