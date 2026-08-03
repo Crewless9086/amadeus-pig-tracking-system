@@ -8,6 +8,10 @@
   contract: `modules/charlie/development_coordination.py`.
 - Operator handover and S02-S07 reconciliation:
   `docs/06-operations/CHARLIE_CORE_ADAPTIVE_MINIMAL_DISPATCH_HANDOVER.md`.
+- Controlled integration order, unsigned one-worker T1 proposal and post-P0
+  successor reconciliation:
+  `docs/06-operations/CHARLIE_CORE_CONTROLLED_T1_INTEGRATION_HANDOVER.md` and
+  `docs/06-operations/contracts/CORE_T1_POST_P0_HANDOVER_CORRECTION_PROPOSAL.json`.
 - These contracts reuse the existing mission store, mission-event ledger,
   execution bridge heartbeat and final-artifact ingestion. They do not create
   a second queue or grant runtime/production authority.

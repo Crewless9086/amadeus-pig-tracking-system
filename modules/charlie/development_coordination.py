@@ -76,9 +76,11 @@ def reduce_coordination(plan, events):
                 raise ValueError("coordination_protected_authority_required")
             state = "released"
         elif kind == "acknowledge" and state == "released":
-            required = ("worker_id", "dispatch_id", "acknowledged_at")
+            required = ("worker_id", "worker_role", "dispatch_id", "acknowledged_at")
             if any(not event.get(field) for field in required):
                 raise ValueError("coordination_acknowledgement_incomplete")
+            if str(event["worker_role"]).strip().lower() not in set(plan.get("agents") or []):
+                raise ValueError("coordination_worker_not_selected")
             worker = str(event["worker_id"])
             if worker in seen_workers:
                 raise ValueError("coordination_circular_worker_handoff")
@@ -101,6 +103,10 @@ def reduce_coordination(plan, events):
             state = "contained"
         elif kind == "complete" and state in {"started", "waiting_for_evidence"}:
             completion = validate_completion_artifact(event.get("artifact"))
+            declared_files = [str(path).strip() for path in ((plan.get("mission") or {}).get("expected_files") or []) if str(path).strip()]
+            evidence_text = "\n".join(completion["artifact_evidence"])
+            if declared_files and any(path not in evidence_text for path in declared_files):
+                raise ValueError("coordination_declared_artifact_required")
             state = "completed_with_artifact"
         elif kind == "block" and state in {"started", "waiting_for_evidence", "contained"}:
             if int(event.get("same_blocker_occurrences") or 0) < 3 or not event.get("owner_or_external_change_required"):
@@ -112,6 +118,20 @@ def reduce_coordination(plan, events):
             raise ValueError(f"coordination_invalid_transition:{state}:{kind}")
     return {"state": state, "pickup_proven": state in {"acknowledged", "started", "waiting_for_evidence", "completed_with_artifact", "genuinely_blocked"},
             "receipt": receipt, "completion": completion, "exceptions": list(exceptions.values())}
+
+
+def validate_dispatch_scope(plan, *, plan_id, mission_id, worker_role):
+    """Fail closed unless one pickup request exactly matches the selected plan."""
+    plan = dict(plan or {})
+    if str(plan_id or "") != str(plan.get("plan_id") or ""):
+        raise ValueError("coordination_plan_scope_mismatch")
+    expected_mission_id = str((plan.get("mission") or {}).get("mission_id") or "")
+    if not expected_mission_id or str(mission_id or "") != expected_mission_id:
+        raise ValueError("coordination_mission_scope_mismatch")
+    if str(worker_role or "").strip().lower() not in set(plan.get("agents") or []):
+        raise ValueError("coordination_worker_not_selected")
+    return {"plan_id": plan["plan_id"], "mission_id": expected_mission_id,
+            "worker_role": str(worker_role).strip().lower(), "single_mission": True}
 
 
 def validate_completion_artifact(artifact):
