@@ -162,6 +162,26 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
         + (f"The strongest reproducible signals are {', '.join(p['pattern'].replace('_', ' ') for p in patterns[:3])}. " if patterns else "No reliable shared pattern is proven. ")
         + "These are associations, not diagnoses. Check surviving penmates and littermates and escalate promptly if serious signs or further losses appear."
     )
+    af_assessment = (
+        f"Van {windows['90']['start']} tot {analysis_end.isoformat()} kan {windows['90']['total']} bevestigde, gedateerde verliese getel word. "
+        + (f"Die sterkste herhaalbare seine is {', '.join(p['pattern'].replace('_', ' ') for p in patterns[:3])}. " if patterns else "Geen betroubare gedeelde patroon is bewys nie. ")
+        + "Dit is verbande, nie diagnoses of bewese oorsake nie. Kontroleer die oorlewende hok- en werpselmaats en kry veeartsenyhulp indien ernstige tekens of verdere verliese voorkom."
+    )
+    owner_reported = []
+    for report in evidence.get("owner_reported_events") or []:
+        owner_reported.append({
+            "report_identity": report.get("report_identity"),
+            "pig_id": report.get("pig_id"),
+            "reported_at": report.get("reported_at"),
+            "reported_facts": list(report.get("reported_facts") or []),
+            "canonical_mortality": False,
+            "status": "authenticated_owner_report_pending_governed_lifecycle",
+        })
+    actions = [
+        "Observe surviving affected penmates and littermates for appetite, drinking, movement and breathing.",
+        "Verify feed and water continuity for the attributable exposure period.",
+        "Seek veterinary assessment for serious signs, repeated losses or a worsening cluster; no treatment is inferred here.",
+    ]
     return {
         "contract_version": "HERDMASTER_MORTALITY_INTELLIGENCE_V1",
         "analysis_period": {"start": windows["90"]["start"], "end": analysis_end.isoformat()},
@@ -172,18 +192,48 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
         "detected_patterns": patterns,
         "hypotheses": hypotheses,
         "unknown_or_missing": unknowns,
+        "undated_identity_accounting": list(evidence.get("undated_identity_accounting") or []),
+        "owner_reported_not_canonical": owner_reported,
+        "herd_at_risk_denominator": evidence.get("herd_at_risk_denominator") or {
+            "reconstructable": False,
+            "minimum_requirement": "immutable dated entered/on-farm and exited/off-farm lifecycle intervals for every canonical animal, with lifecycle stage effective dates",
+        },
         "smallest_grouped_question": question,
-        "recommendations": [
-            "Observe surviving affected penmates and littermates for appetite, drinking, movement and breathing.",
-            "Verify feed and water continuity for the attributable exposure period.",
-            "Seek veterinary assessment for serious signs, repeated losses or a worsening cluster; no treatment is inferred here.",
-        ],
+        "recommendations": actions,
         "automatic_reassessment_trigger": "new or materially changed mortality, health, weight, movement, feed, water, treatment, or observed ROOTLINE evidence",
         "family_assessment_en": assessment,
+        "family_assessment_af": af_assessment,
         "review_identity": review_identity,
         "evidence_digest": evidence_digest,
         "deduplication_key": f"{review_identity}:{evidence_digest}",
         "unchanged_replay_action": "suppress_duplicate_alert",
         "forecast_evidence": forecasts,
         "authority": {"io": False, "writes": False, "medical": False, "lifecycle": False, "messaging": False},
+    }
+
+
+def build_oom_sakkie_mortality_packet(evidence: dict[str, Any], *, analysis_end: date) -> dict[str, Any]:
+    """Shape the typed result for the existing Oom Sakkie consumption boundary."""
+    result = build_mortality_intelligence(evidence, analysis_end=analysis_end)
+    return {
+        "packet_type": "herdmaster.mortality_intelligence.v1",
+        "review_identity": result["review_identity"],
+        "evidence_digest": result["evidence_digest"],
+        "deduplication_key": result["deduplication_key"],
+        "analysis_period": result["analysis_period"],
+        "rolling_counts": result["rolling_counts"],
+        "baseline": result["historical_baseline"],
+        "proven_facts": result["included_events"],
+        "excluded_or_unresolved": result["excluded_events"] + result["undated_identity_accounting"],
+        "owner_reported_not_canonical": result["owner_reported_not_canonical"],
+        "patterns": result["detected_patterns"],
+        "hypotheses": result["hypotheses"],
+        "unknowns": result["unknown_or_missing"],
+        "question": result["smallest_grouped_question"],
+        "actions": result["recommendations"][:3],
+        "reassessment_trigger": result["automatic_reassessment_trigger"],
+        "english": result["family_assessment_en"],
+        "afrikaans": result["family_assessment_af"],
+        "unchanged_replay_action": result["unchanged_replay_action"],
+        "authority": result["authority"],
     }
