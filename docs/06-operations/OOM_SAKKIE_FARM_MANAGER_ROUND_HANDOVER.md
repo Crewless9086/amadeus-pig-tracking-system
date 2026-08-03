@@ -92,3 +92,71 @@ and 239 subtests. Independent operations/CX and backend/security/privacy/
 authority reviewers approved the shared max-eight specialist bulkhead, bounded
 deadline, typed partial containment, escaped-length HTML budgeting and immutable
 3192 non-retry decision.
+
+## P0 owner-context continuation correction
+
+Message `3192` and its consumed recovery guard remain immutable and must never be
+retried. The next source correction addresses a distinct, genuine lifecycle:
+
+- Telegram `3202`, relay `62062`, mission
+  `OOM-HERDMASTER-368E7C97C6D82C2416716A19`, Pig 127 / `PIG-2026-D13C`;
+- Telegram `3204`, relay `62064`, retained urgent follow-up digest
+  `8cbb0a71c12703513b8085cf22348a83018cb8129ab64550b784845994b26aa1`;
+- Telegram `3206`, relay `62066`, retained entity clarification digest
+  `257c015b5d477340a5b54873c0d8ee6f632541edc781bd912d1039315680f64a`.
+
+The authenticated gateway now preserves reply-to identity and resolves owner
+conversation in this order within the health lifecycle: exact confirmation,
+exact card reply, explicit animal identity, then the uniquely newest pending
+owner question. Multiple genuinely possible cases produce one visible typed
+disambiguation and retain the inbound digest instead of returning a generic
+backend rejection. A bare entity clarification is durably retained while the
+existing lifecycle card and question remain unchanged. Authenticated owner text
+that reaches no supported specialist is retained by a zero-authority owner front
+door with one useful farm-context clarification; the legacy V1 fallback is no
+longer an owner-facing operational result.
+
+The natural welfare evaluator distinguishes positive, negative and Unknown
+physical evidence. Pig 127's preserved follow-up supports owner-reported inability
+to stand, apparent inability to drink or function normally, and the owner's
+assessment that the pig appeared close to death. Those are observations, not a
+diagnosis or cause. Breathing remains the one smallest Unknown observation.
+Nothing in this source correction grants farm-write or treatment authority.
+
+### Exact later production proof
+
+1. Integrate and deploy only an independently reviewed exact head and verify its
+   exact merge/deployment lineage.
+2. Use distinct unconsumed recovery guards for `3204` and `3206`; never alter the
+   `3192` guard.
+3. Recover `3204` once into the existing Pig 127 mission and existing card. Require
+   immediate proportional welfare guidance and one breathing-only question, with
+   zero farm rows.
+4. Recover `3206` once as clarification evidence. Require zero additional card,
+   question or message and prove both guard replays create zero rows, sends, edits,
+   missions and work items.
+5. Release runtime while awaiting Charl. A later authenticated answer must produce
+   the consolidated preview; only its exact authenticated confirmation may invoke
+   the existing governed HERDMASTER writer.
+6. For Proof B, wait for a new genuine manager request. Do not replay `3192`.
+   Require provider-confirmed delivery of one bounded HERDMASTER/ROOTLINE brief,
+   at most three actions and one question, honest SAM/BEACON availability and zero
+   protected actions.
+
+Prepared inputs remain governed and unconsumed until the matching manager path
+is ready: ROOTLINE packet
+`ROOTLINE_POST_P0_COMMISSIONING_AND_DAILY_HANDOVER_20260803.md` at SHA-256
+`BC41AE22FE897C96769E949888C1258157A293B401931737D340D9039D62D4C7`, and
+unmerged HERDMASTER PR `#690` at exact head
+`0b77f10b346f1f0a4a9ee181ec708d43e8e9ffd6`. The ROOTLINE packet is read-only
+specialist evidence. Its commissioning procedure remains a separately protected
+decision and grants no irrigation or hardware authority.
+
+### Later acceptance requirements (not blockers for this P0 proof)
+
+- Charl retains the authenticated owner and protected-decision authority.
+- Mom and Dad require distinct authenticated identities and explicitly scoped
+  permissions before their messages can enter governed owner lifecycles.
+- Natural Afrikaans and English must use the same context, evidence, preview,
+  confirmation, replay and authority rules. Family members must never have to
+  translate observations into English or complete a rigid form.

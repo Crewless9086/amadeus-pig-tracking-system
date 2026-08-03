@@ -274,6 +274,13 @@ def _parse_report(text, provider_time):
             match.end() for match in positive_matches
         )
 
+    def welfare_evidence(positive_pattern, negative_pattern):
+        if latest_negative(positive_pattern, negative_pattern, lower):
+            return "no"
+        if latest_positive(positive_pattern, negative_pattern, lower):
+            return "yes"
+        return "unknown"
+
     def current_sign(pattern):
         return latest_positive(
             rf"\b(?:{pattern})\w*\b",
@@ -365,6 +372,26 @@ def _parse_report(text, provider_time):
             lower,
         ),
     }
+    welfare_check_evidence = {
+        "standing": welfare_evidence(
+            r"\b(?:can|able to) stand\b|\b(?:is|was) standing\b",
+            r"\b(?:not|no longer|cannot|can't|isn't|wasn't|without)\s+(?:being\s+|able to\s+)?(?:stand|standing)\b|\b(?:unable to|stopped|barely|hardly|scarcely)(?: able to)? stand(?:ing)?\b|\bnot able to do anything\b"),
+        "moving": welfare_evidence(r"\bmoving(?: around)?\b",
+            r"\b(?:not|no longer|isn't|wasn't|without) moving\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) mov(?:e|ing)\b|\bnot able to do anything\b"),
+        "breathing": welfare_evidence(r"\bbreath(?:ing|es) normal(?:ly)?\b",
+            r"\b(?:not|no longer|isn't|wasn't|without) breathing normal(?:ly)?\b|\b(?:cannot|can't|unable to|stopped|barely|hardly|scarcely) breath(?:e|ing)(?: normal(?:ly)?)?\b|\b(?:breathing abnormally|struggling to breathe)\b"),
+        "drinking": welfare_evidence(drinking_positive,
+            drinking_negative + r"|\bnot able to do anything\b"),
+    }
+    if re.search(r"\bnot able to do anything\b", lower):
+        observed.extend([
+            {"fact": "unable_to_stand", "value": True, "attribution": "owner_reported"},
+            {"fact": "not_drinking", "value": True, "attribution": "owner_reported_apparent"},
+            {"fact": "unable_to_function_normally", "value": True, "attribution": "owner_reported_apparent"},
+        ])
+    if re.search(r"\b(?:last breath|last breathe|not going to make it)\b", lower):
+        observed.append({"fact": "apparently_close_to_death", "value": True,
+                         "attribution": "owner_reported_not_diagnosis"})
     for fact, supplied in welfare_checks.items():
         if supplied:
             observed.append({"fact": f"{fact}_reported", "value": True})
@@ -423,6 +450,7 @@ def _parse_report(text, provider_time):
         "later_death_count": later_death_count if later_death_match else None,
         "complete_birth_outcomes": complete_outcomes,
         "welfare_checks": welfare_checks,
+        "welfare_check_evidence": welfare_check_evidence,
         "last_seen_supplied": last_seen_supplied,
         "found_time_supplied": found_time_supplied,
         "removal_supplied": removal_supplied,
@@ -547,7 +575,11 @@ def _smallest_question(parsed, missing, animal):
         return f"Has {_display(animal)} been removed from the pen; if yes, when and what was the disposal/removal outcome?"
     if "exact current mating cycle" in missing:
         return f"Which exact current mating cycle applies to {_display(animal)}?"
-    if parsed["current_signs"] and not all(parsed["welfare_checks"].get(key) for key in ("standing", "breathing", "drinking")):
+    unknown = [key for key in ("standing", "breathing", "drinking")
+               if parsed.get("welfare_check_evidence", {}).get(key) == "unknown"]
+    if parsed["current_signs"] and unknown:
+        if unknown == ["breathing"]:
+            return f"Is {_display(animal)} breathing now, and does it look normal or distressed?"
         return f"Is {_display(animal)} able to stand, breathe normally and drink water right now?"
     return ""
 
