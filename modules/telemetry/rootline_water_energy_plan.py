@@ -884,6 +884,7 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                       operating_date):
     adaptive = _dict(irrigation.get("adaptive_management"))
     if adaptive.get("enabled") is True:
+        reservoir_amount = _tank_amount(tanks, "reservoir")
         allowed_zone_fields = {
             "zone_id", "visible_need", "visible_need_observed_at",
             "visible_need_source", "completion_events",
@@ -898,13 +899,18 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             "power": deepcopy(power),
             "local_weather": deepcopy(weather),
             "forecast": deepcopy(forecast),
-            "water": {
-            "observed_at": tanks.get("reservoir_observed_at"),
-            "reservoir_available": (
-                tank_state.get("reservoir") in {"fresh", "aging"}
-                and (_number(_tank_amount(tanks, "reservoir")) or 0) > 0
-            ),
-            },
+            "water": ({
+                "observed_at": (
+                    tanks.get("reservoir_observed_at")
+                    or (tanks.get("observed_at")
+                        if reservoir_amount is not None
+                        else None)
+                ),
+                "reservoir_available": (
+                    tank_state.get("reservoir") in {"fresh", "aging"}
+                    and (_number(reservoir_amount) or 0) > 0
+                ),
+            } if reservoir_amount is not None else {}),
             "policy": {
                 "season": _irrigation_season(now),
                 "target_days_per_week": 4,
@@ -1113,13 +1119,18 @@ def _freshness(packet, now):
 
 
 def _tank_freshness(packet, now):
-    def one(field):
-        age = _age_minutes({"observed_at": packet.get(field)}, now)
+    def one(field, kind):
+        observed_at = packet.get(field)
+        if not observed_at and _tank_amount(packet, kind) is not None:
+            observed_at = packet.get("observed_at")
+        age = _age_minutes({
+            "observed_at": observed_at
+        }, now)
         if age is None:
             return UNAVAILABLE
         return "fresh" if age <= 360 else "aging" if age <= 1440 else "stale"
-    storage = one("storage_observed_at" if "storage_observed_at" in packet else "observed_at")
-    reservoir = one("reservoir_observed_at" if "reservoir_observed_at" in packet else "observed_at")
+    storage = one("storage_observed_at", "storage")
+    reservoir = one("reservoir_observed_at", "reservoir")
     states = {storage, reservoir}
     overall = "stale" if "stale" in states else (
         UNAVAILABLE if UNAVAILABLE in states else "aging" if "aging" in states else "fresh"
