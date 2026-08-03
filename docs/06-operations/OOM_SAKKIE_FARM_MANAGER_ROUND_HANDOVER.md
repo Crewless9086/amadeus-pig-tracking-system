@@ -65,3 +65,30 @@ review approval is required on the final exact head before integration.
 
 Pig 125 completed work and other closed work are specialist lifecycle truth and
 must remain suppressed. Pig 11 remains owned by its existing active lifecycle.
+
+## 3 August production containment
+
+PR #688 merged as `95e3431aa3e1a6f2ba9b0f6d1d22f39514b73a42`, all
+exact-merge gates passed, and Render deployment `dep-d9o4asnlk1mc739khb2g`
+became healthy at that exact commit. Recovery guard
+`OOM-FARM-ROUND-3192-RECOVERY-95E3431A` was consumed once.
+
+The manager result persisted successfully as
+`OOM-FARM-ROUND-9DCAD5A9AAC677A90A92CCB0`, but the synchronous worker reached
+its 30-second timeout while Telegram delivery was in flight. The durable family
+lifecycle contains one delivery attempt and no authoritative delivered identity.
+Provider delivery is therefore ambiguous: do not retry, resend or bind a guessed
+message. Farm state remained outside the manager's zero-authority path.
+
+The follow-up source correction runs independent read-only specialist loaders
+concurrently and constrains rendered Telegram text to 3,900 characters. This
+restores delivery budget generically; it does not authorize replay of the
+ambiguous 3192 attempt. A later fresh owner manager request is the next safe live
+acceptance case unless authoritative provider chronology first proves the exact
+3192 delivery identity.
+
+The corrected delivery-budget candidate passed 560 focused tests with 7 skipped
+and 239 subtests. Independent operations/CX and backend/security/privacy/
+authority reviewers approved the shared max-eight specialist bulkhead, bounded
+deadline, typed partial containment, escaped-length HTML budgeting and immutable
+3192 non-retry decision.
