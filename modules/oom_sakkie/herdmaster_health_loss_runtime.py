@@ -64,14 +64,17 @@ def handle_authenticated_health_loss_message(
     """Return one useful owner response, or ``handled=False`` for other intents."""
     parsed = parsed if isinstance(parsed, Mapping) else {}
     text = str(parsed.get("text") or "").strip()
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     provider_message_id = str(parsed.get("provider_message_id") or "").strip()
     provider_timestamp = str(parsed.get("provider_timestamp") or "").strip()
-    explicit_health = bool(HEALTH_PATTERN.search(text))
+    explicit_health = bool(HEALTH_PATTERN.search(text) or (
+        semantic.get("domain") == "herd_health" and not semantic.get("needs_clarification")))
     confirmation_shaped = bool(CONFIRMATION_PATTERN.fullmatch(text))
     plausible_follow_up = bool(
         FOLLOW_UP_PATTERN.search(text)
         and not UNRELATED_OPERATIONAL_PATTERN.search(text)
-    )
+    ) or bool(semantic.get("domain") == "herd_health" and semantic.get("continuation")
+              and not semantic.get("needs_clarification"))
     reply_to_message_id = str(parsed.get("reply_to_message_id") or "").strip()
     # Active-case persistence belongs only to this specialist boundary.  Do
     # not make unrelated read-only gateway traffic depend on its store merely
@@ -107,7 +110,8 @@ def handle_authenticated_health_loss_message(
     active, ambiguity, superseded = _resolve_active_context(
         text, contexts, provider_message_id,
         reply_to_message_id=reply_to_message_id,
-        provider_timestamp=provider_timestamp)
+        provider_timestamp=provider_timestamp,
+        entity_refs=semantic.get("entity_refs") or ())
     if ambiguity:
         if all(str(row.get("status") or "").startswith("waiting_for_context")
                for row in ambiguity):
@@ -337,7 +341,13 @@ def handle_authenticated_health_loss_message(
                         "writes_farm_data": False, "protected_actions_performed": False}, 503
     context_text = str((active_for_message or {}).get("combined_text") or "").strip()
     joiner = "Owner correction:" if owner_intent == "corrects_preview" else "Follow-up:"
-    combined_text = f"{context_text} {joiner} {text}".strip() if context_text else text
+    semantic_observation = str(semantic.get("observation") or "").strip()
+    interpreted = (f" Semantic interpretation pending owner preview confirmation: {semantic_observation}"
+                   if semantic.get("domain") == "herd_health"
+                   and float(semantic.get("confidence") or 0) >= 0.8
+                   and semantic_observation else "")
+    current_text = (text + interpreted).strip()
+    combined_text = f"{context_text} {joiner} {current_text}".strip() if context_text else current_text
     evidence = load_canonical_health_loss_evidence(connect_factory=connect_factory)
     envelope = {
         "gateway_authority": gateway_authority,
@@ -359,6 +369,8 @@ def handle_authenticated_health_loss_message(
         "evidence_provider_message_id": evidence_provider_message_id,
         "evidence_provider_timestamp": evidence_provider_timestamp,
         "combined_text": combined_text,
+        "owner_text_verbatim": text,
+        "semantic_interpretation": dict(semantic) if semantic else {},
         "status": "waiting_for_input" if int(preview.get("question_count") or 0) else "preview_ready",
         "operation_id": str((preview.get("confirmation_binding") or {}).get("operation_id") or ""),
         "evidence_generation": str(evidence.get("evidence_generation") or ""),
@@ -632,7 +644,7 @@ def _context_missing(context):
 
 
 def _resolve_active_context(text, contexts, provider_message_id="", *,
-                            reply_to_message_id="", provider_timestamp=""):
+                            reply_to_message_id="", provider_timestamp="", entity_refs=()):
     exact_confirmations = [row for row in contexts
         if text == "CONFIRM " + str(row.get("operation_id") or "")]
     if len(exact_confirmations) == 1:
@@ -670,8 +682,9 @@ def _resolve_active_context(text, contexts, provider_message_id="", *,
         if len(replies) > 1:
             return None, replies, []
     entity = ENTITY_PATTERN.search(text)
-    if entity:
-        tag = entity.group(1).casefold()
+    semantic_tag = _semantic_tag(entity_refs)
+    if entity or semantic_tag:
+        tag = entity.group(1).casefold() if entity else semantic_tag
         consumed_contexts = {str(value or "") for row in contexts
                              for value in row.get("consumed_context_missions") or []}
         pending_matches = [row for row in contexts
@@ -698,7 +711,7 @@ def _resolve_active_context(text, contexts, provider_message_id="", *,
                         "_pending_claimed": str(pending.get("status") or "") == "waiting_for_context_consumption"}, False, []
         if len(pending_matches) > 1:
             return None, pending_matches, []
-        matches = [row for row in contexts if _context_tag(row) == entity.group(1).casefold()
+        matches = [row for row in contexts if _context_tag(row) == tag
                    and str(row.get("status") or "") in {"waiting_for_input", "preview_ready",
                                                           "waiting_for_confirmation", "preview_correction_pending"}]
         if len(matches) == 1:
@@ -729,6 +742,14 @@ def _resolve_active_context(text, contexts, provider_message_id="", *,
         if len(newest) == 1 and _chronology_allows(newest[0], provider_message_id, provider_timestamp):
             return newest[0], False, []
     return None, candidates if len(candidates) > 1 else False, []
+
+
+def _semantic_tag(entity_refs):
+    for value in entity_refs or ():
+        match = re.search(r"(?:pig|tag|vark)?\s*([0-9]{1,8})\b", str(value), re.I)
+        if match:
+            return match.group(1).casefold()
+    return ""
 
 
 def _chronology_allows(active, provider_message_id, provider_timestamp):
