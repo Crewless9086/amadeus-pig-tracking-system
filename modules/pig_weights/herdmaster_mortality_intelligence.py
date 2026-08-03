@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter, defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 
@@ -44,6 +44,30 @@ def _canonicalize(value: Any) -> Any:
 def _public_event(event: dict[str, Any]) -> dict[str, Any]:
     allowed = ("event_id", "pig_id", "effective_date", "event_kind", "confirmation", "canonical_status", "litter_id", "pen_id", "exclusion_reasons")
     return {key: event.get(key) for key in allowed if event.get(key) is not None}
+
+
+def _authenticated_owner_receipt(report: dict[str, Any]) -> bool:
+    receipt = report.get("authentication_receipt")
+    if not isinstance(receipt, dict) or not report.get("report_identity") or not report.get("pig_id"):
+        return False
+    principal = str(receipt.get("principal_id") or "")
+    chat = str(receipt.get("private_chat_id") or "")
+    digest = str(receipt.get("receipt_digest") or "")
+    try:
+        datetime.fromisoformat(str(report.get("provider_timestamp") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return bool(
+        receipt.get("verified_by") == "oom_sakkie_authenticated_gateway"
+        and receipt.get("authority_scope") == "private_owner_health_loss"
+        and principal
+        and chat
+        and receipt.get("bound_principal_id") == principal
+        and receipt.get("bound_private_chat_id") == chat
+        and len(digest) == 64
+        and all(character in "0123456789abcdefABCDEF" for character in digest)
+        and report.get("provider_message_id")
+    )
 
 
 def _validate_accounting(evidence: dict[str, Any]) -> list[dict[str, Any]]:
@@ -204,7 +228,7 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
     )
     owner_reported = []
     for report in evidence.get("owner_reported_events") or []:
-        authenticated = bool(report.get("authenticated") is True and report.get("private_chat") is True and report.get("sender_role") == "owner" and report.get("provider_message_id") and report.get("provider_timestamp"))
+        authenticated = _authenticated_owner_receipt(report)
         owner_reported.append({
             "report_identity": report.get("report_identity"),
             "pig_id": report.get("pig_id"),
