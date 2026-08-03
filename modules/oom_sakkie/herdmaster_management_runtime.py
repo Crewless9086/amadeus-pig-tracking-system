@@ -11,6 +11,7 @@ from modules.oom_sakkie.herdmaster_management_adapter import (
 )
 import hashlib
 import json
+from modules.oom_sakkie.farm_manager_loop import SpecialistResult
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
 
 EVENT_SOURCE = "oom_sakkie_herdmaster_management_consumer"
@@ -19,7 +20,8 @@ OBSERVATION_SOURCE = "oom_sakkie_owner_observation"
 
 def consume_current_herdmaster_management(*, authority: Any, owner_user_id: str,
         now: datetime | None = None, canonical_loader=load_current_breeding_operating_loop,
-        observation_loader=None, active_loader=None, prior_loader=None, recorder=None):
+        observation_loader=None, active_loader=None, prior_loader=None, recorder=None,
+        retain_replay_result=False):
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     auth = validate_management_authority(
         authority, str(owner_user_id), now, trusted_now=now)
@@ -37,6 +39,15 @@ def consume_current_herdmaster_management(*, authority: Any, owner_user_id: str,
         expected_owner_user_id=str(owner_user_id), canonical_round=canonical,
         invocation_at=now, trusted_now=now, attributable_owner_observations=observations,
         active_lifecycles=active, prior_consumptions=prior)
+    if (retain_replay_result
+            and result.get("status") == "herdmaster_management_round_replay_suppressed"):
+        replay = consume_herdmaster_management_round(authority=authority,
+            expected_owner_user_id=str(owner_user_id), canonical_round=canonical,
+            invocation_at=now, trusted_now=now,
+            attributable_owner_observations=observations,
+            active_lifecycles=active, prior_consumptions=())
+        if isinstance(replay.get("specialist_result"), SpecialistResult):
+            result = {**replay, "status": "herdmaster_management_round_replay_suppressed"}
     if result.get("status") == "herdmaster_management_round_consumed":
         try:
             recorded = (recorder or _record_consumption)(result)
@@ -94,7 +105,8 @@ def _load_active_lifecycles(owner_user_id):
         pig_id = str(identity.get("pig_id") or "")
         if not pig_id:
             continue
-        if row.get("status") in {"waiting_for_input", "preview_ready"} and card_message_id:
+        if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
+                                  "preview_correction_pending"} and card_message_id:
             active[pig_id] = {"pig_id": pig_id, "lifecycle_id": str(row.get("mission_id") or ""),
                 "state": str(row.get("status")), "card_message_id": card_message_id}
         else:
