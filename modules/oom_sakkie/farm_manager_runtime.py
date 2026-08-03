@@ -60,7 +60,9 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
                               event_store=None, weighing_loader=None,
                               specialist_budget_seconds=SPECIALIST_BUDGET_SECONDS,
                               clock=None):
-    if not is_farm_manager_round(parsed.get("text", "")):
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), dict) else {}
+    if not (semantic.get("domain") == "manager_round" and not semantic.get("needs_clarification")) \
+            and not is_farm_manager_round(parsed.get("text", "")):
         return {"handled": False}, 200
     # The durable manager lifecycle is provider-bound. Legacy/local callers
     # without Telegram chronology continue through the existing read-only tool.

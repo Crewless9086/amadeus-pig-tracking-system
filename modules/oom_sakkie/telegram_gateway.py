@@ -12,6 +12,7 @@ from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 from modules.oom_sakkie.owner_conversation_front_door import build_owner_clarification
 from modules.oom_sakkie.owner_operational_continuation import handle_owner_operational_continuation
+from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -31,6 +32,7 @@ _AUTH_LOCKED_UNTIL = 0.0
 
 def telegram_gateway_policy(environ=None):
     source = environ if environ is not None else os.environ
+    semantic_policy = semantic_front_door_policy(source)
     explicitly_enabled = _env_truthy(source.get(ENABLED_ENV))
     token = str(source.get(TOKEN_ENV, "") or "").strip()
     token_configured = bool(token)
@@ -75,8 +77,9 @@ def telegram_gateway_policy(environ=None):
             "deduplicated": True,
             "scope": "visible_acknowledgement_or_consolidated_read_only_result",
         },
-        "deterministic_only": True,
-        "can_trigger_outbound_llm": False,
+        "deterministic_only": not (semantic_policy["enabled"] and semantic_policy["configured"]),
+        "semantic_front_door": semantic_policy,
+        "can_trigger_outbound_llm": semantic_policy["enabled"] and semantic_policy["configured"],
         "minimum_token_entropy": "Requires a long random token of at least 32 characters before the gateway can enable.",
         "direct_bot_cutover_enabled": False,
         "writes": False,
@@ -105,8 +108,8 @@ def telegram_gateway_exposure_preflight(environ=None):
         _check("allowed_user_ids_configured", policy["allowed_user_ids_configured"], "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS is configured."),
         _check("constant_time_compare", True, "Token comparison uses hmac.compare_digest."),
         _check("auth_lockout_enabled", policy["auth_rate_limit"]["enabled"], "Repeated bad tokens trigger a fail-closed lockout."),
-        _check("deterministic_only", policy["deterministic_only"], "telegram_read_only never uses LLM router or answer composer."),
-        _check("no_outbound_llm", not policy["can_trigger_outbound_llm"], "Gateway cannot trigger outbound LLM calls."),
+        _check("semantic_llm_has_zero_authority", not policy["semantic_front_door"]["can_execute"],
+               "The semantic LLM interprets text only; deterministic specialist boundaries retain authority."),
         _check("ordinary_reply_transport_bounded", not policy["sends_telegram"] and not policy["direct_bot_cutover_enabled"],
                "The gateway itself has no ambient send authority; authenticated provider-bound family lifecycles may deliver through the existing owner bot."),
         _check("owner_task_send_is_scoped", not policy["owner_task_lifecycle"]["enabled"] or (
@@ -212,6 +215,10 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     )
     if parsed["telegram_chat_type"] != "private":
         gateway_authority = None
+
+    semantic = interpret_owner_message(parsed, environ=source) if gateway_authority is not None else None
+    if semantic is not None:
+        parsed = {**parsed, "semantic": semantic.as_hint()}
 
     continuation_result, continuation_status = handle_owner_operational_continuation(
         parsed, gateway_authority,
@@ -444,8 +451,8 @@ def _gateway_result(success, status, policy, status_code):
         "telegram_gateway": policy,
         "sends_telegram": False,
         "reply_transport": "caller_handles_telegram_send",
-        "deterministic_only": True,
-        "can_trigger_outbound_llm": False,
+        "deterministic_only": policy.get("deterministic_only", True),
+        "can_trigger_outbound_llm": policy.get("can_trigger_outbound_llm", False),
         "writes": False,
         "records_audit_trace": False,
         "audit_trace_mode": policy.get("audit_trace_mode", "tool_dependent"),
