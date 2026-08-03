@@ -9,6 +9,9 @@ import re
 import os
 from typing import Any, Callable
 from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait
+import html
 
 from modules.oom_sakkie.farm_manager_loop import (
     Authority, Provenance, SpecialistAvailability, SpecialistResult,
@@ -20,6 +23,8 @@ from modules.telemetry.rootline_specialist_result import build_current_rootline_
 
 CONTRACT_VERSION = "oom_sakkie_farm_manager_round_v1"
 EVENT_SOURCE = "oom_sakkie_farm_manager_round"
+SPECIALIST_BUDGET_SECONDS = 12.0
+_SPECIALIST_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="oom-manager")
 _MANAGER_PHRASES = (
     "what needs our attention", "what needs attention", "farm status",
     "farm priorities", "morning brief", "management plan", "today's work",
@@ -48,7 +53,8 @@ def is_farm_manager_round(text: str) -> bool:
 
 def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=None,
                               loaders: dict[str, Callable] | None = None,
-                              event_store=None, weighing_loader=None):
+                              event_store=None, weighing_loader=None,
+                              specialist_budget_seconds=SPECIALIST_BUDGET_SECONDS):
     if not is_farm_manager_round(parsed.get("text", "")):
         return {"handled": False}, 200
     # The durable manager lifecycle is provider-bound. Legacy/local callers
@@ -93,15 +99,28 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     }
     results = []
     exceptions = {}
-    for specialist in ("herdmaster", "rootline", "sam", "beacon"):
-        try:
-            result = providers[specialist]()
-            if not isinstance(result, SpecialistResult):
-                raise ValueError("malformed specialist result")
-        except Exception:
-            result = _missing(specialist, now, SpecialistAvailability.CONTAINED)
-            exceptions[specialist] = "specialist_result_unavailable"
-        results.append(result)
+    specialists = ("herdmaster", "rootline", "sam", "beacon")
+    # Independent specialist evidence loads run concurrently so one slow source
+    # cannot consume the synchronous Telegram delivery budget. HERDMASTER may
+    # append only its existing idempotent internal consumption audit trace.
+    futures = {specialist: _SPECIALIST_EXECUTOR.submit(providers[specialist]) for specialist in specialists}
+    done, pending = wait(tuple(futures.values()), timeout=max(0.01, float(specialist_budget_seconds)))
+    try:
+        for specialist in specialists:
+            future = futures[specialist]
+            try:
+                if future not in done:
+                    raise TimeoutError("specialist_delivery_budget_exceeded")
+                result = future.result()
+                if not isinstance(result, SpecialistResult):
+                    raise ValueError("malformed specialist result")
+            except Exception:
+                result = _missing(specialist, now, SpecialistAvailability.CONTAINED)
+                exceptions[specialist] = "specialist_result_unavailable"
+            results.append(result)
+    finally:
+        for future in pending:
+            future.cancel()
     try:
         weighing_worklist = tuple((weighing_loader or _load_weighing_worklist)())
         results[0] = _consolidate_herdmaster(results[0], weighing_worklist, weighing_available=True)
@@ -111,7 +130,12 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
         results.append(_missing("herdmaster_weighing", now, SpecialistAvailability.CONTAINED))
         results[0] = _consolidate_herdmaster(results[0], weighing_worklist, weighing_available=False)
     brief = build_family_brief(results, now=now)
-    answer = _render(brief)
+    try:
+        answer = _render(brief)
+    except ValueError:
+        return {"handled": True, "success": False,
+            "status": "farm_manager_round_render_contained",
+            "mission_id": mission_id, **ZERO_AUTHORITY}, 503
     result_digest = _digest({
         "binding": binding, "answer": answer,
         "specialists": [(r.specialist, r.result_id, r.observed_at.isoformat(), r.availability.value) for r in results],
@@ -229,17 +253,33 @@ def _render(brief):
     }
     lines = ["<b>OOM SAKKIE — TODAY'S FARM BRIEF</b>"]
     for item in brief.queue[:3]:
-        lines += ["", f"<b>{labels[item.state]}</b> — {item.title}",
-                  item.why, f"Next: {item.next_action}",
-                  f"Owner: {item.assignee.title()} · Specialist: {item.provenance.specialist.upper()}"]
+        lines += ["", f"<b>{labels[item.state]}</b> — {_clip(item.title, 120)}",
+                  _clip(item.why, 300), f"Next: {_clip(item.next_action, 450)}",
+                  f"Owner: {_clip(item.assignee.title(), 30)} · Specialist: {_clip(item.provenance.specialist.upper(), 40)}"]
     if brief.specialist_gaps:
-        lines += ["", "<b>BOUNDED WAITING</b>", "Unavailable or stale specialist evidence limits only its own conclusion: " +
-                  ", ".join(f"{k.upper()} ({v})" for k, v in brief.specialist_gaps.items()) + "."]
+        gap_text = ", ".join(f"{k.upper()} ({v})" for k, v in brief.specialist_gaps.items())
+        lines += ["", "<b>BOUNDED WAITING</b>", "Unavailable or stale specialist evidence limits only its own conclusion: " + _clip(gap_text, 350) + "."]
     questions = [question for values in brief.questions.values() for question in values]
     if questions:
-        lines += ["", "<b>ONE QUESTION</b>", questions[0]]
+        lines += ["", "<b>ONE QUESTION</b>", _clip(questions[0], 300)]
     lines += ["", "No weight, mating, farm, customer, publication or hardware action was performed. Weights require an exact tag/Pig ID/weight preview and confirmation; mating and irrigation execution remain separately governed."]
-    return "\n".join(lines)
+    rendered = "\n".join(lines)
+    if len(rendered) > 3900:
+        raise ValueError("farm_manager_render_budget_exceeded")
+    return rendered
+
+
+def _clip(value, limit):
+    text = " ".join(str(value or "").split())
+    escaped = []
+    used = 0
+    for character in text:
+        entity = html.escape(character, quote=False)
+        if used + len(entity) > limit:
+            return "".join(escaped).rstrip() + "…"
+        escaped.append(entity)
+        used += len(entity)
+    return "".join(escaped)
 
 
 def _digest(value):

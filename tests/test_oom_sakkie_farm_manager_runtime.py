@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
+import time
 
 from modules.oom_sakkie.farm_manager_loop import (
     Authority, Provenance, SpecialistAvailability, SpecialistResult,
     SpecialistWorkItem, WorkState,
 )
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round, is_farm_manager_round
+from modules.oom_sakkie import farm_manager_runtime
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 
 NOW = datetime(2026, 8, 3, 6, 35, tzinfo=timezone.utc)
@@ -121,3 +123,72 @@ def test_weighing_loader_failure_is_a_bounded_visible_gap():
         weighing_loader=lambda:(_ for _ in ()).throw(RuntimeError("down")))
     assert result["specialist_gaps"]["herdmaster_weighing"] == "contained"
     assert "HERDMASTER_WEIGHING (contained)" in result["answer"]
+
+
+def test_independent_specialists_share_one_bounded_delivery_budget_and_text_is_telegram_safe():
+    def slow(name):
+        time.sleep(0.12)
+        value = specialist(name)
+        item = value.work_items[0]
+        return SpecialistResult(name, value.result_id, NOW, work_items=(SpecialistWorkItem(
+            item.item_id, item.dedupe_key, item.domain, item.title, "why " * 600,
+            "next " * 600, item.assignee, item.state, item.authority, item.provenance,
+            business_value=item.business_value),))
+    loaders={name:(lambda n=name:slow(n)) for name in ("herdmaster","rootline","sam","beacon")}
+    started=time.monotonic()
+    result,_=handle_farm_manager_round(parsed(),issue_gateway_owner_authority(OWNER,OWNER),now=NOW,
+        loaders=loaders,event_store=memory_store(),weighing_loader=lambda:())
+    elapsed=time.monotonic()-started
+    assert elapsed < 0.35
+    assert len(result["answer"]) <= 3900
+    assert "No weight, mating, farm, customer, publication or hardware action was performed." in result["answer"]
+    assert result["answer"].count("<b>") == result["answer"].count("</b>")
+
+
+def test_slow_specialist_is_contained_without_blocking_supported_brief_and_html_is_escaped():
+    def slow():
+        time.sleep(0.5)
+        return specialist("beacon")
+    hostile = specialist("herdmaster")
+    original = hostile.work_items[0]
+    hostile = SpecialistResult("herdmaster", hostile.result_id, NOW, work_items=(SpecialistWorkItem(
+        original.item_id, original.dedupe_key, original.domain, "Pig <unsafe> & current", original.why,
+        original.next_action, original.assignee, original.state, original.authority, original.provenance,
+        business_value=original.business_value),))
+    loaders={"herdmaster":lambda:hostile,"rootline":lambda:specialist("rootline"),
+        "sam":lambda:specialist("sam"),"beacon":slow}
+    started=time.monotonic()
+    result,_=handle_farm_manager_round(parsed(),issue_gateway_owner_authority(OWNER,OWNER),now=NOW,
+        loaders=loaders,event_store=memory_store(),weighing_loader=lambda:(),specialist_budget_seconds=0.05)
+    assert time.monotonic()-started < 0.3
+    assert result["specialist_gaps"]["beacon"] == "contained"
+    assert "&lt;unsafe&gt; &amp; current" in result["answer"]
+    assert "<unsafe>" not in result["answer"]
+    assert "No weight, mating, farm, customer, publication or hardware action was performed." in result["answer"]
+
+
+def test_escape_heavy_specialist_text_stays_valid_and_inside_telegram_budget():
+    def hostile(name):
+        value=specialist(name);item=value.work_items[0];noise="&<>"*900
+        return SpecialistResult(name,value.result_id,NOW,work_items=(SpecialistWorkItem(
+            item.item_id,item.dedupe_key,item.domain,noise,noise,noise,item.assignee,item.state,
+            item.authority,item.provenance,business_value=item.business_value),))
+    loaders={name:(lambda n=name:hostile(n)) for name in ("herdmaster","rootline","sam","beacon")}
+    result,status=handle_farm_manager_round(parsed(),issue_gateway_owner_authority(OWNER,OWNER),now=NOW,
+        loaders=loaders,event_store=memory_store(),weighing_loader=lambda:())
+    assert status==200 and result["success"] is True and len(result["answer"])<=3900
+    assert result["answer"].count("<b>")==result["answer"].count("</b>")
+    assert "No weight, mating, farm, customer, publication or hardware action was performed." in result["answer"]
+
+
+def test_repeated_timeouts_remain_inside_shared_worker_bulkhead():
+    def slow():
+        time.sleep(0.15)
+        return specialist("beacon")
+    for index in range(3):
+        row=parsed(EXACT+f" {index}");row["provider_message_id"]=str(4000+index)
+        loaders={name:slow for name in ("herdmaster","rootline","sam","beacon")}
+        result,_=handle_farm_manager_round(row,issue_gateway_owner_authority(OWNER,OWNER),now=NOW,
+            loaders=loaders,event_store=memory_store(),weighing_loader=lambda:(),specialist_budget_seconds=0.01)
+        assert result["success"] is True
+    assert len(farm_manager_runtime._SPECIALIST_EXECUTOR._threads) <= 8
