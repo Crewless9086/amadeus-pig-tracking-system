@@ -6,6 +6,7 @@ from unittest.mock import patch
 from modules.oom_sakkie.telegram_gateway import (
     _send_owner_task_telegram,
     handle_telegram_gateway_message,
+    telegram_gateway_policy,
 )
 
 
@@ -49,6 +50,27 @@ class OwnerTaskGatewayTests(unittest.TestCase):
         mock_api.return_value={"ok":True,"result":{}}
         result=_send_owner_task_telegram("42","done",ENV)
         self.assertFalse(result["success"]);self.assertEqual(result["telegram_message_id"],"")
+
+    @patch("modules.sales.sam_live_stock_launch_control._telegram_api")
+    def test_owner_task_sender_uses_canonical_oom_bot_when_sam_bot_is_absent(self,mock_api):
+        mock_api.return_value={"ok":True,"result":{"message_id":4002}}
+        source={key:value for key,value in ENV.items()
+                if key != "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN"}
+        source["OOM_SAKKIE_TELEGRAM_BOT_TOKEN"]="oom-sakkie-bot-token"
+        result=_send_owner_task_telegram("42","question",source)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["telegram_message_id"],"4002")
+        self.assertEqual(mock_api.call_args.args[0],"oom-sakkie-bot-token")
+        self.assertNotIn("oom-sakkie-bot-token",str(result))
+
+    def test_policy_reports_oom_bot_fallback_send_authority(self):
+        source={key:value for key,value in ENV.items()
+                if key != "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN"}
+        source["OOM_SAKKIE_TELEGRAM_BOT_TOKEN"]="oom-sakkie-bot-token"
+        policy=telegram_gateway_policy(source)
+        self.assertTrue(policy["owner_task_lifecycle"]["enabled"])
+        self.assertTrue(policy["owner_task_lifecycle"]["sends_telegram"])
+        self.assertNotIn("oom-sakkie-bot-token",str(policy))
 
     def test_gatekeeper_reuses_single_trigger_and_active_gateway_for_owner_request_media(self):
         workflow=json.loads(Path("docs/04-n8n/workflows/2 - The GateKeeper/workflow.json").read_text(encoding="utf-8-sig"))

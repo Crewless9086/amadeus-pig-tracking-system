@@ -36,7 +36,7 @@ def telegram_gateway_policy(environ=None):
     token_meets_minimum = len(token) >= MIN_TOKEN_CHARS
     allowed_ids = _allowed_user_ids(source)
     auth_locked = _auth_locked()
-    owner_task_bot_configured = bool(str(source.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or "").strip())
+    owner_task_bot_configured = bool(_owner_task_bot_token(source))
     return {
         "enabled": explicitly_enabled and token_configured and token_meets_minimum and bool(allowed_ids) and not auth_locked,
         "explicitly_enabled": explicitly_enabled,
@@ -389,7 +389,7 @@ def parse_telegram_gateway_payload(payload):
 
 def _send_owner_task_telegram(chat_id, text, source):
     from modules.sales.sam_live_stock_launch_control import _telegram_api
-    token = str(source.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or "").strip()
+    token = _owner_task_bot_token(source)
     if not token:
         return {"success": False, "status": "owner_task_telegram_token_not_configured"}
     try:
@@ -404,6 +404,11 @@ def _send_owner_task_telegram(chat_id, text, source):
     return {"success": response.get("ok") is True and bool(message_id),
             "status": "owner_task_telegram_delivered" if message_id else "owner_task_telegram_delivery_unconfirmed",
             "telegram_message_id": message_id}
+
+
+def _owner_task_bot_token(source):
+    return str(source.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN")
+               or source.get("OOM_SAKKIE_TELEGRAM_BOT_TOKEN") or "").strip()
 
 
 def _gateway_result(success, status, policy, status_code):
