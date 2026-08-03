@@ -12,11 +12,12 @@ typed command-inert packet to ROOTLINE. A new physical observation forces a
 fresh governed reassessment; it is never silently combined with or overridden
 by the older canonical recommendation.
 
-The source change creates no router, webhook, queue, Telegram path, farm write,
-or device transport. Its durable dispatch event preserves both independent
+The source change creates no router, webhook, queue, Telegram path or device
+transport. It adds one narrowly scoped authenticated canonical owner-observation
+write before ROOTLINE reassessment. Its durable dispatch event preserves both independent
 observations and suppresses repeat specialist dispatch after completion. The
-intake result cannot send Telegram, write canonical farm observations, retry ON,
-or issue a hardware command. A missing or malformed deployed ROOTLINE
+intake result cannot itself send Telegram, retry ON, or issue a hardware command.
+A missing or malformed deployed ROOTLINE
 consumer produces one visible typed containment instead of the legacy sheet
 disclaimer.
 
@@ -47,3 +48,18 @@ plans, commands, cards, messages and farm events.
 
 The source contract alone is not business completion. Provider-confirmed
 ROOTLINE decision and the supported real segment outcome are required.
+
+## Canonical fraction observation bridge
+
+The continuation adds a provider-bound bridge to the existing append-only
+`rootline_tank_observations` rail. Natural fractions retain their exact
+numerator and denominator in dedicated fraction columns; legacy count columns
+remain NULL rather than misrepresenting fraction parts as physical tank counts.
+Reservoir and storage are read back
+independently with their shared provider message identity and exact provider
+timestamp. The idempotency key binds message and content digest; exact replay
+creates no row and changed evidence conflicts.
+
+Operational intake persists and verifies canonical readback before asking
+ROOTLINE to reassess. This grants observation-write authority only; Telegram,
+planning, schedules, ON/OFF and all other hardware authority remain separate.

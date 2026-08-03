@@ -13,9 +13,10 @@ from modules.oom_sakkie.gateway_authority import (
     ROOTLINE_READ_ONLY_TOOL,
     bind_gateway_owner_authority,
     validates_rootline_gateway_authority,
+    issue_rootline_observation_write_authority,
 )
 from modules.oom_sakkie.rootline_commissioning_adapter import accept_supervised_commissioning_presence
-from modules.oom_sakkie.rootline_operational_adapter import dispatch_rootline_operation
+from modules.oom_sakkie.rootline_operational_adapter import dispatch_rootline_operation, persist_rootline_observations
 
 CONTRACT_VERSION = "oom_sakkie_operational_specialist_intake_v1"
 ROOTLINE_PRESENCE_MAX_AGE_SECONDS = 300
@@ -38,11 +39,13 @@ def handle_operational_specialist_message(
     parsed: Mapping[str, Any], gateway_authority: Any, *, now: datetime | None = None,
     rootline_dispatcher: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = accept_supervised_commissioning_presence,
     rootline_operations_dispatcher: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = dispatch_rootline_operation,
+    rootline_observation_writer: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     operation_store=None,
 ) -> tuple[dict[str, Any], int]:
     text = str((parsed or {}).get("text") or "").strip()
     if _ROOTLINE_OPERATIONAL.search(text) and not _ROOTLINE_PRESENCE.search(text):
-        return _handle_rootline_operation(parsed, gateway_authority, rootline_operations_dispatcher, now,
+        return _handle_rootline_operation(parsed, gateway_authority, rootline_operations_dispatcher,
+                                          rootline_observation_writer or persist_rootline_observations, now,
                                           operation_store or _operation_event_store)
     if not _ROOTLINE_PRESENCE.search(text):
         return {"handled": False, "status": "operational_specialist_intake_not_applicable"}, 200
@@ -100,7 +103,7 @@ def handle_operational_specialist_message(
         **ZERO_AUTHORITY}, 200)
 
 
-def _handle_rootline_operation(parsed, gateway_authority, dispatcher, now, store):
+def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observation_writer, now, store):
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     provider_id = str(parsed.get("provider_message_id") or "").strip()
     provider_at = _time(parsed.get("provider_timestamp"))
@@ -135,6 +138,9 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, now, store
         "authority": {"farm_observation_write": False, "hardware_control": False,
                       "telegram_send": False, "automatic_on_retry": False},
     }
+    write_bound=issue_rootline_observation_write_authority(gateway_authority,
+        mission_id=mission,provider_message_id=provider_id,provider_timestamp=provider_at.isoformat(),
+        content_sha256=context["content_sha256"])
     try:
         prior = list(store("load", mission, None) or [])
     except Exception:
@@ -168,14 +174,33 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, now, store
         result = _contained(parsed, "rootline_operational_dispatch_claim_conflict", now)
         result["answer"] = "<b>IRRIGATION FOLLOW-UP CONTAINED</b>\n\nThe current handover is already being processed. No irrigation command was sent."
         return result, 202
+    try:
+        observation_result = dict(observation_writer(context, write_bound) or {}) if observation_writer else {}
+    except Exception:
+        observation_result = {}
+    write_truth = _canonical_write_truth(observation_result)
+    if (observation_result.get("success") is not True
+            or observation_result.get("contract_version") != "rootline_owner_observation_bridge_v1"
+            or write_truth is None):
+        result = _contained(parsed, "rootline_canonical_observation_bridge_failed", now)
+        _apply_write_truth(result, observation_result, write_truth)
+        result["answer"] = "<b>ROOTLINE OBSERVATION CONTAINED</b>\n\nThe owner evidence could not be proven in canonical readback. No irrigation command was sent."
+        if _record_terminal(store, mission, context, result).get("success") is not True:
+            failed, failed_status = _persistence_failed(parsed, now)
+            _apply_write_truth(failed, observation_result, write_truth)
+            return failed, failed_status
+        return result, 503
     if dispatcher is None:
         result = _contained(parsed, "rootline_operational_adapter_unavailable", now)
         result.update({"observations": observations, "visible_irrigation_need_zone": visible_need,
             "answer": ("<b>IRRIGATION FOLLOW-UP CONTAINED</b>\n\n"
-                       "I received the current water and irrigation observation, but ROOTLINE did not accept "
+                       "I retained the current water and irrigation observation, but ROOTLINE did not accept "
                        "the operational handover. No irrigation command was sent.")})
+        _apply_write_truth(result, observation_result, write_truth)
         if _record_terminal(store, mission, context, result).get("success") is not True:
-            return _persistence_failed(parsed, now)
+            failed, failed_status = _persistence_failed(parsed, now)
+            _apply_write_truth(failed, observation_result, write_truth)
+            return failed, failed_status
         return result, 503
     try:
         evidence = dict(dispatcher(context) or {})
@@ -193,8 +218,11 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, now, store
         result = _contained(parsed, "rootline_operational_adapter_result_invalid", now)
         result.update({"observations": observations, "visible_irrigation_need_zone": visible_need,
                        "answer": "<b>IRRIGATION DECISION CONTAINED</b>\n\nROOTLINE could not safely validate the current decision. No irrigation command was sent."})
+        _apply_write_truth(result, observation_result, write_truth)
         if _record_terminal(store, mission, context, result).get("success") is not True:
-            return _persistence_failed(parsed, now)
+            failed, failed_status = _persistence_failed(parsed, now)
+            _apply_write_truth(failed, observation_result, write_truth)
+            return failed, failed_status
         return result, 503
     digest = _digest({"context": context, "result": evidence})
     recommendation = str(evidence.get("recommendation") or "Needs Data")
@@ -207,20 +235,41 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, now, store
         "mission_id": mission, "card_mission_id": mission, "provider_message_id": provider_id,
         "provider_timestamp": provider_at.isoformat(), "observations": observations,
         "visible_irrigation_need_zone": visible_need, "specialist_result": evidence,
+        "canonical_observation": observation_result,
         "evidence_generation": str(evidence.get("evidence_generation") or ""),
         "adapter_version": CONTRACT_VERSION, "result_digest": digest, "answer": answer,
         **ZERO_AUTHORITY}
+    _apply_write_truth(outcome, observation_result, write_truth)
     complete_id = mission + "-COMPLETED"
     try:
         recorded = store("record", complete_id, {"event_id": complete_id, "mission_id": mission,
             "state": "completed", "context": context, "outcome": outcome})
     except Exception:
-        return _persistence_failed(parsed, now)
+        failed, failed_status = _persistence_failed(parsed, now)
+        _apply_write_truth(failed, observation_result, write_truth)
+        return failed, failed_status
     if recorded.get("success") is not True:
         result = _contained(parsed, "rootline_operational_result_persistence_failed", now)
         result["answer"] = "<b>IRRIGATION FOLLOW-UP CONTAINED</b>\n\nROOTLINE assessed the evidence, but durable completion was not proven. No irrigation command was sent. A separately authorized recovery identity is required."
+        _apply_write_truth(result, observation_result, write_truth)
         return result, 503
     return outcome, 200
+
+
+def _canonical_write_truth(observation_result):
+    count = observation_result.get("canonical_writes")
+    if type(count) is not int or count not in (0, 1):
+        return None
+    if count == 1 and not str(observation_result.get("observation_id") or "").strip():
+        return None
+    return count == 1
+
+
+def _apply_write_truth(result, observation_result, write_truth):
+    result["writes_farm_data"] = write_truth
+    result["writes_farm_data_unknown"] = write_truth is None
+    result["canonical_observation_id"] = observation_result.get("observation_id")
+    result["canonical_observation"] = observation_result
 
 
 def _operation_event_store(action, identity, payload):

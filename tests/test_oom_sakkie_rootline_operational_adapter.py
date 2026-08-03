@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from modules.oom_sakkie.rootline_operational_adapter import dispatch_rootline_operation
+from modules.oom_sakkie.rootline_operational_adapter import dispatch_rootline_operation, persist_rootline_observations
 
 
 def context():
@@ -69,3 +69,74 @@ def test_malformed_observation_and_identity_are_rejected_before_rootline_read():
         assert dispatch_rootline_operation(item)["success"] is False
     item=context(); item["observations"]=[{**item["observations"][0],"kind":"<b>unsafe</b>"}]
     assert dispatch_rootline_operation(item)["reason"]=="owner_observation_binding_invalid"
+
+@patch("modules.oom_sakkie.rootline_operational_adapter.read_tank_observation")
+@patch("modules.oom_sakkie.rootline_operational_adapter.record_tank_observation")
+def test_fraction_observations_write_once_and_require_exact_canonical_readback(writer,reader):
+    both=context();both["observations"].append({"kind":"storage_level","value":"2/4","numerator":2,"denominator":4,
+        "provider_message_id":"3213","observed_at":both["provider_timestamp"]})
+    writer.return_value=({"success":True,"status":"recorded","created":True,"observation_id":"ROOTLINE-TANK-1"},201)
+    reader.return_value={"storage_fraction":[2,4],"reservoir_fraction":[4,4],
+        "provider_message_id":"3213","observed_at":both["provider_timestamp"]}
+    from modules.oom_sakkie.gateway_authority import (
+        issue_gateway_owner_authority,
+        issue_rootline_observation_write_authority,
+    )
+    authority=issue_rootline_observation_write_authority(
+        issue_gateway_owner_authority("42","42"),
+        mission_id=both["mission_id"],
+        provider_message_id=both["provider_message_id"],
+        provider_timestamp=both["provider_timestamp"],
+        content_sha256=both["content_sha256"],
+    )
+    result=persist_rootline_observations(both,authority,database_url="postgresql://test")
+    assert result["success"] is True and result["canonical_writes"]==1
+    payload=writer.call_args.args[0]
+    assert payload["storage_fraction"]==[2,4] and payload["reservoir_fraction"]==[4,4]
+    assert payload["storage_state"]=="OK" and payload["reservoir_state"]=="FULL"
+    reader.return_value={}
+    assert persist_rootline_observations(both,authority,database_url="postgresql://test")["status"]=="canonical_observation_readback_mismatch"
+
+
+def test_observation_write_authority_is_distinct_and_exactly_request_bound():
+    from modules.oom_sakkie.gateway_authority import (
+        bind_gateway_owner_authority,
+        issue_gateway_owner_authority,
+        issue_rootline_observation_write_authority,
+        ROOTLINE_READ_ONLY_TOOL,
+    )
+    base=issue_gateway_owner_authority("42","42")
+    read_only=bind_gateway_owner_authority(base,ROOTLINE_READ_ONLY_TOOL)
+    denied=persist_rootline_observations(context(),read_only,database_url="postgresql://must-not-connect")
+    assert denied["status"]=="observation_write_authority_denied"
+    authority=issue_rootline_observation_write_authority(base,mission_id="OOM-ROOTLINE-other",
+        provider_message_id="3213",provider_timestamp=context()["provider_timestamp"],
+        content_sha256=context()["content_sha256"])
+    denied=persist_rootline_observations(context(),authority,database_url="postgresql://must-not-connect")
+    assert denied["status"]=="observation_write_authority_denied"
+
+
+def test_invalid_or_duplicate_observations_never_reach_writer():
+    from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority,issue_rootline_observation_write_authority
+    item=context()
+    authority=issue_rootline_observation_write_authority(issue_gateway_owner_authority("42","42"),
+        mission_id=item["mission_id"],provider_message_id=item["provider_message_id"],
+        provider_timestamp=item["provider_timestamp"],content_sha256=item["content_sha256"])
+    with patch("modules.oom_sakkie.rootline_operational_adapter.record_tank_observation") as writer:
+        malformed={**item,"observations":[{**item["observations"][0],"denominator":0}]}
+        assert persist_rootline_observations(malformed,authority)["status"]=="owner_observation_binding_invalid"
+        duplicate={**item,"observations":[item["observations"][0],dict(item["observations"][0])]}
+        assert persist_rootline_observations(duplicate,authority)["status"]=="duplicate_water_observation_ambiguous"
+        writer.assert_not_called()
+
+
+@patch("modules.oom_sakkie.rootline_operational_adapter.record_tank_observation")
+def test_indeterminate_database_failure_never_claims_zero_writes(writer):
+    from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority,issue_rootline_observation_write_authority
+    item=context()
+    authority=issue_rootline_observation_write_authority(issue_gateway_owner_authority("42","42"),
+        mission_id=item["mission_id"],provider_message_id=item["provider_message_id"],
+        provider_timestamp=item["provider_timestamp"],content_sha256=item["content_sha256"])
+    writer.return_value=({"success":False,"status":"tank_observation_write_failed","write_outcome":"indeterminate"},503)
+    result=persist_rootline_observations(item,authority)
+    assert result["canonical_writes"] is None and result["write_outcome"]=="indeterminate"

@@ -12,8 +12,70 @@ from datetime import datetime
 import re
 
 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
+from modules.telemetry.rootline_water_energy_plan import record_tank_observation, read_tank_observation
+from modules.oom_sakkie.gateway_authority import validates_rootline_observation_write_authority
 
 CONTRACT_VERSION = "rootline_operational_dispatch_result_v1"
+
+
+def persist_rootline_observations(context: Mapping[str, Any], authority, *, database_url=None) -> dict[str, Any]:
+    if (not validates_rootline_observation_write_authority(authority)
+            or authority.owner_user_id != str(context.get("owner_user_id") or "")
+            or authority.private_chat_id != str(context.get("chat_id") or "")
+            or authority.mission_id != str(context.get("mission_id") or "")
+            or authority.provider_message_id != str(context.get("provider_message_id") or "")
+            or authority.provider_timestamp != str(context.get("provider_timestamp") or "")
+            or authority.content_sha256 != str(context.get("content_sha256") or "")):
+        return {"success": False, "contract_version": "rootline_owner_observation_bridge_v1",
+                "status": "observation_write_authority_denied", "canonical_writes": 0}
+    observations = context.get("observations") if isinstance(context.get("observations"), list) else []
+    if not observations or not all(_valid_observation(item,context) for item in observations):
+        return {"success":False,"contract_version":"rootline_owner_observation_bridge_v1",
+                "status":"owner_observation_binding_invalid","canonical_writes":0}
+    kinds=[item.get("kind") for item in observations if isinstance(item,Mapping)]
+    if len(kinds) != len(set(kinds)):
+        return {"success":False,"contract_version":"rootline_owner_observation_bridge_v1",
+                "status":"duplicate_water_observation_ambiguous","canonical_writes":0}
+    by_kind = {item.get("kind"): item for item in observations if isinstance(item, Mapping)}
+    storage = by_kind.get("storage_level")
+    reservoir = by_kind.get("reservoir_level")
+    if not storage and not reservoir:
+        return {"success": True, "contract_version": "rootline_owner_observation_bridge_v1",
+                "created": False, "status": "no_water_observation", "canonical_writes": 0}
+    provider_id = str(context.get("provider_message_id") or "")
+    provider_at = str(context.get("provider_timestamp") or "")
+    owner = str(context.get("owner_user_id") or "")
+    payload = {"storage_fraction": [storage["numerator"], storage["denominator"]] if storage else None,
+        "reservoir_fraction": [reservoir["numerator"], reservoir["denominator"]] if reservoir else None,
+        "storage_state": _fraction_state(storage), "reservoir_state": _fraction_state(reservoir),
+        "provider_message_id": provider_id, "observed_at": provider_at, "source": "oom_sakkie_owner",
+        "idempotency_key": f"telegram:{context.get('mission_id')}:{provider_id}:rootline-water:{context.get('content_sha256')}"}
+    actor = "telegram-owner:" + __import__("hashlib").sha256(owner.encode()).hexdigest()[:16]
+    result, status = record_tank_observation(payload, actor, database_url)
+    if status >= 400 or result.get("success") is not True:
+        return {"success": False, "contract_version": "rootline_owner_observation_bridge_v1",
+                "status": str(result.get("status") or "canonical_observation_write_failed"),
+                "canonical_writes": None if result.get("write_outcome")=="indeterminate" else 0,
+                "write_outcome": result.get("write_outcome") or "not_written"}
+    readback = read_tank_observation(result.get("observation_id"), database_url)
+    expected = {"storage_fraction": payload["storage_fraction"],
+        "reservoir_fraction": payload["reservoir_fraction"],
+        "provider_message_id": provider_id, "observed_at": provider_at}
+    if any(readback.get(key) != value for key, value in expected.items()):
+        return {"success": False, "contract_version": "rootline_owner_observation_bridge_v1",
+                "status": "canonical_observation_readback_mismatch", "canonical_writes": int(result.get("created") is True),
+                "observation_id": result.get("observation_id")}
+    return {"success": True, "contract_version": "rootline_owner_observation_bridge_v1",
+        "status": str(result.get("status")), "created": result.get("created") is True,
+        "canonical_writes": int(result.get("created") is True), "observation_id": result.get("observation_id"),
+        "readback": expected}
+
+
+def _fraction_state(item):
+    if not item: return "Unknown"
+    if item["numerator"] == 0: return "LOW"
+    if item["numerator"] == item["denominator"]: return "FULL"
+    return "OK"
 
 
 def dispatch_rootline_operation(context: Mapping[str, Any]) -> dict[str, Any]:

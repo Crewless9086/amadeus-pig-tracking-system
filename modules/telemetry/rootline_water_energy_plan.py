@@ -204,12 +204,14 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         "battery_reserve": reserve,
         "tank_evidence": {
             "status": tank_state["overall"],
-            "storage_reported_count": tanks.get("storage_reported_count"),
+            "storage_reported_count": (tanks.get("storage_fraction") or [tanks.get("storage_reported_count")])[0],
             "storage_state": tanks.get("storage_state", UNKNOWN),
-            "storage_total_count": 5,
-            "reservoir_reported_count": tanks.get("reservoir_reported_count"),
+            "storage_total_count": (tanks.get("storage_fraction") or [None,5])[1],
+            "storage_fraction": tanks.get("storage_fraction"),
+            "reservoir_reported_count": (tanks.get("reservoir_fraction") or [tanks.get("reservoir_reported_count")])[0],
             "reservoir_state": tanks.get("reservoir_state", UNKNOWN),
-            "reservoir_total_count": 12,
+            "reservoir_total_count": (tanks.get("reservoir_fraction") or [None,12])[1],
+            "reservoir_fraction": tanks.get("reservoir_fraction"),
             "storage_observed_at": tanks.get("storage_observed_at"),
             "storage_age_minutes": _age_minutes(
                 {"observed_at": tanks.get("storage_observed_at")}, now
@@ -422,11 +424,13 @@ def record_tank_observation(payload, actor_identity, database_url=None):
     if not actor_identity:
         return {"success": False, "status": "owner_identity_required"}, 403
     try:
-        storage = _optional_count(payload.get("storage_reported_count"), 5)
-        reservoir = _optional_count(payload.get("reservoir_reported_count"), 12)
+        storage_fraction = _fraction(payload.get("storage_fraction"), "storage_fraction")
+        reservoir_fraction = _fraction(payload.get("reservoir_fraction"), "reservoir_fraction")
+        storage = None if storage_fraction else _optional_count(payload.get("storage_reported_count"), 5)
+        reservoir = None if reservoir_fraction else _optional_count(payload.get("reservoir_reported_count"), 12)
         storage_state = _tank_state(payload.get("storage_state"))
         reservoir_state = _tank_state(payload.get("reservoir_state"))
-        if storage is None and reservoir is None:
+        if storage is None and reservoir is None and not storage_fraction and not reservoir_fraction:
             raise ValueError("one_count_required")
         observed = datetime.fromisoformat(str(payload["observed_at"]).replace("Z", "+00:00"))
         if observed.tzinfo is None:
@@ -439,6 +443,9 @@ def record_tank_observation(payload, actor_identity, database_url=None):
         key = str(payload.get("idempotency_key") or "").strip()
         if not key:
             raise ValueError("idempotency_key_required")
+        provider_message_id = str(payload.get("provider_message_id") or "").strip()
+        if (storage_fraction or reservoir_fraction) and not provider_message_id:
+            raise ValueError("provider_message_id_required_for_fraction")
     except (KeyError, TypeError, ValueError) as exc:
         return {"success": False, "status": str(exc)}, 400
     identity = "ROOTLINE-TANK-" + sha256(key.encode()).hexdigest()[:24].upper()
@@ -452,19 +459,27 @@ def record_tank_observation(payload, actor_identity, database_url=None):
                     insert into public.rootline_tank_observations (
                       observation_id,idempotency_key,storage_reported_count,
                       reservoir_reported_count,storage_state,reservoir_state,
-                      observed_at,reporter_identity,source
-                    ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                      observed_at,reporter_identity,source,
+                      storage_fraction_numerator,storage_fraction_denominator,
+                      reservoir_fraction_numerator,reservoir_fraction_denominator,
+                      provider_message_id
+                    ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     on conflict (idempotency_key) do nothing
                     returning observation_id
                     """,
                     (identity, key, storage, reservoir, storage_state,
-                     reservoir_state, observed, actor_identity, source),
+                     reservoir_state, observed, actor_identity, source,
+                     *(storage_fraction or (None,None)),*(reservoir_fraction or (None,None)),
+                     provider_message_id or None),
                 )
                 created = cursor.fetchone() is not None
                 cursor.execute(
                     """select observation_id,storage_reported_count,reservoir_reported_count,
                               storage_state,reservoir_state,observed_at,
-                              reporter_identity,source
+                              reporter_identity,source,
+                              storage_fraction_numerator,storage_fraction_denominator,
+                              reservoir_fraction_numerator,reservoir_fraction_denominator,
+                              provider_message_id
                          from public.rootline_tank_observations
                         where idempotency_key=%s""",
                     (key,),
@@ -477,6 +492,9 @@ def record_tank_observation(payload, actor_identity, database_url=None):
             or row[3] != storage_state or row[4] != reservoir_state
             or actual_observed != expected_observed
             or row[6] != actor_identity or row[7] != source
+            or (row[8],row[9]) != (storage_fraction or (None,None))
+            or (row[10],row[11]) != (reservoir_fraction or (None,None))
+            or row[12] != (provider_message_id or None)
         ):
             return {
                 "success": False,
@@ -490,11 +508,14 @@ def record_tank_observation(payload, actor_identity, database_url=None):
             "storage_reported_count": row[1], "reservoir_reported_count": row[2],
             "storage_state": row[3], "reservoir_state": row[4],
             "observed_at": row[5].isoformat(), "reporter": row[6], "source": row[7],
+            "provider_message_id": row[12],
+            "storage_fraction": list(row[8:10]) if row[8] is not None else None,
+            "reservoir_fraction": list(row[10:12]) if row[10] is not None else None,
             "litres_inferred": False, "hardware_control_performed": False,
         }, 201 if created else 200
     except Exception as exc:
         return {"success": False, "status": "tank_observation_write_failed",
-                "error_type": exc.__class__.__name__}, 503
+                "error_type": exc.__class__.__name__, "write_outcome": "indeterminate"}, 503
 
 
 def _reserve(power, power_state, profile, confidence):
@@ -656,9 +677,12 @@ def _read_latest_tank_observation(database_url):
                     """
                     select storage_reported_count,reservoir_reported_count,
                            storage_state,reservoir_state,observed_at,
-                           reporter_identity,source
+                           reporter_identity,source,
+                           storage_fraction_numerator,storage_fraction_denominator,
+                           reservoir_fraction_numerator,reservoir_fraction_denominator,
+                           provider_message_id
                       from public.rootline_tank_observations
-                     where storage_reported_count is not null
+                     where storage_reported_count is not null or storage_fraction_numerator is not null
                      order by observed_at desc,recorded_at desc limit 1
                     """
                 )
@@ -667,9 +691,12 @@ def _read_latest_tank_observation(database_url):
                     """
                     select storage_reported_count,reservoir_reported_count,
                            storage_state,reservoir_state,observed_at,
-                           reporter_identity,source
+                           reporter_identity,source,
+                           storage_fraction_numerator,storage_fraction_denominator,
+                           reservoir_fraction_numerator,reservoir_fraction_denominator,
+                           provider_message_id
                       from public.rootline_tank_observations
-                     where reservoir_reported_count is not null
+                     where reservoir_reported_count is not null or reservoir_fraction_numerator is not null
                      order by observed_at desc,recorded_at desc limit 1
                     """
                 )
@@ -690,12 +717,54 @@ def _read_latest_tank_observation(database_url):
             "storage_source": storage[6] if storage else None,
             "reservoir_reporter": reservoir[5] if reservoir else None,
             "reservoir_source": reservoir[6] if reservoir else None,
+            "storage_fraction": list(storage[7:9]) if storage and len(storage)>8 and storage[7] is not None else None,
+            "storage_provider_message_id": storage[11] if storage and len(storage)>11 else None,
+            "reservoir_fraction": list(reservoir[9:11]) if reservoir and len(reservoir)>10 and reservoir[9] is not None else None,
+            "reservoir_provider_message_id": reservoir[11] if reservoir and len(reservoir)>11 else None,
             "observed_at": newest[4].isoformat(),
             "reporter": newest[5],
             "source": newest[6],
         }
     except Exception:
         return {}
+
+
+def read_tank_observation(observation_id, database_url=None):
+    database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
+    try:
+        import psycopg
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            connection.read_only = True
+            with connection.cursor() as cursor:
+                cursor.execute("""select observation_id,storage_reported_count,reservoir_reported_count,
+                    storage_state,reservoir_state,observed_at,reporter_identity,source,
+                    storage_fraction_numerator,storage_fraction_denominator,
+                    reservoir_fraction_numerator,reservoir_fraction_denominator,provider_message_id
+                    from public.rootline_tank_observations where observation_id=%s""",(str(observation_id),))
+                row=cursor.fetchone()
+        if not row: return {}
+        return {"observation_id":row[0],"storage_reported_count":row[1],"reservoir_reported_count":row[2],
+            "storage_state":row[3],"reservoir_state":row[4],"observed_at":row[5].isoformat(),
+            "reporter":row[6],"source":row[7],
+            "storage_fraction":list(row[8:10]) if row[8] is not None else None,
+            "reservoir_fraction":list(row[10:12]) if row[10] is not None else None,
+            "provider_message_id":row[12]}
+    except Exception:
+        return {}
+
+
+def _fraction(value, field):
+    if value in (None, ""):
+        return None
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise ValueError(field + "_invalid")
+    numerator, denominator = value
+    if (type(numerator) is not int or type(denominator) is not int
+            or denominator < 1 or numerator < 0 or numerator > denominator):
+        raise ValueError(field + "_invalid")
+    return numerator, denominator
+
+
 
 
 def _forecast_profile(forecast, state):
@@ -760,7 +829,7 @@ def _rain_effect(weather, weather_state, forecast, forecast_state):
 
 def _borehole_task(tanks, tank_state, demand, rain, reserve):
     urgent = demand.get("status") == "urgent"
-    storage = tanks.get("storage_reported_count")
+    storage = _tank_amount(tanks, "storage")
     if rain["borehole_avoidance_signal"] and not urgent:
         rec, reason = "Do Not Run", (
             "Fresh live rain; avoid unnecessary borehole pumping."
@@ -785,8 +854,8 @@ def _borehole_task(tanks, tank_state, demand, rain, reserve):
 
 
 def _transfer_task(tanks, tank_state, demand, reserve):
-    storage = tanks.get("storage_reported_count")
-    reservoir = tanks.get("reservoir_reported_count")
+    storage = _tank_amount(tanks, "storage")
+    reservoir = _tank_amount(tanks, "reservoir")
     if (tank_state["storage"] in {"stale", UNAVAILABLE}
             or tank_state["reservoir"] in {"stale", UNAVAILABLE}
             or storage is None or reservoir is None):
@@ -823,8 +892,10 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain, tanks,
         completed_days = zone_history.get("completed_last_7_days")
         adequate_reservoir = (
             tank_state["reservoir"] in {"fresh", "aging"}
-            and tanks.get("reservoir_reported_count") is not None
-            and tanks.get("reservoir_reported_count") >= 9
+            and (tanks.get("reservoir_state") == "FULL"
+                 or _fraction_full(tanks.get("reservoir_fraction"))
+                 or (tanks.get("reservoir_reported_count") is not None
+                     and tanks.get("reservoir_reported_count") >= 9))
         )
         observed_rain = rain["current_rain_status"] == "Hold"
         rec = "Recommend" if (
@@ -869,6 +940,15 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain, tanks,
         result.append(_task("irrigation", "Needs Data", "Zone advice unavailable.",
                             "Unavailable", ["daily_advisor"], reserve))
     return result
+
+
+def _tank_amount(tanks, name):
+    fraction=tanks.get(name+"_fraction")
+    return fraction[0] if isinstance(fraction,(list,tuple)) and len(fraction)==2 else tanks.get(name+"_reported_count")
+
+
+def _fraction_full(value):
+    return isinstance(value,(list,tuple)) and len(value)==2 and value[1]>0 and value[0]==value[1]
 
 
 def _adaptive_irrigation_start(now, power, power_state, reserve):
