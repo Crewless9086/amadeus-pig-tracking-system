@@ -9,6 +9,7 @@ from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
 from modules.oom_sakkie.operational_specialist_intake import handle_operational_specialist_message
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -55,7 +56,7 @@ def telegram_gateway_policy(environ=None):
             "locked": auth_locked,
         },
         "sends_telegram": False,
-        "reply_transport": "caller_handles_telegram_send",
+        "reply_transport": "caller_or_provider_bound_family_lifecycle",
         "owner_task_lifecycle": {
             "enabled": owner_task_bot_configured,
             "canonical_bot": "existing_sam_oom_owner_bot",
@@ -64,6 +65,13 @@ def telegram_gateway_policy(environ=None):
             "scope": "authenticated_active_owner_request_acknowledgement_result_or_systemic_exception_only",
             "requires_provider_message_identity": True,
             "ambiguous_delivery_retries": False,
+        },
+        "provider_bound_family_delivery": {
+            "enabled": bool(str(source.get("DATABASE_URL") or "").strip()),
+            "requires_authenticated_private_owner": True,
+            "requires_provider_message_identity": True,
+            "deduplicated": True,
+            "scope": "visible_acknowledgement_or_consolidated_read_only_result",
         },
         "deterministic_only": True,
         "can_trigger_outbound_llm": False,
@@ -97,8 +105,8 @@ def telegram_gateway_exposure_preflight(environ=None):
         _check("auth_lockout_enabled", policy["auth_rate_limit"]["enabled"], "Repeated bad tokens trigger a fail-closed lockout."),
         _check("deterministic_only", policy["deterministic_only"], "telegram_read_only never uses LLM router or answer composer."),
         _check("no_outbound_llm", not policy["can_trigger_outbound_llm"], "Gateway cannot trigger outbound LLM calls."),
-        _check("ordinary_reply_uses_caller_transport", not policy["sends_telegram"] and not policy["direct_bot_cutover_enabled"],
-               "Ordinary gateway answers remain caller-sent; only a bound owner-task lifecycle may send directly."),
+        _check("ordinary_reply_transport_bounded", not policy["sends_telegram"] and not policy["direct_bot_cutover_enabled"],
+               "The gateway itself has no ambient send authority; authenticated provider-bound family lifecycles may deliver through the existing owner bot."),
         _check("owner_task_send_is_scoped", not policy["owner_task_lifecycle"]["enabled"] or (
                policy["owner_task_lifecycle"]["requires_provider_message_identity"]
                and not policy["owner_task_lifecycle"]["ambiguous_delivery_retries"]),
@@ -267,6 +275,22 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
         })
         return body, health_status if delivery.get("success") else 202
+
+    manager_result, manager_status = handle_farm_manager_round(parsed, gateway_authority)
+    if manager_result.get("handled"):
+        answer = str(manager_result.get("answer") or "")
+        delivery = deliver_family_result(parsed, manager_result, specialist="OOM_SAKKIE",
+            mission_id=str(manager_result.get("mission_id") or ""),
+            card_mission_id=str(manager_result.get("card_mission_id") or "")) \
+            if manager_result.get("success") else {"success": False, "telegram_sends": 0}
+        body, _ = _gateway_result(bool(manager_result.get("success")),
+            str(manager_result.get("status") or "farm_manager_contained"), policy, manager_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": answer, "message": manager_result, "delivery": delivery,
+            "records_audit_trace": True, "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        return body, manager_status if delivery.get("success") else 202
 
     message_result, message_status = handle_message({
         "text": parsed["text"],

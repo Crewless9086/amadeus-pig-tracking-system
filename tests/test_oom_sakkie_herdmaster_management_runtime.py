@@ -36,6 +36,24 @@ def test_runtime_exact_replay_records_nothing():
         active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[prior],recorder=lambda value:recorded.append(value))
     assert replay["status"]=="herdmaster_management_round_replay_suppressed" and recorded==[]
 
+def test_manager_can_retain_canonical_result_on_proven_replay_without_recording():
+    first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
+        active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[],
+        recorder=lambda _value:{"success":True,"created":True})
+    b=first["binding"]
+    prior={"management_round_identity":b["management_round_identity"],"deduplication_key":b["deduplication_key"],
+        "result_digest":b["result_digest"],"evidence_generation":b["evidence_generation"],
+        "active_case_digest":b["active_case_deduplication_state"]["digest"],
+        "invocation_context_digest":b["invocation_context"]["digest"]}
+    recorded=[]
+    replay=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
+        active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[prior],
+        recorder=lambda value:recorded.append(value),retain_replay_result=True)
+    assert replay["status"]=="herdmaster_management_round_replay_suppressed"
+    assert replay["specialist_result"] is not None and recorded==[]
+
 def test_authentication_precedes_every_loader_and_loader_failure_is_contained():
     calls=[]
     denied=consume_current_herdmaster_management(authority=None,owner_user_id=OWNER,now=NOW,
