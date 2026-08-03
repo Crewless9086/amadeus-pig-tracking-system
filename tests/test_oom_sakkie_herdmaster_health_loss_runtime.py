@@ -343,8 +343,10 @@ def test_multiple_active_cases_require_animal_identity_for_short_natural_reply()
     result, status = handle_authenticated_health_loss_message(
         {**parsed("Yes, found this evening", "3188"), "provider_timestamp": "2026-08-02T17:20:00+00:00"},
         issue_gateway_owner_authority("42", "42"), context_store=store)
-    assert status == 409 and result["status"] == "health_loss_active_context_ambiguous"
-    assert result["writes_farm_data"] is False and recorded == []
+    assert status == 200 and result["status"] == "health_loss_context_disambiguation_required"
+    assert result["question_count"] == 1
+    assert result["writes_farm_data"] is False and len(recorded) == 1
+    assert recorded[0]["status"] == "waiting_for_context"
 
 
 @patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")

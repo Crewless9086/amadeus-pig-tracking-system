@@ -72,10 +72,13 @@ def handle_authenticated_health_loss_message(
         FOLLOW_UP_PATTERN.search(text)
         and not UNRELATED_OPERATIONAL_PATTERN.search(text)
     )
+    reply_to_message_id = str(parsed.get("reply_to_message_id") or "").strip()
     # Active-case persistence belongs only to this specialist boundary.  Do
     # not make unrelated read-only gateway traffic depend on its store merely
     # to establish that HERDMASTER is not applicable.
-    if not explicit_health and not plausible_follow_up and not confirmation_shaped:
+    explicit_entity = bool(ENTITY_PATTERN.search(text))
+    if (not explicit_health and not plausible_follow_up and not confirmation_shaped
+            and not explicit_entity and not reply_to_message_id):
         return {"handled": False, "status": "health_loss_intake_not_applicable"}, 200
     try:
         contexts = _load_active_contexts(
@@ -101,13 +104,48 @@ def handle_authenticated_health_loss_message(
             "card_mission_id": str(stale_confirmation.get("mission_id") or ""),
             "records_audit_trace": True, "writes_farm_data": False,
             "protected_actions_performed": False}, 409
-    active, ambiguity, superseded = _resolve_active_context(text, contexts, provider_message_id)
+    active, ambiguity, superseded = _resolve_active_context(
+        text, contexts, provider_message_id,
+        reply_to_message_id=reply_to_message_id,
+        provider_timestamp=provider_timestamp)
     if ambiguity:
-        return {"handled": True, "success": False, "status": "health_loss_active_context_ambiguous",
+        if all(str(row.get("status") or "").startswith("waiting_for_context")
+               for row in ambiguity):
+            return {"handled": True, "success": True,
+                    "status": "health_loss_pending_context_ambiguous",
+                    "answer": ("<b>HERDMASTER - WHICH UPDATE?</b>\n\n"
+                               "More than one pending update could match that pig. Reply to the exact question card so I can bind it safely."),
+                    "question_count": 1, "writes_farm_data": False,
+                    "protected_actions_performed": False}, 200
+        ambiguity_id = "OOM-HERDMASTER-CONTEXT-" + hashlib.sha256(
+            f"{parsed.get('telegram_user_id')}|{parsed.get('telegram_chat_id')}|{provider_message_id}".encode()
+        ).hexdigest()[:24].upper()
+        pending = {
+            "chat_id": str(parsed.get("telegram_chat_id") or ""),
+            "owner_user_id": str(parsed.get("telegram_user_id") or ""),
+            "provider_message_id": provider_message_id,
+            "provider_timestamp": provider_timestamp,
+            "mission_id": ambiguity_id,
+            "status": "waiting_for_context",
+            "pending_text": text,
+            "pending_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "candidate_bindings": [{"mission_id": str(row.get("mission_id") or ""),
+                                     "tag_number": _context_tag(row)} for row in ambiguity],
+            "event_phase": "context_disambiguation_pending",
+        }
+        stored = _record_lifecycle_event(pending, context_store=context_store)
+        if stored.get("success") is not True:
+            return {"handled": True, "success": False,
+                    "status": "health_loss_context_persistence_failed",
+                    "writes_farm_data": False, "protected_actions_performed": False}, 503
+        return {"handled": True, "success": True, "status": "health_loss_context_disambiguation_required",
             "answer": ("⚠️ <b>HERDMASTER FOLLOW-UP NEEDS ONE IDENTITY</b>\n\n"
                        "More than one animal case is active. Name the pig or tag once so I can bind this update safely. Nothing was recorded."),
+            "question_count": 1,
+            "retained_owner_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "mission_id": ambiguity_id, "card_mission_id": ambiguity_id,
             "records_audit_trace": False, "writes_farm_data": False,
-            "protected_actions_performed": False}, 409
+            "protected_actions_performed": False}, 200
     active_status = str((active or {}).get("status") or "")
     superseded = sorted(set(superseded) | {
         str(value) for value in (active or {}).get("superseded_duplicate_missions") or []
@@ -129,8 +167,13 @@ def handle_authenticated_health_loss_message(
         "waiting_for_input", "preview_ready", "waiting_for_confirmation",
         "preview_correction_pending",
     })
-    if not explicit_health and not follow_up and not confirmation:
+    if (not explicit_health and not follow_up and not confirmation
+            and not explicit_entity and not reply_to_message_id):
         return {"handled": False, "status": "health_loss_intake_not_applicable"}, 200
+    if reply_to_message_id and not active:
+        return {"handled": False, "status": "health_loss_reply_without_active_context"}, 200
+    if explicit_entity and not active and not explicit_health:
+        return {"handled": False, "status": "health_loss_entity_without_active_context"}, 200
 
     if not provider_message_id or not provider_timestamp:
         return {"handled": True, "success": False, "status": "health_loss_provider_identity_required"}, 409
@@ -142,6 +185,55 @@ def handle_authenticated_health_loss_message(
             "card_mission_id": str(active.get("mission_id") or ""),
             "records_audit_trace": False, "writes_farm_data": False,
             "protected_actions_performed": False}, 409
+
+    if active_status != "preview_correction_pending" and active and ((str(active.get("provider_message_id") or "") == provider_message_id
+                    and str(active.get("provider_timestamp") or "") == provider_timestamp)
+                   or (str(active.get("clarification_provider_message_id") or "") == provider_message_id
+                       and str(active.get("clarification_provider_timestamp") or "") == provider_timestamp)):
+        result = _existing_lifecycle_result(active)
+        result.update({"status": "health_loss_inbound_replay_suppressed",
+                       "answer": "", "suppress_owner_delivery": True,
+                       "replay_suppressed": True})
+        return result, 200
+
+    consumed_pending_context = ""
+    evidence_provider_message_id = provider_message_id
+    evidence_provider_timestamp = provider_timestamp
+    if active and explicit_entity and not explicit_health and not plausible_follow_up:
+        pending = active.get("_pending_clarification") if isinstance(
+            active.get("_pending_clarification"), Mapping) else None
+        if pending:
+            if not _timestamp_strictly_after(provider_timestamp,
+                                             str(pending.get("provider_timestamp") or "")):
+                return {"handled": True, "success": False,
+                        "status": "health_loss_context_resolution_chronology_conflict",
+                        "writes_farm_data": False, "protected_actions_performed": False}, 409
+            claimed = bool(active.get("_pending_claimed")) or _claim_pending_context(
+                pending, active, parsed, context_store=context_store)
+            if not claimed:
+                return {"handled": True, "success": False,
+                        "status": "health_loss_context_consumption_already_claimed",
+                        "writes_farm_data": False, "protected_actions_performed": False}, 409
+            consumed_pending_context = str(pending.get("mission_id") or "")
+            evidence_provider_message_id = str(pending.get("provider_message_id") or "")
+            evidence_provider_timestamp = str(pending.get("provider_timestamp") or "")
+            text = str(pending.get("pending_text") or "")
+            plausible_follow_up = True
+            active = {key: value for key, value in active.items() if key != "_pending_clarification"}
+        else:
+            clarification = {**dict(active),
+            "provider_message_id": provider_message_id,
+            "provider_timestamp": provider_timestamp,
+            "clarification_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "event_phase": "entity_clarification_retained"}
+            stored = _record_lifecycle_event(clarification, context_store=context_store)
+            if stored.get("success") is not True:
+                return {"handled": True, "success": False,
+                        "status": "health_loss_lifecycle_persistence_failed"}, 503
+            result = _existing_lifecycle_result(active)
+            result.update({"status": "health_loss_entity_clarification_retained",
+                           "answer": "", "suppress_owner_delivery": True})
+            return result, 200
 
     if confirmation:
         recorded, recorded_status = confirm_health_loss_preview(
@@ -249,8 +341,8 @@ def handle_authenticated_health_loss_message(
     evidence = load_canonical_health_loss_evidence(connect_factory=connect_factory)
     envelope = {
         "gateway_authority": gateway_authority,
-        "provider_message_id": provider_message_id,
-        "provider_timestamp": provider_timestamp,
+        "provider_message_id": evidence_provider_message_id,
+        "provider_timestamp": evidence_provider_timestamp,
         "provider_timezone": "Africa/Johannesburg",
         "text": combined_text,
     }
@@ -264,6 +356,8 @@ def handle_authenticated_health_loss_message(
         "owner_user_id": str(parsed.get("telegram_user_id") or ""),
         "provider_message_id": provider_message_id,
         "provider_timestamp": provider_timestamp,
+        "evidence_provider_message_id": evidence_provider_message_id,
+        "evidence_provider_timestamp": evidence_provider_timestamp,
         "combined_text": combined_text,
         "status": "waiting_for_input" if int(preview.get("question_count") or 0) else "preview_ready",
         "operation_id": str((preview.get("confirmation_binding") or {}).get("operation_id") or ""),
@@ -281,6 +375,10 @@ def handle_authenticated_health_loss_message(
         "event_phase": "preview_corrected" if owner_intent == "corrects_preview" else "preview_generated",
         "superseded_duplicate_missions": superseded,
         "superseded_duplicate_bindings": superseded_bindings,
+        "consumed_context_missions": sorted(set(
+            list((active_for_message or {}).get("consumed_context_missions") or [])
+            + ([consumed_pending_context] if consumed_pending_context else [])
+        )),
     }
     stored = _record_lifecycle_event(lifecycle, context_store=context_store)
     if stored.get("success") is not True:
@@ -412,6 +510,19 @@ def _record_lifecycle_event(lifecycle: Mapping[str, Any], *, context_store=None)
     return {**result, "success": status < 400 and result.get("success") is True}
 
 
+def _claim_pending_context(pending, target, parsed, *, context_store=None):
+    claim = {**dict(pending),
+        "status": "waiting_for_context_consumption",
+        "resolution_provider_message_id": str(parsed.get("provider_message_id") or ""),
+        "resolution_provider_timestamp": str(parsed.get("provider_timestamp") or ""),
+        "resolution_text_sha256": hashlib.sha256(
+            str(parsed.get("text") or "").encode("utf-8")).hexdigest(),
+        "target_mission_id": str(target.get("mission_id") or ""),
+        "event_phase": "context_consumption_claimed"}
+    recorded = _record_lifecycle_event(claim, context_store=context_store)
+    return recorded.get("success") is True and recorded.get("created") is not False
+
+
 def _load_active_context(chat_id: str, *, context_store=None):
     contexts = _load_active_contexts(chat_id, context_store=context_store)
     return contexts[0] if contexts else None
@@ -434,18 +545,25 @@ def _load_active_contexts(chat_id: str, *, owner_user_id="", context_store=None)
         import psycopg
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
-                owner_clause = ("and review_json->'herdmaster_health_loss'->>'owner_user_id' = %s"
+                owner_clause = ("and h.review_json->'herdmaster_health_loss'->>'owner_user_id' = %s"
                                 if owner_user_id else "")
                 params = ((EVENT_SOURCE, "oom-health-" + chat_id, owner_user_id)
                           if owner_user_id else (EVENT_SOURCE, "oom-health-" + chat_id))
                 cursor.execute(
                     f"""
-                    select review_json->'herdmaster_health_loss', created_at
-                    from public.sam_live_stock_conversation_review_events
-                    where event_source = %s
-                      and chatwoot_conversation_id = %s
+                    select h.review_json->'herdmaster_health_loss', h.created_at,
+                      (select f.review_json->'family_message_lifecycle'->>'telegram_message_id'
+                       from public.sam_live_stock_conversation_review_events f
+                       where f.event_source = 'oom_sakkie_family_message_lifecycle'
+                         and f.review_json->'family_message_lifecycle'->>'card_mission_id' =
+                             h.review_json->'herdmaster_health_loss'->>'mission_id'
+                         and f.review_json->'family_message_lifecycle'->>'state' in ('delivered','updated')
+                       order by f.created_at desc, f.review_event_id desc limit 1)
+                    from public.sam_live_stock_conversation_review_events h
+                    where h.event_source = %s
+                      and h.chatwoot_conversation_id = %s
                       {owner_clause}
-                    order by created_at desc
+                    order by h.created_at desc
                     limit 100
                     """,
                     params,
@@ -453,12 +571,12 @@ def _load_active_contexts(chat_id: str, *, owner_user_id="", context_store=None)
                 rows = cursor.fetchall()
         current = []
         now = datetime.now(timezone.utc)
-        for value, created_at in rows:
+        for value, created_at, card_message_id in rows:
             if not isinstance(value, dict):
                 continue
             if created_at and now - created_at.astimezone(timezone.utc) > CONTEXT_WINDOW:
                 continue
-            current.append(value)
+            current.append({**value, "card_message_id": str(card_message_id or "")})
         return _dedupe_active_contexts(current, owner_user_id=owner_user_id)
     except Exception as exc:
         raise ActiveContextLoadError("active_context_read_failed") from exc
@@ -472,8 +590,10 @@ def _dedupe_active_contexts(rows, *, owner_user_id=""):
         bound_owner = str(row.get("owner_user_id") or "")
         if owner_user_id and bound_owner and bound_owner != owner_user_id:
             continue
-        if status not in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
-                          "preview_correction_pending", "completed"} or not mission or mission in latest:
+        if status not in {"waiting_for_context", "waiting_for_context_consumption",
+                          "waiting_for_input", "preview_ready",
+                          "waiting_for_confirmation", "preview_correction_pending",
+                          "completed"} or not mission or mission in latest:
             continue
         latest[mission] = row
     superseded = set(); validated_by_source = {mission: [] for mission in latest}
@@ -511,15 +631,73 @@ def _context_missing(context):
     return {str(value or "") for value in evaluator.get("missing_evidence") or []}
 
 
-def _resolve_active_context(text, contexts, provider_message_id=""):
+def _resolve_active_context(text, contexts, provider_message_id="", *,
+                            reply_to_message_id="", provider_timestamp=""):
     exact_confirmations = [row for row in contexts
         if text == "CONFIRM " + str(row.get("operation_id") or "")]
     if len(exact_confirmations) == 1:
         return exact_confirmations[0], False, []
     if len(exact_confirmations) > 1:
-        return None, True, []
+        return None, exact_confirmations, []
+    if reply_to_message_id:
+        replies = [row for row in contexts if reply_to_message_id in {
+            str(row.get("card_message_id") or ""),
+            str(row.get("telegram_message_id") or ""),
+        }]
+        if len(replies) == 1:
+            reply = replies[0]
+            if str(reply.get("status") or "").startswith("waiting_for_context"):
+                reply_entity = ENTITY_PATTERN.search(text)
+                if not reply_entity:
+                    return None, replies, []
+                tag = reply_entity.group(1).casefold()
+                target_ids = {str(binding.get("mission_id") or "")
+                              for binding in reply.get("candidate_bindings") or []
+                              if isinstance(binding, Mapping)
+                              and str(binding.get("tag_number") or "").casefold() == tag}
+                targets = [row for row in contexts
+                           if str(row.get("mission_id") or "") in target_ids]
+                if len(targets) != 1:
+                    return None, replies, []
+                claimed = str(reply.get("status") or "") == "waiting_for_context_consumption"
+                if claimed and not (
+                    str(reply.get("resolution_provider_message_id") or "") == provider_message_id
+                    and str(reply.get("resolution_provider_timestamp") or "") == provider_timestamp):
+                    return None, replies, []
+                return {**targets[0], "_pending_clarification": reply,
+                        "_pending_claimed": claimed}, False, []
+            return reply, False, []
+        if len(replies) > 1:
+            return None, replies, []
     entity = ENTITY_PATTERN.search(text)
     if entity:
+        tag = entity.group(1).casefold()
+        consumed_contexts = {str(value or "") for row in contexts
+                             for value in row.get("consumed_context_missions") or []}
+        pending_matches = [row for row in contexts
+            if str(row.get("status") or "") in {"waiting_for_context", "waiting_for_context_consumption"}
+            and str(row.get("mission_id") or "") not in consumed_contexts
+            and any(str(binding.get("tag_number") or "").casefold() == tag
+                    for binding in row.get("candidate_bindings") or []
+                    if isinstance(binding, Mapping))]
+        if len(pending_matches) == 1:
+            pending = pending_matches[0]
+            target_ids = {str(binding.get("mission_id") or "")
+                          for binding in pending.get("candidate_bindings") or []
+                          if isinstance(binding, Mapping)
+                          and str(binding.get("tag_number") or "").casefold() == tag}
+            targets = [row for row in contexts if str(row.get("mission_id") or "") in target_ids]
+            if len(targets) == 1:
+                if str(pending.get("status") or "") == "waiting_for_context_consumption":
+                    same_resolution = (
+                        str(pending.get("resolution_provider_message_id") or "") == provider_message_id
+                        and str(pending.get("resolution_provider_timestamp") or "") == provider_timestamp)
+                    if not same_resolution:
+                        return None, pending_matches, []
+                return {**targets[0], "_pending_clarification": pending,
+                        "_pending_claimed": str(pending.get("status") or "") == "waiting_for_context_consumption"}, False, []
+        if len(pending_matches) > 1:
+            return None, pending_matches, []
         matches = [row for row in contexts if _context_tag(row) == entity.group(1).casefold()
                    and str(row.get("status") or "") in {"waiting_for_input", "preview_ready",
                                                           "waiting_for_confirmation", "preview_correction_pending"}]
@@ -531,7 +709,7 @@ def _resolve_active_context(text, contexts, provider_message_id=""):
                   if str(row.get("provider_message_id") or "") == provider_message_id]
         if len(prior) == 1 and echoes:
             return prior[0], False, [str(row.get("mission_id") or "") for row in echoes]
-        return None, len(matches) > 1, []
+        return None, matches if len(matches) > 1 else False, []
     if UNRELATED_OPERATIONAL_PATTERN.search(text) or not FOLLOW_UP_PATTERN.search(text):
         return None, False, []
     candidates = [row for row in contexts
@@ -542,8 +720,15 @@ def _resolve_active_context(text, contexts, provider_message_id=""):
                    if "physical removal/disposal evidence" in _context_missing(row)]
         if len(removal) == 1:
             return removal[0], False, []
-    return ((candidates[0], False, []) if len(candidates) == 1
-            else (None, len(candidates) > 1, []))
+    if len(candidates) == 1:
+        return candidates[0], False, []
+    waiting = [row for row in candidates if str(row.get("status") or "") == "waiting_for_input"]
+    if waiting:
+        newest_time = max(str(row.get("provider_timestamp") or "") for row in waiting)
+        newest = [row for row in waiting if str(row.get("provider_timestamp") or "") == newest_time]
+        if len(newest) == 1 and _chronology_allows(newest[0], provider_message_id, provider_timestamp):
+            return newest[0], False, []
+    return None, candidates if len(candidates) > 1 else False, []
 
 
 def _chronology_allows(active, provider_message_id, provider_timestamp):
@@ -554,5 +739,13 @@ def _chronology_allows(active, provider_message_id, provider_timestamp):
         incoming = datetime.fromisoformat(provider_timestamp.replace("Z", "+00:00"))
         prior = datetime.fromisoformat(str(active.get("provider_timestamp") or "").replace("Z", "+00:00"))
         return incoming > prior
+    except (TypeError, ValueError):
+        return False
+
+
+def _timestamp_strictly_after(candidate, prior):
+    try:
+        return datetime.fromisoformat(str(candidate).replace("Z", "+00:00")) > datetime.fromisoformat(
+            str(prior).replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return False
