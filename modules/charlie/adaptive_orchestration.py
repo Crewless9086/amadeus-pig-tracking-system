@@ -28,6 +28,59 @@ ALL_AGENTS = (
     "evidence_reviewer", "reviewer", "publisher",
 )
 
+URGENCY_SCORE = {"P4": 0, "P3": 1, "P2": 2, "P1": 3, "P0": 4}
+
+
+def bounded_coordination_score(mission, base_score=None):
+    """Return the one bounded score used for development-team sizing."""
+    mission = mission if isinstance(mission, dict) else {}
+    base = base_score if isinstance(base_score, dict) else score_mission(mission)
+    dimensions = base.get("dimensions") or {}
+    impact = mission.get("business_impact_score")
+    try:
+        impact = max(0, min(4, int(impact)))
+    except (TypeError, ValueError):
+        impact = 0 if base.get("tier") == "T0" else 2 if any((base.get("triggers") or {}).values()) else 1
+    urgency = URGENCY_SCORE.get(str(mission.get("urgency") or "P2").upper(), 2)
+    operational_risk = max(
+        int((dimensions.get(name) or {}).get("score") or 0)
+        for name in ("blast_radius", "external_side_effects", "hardware_physical", "production_configuration")
+    )
+    scope_breadth = max(
+        int((dimensions.get("scope_size") or {}).get("score") or 0),
+        int((dimensions.get("component_count") or {}).get("score") or 0),
+        int((dimensions.get("architectural_complexity") or {}).get("score") or 0),
+    )
+    evidence_uncertainty = max(
+        int((dimensions.get("uncertainty") or {}).get("score") or 0),
+        int((dimensions.get("evidence_availability") or {}).get("score") or 0),
+    )
+    required_authority = max(
+        [int((dimensions.get(name) or {}).get("score") or 0) for name in PROTECTED] + [0]
+    )
+    factors = {
+        "business_impact": impact, "urgency": urgency,
+        "operational_risk": operational_risk, "scope_breadth": scope_breadth,
+        "evidence_uncertainty": evidence_uncertainty,
+        "required_authority": required_authority,
+    }
+    weights = {"business_impact": 3, "urgency": 2, "operational_risk": 4,
+               "scope_breadth": 3, "evidence_uncertainty": 2, "required_authority": 4}
+    total = sum(factors[name] * weights[name] for name in factors)
+    if base.get("tier") == "T0":
+        tier = "T0"
+    elif required_authority >= 3:
+        tier = "T4"
+    elif total >= 40:
+        tier = "T3"
+    elif total >= 20:
+        tier = "T2"
+    else:
+        tier = "T1"
+    return {"version": "charlie_bounded_mission_score_v1", "total": total,
+            "maximum": sum(4 * weight for weight in weights.values()),
+            "factors": factors, "weights": weights, "tier": tier}
+
 
 def _text(mission):
     mission = mission if isinstance(mission, dict) else {}
@@ -213,23 +266,22 @@ def build_orchestration_packet(mission):
     score = score_mission(mission)
     if score["intent_context"]["contradictory_protected_intent"]:
         raise ValueError("contradictory_read_only_protected_intent")
-    tier, triggers = score["tier"], score["triggers"]
+    coordination_score = bounded_coordination_score(mission, score)
+    tier, triggers = coordination_score["tier"], score["triggers"]
     text = _text(mission)
     factory_build = _hit(text, (r"\b(agent build|system improvement|charlie core|workflow system|orchestration engine)\b",))
-    if factory_build:
-        selected = [
-            "idea_expander", "source_mapper", "product_architect",
-            "technical_architect", "risk_agent", "council_synthesis", "planner",
-            "architect", "builder", "tester", "qa_red_team",
-            "product_reviewer", "security_reviewer", "evidence_reviewer",
-            "reviewer", "publisher",
-        ]
-    elif tier == "T0":
+    if factory_build and tier in {"T1", "T2"}:
+        tier = "T3"
+        coordination_score = {**coordination_score, "tier": tier,
+                              "tier_floor_reason": "CORE/agent-system change requires cross-module review."}
+    if tier == "T0":
         selected = ["source_mapper"]
     elif tier == "T1":
-        selected = ["builder", "tester", "reviewer"]
+        selected = ["builder"]
     elif tier == "T2":
-        selected = ["source_mapper", "architect", "builder", "tester", "reviewer"]
+        selected = ["builder", "tester"]
+    elif tier == "T3":
+        selected = ["source_mapper", "technical_architect", "builder", "tester", "reviewer"]
     else:
         selected = ["source_mapper", "technical_architect", "builder", "tester", "qa_red_team", "reviewer", "publisher"]
     mandatory = {}
@@ -280,7 +332,7 @@ def build_orchestration_packet(mission):
     generation = hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()[:24]
     return {
         "version": VERSION, "generation_identity": generation, "created_at": datetime.now(timezone.utc).isoformat(),
-        "score": score, "tier": tier, "selected_agents": agents, "skipped_agents": skipped,
+        "score": score, "coordination_score": coordination_score, "tier": tier, "selected_agents": agents, "skipped_agents": skipped,
         "authority_contract": {"permitted_reads": ["mission evidence", "scoped repository"],
                                "permitted_writes": [] if tier == "T0" else ["claimed files"],
                                "protected_actions": score["protected_triggers"]},
