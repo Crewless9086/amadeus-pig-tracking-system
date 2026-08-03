@@ -56,7 +56,8 @@ def test_consolidates_max_three_actions_one_question_and_partial_failure():
     assert status == 200 and result["status"] == "farm_manager_round_ready"
     assert result["action_count"] == 3 and result["question_count"] == 1
     assert result["specialist_gaps"] == {"beacon": "missing"}
-    assert "BEACON (missing)" in result["answer"] and "Irrigation status could not be read" not in result["answer"]
+    assert "BEACON" not in result["answer"] and "missing" not in result["answer"].lower()
+    assert "Irrigation status could not be read" not in result["answer"]
     assert "weighing, breeding and welfare" in result["answer"]
     assert "Weigh all 2 current active/on-farm pigs" in result["answer"]
     assert "ROOTLINE priority" in result["answer"]
@@ -122,7 +123,8 @@ def test_weighing_loader_failure_is_a_bounded_visible_gap():
         loaders=loaders, event_store=memory_store(),
         weighing_loader=lambda:(_ for _ in ()).throw(RuntimeError("down")))
     assert result["specialist_gaps"]["herdmaster_weighing"] == "contained"
-    assert "HERDMASTER_WEIGHING (contained)" in result["answer"]
+    assert "contained" not in result["answer"].lower()
+    assert "weighing evidence unavailable" in result["answer"].lower()
 
 
 def test_independent_specialists_share_one_bounded_delivery_budget_and_text_is_telegram_safe():
