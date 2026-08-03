@@ -205,6 +205,48 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         self.assertFalse(tasks["irrigation_C12345"]["command_created"])
         self.assertFalse(plan["authority"]["controls_hardware"])
 
+    def test_combined_canonical_tank_timestamp_reaches_adaptive_water_check(self):
+        adaptive = evidence()
+        plan_evidence = {
+            "power": adaptive["power"], "weather": adaptive["local_weather"],
+            "forecast": {**adaptive["forecast"], "days": []},
+            "tanks": {
+                "observed_at": NOW.isoformat(),
+                "reservoir_observed_at": None,
+                "reservoir_fraction": [4, 4],
+            },
+            "irrigation": {"adaptive_management": {**adaptive, "enabled": True}},
+            "irrigation_history": {}, "water_demand": {"status": "standing_essential"},
+        }
+        tasks = {row["task_id"]: row for row in
+                 build_water_energy_plan(plan_evidence, now=NOW)["candidate_tasks"]}
+        self.assertEqual(tasks["irrigation_C12345"]["zone_decision"], "Run now")
+        self.assertNotIn(
+            "water_observation_stale", tasks["irrigation_C12345"]["dependencies"])
+
+    def test_storage_only_combined_timestamp_is_not_reservoir_provenance(self):
+        adaptive = evidence()
+        plan_evidence = {
+            "power": adaptive["power"], "weather": adaptive["local_weather"],
+            "forecast": {**adaptive["forecast"], "days": []},
+            "tanks": {
+                "observed_at": NOW.isoformat(),
+                "storage_fraction": [2, 4],
+                "reservoir_observed_at": None,
+                "reservoir_reported_count": None,
+            },
+            "irrigation": {"adaptive_management": {**adaptive, "enabled": True}},
+            "irrigation_history": {}, "water_demand": {"status": "standing_essential"},
+        }
+        plan = build_water_energy_plan(plan_evidence, now=NOW)
+        tasks = {row["task_id"]: row for row in plan["candidate_tasks"]}
+        self.assertEqual(plan["tank_evidence"]["reservoir_freshness"], "Unavailable")
+        self.assertEqual(tasks["irrigation_C12345"]["zone_decision"], "Needs Data")
+        self.assertIn(
+            "water_observation_unavailable",
+            tasks["irrigation_C12345"]["dependencies"],
+        )
+
     def test_canonical_weather_water_and_reserve_override_nested_adaptive_claims(self):
         adaptive = evidence()
         adaptive["power"].update(battery_soc_pct=99, solar_power_w=5000, load_power_w=100)
