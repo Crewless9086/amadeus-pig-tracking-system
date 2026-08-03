@@ -160,3 +160,73 @@ decision and grants no irrigation or hardware authority.
 - Natural Afrikaans and English must use the same context, evidence, preview,
   confirmation, replay and authority rules. Family members must never have to
   translate observations into English or complete a rigid form.
+
+## P0 Proof B material correction
+
+The next genuine owner request is authoritatively bound to Telegram inbound
+`3208`, GateKeeper execution `62102`, relay execution `62103`, provider epoch
+`1785753983`, content SHA-256
+`5f6f1459ebdd83f241a4a038f3e4a10cdfbb13c82b781d559b0fef2ff081d471`,
+manager mission `OOM-FARM-ROUND-0FCB0C799AFC160886B57077`, and delivered daily
+card `3209`. The first v1 result is preserved as defect evidence: it had zero
+actions and globally rendered `BOUNDED WAITING` from section-local specialist
+limitations.
+
+The v2 composition contract permits one material recomposition only when the
+same exact provider binding owns that v1 zero-action defect. It stores the v2
+result as a new immutable revision under the same mission and lets the existing
+family lifecycle edit card `3209`; an ordinary same-version replay remains a
+no-op. Missing, stale, unavailable and contained specialists remain typed in the
+internal result but are suppressed from family-facing text. A specialist with
+no owner action is also suppressed.
+
+HERDMASTER consumption uses the reviewed whole-herd packet contract from merged
+PR `#690`. The prepared production result ranks the existing Pig 127 welfare
+question first, then groups Mona and Mysikind's proportional farrowing
+preparation with the Monday weighing journey. The authenticated 1 August owner
+observation is Telegram `3151`, GateKeeper execution `61664`, provider timestamp
+`2026-08-01T11:51:04+00:00`, and SHA-256
+`c19f2c2b9e3088c49a051b5f76d5d92b6339e7539349c0892e097ee3bd7b3735`.
+It supports operational `Assumed Pregnant` for Mona and Mysikind and
+`Inconclusive` for Baby; it is not clinical confirmation and grants no write.
+An existing active welfare lifecycle is deduplicated by Pig ID and card rather
+than becoming a new case or question.
+
+ROOTLINE refresh is independently time-bounded. If a fresh safe recommendation
+cannot be built inside the manager deadline, its section contributes only a
+plain practical reassessment action and observation request; it never exposes
+runtime or containment language and grants no irrigation or commissioning
+authority. SAM's supported zero-action state and BEACON's absent owner-relevant
+work are suppressed.
+
+Focused source verification: `829 passed, 7 skipped, 351 subtests passed` across
+all Oom Sakkie tests. The exact reviewed head still requires normal CI,
+integration, exact-merge CI and exact deployment lineage.
+
+Independent farm-operations/CX and backend/security/privacy/authority reviews
+approved the final candidate after verifying section-local reproductive
+suppression, strict current-mating/timestamp provenance, one durable
+recomposition winner, bounded loaders, existing-card editing and zero authority.
+
+### Exact Proof B production proof
+
+1. Revalidate inbound `3208`, executions `62102/62103`, card `3209`, provider
+   timestamp/digest, authenticated owner/chat and exact deployed lineage.
+2. Bind the three Telegram `3151` pregnancy observations as read-only manager
+   evidence with exact Pig/mating identities. This must change zero farm rows.
+3. Recover `3208` once under a distinct unconsumed correction guard. Require one
+   authoritative in-place edit of card `3209`, zero new Telegram messages, no
+   duplicate lifecycle/question, and no protected action.
+4. Require the corrected card to begin with Pig 127's existing breathing
+   observation, contain no more than three supported actions and one question,
+   include the supported HERDMASTER work and a proportional ROOTLINE result,
+   and contain none of the suppressed internal failure terms.
+5. Repeat the exact recovery and require zero packets, revisions, sends, edits,
+   questions, missions, commands or farm rows.
+6. Verify Pig 127 remains in its canonical zero-write lifecycle, message `3192`
+   remains quarantined, and all unrelated specialist and protected state is
+   unchanged. Release the serialized runtime immediately.
+
+Proof B is business-complete only after Telegram provider evidence proves Charl
+can see the corrected useful card. Source, CI, merge, deployment or containment
+alone is insufficient.

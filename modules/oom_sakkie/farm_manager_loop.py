@@ -1248,7 +1248,7 @@ def _minimal_questions(
         for item in queue
         if item.question_for in FAMILY_MEMBERS
         and item.genuine_question.strip()
-        and item.state is WorkState.WAITING_EVIDENCE
+        and item.state in {WorkState.URGENT, WorkState.DUE_TODAY, WorkState.WAITING_EVIDENCE}
     ]
     selected = min(candidates, key=_priority_key) if candidates else None
     return MappingProxyType({

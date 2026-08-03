@@ -108,7 +108,12 @@ def _load_active_lifecycles(owner_user_id):
         if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
                                   "preview_correction_pending"} and card_message_id:
             active[pig_id] = {"pig_id": pig_id, "lifecycle_id": str(row.get("mission_id") or ""),
-                "state": str(row.get("status")), "card_message_id": card_message_id}
+                "state": str(row.get("status")), "card_message_id": card_message_id,
+                "tag_number": str(identity.get("tag_number") or identity.get("name") or pig_id),
+                "provider_timestamp": str(row.get("provider_timestamp") or ""),
+                "current_question": str((((row.get("preview") or {}).get("evaluator") or {}).get(
+                    "smallest_missing_follow_up_question") or "")),
+                "owner_text": str(row.get("owner_text") or "")}
         else:
             active.pop(pig_id, None)
     return list(active.values())
