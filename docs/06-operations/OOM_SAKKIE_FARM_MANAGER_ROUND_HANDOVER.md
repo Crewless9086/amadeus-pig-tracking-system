@@ -199,7 +199,7 @@ runtime or containment language and grants no irrigation or commissioning
 authority. SAM's supported zero-action state and BEACON's absent owner-relevant
 work are suppressed.
 
-Focused source verification: `833 passed, 7 skipped, 351 subtests passed` across
+Focused source verification: `836 passed, 7 skipped, 351 subtests passed` across
 all Oom Sakkie tests. The exact reviewed head still requires normal CI,
 integration, exact-merge CI and exact deployment lineage.
 
@@ -252,3 +252,12 @@ v2 result carrying HERDMASTER `invalid_future_evidence` and lacking Pig 127.
 All ordinary v3 replays remain suppressed. The next production recovery must
 use a distinct guard and update the same card `3209`; it must not create a new
 brief.
+
+The v3 correction then restored all three priorities with zero farm writes and
+one in-place edit, but live scale exposed an owner-usefulness defect: 137
+weighing candidates expanded into a clipped line containing unlabelled `None`
+values. Guard `OOM-PROOF-B-3208-CORRECTION-B092CCC6` is consumed and immutable.
+The v4 contract keeps small identified lists explicit, renders large identified
+herds as a concise count bound to the canonical worklist, and keeps unlabelled
+pigs outside the recording preview until identity is proven. An all-unlabelled
+round remains visible as one waiting-evidence task rather than disappearing.
