@@ -157,10 +157,7 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         agents = [item["agent"] for item in metadata["agent_workflow"]]
 
         self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "software_build")
-        self.assertIn("builder", agents)
-        self.assertIn("tester", agents)
-        self.assertEqual(agents, ["builder", "tester", "reviewer"])
-        self.assertLess(agents.index("builder"), agents.index("tester"))
+        self.assertEqual(agents, ["builder"])
 
     def test_ui_product_build_routes_through_design_council(self):
         mission = {
@@ -196,8 +193,7 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         agents = [item["agent"] for item in metadata["agent_workflow"]]
 
         self.assertIn("product_reviewer", agents)
-        self.assertLess(agents.index("tester"), agents.index("product_reviewer"))
-        self.assertLess(agents.index("product_reviewer"), agents.index("reviewer"))
+        self.assertLess(agents.index("builder"), agents.index("product_reviewer"))
 
     def test_explicit_simple_non_ui_fix_uses_right_sized_pipeline(self):
         mission = {
@@ -211,10 +207,7 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
 
         self.assertEqual(metadata["mission_vault"]["project_truth"]["pipeline_profile"], "minimal_software_fix")
         self.assertTrue(metadata["mission_vault"]["project_truth"]["workflow_right_sized"])
-        self.assertIn("builder", agents)
-        self.assertIn("tester", agents)
-        self.assertIn("reviewer", agents)
-        self.assertEqual(agents, ["builder", "tester", "reviewer"])
+        self.assertEqual(agents, ["builder"])
         self.assertNotIn("idea_expander", agents)
         self.assertNotIn("product_architect", agents)
         self.assertLess(len(agents), len(WORKFLOW_TEMPLATES["software_build"]["agent_order"]))
@@ -280,7 +273,7 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         agents = [item["agent"] for item in metadata["agent_workflow"]]
         self.assertIn("source_mapper", agents)
         self.assertIn("technical_architect", agents)
-        self.assertIn("council_synthesis", agents)
+        self.assertEqual(agents, ["source_mapper", "technical_architect", "builder", "tester", "reviewer"])
         self.assertTrue(all(AGENT_DOCTRINE_PATHS.get(agent) for agent in agents))
 
     def test_handoff_report_requires_auditable_fields(self):

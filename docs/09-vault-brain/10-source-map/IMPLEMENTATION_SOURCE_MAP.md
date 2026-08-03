@@ -1,5 +1,17 @@
 # Implementation Source Map
 
+## CHARLIE CORE development coordination
+
+- Adaptive development scoring and minimum-team selection:
+  `modules/charlie/adaptive_orchestration.py`.
+- Source-only release, acknowledgement, start, containment and completion
+  contract: `modules/charlie/development_coordination.py`.
+- Operator handover and S02-S07 reconciliation:
+  `docs/06-operations/CHARLIE_CORE_ADAPTIVE_MINIMAL_DISPATCH_HANDOVER.md`.
+- These contracts reuse the existing mission store, mission-event ledger,
+  execution bridge heartbeat and final-artifact ingestion. They do not create
+  a second queue or grant runtime/production authority.
+
 ## Oom Sakkie owner-request lifecycle
 
 - Existing authenticated ingress and Telegram delivery:
