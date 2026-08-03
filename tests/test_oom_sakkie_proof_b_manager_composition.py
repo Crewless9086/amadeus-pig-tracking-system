@@ -201,6 +201,47 @@ def test_v1_zero_action_waiting_result_is_recomposed_once_and_then_replays():
     assert replay_status == 200 and replay["status"] == "farm_manager_round_replay_suppressed"
 
 
+def test_v2_precomposition_clock_defect_recomposes_under_v3():
+    mission = "OOM-FARM-ROUND-0FCB0C799AFC160886B57077"
+    old_binding = {"owner": OWNER, "chat": OWNER, "provider_message_id": "3208",
+        "provider_timestamp": NOW.isoformat(),
+        "content_digest": __import__("hashlib").sha256(TEXT.encode()).hexdigest(),
+        "contract_version": "oom_sakkie_farm_manager_round_v2"}
+    rows = {mission: {"binding": old_binding, "result": {"action_count": 1,
+        "answer": "Refresh today's irrigation decision",
+        "specialist_gaps": {"herdmaster": "invalid_future_evidence"}}}}
+    def store(action, identity, payload):
+        if action == "load": return rows.get(identity)
+        rows[identity] = payload; return {"success": True, "created": True}
+    herd = _whole_herd_specialist_result(canonical(), observations(), active(), weights(), NOW)
+    loaders = {"herdmaster": lambda: herd,
+        "rootline": lambda: SpecialistResult("rootline", "zero", NOW),
+        "sam": lambda: SpecialistResult("sam", "zero", NOW),
+        "beacon": lambda: SpecialistResult("beacon", "zero", NOW)}
+    result, status = handle_farm_manager_round(parsed(),
+        issue_gateway_owner_authority(OWNER, OWNER), now=NOW, loaders=loaders,
+        event_store=store, weighing_loader=weights)
+    assert status == 200 and "Pig 127" in result["answer"]
+    assert result["binding"]["contract_version"] == "oom_sakkie_farm_manager_round_v3"
+
+
+def test_live_composition_clock_accepts_result_generated_after_invocation():
+    invoked = NOW
+    composed = NOW.replace(second=NOW.second + 5)
+    ticks = iter((invoked, composed))
+    herd = _whole_herd_specialist_result(canonical(), observations(), active(), weights(), composed)
+    loaders = {"herdmaster": lambda: herd,
+        "rootline": lambda: SpecialistResult("rootline", "zero", composed),
+        "sam": lambda: SpecialistResult("sam", "zero", composed),
+        "beacon": lambda: SpecialistResult("beacon", "zero", composed)}
+    result, status = handle_farm_manager_round(parsed(),
+        issue_gateway_owner_authority(OWNER, OWNER), loaders=loaders,
+        event_store=lambda action, identity, payload: None if action == "load" else {"success": True, "created": True},
+        weighing_loader=weights, clock=lambda: next(ticks))
+    assert status == 200 and "Pig 127" in result["answer"]
+    assert "invalid_future_evidence" not in result["specialist_gaps"].values()
+
+
 def test_whole_herd_packet_does_not_repeat_the_unbounded_weighing_read():
     herd = _whole_herd_specialist_result(canonical(), observations(), active(), weights(), NOW)
     loaders = {name: (lambda result=result: result) for name, result in {
