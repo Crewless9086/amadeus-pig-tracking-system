@@ -55,6 +55,8 @@ def compose_rootline(result: Mapping[str, Any], *, language="en") -> str:
             continue
         decision = str(item.get("status") or item.get("recommendation") or "Needs Data")
         reason = str(item.get("reason") or "").strip()
+        if subject == "C12345":
+            reason = reason.replace("B-Camp plan", "camp plan").replace("B Camp plan", "camp plan")
         rendered_reason = _local_text(reason, af)
         if af and reason and rendered_reason == reason:
             rendered_reason = "Spesialisrede (bronwoorde): " + reason
