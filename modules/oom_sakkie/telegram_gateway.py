@@ -12,7 +12,9 @@ from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 from modules.oom_sakkie.owner_conversation_front_door import build_owner_clarification
 from modules.oom_sakkie.owner_operational_continuation import handle_owner_operational_continuation
+from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_message
 from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
+from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline, record_reassessment_delivery
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -266,6 +268,21 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         body["writes_unknown"] = operational_result.get("writes_farm_data_unknown") is True
         return body, 200 if delivery.get("success") else 202
 
+    weight_result, weight_status = handle_grouped_weight_message(parsed, gateway_authority)
+    if weight_result.get("handled"):
+        delivery = (deliver_family_result(parsed, weight_result, specialist="HERDMASTER",
+            mission_id=str(weight_result.get("mission_id") or ""),
+            card_mission_id=str(weight_result.get("card_mission_id") or ""))
+            if weight_result.get("answer") else {"success": False, "telegram_sends": 0, "telegram_edits": 0})
+        body, _ = _gateway_result(delivery.get("success") is True,
+            str(weight_result.get("status") or "contained"), policy, weight_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"], "telegram_chat_id": parsed["telegram_chat_id"],
+            "text": parsed["text"], "answer": weight_result.get("answer", ""), "message": weight_result,
+            "delivery": delivery, "records_audit_trace": True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        return body, weight_status if delivery.get("success") else 202
+
     health_result, health_status = handle_authenticated_health_loss_message(
         parsed,
         gateway_authority,
@@ -390,6 +407,48 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         if not delivery.get("success"):
             return body, 202
     return body, response_code
+
+
+def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *, specialist_loader=None,
+                                         state_store=None, family_delivery=None):
+    """Run one authenticated scheduled/evidence-change reassessment via the existing family rail."""
+    source = environ if environ is not None else os.environ
+    policy = telegram_gateway_policy(source)
+    if not policy["enabled"] or not _token_matches(headers or {}, environ=source):
+        return _gateway_result(False, "rootline_reassessment_auth_denied", policy, 403)
+    owner = str((payload or {}).get("owner_user_id") or "").strip()
+    chat = str((payload or {}).get("chat_id") or "").strip()
+    trigger = str((payload or {}).get("trigger") or "").strip()
+    trigger_id = str((payload or {}).get("trigger_id") or "").strip()
+    trigger_at = str((payload or {}).get("trigger_timestamp") or "").strip()
+    if owner != chat or owner not in _allowed_user_ids(source) or not trigger_id or not trigger_at:
+        return _gateway_result(False, "rootline_reassessment_binding_invalid", policy, 403)
+    if specialist_loader is None:
+        from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
+        specialist_loader = build_current_rootline_specialist_result
+    if state_store is None:
+        from modules.oom_sakkie.rootline_reassessment_store import rootline_reassessment_state_store
+        state_store = rootline_reassessment_state_store
+    result = reassess_rootline(owner_user_id=owner, chat_id=chat, trigger=trigger,
+        specialist_loader=specialist_loader, state_store=state_store,
+        language="af" if str((payload or {}).get("language") or "").casefold().startswith("af") else "en")
+    if not result.get("notify_owner"):
+        return result, 200 if result.get("success") else 202
+    parsed = {"telegram_user_id": owner, "telegram_chat_id": chat,
+        "provider_message_id": f"scheduled:{trigger_id}", "provider_timestamp": trigger_at,
+        "semantic": {"domain": "water_energy", "intent": "rootline_reassessment",
+                     "language": str((payload or {}).get("language") or "en")}}
+    deliver = family_delivery or deliver_family_result
+    delivery = deliver(parsed, {**result, "status": result["status"]}, specialist="ROOTLINE",
+        mission_id=result["notification_identity"], card_mission_id=result["notification_identity"])
+    delivery_proof = {"provider_delivery_confirmed": delivery.get("success") is True and bool(delivery.get("telegram_message_id")),
+        "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
+        "provider_message_id": str(delivery.get("telegram_message_id") or ""),
+        "provider_timestamp": str(delivery.get("provider_timestamp") or "")}
+    recorded = record_reassessment_delivery(identity=result["notification_identity"], owner_user_id=owner,
+        chat_id=chat, material_digest=result["material_digest"], delivery=delivery_proof, state_store=state_store)
+    return {**result, "delivery": delivery, "delivery_record": recorded,
+            "telegram_sends": int(delivery.get("telegram_sends") or 0)}, 200 if delivery_proof["provider_delivery_confirmed"] else 202
 
 
 def parse_telegram_gateway_payload(payload):

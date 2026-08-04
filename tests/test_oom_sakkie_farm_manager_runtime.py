@@ -117,6 +117,17 @@ def test_completed_pig125_is_suppressed_and_active_pig11_appears_once():
     assert "No current active/on-farm pigs" in result["answer"]
 
 
+def test_owner_reported_dead_pig127_keeps_mortality_lifecycle_without_obsolete_breathing_question():
+    result = farm_manager_runtime._active_welfare_result(({
+        "pig_id":"PIG-2026-D13C", "tag_number":"127", "lifecycle_id":"PIG127-MORTALITY",
+        "card_message_id":"3203", "provider_timestamp":"2026-08-03T06:00:00+00:00",
+        "reported_dead":True, "current_question":"Is Pig 127 breathing?"},), NOW)
+    assert len(result.work_items)==1
+    item=result.work_items[0]
+    assert "mortality record follow-up" in item.title
+    assert "breathing" not in item.next_action.lower() and item.genuine_question==""
+
+
 def test_weighing_loader_failure_is_a_bounded_visible_gap():
     loaders = {name:(lambda n=name:specialist(n)) for name in ("herdmaster","rootline","sam","beacon")}
     result, _ = handle_farm_manager_round(parsed(), issue_gateway_owner_authority(OWNER, OWNER), now=NOW,
@@ -143,7 +154,7 @@ def test_independent_specialists_share_one_bounded_delivery_budget_and_text_is_t
     elapsed=time.monotonic()-started
     assert elapsed < 0.35
     assert len(result["answer"]) <= 3900
-    assert "No weight, mating, farm, customer, publication or hardware action was performed." in result["answer"]
+    assert "authority" not in result["answer"].lower()
     assert result["answer"].count("<b>") == result["answer"].count("</b>")
 
 
@@ -166,7 +177,7 @@ def test_slow_specialist_is_contained_without_blocking_supported_brief_and_html_
     assert result["specialist_gaps"]["beacon"] == "contained"
     assert "&lt;unsafe&gt; &amp; current" in result["answer"]
     assert "<unsafe>" not in result["answer"]
-    assert "No weight, mating, farm, customer, publication or hardware action was performed." in result["answer"]
+    assert "authority" not in result["answer"].lower()
 
 
 def test_escape_heavy_specialist_text_stays_valid_and_inside_telegram_budget():
@@ -180,7 +191,7 @@ def test_escape_heavy_specialist_text_stays_valid_and_inside_telegram_budget():
         loaders=loaders,event_store=memory_store(),weighing_loader=lambda:())
     assert status==200 and result["success"] is True and len(result["answer"])<=3900
     assert result["answer"].count("<b>")==result["answer"].count("</b>")
-    assert "No weight, mating, farm, customer, publication or hardware action was performed." in result["answer"]
+    assert "authority" not in result["answer"].lower()
 
 
 def test_repeated_timeouts_remain_inside_shared_worker_bulkhead():

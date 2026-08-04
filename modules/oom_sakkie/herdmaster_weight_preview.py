@@ -6,6 +6,7 @@ from datetime import datetime
 
 
 CONTRACT_VERSION = "herdmaster_telegram_weight_preview_v1"
+GROUPED_CONTRACT_VERSION = "herdmaster_telegram_grouped_weight_preview_v1"
 _WEIGHT_FACT = re.compile(
     r"^\s*(?P<animal>.+?)\s+weighed\s+"
     r"(?P<weight>\d+(?:[.,]\d+)?)\s*kg\s+on\s+"
@@ -99,6 +100,48 @@ def preview_herd_weight_fact(owner_words, readiness, preflight):
         "writes_performed": False,
         "protected_actions_performed": False,
     }
+
+
+def preview_grouped_herd_weights(owner_words, *, weight_date, readiness, preflight):
+    """Resolve ordinary comma/full-stop separated tag/name and kg pairs."""
+    pairs = re.findall(r"(?:^|[,;.]\s*)(?:(?:pig|vark)\s+)?([A-Za-z0-9-]+)\s+(\d+(?:[.,]\d+)?)\s*kg\b",
+                       str(owner_words or ""), flags=re.I)
+    if not pairs:
+        return _failure("grouped_weight_facts_not_found", "Send each pig tag or name followed by its kg.")
+    try:
+        canonical_date = datetime.fromisoformat(str(weight_date)).date().isoformat()
+    except (TypeError, ValueError):
+        return _failure("weight_date_needs_clarification", "The observation date is not safely known.")
+    pigs = readiness.get("pigs") if isinstance(readiness, dict) and readiness.get("success") is True else None
+    if not isinstance(pigs, list) or any(not isinstance(pig, dict) for pig in pigs):
+        return _failure("canonical_herd_identity_unavailable", "Canonical herd identity is unavailable.")
+    rows = []
+    for label, raw_weight in pairs:
+        matches = [pig for pig in pigs if _identity_values(pig) & {label.casefold()}]
+        if len(matches) != 1:
+            return _failure("animal_identity_ambiguous" if matches else "animal_identity_not_found",
+                            f"I could not resolve {label} to exactly one active on-farm pig.")
+        pig = matches[0]
+        if (str(pig.get("status") or pig.get("lifecycle_status") or "").casefold() != "active"
+                or str(pig.get("on_farm") or "").casefold() not in {"yes", "true", "1"}):
+            return _failure("animal_not_active_on_farm", f"{label} is not confirmed active and on-farm.")
+        rows.append({"pig_id": str(pig.get("pig_id") or ""),
+                     "tag_number": str(pig.get("tag_number") or pig.get("name") or label),
+                     "label": label, "weight_kg": float(raw_weight.replace(",", "."))})
+    check, status = preflight({"weight_date": canonical_date,
+        "weighed_by": "Authenticated owner via Oom Sakkie",
+        "rows": [{key: row[key] for key in ("pig_id", "tag_number", "weight_kg")} for row in rows]})
+    if status != 200 or check.get("accepted_count") != len(rows):
+        return _failure(str(check.get("status") or check.get("error") or "weight_preflight_blocked"),
+                        "The canonical grouped-weight preflight did not accept every mapping.")
+    basis = {"contract": GROUPED_CONTRACT_VERSION, "weight_date": canonical_date,
+             "rows": [(row["pig_id"], _canonical_weight(row["weight_kg"])) for row in rows]}
+    preview_id = "HERD-WEIGHT-GROUP-PREVIEW-" + hashlib.sha256(
+        repr(basis).encode("utf-8")).hexdigest()[:24].upper()
+    return {"success": True, "status": "grouped_weight_preview_ready",
+        "contract_version": GROUPED_CONTRACT_VERSION, "preview_id": preview_id,
+        "weight_date": canonical_date, "rows": rows, "confirmation_required": True,
+        "writes_performed": False, "protected_actions_performed": False}
 
 
 def _parse_weight_fact(owner_words):

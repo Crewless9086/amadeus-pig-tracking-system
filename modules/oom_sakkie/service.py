@@ -563,6 +563,7 @@ def handle_message(payload):
         "allow_specialist_llm": allow_specialist_llm,
         "authenticated_owner": legacy_authenticated_owner,
         "gateway_authority": bound_gateway_authority,
+        "semantic_language": str(semantic.get("language") or "en"),
     })
     stale_warnings = list(tool_result.get("stale_warnings") or [])
     safety_notes = list(tool_result.get("safety_notes") or [])

@@ -107,13 +107,16 @@ def _load_active_lifecycles(owner_user_id):
             continue
         if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
                                   "preview_correction_pending"} and card_message_id:
+            observations = (((row.get("preview") or {}).get("evaluator") or {}).get("observations") or [])
+            reported_dead = any(isinstance(item, dict) and item.get("fact") == "animal_reported_dead"
+                                and item.get("value") is True for item in observations)
             active[pig_id] = {"pig_id": pig_id, "lifecycle_id": str(row.get("mission_id") or ""),
                 "state": str(row.get("status")), "card_message_id": card_message_id,
                 "tag_number": str(identity.get("tag_number") or identity.get("name") or pig_id),
                 "provider_timestamp": str(row.get("provider_timestamp") or ""),
                 "current_question": str((((row.get("preview") or {}).get("evaluator") or {}).get(
                     "smallest_missing_follow_up_question") or "")),
-                "owner_text": str(row.get("owner_text") or "")}
+                "owner_text": str(row.get("owner_text") or ""), "reported_dead": reported_dead}
         else:
             active.pop(pig_id, None)
     return list(active.values())
