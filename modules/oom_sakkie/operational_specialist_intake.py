@@ -44,8 +44,12 @@ def handle_operational_specialist_message(
 ) -> tuple[dict[str, Any], int]:
     text = str((parsed or {}).get("text") or "").strip()
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
-    semantic_rootline = semantic.get("domain") == "rootline" and not semantic.get("needs_clarification")
-    if (semantic_rootline or _ROOTLINE_OPERATIONAL.search(text)) and not _ROOTLINE_PRESENCE.search(text):
+    semantic_present = bool(semantic)
+    semantic_rootline_observation = (semantic.get("domain") == "rootline"
+        and semantic.get("message_kind") in {"observation", "correction"}
+        and not semantic.get("needs_clarification"))
+    legacy_rootline_observation = not semantic_present and _ROOTLINE_OPERATIONAL.search(text)
+    if (semantic_rootline_observation or legacy_rootline_observation) and not _ROOTLINE_PRESENCE.search(text):
         return _handle_rootline_operation(parsed, gateway_authority, rootline_operations_dispatcher,
                                           rootline_observation_writer or persist_rootline_observations, now,
                                           operation_store or _operation_event_store)

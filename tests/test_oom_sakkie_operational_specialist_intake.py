@@ -104,6 +104,14 @@ def test_water_levels_and_visible_c_need_outrank_legacy_irrigation_reader():
     assert calls[0]["authority"]["hardware_control"] is False
     assert value["hardware_commands"]==0
 
+def test_semantic_rootline_plan_question_is_not_claimed_as_owner_observation():
+    request = {**operational("What is today's irrigation plan for B and C Camps?"),
+        "semantic": {"domain": "rootline", "intent": "request_irrigation_plan",
+                     "message_kind": "question", "needs_clarification": False}}
+    value,status=handle_operational_specialist_message(request,issue_gateway_owner_authority("42","42"),
+        now=NOW,rootline_operations_dispatcher=lambda _context: pytest.fail("question was dispatched as evidence"))
+    assert status==200 and value["handled"] is False
+
 def test_one_water_level_routes_independently_without_demanding_both():
     value,status=handle_operational_specialist_message(operational("Storage tanks 2/4"),
         issue_gateway_owner_authority("42","42"),now=NOW,
