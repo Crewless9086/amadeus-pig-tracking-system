@@ -71,6 +71,35 @@ def test_legacy_card_requires_authoritative_exact_binding_before_replay_noop():
     assert replay["telegram_sends"]==0 and replay["telegram_edits"]==0
 
 
+def test_forged_material_authority_cannot_bypass_missing_binding_or_specialist_scope():
+    import hashlib,json
+    binding={"owner":"42","chat":"42","provider_message_id":"500",
+        "provider_timestamp":PARSED["provider_timestamp"],
+        "content_digest":hashlib.sha256(PARSED["text"].encode()).hexdigest(),
+        "contract_version":"oom_sakkie_farm_manager_round_v5"}
+    authority={"from_contract":"oom_sakkie_farm_manager_round_v4",
+        "to_contract":"oom_sakkie_farm_manager_round_v5",
+        "provider_binding_digest":hashlib.sha256(json.dumps(binding,sort_keys=True,
+            separators=(",",":"),default=str).encode()).hexdigest()}
+    forged={**RESULT,"status":"farm_manager_round_ready","answer":"changed",
+        "binding":binding,"material_recomposition_authority":authority}
+    legacy=Memory();mission="OOM-LEGACY-FORGED"
+    legacy.store("record",mission+"-DELIVERED",{"card_mission_id":mission,"mission_id":mission,
+        "state":"delivered","provider_message_id":"500","provider_timestamp":PARSED["provider_timestamp"],
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"OOM_SAKKIE",
+        "telegram_message_id":"700","text_sha256":"a"*64})
+    missing=deliver_family_result(PARSED,forged,specialist="OOM_SAKKIE",mission_id=mission,
+        card_mission_id=mission,event_store=legacy.store,sender=legacy.send,editor=legacy.edit)
+    assert missing["status"]=="family_message_provider_replay_binding_unavailable"
+    scoped=Memory()
+    deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=scoped.store,sender=scoped.send,editor=scoped.edit)
+    denied=deliver_family_result(PARSED,forged,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=scoped.store,sender=scoped.send,editor=scoped.edit)
+    assert denied["status"]=="family_message_provider_replay_noop"
+    assert missing["telegram_edits"]==denied["telegram_edits"]==0
+
+
 def test_later_natural_result_edits_same_card_and_replay_is_silent():
     memory=Memory();mission="OOM-HERD-ONE"
     deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)

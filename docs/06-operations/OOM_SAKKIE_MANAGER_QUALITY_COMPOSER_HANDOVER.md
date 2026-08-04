@@ -13,6 +13,7 @@ The existing authenticated gateway owns delivery and replay. The composer grants
 - HERDMASTER active mortality evidence suppresses obsolete welfare questions. An owner-reported-dead Pig 127 case remains a governed mortality follow-up until recorded; it is never rendered as awaiting breathing evidence.
 - Natural grouped weight lines resolve against canonical active/on-farm identity, run the existing bulk-weight preflight and produce one grouped confirmation preview. No weight is recorded by preview.
 - ROOTLINE read-only reassessment uses an owner/chat-scoped material decision digest. The authenticated scheduled/evidence-change entrypoint is `POST /api/oom-sakkie/management/rootline/reassess`; it reuses the existing gateway token, allowed-owner policy, family lifecycle and Telegram transport. Unchanged delivered evidence emits no notification. A changed decision stays pending until provider-confirmed delivery, while ambiguous delivery is contained without blind retry. It never creates a command or second irrigation segment.
+- Manager-round contract v5 permits one provider-bound material correction when a preserved v4 brief still asks an obsolete breathing question after the same animal's retained lifecycle reports death. This is animal-agnostic lifecycle behavior: the prior brief remains audit history, the existing card is edited once, and ordinary or substituted replay remains a zero-I/O no-op or fail-closed conflict.
 
 ## Production proof
 

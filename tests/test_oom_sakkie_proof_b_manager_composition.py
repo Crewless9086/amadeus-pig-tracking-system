@@ -222,7 +222,7 @@ def test_v2_precomposition_clock_defect_recomposes_under_v3():
         issue_gateway_owner_authority(OWNER, OWNER), now=NOW, loaders=loaders,
         event_store=store, weighing_loader=weights)
     assert status == 200 and "Pig 127" in result["answer"]
-    assert result["binding"]["contract_version"] == "oom_sakkie_farm_manager_round_v4"
+    assert result["binding"]["contract_version"] == "oom_sakkie_farm_manager_round_v5"
 
 
 def test_live_composition_clock_accepts_result_generated_after_invocation():
@@ -289,8 +289,60 @@ def test_v3_truncated_large_herd_result_can_recompose_once_under_v4():
     result, status = handle_farm_manager_round(parsed(),
         issue_gateway_owner_authority(OWNER, OWNER), now=NOW, loaders=loaders,
         event_store=store, weighing_loader=weights)
-    assert status == 200 and result["binding"]["contract_version"] == "oom_sakkie_farm_manager_round_v4"
+    assert status == 200 and result["binding"]["contract_version"] == "oom_sakkie_farm_manager_round_v5"
     assert "Pig 127" in result["answer"] and "None" not in result["answer"]
+
+
+def test_v4_obsolete_breathing_question_recomposes_once_under_v5():
+    mission = "OOM-FARM-ROUND-0FCB0C799AFC160886B57077"
+    prior = {"binding": {"owner": OWNER, "chat": OWNER, "provider_message_id": "3208",
+        "provider_timestamp": NOW.isoformat(),
+        "content_digest": __import__("hashlib").sha256(TEXT.encode()).hexdigest(),
+        "contract_version": "oom_sakkie_farm_manager_round_v4"},
+        "result": {"action_count": 2,
+            "answer": "Pig 127 welfare follow-up. Is Pig 127 breathing now?"}}
+    rows = {mission: prior}
+    def store(action, identity, payload):
+        if action == "load": return rows.get(identity)
+        rows[identity] = payload; return {"success": True, "created": True}
+    reported_dead = [{**active()[0], "reported_dead": True}]
+    herd = _whole_herd_specialist_result(canonical(), observations(), reported_dead, weights(), NOW)
+    loaders = {"herdmaster": lambda: herd,
+        "rootline": lambda: SpecialistResult("rootline", "zero", NOW),
+        "sam": lambda: SpecialistResult("sam", "zero", NOW),
+        "beacon": lambda: SpecialistResult("beacon", "zero", NOW)}
+    result, status = handle_farm_manager_round(parsed(),
+        issue_gateway_owner_authority(OWNER, OWNER), now=NOW, loaders=loaders,
+        event_store=store, weighing_loader=weights)
+    assert status == 200
+    assert result["binding"]["contract_version"] == "oom_sakkie_farm_manager_round_v5"
+    assert "breathing" not in result["answer"].casefold()
+    assert "mortality" in result["answer"].casefold()
+
+
+def test_v4_obsolete_question_preserves_card_without_matching_mortality_evidence():
+    mission = "OOM-FARM-ROUND-0FCB0C799AFC160886B57077"
+    prior = {"binding": {"owner": OWNER, "chat": OWNER, "provider_message_id": "3208",
+        "provider_timestamp": NOW.isoformat(),
+        "content_digest": __import__("hashlib").sha256(TEXT.encode()).hexdigest(),
+        "contract_version": "oom_sakkie_farm_manager_round_v4"},
+        "result": {"action_count": 2,
+            "answer": "Pig 127 welfare follow-up. Is Pig 127 breathing now?"}}
+    rows = {mission: prior}
+    def store(action, identity, payload):
+        if action == "load": return rows.get(identity)
+        rows[identity] = payload; return {"success": True, "created": True}
+    loaders = {"herdmaster": lambda: _whole_herd_specialist_result(
+            canonical(), observations(), active(), weights(), NOW),
+        "rootline": lambda: SpecialistResult("rootline", "zero", NOW),
+        "sam": lambda: SpecialistResult("sam", "zero", NOW),
+        "beacon": lambda: SpecialistResult("beacon", "zero", NOW)}
+    result, status = handle_farm_manager_round(parsed(),
+        issue_gateway_owner_authority(OWNER, OWNER), now=NOW, loaders=loaders,
+        event_store=store, weighing_loader=weights)
+    assert status == 409
+    assert result["status"] == "farm_manager_material_recomposition_evidence_unavailable"
+    assert rows[mission] == prior
 
 
 def test_whole_herd_packet_does_not_repeat_the_unbounded_weighing_read():
@@ -349,13 +401,15 @@ def test_material_correction_edits_card_3209_once_then_delivery_replay_is_silent
     old_binding = {"owner": OWNER, "chat": OWNER, "provider_message_id": "3208",
         "provider_timestamp": NOW.isoformat(),
         "content_digest": __import__("hashlib").sha256(TEXT.encode()).hexdigest(),
-        "contract_version": "oom_sakkie_farm_manager_round_v1"}
+        "contract_version": "oom_sakkie_farm_manager_round_v4"}
     manager_rows = {mission: {"binding": old_binding,
-        "result": {"action_count": 0, "answer": "BOUNDED WAITING"}}}
+        "result": {"action_count": 1,
+            "answer": "Pig 127 welfare follow-up. Is Pig 127 breathing now?"}}}
     def manager_store(action, identity, payload):
         if action == "load": return manager_rows.get(identity)
         manager_rows[identity] = payload; return {"success": True, "created": True}
-    herd = _whole_herd_specialist_result(canonical(), observations(), active(), weights(), NOW)
+    herd = _whole_herd_specialist_result(canonical(), observations(),
+        [{**active()[0], "reported_dead": True}], weights(), NOW)
     loaders = {"herdmaster": lambda: herd,
         "rootline": lambda: SpecialistResult("rootline", "zero", NOW),
         "sam": lambda: SpecialistResult("sam", "zero", NOW),

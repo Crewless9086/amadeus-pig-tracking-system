@@ -39,6 +39,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     latest = next((row for row in reversed(events) if row.get("state") in {"delivered", "updated"}), delivered)
     card_id = str((latest or {}).get("telegram_message_id") or "")
     inbound_binding = _inbound_binding(parsed, specialist)
+    material_update = _material_update_authorized(parsed, result, specialist)
     provider_replay = next((row for row in reversed(events)
         if row.get("state") in {"delivered", "updated", "provider_binding"}
         and str(row.get("provider_message_id") or "") == inbound_binding["provider_message_id"]), None)
@@ -53,7 +54,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
                 "telegram_sends": 0, "telegram_edits": 0}
-    if provider_replay:
+    if provider_replay and not material_update:
         return {"success": True, "status": "family_message_provider_replay_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
@@ -197,6 +198,30 @@ def _inbound_binding(parsed, specialist):
         "provider_message_id": str(parsed.get("provider_message_id") or ""),
         "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
         "inbound_text_sha256": hashlib.sha256(normalized.encode("utf-8")).hexdigest()}
+
+
+def _material_update_authorized(parsed, result, specialist):
+    authority = result.get("material_recomposition_authority")
+    binding = result.get("binding")
+    if not isinstance(authority, Mapping) or not isinstance(binding, Mapping):
+        return False
+    expected_binding = {
+        "owner": str(parsed.get("telegram_user_id") or ""),
+        "chat": str(parsed.get("telegram_chat_id") or ""),
+        "provider_message_id": str(parsed.get("provider_message_id") or ""),
+        "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
+        "content_digest": hashlib.sha256(
+            str(parsed.get("text") or "").encode("utf-8")).hexdigest(),
+        "contract_version": "oom_sakkie_farm_manager_round_v5",
+    }
+    binding_digest = hashlib.sha256(json.dumps(
+        dict(binding), sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+    return (specialist == "OOM_SAKKIE"
+        and result.get("status") == "farm_manager_round_ready"
+        and dict(binding) == expected_binding
+        and authority.get("from_contract") == "oom_sakkie_farm_manager_round_v4"
+        and authority.get("to_contract") == "oom_sakkie_farm_manager_round_v5"
+        and authority.get("provider_binding_digest") == binding_digest)
 
 
 def _event_store(action, identity, payload):
