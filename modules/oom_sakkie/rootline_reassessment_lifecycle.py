@@ -67,9 +67,24 @@ def _material_digest(result):
     selected = {"overall_status": result.get("overall_status"),
         "recommendations": [{key: row.get(key) for key in ("subject", "status", "recommendation", "reason")}
                             for row in result.get("recommendations") or () if isinstance(row, Mapping)],
-        "next_reassessment": result.get("next_reassessment"),
+        "next_reassessment": _stable_reassessment(result.get("next_reassessment")),
         "owner_question": (result.get("owner_brief") or {}).get("family_fact_needed")}
     return hashlib.sha256(json.dumps(selected, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def _stable_reassessment(value):
+    if not isinstance(value, Mapping):
+        return value
+    trigger = str(value.get("trigger") or "")
+    stable = {key: value.get(key) for key in (
+        "trigger", "reason", "also_on", "recovery_if_window_is_missed", "automatic_command"
+    ) if key in value}
+    # Current-read models legitimately regenerate the next-read timestamp on
+    # every observation. It is presentation metadata, not a changed farm
+    # decision. Fixed plan/forecast deadlines remain material.
+    if trigger not in {"new_canonical_evidence", "new_canonical_evidence_or_next_read"} and "at" in value:
+        stable["at"] = value.get("at")
+    return stable
 
 
 def _contained(status):
