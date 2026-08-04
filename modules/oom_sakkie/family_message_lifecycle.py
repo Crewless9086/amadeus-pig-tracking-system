@@ -127,13 +127,18 @@ def bind_existing_card(parsed: Mapping[str, Any], *, specialist: str, mission_id
 
 
 def _event(parsed, mission_id, card_mission_id, specialist, task_state, text_sha):
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     return {"mission_id": mission_id, "card_mission_id": card_mission_id,
         "owner_user_id": str(parsed.get("telegram_user_id") or ""),
         "chat_id": str(parsed.get("telegram_chat_id") or ""),
         "provider_message_id": str(parsed.get("provider_message_id") or ""),
         "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
         "specialist_identity": specialist, "task_state": task_state,
-        "text_sha256": text_sha}
+        "text_sha256": text_sha,
+        "semantic_domain": str(semantic.get("domain") or "")[:40],
+        "semantic_intent": str(semantic.get("intent") or "")[:100],
+        "semantic_continuation": semantic.get("continuation") is True,
+        "clarification_question": str(semantic.get("clarification_question") or "")[:240]}
 
 
 def _event_store(action, identity, payload):

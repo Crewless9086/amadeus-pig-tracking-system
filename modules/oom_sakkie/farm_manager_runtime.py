@@ -61,7 +61,8 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
                               specialist_budget_seconds=SPECIALIST_BUDGET_SECONDS,
                               clock=None):
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), dict) else {}
-    if not (semantic.get("domain") == "manager_round" and not semantic.get("needs_clarification")) \
+    if not (semantic.get("domain") in {"manager_round", "herd_management"}
+            and not semantic.get("needs_clarification")) \
             and not is_farm_manager_round(parsed.get("text", "")):
         return {"handled": False}, 200
     # The durable manager lifecycle is provider-bound. Legacy/local callers

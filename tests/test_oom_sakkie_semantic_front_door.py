@@ -8,6 +8,7 @@ from modules.oom_sakkie.semantic_front_door import (
     semantic_front_door_policy,
 )
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
+from modules.oom_sakkie.service import handle_message
 
 
 def _response(value):
@@ -119,3 +120,48 @@ def test_gateway_attaches_semantic_hint_before_specialist_routing(interpret, ope
     assert status == 200 and result["message"]["specialist_identity"] == "ROOTLINE"
     routed = operational.call_args.args[0]
     assert routed["semantic"]["intent"] == "irrigation_shutdown_observed"
+
+
+@patch("modules.oom_sakkie.service.classify_intent",
+       side_effect=AssertionError("legacy classifier must not run"))
+@patch("modules.oom_sakkie.service.route_with_llm",
+       side_effect=AssertionError("second router must not reinterpret owner meaning"))
+@patch("modules.oom_sakkie.service.get_tool")
+@patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
+@patch("modules.oom_sakkie.service._write_tool_trace",
+       return_value={"stored": False, "status": "test"})
+def test_authenticated_owner_semantics_bypass_legacy_irrigation_classifier(
+        _trace, _compose, get_tool, _second_router, _legacy):
+    tool = get_tool.return_value
+    tool.name = "rootline_water_energy_plan"
+    tool.risk_level = 0
+    tool.handler.return_value = {"success": True, "summary": "Adaptive B/C plan"}
+    result, status = handle_message({
+        "text": "What is today's irrigation plan for B and C Camps?",
+        "channel": "telegram_read_only",
+        "semantic_authoritative": True,
+        "semantic": _semantic("rootline", "daily_irrigation_plan"),
+    })
+    assert status == 200
+    assert result["tool_used"] == "rootline_water_energy_plan"
+    assert result["intent"]["reason"] == "semantic:rootline_read_plan"
+
+
+@patch("modules.oom_sakkie.service.classify_intent",
+       side_effect=AssertionError("legacy classifier must not run"))
+@patch("modules.oom_sakkie.service.route_with_llm",
+       side_effect=AssertionError("second router must not reinterpret owner meaning"))
+def test_authenticated_owner_clarification_never_falls_back_to_keyword_code(
+        _second_router, _legacy):
+    semantic = _semantic("general", "unclear_followup")
+    semantic["needs_clarification"] = True
+    semantic["clarification_question"] = "Which animals do you mean?"
+    result, status = handle_message({
+        "text": "Animals",
+        "channel": "telegram_read_only",
+        "semantic_authoritative": True,
+        "semantic": semantic,
+    })
+    assert status == 200
+    assert result["needs_clarification"] is True
+    assert result["tool_used"] == ""

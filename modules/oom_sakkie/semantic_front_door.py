@@ -16,7 +16,7 @@ from urllib import request as urllib_request
 from modules.oom_sakkie.llm_router import API_KEY_ENV, API_URL_ENV, DEFAULT_API_URL, MODEL_ENV, TIMEOUT_ENV
 
 ENABLED_ENV = "OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED"
-DOMAINS = frozenset({"herd_health", "rootline", "manager_round", "sam", "beacon", "general"})
+DOMAINS = frozenset({"herd_health", "herd_management", "rootline", "manager_round", "sam", "beacon", "general"})
 MAX_CONTEXT_ITEMS = 8
 
 
@@ -131,7 +131,10 @@ def _load_recent_specialist_context(parsed):
     return [{"specialist": str(row.get("specialist_identity") or "")[:40],
              "task_state": str(row.get("task_state") or "")[:40],
              "card_mission_id": str(row.get("card_mission_id") or "")[:80],
-             "provider_message_id": str(row.get("provider_message_id") or "")[:40]}
+             "provider_message_id": str(row.get("provider_message_id") or "")[:40],
+             "semantic_domain": str(row.get("semantic_domain") or "")[:40],
+             "semantic_intent": str(row.get("semantic_intent") or "")[:100],
+             "clarification_question": str(row.get("clarification_question") or "")[:240]}
             for row in rows if isinstance(row, Mapping)]
 
 
@@ -140,10 +143,15 @@ def _payload(parsed, context, source):
         "You are Oom Sakkie's semantic front door for authenticated private farm-owner messages. "
         "Understand natural English or Afrikaans, typos, short follow-ups, and references to active cases. "
         "Classify meaning only; never claim a write, send, publication, sale, treatment, mating, or hardware action. "
-        "Domains: herd_health for animal welfare/death/loss/health updates; rootline for water, tanks, irrigation, "
-        "power, valves or confirmation that a camp started/stopped; manager_round for farm briefs and priorities; "
+        "Domains: herd_health only for a specific animal welfare/death/loss/health report; herd_management for herd, "
+        "breeding, weighing, farrowing or animal-work planning; rootline for water, tanks, irrigation, power, valves "
+        "or confirmation that a camp started/stopped; manager_round for farm briefs and priorities; "
         "sam for customers/livestock sales; beacon for marketing/media/posts; general otherwise. "
-        "A death or stopped-valve statement is new evidence, not a request to repeat an old question. "
+        "Treat broad requests such as 'what is the plan for today?', 'what needs attention today?', or their Afrikaans "
+        "equivalents as manager_round and do not ask which domain. Treat a one-word domain reply as a continuation "
+        "when recent context shows a clarification: Animals/Diere maps to herd_management, Irrigation/Besproeiing "
+        "maps to rootline, Sales/Verkope maps to sam, and Marketing maps to beacon. A death or stopped-valve statement "
+        "is new evidence, not a repeated question. "
         "Use active context and reply identity. Ask one clarification only when meaning or entity truly cannot be determined. "
         "Return JSON only with domain,intent,entity_refs,continuation,observation,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
