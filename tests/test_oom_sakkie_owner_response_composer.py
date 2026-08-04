@@ -22,10 +22,14 @@ def rootline(c="Hold"):
         "next_reassessment":{"trigger":"time_or_change","at":"10:00 SAST"},"result_id":"R1","generation":"G1"}
 
 def test_verbose_rootline_packet_becomes_compact_farm_message_without_b_camp_copy_error():
-    answer=compose_rootline(rootline())
+    packet=rootline()
+    packet["recommendations"][1]["reason"]=("Not selected for today's proportional B-Camp plan; "
+        "retain the four-day weekly target.")
+    answer=compose_rootline(packet)
     assert "<b>ROOTLINE — WATER &amp; POWER</b>" in answer
     assert "<b>B Camp:</b> Hold" in answer and "<b>C Camp:</b> Hold" in answer
     assert "B-Camp plan" not in answer and "authority" not in answer.lower()
+    assert "today's proportional camp plan" in answer
     assert "internal" not in answer.lower() and len(answer)<1200
 
 def test_rootline_hostile_scalar_values_are_never_rendered_as_telegram_html():
