@@ -108,8 +108,7 @@ def _load_active_lifecycles(owner_user_id):
         if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
                                   "preview_correction_pending"} and card_message_id:
             observations = (((row.get("preview") or {}).get("evaluator") or {}).get("observations") or [])
-            reported_dead = any(isinstance(item, dict) and item.get("fact") == "animal_reported_dead"
-                                and item.get("value") is True for item in observations)
+            reported_dead = _retained_owner_reported_death(row, observations, owner_user_id)
             active[pig_id] = {"pig_id": pig_id, "lifecycle_id": str(row.get("mission_id") or ""),
                 "state": str(row.get("status")), "card_message_id": card_message_id,
                 "tag_number": str(identity.get("tag_number") or identity.get("name") or pig_id),
@@ -120,6 +119,51 @@ def _load_active_lifecycles(owner_user_id):
         else:
             active.pop(pig_id, None)
     return list(active.values())
+
+
+def _retained_owner_reported_death(row, observations, owner_user_id):
+    if str(row.get("owner_user_id") or "") != str(owner_user_id):
+        return False
+    if any(isinstance(item, dict) and item.get("fact") == "animal_reported_dead"
+           and item.get("value") is True for item in observations or ()):
+        return True
+    semantic = row.get("semantic_interpretation")
+    if not isinstance(semantic, dict):
+        return False
+    # Older health/loss evaluators retained the authenticated natural death
+    # report and its semantic binding without projecting animal_reported_dead.
+    # This supports manager coordination only; it grants no canonical write.
+    verbatim = str(row.get("owner_text_verbatim") or "").strip()
+    retained_sha = str(row.get("retained_owner_text_sha256") or "").strip().lower()
+    if retained_sha and hashlib.sha256(verbatim.encode("utf-8")).hexdigest() != retained_sha:
+        return False
+    identity = ((row.get("preview") or {}).get("evaluator") or {}).get("identity") or {}
+    def entity_alias(value):
+        normalized = " ".join(str(value or "").casefold().split())
+        return normalized[4:] if normalized.startswith("pig ") else normalized
+    references = {entity_alias(value) for value in semantic.get("entity_refs") or ()
+                  if entity_alias(value)}
+    identifiers = {entity_alias(identity.get(key)) for key in ("pig_id", "tag_number", "name")
+                   if entity_alias(identity.get(key))}
+    if not references.intersection(identifiers):
+        return False
+    try:
+        from modules.pig_weights.herdmaster_natural_health_loss_intake import _parse_report
+        parsed = _parse_report(verbatim, datetime.fromisoformat(
+            str(row.get("provider_timestamp") or "").replace("Z", "+00:00")))
+    except (TypeError, ValueError):
+        return False
+    deterministic_death = any(item.get("fact") == "animal_reported_dead" and item.get("value") is True
+                              for item in parsed.get("observed") or () if isinstance(item, dict))
+    return (bool(verbatim)
+        and bool(str(row.get("provider_message_id") or "").strip())
+        and bool(str(row.get("provider_timestamp") or "").strip())
+        and semantic.get("domain") == "herd_health"
+        and semantic.get("intent") == "report_death"
+        and float(semantic.get("confidence") or 0) >= 0.8
+        and semantic.get("continuation") is True
+        and semantic.get("needs_clarification") is False
+        and deterministic_death)
 
 
 def _load_prior_consumptions(owner_user_id, invocation_context_digest):

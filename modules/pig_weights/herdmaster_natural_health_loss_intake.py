@@ -231,7 +231,11 @@ def _identity_result(matches):
 
 def _parse_report(text, provider_time):
     lower = text.casefold()
-    reported_died = bool(re.search(r"\bdied\b", lower))
+    reported_died = bool(re.search(
+        r"\bdied\b|\b(?:is|was) dead(?=\s*(?:[.!?,;:]|$)|\s+(?:and\s+)?"
+        r"(?:(?:was\s+)?buried|(?:was\s+)?removed|gone|no longer alive)\b)",
+        lower,
+    ))
     found_dead = bool(
         re.search(r"\bfound(?:\s+.+?)?\s+dead\b", lower)
         or re.search(r"\bwas dead(?:\s+when|\s+in|\s+at|[.!?]|$)", lower)

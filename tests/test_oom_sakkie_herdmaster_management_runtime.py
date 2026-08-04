@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
-from modules.oom_sakkie.herdmaster_management_runtime import consume_current_herdmaster_management, _consumption_claim_identity
+from modules.oom_sakkie.herdmaster_management_runtime import (consume_current_herdmaster_management,
+    _consumption_claim_identity, _retained_owner_reported_death)
 from tests.test_oom_sakkie_herdmaster_management_adapter import canonical, observations, active, NOW, OWNER
 
 def test_authenticated_runtime_consumes_and_records_existing_store_binding_once():
@@ -87,3 +88,29 @@ def test_claim_identity_excludes_invocation_timestamp_and_recorder_requires_proo
             owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner:observations(),
             active_loader=lambda _owner:active(),prior_loader=lambda _owner,_context:[],recorder=lambda _value,r=response:r)
         assert result["systemic_exception"]["reason"]=="herdmaster_management_consumption_persistence_unproven"
+
+
+def test_retained_authenticated_natural_death_report_projects_owner_reported_mortality_only():
+    row={"owner_user_id":OWNER,"owner_text_verbatim":"Pig 127 is dead and was buried.",
+        "provider_message_id":"3235","provider_timestamp":"2026-08-04T05:26:20+00:00",
+        "preview":{"evaluator":{"identity":{"pig_id":"PIG-2026-D13C","tag_number":"127","name":"127"}}},
+        "semantic_interpretation":{"domain":"herd_health","intent":"report_death",
+            "confidence":.99,"entity_refs":["pig 127"],
+            "continuation":True,"needs_clarification":False}}
+    assert _retained_owner_reported_death(row,[],OWNER) is True
+    for changed,value in (("owner_user_id","99"),("owner_text_verbatim",""),
+                          ("provider_message_id",""),("provider_timestamp","")):
+        assert _retained_owner_reported_death({**row,changed:value},[],OWNER) is False
+    for changed,value in (("intent","welfare_observation"),("domain","water_energy"),
+                          ("confidence",.79),("entity_refs",["pig 126"]),
+                          ("entity_refs",["pig 1270"]),("entity_refs",["pig 12"]),
+                          ("continuation",False),("needs_clarification",True)):
+        semantic={**row["semantic_interpretation"],changed:value}
+        assert _retained_owner_reported_death({**row,"semantic_interpretation":semantic},[],OWNER) is False
+    assert _retained_owner_reported_death({**row,"owner_text_verbatim":"Pig 127 is breathing."},[],OWNER) is False
+    assert _retained_owner_reported_death({**row,"owner_text_verbatim":"Pig 127 is dead tired."},[],OWNER) is False
+    typed=[{"fact":"animal_reported_dead","value":True}]
+    assert _retained_owner_reported_death({**row,"owner_user_id":"99"},typed,OWNER) is False
+    digest=__import__("hashlib").sha256(row["owner_text_verbatim"].encode()).hexdigest()
+    assert _retained_owner_reported_death({**row,"retained_owner_text_sha256":digest},[],OWNER) is True
+    assert _retained_owner_reported_death({**row,"retained_owner_text_sha256":"0"*64},[],OWNER) is False
