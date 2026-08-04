@@ -14,6 +14,16 @@
       "Only docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md changes."
     ],
     "acknowledgement_timeout_seconds": 300,
+    "agentic_architecture_packet": {
+      "coordinating_agent": "CHARLIE",
+      "deterministic_code_scope": "One bounded documentation correction and exact artifact verification.",
+      "governed_actions": [],
+      "ordinary_farm_routing": false,
+      "owning_agent": "CORE",
+      "reasoning_boundary": "No business-domain reasoning or operational decision is delegated by this mission.",
+      "supporting_agents": [],
+      "version": "agentic_architecture_packet_v1"
+    },
     "business_impact_score": 1,
     "expected_files": [
       "docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md"
@@ -38,7 +48,7 @@
       "urgency": 1
     },
     "orchestration_generation": "24e2d0dffd3fe4f070509771",
-    "plan_id": "CORE-PLAN-67BF7BE5012B3D1A1EC8B9B0",
+    "plan_id": "CORE-PLAN-04AC76227E96776EA33D4C0C",
     "release_is_pickup": false,
     "score_maximum": 72,
     "score_total": 12,

@@ -25,6 +25,12 @@ class CharlieDevelopmentCoordinationTests(unittest.TestCase):
         self.assertEqual(plan["score"]["total"], 12)
         self.assertEqual(plan["tier"], "T1")
         self.assertEqual(plan["agents"], ["builder"])
+        architecture = proposal["mission"]["agentic_architecture_packet"]
+        self.assertEqual(architecture["owning_agent"], "CORE")
+        self.assertEqual(architecture["coordinating_agent"], "CHARLIE")
+        self.assertEqual(architecture["supporting_agents"], [])
+        self.assertFalse(architecture["ordinary_farm_routing"])
+        self.assertEqual(architecture["governed_actions"], [])
         self.assertEqual(reduce_coordination(plan, [])["state"], "proposed")
         authorized = [{"type": "authorize", "authority": "charlie"}]
         self.assertEqual(reduce_coordination(plan, authorized)["state"], "owner_authorized")
