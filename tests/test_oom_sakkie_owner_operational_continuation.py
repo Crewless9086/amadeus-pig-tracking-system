@@ -154,6 +154,16 @@ def test_committed_completion_exact_replay_is_handled_before_legacy_routing():
     assert result["writes_operational_outcome"] is False
     assert result["operational_outcome_recorded"] is True
 
+def test_first_completion_and_exact_replay_render_identically():
+    rows,store=memory_store()
+    first,_=handle_owner_operational_continuation(parsed(),issue_gateway_owner_authority("42","42"),
+        lifecycle_loader=lambda *_:([],[c_active()],[]),context_store=store,now=NOW)
+    prior=next(iter(rows.values()))
+    replay,_=handle_owner_operational_continuation(parsed(),issue_gateway_owner_authority("42","42"),
+        lifecycle_loader=lambda *_:([],[],[prior]),context_store=store,now=NOW)
+    assert first["answer"]==replay["answer"]
+    assert first["card_mission_id"]==replay["card_mission_id"]
+
 def test_ambiguous_3218_is_never_edited_and_completion_delivery_replays_zero():
     events={
         "old-delivered":{"card_mission_id":c_active()["card_mission_id"],"state":"delivered","telegram_message_id":"3218","text_sha256":"a"*64},

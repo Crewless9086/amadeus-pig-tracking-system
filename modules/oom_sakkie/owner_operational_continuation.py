@@ -95,20 +95,7 @@ def handle_owner_operational_continuation(parsed: Mapping[str, Any], authority, 
             provider_timestamp=provider_at.isoformat(), content_sha256=event["text_sha256"])
         if not validates_owner_operational_outcome_authority(outcome_authority):
             return _contained("owner_operational_outcome_authority_denied"), 403
-        mission = str(target.get("mission_id") or "")
-        result = {"handled": True, "success": True, "status": "Completed",
-            "specialist_identity": "ROOTLINE", "mission_id": mission,
-            "card_mission_id": str(target.get("completion_card_mission_id") or
-                                    (str(target.get("card_mission_id") or mission) + "-COMPLETION")),
-            "execution_id": str(target.get("execution_id") or ""),
-            "observation": {"state": "Stopped", "entity_id": resolved_entity,
-                "provider_message_id": provider, "observed_at": provider_at.isoformat(),
-                "owner_reported": True, "continuous_flow": "Unknown",
-                "delivered_volume": "Unknown", "exact_runtime": "Unknown"},
-            "answer": (f"<b>IRRIGATION COMPLETE — {label.upper()}</b>\n\n"
-                       f"{label} is physically stopped. I closed this irrigation segment from your "
-                       "timestamped observation. No second segment was started."),
-            **_zero_authority(), "writes_operational_outcome": True}
+        result = _completion_result(event)
         try:
             recorded = store("record", event["event_id"], event)
         except Exception:
