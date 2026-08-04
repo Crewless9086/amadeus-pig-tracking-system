@@ -413,16 +413,19 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIs(response["raw"], result)
         self.assertIs(response["llm_context"], result)
         self.assertIn("SOC 74%", response["summary"])
-        self.assertIn("40% absolute", response["summary"])
+        self.assertIn("Reserve target: 63%", response["summary"])
+        self.assertNotIn("absolute floor", response["summary"])
         self.assertIn("Reserve reason: sunny forecast", response["summary"])
-        self.assertIn("Current local weather", response["summary"])
-        self.assertIn("Forecast", response["summary"])
-        self.assertIn("solar_transfer_dependency: Hold", response["summary"])
-        self.assertIn("monitor-only", response["summary"])
-        self.assertIn("not controllable by ROOTLINE", response["summary"])
-        self.assertIn("not an instruction to run", response["summary"])
-        self.assertIn("Reassess:", response["summary"])
-        self.assertEqual(response["summary"].count("Family fact needed:"), 1)
+        self.assertIn("ROOTLINE recommends now: borehole", response["summary"])
+        self.assertIn("<b>Borehole:</b> Recommend", response["summary"])
+        self.assertIn("Next reassessment", response["summary"])
+        af_response = rootline_water_energy_plan_handler(
+            {"date": "2026-07-29", "semantic_language": "af"}
+        )
+        self.assertIn("WATER &amp; KRAG", af_response["summary"])
+        self.assertIn("Plaasbesluite", af_response["summary"])
+        self.assertEqual(response["summary"].count("What I need from you"), 1)
+        self.assertNotIn("command_authority", response["summary"])
         self.assertFalse(response["raw"]["authority"]["command_authority"])
         self.assertFalse(response["raw"]["authority"]["hardware_control"])
         self.assertFalse(response["raw"]["authority"]["writes_performed"])
@@ -431,7 +434,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             ["water_observations: Unavailable"],
         )
         self.assertIn("no database or farm write", response["safety_notes"][0])
-        build_result.assert_called_once_with(operating_date="2026-07-29")
+        self.assertEqual(build_result.call_count, 2)
+        build_result.assert_called_with(operating_date="2026-07-29")
 
     def test_combined_water_and_power_question_routes_to_rootline(self):
         match = classify_intent(

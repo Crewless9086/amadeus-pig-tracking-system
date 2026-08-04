@@ -149,7 +149,7 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     composition_now = now if explicit_now else clock().astimezone(timezone.utc)
     brief = build_family_brief(results, now=composition_now)
     try:
-        answer = _render(brief)
+        answer = _render(brief, language=str(semantic.get("language") or "en"))
     except ValueError:
         return {"handled": True, "success": False,
             "status": "farm_manager_round_render_contained",
@@ -217,7 +217,8 @@ def _active_welfare_result(active, now):
     items = []
     for row in active or ():
         question = str(row.get("current_question") or "").strip()
-        if not question:
+        reported_dead = row.get("reported_dead") is True
+        if not question and not reported_dead:
             continue
         tag = str(row.get("tag_number") or row.get("pig_id") or "the pig")
         observed = _time(row.get("provider_timestamp"), now)
@@ -225,11 +226,19 @@ def _active_welfare_result(active, now):
         provenance = Provenance("herdmaster", result_id,
             (str(row.get("lifecycle_id") or "active_welfare_lifecycle"),
              "telegram-card-" + str(row.get("card_message_id") or "unknown")), observed, 1.0)
+        if reported_dead:
+            question = ""
+            title = f"Pig {tag} mortality record follow-up"
+            why = "The owner reported this pig dead; the governed mortality lifecycle remains the only current follow-up."
+            next_action = "Review the retained mortality preview and confirm only when its proposed effects are correct."
+        else:
+            title = f"Pig {tag} welfare follow-up"
+            why = "An existing welfare case is waiting for one physical observation before HERDMASTER can prepare the record preview."
+            next_action = question
         items.append(SpecialistWorkItem(
             item_id=result_id + ":follow-up", dedupe_key="herdmaster:" + str(row.get("pig_id")),
-            domain="herd", title=f"Pig {tag} welfare follow-up",
-            why="An existing welfare case is waiting for one physical observation before HERDMASTER can prepare the record preview.",
-            next_action=question, assignee="charl", state=WorkState.URGENT,
+            domain="herd", title=title, why=why,
+            next_action=next_action, assignee="charl", state=WorkState.URGENT,
             authority=Authority.ADVISORY, provenance=provenance, business_value=120,
             genuine_question=question, question_for="charl"))
     result_id = "herdmaster-active-welfare-" + _digest([
@@ -522,7 +531,12 @@ def _material_recomposition_allowed(prior, binding):
     return False
 
 
-def _render(brief):
+def _render(brief, language="en"):
+    from modules.oom_sakkie.owner_response_composer import compose_manager_brief
+    return compose_manager_brief(brief, language="af" if language.lower().startswith("af") else "en")
+
+
+def _render_legacy(brief):
     labels = {
         WorkState.URGENT: "DO NOW", WorkState.DUE_TODAY: "DO TODAY",
         WorkState.PLANNED: "PLANNED / RECOMMENDED",

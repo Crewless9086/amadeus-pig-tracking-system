@@ -1307,7 +1307,7 @@ def rootline_water_energy_plan_handler(args):
     return {
         "success": bool(result.get("success", False)),
         "status": str(result.get("overall_status") or result.get("reason") or "Needs Data"),
-        "summary": _rootline_family_answer(result),
+        "summary": _rootline_family_answer(result, language=(args or {}).get("semantic_language", "en")),
         "links": [{"label": "ROOTLINE Water & Energy Plan", "href": "/#rootline_panel"}],
         "stale_warnings": stale_warnings,
         "safety_notes": [
@@ -1319,7 +1319,12 @@ def rootline_water_energy_plan_handler(args):
     }
 
 
-def _rootline_family_answer(result):
+def _rootline_family_answer(result, *, language="en"):
+    from modules.oom_sakkie.owner_response_composer import compose_rootline
+    return compose_rootline(result, language=language)
+
+
+def _rootline_family_answer_legacy(result):
     if result.get("success") is not True:
         return "ROOTLINE's current water-and-power evidence is unavailable."
     power = result.get("current_power") or {}

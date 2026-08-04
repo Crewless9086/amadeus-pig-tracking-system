@@ -118,6 +118,7 @@ from modules.oom_sakkie.service import handle_message
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
 from modules.oom_sakkie.telegram_gateway import (
+    handle_rootline_reassessment_trigger,
     handle_telegram_gateway_message,
     telegram_gateway_exposure_preflight,
 )
@@ -251,6 +252,13 @@ def oom_sakkie_message():
 def oom_sakkie_telegram_message():
     payload = request.get_json(silent=True) or {}
     result, status_code = handle_telegram_gateway_message(payload, headers=request.headers)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/rootline/reassess", methods=["POST"])
+def oom_sakkie_rootline_reassess():
+    result, status_code = handle_rootline_reassessment_trigger(
+        request.get_json(silent=True) or {}, headers=request.headers)
     return jsonify(result), status_code
 
 
