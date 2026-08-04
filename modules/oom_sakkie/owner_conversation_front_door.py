@@ -14,15 +14,16 @@ def build_owner_clarification(parsed: Mapping[str, Any]) -> dict[str, Any]:
         f"{owner}|{chat}|{provider}|owner-front-door-v1".encode()
     ).hexdigest()
     mission = "OOM-OWNER-CONTEXT-" + identity[:24].upper()
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
+    question = str(semantic.get("clarification_question") or "").strip()
+    if not question:
+        question = ("Which current farm item is this about: an animal or tag, "
+                    "water/irrigation, a customer or sale, or marketing?")
     return {
         "handled": True,
         "success": True,
         "status": "owner_context_clarification_required",
-        "answer": (
-            "<b>OOM SAKKIE - ONE DETAIL NEEDED</b>\n\n"
-            "Which current farm item is this about: "
-            "an animal or tag, water/irrigation, a customer or sale, or marketing?"
-        ),
+        "answer": "<b>OOM SAKKIE - ONE DETAIL NEEDED</b>\n\n" + question,
         "tool_used": "owner_context_front_door",
         "mission_id": mission,
         "card_mission_id": mission,

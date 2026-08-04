@@ -216,6 +216,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if parsed["telegram_chat_type"] != "private":
         gateway_authority = None
 
+    semantic_policy = semantic_front_door_policy(source)
+    semantic_authoritative = bool(gateway_authority is not None and semantic_policy.get("enabled"))
     semantic = interpret_owner_message(parsed, environ=source) if gateway_authority is not None else None
     if semantic is not None:
         parsed = {**parsed, "semantic": semantic.as_hint()}
@@ -325,13 +327,17 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
         return body, manager_status if delivery.get("success") else 202
 
-    message_result, message_status = handle_message({
+    service_payload = {
         "text": parsed["text"],
         "channel": "telegram_read_only",
         "session_id": parsed["session_id"],
         "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
         "gateway_authority": gateway_authority,
-    })
+    }
+    if semantic_authoritative:
+        service_payload.update({"semantic": parsed.get("semantic") or {},
+                                "semantic_authoritative": True})
+    message_result, message_status = handle_message(service_payload)
     if (gateway_authority is not None
             and message_result.get("needs_clarification") is True
             and not str(message_result.get("tool_used") or "").strip()):
