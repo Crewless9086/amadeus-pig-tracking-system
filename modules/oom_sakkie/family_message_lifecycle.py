@@ -38,6 +38,26 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     delivered = next((row for row in events if row.get("state") == "delivered"), None)
     latest = next((row for row in reversed(events) if row.get("state") in {"delivered", "updated"}), delivered)
     card_id = str((latest or {}).get("telegram_message_id") or "")
+    inbound_binding = _inbound_binding(parsed, specialist)
+    provider_replay = next((row for row in reversed(events)
+        if row.get("state") in {"delivered", "updated", "provider_binding"}
+        and str(row.get("provider_message_id") or "") == inbound_binding["provider_message_id"]), None)
+    if provider_replay and not provider_replay.get("inbound_text_sha256"):
+        return {"success": False, "status": "family_message_provider_replay_binding_unavailable",
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
+                "telegram_sends": 0, "telegram_edits": 0}
+    if provider_replay and any(str(provider_replay.get(key) or "") != value
+            for key, value in inbound_binding.items()):
+        return {"success": False, "status": "family_message_provider_replay_binding_conflict",
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
+                "telegram_sends": 0, "telegram_edits": 0}
+    if provider_replay:
+        return {"success": True, "status": "family_message_provider_replay_noop",
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
+                "telegram_sends": 0, "telegram_edits": 0}
     if latest and str(latest.get("text_sha256") or "") == text_sha:
         return {"success": True, "status": "family_message_replayed_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
@@ -126,6 +146,33 @@ def bind_existing_card(parsed: Mapping[str, Any], *, specialist: str, mission_id
             "telegram_sends": 0, "telegram_edits": 0}
 
 
+def bind_legacy_provider_request(parsed: Mapping[str, Any], *, specialist: str, card_mission_id: str,
+                                 telegram_message_id: str, provider_evidence_loader, event_store=None):
+    """Append an exact inbound binding to a legacy delivered card after authoritative provider proof."""
+    store = event_store or _event_store
+    events = list(store("load", card_mission_id, None) or [])
+    card = next((row for row in reversed(events) if row.get("state") in {"delivered", "updated"}
+                 and str(row.get("telegram_message_id") or "") == str(telegram_message_id)), None)
+    if not card:
+        return {"success": False, "status": "legacy_provider_card_not_found"}
+    binding = _inbound_binding(parsed, specialist)
+    evidence = provider_evidence_loader(binding["provider_message_id"])
+    evidence = evidence if isinstance(evidence, Mapping) else {}
+    expected = {**binding, "telegram_message_id": str(telegram_message_id)}
+    actual = {key: str(evidence.get(key) or "") for key in expected}
+    if actual != expected:
+        return {"success": False, "status": "legacy_provider_binding_evidence_mismatch"}
+    event_id = card_mission_id + "-PROVIDER-BINDING-" + binding["inbound_text_sha256"][:20].upper()
+    payload = {**_event(parsed, card_mission_id, card_mission_id, specialist,
+                       "provider_binding", str(card.get("text_sha256") or "")),
+               "event_id": event_id, "state": "provider_binding",
+               "telegram_message_id": str(telegram_message_id)}
+    recorded = store("record", event_id, payload)
+    return {"success": recorded.get("success") is True,
+            "status": "legacy_provider_binding_recorded" if recorded.get("success") is True else "legacy_provider_binding_failed",
+            "created": recorded.get("created"), "telegram_sends": 0, "telegram_edits": 0}
+
+
 def _event(parsed, mission_id, card_mission_id, specialist, task_state, text_sha):
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     return {"mission_id": mission_id, "card_mission_id": card_mission_id,
@@ -133,12 +180,23 @@ def _event(parsed, mission_id, card_mission_id, specialist, task_state, text_sha
         "chat_id": str(parsed.get("telegram_chat_id") or ""),
         "provider_message_id": str(parsed.get("provider_message_id") or ""),
         "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
+        "inbound_text_sha256": _inbound_binding(parsed, specialist)["inbound_text_sha256"],
         "specialist_identity": specialist, "task_state": task_state,
         "text_sha256": text_sha,
         "semantic_domain": str(semantic.get("domain") or "")[:40],
         "semantic_intent": str(semantic.get("intent") or "")[:100],
         "semantic_continuation": semantic.get("continuation") is True,
         "clarification_question": str(semantic.get("clarification_question") or "")[:240]}
+
+
+def _inbound_binding(parsed, specialist):
+    normalized = " ".join(str(parsed.get("text") or "").split())
+    return {"owner_user_id": str(parsed.get("telegram_user_id") or ""),
+        "chat_id": str(parsed.get("telegram_chat_id") or ""),
+        "specialist_identity": str(specialist),
+        "provider_message_id": str(parsed.get("provider_message_id") or ""),
+        "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
+        "inbound_text_sha256": hashlib.sha256(normalized.encode("utf-8")).hexdigest()}
 
 
 def _event_store(action, identity, payload):

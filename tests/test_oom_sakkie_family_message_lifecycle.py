@@ -1,8 +1,8 @@
-from modules.oom_sakkie.family_message_lifecycle import bind_existing_card,deliver_family_result
+from modules.oom_sakkie.family_message_lifecycle import bind_existing_card,bind_legacy_provider_request,deliver_family_result
 
 
 PARSED={"telegram_user_id":"42","telegram_chat_id":"42",
-        "provider_message_id":"500","provider_timestamp":"2026-08-02T10:00:00+00:00"}
+        "provider_message_id":"500","provider_timestamp":"2026-08-02T10:00:00+00:00","text":"Pig 11 47 kg"}
 RESULT={"success":True,"status":"waiting_for_input","answer":"Check Pig 11 now."}
 
 
@@ -25,6 +25,50 @@ def test_delivery_and_duplicate_update_are_exact_once():
     replay=deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",event_store=memory.store,sender=memory.send,editor=memory.edit)
     assert first["telegram_sends"]==1 and replay["telegram_sends"]==0
     assert len(memory.sent)==1 and memory.edited==[]
+
+
+def test_same_provider_inbound_never_recomputes_into_a_second_edit_when_live_evidence_changes():
+    memory=Memory();mission="OOM-ROOTLINE-3236"
+    first=deliver_family_result(PARSED,{**RESULT,"answer":"ROOTLINE SOC 39%"},specialist="ROOTLINE",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(PARSED,{**RESULT,"answer":"ROOTLINE SOC 40%"},specialist="ROOTLINE",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert first["telegram_sends"]==1
+    assert replay["status"]=="family_message_provider_replay_noop"
+    assert replay["telegram_sends"]==0 and replay["telegram_edits"]==0 and memory.edited==[]
+
+
+def test_same_provider_id_with_edited_text_or_substituted_binding_fails_closed():
+    for changed,value in (("text","Pig 12 47 kg"),("telegram_user_id","99"),("telegram_chat_id","99"),
+                          ("provider_timestamp","2026-08-02T10:01:00+00:00")):
+        memory=Memory();mission="OOM-BOUND"
+        deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,card_mission_id=mission,
+            event_store=memory.store,sender=memory.send,editor=memory.edit)
+        replay=deliver_family_result({**PARSED,changed:value},{**RESULT,"answer":"changed"},specialist="HERDMASTER",
+            mission_id=mission,card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+        assert replay["status"]=="family_message_provider_replay_binding_conflict"
+        assert replay["telegram_sends"]==0 and replay["telegram_edits"]==0
+
+
+def test_legacy_card_requires_authoritative_exact_binding_before_replay_noop():
+    memory=Memory();mission="OOM-LEGACY"
+    memory.store("record",mission+"-DELIVERED",{"card_mission_id":mission,"mission_id":mission,
+        "state":"delivered","provider_message_id":"500","provider_timestamp":PARSED["provider_timestamp"],
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"HERDMASTER",
+        "telegram_message_id":"700","text_sha256":"a"*64})
+    blocked=deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert blocked["status"]=="family_message_provider_replay_binding_unavailable"
+    import hashlib
+    evidence={"owner_user_id":"42","chat_id":"42","specialist_identity":"HERDMASTER",
+        "provider_message_id":"500","provider_timestamp":PARSED["provider_timestamp"],
+        "inbound_text_sha256":hashlib.sha256(PARSED["text"].encode()).hexdigest(),"telegram_message_id":"700"}
+    bound=bind_legacy_provider_request(PARSED,specialist="HERDMASTER",card_mission_id=mission,
+        telegram_message_id="700",provider_evidence_loader=lambda _mid:evidence,event_store=memory.store)
+    replay=deliver_family_result(PARSED,{**RESULT,"answer":"new live result"},specialist="HERDMASTER",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert bound["success"] is True and replay["status"]=="family_message_provider_replay_noop"
+    assert replay["telegram_sends"]==0 and replay["telegram_edits"]==0
 
 
 def test_later_natural_result_edits_same_card_and_replay_is_silent():
