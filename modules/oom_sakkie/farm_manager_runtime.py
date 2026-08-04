@@ -23,7 +23,7 @@ from modules.pig_weights.herdmaster_whole_herd_packet import build_whole_herd_pa
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
 
-CONTRACT_VERSION = "oom_sakkie_farm_manager_round_v4"
+CONTRACT_VERSION = "oom_sakkie_farm_manager_round_v5"
 EVENT_SOURCE = "oom_sakkie_farm_manager_round"
 SPECIALIST_BUDGET_SECONDS = 12.0
 _SPECIALIST_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="oom-manager")
@@ -93,12 +93,19 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
         return {"handled": True, "success": False,
             "status": "farm_manager_round_persistence_unavailable",
             "mission_id": mission_id, **ZERO_AUTHORITY}, 503
+    material_recomposition = None
     if prior:
         prior_binding = prior.get("binding") or {}
         if prior_binding != binding and not _material_recomposition_allowed(prior, binding):
             return {"handled": True, "success": False,
                 "status": "farm_manager_provider_binding_conflict",
                 "mission_id": mission_id, **ZERO_AUTHORITY}, 409
+        if prior_binding != binding:
+            material_recomposition = {
+                "from_contract": str(prior_binding.get("contract_version") or ""),
+                "to_contract": CONTRACT_VERSION,
+                "provider_binding_digest": _digest(binding),
+            }
         if prior_binding == binding:
             preserved = prior.get("result") or {}
             return {**preserved, "status": "farm_manager_round_replay_suppressed"}, 200
@@ -132,6 +139,12 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     finally:
         for future in pending:
             future.cancel()
+    if (material_recomposition
+            and material_recomposition["from_contract"] == "oom_sakkie_farm_manager_round_v4"
+            and not _mortality_recomposition_supported(prior, results[0])):
+        return {"handled": True, "success": False,
+            "status": "farm_manager_material_recomposition_evidence_unavailable",
+            "mission_id": mission_id, **ZERO_AUTHORITY}, 409
     if str(results[0].result_id).startswith("HERD-NEXT-"):
         weighing_worklist = ()
     else:
@@ -168,6 +181,7 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
         "question_count": sum(len(values) for values in brief.questions.values()),
         "reassessment_triggers": [f.follow_up_id for f in brief.follow_ups],
         "weighing_worklist": weighing_worklist,
+        "material_recomposition_authority": material_recomposition,
         **ZERO_AUTHORITY,
     }
     recorded = store("record", mission_id, {"binding": binding, "result": output})
@@ -528,6 +542,31 @@ def _material_recomposition_allowed(prior, binding):
         answer = str((prior_result or {}).get("answer") or "")
         defective_weighing = re.search(r"Weigh these[^\n]*(?:None|…|\.\.\.)", answer)
         return "Pig 127" in answer and defective_weighing is not None
+    if prior_version == "oom_sakkie_farm_manager_round_v4":
+        answer = str((prior_result or {}).get("answer") or "")
+        # A mortality lifecycle may become authoritative after the original
+        # manager round. Permit one contract-version material correction only
+        # when the preserved brief still asks an obsolete breathing question.
+        return "breathing" in answer.casefold()
+    return False
+
+
+def _mortality_recomposition_supported(prior, herd_result):
+    if not isinstance(herd_result, SpecialistResult):
+        return False
+    if herd_result.specialist != "herdmaster" or herd_result.availability is not SpecialistAvailability.AVAILABLE:
+        return False
+    prior_answer = str(((prior or {}).get("result") or {}).get("answer") or "")
+    prior_animals = {value.casefold() for value in re.findall(
+        r"\bPig\s+([A-Za-z0-9-]+)", prior_answer, flags=re.IGNORECASE)}
+    if not prior_animals:
+        return False
+    for item in herd_result.work_items:
+        title = str(item.title or "")
+        current = {value.casefold() for value in re.findall(
+            r"\bPig\s+([A-Za-z0-9-]+)", title, flags=re.IGNORECASE)}
+        if "mortality record follow-up" in title.casefold() and prior_animals.intersection(current):
+            return True
     return False
 
 
