@@ -17,6 +17,7 @@ from modules.oom_sakkie.llm_router import API_KEY_ENV, API_URL_ENV, DEFAULT_API_
 
 ENABLED_ENV = "OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED"
 DOMAINS = frozenset({"herd_health", "herd_management", "rootline", "manager_round", "sam", "beacon", "general"})
+MESSAGE_KINDS = frozenset({"observation", "question", "request", "command", "confirmation", "correction", "general"})
 MAX_CONTEXT_ITEMS = 8
 
 
@@ -24,6 +25,7 @@ MAX_CONTEXT_ITEMS = 8
 class SemanticInterpretation:
     domain: str
     intent: str
+    message_kind: str = "general"
     entity_refs: tuple[str, ...] = ()
     continuation: bool = False
     observation: str = ""
@@ -77,8 +79,12 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             return None
         refs = tuple(dict.fromkeys(str(item).strip()[:80] for item in
                                    (value.get("entity_refs") or []) if str(item).strip()))[:8]
+        message_kind = str(value.get("message_kind") or "general").strip().lower()
+        if message_kind not in MESSAGE_KINDS:
+            return None
         return SemanticInterpretation(domain=domain,
             intent=str(value.get("intent") or domain).strip()[:100], entity_refs=refs,
+            message_kind=message_kind,
             continuation=bool(value.get("continuation")),
             observation=str(value.get("observation") or "").strip()[:500],
             requested_action=str(value.get("requested_action") or "").strip()[:120],
@@ -153,7 +159,10 @@ def _payload(parsed, context, source):
         "maps to rootline, Sales/Verkope maps to sam, and Marketing maps to beacon. A death or stopped-valve statement "
         "is new evidence, not a repeated question. "
         "Use active context and reply identity. Ask one clarification only when meaning or entity truly cannot be determined. "
-        "Return JSON only with domain,intent,entity_refs,continuation,observation,requested_action,language,confidence,"
+        "Classify message_kind as observation only when the owner asserts a physical/current fact; use question or request "
+        "when asking for information or a plan, command when asking for an action, confirmation for an approval/confirmation, "
+        "and correction when replacing prior evidence. Return JSON only with domain,intent,message_kind,entity_refs,continuation,"
+        "observation,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
     )
     user = {"message": str(parsed.get("text") or "")[:2000],

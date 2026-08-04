@@ -23,7 +23,8 @@ class _HttpResponse:
 
 
 def _semantic(domain, intent, **extra):
-    return {"domain": domain, "intent": intent, "entity_refs": extra.get("entity_refs", []),
+    return {"domain": domain, "intent": intent, "message_kind": extra.get("message_kind", "general"),
+        "entity_refs": extra.get("entity_refs", []),
         "continuation": extra.get("continuation", False), "observation": extra.get("observation", ""),
         "requested_action": extra.get("requested_action", ""), "language": extra.get("language", "en"),
         "confidence": extra.get("confidence", .98), "needs_clarification": False,
@@ -104,7 +105,8 @@ def test_interpreter_receives_bounded_active_context():
 @patch("modules.oom_sakkie.telegram_gateway.interpret_owner_message")
 def test_gateway_attaches_semantic_hint_before_specialist_routing(interpret, operational, _deliver):
     interpret.return_value = SemanticInterpretation(domain="rootline",
-        intent="irrigation_shutdown_observed", entity_refs=("C Camp",), continuation=True,
+        intent="irrigation_shutdown_observed", message_kind="observation",
+        entity_refs=("C Camp",), continuation=True,
         observation="C Camp irrigation physically stopped.", confidence=.99)
     operational.return_value = ({"handled": True, "success": True, "status": "working",
         "answer": "ROOTLINE received shutdown evidence", "specialist_identity": "ROOTLINE",
