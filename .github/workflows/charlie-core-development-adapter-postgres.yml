@@ -32,11 +32,5 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
-      - name: Apply authoritative CORE queue migrations
-        run: |
-          python scripts/apply_supabase_migration.py supabase/migrations/202606300001_create_charlie_mission_queue.sql
-          python scripts/apply_supabase_migration.py supabase/migrations/202607270003_create_charlie_owner_execution_holds.sql
-          python scripts/apply_supabase_migration.py supabase/migrations/202608020001_create_charlie_many_to_one_replacements.sql
-          python scripts/apply_supabase_migration.py supabase/migrations/202608040001_create_charlie_development_mission_adapter.sql
-      - name: Run exact development mission adapter gates
+      - name: Run exact queue-migration and development-adapter gates
         run: python -m unittest tests.test_charlie_development_mission_adapter_postgres
