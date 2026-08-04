@@ -6,6 +6,17 @@
   `modules/charlie/adaptive_orchestration.py`.
 - Source-only release, acknowledgement, start, containment and completion
   contract: `modules/charlie/development_coordination.py`.
+- Existing-store adapter for exact owner-authorized insertion, release and
+  direct selected-worker pickup: contract/digest logic in
+  `modules/charlie/development_mission_adapter.py`, least-privilege persistence
+  in `modules/charlie/development_mission_store_adapter.py`, re-export through
+  `modules/charlie/mission_store.py`, and the exact-ID entry in
+  `scripts/charlie_mission_pickup.py`.
+- Dedicated authorizer/writer roles and serializable security-definer boundary:
+  `supabase/migrations/202608040001_create_charlie_development_mission_adapter.sql`.
+- Unit and disposable PostgreSQL enforcement:
+  `tests/test_charlie_development_mission_adapter.py` and
+  `tests/test_charlie_development_mission_adapter_postgres.py`.
 - Operator handover and S02-S07 reconciliation:
   `docs/06-operations/CHARLIE_CORE_ADAPTIVE_MINIMAL_DISPATCH_HANDOVER.md`.
 - Controlled integration order, unsigned one-worker T1 proposal and post-P0

@@ -32,6 +32,22 @@ from modules.charlie.mission_replacement import (
     record_replacement_owner_authorization,
     validate_replacement_owner_authorization,
 )
+from modules.charlie.development_mission_adapter import (
+    create_development_authorization,
+    create_development_dispatch_grant,
+    prepare_development_mission,
+    validate_development_authorization,
+    validate_development_dispatch_grant,
+)
+from modules.charlie.development_mission_store_adapter import (
+    authorize_and_insert_development_mission,
+    record_development_authorization,
+    record_development_dispatch,
+    record_development_dispatch_authorization,
+    record_development_lineage_authorization,
+    record_development_state,
+    release_development_mission,
+)
 
 
 MISSION_STATUSES = {

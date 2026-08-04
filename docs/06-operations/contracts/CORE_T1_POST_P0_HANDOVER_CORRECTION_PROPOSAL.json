@@ -2,7 +2,11 @@
   "authorization": null,
   "expected_completion_artifact": {
     "artifact_evidence": [
-      "docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md@<exact-integrated-commit>"
+      {
+        "commit_sha": "<exact-40-character-candidate-commit>",
+        "path": "docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md",
+        "result_identity": "<exact-test-or-diff-proof-identity>"
+      }
     ],
     "business_outcome": "Charl sees that accepted P0 prohibits S01 creation while the reusable replacement rail remains available for separately authorized successors.",
     "next_dependency": null
@@ -29,8 +33,15 @@
       "docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md"
     ],
     "mission_id": "CHARLIE-CORE-T1-POST-P0-HANDOVER-CORRECTION",
+    "mission_kind": "software_development",
     "mission_type": "documentation",
+    "parent_lineage": {
+      "parent_mission_id": null,
+      "predecessor_mission_ids": [],
+      "root_mission_id": "CHARLIE-CORE-T1-POST-P0-HANDOVER-CORRECTION"
+    },
     "raw_text": "Correct the stale S01 section in docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md. Record that accepted P0 means S01 is not created. This is one small reversible documentation correction.",
+    "source_base_revision": "09085dfa609008a3acbd7a6a53b46de00d066a39",
     "stop_condition": "Stop after the one-file documentation diff and exact completion artifact; perform no queue or runtime action.",
     "title": "Remove obsolete S01 activation instructions after accepted P0",
     "urgency": "P3"
@@ -48,7 +59,7 @@
       "urgency": 1
     },
     "orchestration_generation": "24e2d0dffd3fe4f070509771",
-    "plan_id": "CORE-PLAN-04AC76227E96776EA33D4C0C",
+    "plan_id": "CORE-PLAN-AFA1EBB81D2DA466F366CBFC",
     "release_is_pickup": false,
     "score_maximum": 72,
     "score_total": 12,
