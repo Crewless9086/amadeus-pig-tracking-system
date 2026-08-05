@@ -626,46 +626,8 @@ def _read_historical_context(database_url):
 
 
 def _read_recent_irrigation_history(database_url, now):
-    database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
-    if not database_url:
-        return {"status": UNAVAILABLE, "zones": {}}
-    try:
-        import psycopg
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    select zone_id, max(event_at) filter (
-                               where lower(event_type) in ('completed','done')
-                                 and event_at <= %s
-                           ) as last_completed_at,
-                           count(distinct (event_at at time zone 'Africa/Johannesburg')::date) filter (
-                               where lower(event_type) in ('completed','done')
-                                 and event_at >= %s - interval '7 days'
-                                 and event_at <= %s
-                           )::int as completed_last_7_days
-                      from public.irrigation_events
-                     where zone_id in ('B12345','C12345')
-                     group by zone_id
-                    """,
-                    (now, now, now),
-                )
-                rows = cursor.fetchall()
-        zones = {
-            row[0]: {
-                "last_completed_at": row[1].isoformat() if row[1] else None,
-                "completed_last_7_days": row[2],
-            }
-            for row in rows
-        }
-        return {
-            "status": "Available" if zones else UNAVAILABLE,
-            "zones": zones,
-            "absence_means_no_canonical_completion_evidence": True,
-            "completion_events_do_not_prove_flow_or_delivered_water": True,
-        }
-    except Exception as exc:
-        return {"status": UNAVAILABLE, "zones": {}, "error_type": exc.__class__.__name__}
+    from modules.telemetry.rootline_irrigation_history import read_canonical_irrigation_history
+    return read_canonical_irrigation_history(database_url, now=now)
 
 
 def _read_latest_tank_observation(database_url):
@@ -890,12 +852,27 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             "visible_need_source", "completion_events",
             "completed_days_last_7_days", "latest_segment", "owner_correction",
         }
+        history_zones = _dict(irrigation_history.get("zones"))
+        canonical_zones = []
+        for item in adaptive.get("zones", []):
+            if not isinstance(item, dict):
+                continue
+            zone = {key: deepcopy(value) for key, value in item.items()
+                    if key in allowed_zone_fields}
+            canonical = _dict(history_zones.get(str(item.get("zone_id") or "")))
+            zone["completion_events"] = [{
+                "completed_at": event.get("event_at_sast"), "state": "Completed",
+                "shutdown_verified": event.get("shutdown_verified") is True,
+                "objective_satisfied": event.get("objective_satisfied") is True,
+                "verified_runtime_minutes": event.get("verified_runtime_minutes"),
+                "outcome_id": event.get("execution_id"),
+                "source": event.get("provenance"),
+            } for event in canonical.get("events", [])
+                if event.get("qualifies_as_completed_watering") is True]
+            zone["completion_ledger_complete_through"] = canonical.get("complete_through")
+            canonical_zones.append(zone)
         payload = {
-            "zones": [
-                {key: deepcopy(value) for key, value in item.items()
-                 if key in allowed_zone_fields}
-                for item in adaptive.get("zones", []) if isinstance(item, dict)
-            ],
+            "zones": canonical_zones,
             "power": deepcopy(power),
             "local_weather": deepcopy(weather),
             "forecast": deepcopy(forecast),
