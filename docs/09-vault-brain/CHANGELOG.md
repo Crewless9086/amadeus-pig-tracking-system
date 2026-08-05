@@ -1,4 +1,18 @@
 # Vault Brain Changelog
+## 2026-08-05 - SAM provider-identity deployment contained
+
+- Integrated clean green PR #727 at exact reviewed head
+  `0727ff80d22af89226467ab6db5d79fc8a1b8248`; exact-merge CI passed and Render
+  deployed merge `ec56263182763dc2475ca6069a3dd26853781441` as
+  `dep-d9pm0aegekts73dpv9tg` with HTTP 200 health and unchanged Level 1 controls.
+- Production read-only acceptance proved the Chatwoot conversation endpoint
+  carries exact `inbox_id` but no provider channel. The exact authenticated
+  inbox endpoint carries `Channel::Whatsapp` and `whatsapp_cloud`.
+- Contained before claim or send. Conversation 2101/inbound 777634477 remained
+  unchanged and claim-free; zero customer sends, retries, quarantines,
+  Chatwoot changes, summary writes, protected actions and farm mutations were
+  created. Shared runtime was released immediately.
+
 ## 2026-08-05 - SAM typed manager summary integrated
 
 - Integrated PR #691 at reviewed head `bcd3b9cfa34a1278db18eb7e0f7c69b4612e2321`

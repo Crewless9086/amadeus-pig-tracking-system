@@ -389,6 +389,16 @@ Current Stage 4 surface:
   mutation authority. PR #691 deployed at merge
   `34464e89bf2d3a3ebbda12779cb2672461a2ca2b`.
 
+- WhatsApp provider identity: `modules/sales/sam_live_stock_runtime.py`
+  normalizes authenticated webhook provider shapes and
+  `modules/sales/sam_owner_reply_window.py` binds provider evidence to exact
+  account, inbox, contact, conversation, inbound and timestamp chronology.
+  PR #727 deployed at merge `ec56263182763dc2475ca6069a3dd26853781441`, but
+  live acceptance proved Chatwoot's conversation record omits channel type;
+  the exact authenticated inbox endpoint is the authoritative provider source.
+  Until that bounded shared-loader correction is reviewed and deployed, the
+  affected inbound fails closed with no claim or send.
+
 - routes to inspect later: `/sales-dashboard`, `/sales-availability`, `/orders`, `/api/order-intake/context`, `/api/order-intake/update`, `/api/orders/active-customer-context`, `/api/orders/available-pigs`, `/api/master/orders`, `/api/master/order-lines`, `/api/pig-weights/sales-dashboard`, `/api/pig-weights/pig-allocation-readiness`;
 - authoritative offer: `external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md` plus `docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`;
 - Vault doctrine: `docs/09-vault-brain/02-agents/sales/SAM.md`, `docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md`, `docs/09-vault-brain/03-business/LIVE_PIG_SALES.md`, `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`, `docs/09-vault-brain/04-workflows/BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md`, `docs/09-vault-brain/05-playbooks/SAM_LIVE_STOCK_HUMAN_SALES_PLAYBOOK.md`, `docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md`, `docs/09-vault-brain/09-examples/SAM_LIVE_STOCK_GOLD_STANDARD_REPLIES.md`;

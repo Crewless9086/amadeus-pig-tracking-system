@@ -4,6 +4,16 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## SAM-LIVESTOCK-MANAGER-SUMMARY-1
 
+PR #727 merged as `ec56263182763dc2475ca6069a3dd26853781441` and deployed as
+`dep-d9pm0aegekts73dpv9tg`, but production acceptance correctly failed closed:
+the Chatwoot conversation record exposes only the exact `inbox_id`, while the
+authoritative WhatsApp provider fields are on the separately authenticated
+exact inbox record. Conversation 2101/inbound 777634477 received no claim,
+send, retry or Chatwoot mutation. The next source step is the bounded existing-
+loader correction on `fix/sam-chatwoot-inbox-provider-identity`, followed by
+independent review and normal CI/integration. Revalidate the customer from
+current provider chronology after deployment; never replay it for proof.
+
 The typed `sam_manager_summary_v1` adapter is merged and deployed through PR
 #691. Oom Sakkie's existing read-only specialist answer boundary consumed one
 compact current summary with no customer content or individual-message noise;
