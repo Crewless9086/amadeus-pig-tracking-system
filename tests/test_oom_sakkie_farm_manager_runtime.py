@@ -138,6 +138,64 @@ def test_weighing_loader_failure_is_a_bounded_visible_gap():
     assert "weighing evidence unavailable" in result["answer"].lower()
 
 
+def test_optional_mortality_failure_does_not_hide_supported_herd_work(monkeypatch):
+    base=specialist("herdmaster")
+    monkeypatch.setattr(farm_manager_runtime,"load_current_breeding_operating_loop",lambda:{})
+    monkeypatch.setattr(farm_manager_runtime,"_load_observations",lambda owner:())
+    monkeypatch.setattr(farm_manager_runtime,"_load_active_lifecycles",lambda owner:())
+    monkeypatch.setattr(farm_manager_runtime,"_load_weighing_worklist",lambda:())
+    monkeypatch.setattr(farm_manager_runtime,"_whole_herd_specialist_result",lambda *args:base)
+    monkeypatch.setattr(farm_manager_runtime,"load_current_mortality_evidence",
+        lambda **kwargs:(_ for _ in ()).throw(RuntimeError("optional unavailable")))
+    result=farm_manager_runtime._load_herdmaster(
+        issue_gateway_owner_authority(OWNER,OWNER),OWNER,NOW)
+    assert result==base
+
+
+def test_unchanged_mortality_consumption_remains_available_to_a_new_manager_round(monkeypatch):
+    base=specialist("herdmaster")
+    mortality=specialist("herdmaster",value=125)
+    monkeypatch.setattr(farm_manager_runtime,"load_current_breeding_operating_loop",lambda:{})
+    monkeypatch.setattr(farm_manager_runtime,"_load_observations",lambda owner:())
+    monkeypatch.setattr(farm_manager_runtime,"_load_active_lifecycles",lambda owner:())
+    monkeypatch.setattr(farm_manager_runtime,"_load_weighing_worklist",lambda:())
+    monkeypatch.setattr(farm_manager_runtime,"_whole_herd_specialist_result",lambda *args:base)
+    monkeypatch.setattr(farm_manager_runtime,"load_current_mortality_evidence",lambda **kwargs:{})
+    monkeypatch.setattr(farm_manager_runtime,"build_oom_sakkie_mortality_packet",lambda *args,**kwargs:{})
+    monkeypatch.setattr(farm_manager_runtime,"consume_current_mortality_packet",
+        lambda **kwargs:(mortality,{"notify_owner":False}))
+    result=farm_manager_runtime._load_herdmaster(
+        issue_gateway_owner_authority(OWNER,OWNER),OWNER,NOW)
+    assert result.result_id==base.result_id+":"+mortality.result_id
+    assert result.work_items[0].dedupe_key==mortality.work_items[0].dedupe_key
+
+
+def test_two_distinct_manager_rounds_share_one_consumption_but_both_receive_current_mortality(monkeypatch):
+    from modules.oom_sakkie.herdmaster_mortality_runtime import consume_current_mortality_packet as consume_runtime
+    base=specialist("herdmaster")
+    rows={}
+    def mortality_store(action,identity,payload):
+        if action=="load": return rows.get(identity)
+        if identity in rows: return {"success":True,"created":False}
+        rows[identity]=payload; return {"success":True,"created":True}
+    monkeypatch.setattr(farm_manager_runtime,"load_current_breeding_operating_loop",lambda:{})
+    monkeypatch.setattr(farm_manager_runtime,"_load_observations",lambda owner:())
+    monkeypatch.setattr(farm_manager_runtime,"_load_active_lifecycles",lambda owner:())
+    monkeypatch.setattr(farm_manager_runtime,"_load_weighing_worklist",lambda:())
+    monkeypatch.setattr(farm_manager_runtime,"_whole_herd_specialist_result",lambda *args:base)
+    monkeypatch.setattr(farm_manager_runtime,"load_current_mortality_evidence",lambda **kwargs:{
+        "mortality_events":[{"event_id":"E1","pig_id":"P1","effective_date":"2026-08-02",
+            "event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current"}]})
+    monkeypatch.setattr(farm_manager_runtime,"consume_current_mortality_packet",
+        lambda **kwargs:consume_runtime(**kwargs,state_store=mortality_store))
+    authority=issue_gateway_owner_authority(OWNER,OWNER)
+    first=farm_manager_runtime._load_herdmaster(authority,OWNER,NOW)
+    second=farm_manager_runtime._load_herdmaster(authority,OWNER,NOW)
+    assert len(rows)==1
+    assert any(item.dedupe_key=="herdmaster:mortality-current-assessment" for item in first.work_items)
+    assert any(item.dedupe_key=="herdmaster:mortality-current-assessment" for item in second.work_items)
+
+
 def test_independent_specialists_share_one_bounded_delivery_budget_and_text_is_telegram_safe():
     def slow(name):
         time.sleep(0.12)

@@ -2,6 +2,15 @@
 
 ## Oom Sakkie owner-request lifecycle
 
+### HERDMASTER mortality intelligence consumption
+
+- Pure evaluator and packet: `modules/pig_weights/herdmaster_mortality_intelligence.py`.
+- Canonical read-only loader: `modules/pig_weights/herdmaster_mortality_evidence.py`.
+- Existing-boundary adapter and durable consumption: `modules/oom_sakkie/herdmaster_mortality_adapter.py`, `modules/oom_sakkie/herdmaster_mortality_runtime.py`.
+- Consolidation/delivery owner: existing `modules/oom_sakkie/farm_manager_runtime.py` and family-message lifecycle; HERDMASTER has no direct Telegram route.
+- Tests: `tests/test_herdmaster_mortality_intelligence.py`, `tests/test_oom_sakkie_herdmaster_mortality_adapter.py`, `tests/test_oom_sakkie_herdmaster_mortality_runtime.py`.
+- Authority: read-only assessment only; no diagnosis, treatment, medication, mortality/lifecycle/farm write or protected authority.
+
 - Existing authenticated ingress and Telegram delivery:
   `modules/oom_sakkie/telegram_direct.py`.
 - Durable owner-task lifecycle adapter:

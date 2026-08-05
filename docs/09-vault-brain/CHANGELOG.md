@@ -1,4 +1,9 @@
 # Vault Brain Changelog
+## 2026-08-05 - HERDMASTER mortality consumption successor prepared
+
+- Rebased PR #702's reviewed mortality evaluator onto current main and connected it to Oom Sakkie's existing authenticated manager and append-only consumption rails.
+- Added canonical read-only current/historical evidence loading, stable material-refresh identity, bilingual bounded presentation, active-lifecycle separation and replay suppression with no route, Telegram sender, diagnosis, treatment or farm-write authority.
+
 ## 2026-08-05 - Oom Sakkie automatic reassessment scheduler prepared
 
 - Extended the existing approved 15-minute n8n scheduler with a ROOTLINE-only call to Oom Sakkie's authenticated read-only reassessment endpoint; no new workflow family, Telegram path or command authority was added.

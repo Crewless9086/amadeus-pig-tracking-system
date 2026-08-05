@@ -193,12 +193,24 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
         "weak_growth_association": "Poor or declining growth may identify vulnerable animals.",
         "observed_cold_weather_overlap": "Cold exposure may have coincided with some losses.",
     }
+    labels_af = {
+        "litter_cluster": "werpselgroep",
+        "pen_cluster": "hokgroep",
+        "weak_growth_association": "verband met swak groei",
+        "observed_cold_weather_overlap": "oorvleueling met waargenome koue weer",
+    }
+    controls=list(evidence.get("surviving_controls") or [])
     for pattern in patterns:
+        comparable=[{"pig_id":row.get("pig_id"),"observed_outcome":row.get("observed_outcome")}
+                    for row in controls if _healthy_control(row) and (
+                        (pattern["pattern"]=="litter_cluster" and row.get("litter_id")==pattern.get("identity"))
+                        or (pattern["pattern"]=="pen_cluster" and row.get("pen_id")==pattern.get("identity")))]
         hypotheses.append({
             "hypothesis": labels[pattern["pattern"]],
             "confidence": "moderate" if pattern["count"] >= 3 else "low",
             "supporting_evidence": pattern,
-            "contradicting_evidence": "No causal diagnosis or controlled comparison is present.",
+            "counterevidence": comparable or "Unknown: no attributable surviving-control comparison is present.",
+            "causal_limitations": "No causal diagnosis or controlled comparison establishes a cause.",
         })
 
     unknowns = []
@@ -209,11 +221,20 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
         unknowns.append("forecasts are retained separately and do not prove observed exposure")
 
     accounting = _validate_accounting(evidence)
-    evidence_digest = _digest(_canonicalize(evidence))
-    review_identity = f"HERDMASTER-MORTALITY-{analysis_end.isoformat()}"
+    material_evidence = {key: value for key, value in evidence.items()
+                         if key not in {"evidence_cutoff", "analysis_start"}}
+    evidence_digest = _digest(_canonicalize(material_evidence))
+    # One durable management lifecycle is refreshed by a changed evidence
+    # digest; calendar rollover must not create notification/card noise.
+    review_identity = "HERDMASTER-MORTALITY-CURRENT"
     question = (
         "Please check the surviving littermates and penmates once: are they eating, drinking, moving and breathing normally, "
         "and was there any feed or water interruption?"
+        if unknowns else None
+    )
+    af_question = (
+        "Kontroleer asseblief die oorlewende werpsel- en hokmaats een keer: eet, drink, beweeg en haal hulle normaal asem, "
+        "en was daar enige onderbreking in voer of water?"
         if unknowns else None
     )
     assessment = (
@@ -223,7 +244,7 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
     )
     af_assessment = (
         f"Van {windows['90']['start']} tot {analysis_end.isoformat()} kan {windows['90']['total']} bevestigde, gedateerde verliese getel word. "
-        + (f"Die sterkste herhaalbare seine is {', '.join(p['pattern'].replace('_', ' ') for p in patterns[:3])}. " if patterns else "Geen betroubare gedeelde patroon is bewys nie. ")
+        + (f"Die sterkste herhaalbare seine is {', '.join(labels_af[p['pattern']] for p in patterns[:3])}. " if patterns else "Geen betroubare gedeelde patroon is bewys nie. ")
         + "Dit is verbande, nie diagnoses of bewese oorsake nie. Kontroleer die oorlewende hok- en werpselmaats en kry veeartsenyhulp indien ernstige tekens of verdere verliese voorkom."
     )
     owner_reported = []
@@ -245,6 +266,11 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
         "Verify feed and water continuity for the attributable exposure period.",
         "Seek veterinary assessment for serious signs, repeated losses or a worsening cluster; no treatment is inferred here.",
     ]
+    actions_af = [
+        "Kyk of die betrokke oorlewende hok- en werpselmaats normaal eet, drink, beweeg en asemhaal.",
+        "Bevestig dat voer en water gedurende die betrokke tyd beskikbaar en ononderbroke was.",
+        "Kry veeartsenyhulp vir ernstige tekens, herhaalde verliese of 'n verslegtende groep; geen behandeling word hier afgelei nie.",
+    ]
     return {
         "contract_version": "HERDMASTER_MORTALITY_INTELLIGENCE_V1",
         "analysis_period": {"start": windows["90"]["start"], "end": analysis_end.isoformat()},
@@ -262,7 +288,9 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
             "minimum_requirement": "immutable dated entered/on-farm and exited/off-farm lifecycle intervals for every canonical animal, with lifecycle stage effective dates",
         },
         "smallest_grouped_question": question,
+        "smallest_grouped_question_af": af_question,
         "recommendations": actions,
+        "recommendations_af": actions_af,
         "automatic_reassessment_trigger": "new or materially changed mortality, health, weight, movement, feed, water, treatment, or observed ROOTLINE evidence",
         "family_assessment_en": assessment,
         "family_assessment_af": af_assessment,
@@ -275,6 +303,13 @@ def build_mortality_intelligence(evidence: dict[str, Any], *, analysis_end: date
     }
 
 
+def _healthy_control(row: dict[str, Any]) -> bool:
+    if row.get("healthy") is True:
+        return True
+    outcome=str(row.get("observed_outcome") or "").strip().casefold().replace(" ","_")
+    return outcome in {"healthy","normal","alive_healthy","unaffected","no_signs","no_abnormal_signs"}
+
+
 def build_oom_sakkie_mortality_packet(evidence: dict[str, Any], *, analysis_end: date) -> dict[str, Any]:
     """Shape the typed result for the existing Oom Sakkie consumption boundary."""
     result = build_mortality_intelligence(evidence, analysis_end=analysis_end)
@@ -285,6 +320,10 @@ def build_oom_sakkie_mortality_packet(evidence: dict[str, Any], *, analysis_end:
     counts = result["rolling_counts"]
     patterns = result["detected_patterns"]
     signal = ", ".join(p["pattern"].replace("_", " ") for p in patterns[:3]) or "no reliable shared pattern"
+    signal_af = ", ".join({"litter_cluster":"werpselgroep","pen_cluster":"hokgroep",
+        "weak_growth_association":"verband met swak groei",
+        "observed_cold_weather_overlap":"oorvleueling met waargenome koue weer"}[p["pattern"]]
+        for p in patterns[:3]) or "geen betroubare gedeelde patroon"
     english = (
         f"We can confirm {counts['90']['total']} dated losses in 90 days, {counts['30']['total']} in 30 days and {counts['7']['total']} in seven days. "
         f"Among older undated records, {classifications['legitimate_undated_historical_loss']} are supported historical losses, "
@@ -296,7 +335,7 @@ def build_oom_sakkie_mortality_packet(evidence: dict[str, Any], *, analysis_end:
         f"Ons kan {counts['90']['total']} gedateerde verliese in 90 dae bevestig, {counts['30']['total']} in 30 dae en {counts['7']['total']} in sewe dae. "
         f"Onder ouer ongedateerde rekords word {classifications['legitimate_undated_historical_loss']} as historiese verliese ondersteun, "
         f"{classifications['conflicting']} bots met kohort- of gedateerde bewyse, en {classifications['insufficient_evidence']} bly onvoldoende. "
-        f"Die herhaalbare seine is {signal}; dit is verbande, nie bewese oorsake nie."
+        f"Die herhaalbare seine is {signal_af}; dit is verbande, nie bewese oorsake nie."
         + (" Pig 127 se geverifieerde eienaarsverslag bly apart totdat die beheerde lewensiklus voltooi is." if owner_pending else "")
     )
     return {
@@ -315,7 +354,9 @@ def build_oom_sakkie_mortality_packet(evidence: dict[str, Any], *, analysis_end:
         "hypotheses": result["hypotheses"],
         "unknowns": result["unknown_or_missing"],
         "question": result["smallest_grouped_question"],
+        "question_af": result["smallest_grouped_question_af"],
         "actions": result["recommendations"][:3],
+        "actions_af": result["recommendations_af"][:3],
         "reassessment_trigger": result["automatic_reassessment_trigger"],
         "english": english,
         "afrikaans": afrikaans,

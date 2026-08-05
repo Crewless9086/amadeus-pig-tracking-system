@@ -72,6 +72,13 @@ def test_material_change_refreshes_same_review_identity_only():
     assert changed["evidence_digest"] != first["evidence_digest"]
 
 
+def test_calendar_rollover_does_not_create_a_second_management_lifecycle():
+    first = build_mortality_intelligence({"mortality_events": [event("E1", "P1", "2026-08-01")]}, analysis_end=END)
+    next_day = build_mortality_intelligence({"mortality_events": [event("E1", "P1", "2026-08-01")]}, analysis_end=date(2026, 8, 4))
+    assert first["review_identity"] == next_day["review_identity"] == "HERDMASTER-MORTALITY-CURRENT"
+    assert first["evidence_digest"] == next_day["evidence_digest"]
+
+
 def test_undated_historical_and_superseded_duplicate_are_accounted_without_dates():
     evidence = {"mortality_events": [event("OLD", "P1", None), event("DUP", "P2", "2026-08-01", canonical_status="superseded")],
                 "undated_identity_accounting": [{"pig_id": "P1", "classification": "legitimate_undated_historical_loss", "effective_date": None}]}
@@ -95,11 +102,37 @@ def test_missing_herd_at_risk_denominator_is_explicit():
     assert "lifecycle intervals" in result["herd_at_risk_denominator"]["minimum_requirement"]
 
 
-def test_weak_growth_hypothesis_retains_counter_evidence_and_no_cause():
+def test_weak_growth_hypothesis_separates_unknown_counterevidence_and_no_cause():
     evidence = {"mortality_events": [event("E1", "P1", "2026-08-01")], "weights": {"P1": [{"date": "2026-07-20", "kg": 6}, {"date": "2026-07-30", "kg": 5}]}}
     result = build_mortality_intelligence(evidence, analysis_end=END)
     hypothesis = next(h for h in result["hypotheses"] if h["supporting_evidence"]["pattern"] == "weak_growth_association")
-    assert "No causal diagnosis" in hypothesis["contradicting_evidence"]
+    assert str(hypothesis["counterevidence"]).startswith("Unknown")
+    assert "No causal diagnosis" in hypothesis["causal_limitations"]
+
+
+def test_afrikaans_pattern_labels_do_not_leak_internal_english_identifiers():
+    evidence={"mortality_events":[event("E1","P1","2026-08-01",litter_id="L1"),
+        event("E2","P2","2026-08-02",litter_id="L1")]}
+    packet=build_oom_sakkie_mortality_packet(evidence,analysis_end=END)
+    assert "werpselgroep" in packet["afrikaans"]
+    assert "litter cluster" not in packet["afrikaans"]
+
+
+def test_only_matching_healthy_survivors_are_attributable_counterevidence():
+    evidence={"mortality_events":[
+        event("E1","P1","2026-08-01",litter_id="L1",pen_id="PEN-1"),
+        event("E2","P2","2026-08-02",litter_id="L1",pen_id="PEN-1")],
+        "surviving_controls":[
+            {"pig_id":"S-L","litter_id":"L1","observed_outcome":"healthy"},
+            {"pig_id":"S-P","pen_id":"PEN-1","observed_outcome":"no signs"},
+            {"pig_id":"S-X","litter_id":"OTHER","observed_outcome":"healthy"},
+            {"pig_id":"S-U","pen_id":"PEN-1","observed_outcome":"Unknown"}]}
+    result=build_mortality_intelligence(evidence,analysis_end=END)
+    by_pattern={row["supporting_evidence"]["pattern"]:row for row in result["hypotheses"]}
+    assert by_pattern["litter_cluster"]["counterevidence"]==[
+        {"pig_id":"S-L","observed_outcome":"healthy"}]
+    assert by_pattern["pen_cluster"]["counterevidence"]==[
+        {"pig_id":"S-P","observed_outcome":"no signs"}]
 
 
 def test_typed_oom_sakkie_packet_is_bilingual_bounded_and_zero_write():
