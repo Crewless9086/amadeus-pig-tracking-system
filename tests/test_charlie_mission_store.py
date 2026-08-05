@@ -974,13 +974,10 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("on conflict (mission_id) do nothing", insert_sql)
         self.assertIn("returning mission_id", insert_sql)
 
-    def test_agent_sequence_for_agent_build_adds_specialists_and_qa(self):
+    def test_agent_sequence_for_agent_build_uses_minimum_cross_module_team(self):
         sequence = agent_sequence_for_mission("agent build")
 
-        self.assertEqual(sequence[:3], ["idea_expander", "source_mapper", "product_architect"])
-        self.assertIn("qa_red_team", sequence)
-        self.assertIn("evidence_reviewer", sequence)
-        self.assertEqual(sequence[-1], "publisher")
+        self.assertEqual(sequence, ["source_mapper", "technical_architect", "builder", "tester", "reviewer"])
 
     def test_agent_sequence_uses_raw_text_to_route_ui_system_improvement(self):
         sequence = agent_sequence_for_mission(
@@ -1005,8 +1002,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertNotIn("creative_ui_designer", sequence)
         self.assertNotIn("ux_interaction_designer", sequence)
         self.assertNotIn("frontend_design_implementer", sequence)
-        self.assertIn("risk_agent", sequence)
         self.assertIn("technical_architect", sequence)
+        self.assertEqual(sequence, ["source_mapper", "technical_architect", "builder", "tester", "reviewer"])
 
     def test_list_missions_maps_rows(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)

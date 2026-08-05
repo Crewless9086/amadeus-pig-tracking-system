@@ -145,13 +145,13 @@ class AdaptiveOrchestrationTests(unittest.TestCase):
     def test_trivial_document_fix_is_short_t1(self):
         packet = build_orchestration_packet({"mission_type": "documentation", "raw_text": "Fix typo in README.md."})
         self.assertEqual(packet["tier"], "T1")
-        self.assertEqual([x["agent"] for x in packet["selected_agents"]], ["builder", "tester", "reviewer"])
+        self.assertEqual([x["agent"] for x in packet["selected_agents"]], ["builder"])
         self.assertLessEqual(packet["budgets"]["maximum_elapsed_minutes"], 120)
 
-    def test_small_backend_fix_uses_three_roles(self):
+    def test_small_backend_fix_uses_one_capable_worker(self):
         self.assertEqual(
             self.agents({"mission_type": "bug fix", "raw_text": "Fix one bounded service regression in modules/x.py."}),
-            ["builder", "tester", "reviewer"],
+            ["builder"],
         )
 
     def test_farm_and_sales_select_domain_reviewers(self):
