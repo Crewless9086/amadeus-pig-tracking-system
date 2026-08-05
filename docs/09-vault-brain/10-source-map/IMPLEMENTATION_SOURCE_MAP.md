@@ -406,3 +406,9 @@ Current Stage 4 surface:
 - tests: `tests/test_sam_sales_router.py`, `tests/test_sam_live_stock_runtime.py`, `tests/test_order_intake_service.py`, `tests/test_order_routes.py`, `tests/test_order_service_reservation.py`, `tests/test_sales_transaction_read.py`, `tests/test_pig_allocation_readiness_service.py`;
 - legacy references to mine only: `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md`, `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json`, `docs/03-google-sheets/sheets/SALES_PRICING.md`, `docs/03-google-sheets/sheets/SALES_AVAILABILITY.md`, `docs/03-google-sheets/sheets/SALES_STOCK_TOTALS.md`;
 - rule: Stage 4 permits env-gated writes only to the existing order-intake service after validation. Customer sends, order creation, stock reservation, quotes, and sales transactions remain blocked until later owner-approved stages.
+# SAM bounded inbox reconciliation
+
+- `modules/sales/sam_live_stock_inbox_operator.py` — bounded Chatwoot inventory/chronology reads, conversation-specific provider-read isolation, current coverage evidence and pre/post-claim failure classification.
+- `modules/sales/sales_transaction_routes.py` — existing authenticated reconciliation route; enables provider-read isolation without adding a router, webhook or consumer.
+- `modules/sales/sam_live_stock_runtime.py` — bounded shared Chatwoot identity and chronology read timeout used by the existing Front Door/Livestock path.
+- `tests/test_sam_live_stock_inbox_operator.py` — normal, slow-page, per-conversation timeout, pre/post-claim, ambiguous delivery and replay regressions.

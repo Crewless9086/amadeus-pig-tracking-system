@@ -6,6 +6,7 @@ import json
 import math
 import os
 import urllib.parse
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -21,6 +22,15 @@ from modules.sales.sam_live_stock_runtime import (
 from modules.sales.sam_sales_router import classify_sam_sales_lane
 
 
+class SamInboxOperationFailure(RuntimeError):
+    """Safe phase evidence for a failed inbox cycle; contains no customer data."""
+
+    def __init__(self, code, *, stage, effect_boundary):
+        super().__init__(code)
+        self.stage = stage
+        self.effect_boundary = effect_boundary
+
+
 def operate_livestock_inbox(
     *,
     environ=None,
@@ -33,6 +43,7 @@ def operate_livestock_inbox(
     attention_queue_operator: Callable | None = None,
     attention_sam_state: Mapping | None = None,
     max_process_count: int | None = None,
+    isolate_provider_read_failures: bool = False,
     now=None,
 ) -> dict:
     """Process every independently eligible current inbound exactly once."""
@@ -41,7 +52,14 @@ def operate_livestock_inbox(
     page_loader = conversation_page_loader or (
         lambda page: _conversation_page(page, source)
     )
-    first = page_loader(1)
+    try:
+        first = page_loader(1)
+    except Exception as exc:
+        raise SamInboxOperationFailure(
+            "chatwoot_inventory_first_page_unavailable",
+            stage="provider_inventory_read_before_claim",
+            effect_boundary="not_crossed",
+        ) from exc
     meta = (first.get("data") or {}).get("meta") or {}
     provider_total = int(meta.get("all_count") or 0)
     first_payload = (first.get("data") or {}).get("payload")
@@ -63,21 +81,38 @@ def operate_livestock_inbox(
         return page, list(next_payload)
 
     loaded = {}
+    provider_read_failures = []
     if page_count > 1:
         with ThreadPoolExecutor(max_workers=min(24, page_count - 1)) as pool:
-            futures = [
-                pool.submit(load_page, page)
+            futures = {
+                pool.submit(load_page, page): page
                 for page in range(2, page_count + 1)
-            ]
+            }
             for future in as_completed(futures):
-                page, payload = future.result()
-                loaded[page] = payload
+                try:
+                    page, payload = future.result()
+                    loaded[page] = payload
+                except Exception as exc:
+                    if (
+                        not isolate_provider_read_failures
+                        or not _isolatable_provider_transport_failure(exc)
+                    ):
+                        raise
+                    provider_read_failures.append({
+                        "dependency": "chatwoot_inventory_page",
+                        "page": futures[future],
+                        "error_type": exc.__class__.__name__,
+                    })
     for page in range(2, page_count + 1):
-        rows.extend(loaded[page])
+        if page in loaded:
+            rows.extend(loaded[page])
     identities = [str(row.get("id") or "") for row in rows]
     if not all(identities) or len(set(identities)) != len(identities):
         raise RuntimeError("chatwoot_inventory_identity_conflict")
-    if len(identities) != provider_total:
+    if (
+        len(identities) != provider_total
+        and not provider_read_failures
+    ):
         raise RuntimeError("chatwoot_inventory_incomplete")
 
     candidate_rows = []
@@ -139,6 +174,7 @@ def operate_livestock_inbox(
                 candidate_rows.append(row)
 
     history_cache = {}
+    history_failures = {}
     if candidate_rows:
         with ThreadPoolExecutor(max_workers=min(16, len(candidate_rows))) as pool:
             futures = {
@@ -148,7 +184,19 @@ def operate_livestock_inbox(
                 for row in candidate_rows
             }
             for future in as_completed(futures):
-                history_cache[futures[future]] = future.result()
+                conversation_id = futures[future]
+                try:
+                    history_cache[conversation_id] = future.result()
+                except Exception as exc:
+                    if (
+                        not isolate_provider_read_failures
+                        or not _isolatable_provider_transport_failure(exc)
+                    ):
+                        raise
+                    history_failures[conversation_id] = {
+                        "dependency": "chatwoot_conversation_history",
+                        "error_type": exc.__class__.__name__,
+                    }
     for conversation_id, result in history_cache.items():
         history, status = result
         if (
@@ -178,6 +226,35 @@ def operate_livestock_inbox(
     processed_count = 0
     operation_rows = sorted(rows, key=_autonomous_priority)
     for row in operation_rows:
+        conversation_id = str(row.get("id") or "")
+        if conversation_id in history_failures:
+            latest = (
+                row.get("last_non_activity_message")
+                if isinstance(row.get("last_non_activity_message"), Mapping)
+                else {}
+            )
+            dispositions.append({
+                "account_id": str(row.get("account_id") or ""),
+                "inbox_id": str(row.get("inbox_id") or ""),
+                "contact_id": str(
+                    ((row.get("meta") or {}).get("sender") or {}).get("id")
+                    or ""
+                ),
+                "conversation_id": conversation_id,
+                "inbound_message_id": str(latest.get("id") or ""),
+                "queue_relevant": True,
+                "eligible": False,
+                "selected_for_processing": False,
+                "disposition": "provider_chronology_unavailable",
+                "final_route": "AUTO_SPECIALIST",
+                "provider_state": "",
+                "provider_confirmed": False,
+                "owner_decision_required": False,
+                "reply": "",
+                "latest_inbound_at": int(latest.get("created_at") or 0),
+                "coverage_exception": history_failures[conversation_id],
+            })
+            continue
         can_process = bool(
             max_process_count is None
             or processed_count < max(0, int(max_process_count))
@@ -188,6 +265,7 @@ def operate_livestock_inbox(
             history_loader=cached_history_loader,
             inbound_processor=inbound_processor,
             claim_exists=cached_claim_exists,
+            effect_claim_exists=claim_exists,
             conversation_quarantined=(
                 str(row.get("id") or "") in quarantined_conversations
             ),
@@ -199,7 +277,16 @@ def operate_livestock_inbox(
             processed_count += 1
         if disposition["queue_relevant"]:
             dispositions.append(disposition)
-    summary = build_sam_status_summary(dispositions, observed_at=clock)
+    coverage_failures = [
+        *provider_read_failures,
+        *history_failures.values(),
+    ]
+    summary = build_sam_status_summary(
+        dispositions,
+        observed_at=clock,
+        coverage_failures=coverage_failures,
+        inventory_complete=not provider_read_failures,
+    )
     attention = {}
     if attention_queue_operator is not False:
         operator = attention_queue_operator
@@ -207,15 +294,51 @@ def operate_livestock_inbox(
             from modules.oom_sakkie.owner_attention_adapter import operate_owner_attention_queue
             operator = operate_owner_attention_queue
         try:
-            attention = operator(dispositions, environ=source, now=clock,
-                                 sam_state=attention_sam_state or {"state": "healthy"})
+            sam_state = dict(attention_sam_state or {"state": "healthy"})
+            if coverage_failures:
+                sam_state.update({
+                    "state": "degraded_partial_provider_coverage",
+                    "affected_work_codes": [
+                        code
+                        for code, affected in (
+                            (
+                                "provider_inventory_page",
+                                bool(provider_read_failures),
+                            ),
+                            (
+                                "conversation_chronology",
+                                bool(history_failures),
+                            ),
+                        )
+                        if affected
+                    ],
+                    "coverage_exception_count": len(coverage_failures),
+                    "manual_coverage_required": True,
+                    "manual_coverage_reason_code": (
+                        "provider_chronology_unavailable"
+                    ),
+                })
+            attention = operator(
+                dispositions,
+                environ=source,
+                now=clock,
+                sam_state=sam_state,
+            )
         except Exception:
             attention = {"success": False, "status": "owner_attention_queue_contained", "calls_telegram": False}
     return {
         "status": "sam_live_stock_inbox_operated",
         "inventory_count": len(rows),
         "provider_conversation_count": provider_total,
-        "inventory_scope": "full_provider_conversation_inventory",
+        "inventory_scope": (
+            "partial_provider_inventory_isolated"
+            if provider_read_failures
+            else "full_provider_conversation_inventory"
+        ),
+        "provider_read_failures": provider_read_failures,
+        "coverage_exception_count": (
+            len(provider_read_failures) + len(history_failures)
+        ),
         "dispositions": dispositions,
         "customers_answered": sum(
             item.get("provider_confirmed") is True for item in dispositions
@@ -229,6 +352,11 @@ def operate_livestock_inbox(
             for item in dispositions
         ),
         "lane_active": True,
+        "lane_coverage_state": (
+            "degraded_partial_provider_coverage"
+            if coverage_failures
+            else "complete"
+        ),
         "automatic_retry_authorized": False,
         "protected_authority": False,
         "owner_status_summary": summary,
@@ -262,6 +390,7 @@ def _inspect_and_operate(
     history_loader,
     inbound_processor,
     claim_exists,
+    effect_claim_exists,
     conversation_quarantined,
     can_process,
     require_durable_result,
@@ -431,7 +560,30 @@ def _inspect_and_operate(
         and not exact_claim
     )
     selected_for_processing = bool(eligible and can_process)
-    result = inbound_processor(payload) if selected_for_processing else {}
+    if selected_for_processing:
+        try:
+            result = inbound_processor(payload)
+        except Exception as exc:
+            try:
+                crossed = bool(
+                    effect_claim_exists(conversation_id, inbound_id)
+                )
+                effect_boundary = "crossed" if crossed else "not_crossed"
+            except Exception:
+                effect_boundary = "indeterminate"
+            raise SamInboxOperationFailure(
+                "sam_selected_candidate_processing_failed",
+                stage=(
+                    "post_claim_processing"
+                    if effect_boundary == "crossed"
+                    else "preclaim_response_processing"
+                    if effect_boundary == "not_crossed"
+                    else "processing_boundary_indeterminate"
+                ),
+                effect_boundary=effect_boundary,
+            ) from exc
+    else:
+        result = {}
     decision = result.get("sam_decision") if isinstance(result.get("sam_decision"), Mapping) else {}
     delivery = decision.get("routine_reply_delivery") if isinstance(decision.get("routine_reply_delivery"), Mapping) else {}
     outcome = delivery.get("delivery_outcome") if isinstance(delivery.get("delivery_outcome"), Mapping) else {}
@@ -560,10 +712,20 @@ def _history_is_complete(history):
         return False
 
 
-def build_sam_status_summary(dispositions, *, observed_at=None):
+def build_sam_status_summary(
+    dispositions,
+    *,
+    observed_at=None,
+    coverage_failures=(),
+    inventory_complete=True,
+):
     """Build the compact owner-facing status used by the safe brief path."""
     rows = list(dispositions or [])
     eligible = [row for row in rows if row.get("eligible") is True]
+    unavailable = [
+        row for row in rows
+        if row.get("disposition") == "provider_chronology_unavailable"
+    ]
     awaiting_customer = [
         row for row in rows
         if row.get("disposition") == "awaiting_customer"
@@ -588,7 +750,11 @@ def build_sam_status_summary(dispositions, *, observed_at=None):
         default={},
     )
     return {
-        "lane_state": "active",
+        "lane_state": (
+            "active"
+            if not coverage_failures
+            else "degraded_partial_provider_coverage"
+        ),
         "customers_answered_today": sum(
             row.get("provider_confirmed") is True for row in rows
         ),
@@ -596,13 +762,23 @@ def build_sam_status_summary(dispositions, *, observed_at=None):
             row.get("eligible") is True
             and row.get("provider_confirmed") is not True
             for row in rows
-        ),
+        ) + len(unavailable),
         "customers_awaiting_customer_reply": len(awaiting_customer),
         "owner_decisions": len(owner),
         "quarantines": len(quarantined),
         "closed_window_reengagement": len(closed),
         "oldest_eligible_unanswered_lead": (
             str(oldest.get("conversation_id") or "")
+            if inventory_complete
+            else ""
+        ),
+        "oldest_eligible_scope": (
+            "full_provider_inventory"
+            if inventory_complete
+            else "unknown_partial_provider_inventory"
+        ),
+        "coverage_exceptions": _coverage_exception_summary(
+            coverage_failures
         ),
         "last_successful_webhook_processing_time": (
             (observed_at or datetime.now(timezone.utc)).isoformat()
@@ -610,6 +786,23 @@ def build_sam_status_summary(dispositions, *, observed_at=None):
             else ""
         ),
     }
+
+
+def _coverage_exception_summary(failures):
+    counts = {}
+    for row in failures or ():
+        dependency = str((row or {}).get("dependency") or "provider_read")
+        counts[dependency] = counts.get(dependency, 0) + 1
+    return [
+        {"dependency": key, "count": counts[key]}
+        for key in sorted(counts)
+    ]
+
+
+def _isolatable_provider_transport_failure(exc):
+    if isinstance(exc, urllib.error.HTTPError):
+        return False
+    return isinstance(exc, (TimeoutError, urllib.error.URLError))
 
 
 def _conversation_page(page, environ):
@@ -641,5 +834,19 @@ def _request(path, environ):
         base + path,
         headers={"api_access_token": token, "Accept": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    timeout = _bounded_timeout(
+        environ.get("SAM_CHATWOOT_INVENTORY_READ_TIMEOUT_SECONDS"),
+        default=5.0,
+        minimum=1.0,
+        maximum=10.0,
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.load(response)
+
+
+def _bounded_timeout(value, *, default, minimum, maximum):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))

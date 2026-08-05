@@ -1069,12 +1069,7 @@ def sam_live_stock_chatwoot_reconcile():
                 else {"state": "disabled", "affected_work_codes": ["current_eligible_enquiries"],
                       "manual_coverage_required": True, "manual_coverage_reason_code": "sam_disabled"}
             ),
-            history_loader=lambda conversation_id, environ: (
-                load_chatwoot_conversation_history(
-                    conversation_id, environ, limit=200
-                ),
-                200,
-            ),
+            history_loader=_load_sam_live_stock_history_with_status,
             claim_exists=_sam_live_stock_inbound_claim_exists,
             claimed_inbound_loader=(
                 _sam_live_stock_existing_inbound_claims
@@ -1083,6 +1078,7 @@ def sam_live_stock_chatwoot_reconcile():
                 _sam_live_stock_unresolved_delivery_quarantines
             ),
             max_process_count=1,
+            isolate_provider_read_failures=True,
             inbound_processor=_operate_sam_live_stock_exact_payload,
         )
         return jsonify(packet), 200
@@ -1098,6 +1094,10 @@ def sam_live_stock_chatwoot_reconcile():
             {
                 "status": "sam_live_stock_inbox_operation_failed",
                 "error_type": exc.__class__.__name__,
+                "failure_stage": getattr(exc, "stage", "unclassified"),
+                "external_effect_boundary": getattr(
+                    exc, "effect_boundary", "indeterminate"
+                ),
                 "lane_stopped": True,
                 "automatic_retry_authorized": False,
                 "protected_authority": False,
@@ -1132,6 +1132,13 @@ def _operate_sam_live_stock_exact_payload(payload):
         )
     result["_operation_status_code"] = int(_status)
     return result
+
+
+def _load_sam_live_stock_history_with_status(conversation_id, environ):
+    history = load_chatwoot_conversation_history(
+        conversation_id, environ, limit=200
+    )
+    return history, 200 if history.get("success") is True else 503
 
 
 def _sam_live_stock_inbound_claim_exists(conversation_id, inbound_id):

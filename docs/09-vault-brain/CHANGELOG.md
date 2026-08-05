@@ -530,3 +530,8 @@
 - Preserved terminal failed claim `BEACON-FB-POST-A3E2BBED0CEA5F93E2` and prepared
   successor execution identity `BEACON-PUBLICATION-EXECUTION-928F7D5A9731FFDE3D62CE1A`
   plus a timing-only Oom Sakkie reauthorization handover.
+# 2026-08-05 — SAM pre-claim reconciliation timeout correction
+
+- Diagnosed the approximately 30-second HTTP 503 as a transient full-inventory Chatwoot page read reaching the previous hard timeout before any durable claim or external customer effect.
+- Bounded Chatwoot reads, isolated partial-page and exact-conversation chronology failures, preserved unrelated eligible work, and added fresh claim-boundary classification without weakening identity, chronology, usefulness, pricing, inventory, delivery or authority gates.
+- Recorded the exact source and production handover in `docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md`.
