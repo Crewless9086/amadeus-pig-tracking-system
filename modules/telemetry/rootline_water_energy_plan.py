@@ -924,6 +924,7 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             "Run now": "Recommend", "Run later": "Recommend", "Hold": "Hold",
             "Needs Data": "Needs Data", "Completed": "Hold",
             "Reassess after segment one": "Hold",
+            "recovery required": "Do Not Run",
         }
         for decision in decisions["zones"]:
             task = _task(

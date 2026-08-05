@@ -7,7 +7,7 @@ does not persist, notify, schedule, create commands, or call provider hardware.
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 from zoneinfo import ZoneInfo
@@ -17,7 +17,7 @@ ZA_TZ = ZoneInfo("Africa/Johannesburg")
 ZONES = {"B12345": {"channel": 1}, "C12345": {"channel": 2}}
 DECISIONS = {
     "Run now", "Run later", "Hold", "Needs Data", "Completed",
-    "Reassess after segment one",
+    "Reassess after segment one", "recovery required",
 }
 AUTHORITY = {
     "command_authority": False,
@@ -61,6 +61,65 @@ def build_adaptive_irrigation_decisions(evidence, *, now=None):
         "borehole_authority": False,
         "fertilizer_authority": False,
         **AUTHORITY,
+}
+
+
+def project_weekly_delivery_obligation(zone, *, now=None, target_days_per_week=4,
+                                       additional_outcomes=None):
+    """Project zone-specific weekly debt from verified completions only.
+
+    The projection is deterministic and can be rebuilt from the durable outcome
+    ledger.  ON receipts, requested runtime, and unverified stops never count.
+    """
+    now = _za(now or datetime.now(timezone.utc))
+    zone = _dict(zone)
+    target = max(1, min(7, int(target_days_per_week or 4)))
+    week_start = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    coverage = _timestamp(zone.get("completion_ledger_complete_through"))
+    coverage_current = coverage is not None and coverage <= now and (now - coverage).total_seconds() <= 15 * 60
+    verified_days = set()
+    verified_minutes = 0
+    outcomes = []
+    seen = {}
+    conflict = False
+    rows = list(zone.get("completion_events", [])) + list(additional_outcomes or [])
+    for row in rows:
+        if not isinstance(row, dict) or not str(row.get("outcome_id") or "").strip():
+            continue
+        identity = str(row.get("outcome_id"))
+        canonical = _digest({key: row.get(key) for key in (
+            "outcome_id", "completed_at", "verified_runtime_minutes", "state",
+            "shutdown_verified", "source", "objective_satisfied")})
+        if identity in seen:
+            conflict = conflict or seen[identity] != canonical
+            continue
+        seen[identity] = canonical
+        if _verified_completion_time(row) is None:
+            continue
+        completed = _verified_completion_time(row).astimezone(ZA_TZ)
+        if week_start <= completed <= now:
+            verified_minutes += int(_number(row.get("verified_runtime_minutes")) or 0)
+            outcomes.append(identity)
+            if row.get("objective_satisfied") is True:
+                verified_days.add(completed.date().isoformat())
+    elapsed_days = now.weekday() + 1
+    expected_by_now = min(target, int((elapsed_days * target + 6) / 7))
+    completed_days = len(verified_days)
+    status = "conflicting" if conflict else "available" if coverage_current else "Unavailable"
+    return {
+        "status": status,
+        "ledger_complete_through": coverage.isoformat() if coverage else None,
+        "target_days_per_week": target,
+        "week_start": week_start.date().isoformat(),
+        "completed_days": completed_days,
+        "verified_runtime_minutes": verified_minutes,
+        "expected_days_by_now": expected_by_now,
+        "delivery_debt_days": max(0, expected_by_now - completed_days) if status == "available" else None,
+        "remaining_weekly_obligation_days": max(0, target - completed_days) if status == "available" else None,
+        "verified_outcome_ids": sorted(outcomes),
+        "on_receipts_counted": 0,
+        "delivered_volume": "Unavailable",
     }
 
 
@@ -84,6 +143,7 @@ def build_run_outcome_evidence(outcome, *, now=None):
         "planned_runtime_minutes": planned,
         "verified_runtime_minutes": actual,
         "shutdown_verified": item.get("shutdown_verified") is True,
+        "objective_satisfied": item.get("objective_satisfied") is True,
         "physical_flow_confirmation": item.get("physical_flow_confirmation", "Unavailable"),
         "weather_after": _dict(item.get("weather_after")),
         "visible_response_after": item.get("visible_response_after", "Unavailable"),
@@ -123,6 +183,7 @@ def notification_projection(result, previous_decision_sha256=None):
     zones = _dict(result).get("zones") if isinstance(_dict(result).get("zones"), list) else []
     material = any(_dict(row).get("decision") in {
         "Run now", "Run later", "Needs Data", "Reassess after segment one",
+        "recovery required",
     } for row in zones)
     changed = bool(current) and current != str(previous_decision_sha256 or "")
     return {
@@ -148,32 +209,65 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
                             "state": "Completed", "shutdown_verified": True,
                             "verified_runtime_minutes": correction.get("verified_runtime_minutes"),
                             "outcome_id": correction.get("outcome_id"),
-                            "source": correction.get("source")})
+                            "source": correction.get("source"),
+                            "objective_satisfied": correction.get("objective_satisfied")})
     latest = _latest_completion(completions)
-    completed_today = latest is not None and latest.astimezone(ZA_TZ).date() == now.date()
+    correction_outcomes = []
+    if corrected_completion:
+        correction_outcomes.append({
+            "completed_at": corrected_completion, "state": "Completed",
+            "shutdown_verified": True,
+            "verified_runtime_minutes": correction.get("verified_runtime_minutes"),
+            "outcome_id": correction.get("outcome_id"), "source": correction.get("source"),
+            "objective_satisfied": correction.get("objective_satisfied"),
+        })
+    obligation = project_weekly_delivery_obligation(
+        zone, now=now, target_days_per_week=policy["target_days_per_week"],
+        additional_outcomes=correction_outcomes)
+    sufficient_latest = _latest_completion(completions, require_objective_satisfied=True)
+    completed_today = (sufficient_latest is not None
+                       and sufficient_latest.astimezone(ZA_TZ).date() == now.date())
     segment = _dict(zone.get("latest_segment"))
-    if (segment.get("segment_number") == 1 and segment.get("state") == "Completed"
+    if (segment.get("state") in {"Active", "Stopped", "Failed", "ambiguous_outcome"}
+            and segment.get("shutdown_verified") is not True):
+        decision = "recovery required"
+        reason = "Shutdown is not verified; contain this zone and use bounded state-setting OFF recovery before reuse."
+        score = _need_score(need, latest, zone, now, obligation)
+    elif (segment.get("segment_number") == 1 and segment.get("state") == "Completed"
             and segment.get("shutdown_verified") is True
             and segment.get("objective_remaining") is True):
         decision = "Reassess after segment one"
         reason = "Segment one completed and shutdown is verified; a new evidence generation must decide segment two."
-        score = _need_score(need, latest, zone, now)
+        score = _need_score(need, latest, zone, now, obligation)
     elif completed_today and correction.get("another_segment_needed") is not True:
         decision, reason, score = "Completed", "A completed irrigation is recorded for this zone today.", 0
+    elif (latest is not None and latest.astimezone(ZA_TZ).date() == now.date()
+          and sufficient_latest is None):
+        decision = "Reassess after segment one"
+        reason = "A bounded segment stopped safely, but sufficient irrigation was not established; fresh evidence must decide further work."
+        score = _need_score(need, latest, zone, now, obligation)
     elif need.lower() in {"ok", "wet", "none", "not needed"}:
         decision, reason, score = (
             "Hold",
             "A fresh authoritative observation says this zone does not currently need irrigation; weekly cadence is guidance only.",
-            _need_score(need, latest, zone, now),
+            _need_score(need, latest, zone, now, obligation),
         )
     else:
-        score = _need_score(need, latest, zone, now)
+        score = _need_score(need, latest, zone, now, obligation)
         decision, reason = _classify(score, need, policy, weather, water, power, now)
     confidence, gaps = _confidence(zone, weather, forecast, water, power, now)
+    if obligation["status"] == "Unavailable":
+        gaps.append("verified_completion_ledger_coverage_unavailable")
+    elif obligation["status"] == "conflicting":
+        gaps.append("verified_completion_outcome_conflict")
+        if decision != "recovery required":
+            decision = "Needs Data"
+            reason = "Conflicting completion evidence must be reconciled before this zone can execute."
     if decision in {"Run now", "Run later"} and not _fresh_adequate_water(water, now):
         decision = "Needs Data"
         reason = "Current water availability is required before this water-dependent execution; other planning remains available."
-    if _observed_rain(weather, now):
+    if (_observed_rain(weather, now) and decision != "recovery required"
+            and obligation["status"] != "conflicting"):
         decision = "Hold"
         reason = "Fresh local evidence records rain; reassess need after observed rain rather than relying on forecast."
     window = _window(decision, policy, power, now)
@@ -199,6 +293,7 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "delivered_volume": "Unavailable",
         "flow_rate": "Unavailable",
         "rank": None,
+        "weekly_obligation": obligation,
         **AUTHORITY,
     }
 
@@ -225,15 +320,19 @@ def _classify(score, need, policy, weather, water, power, now):
     return "Run later", "Need is supported, but wait for reserve recovery or an explicitly justified water-continuity grid decision."
 
 
-def _need_score(need, latest, zone, now):
+def _need_score(need, latest, zone, now, obligation=None):
     score = {"urgent": 45, "dry": 35, "needed": 28, "visible_need": 28,
              "ok": -15, "wet": -35, "none": -25}.get(need.lower(), 8)
     if latest is not None:
         days = max(0, (now - latest.astimezone(ZA_TZ)).total_seconds() / 86400)
         score += min(35, int(days * 12))
-    completed = _number(zone.get("completed_days_last_7_days"))
-    if completed is not None:
-        score += max(0, 4 - int(completed)) * 7
+    if obligation is not None and obligation.get("status") == "available":
+        score += int(obligation["delivery_debt_days"]) * 14
+        score += int(obligation["remaining_weekly_obligation_days"]) * 3
+    elif obligation is None:
+        completed = _number(zone.get("completed_days_last_7_days"))
+        if completed is not None:
+            score += max(0, 4 - int(completed)) * 7
     return max(0, min(100, score))
 
 
@@ -334,18 +433,29 @@ def _freshness(value, now, minutes):
     return "fresh" if 0 <= age <= minutes else "stale"
 
 
-def _latest_completion(rows):
+def _latest_completion(rows, require_objective_satisfied=False):
     verified = []
     for row in rows:
         runtime = _number(row.get("verified_runtime_minutes"))
         if (row.get("state") == "Completed" and row.get("shutdown_verified") is True
                 and 0 < (runtime or 0) <= 120
                 and str(row.get("outcome_id") or "").strip()
-                and str(row.get("source") or "").strip()):
+                and str(row.get("source") or "").strip()
+                and (not require_objective_satisfied or row.get("objective_satisfied") is True)):
             verified.append(row)
     values = [_timestamp(row.get("completed_at")) for row in verified]
     values = [value for value in values if value is not None]
     return max(values) if values else None
+
+
+def _verified_completion_time(row):
+    runtime = _number(row.get("verified_runtime_minutes"))
+    if (row.get("state") != "Completed" or row.get("shutdown_verified") is not True
+            or not 0 < (runtime or 0) <= 120
+            or not str(row.get("outcome_id") or "").strip()
+            or not str(row.get("source") or "").strip()):
+        return None
+    return _timestamp(row.get("completed_at"))
 
 
 def _timestamp(value):

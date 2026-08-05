@@ -8,6 +8,7 @@ from modules.telemetry.rootline_adaptive_irrigation import (
     build_run_outcome_evidence,
     learning_hints,
     notification_projection,
+    project_weekly_delivery_obligation,
 )
 from modules.telemetry.rootline_water_energy_plan import build_water_energy_plan
 
@@ -31,10 +32,12 @@ def evidence():
             {"zone_id": "B12345", "visible_need": "dry",
              "visible_need_observed_at": NOW.isoformat(), "visible_need_source": "owner_observation",
              "completed_days_last_7_days": 2,
+             "completion_ledger_complete_through": NOW.isoformat(),
              "completion_events": []},
             {"zone_id": "C12345", "visible_need": "dry",
              "visible_need_observed_at": NOW.isoformat(), "visible_need_source": "owner_observation",
              "completed_days_last_7_days": 1,
+             "completion_ledger_complete_through": NOW.isoformat(),
              "completion_events": []},
         ],
     }
@@ -51,7 +54,7 @@ class AdaptiveIrrigationTests(unittest.TestCase):
             {"completed_at": (NOW - timedelta(hours=6)).isoformat(),
              "verified_runtime_minutes": 60, "state": "Completed",
              "shutdown_verified": True, "outcome_id": "B-OUTCOME-1",
-             "source": "owner_confirmed"}
+             "source": "owner_confirmed", "objective_satisfied": True}
         ]
         result = zones(build_adaptive_irrigation_decisions(item, now=NOW))
         self.assertEqual(result["B12345"]["decision"], "Completed")
@@ -158,7 +161,7 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         self.assertEqual(result["decision"], "Hold")
         self.assertIn("weekly cadence is guidance only", result["reason"])
 
-    def test_missing_need_and_history_never_become_positive_deficit(self):
+    def test_missing_visible_need_does_not_erase_authoritatively_covered_debt(self):
         item = evidence()
         for zone in item["zones"]:
             zone.pop("visible_need")
@@ -168,10 +171,122 @@ class AdaptiveIrrigationTests(unittest.TestCase):
             zone["completion_events"] = []
         result = zones(build_adaptive_irrigation_decisions(item, now=NOW))
         for decision in result.values():
-            self.assertEqual(decision["decision"], "Hold")
-            self.assertLess(decision["need_score"], 20)
+            self.assertEqual(decision["decision"], "Run now")
+            self.assertGreater(decision["weekly_obligation"]["delivery_debt_days"], 0)
             self.assertIn("current_visible_need_unavailable", decision["evidence_gaps"])
             self.assertIn("verified_completion_history_unavailable", decision["evidence_gaps"])
+
+    def test_missing_ledger_coverage_is_not_asserted_as_zero_delivery(self):
+        item = evidence()
+        for zone in item["zones"]:
+            zone.pop("completion_ledger_complete_through")
+            zone.pop("visible_need")
+            zone.pop("visible_need_observed_at")
+            zone.pop("visible_need_source")
+            zone.pop("completed_days_last_7_days")
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))
+        for decision in result.values():
+            self.assertEqual(decision["decision"], "Hold")
+            self.assertEqual(decision["weekly_obligation"]["status"], "Unavailable")
+            self.assertIsNone(decision["weekly_obligation"]["delivery_debt_days"])
+
+    def test_weekly_obligation_counts_only_verified_completed_zone_outcomes(self):
+        zone = evidence()["zones"][0]
+        zone["completion_events"] = [
+            {"completed_at": (NOW - timedelta(hours=2)).isoformat(),
+             "verified_runtime_minutes": 60, "state": "Completed",
+             "shutdown_verified": True, "outcome_id": "B-OK", "source": "ledger"},
+            {"completed_at": NOW.isoformat(), "verified_runtime_minutes": 60,
+             "state": "command_accepted", "shutdown_verified": False,
+             "outcome_id": "B-ON", "source": "provider"},
+        ]
+        zone["completion_events"][0]["objective_satisfied"] = True
+        debt = project_weekly_delivery_obligation(zone, now=NOW)
+        self.assertEqual(debt["completed_days"], 1)
+        self.assertEqual(debt["verified_runtime_minutes"], 60)
+        self.assertEqual(debt["verified_outcome_ids"], ["B-OK"])
+        self.assertEqual(debt["on_receipts_counted"], 0)
+
+    def test_verified_completion_reduces_only_its_zone_debt(self):
+        item = evidence()
+        item["zones"][0]["completion_events"] = [{
+            "completed_at": (NOW - timedelta(hours=2)).isoformat(),
+            "verified_runtime_minutes": 60, "state": "Completed",
+            "shutdown_verified": True, "objective_satisfied": True,
+            "outcome_id": "B-ONLY", "source": "ledger"}]
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))
+        self.assertLess(result["B12345"]["weekly_obligation"]["delivery_debt_days"],
+                        result["C12345"]["weekly_obligation"]["delivery_debt_days"])
+
+    def test_short_completed_segment_does_not_discharge_sufficient_day(self):
+        zone = evidence()["zones"][0]
+        zone["completion_events"] = [{
+            "completed_at": NOW.isoformat(), "verified_runtime_minutes": 1,
+            "state": "Completed", "shutdown_verified": True,
+            "objective_satisfied": False, "outcome_id": "B-PULSE", "source": "ledger"}]
+        debt = project_weekly_delivery_obligation(zone, now=NOW)
+        self.assertEqual(debt["verified_runtime_minutes"], 1)
+        self.assertEqual(debt["completed_days"], 0)
+        decision = zones(build_adaptive_irrigation_decisions(
+            {**evidence(), "zones": [zone, evidence()["zones"][1]]}, now=NOW))["B12345"]
+        self.assertEqual(decision["decision"], "Reassess after segment one")
+
+    def test_exact_replay_is_deduplicated_and_conflicting_replay_fails_closed(self):
+        zone = evidence()["zones"][0]
+        outcome = {"completed_at": NOW.isoformat(), "verified_runtime_minutes": 60,
+                   "state": "Completed", "shutdown_verified": True,
+                   "objective_satisfied": True, "outcome_id": "B-ONE", "source": "ledger"}
+        zone["completion_events"] = [outcome, dict(outcome)]
+        exact = project_weekly_delivery_obligation(zone, now=NOW)
+        self.assertEqual(exact["status"], "available")
+        self.assertEqual(exact["verified_runtime_minutes"], 60)
+        zone["completion_events"][1] = {**outcome, "completed_at": (NOW - timedelta(hours=1)).isoformat()}
+        conflict = project_weekly_delivery_obligation(zone, now=NOW)
+        self.assertEqual(conflict["status"], "conflicting")
+        self.assertIsNone(conflict["delivery_debt_days"])
+        zone["completion_events"] = [outcome, {
+            **outcome, "state": "Failed", "shutdown_verified": False}]
+        invalid_conflict = project_weekly_delivery_obligation(zone, now=NOW)
+        self.assertEqual(invalid_conflict["status"], "conflicting")
+        self.assertIsNone(invalid_conflict["delivery_debt_days"])
+        item = evidence()
+        item["zones"][0] = zone
+        decision = zones(build_adaptive_irrigation_decisions(item, now=NOW))["B12345"]
+        self.assertEqual(decision["decision"], "Needs Data")
+        item["local_weather"].update(rain_rate_mm_h=3, rain_today_mm=5)
+        rain_decision = zones(build_adaptive_irrigation_decisions(item, now=NOW))["B12345"]
+        self.assertEqual(rain_decision["decision"], "Needs Data")
+        self.assertIn("verified_completion_outcome_conflict", rain_decision["evidence_gaps"])
+
+    def test_owner_corrected_sufficient_completion_is_consistent(self):
+        item = evidence()
+        item["zones"][0]["owner_correction"] = {
+            "last_completed_at": NOW.isoformat(), "verified_runtime_minutes": 60,
+            "outcome_id": "B-OWNER", "source": "authenticated_owner",
+            "objective_satisfied": True, "another_segment_needed": False}
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))["B12345"]
+        self.assertEqual(result["decision"], "Completed")
+        self.assertEqual(result["weekly_obligation"]["completed_days"], 1)
+
+    def test_unqualified_weekly_summary_cannot_create_debt_when_coverage_unknown(self):
+        item = evidence()
+        for zone in item["zones"]:
+            zone.pop("completion_ledger_complete_through")
+            zone.pop("visible_need")
+            zone.pop("visible_need_observed_at")
+            zone.pop("visible_need_source")
+            zone["completed_days_last_7_days"] = 0
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))
+        self.assertTrue(all(row["decision"] == "Hold" for row in result.values()))
+
+    def test_uncertain_shutdown_contains_only_zone_and_requires_recovery(self):
+        item = evidence()
+        item["zones"][0]["latest_segment"] = {
+            "segment_number": 1, "state": "Active", "shutdown_verified": False}
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))
+        self.assertEqual(result["B12345"]["decision"], "recovery required")
+        self.assertEqual(result["C12345"]["decision"], "Run now")
+        self.assertFalse(result["B12345"]["automatic_on_retry"])
 
     def test_outcome_learning_preserves_unknown_volume_and_policy(self):
         outcome = build_run_outcome_evidence({
