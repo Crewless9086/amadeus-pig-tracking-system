@@ -1,5 +1,9 @@
 # ALERT - Power Backend Delivery
 
+Source-prepared reassessment extension (not active until production proof): the existing 15-minute schedule gains an isolated call to Oom Sakkie's typed ROOTLINE read-only endpoint. It has no Telegram or hardware node. The backend durably claims each SAST due bucket, records its invocation receipt and outcome, suppresses concurrent/replayed buckets, and gates ticks against the previously owned next due time. Only ROOTLINE is enabled; other specialists require a reviewed typed adapter before scheduling.
+
+The exported gateway-token value is deliberately a placeholder. Production must bind the existing Oom Sakkie gateway credential without exposing it. The pre-existing power-alert lane alone is active/live-verified; reassessment is not automatic until a schedule-triggered receipt and durable next-due proof exist.
+
 Thin Telegram delivery workflow for backend-owned Sunsynk/power alerts.
 
 Status: active / live-verified  

@@ -410,12 +410,47 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
 
 
 def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *, specialist_loader=None,
-                                         state_store=None, family_delivery=None):
+                                         state_store=None, family_delivery=None, schedule_store=None,
+                                         scheduler_now=None):
     """Run one authenticated scheduled/evidence-change reassessment via the existing family rail."""
     source = environ if environ is not None else os.environ
     policy = telegram_gateway_policy(source)
     if not policy["enabled"] or not _token_matches(headers or {}, environ=source):
         return _gateway_result(False, "rootline_reassessment_auth_denied", policy, 403)
+    if str((payload or {}).get("scheduler_identity") or "").strip():
+        from modules.oom_sakkie.automatic_reassessment_scheduler import run_due_reassessment
+        if schedule_store is None:
+            from modules.oom_sakkie.automatic_reassessment_store import automatic_reassessment_store
+            schedule_store = automatic_reassessment_store
+        manual_payload = {key: value for key, value in (payload or {}).items()
+                          if key not in {"scheduler_identity", "specialist", "due_at", "evidence_cutoff"}}
+        base_scheduled_loader = specialist_loader
+        if base_scheduled_loader is None:
+            from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
+            base_scheduled_loader = lambda: build_current_rootline_specialist_result(
+                now=datetime.fromisoformat(str(payload.get("evidence_cutoff")).replace("Z", "+00:00")))
+        def scheduled_loader():
+            current = base_scheduled_loader()
+            try:
+                observed = datetime.fromisoformat(str(current.get("evidence_cutoff") or "").replace("Z", "+00:00"))
+                requested = datetime.fromisoformat(str(payload.get("evidence_cutoff")).replace("Z", "+00:00"))
+            except (AttributeError, TypeError, ValueError):
+                return {"success": False, "status": "scheduled_reassessment_evidence_cutoff_unproven"}
+            if observed > requested:
+                return {"success": False, "status": "scheduled_reassessment_evidence_after_cutoff"}
+            return current
+        def invoke():
+            result, nested_status = handle_rootline_reassessment_trigger(
+                manual_payload, headers=headers, environ=source, specialist_loader=scheduled_loader,
+                state_store=state_store, family_delivery=family_delivery)
+            if nested_status != 200:
+                return {**result, "success": False,
+                        "scheduled_underlying_status": str(result.get("status") or ""),
+                        "status": "scheduled_reassessment_delivery_contained"}
+            return result
+        scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=schedule_store,
+                                         now=scheduler_now)
+        return scheduled, 200 if scheduled.get("success") else 202
     owner = str((payload or {}).get("owner_user_id") or "").strip()
     chat = str((payload or {}).get("chat_id") or "").strip()
     trigger = str((payload or {}).get("trigger") or "").strip()

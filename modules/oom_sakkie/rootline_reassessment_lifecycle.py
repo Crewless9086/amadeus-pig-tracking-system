@@ -19,7 +19,9 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     identity = "OOM-ROOTLINE-REASSESS-" + binding[:24].upper()
     delivered = state_store("load_delivered", f"{owner_user_id}|{chat_id}", None) or {}
     if delivered.get("material_digest") == material:
-        return _result("rootline_reassessment_unchanged", material, notify=False)
+        return {**_result("rootline_reassessment_unchanged", material, notify=False),
+                "next_due_at": _declared_next_due(current),
+                "evidence_cutoff": str(current.get("evidence_cutoff") or "")}
     packet = {"identity": identity, "owner_user_id": owner_user_id, "chat_id": chat_id,
               "trigger": trigger, "material_digest": material,
               "result_id": str(current.get("result_id") or ""),
@@ -39,6 +41,8 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
         return _contained("rootline_reassessment_delivery_ambiguous")
     status = "rootline_reassessment_changed" if recorded.get("created") is not False else "rootline_reassessment_delivery_pending"
     return {**_result(status, material, notify=True), "notification_identity": identity,
+            "next_due_at": _declared_next_due(current),
+            "evidence_cutoff": str(current.get("evidence_cutoff") or ""),
             "answer": packet["answer"]}
 
 
@@ -85,6 +89,11 @@ def _stable_reassessment(value):
     if trigger not in {"new_canonical_evidence", "new_canonical_evidence_or_next_read"} and "at" in value:
         stable["at"] = value.get("at")
     return stable
+
+
+def _declared_next_due(result):
+    value = result.get("next_reassessment") if isinstance(result, Mapping) else None
+    return str((value or {}).get("at") or "") if isinstance(value, Mapping) else ""
 
 
 def _contained(status):
