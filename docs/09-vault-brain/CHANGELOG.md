@@ -4,6 +4,7 @@
 - Extended the existing approved 15-minute n8n scheduler with a ROOTLINE-only call to Oom Sakkie's authenticated read-only reassessment endpoint; no new workflow family, Telegram path or command authority was added.
 - Added durable SAST due-bucket claims, bounded missed-run handling, canonical evidence-cutoff validation, invocation receipts, terminal outcomes, next-due gating, restart containment and exact replay suppression.
 - Kept unchanged results silent and preserved provider-ambiguous message 3240 without retry. Source readiness is not automatic-operation proof; deployment acceptance still requires a scheduler-originated live receipt.
+- Deployed merge `5cfed5eaca643c09674db24efcc1fb48fd1036f8` and extended the existing active scheduler in place. Automatic execution `62498` durably completed unchanged with zero Telegram sends/edits, commands and farm writes, and owns the next 09:15:45 SAST reassessment. Genuine material-change delivery remains pending real evidence.
 
 ## 2026-07-31 - Owner Attention Queue existing-rail adapter prepared
 
