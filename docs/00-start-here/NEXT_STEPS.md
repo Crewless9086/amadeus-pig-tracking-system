@@ -331,3 +331,9 @@ autonomous authority.
 - Owner access session guard: `97e63a0`.
 - Owner logout UX: `560a345`.
 
+# SAM inbox reconciliation timeout containment (2026-08-05)
+
+- Preserve deployed PR #728 provider identity at merge `587cf6b9e689ebb7a49c07cd87127c74de8f7572`.
+- Integrate the reviewed bounded provider-read correction from `fix/sam-bounded-inbox-reconciliation` only after independent commercial/CX and backend/security/privacy/authority approval.
+- After exact deployment, refresh authoritative chronology and summary evidence. Treat conversation 2101/inbound 777634477 as a fresh candidate only if it remains latest, unanswered, open-window, claim-free, ordinary Level 1 and free of protected decisions.
+- Never retry the contained HTTP 503 execution; it created no claim or provider attempt.

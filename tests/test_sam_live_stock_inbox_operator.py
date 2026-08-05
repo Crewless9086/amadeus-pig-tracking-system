@@ -1,8 +1,10 @@
 import unittest
 import threading
+import urllib.error
 from datetime import datetime, timezone
 
 from modules.sales.sam_live_stock_inbox_operator import (
+    SamInboxOperationFailure,
     operate_livestock_inbox,
 )
 
@@ -370,6 +372,89 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
                 inbound_processor=lambda payload: {},
             )
 
+    def test_provider_total_change_remains_systemic_when_transport_isolation_enabled(self):
+        first = [self.row(str(value)) for value in range(25)]
+        second = [self.row(str(25 + value)) for value in range(25)]
+        with self.assertRaisesRegex(
+            RuntimeError, "chatwoot_inventory_changed"
+        ):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: (
+                    self.page_with_total(first, 50)
+                    if page == 1
+                    else self.page_with_total(second, 51)
+                ),
+                history_loader=lambda cid, _env: ({}, 500),
+                claim_exists=lambda cid, mid: False,
+                inbound_processor=lambda payload: {},
+                isolate_provider_read_failures=True,
+            )
+
+    def test_http_auth_failure_is_systemic_not_partial_transport(self):
+        first = [self.row(str(value)) for value in range(25)]
+
+        def page_loader(page):
+            if page == 1:
+                return self.page_with_total(first, 50)
+            raise urllib.error.HTTPError(
+                "https://chatwoot.test/page/2", 401, "denied", {}, None
+            )
+
+        with self.assertRaises(urllib.error.HTTPError):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=page_loader,
+                history_loader=lambda cid, _env: ({}, 500),
+                claim_exists=lambda cid, mid: False,
+                inbound_processor=lambda payload: {},
+                isolate_provider_read_failures=True,
+            )
+
+    def test_nontransport_history_failure_is_systemic(self):
+        row = self.row("1")
+        row["last_non_activity_message"] = {
+            "id": 750001,
+            "created_at": 100,
+            "message_type": 0,
+            "private": False,
+        }
+        with self.assertRaisesRegex(ValueError, "malformed chronology"):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: self.page([row]),
+                history_loader=lambda cid, _env: (_ for _ in ()).throw(
+                    ValueError("malformed chronology")
+                ),
+                claim_exists=lambda cid, mid: False,
+                inbound_processor=lambda payload: {},
+                isolate_provider_read_failures=True,
+            )
+
+    def test_structured_history_auth_failure_is_systemic(self):
+        row = self.row("1")
+        row["last_non_activity_message"] = {
+            "id": 760001,
+            "created_at": 100,
+            "message_type": 0,
+            "private": False,
+        }
+        with self.assertRaisesRegex(
+            RuntimeError, "chatwoot_candidate_history_unavailable"
+        ):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: self.page([row]),
+                history_loader=lambda cid, _env: ({
+                    "success": False,
+                    "status": "chatwoot_history_http_401",
+                    "messages": [],
+                }, 503),
+                claim_exists=lambda cid, mid: False,
+                inbound_processor=lambda payload: {},
+                isolate_provider_read_failures=True,
+            )
+
     def test_later_replyable_pending_row_survives_noncandidate_first_page(self):
         first = []
         for value in range(25):
@@ -690,6 +775,270 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
                 ),
             )
         self.assertEqual(calls, ["1"])
+
+    def test_slow_inventory_page_isolated_before_claim_and_other_work_continues(self):
+        first = []
+        for value in range(25):
+            row = self.row(str(value), can_reply=value == 0)
+            row["last_non_activity_message"] = {
+                "id": 960000 + value,
+                "created_at": 100 + value,
+                "message_type": 0 if value == 0 else 1,
+                "private": False,
+            }
+            first.append(row)
+        calls = []
+        attention_states = []
+
+        def page_loader(page):
+            if page == 2:
+                raise TimeoutError("bounded provider read")
+            return self.page_with_total(first, 50)
+
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=page_loader,
+            history_loader=lambda cid, _env: (
+                self.history("960000", "I want weaned piglets"), 200
+            ),
+            claim_exists=lambda cid, mid: False,
+            claimed_inbound_loader=lambda identities: set(),
+            inbound_processor=lambda payload: (
+                calls.append(payload["id"])
+                or {
+                    "processed": True,
+                    "sent": True,
+                    "_operation_status_code": 200,
+                    "sam_decision": {
+                        "routine_reply_delivery": {
+                            "delivery_outcome": {
+                                "delivery_state": "provider_delivered"
+                            }
+                        }
+                    },
+                }
+            ),
+            isolate_provider_read_failures=True,
+            max_process_count=1,
+            attention_queue_operator=lambda rows, **kwargs: (
+                attention_states.append(kwargs["sam_state"])
+                or {"success": True}
+            ),
+        )
+        self.assertEqual(calls, ["960000"])
+        self.assertEqual(
+            packet["inventory_scope"],
+            "partial_provider_inventory_isolated",
+        )
+        self.assertEqual(packet["coverage_exception_count"], 1)
+        self.assertEqual(
+            packet["provider_read_failures"][0]["error_type"],
+            "TimeoutError",
+        )
+        self.assertEqual(
+            packet["owner_status_summary"]["lane_state"],
+            "degraded_partial_provider_coverage",
+        )
+        self.assertEqual(
+            packet["owner_status_summary"]["oldest_eligible_scope"],
+            "unknown_partial_provider_inventory",
+        )
+        self.assertEqual(
+            packet["owner_status_summary"]["oldest_eligible_unanswered_lead"],
+            "",
+        )
+        self.assertEqual(
+            attention_states[0]["state"],
+            "degraded_partial_provider_coverage",
+        )
+
+    def test_one_slow_history_isolated_without_stopping_unrelated_candidate(self):
+        rows = [self.row("1"), self.row("2")]
+        for index, row in enumerate(rows, start=1):
+            row["last_non_activity_message"] = {
+                "id": 970000 + index,
+                "created_at": 100 + index,
+                "message_type": 0,
+                "private": False,
+            }
+        calls = []
+
+        def history(cid, _env):
+            if cid == "1":
+                raise TimeoutError("bounded chronology read")
+            return self.history("970002", "I want weaned piglets"), 200
+
+        packet = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page(rows),
+            history_loader=history,
+            claim_exists=lambda cid, mid: False,
+            claimed_inbound_loader=lambda identities: set(),
+            inbound_processor=lambda payload: (
+                calls.append(str(payload["conversation"]["id"]))
+                or {
+                    "processed": True,
+                    "sent": True,
+                    "_operation_status_code": 200,
+                    "sam_decision": {
+                        "routine_reply_delivery": {
+                            "delivery_outcome": {
+                                "delivery_state": "provider_delivered"
+                            }
+                        }
+                    },
+                }
+            ),
+            isolate_provider_read_failures=True,
+            max_process_count=1,
+        )
+        self.assertEqual(calls, ["2"])
+        failed = next(
+            row for row in packet["dispositions"]
+            if row["conversation_id"] == "1"
+        )
+        self.assertEqual(
+            failed["disposition"], "provider_chronology_unavailable"
+        )
+        self.assertEqual(packet["coverage_exception_count"], 1)
+        self.assertEqual(
+            packet["owner_status_summary"]["customers_awaiting_sam"], 1
+        )
+        self.assertEqual(
+            packet["owner_status_summary"]["coverage_exceptions"],
+            [{"dependency": "chatwoot_conversation_history", "count": 1}],
+        )
+
+    def test_ambiguous_after_claim_is_durable_and_replay_never_sends(self):
+        row = self.row("1")
+        row["last_non_activity_message"] = {
+            "id": 980001,
+            "created_at": 100,
+            "message_type": 0,
+            "private": False,
+        }
+        claims = set()
+        calls = []
+
+        def run():
+            return operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: self.page([row]),
+                history_loader=lambda cid, _env: (
+                    self.history("980001", "I want weaned piglets"), 200
+                ),
+                claim_exists=lambda cid, mid: (cid, mid) in claims,
+                claimed_inbound_loader=lambda identities: claims,
+                inbound_processor=lambda payload: (
+                    calls.append(payload["id"])
+                    or claims.add(("1", "980001"))
+                    or {
+                        "processed": True,
+                        "sent": False,
+                        "_operation_status_code": 200,
+                        "sam_decision": {
+                            "reason": "routine_reply_delivery_ambiguous",
+                            "routine_reply_delivery": {
+                                "claim": {
+                                    "success": True,
+                                    "created": True,
+                                    "delivery_attempt_id": "ATTEMPT-980001",
+                                },
+                                "delivery_outcome": {
+                                    "delivery_state": "provider_outcome_ambiguous"
+                                },
+                                "automatic_retry_prohibited": True,
+                            },
+                        },
+                    }
+                ),
+                max_process_count=1,
+            )
+
+        first = run()
+        second = run()
+        self.assertEqual(calls, ["980001"])
+        self.assertEqual(
+            first["dispositions"][0]["provider_state"],
+            "provider_outcome_ambiguous",
+        )
+        self.assertEqual(
+            second["dispositions"][0]["disposition"], "already_claimed"
+        )
+
+    def test_timeout_before_claim_is_explicit_and_creates_no_claim(self):
+        row = self.row("1")
+        row["last_non_activity_message"] = {
+            "id": 990001,
+            "created_at": 100,
+            "message_type": 0,
+            "private": False,
+        }
+        claims = set()
+        with self.assertRaises(SamInboxOperationFailure) as raised:
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: self.page([row]),
+                history_loader=lambda cid, _env: (
+                    self.history("990001", "I want weaned piglets"), 200
+                ),
+                claim_exists=lambda cid, mid: (cid, mid) in claims,
+                claimed_inbound_loader=lambda identities: claims,
+                inbound_processor=lambda payload: (_ for _ in ()).throw(
+                    TimeoutError("planning deadline")
+                ),
+                max_process_count=1,
+            )
+        self.assertEqual(raised.exception.stage, "preclaim_response_processing")
+        self.assertEqual(raised.exception.effect_boundary, "not_crossed")
+        self.assertEqual(claims, set())
+
+    def test_timeout_after_claim_is_explicit_and_replay_is_withheld(self):
+        row = self.row("1")
+        row["last_non_activity_message"] = {
+            "id": 995001,
+            "created_at": 100,
+            "message_type": 0,
+            "private": False,
+        }
+        claims = set()
+        calls = []
+
+        def processor(payload):
+            calls.append(payload["id"])
+            claims.add(("1", "995001"))
+            raise TimeoutError("provider boundary indeterminate")
+
+        with self.assertRaises(SamInboxOperationFailure) as raised:
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda page: self.page([row]),
+                history_loader=lambda cid, _env: (
+                    self.history("995001", "I want weaned piglets"), 200
+                ),
+                claim_exists=lambda cid, mid: (cid, mid) in claims,
+                claimed_inbound_loader=lambda identities: claims,
+                inbound_processor=processor,
+                max_process_count=1,
+            )
+        self.assertEqual(raised.exception.stage, "post_claim_processing")
+        self.assertEqual(raised.exception.effect_boundary, "crossed")
+
+        replay = operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page([row]),
+            history_loader=lambda cid, _env: self.fail(
+                "claimed replay must not load chronology"
+            ),
+            claim_exists=lambda cid, mid: (cid, mid) in claims,
+            claimed_inbound_loader=lambda identities: claims,
+            inbound_processor=processor,
+            max_process_count=1,
+        )
+        self.assertEqual(calls, ["995001"])
+        self.assertEqual(
+            replay["dispositions"][0]["disposition"], "already_claimed"
+        )
 
 
 if __name__ == "__main__":

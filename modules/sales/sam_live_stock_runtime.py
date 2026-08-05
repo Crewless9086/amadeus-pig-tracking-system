@@ -2662,7 +2662,9 @@ def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
         method="GET",
     )
     try:
-        with urllib_request.urlopen(request, timeout=10) as response:
+        with urllib_request.urlopen(
+            request, timeout=_chatwoot_read_timeout(source)
+        ) as response:
             raw = response.read().decode("utf-8", errors="replace")
             parsed = json.loads(raw or "{}")
     except urllib_error.HTTPError as exc:
@@ -2708,7 +2710,9 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
         method="GET",
     )
     try:
-        with urllib_request.urlopen(request, timeout=10) as response:
+        with urllib_request.urlopen(
+            request, timeout=_chatwoot_read_timeout(source)
+        ) as response:
             raw = response.read().decode("utf-8", errors="replace")
             parsed = json.loads(raw or "{}")
     except urllib_error.HTTPError as exc:
@@ -2755,7 +2759,9 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
             method="GET",
         )
         try:
-            with urllib_request.urlopen(inbox_request, timeout=10) as response:
+            with urllib_request.urlopen(
+                inbox_request, timeout=_chatwoot_read_timeout(source)
+            ) as response:
                 inbox_payload = json.loads(
                     response.read().decode("utf-8", errors="replace") or "{}"
                 )
@@ -7481,6 +7487,17 @@ def _send_chatwoot_message(conversation_id, message, source, amadeus_source="sam
 
 def _configured_model(source):
     return str(source.get(AGENT_V3_MODEL_ENV) or source.get(LLM_MODEL_ENV) or DEFAULT_LLM_MODEL).strip()
+
+
+def _chatwoot_read_timeout(source):
+    source = source or {}
+    try:
+        configured = float(
+            source.get("SAM_CHATWOOT_READ_TIMEOUT_SECONDS", "5")
+        )
+    except (TypeError, ValueError):
+        configured = 5.0
+    return max(1.0, min(10.0, configured))
 
 
 def _timeout(source):

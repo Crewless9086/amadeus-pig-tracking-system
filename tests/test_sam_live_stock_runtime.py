@@ -1,7 +1,7 @@
 import json
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from modules.sales import sam_live_stock_runtime
@@ -80,12 +80,15 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
     def test_complete_eligible_projection_is_not_truncated_before_composition(self):
+        fresh_weight_date = (
+            datetime.now(timezone.utc).date() - timedelta(days=3)
+        ).isoformat()
         rows = [
             exact_eligible_row(
                 pig_id=f"PIG-{index:02d}",
                 sex="Female" if index % 2 else "Male",
                 current_weight_kg=2 + index,
-                latest_weight_date="2026-07-27",
+                latest_weight_date=fresh_weight_date,
                 days_since_weight=3,
             )
             for index in range(38)
@@ -139,7 +142,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             {row["pig_id"] for row in summary["eligible_projection"]},
             {f"PIG-{index:02d}" for index in range(38)},
         )
-        self.assertEqual(summary["latest_weight_date"], "2026-07-27")
+        self.assertEqual(summary["latest_weight_date"], fresh_weight_date)
         self.assertEqual(summary["oldest_weight_age_days"], 3)
         self.assertEqual(len(summary["withdrawal_unknown_exclusions"]), 12)
         self.assertTrue(
@@ -3367,6 +3370,23 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 "SAM_LIVE_STOCK_BACKEND_LLM_TIMEOUT_SECONDS": "30",
             }),
             15,
+        )
+
+    def test_chatwoot_read_timeout_is_proportionally_bounded(self):
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_read_timeout({}), 5.0
+        )
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_read_timeout({
+                "SAM_CHATWOOT_READ_TIMEOUT_SECONDS": "0.1"
+            }),
+            1.0,
+        )
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_read_timeout({
+                "SAM_CHATWOOT_READ_TIMEOUT_SECONDS": "30"
+            }),
+            10.0,
         )
 
     def test_availability_summary_filters_unsafe_and_matches_category_sex(self):
