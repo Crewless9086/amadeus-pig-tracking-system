@@ -8,8 +8,9 @@
 - Canonical read-only loader: `modules/pig_weights/herdmaster_mortality_evidence.py`.
 - Existing-boundary adapter and durable consumption: `modules/oom_sakkie/herdmaster_mortality_adapter.py`, `modules/oom_sakkie/herdmaster_mortality_runtime.py`.
 - Consolidation/delivery owner: existing `modules/oom_sakkie/farm_manager_runtime.py` and family-message lifecycle; HERDMASTER has no direct Telegram route.
-- Tests: `tests/test_herdmaster_mortality_intelligence.py`, `tests/test_oom_sakkie_herdmaster_mortality_adapter.py`, `tests/test_oom_sakkie_herdmaster_mortality_runtime.py`.
+- Tests: `tests/test_herdmaster_mortality_intelligence.py`, `tests/test_herdmaster_mortality_evidence.py`, `tests/test_oom_sakkie_herdmaster_mortality_adapter.py`, `tests/test_oom_sakkie_herdmaster_mortality_runtime.py`, and focused manager-runtime coverage.
 - Authority: read-only assessment only; no diagnosis, treatment, medication, mortality/lifecycle/farm write or protected authority.
+- Live lineage: PRs #723/#724, merge `c1913270a0ae16f2cfb971ecc9c6b5db0bacfdcc`, deployment `dep-d9pkn9p5efls73a501tg`. Authenticated read-only consumption is proven; provider-confirmed owner presentation awaits the next genuine manager request.
 
 - Existing authenticated ingress and Telegram delivery:
   `modules/oom_sakkie/telegram_direct.py`.

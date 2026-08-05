@@ -4,7 +4,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## OOM-SAKKIE-HERDMASTER-MORTALITY-1
 
-Integrate the rebased PR #702 successor through Oom Sakkie's existing authenticated farm-manager boundary. Prove one current canonical, bilingual-capable mortality assessment is provider-confirmed once; exact replay must create zero messages, work items and farm writes. Keep Pig 127 in its existing governed lifecycle, suppress unchanged intelligence, and refresh stable lifecycle `HERDMASTER-MORTALITY-CURRENT` only for material evidence. ROOTLINE's eWeLink Developer profile remains externally pending and grants no polling or hardware authority.
+Preserve live PRs #723/#724 and the single current mortality consumption. On the next genuine authenticated farm-manager request, prove one concise bilingual-capable mortality assessment is provider-confirmed once; exact inbound replay must create zero messages, work items and farm writes. Keep Pig 127 in its existing governed lifecycle, suppress completed Pig 125 and unchanged standalone intelligence, and refresh stable lifecycle `HERDMASTER-MORTALITY-CURRENT` only for material evidence. ROOTLINE's eWeLink Developer profile remains externally pending and grants no polling or hardware authority.
 
 ## OOM-SAKKIE-OWNER-REQUEST-LIFECYCLE-1
 
