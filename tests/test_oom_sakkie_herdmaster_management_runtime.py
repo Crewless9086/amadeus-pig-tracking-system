@@ -2,8 +2,42 @@ from datetime import datetime, timezone
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_management_runtime import (consume_current_herdmaster_management,
-    _consumption_claim_identity, _retained_owner_reported_death)
+    _consumption_claim_identity, _retain_active_mortality_context, _retained_owner_reported_death)
 from tests.test_oom_sakkie_herdmaster_management_adapter import canonical, observations, active, NOW, OWNER
+
+
+def test_later_projection_retains_proven_mortality_and_drops_obsolete_question():
+    previous={"pig_id":"PIG-127","lifecycle_id":"CASE-127","reported_dead":True,"current_question":""}
+    later={"pig_id":"PIG-127","lifecycle_id":"CASE-127","reported_dead":False,
+           "current_question":"Is Pig 127 breathing now?"}
+    retained=_retain_active_mortality_context(previous,later)
+    assert retained["reported_dead"] is True and retained["current_question"]==""
+
+
+def test_nonmortality_lifecycle_projection_is_not_reinterpreted():
+    later={"pig_id":"PIG-11","reported_dead":False,
+           "current_question":"Is Pig 11 eating?"}
+    assert _retain_active_mortality_context(None,later)==later
+
+
+def test_different_lifecycle_for_same_entity_does_not_inherit_old_mortality():
+    previous={"pig_id":"PIG-1","lifecycle_id":"OLD","reported_dead":True}
+    current={"pig_id":"PIG-1","lifecycle_id":"NEW","reported_dead":False,
+             "current_question":"What changed?"}
+    assert _retain_active_mortality_context(previous,current)==current
+
+
+def test_missing_lifecycle_identity_fails_closed_on_retention():
+    previous={"pig_id":"PIG-1","reported_dead":True}
+    current={"pig_id":"PIG-1","reported_dead":False,"current_question":"What changed?"}
+    assert _retain_active_mortality_context(previous,current)==current
+
+
+def test_different_entity_does_not_inherit_old_mortality():
+    previous={"pig_id":"PIG-1","lifecycle_id":"CASE-1","reported_dead":True}
+    current={"pig_id":"PIG-2","lifecycle_id":"CASE-2","reported_dead":False,
+             "current_question":"Is Pig 2 eating?"}
+    assert _retain_active_mortality_context(previous,current)==current
 
 def test_authenticated_runtime_consumes_and_records_existing_store_binding_once():
     recorded=[]

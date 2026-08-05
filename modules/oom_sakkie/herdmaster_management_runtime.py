@@ -105,20 +105,34 @@ def _load_active_lifecycles(owner_user_id):
         pig_id = str(identity.get("pig_id") or "")
         if not pig_id:
             continue
+        lifecycle_id = str(row.get("mission_id") or "")
         if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
                                   "preview_correction_pending"} and card_message_id:
             observations = (((row.get("preview") or {}).get("evaluator") or {}).get("observations") or [])
             reported_dead = _retained_owner_reported_death(row, observations, owner_user_id)
-            active[pig_id] = {"pig_id": pig_id, "lifecycle_id": str(row.get("mission_id") or ""),
+            projected = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
                 "state": str(row.get("status")), "card_message_id": card_message_id,
                 "tag_number": str(identity.get("tag_number") or identity.get("name") or pig_id),
                 "provider_timestamp": str(row.get("provider_timestamp") or ""),
                 "current_question": str((((row.get("preview") or {}).get("evaluator") or {}).get(
                     "smallest_missing_follow_up_question") or "")),
                 "owner_text": str(row.get("owner_text") or ""), "reported_dead": reported_dead}
+            active[pig_id] = _retain_active_mortality_context(active.get(pig_id), projected)
         else:
+            # Chronology is ordered. A later terminal lifecycle for an animal
+            # supersedes stale earlier active projections for that animal.
             active.pop(pig_id, None)
     return list(active.values())
+
+
+def _retain_active_mortality_context(previous, current):
+    """A later lifecycle projection cannot erase earlier proven death context."""
+    previous_id=str(previous.get("lifecycle_id") or "") if isinstance(previous,dict) else ""
+    current_id=str(current.get("lifecycle_id") or "")
+    if (not previous_id or not current_id or previous_id != current_id
+            or previous.get("reported_dead") is not True):
+        return current
+    return {**current, "reported_dead": True, "current_question": ""}
 
 
 def _retained_owner_reported_death(row, observations, owner_user_id):
