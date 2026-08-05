@@ -1,8 +1,13 @@
 from datetime import datetime, timezone
+import json
+from unittest.mock import patch
+from urllib.error import HTTPError
+from urllib.error import URLError
 
 import pytest
 
 from modules.sales.sam_live_stock_runtime import (
+    load_chatwoot_conversation_identity,
     parse_chatwoot_inbound,
     resolve_sam_general_inbound_identity,
 )
@@ -11,6 +16,25 @@ from modules.sales.sam_sales_autonomy import bind_authoritative_conversation_evi
 
 
 NOW = datetime(2026, 8, 5, 8, 0, tzinfo=timezone.utc)
+
+
+class Response:
+    def __init__(self, payload):
+        self.body = json.dumps(payload).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return self.body
+
+
+class RawResponse(Response):
+    def __init__(self, body):
+        self.body = body
 
 
 def payload(conversation_id="2101", message_id="777634477", **overrides):
@@ -23,6 +47,7 @@ def payload(conversation_id="2101", message_id="777634477", **overrides):
         "account": {"id": "147387"},
         "conversation": {
             "id": conversation_id,
+            "account_id": 147387,
             "account_id": "147387",
             "inbox": {"id": "96568", "channel_type": "Channel::Whatsapp"},
         },
@@ -89,6 +114,232 @@ def test_missing_webhook_provider_recovers_only_from_exact_authoritative_record(
     result = bind_authoritative_conversation_evidence(inbound, chronology(), now=NOW)
     assert inbound["identity_provenance"]["provider_identity_class"] == "genuine_whatsapp"
     assert result["chronology_current"] is True
+
+
+@pytest.mark.parametrize(
+    "conversation_id,inbox_id",
+    [("2101", "96568"), ("2202", "97569")],
+)
+def test_authoritative_conversation_recovers_provider_from_exact_inbox_endpoint(
+    conversation_id, inbox_id,
+):
+    responses = iter([
+        Response({
+            "id": conversation_id,
+            "account_id": 147387,
+            "inbox_id": inbox_id,
+            "can_reply": True,
+            "meta": {"sender": {"id": 699428938}},
+            "last_non_activity_message": {"id": 777634477, "message_type": 0},
+        }),
+        Response({
+            "id": inbox_id,
+            "channel_type": "Channel::Whatsapp",
+            "provider": "whatsapp_cloud",
+        }),
+    ])
+    with patch(
+        "modules.sales.sam_live_stock_runtime.urllib_request.urlopen",
+        side_effect=lambda *_args, **_kwargs: next(responses),
+    ):
+        result = load_chatwoot_conversation_identity(
+            conversation_id,
+            {
+                "CHATWOOT_BASE_URL": "https://chatwoot.example",
+                "CHATWOOT_ACCOUNT_ID": "147387",
+                "CHATWOOT_API_ACCESS_TOKEN": "secret",
+            },
+        )
+    assert result["provider_identity_class"] == "genuine_whatsapp"
+    assert result["provider_identity_status"] == "chatwoot_inbox_provider_identity_loaded"
+    assert result["inbox_id"] == inbox_id
+
+
+def test_authoritative_inbox_identity_conflict_fails_provider_closed():
+    responses = iter([
+        Response({
+            "id": 2101,
+            "account_id": 147387,
+            "inbox_id": 96568,
+            "meta": {"sender": {"id": 699428938}},
+        }),
+        Response({"id": 99999, "channel_type": "Channel::Whatsapp"}),
+    ])
+    with patch(
+        "modules.sales.sam_live_stock_runtime.urllib_request.urlopen",
+        side_effect=lambda *_args, **_kwargs: next(responses),
+    ):
+        result = load_chatwoot_conversation_identity(
+            "2101",
+            {
+                "CHATWOOT_BASE_URL": "https://chatwoot.example",
+                "CHATWOOT_ACCOUNT_ID": "147387",
+                "CHATWOOT_API_ACCESS_TOKEN": "secret",
+            },
+        )
+    assert result["provider_identity_class"] == ""
+    assert result["provider_identity_status"] == "chatwoot_inbox_identity_conflict"
+
+
+@pytest.mark.parametrize(
+    "inbox_payload,status",
+    [
+        ({"channel_type": "Channel::Whatsapp", "provider": "whatsapp_cloud"},
+         "chatwoot_inbox_identity_unavailable"),
+        ({"id": 96568, "channel_type": "Channel::Whatsapp"},
+         "chatwoot_inbox_provider_identity_unavailable"),
+        ({"id": 96568, "provider": "whatsapp_cloud"},
+         "chatwoot_inbox_provider_identity_unavailable"),
+        ({"id": 96568, "channel_type": "Channel::FacebookPage", "provider": "facebook"},
+         "chatwoot_inbox_provider_identity_conflict"),
+        ({"id": 96568, "channel_type": "Channel::Whatsapp", "provider": "other"},
+         "chatwoot_inbox_provider_identity_conflict"),
+    ],
+)
+def test_inbox_record_requires_exact_identity_channel_and_cloud_provider(
+    inbox_payload, status,
+):
+    responses = iter([
+        Response({"id": 2101, "account_id": 147387, "inbox_id": 96568, "meta": {"sender": {"id": 699428938}}}),
+        Response(inbox_payload),
+    ])
+    with patch(
+        "modules.sales.sam_live_stock_runtime.urllib_request.urlopen",
+        side_effect=lambda *_args, **_kwargs: next(responses),
+    ):
+        result = load_chatwoot_conversation_identity(
+            "2101",
+            {
+                "CHATWOOT_BASE_URL": "https://chatwoot.example",
+                "CHATWOOT_ACCOUNT_ID": "147387",
+                "CHATWOOT_API_ACCESS_TOKEN": "secret",
+            },
+        )
+    assert result["provider_identity_class"] != "genuine_whatsapp"
+    assert result["provider_identity_status"] == status
+
+
+def test_missing_inbox_record_fails_provider_closed():
+    responses = iter([
+        Response({"id": 2101, "account_id": 147387, "inbox_id": 96568, "meta": {"sender": {"id": 699428938}}}),
+        HTTPError("https://chatwoot.example/inboxes/96568", 404, "missing", {}, None),
+    ])
+
+    def urlopen(*_args, **_kwargs):
+        value = next(responses)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    with patch(
+        "modules.sales.sam_live_stock_runtime.urllib_request.urlopen",
+        side_effect=urlopen,
+    ):
+        result = load_chatwoot_conversation_identity(
+            "2101",
+            {
+                "CHATWOOT_BASE_URL": "https://chatwoot.example",
+                "CHATWOOT_ACCOUNT_ID": "147387",
+                "CHATWOOT_API_ACCESS_TOKEN": "secret",
+            },
+        )
+    assert result["provider_identity_class"] == ""
+    assert result["provider_identity_status"] == "chatwoot_inbox_identity_http_404"
+
+
+def test_conversation_provider_class_avoids_inbox_lookup():
+    with patch(
+        "modules.sales.sam_live_stock_runtime.urllib_request.urlopen",
+        return_value=Response({
+            "id": 2101,
+            "account_id": 147387,
+            "inbox_id": 96568,
+            "channel_type": "Channel::Whatsapp",
+            "meta": {"sender": {"id": 699428938}},
+        }),
+    ) as urlopen:
+        result = load_chatwoot_conversation_identity(
+            "2101",
+            {
+                "CHATWOOT_BASE_URL": "https://chatwoot.example",
+                "CHATWOOT_ACCOUNT_ID": "147387",
+                "CHATWOOT_API_ACCESS_TOKEN": "secret",
+            },
+        )
+    assert urlopen.call_count == 1
+    assert result["provider_identity_class"] == "genuine_whatsapp"
+    assert result["provider_identity_status"] == "conversation_provider_identity_loaded"
+
+
+@pytest.mark.parametrize(
+    "failure,status",
+    [
+        (RawResponse(b"{malformed"), "chatwoot_inbox_identity_read_failed"),
+        (URLError("unavailable"), "chatwoot_inbox_identity_read_failed"),
+    ],
+)
+def test_malformed_or_unavailable_inbox_record_fails_downstream_closed(failure, status):
+    values = iter([
+        Response({
+            "id": 2101, "account_id": 147387, "inbox_id": 96568,
+            "meta": {"sender": {"id": 699428938}},
+        }),
+        failure,
+    ])
+
+    def urlopen(*_args, **_kwargs):
+        value = next(values)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    with patch(
+        "modules.sales.sam_live_stock_runtime.urllib_request.urlopen",
+        side_effect=urlopen,
+    ):
+        identity = load_chatwoot_conversation_identity(
+            "2101",
+            {
+                "CHATWOOT_BASE_URL": "https://chatwoot.example",
+                "CHATWOOT_ACCOUNT_ID": "147387",
+                "CHATWOOT_API_ACCESS_TOKEN": "secret",
+            },
+        )
+    assert identity["provider_identity_class"] == ""
+    assert identity["provider_identity_status"] == status
+    inbound = resolved(payload())
+    inbound["channel"] = "chatwoot"
+    inbound["identity_provenance"]["provider_identity_class"] = identity["provider_identity_class"]
+    bound = bind_authoritative_conversation_evidence(inbound, chronology(), now=NOW)
+    assert bound["chronology_current"] is False
+
+
+@pytest.mark.parametrize("account_value", ["OTHER", None])
+def test_conversation_account_must_match_authenticated_account(account_value):
+    conversation = {
+        "id": 2101,
+        "inbox_id": 96568,
+        "meta": {"sender": {"id": 699428938}},
+    }
+    if account_value is not None:
+        conversation["account_id"] = account_value
+    with patch(
+        "modules.sales.sam_live_stock_runtime.urllib_request.urlopen",
+        return_value=Response(conversation),
+    ) as urlopen:
+        result = load_chatwoot_conversation_identity(
+            "2101",
+            {
+                "CHATWOOT_BASE_URL": "https://chatwoot.example",
+                "CHATWOOT_ACCOUNT_ID": "147387",
+                "CHATWOOT_API_ACCESS_TOKEN": "secret",
+            },
+        )
+    assert urlopen.call_count == 1
+    assert result["provider_identity_class"] == ""
+    assert result["account_identity_status"] in {
+        "account_identity_conflict", "account_identity_unavailable",
+    }
 
 
 @pytest.mark.parametrize(

@@ -2728,16 +2728,82 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
         )
         else {}
     )
+    conversation_account_id = _clean(conversation.get("account_id"), 100)
+    account_identity_status = (
+        "account_identity_exact"
+        if conversation_account_id == account_id
+        else "account_identity_conflict"
+        if conversation_account_id
+        else "account_identity_unavailable"
+    )
+    inbox_id = _clean(conversation.get("inbox_id") or inbox.get("id"), 100)
+    provider_identity_class = _normal_provider_identity(
+        conversation.get("channel_type") or inbox.get("channel_type")
+    )
+    provider_identity_status = (
+        "conversation_provider_identity_loaded"
+        if provider_identity_class
+        else "conversation_provider_identity_unavailable"
+    )
+    if account_identity_status != "account_identity_exact":
+        provider_identity_class = ""
+        provider_identity_status = account_identity_status
+    elif inbox_id and not provider_identity_class:
+        inbox_request = urllib_request.Request(
+            f"{base_url}/api/v1/accounts/{account_id}/inboxes/{inbox_id}",
+            headers={"api_access_token": token, "Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            with urllib_request.urlopen(inbox_request, timeout=10) as response:
+                inbox_payload = json.loads(
+                    response.read().decode("utf-8", errors="replace") or "{}"
+                )
+            inbox_payload = (
+                inbox_payload.get("payload")
+                if isinstance(inbox_payload, dict)
+                and isinstance(inbox_payload.get("payload"), dict)
+                else inbox_payload
+            )
+            inbox_payload = inbox_payload if isinstance(inbox_payload, dict) else {}
+            loaded_inbox_id = _clean(inbox_payload.get("id"), 100)
+            if not loaded_inbox_id:
+                provider_identity_status = "chatwoot_inbox_identity_unavailable"
+            elif loaded_inbox_id != inbox_id:
+                provider_identity_status = "chatwoot_inbox_identity_conflict"
+            else:
+                channel_class = _normal_provider_identity(
+                    inbox_payload.get("channel_type")
+                )
+                provider_name = _clean(inbox_payload.get("provider"), 100).lower()
+                if channel_class == "genuine_whatsapp" and provider_name == "whatsapp_cloud":
+                    provider_identity_class = "genuine_whatsapp"
+                    provider_identity_status = "chatwoot_inbox_provider_identity_loaded"
+                elif not channel_class or not provider_name:
+                    provider_identity_status = "chatwoot_inbox_provider_identity_unavailable"
+                else:
+                    provider_identity_class = "conflicting"
+                    provider_identity_status = "chatwoot_inbox_provider_identity_conflict"
+        except urllib_error.HTTPError as exc:
+            provider_identity_status = f"chatwoot_inbox_identity_http_{exc.code}"
+        except (
+            urllib_error.URLError,
+            TimeoutError,
+            OSError,
+            ValueError,
+            json.JSONDecodeError,
+        ):
+            provider_identity_status = "chatwoot_inbox_identity_read_failed"
     return {
         "success": True,
         "status": "chatwoot_conversation_identity_loaded",
         "account_id": account_id,
+        "account_identity_status": account_identity_status,
         "conversation_id": _clean(conversation.get("id") or conversation_id, 100),
         "contact_id": _clean(sender.get("id") or contact.get("id"), 100),
-        "inbox_id": _clean(conversation.get("inbox_id") or inbox.get("id"), 100),
-        "provider_identity_class": _normal_provider_identity(
-            conversation.get("channel_type") or inbox.get("channel_type")
-        ),
+        "inbox_id": inbox_id,
+        "provider_identity_class": provider_identity_class,
+        "provider_identity_status": provider_identity_status,
         "can_reply": conversation.get("can_reply") is True,
         "latest_message_id": _clean(latest.get("id"), 100),
         "latest_message_type": latest.get("message_type"),
