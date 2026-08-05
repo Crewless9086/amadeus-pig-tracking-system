@@ -1,4 +1,22 @@
 # Vault Brain Changelog
+## 2026-08-05 - SAM typed manager summary integrated
+
+- Integrated PR #691 at reviewed head `bcd3b9cfa34a1278db18eb7e0f7c69b4612e2321`
+  and deployed exact merge `34464e89bf2d3a3ebbda12779cb2672461a2ca2b` as
+  `dep-d9pl1p8ae00c738m2n8g`; exact-head and exact-merge CI passed and health
+  returned HTTP 200.
+- Added the typed, content-free `sam_manager_summary_v1` aggregate for leads,
+  answers, waiting work, protected decisions, quarantines and coverage
+  exceptions without adding a router, queue, Telegram path or customer
+  authority.
+- Proved read-only consumption through Oom Sakkie's existing supported-answer
+  boundary. Exact replay retained digest
+  `FC74B4C78F9B7734562C1ED58D234E1E8478766FC29302238A689C3475A86217`
+  and created zero summaries, messages, claims and writes.
+- The proof truthfully exposed one current customer awaiting SAM because
+  WhatsApp provider identity is unavailable. No claim, send or retry was
+  attempted; protected decisions and quarantines remain zero.
+
 ## 2026-08-05 - HERDMASTER mortality intelligence integrated
 
 - Integrated PRs #723/#724 and deployed exact merge `c1913270a0ae16f2cfb971ecc9c6b5db0bacfdcc` as `dep-d9pkn9p5efls73a501tg`.
