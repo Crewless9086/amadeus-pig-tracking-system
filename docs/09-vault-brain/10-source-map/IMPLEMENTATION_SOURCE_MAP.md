@@ -1,5 +1,21 @@
 # Implementation Source Map
 
+## CHARLIE CORE development coordination
+
+- Adaptive development scoring and minimum-team selection:
+  `modules/charlie/adaptive_orchestration.py`.
+- Source-only release, acknowledgement, start, containment and completion
+  contract: `modules/charlie/development_coordination.py`.
+- Operator handover and S02-S07 reconciliation:
+  `docs/06-operations/CHARLIE_CORE_ADAPTIVE_MINIMAL_DISPATCH_HANDOVER.md`.
+- Controlled integration order, unsigned one-worker T1 proposal and post-P0
+  successor reconciliation:
+  `docs/06-operations/CHARLIE_CORE_CONTROLLED_T1_INTEGRATION_HANDOVER.md` and
+  `docs/06-operations/contracts/CORE_T1_POST_P0_HANDOVER_CORRECTION_PROPOSAL.json`.
+- These contracts reuse the existing mission store, mission-event ledger,
+  execution bridge heartbeat and final-artifact ingestion. They do not create
+  a second queue or grant runtime/production authority.
+
 ## Oom Sakkie owner-request lifecycle
 
 - Existing authenticated ingress and Telegram delivery:
@@ -119,6 +135,18 @@ For income, SAM, Beacon, order, WhatsApp, Chatwoot, n8n, or live-sales missions,
 ### CHARLIE CORE Adaptive Mission Orchestration
 
 Current implementation and review surface:
+
+- atomic many-to-one fresh-start replacement candidate:
+  `modules/charlie/mission_replacement.py`,
+  `supabase/migrations/202608020001_create_charlie_many_to_one_replacements.sql`,
+  `scripts/charlie_many_to_one_replacement.py`,
+  `tests/test_charlie_mission_replacement.py`,
+  `tests/test_charlie_mission_replacement_postgres.py`, and
+  `docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md`;
+- replacement rule: migration-first, exact owner authorization and one
+  serializable transaction create only a paused successor plus immutable
+  predecessor bindings. Replacement never grants approval, pickup, release or
+  operational authority;
 
 - operating contract:
   `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`;

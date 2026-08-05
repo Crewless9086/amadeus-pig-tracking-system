@@ -1,0 +1,61 @@
+{
+  "authorization": null,
+  "expected_completion_artifact": {
+    "artifact_evidence": [
+      "docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md@<exact-integrated-commit>"
+    ],
+    "business_outcome": "Charl sees that accepted P0 prohibits S01 creation while the reusable replacement rail remains available for separately authorized successors.",
+    "next_dependency": null
+  },
+  "mission": {
+    "acceptance_criteria": [
+      "The S01 procedure is replaced by an explicit historical-only prohibition after accepted P0.",
+      "The handover retains the replacement rail procedure for future successors without naming S01 as actionable.",
+      "Only docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md changes."
+    ],
+    "acknowledgement_timeout_seconds": 300,
+    "agentic_architecture_packet": {
+      "coordinating_agent": "CHARLIE",
+      "deterministic_code_scope": "One bounded documentation correction and exact artifact verification.",
+      "governed_actions": [],
+      "ordinary_farm_routing": false,
+      "owning_agent": "CORE",
+      "reasoning_boundary": "No business-domain reasoning or operational decision is delegated by this mission.",
+      "supporting_agents": [],
+      "version": "agentic_architecture_packet_v1"
+    },
+    "business_impact_score": 1,
+    "expected_files": [
+      "docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md"
+    ],
+    "mission_id": "CHARLIE-CORE-T1-POST-P0-HANDOVER-CORRECTION",
+    "mission_type": "documentation",
+    "raw_text": "Correct the stale S01 section in docs/06-operations/CHARLIE_CORE_MANY_TO_ONE_REPLACEMENT_HANDOVER.md. Record that accepted P0 means S01 is not created. This is one small reversible documentation correction.",
+    "stop_condition": "Stop after the one-file documentation diff and exact completion artifact; perform no queue or runtime action.",
+    "title": "Remove obsolete S01 activation instructions after accepted P0",
+    "urgency": "P3"
+  },
+  "planning_proof": {
+    "agents": [
+      "builder"
+    ],
+    "factors": {
+      "business_impact": 1,
+      "evidence_uncertainty": 0,
+      "operational_risk": 1,
+      "required_authority": 0,
+      "scope_breadth": 1,
+      "urgency": 1
+    },
+    "orchestration_generation": "24e2d0dffd3fe4f070509771",
+    "plan_id": "CORE-PLAN-04AC76227E96776EA33D4C0C",
+    "release_is_pickup": false,
+    "score_maximum": 72,
+    "score_total": 12,
+    "state": "proposed",
+    "tier": "T1"
+  },
+  "released": false,
+  "signature": null,
+  "version": "charlie_core_t1_unsigned_proposal_v1"
+}

@@ -1092,8 +1092,14 @@ def recover_pending_final_agent_artifact(mission_id="", database_url=None, conne
     artifact = bind_artifact_to_candidate(
         artifact, agent, execution_id, attempt, candidate_manifest, previous_artifact=artifacts.get(agent),
     )
+    persisted_sequence = [
+        str(item.get("agent") or "").strip().lower()
+        for item in workflow
+        if isinstance(item, dict) and str(item.get("agent") or "").strip().lower() in all_agent_names()
+    ]
+    recovery_sequence = persisted_sequence if agent in persisted_sequence else _mission_agent_sequence(mission)
     artifact = _prepare_durable_artifact_contract(
-        mission, artifact, agent, execution_id, attempt, artifacts, _mission_agent_sequence(mission),
+        mission, artifact, agent, execution_id, attempt, artifacts, recovery_sequence,
     )
     result, status_code = consume_final_agent_artifact(
         mission_id, agent, execution_id, attempt, artifact,

@@ -139,6 +139,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202607270002_create_rootline_operating_policies.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606300001_create_charlie_mission_queue.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607270003_create_charlie_owner_execution_holds.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608020001_create_charlie_many_to_one_replacements.sql
 
       - name: Run Beacon weekly owner-decision permission gates
         env:
@@ -157,6 +158,9 @@ jobs:
 
       - name: Run CHARLIE adaptive orchestration durable canary tests
         run: python -m unittest tests.test_charlie_adaptive_orchestration_postgres tests.test_charlie_owner_execution_hold_postgres
+
+      - name: Run CHARLIE atomic many-to-one replacement gates
+        run: python -m unittest tests.test_charlie_mission_replacement_postgres
 
       - name: Run pig observation privilege gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_observation_event_postgres tests.test_herdmaster_breeding_observation_postgres
