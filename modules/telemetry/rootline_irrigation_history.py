@@ -144,11 +144,18 @@ def _trusted_typed_row(row):
 def _event_digest(row):
     details = row.get("details") if isinstance(row.get("details"), dict) else {}
     return _digest({"irrigation_event_id": row.get("irrigation_event_id"),
-        "event_at": _timestamp(row.get("event_at")).isoformat() if _timestamp(row.get("event_at")) else None,
+        # PostgreSQL normalizes timestamptz values to the connection timezone.
+        # Bind the instant, not the caller/connection's equivalent offset string.
+        "event_at": _digest_timestamp(row.get("event_at")),
         "event_type": row.get("event_type"), "zone_id": row.get("zone_id"),
         "planned_minutes": _number(row.get("planned_minutes")),
         "actual_minutes": _number(row.get("actual_minutes")),
         "details": {key:details.get(key) for key in sorted(details) if key!="event_sha256"}})
+
+
+def _digest_timestamp(value):
+    parsed = _timestamp(value)
+    return parsed.astimezone(timezone.utc).isoformat() if parsed else None
 
 
 def _legacy_class(row):
