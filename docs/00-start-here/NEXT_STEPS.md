@@ -2,6 +2,20 @@
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
 
+## SAM-LIVESTOCK-MANAGER-SUMMARY-1
+
+The typed `sam_manager_summary_v1` adapter is merged and deployed through PR
+#691. Oom Sakkie's existing read-only specialist answer boundary consumed one
+compact current summary with no customer content or individual-message noise;
+exact replay produced the same digest with zero summaries, messages, claims or
+writes. Current sales truth is one Livestock customer awaiting SAM because the
+conversation-specific WhatsApp provider identity is unavailable, with zero
+answers today, protected decisions and quarantines. Do not replay or manually
+claim that inbound. The next SAM source mission should correct the reusable
+provider-identity coverage boundary only if fresh chronology still proves the
+customer is waiting; otherwise retire it as handled evidence. Keep Level 1 and
+all existing narrow controls unchanged.
+
 ## OOM-SAKKIE-HERDMASTER-MORTALITY-1
 
 Preserve live PRs #723/#724 and the single current mortality consumption. On the next genuine authenticated farm-manager request, prove one concise bilingual-capable mortality assessment is provider-confirmed once; exact inbound replay must create zero messages, work items and farm writes. Keep Pig 127 in its existing governed lifecycle, suppress completed Pig 125 and unchanged standalone intelligence, and refresh stable lifecycle `HERDMASTER-MORTALITY-CURRENT` only for material evidence. ROOTLINE's eWeLink Developer profile remains externally pending and grants no polling or hardware authority.
