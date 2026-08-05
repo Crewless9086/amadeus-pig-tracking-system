@@ -97,6 +97,37 @@
           "name": "Telegram - Oom Sakkie"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst sast = new Date(now.getTime() + (2 * 60 * 60 * 1000));\nconst minute = sast.getUTCMinutes() - (sast.getUTCMinutes() % 15);\nsast.setUTCMinutes(minute, 0, 0);\nconst dueAt = sast.toISOString().replace('Z', '+02:00');\nconst cutoff = new Date(now.getTime() - 1000).toISOString();\nconst bucket = dueAt.replace(/[-:.+]/g, '').replace('T', '-').slice(0, 15);\nreturn [{json:{request_body:{scheduler_identity:'ALERT-POWER-BACKEND-DELIVERY:OOM-SAKKIE-REASSESSMENT',specialist:'ROOTLINE',owner_user_id:'5721652188',chat_id:'5721652188',trigger:'scheduled_due_reassessment',trigger_id:`ROOTLINE-${bucket}`,trigger_timestamp:now.toISOString(),due_at:dueAt,evidence_cutoff:cutoff,language:'en'}}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-300, 260],
+      "id": "a1289810-3bfe-4b17-914e-25fb5c197916",
+      "name": "Code - Build Oom Sakkie Reassessment"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://amadeus-pig-tracking-system.onrender.com/api/oom-sakkie/management/rootline/reassess",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [
+          {"name": "X-Oom-Sakkie-Telegram-Token", "value": "CONFIGURE_EXISTING_OOM_SAKKIE_GATEWAY_CREDENTIAL"},
+          {"name": "Content-Type", "value": "application/json"}
+        ]},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request_body) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-80, 260],
+      "id": "657c9b58-7133-42f7-8ee9-3133592085bb",
+      "name": "HTTP - Run Oom Sakkie Reassessment",
+      "continueOnFail": true
     }
   ],
   "pinData": {},
@@ -106,6 +137,11 @@
         [
           {
             "node": "Code - Build Evaluate Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code - Build Oom Sakkie Reassessment",
             "type": "main",
             "index": 0
           }
@@ -122,6 +158,9 @@
           }
         ]
       ]
+    },
+    "Code - Build Oom Sakkie Reassessment": {
+      "main": [[{"node": "HTTP - Run Oom Sakkie Reassessment", "type": "main", "index": 0}]]
     },
     "HTTP - Evaluate Power Alerts": {
       "main": [

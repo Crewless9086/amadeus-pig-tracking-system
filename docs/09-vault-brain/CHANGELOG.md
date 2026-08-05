@@ -1,4 +1,10 @@
 # Vault Brain Changelog
+## 2026-08-05 - Oom Sakkie automatic reassessment scheduler prepared
+
+- Extended the existing approved 15-minute n8n scheduler with a ROOTLINE-only call to Oom Sakkie's authenticated read-only reassessment endpoint; no new workflow family, Telegram path or command authority was added.
+- Added durable SAST due-bucket claims, bounded missed-run handling, canonical evidence-cutoff validation, invocation receipts, terminal outcomes, next-due gating, restart containment and exact replay suppression.
+- Kept unchanged results silent and preserved provider-ambiguous message 3240 without retry. Source readiness is not automatic-operation proof; deployment acceptance still requires a scheduler-originated live receipt.
+
 ## 2026-07-31 - Owner Attention Queue existing-rail adapter prepared
 
 - Connected current SAM inbox dispositions to the consolidated queue after
