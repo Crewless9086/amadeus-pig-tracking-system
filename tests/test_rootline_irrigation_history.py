@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from modules.telemetry.rootline_irrigation_history import (
@@ -96,6 +96,15 @@ def test_typed_digest_cannot_be_rebound_to_another_zone_or_day():
     assert result["verified_completed_day_count"]==0
     assert any(item["classification"]=="typed_writer_or_digest_untrusted"
                for item in result["events"])
+
+
+def test_typed_digest_binds_instant_across_database_timezone_normalization():
+    event = completed()
+    database_row = dict(event)
+    database_row["event_at"] = event["event_at"].astimezone(timezone.utc)
+    result = project_canonical_irrigation_history(
+        [epoch("B12345"), database_row], snapshot_cutoff=NOW)["zones"]["B12345"]
+    assert result["verified_completed_day_count"] == 1
 
 
 def test_missing_shutdown_start_or_cutoff_never_qualifies():
