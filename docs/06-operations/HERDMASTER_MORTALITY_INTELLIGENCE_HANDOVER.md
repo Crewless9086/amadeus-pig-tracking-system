@@ -31,6 +31,6 @@ Operational proof must show canonical inclusion/exclusion, exact 7/30/90 counts,
 ## Mission stage
 
 - Prepared: yes
-- Integrated: pending reviewed successor PR and deployment
-- Operational: no
+- Integrated: yes; PRs #723/#724 are live at merge `c1913270a0ae16f2cfb971ecc9c6b5db0bacfdcc`
+- Operational: read-only authenticated consumption proven; provider-confirmed owner presentation pending the next genuine request
 - Business-complete: no

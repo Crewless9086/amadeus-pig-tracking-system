@@ -1,4 +1,10 @@
 # Vault Brain Changelog
+## 2026-08-05 - HERDMASTER mortality intelligence integrated
+
+- Integrated PRs #723/#724 and deployed exact merge `c1913270a0ae16f2cfb971ecc9c6b5db0bacfdcc` as `dep-d9pkn9p5efls73a501tg`.
+- Proved one authenticated current read-only consumption with 9 dated losses in 30 days, Pig 127 retained as a governed mortality follow-up, completed Pig 125 suppressed, and no obsolete breathing question.
+- Repeated assessment retained one append-only mortality-consumption event with zero farm, lifecycle, medical and Telegram authority. Provider-confirmed family presentation remains waiting for the next genuine owner request; no provider identity or evidence was manufactured.
+
 ## 2026-08-05 - HERDMASTER mortality consumption successor prepared
 
 - Rebased PR #702's reviewed mortality evaluator onto current main and connected it to Oom Sakkie's existing authenticated manager and append-only consumption rails.
