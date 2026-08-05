@@ -1225,6 +1225,16 @@ def _webhook_identity_evidence(payload, conversation, sender, contact):
         else {}
     )
     sources = {
+        "account_id": _identity_source_rows(
+            ("payload.account_id", payload.get("account_id")),
+            (
+                "payload.account.id",
+                (payload.get("account") or {}).get("id")
+                if isinstance(payload.get("account"), dict)
+                else "",
+            ),
+            ("payload.conversation.account_id", conversation.get("account_id")),
+        ),
         "conversation_id": _identity_source_rows(
             ("payload.conversation_id", payload.get("conversation_id")),
             ("payload.conversation.id", conversation.get("id")),
@@ -1252,14 +1262,43 @@ def _webhook_identity_evidence(payload, conversation, sender, contact):
         values = sorted({row["value"] for row in rows})
         conflicts[key] = len(values) > 1
         normalized[key] = values[0] if len(values) == 1 else ""
+    provider_sources = _identity_source_rows(
+        ("payload.channel", payload.get("channel")),
+        ("payload.inbox_channel", payload.get("inbox_channel")),
+        ("payload.inbox.channel_type", top_inbox.get("channel_type")),
+        ("payload.conversation.channel_type", conversation.get("channel_type")),
+        ("payload.conversation.inbox.channel_type", conversation_inbox.get("channel_type")),
+    )
+    provider_classes = {
+        _normal_provider_identity(row["value"])
+        for row in provider_sources
+        if _normal_provider_identity(row["value"]) not in {"", "transport_only"}
+    }
+    provider_identity_class = (
+        next(iter(provider_classes)) if len(provider_classes) == 1
+        else "conflicting" if len(provider_classes) > 1 else ""
+    )
     return {
         "status": "webhook_identity_conflict" if any(conflicts.values()) else "webhook_identity_normalized",
         "normalized": normalized,
         "sources": sources,
         "conflicts": conflicts,
+        "provider_identity_class": provider_identity_class,
+        "provider_sources": provider_sources,
         "authoritative_conversation_lookup": {"attempted": False, "status": "not_attempted"},
         "configured_allowlist_used_as_evidence": False,
     }
+
+
+def _normal_provider_identity(value):
+    value = _clean(value, 100).lower()
+    if value in {"channel::whatsapp", "chatwoot_whatsapp", "whatsapp", "genuine_whatsapp"}:
+        return "genuine_whatsapp"
+    if value in {"chatwoot", "api", "webhook"}:
+        return "transport_only"
+    if value:
+        return "non_whatsapp"
+    return ""
 
 
 def _identity_source_rows(*pairs):
@@ -1287,10 +1326,17 @@ def resolve_sam_general_inbound_identity(
     evidence["normalized"] = dict(evidence.get("normalized") or {})
     evidence["sources"] = {
         key: list((evidence.get("sources") or {}).get(key) or [])
-        for key in ("conversation_id", "contact_id", "inbox_id")
+        for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
     }
     evidence["conflicts"] = dict(evidence.get("conflicts") or {})
-    webhook_complete = all(evidence["normalized"].get(key) for key in ("conversation_id", "contact_id", "inbox_id"))
+    webhook_complete = bool(
+        all(
+            evidence["normalized"].get(key)
+            for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
+        )
+        and evidence.get("provider_identity_class")
+        and evidence.get("provider_identity_class") != "conflicting"
+    )
     canary_active = (
         _truthy(source.get(AUTO_GENERAL_AUTOREPLY_ENABLED_ENV))
         and _truthy(source.get(AUTO_GENERAL_CANARY_ENABLED_ENV))
@@ -1311,12 +1357,22 @@ def resolve_sam_general_inbound_identity(
         authoritative = authoritative if isinstance(authoritative, dict) else {}
         authoritative = {**authoritative, "attempted": True}
         if authoritative.get("success") is True:
-            for key in ("conversation_id", "contact_id", "inbox_id"):
+            for key in ("account_id", "conversation_id", "contact_id", "inbox_id"):
                 value = _clean(authoritative.get(key), 100)
                 if value:
                     evidence["sources"][key].append(
                         {"source": "chatwoot_conversation_record." + key, "value": value}
                     )
+            authoritative_provider = _clean(
+                authoritative.get("provider_identity_class"), 80
+            )
+            webhook_provider = _clean(evidence.get("provider_identity_class"), 80)
+            if authoritative_provider:
+                evidence["provider_identity_class"] = (
+                    authoritative_provider
+                    if not webhook_provider or webhook_provider == authoritative_provider
+                    else "conflicting"
+                )
     inbound_account = _clean(inbound.get("account_id"), 100)
     authoritative_account = _clean(authoritative.get("account_id"), 100)
     authoritative_field_matches = {
@@ -1353,12 +1409,15 @@ def resolve_sam_general_inbound_identity(
         "account_id_matches": account_matches,
         "field_matches": authoritative_field_matches,
     }
-    for key in ("conversation_id", "contact_id", "inbox_id"):
+    for key in ("account_id", "conversation_id", "contact_id", "inbox_id"):
         values = sorted({row["value"] for row in evidence["sources"][key] if row.get("value")})
         evidence["conflicts"][key] = len(values) > 1
         evidence["normalized"][key] = values[0] if len(values) == 1 else ""
     conflict = any(evidence["conflicts"].values()) or account_conflict
-    complete = all(evidence["normalized"].get(key) for key in ("conversation_id", "contact_id", "inbox_id"))
+    complete = all(
+        evidence["normalized"].get(key)
+        for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
+    )
     evidence["status"] = (
         "identity_conflict"
         if conflict
@@ -1368,6 +1427,7 @@ def resolve_sam_general_inbound_identity(
     )
     evidence["configured_allowlist_used_as_evidence"] = False
     inbound["identity_provenance"] = evidence
+    inbound["account_id"] = evidence["normalized"].get("account_id") or ""
     inbound["conversation_id"] = evidence["normalized"].get("conversation_id") or ""
     inbound["contact_id"] = evidence["normalized"].get("contact_id") or ""
     inbound["inbox_id"] = evidence["normalized"].get("inbox_id") or ""
@@ -2675,6 +2735,9 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
         "conversation_id": _clean(conversation.get("id") or conversation_id, 100),
         "contact_id": _clean(sender.get("id") or contact.get("id"), 100),
         "inbox_id": _clean(conversation.get("inbox_id") or inbox.get("id"), 100),
+        "provider_identity_class": _normal_provider_identity(
+            conversation.get("channel_type") or inbox.get("channel_type")
+        ),
         "can_reply": conversation.get("can_reply") is True,
         "latest_message_id": _clean(latest.get("id"), 100),
         "latest_message_type": latest.get("message_type"),

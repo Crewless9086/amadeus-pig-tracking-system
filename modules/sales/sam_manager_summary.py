@@ -60,6 +60,21 @@ _FORBIDDEN_KEYS = {
     "content", "message_content", "customer_message", "reply",
     "suggested_reply", "customer_name", "phone", "email",
 }
+_COVERAGE_EXCEPTION_TYPES = {
+    "closed_window",
+    "provider_chronology_changed",
+    "provider_chronology_unavailable",
+    "whatsapp_provider_identity_conflict",
+    "whatsapp_provider_identity_unavailable",
+}
+_PROVIDER_IDENTITY_CONFLICT_REASONS = {
+    f"provider_{key}_conflict"
+    for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
+}
+_PROVIDER_IDENTITY_UNBOUND_REASONS = {
+    f"provider_{key}_unbound"
+    for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
+}
 
 
 def build_sam_manager_summary(
@@ -68,6 +83,7 @@ def build_sam_manager_summary(
     period_started_at_utc: str,
     observed_at_utc: str | None = None,
     coverage_exceptions: Iterable[Mapping] = (),
+    reply_window_evaluations: Iterable[Mapping] = (),
 ) -> SamManagerSummary:
     """Aggregate exact inbound outcomes without customer/message authority."""
     rows = [dict(row) for row in records or ()]
@@ -126,7 +142,10 @@ def build_sam_manager_summary(
         response_states[response_state] += 1
         workflow_states[workflow_state] += 1
 
-    exceptions = _normalize_exceptions(coverage_exceptions)
+    exceptions = _normalize_exceptions([
+        *(coverage_exceptions or ()),
+        *_reply_window_coverage_exceptions(reply_window_evaluations),
+    ])
     evidence_complete = not any(item["systemic"] for item in exceptions)
     attention = bool(
         response_states["awaiting_sam"]
@@ -173,7 +192,7 @@ def _normalize_exceptions(values: Iterable[Mapping]) -> list[CoverageException]:
     for value in values or ():
         item = dict(value or {})
         exception_type = str(item.get("exception_type") or "")
-        if not exception_type:
+        if exception_type not in _COVERAGE_EXCEPTION_TYPES:
             raise ValueError("manager_summary_coverage_exception_type_required")
         count = item.get("count", 1)
         if isinstance(count, bool) or not isinstance(count, int) or count < 1:
@@ -183,3 +202,30 @@ def _normalize_exceptions(values: Iterable[Mapping]) -> list[CoverageException]:
         {"exception_type": key[0], "count": count, "systemic": key[1]}
         for key, count in sorted(counts.items())
     ]
+
+
+def _reply_window_coverage_exceptions(
+    evaluations: Iterable[Mapping],
+) -> list[CoverageException]:
+    exceptions = []
+    for raw in evaluations or ():
+        row = dict(raw or {})
+        reason = str(row.get("reason") or "")
+        if reason == "whatsapp_provider_identity_unavailable" or reason in _PROVIDER_IDENTITY_UNBOUND_REASONS:
+            exception_type = "whatsapp_provider_identity_unavailable"
+        elif reason in _PROVIDER_IDENTITY_CONFLICT_REASONS:
+            exception_type = "whatsapp_provider_identity_conflict"
+        elif reason in {
+            "provider_latest_inbound_identity_conflict",
+            "provider_latest_inbound_timestamp_conflict",
+            "provider_latest_inbound_timestamp_invalid",
+        }:
+            exception_type = "provider_chronology_changed"
+        else:
+            continue
+        exceptions.append({
+            "exception_type": exception_type,
+            "count": 1,
+            "systemic": False,
+        })
+    return exceptions

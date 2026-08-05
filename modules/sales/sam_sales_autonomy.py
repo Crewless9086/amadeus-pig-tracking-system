@@ -405,16 +405,35 @@ def bind_authoritative_conversation_evidence(
 ) -> dict:
     """Bind current public chronology and provider-window evidence fail closed."""
     row = dict(inbound or {})
+    identity = {
+        key: row.get(key)
+        for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
+    }
+    provenance = (
+        row.get("identity_provenance")
+        if isinstance(row.get("identity_provenance"), Mapping)
+        else {}
+    )
+    bound_provider = dict(provider_evidence or {})
+    if bound_provider:
+        bound_provider["expected_identity"] = identity
+        bound_provider.setdefault("identity_binding", {})
+    else:
+        bound_provider = {
+            "provider_identity_class": provenance.get("provider_identity_class")
+            or row.get("channel"),
+            "latest_inbound_message_id": row.get("message_id")
+            or row.get("inbound_message_id"),
+            "latest_inbound_at_utc": row.get("last_inbound_at"),
+        }
+        if provenance:
+            bound_provider["identity_binding"] = provenance.get("normalized") or {}
+            bound_provider["expected_identity"] = identity
     try:
         window = evaluate_reply_window(
             messages or [],
-            conversation_identity={
-                key: row.get(key)
-                for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
-            } | {"channel": row.get("channel")},
-            provider_evidence=provider_evidence or {
-                "provider_identity_class": row.get("channel"),
-            },
+            conversation_identity=identity | {"channel": row.get("channel")},
+            provider_evidence=bound_provider,
             now=now,
         )
     except (ReplyWindowEvidenceError, TypeError, ValueError):

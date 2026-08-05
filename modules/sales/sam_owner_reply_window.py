@@ -258,25 +258,60 @@ def _provider_classification(
     conversation: Mapping[str, Any], evidence: Mapping[str, Any]
 ) -> str:
     inbox = conversation.get("inbox") if isinstance(conversation.get("inbox"), Mapping) else {}
-    observed = [
-        _clean(conversation.get("channel")).lower(),
-        _clean(conversation.get("channel_type")).lower(),
-        _clean(inbox.get("channel_type")).lower(),
-        _clean(evidence.get("provider_identity_class")).lower(),
-    ]
-    observed = [item for item in observed if item]
-    if not observed:
-        return "unavailable"
-    classes = {
-        "genuine_whatsapp" if "whatsapp" in item else item
-        for item in observed
+    evidence_class = _provider_class(evidence.get("provider_identity_class"))
+    conversation_classes = {
+        value
+        for raw in (
+            conversation.get("channel"),
+            conversation.get("channel_type"),
+            inbox.get("channel_type"),
+        )
+        if (value := _provider_class(raw)) not in {"", "transport_only"}
     }
-    return classes.pop() if len(classes) == 1 else "conflicting"
+    if evidence_class == "conflicting" or len(conversation_classes) > 1:
+        return "conflicting"
+    if evidence_class and evidence_class != "transport_only":
+        if conversation_classes and evidence_class not in conversation_classes:
+            return "conflicting"
+        return evidence_class
+    if not conversation_classes:
+        return "unavailable"
+    return next(iter(conversation_classes))
+
+
+def _provider_class(value: Any) -> str:
+    value = _clean(value).lower()
+    if not value:
+        return ""
+    if value in {
+        "channel::whatsapp", "chatwoot_whatsapp", "genuine_whatsapp", "whatsapp",
+    }:
+        return "genuine_whatsapp"
+    if value in {"chatwoot", "api", "webhook"}:
+        return "transport_only"
+    if value in {
+        "channel::facebookpage", "chatwoot_facebook", "facebook", "messenger",
+        "channel::instagram", "chatwoot_instagram", "instagram",
+        "channel::email", "chatwoot_email", "email",
+    }:
+        return "non_whatsapp"
+    return "conflicting"
 
 
 def _provider_conflict(
     evidence: Mapping[str, Any], latest_inbound: Mapping[str, Any]
 ) -> str:
+    bound = evidence.get("identity_binding")
+    bound = bound if isinstance(bound, Mapping) else evidence
+    expected = evidence.get("expected_identity")
+    expected = expected if isinstance(expected, Mapping) else {}
+    for key in ("account_id", "conversation_id", "contact_id", "inbox_id"):
+        actual_value = _clean(bound.get(key))
+        expected_value = _clean(expected.get(key))
+        if actual_value and expected_value and actual_value != expected_value:
+            return f"provider_{key}_conflict"
+        if expected_value and not actual_value:
+            return f"provider_{key}_unbound"
     message_id = _clean(evidence.get("latest_inbound_message_id"))
     timestamp = evidence.get("latest_inbound_at_utc")
     if message_id and message_id != latest_inbound["message_id"]:
