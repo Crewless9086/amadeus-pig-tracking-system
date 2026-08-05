@@ -22,6 +22,11 @@ from modules.oom_sakkie.herdmaster_management_runtime import _load_active_lifecy
 from modules.pig_weights.herdmaster_whole_herd_packet import build_whole_herd_packet
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
+from modules.pig_weights.herdmaster_mortality_evidence import load_current_mortality_evidence
+from modules.pig_weights.herdmaster_mortality_intelligence import build_oom_sakkie_mortality_packet
+from modules.oom_sakkie.herdmaster_mortality_adapter import consume_mortality_packet
+from modules.oom_sakkie.herdmaster_mortality_runtime import consume_current_mortality_packet
+from zoneinfo import ZoneInfo
 
 CONTRACT_VERSION = "oom_sakkie_farm_manager_round_v5"
 EVENT_SOURCE = "oom_sakkie_farm_manager_round"
@@ -110,7 +115,8 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
             preserved = prior.get("result") or {}
             return {**preserved, "status": "farm_manager_round_replay_suppressed"}, 200
     providers = loaders or {
-        "herdmaster": lambda: _load_herdmaster(authority, owner, now),
+        "herdmaster": lambda: _load_herdmaster(authority, owner, now,
+            language=str(semantic.get("language") or "en")),
         "rootline": lambda: _load_rootline(now),
         "sam": lambda: _missing("sam", now),
         "beacon": lambda: _missing("beacon", now),
@@ -200,31 +206,61 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
     return output, 200
 
 
-def _load_herdmaster(authority, owner, now):
+def _load_herdmaster(authority, owner, now, language="en"):
     futures = {
         "canonical": _HERD_EVIDENCE_EXECUTOR.submit(load_current_breeding_operating_loop),
         "observations": _HERD_EVIDENCE_EXECUTOR.submit(_load_observations, owner),
         "active": _HERD_EVIDENCE_EXECUTOR.submit(_load_active_lifecycles, owner),
         "weights": _HERD_EVIDENCE_EXECUTOR.submit(_load_weighing_worklist),
+        "mortality": _HERD_EVIDENCE_EXECUTOR.submit(load_current_mortality_evidence,
+            analysis_end=now.astimezone(ZoneInfo("Africa/Johannesburg")).date()),
     }
+    base_names=("canonical","observations","active","weights")
     done, pending = wait(tuple(futures.values()), timeout=9.0)
     try:
-        if any(future not in done for future in futures.values()):
+        if any(futures[name] not in done for name in base_names):
             raise TimeoutError("herd_evidence_deadline")
         canonical = futures["canonical"].result()
         observations = futures["observations"].result()
         active = futures["active"].result()
         weights = futures["weights"].result()
-        return _whole_herd_specialist_result(canonical, observations, active, weights, now)
+        herd = _whole_herd_specialist_result(canonical, observations, active, weights, now)
     except Exception:
         try:
             active = futures["active"].result(timeout=0) if futures["active"] in done else ()
         except Exception:
             active = ()
         return _active_welfare_result(active, now)
+    else:
+        return _augment_herd_with_mortality(herd=herd,mortality_future=futures["mortality"],
+            mortality_done=futures["mortality"] in done,authority=authority,owner=owner,
+            now=now,active=active,language=language)
     finally:
         for future in pending:
             future.cancel()
+
+
+def _augment_herd_with_mortality(*,herd,mortality_future,mortality_done,authority,owner,
+                                 now,active,language):
+    """Add the optional mortality section without weakening the base herd round."""
+    if not mortality_done:
+        return herd
+    try:
+        packet=build_oom_sakkie_mortality_packet(mortality_future.result(),
+            analysis_end=now.astimezone(ZoneInfo("Africa/Johannesburg")).date())
+        mortality,meta=consume_current_mortality_packet(packet=packet,authority=authority,
+            owner_user_id=owner,observed_at=now,active_lifecycles=active,language=language)
+    except Exception:
+        return herd
+    # `notify_owner` controls standalone refresh noise. A new authenticated
+    # manager request must still receive current unchanged specialist truth;
+    # exact inbound replay is suppressed by the outer provider lifecycle.
+    if mortality and mortality.availability is SpecialistAvailability.AVAILABLE:
+        combined_id=herd.result_id+":"+mortality.result_id
+        items=tuple(replace(item,provenance=replace(item.provenance,result_id=combined_id))
+                    for item in tuple(mortality.work_items)+tuple(herd.work_items))
+        return replace(herd,work_items=items,result_id=combined_id)
+    return herd
 
 
 def _active_welfare_result(active, now):
@@ -452,12 +488,15 @@ def _consolidate_herdmaster(result, worklist, *, weighing_available):
         return result
     if result.availability is not SpecialistAvailability.AVAILABLE:
         return result
+    mortality_items = tuple(item for item in result.work_items
+                            if item.dedupe_key == "herdmaster:mortality-current-assessment")
     source_items = tuple(item for item in result.work_items
+                         if item.dedupe_key != "herdmaster:mortality-current-assessment"
                          if item.state not in {WorkState.COMPLETED, WorkState.HANDLED})
     provenance = (source_items[0].provenance if source_items else
         Provenance("herdmaster", result.result_id, ("canonical_herdmaster_result",), result.observed_at, 1.0))
     if not weighing_available and not source_items:
-        return replace(result, work_items=())
+        return replace(result, work_items=mortality_items)
     weighing = (f"Weigh all {len(worklist)} current active/on-farm pigs; capture each tag and kg through the "
         "existing governed bulk-weight flow, then review the exact tag/Pig ID/weight preview and confirm before any write."
         if worklist else ("No current active/on-farm pigs are in today's canonical weighing worklist."
@@ -476,7 +515,7 @@ def _consolidate_herdmaster(result, worklist, *, weighing_available):
         provenance=provenance, business_value=100,
         genuine_question=next((item.genuine_question for item in source_items if item.genuine_question), ""),
         question_for="charl" if any(item.genuine_question for item in source_items) else "")
-    return replace(result, work_items=(item,))
+    return replace(result, work_items=mortality_items+(item,))
 
 
 def _load_rootline(now):

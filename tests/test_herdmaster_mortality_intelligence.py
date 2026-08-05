@@ -1,0 +1,220 @@
+from datetime import date
+import json
+from pathlib import Path
+
+from modules.pig_weights.herdmaster_mortality_intelligence import build_mortality_intelligence, build_oom_sakkie_mortality_packet
+
+
+END = date(2026, 8, 3)
+
+
+def event(identity, pig, day, **extra):
+    result = {"event_id": identity, "pig_id": pig, "effective_date": day, "event_kind": "individual_death", "confirmation": "confirmed", "canonical_status": "current"}
+    result.update(extra)
+    return result
+
+
+def test_litter_pen_growth_and_observed_cold_patterns_are_associations():
+    evidence = {
+        "mortality_events": [event("E1", "P1", "2026-08-01", litter_id="L1", pen_id="A"), event("E2", "P2", "2026-08-02", litter_id="L1", pen_id="A")],
+        "weights": {"P1": [{"date": "2026-07-20", "kg": 6}, {"date": "2026-07-30", "kg": 5}]},
+        "rootline_observations": [{"date": "2026-08-01", "temperature_min_c": 4, "coverage_pct": 100}],
+        "rootline_forecasts": [{"date": "2026-08-04", "temperature_min_c": 1}],
+    }
+    result = build_mortality_intelligence(evidence, analysis_end=END)
+    kinds = {p["pattern"] for p in result["detected_patterns"]}
+    assert kinds == {"litter_cluster", "pen_cluster", "weak_growth_association", "observed_cold_weather_overlap"}
+    assert all(p["causality"] == "not established" for p in result["detected_patterns"])
+    assert result["forecast_evidence"] == evidence["rootline_forecasts"]
+
+
+def test_incomplete_conflicting_duplicate_superseded_and_undated_records_are_visible_not_counted():
+    evidence = {"mortality_events": [
+        event("E1", "P1", "2026-08-01"),
+        event("E1", "P1", "2026-08-01"),
+        event("E2", "P2", "2026-08-01", confirmation="conflicting"),
+        event("E3", "P3", None),
+        event("E4", "P4", "2026-08-01", canonical_status="superseded"),
+    ], "recording_quality": {"complete_from": "2026-07-01"}}
+    result = build_mortality_intelligence(evidence, analysis_end=END)
+    assert result["rolling_counts"]["7"]["total"] == 1
+    assert len(result["excluded_events"]) == 4
+    assert result["historical_baseline"]["reliable"] is False
+
+
+def test_no_pattern_and_missing_inputs_yield_one_grouped_question_not_a_diagnosis():
+    result = build_mortality_intelligence({"mortality_events": [event("E1", "P1", "2026-08-01")]}, analysis_end=END)
+    assert result["detected_patterns"] == []
+    assert "No reliable shared pattern" in result["family_assessment_en"]
+    assert result["smallest_grouped_question"].count("?") == 1
+    assert "diagnoses" in result["family_assessment_en"]
+
+
+def test_stillbirth_is_counted_separately_from_later_death():
+    evidence = {"mortality_events": [event("S1", "P1", "2026-08-01", event_kind="stillbirth"), event("D1", "P2", "2026-08-02", event_kind="piglet_later_death")]}
+    result = build_mortality_intelligence(evidence, analysis_end=END)
+    assert result["rolling_counts"]["7"]["by_kind"] == {"piglet_later_death": 1, "stillbirth": 1}
+
+
+def test_unchanged_replay_is_deterministic_and_zero_authority():
+    evidence = {"mortality_events": [event("E1", "P1", "2026-08-01")]}
+    first = build_mortality_intelligence(evidence, analysis_end=END)
+    replay = build_mortality_intelligence(evidence, analysis_end=END)
+    assert replay == first
+    assert first["unchanged_replay_action"] == "suppress_duplicate_alert"
+    assert not any(first["authority"].values())
+
+
+def test_material_change_refreshes_same_review_identity_only():
+    first = build_mortality_intelligence({"mortality_events": [event("E1", "P1", "2026-08-01")]}, analysis_end=END)
+    changed = build_mortality_intelligence({"mortality_events": [event("E1", "P1", "2026-08-01"), event("E2", "P2", "2026-08-02")]}, analysis_end=END)
+    assert changed["review_identity"] == first["review_identity"]
+    assert changed["evidence_digest"] != first["evidence_digest"]
+
+
+def test_calendar_rollover_does_not_create_a_second_management_lifecycle():
+    first = build_mortality_intelligence({"mortality_events": [event("E1", "P1", "2026-08-01")]}, analysis_end=END)
+    next_day = build_mortality_intelligence({"mortality_events": [event("E1", "P1", "2026-08-01")]}, analysis_end=date(2026, 8, 4))
+    assert first["review_identity"] == next_day["review_identity"] == "HERDMASTER-MORTALITY-CURRENT"
+    assert first["evidence_digest"] == next_day["evidence_digest"]
+
+
+def test_undated_historical_and_superseded_duplicate_are_accounted_without_dates():
+    evidence = {"mortality_events": [event("OLD", "P1", None), event("DUP", "P2", "2026-08-01", canonical_status="superseded")],
+                "undated_identity_accounting": [{"pig_id": "P1", "classification": "legitimate_undated_historical_loss", "effective_date": None}]}
+    result = build_mortality_intelligence(evidence, analysis_end=END)
+    assert result["rolling_counts"]["7"]["total"] == 0
+    assert result["undated_identity_accounting"][0]["effective_date"] is None
+    assert {reason for item in result["excluded_events"] for reason in item["exclusion_reasons"]} >= {"effective date Unknown", "superseded history"}
+
+
+def test_authenticated_owner_report_is_not_canonical_mortality():
+    evidence = {"mortality_events": [], "owner_reported_events": [{"report_identity": "TG-3210", "pig_id": "P127", "reported_at": "2026-08-03T10:00:00+02:00", "reported_facts": ["owner reported death"]}]}
+    result = build_mortality_intelligence(evidence, analysis_end=END)
+    assert result["rolling_counts"]["7"]["total"] == 0
+    assert result["owner_reported_not_canonical"][0]["canonical_mortality"] is False
+    assert result["owner_reported_not_canonical"][0]["authenticated_private_owner"] is False
+
+
+def test_missing_herd_at_risk_denominator_is_explicit():
+    result = build_mortality_intelligence({"mortality_events": []}, analysis_end=END)
+    assert result["herd_at_risk_denominator"]["reconstructable"] is False
+    assert "lifecycle intervals" in result["herd_at_risk_denominator"]["minimum_requirement"]
+
+
+def test_weak_growth_hypothesis_separates_unknown_counterevidence_and_no_cause():
+    evidence = {"mortality_events": [event("E1", "P1", "2026-08-01")], "weights": {"P1": [{"date": "2026-07-20", "kg": 6}, {"date": "2026-07-30", "kg": 5}]}}
+    result = build_mortality_intelligence(evidence, analysis_end=END)
+    hypothesis = next(h for h in result["hypotheses"] if h["supporting_evidence"]["pattern"] == "weak_growth_association")
+    assert str(hypothesis["counterevidence"]).startswith("Unknown")
+    assert "No causal diagnosis" in hypothesis["causal_limitations"]
+
+
+def test_afrikaans_pattern_labels_do_not_leak_internal_english_identifiers():
+    evidence={"mortality_events":[event("E1","P1","2026-08-01",litter_id="L1"),
+        event("E2","P2","2026-08-02",litter_id="L1")]}
+    packet=build_oom_sakkie_mortality_packet(evidence,analysis_end=END)
+    assert "werpselgroep" in packet["afrikaans"]
+    assert "litter cluster" not in packet["afrikaans"]
+
+
+def test_only_matching_healthy_survivors_are_attributable_counterevidence():
+    evidence={"mortality_events":[
+        event("E1","P1","2026-08-01",litter_id="L1",pen_id="PEN-1"),
+        event("E2","P2","2026-08-02",litter_id="L1",pen_id="PEN-1")],
+        "surviving_controls":[
+            {"pig_id":"S-L","litter_id":"L1","observed_outcome":"healthy"},
+            {"pig_id":"S-P","pen_id":"PEN-1","observed_outcome":"no signs"},
+            {"pig_id":"S-X","litter_id":"OTHER","observed_outcome":"healthy"},
+            {"pig_id":"S-U","pen_id":"PEN-1","observed_outcome":"Unknown"}]}
+    result=build_mortality_intelligence(evidence,analysis_end=END)
+    by_pattern={row["supporting_evidence"]["pattern"]:row for row in result["hypotheses"]}
+    assert by_pattern["litter_cluster"]["counterevidence"]==[
+        {"pig_id":"S-L","observed_outcome":"healthy"}]
+    assert by_pattern["pen_cluster"]["counterevidence"]==[
+        {"pig_id":"S-P","observed_outcome":"no signs"}]
+
+
+def test_typed_oom_sakkie_packet_is_bilingual_bounded_and_zero_write():
+    evidence = {"mortality_events": [event("E1", "P1", "2026-08-01")]}
+    packet = build_oom_sakkie_mortality_packet(evidence, analysis_end=END)
+    assert packet["packet_type"] == "herdmaster.mortality_intelligence.v1"
+    assert packet["english"] and packet["afrikaans"]
+    assert len(packet["actions"]) <= 3
+    assert packet["question"].count("?") <= 1
+    assert not any(packet["authority"].values())
+    assert build_oom_sakkie_mortality_packet(evidence, analysis_end=END) == packet
+
+
+def test_first_real_assessment_fixture_preserves_exact_counts_and_accounting():
+    evidence = json.loads((Path(__file__).parent / "fixtures" / "herdmaster_mortality_20260803.json").read_text(encoding="utf-8"))
+    packet = build_oom_sakkie_mortality_packet(evidence, analysis_end=END)
+    assert packet["rolling_counts"]["7"]["total"] == 1
+    assert packet["rolling_counts"]["30"]["total"] == 13
+    assert packet["rolling_counts"]["90"]["total"] == 16
+    assert len(packet["proven_facts"]) == 16
+    assert len(packet["excluded_dated_or_superseded"]) == 1
+    assert len(packet["undated_identity_accounting"]) == 30
+    assert len(packet["owner_reported_not_canonical"]) == 1
+    assert packet["owner_reported_not_canonical"][0]["pig_id"] == "PIG-2026-D13C"
+    assert packet["unchanged_replay_action"] == "suppress_duplicate_alert"
+    assert "16 dated losses" in packet["english"] and "12 are supported" in packet["english"]
+    assert "16 gedateerde verliese" in packet["afrikaans"] and "12 as historiese" in packet["afrikaans"]
+
+
+def test_packet_rejects_unverified_owner_report_and_sanitizes_raw_fields():
+    unsafe = {"mortality_events": [{**event("E1", "P1", "2026-08-01"), "private_note": "SECRET", "provider_payload": {"token": "SECRET"}}],
+              "owner_reported_events": [{"report_identity": "R", "pig_id": "P2", "authenticated": False}]}
+    try:
+        build_oom_sakkie_mortality_packet(unsafe, analysis_end=END)
+        assert False, "unverified owner report must fail closed"
+    except ValueError:
+        pass
+    safe = build_oom_sakkie_mortality_packet({"mortality_events": unsafe["mortality_events"]}, analysis_end=END)
+    assert "private_note" not in safe["proven_facts"][0]
+    assert "provider_payload" not in safe["proven_facts"][0]
+
+
+def test_forged_true_fields_mismatched_receipt_and_malformed_timestamp_fail_closed():
+    base = {"report_identity": "R", "pig_id": "P2", "authenticated": True, "private_chat": True,
+            "sender_role": "owner", "provider_message_id": "M", "provider_timestamp": "2026-08-03T10:00:00+02:00"}
+    receipt = {"verified_by": "oom_sakkie_authenticated_gateway", "authority_scope": "private_owner_health_loss",
+               "principal_id": "OWNER", "private_chat_id": "CHAT", "bound_principal_id": "OWNER",
+               "bound_private_chat_id": "CHAT", "receipt_digest": "a" * 64}
+    for report in (
+        base,
+        {**base, "authentication_receipt": {**receipt, "bound_private_chat_id": "OTHER"}},
+        {**base, "provider_timestamp": "not-a-time", "authentication_receipt": receipt},
+        {**base, "pig_id": "", "authentication_receipt": receipt},
+    ):
+        try:
+            build_oom_sakkie_mortality_packet({"mortality_events": [], "owner_reported_events": [report]}, analysis_end=END)
+            assert False, "unbound or malformed authentication evidence must fail closed"
+        except ValueError:
+            pass
+
+
+def test_reordered_set_evidence_has_same_digest_and_dedup_key():
+    one = event("E1", "P1", "2026-08-01")
+    two = event("E2", "P2", "2026-08-02")
+    first = build_mortality_intelligence({"mortality_events": [one, two]}, analysis_end=END)
+    reordered = build_mortality_intelligence({"mortality_events": [two, one]}, analysis_end=END)
+    assert reordered["evidence_digest"] == first["evidence_digest"]
+    assert reordered["deduplication_key"] == first["deduplication_key"]
+
+
+def test_accounting_rejects_duplicate_identity_and_bad_cohort_arithmetic():
+    bad = {"mortality_events": [], "undated_identity_accounting": [
+        {"pig_id": "P1", "classification": "conflicting", "effective_date": None},
+        {"pig_id": "P1", "classification": "conflicting", "effective_date": None}]}
+    try:
+        build_mortality_intelligence(bad, analysis_end=END)
+        assert False, "duplicate accounting identity must fail"
+    except ValueError:
+        pass
+    bad_cohort = {"mortality_events": [], "cohort_reconciliations": [{"born_alive": 10, "weaned_count": 8, "undated_loss_rows": 2, "dated_later_deaths": 0, "outcome": "conflicting"}]}
+    try:
+        build_mortality_intelligence(bad_cohort, analysis_end=END)
+        assert False, "unsupported cohort outcome must fail"
+    except ValueError:
+        pass
