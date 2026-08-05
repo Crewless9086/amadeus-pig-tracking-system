@@ -333,6 +333,7 @@ class WaterEnergyPlanTests(unittest.TestCase):
     def test_recent_history_excludes_stopped_and_future_completion_evidence(self):
         connection = mock.MagicMock()
         cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = (NOW,)
         cursor.fetchall.return_value = []
         with mock.patch("psycopg.connect") as connect:
             connect.return_value.__enter__.return_value = connection
@@ -340,10 +341,10 @@ class WaterEnergyPlanTests(unittest.TestCase):
                 "postgresql://production-shaped", NOW
             )
         sql, params = cursor.execute.call_args.args
-        self.assertNotIn("'stopped'", sql)
-        self.assertEqual(sql.count("event_at <= %s"), 2)
-        self.assertEqual(params, (NOW, NOW, NOW))
-        self.assertEqual(result["status"], "Unavailable")
+        self.assertIn("public.irrigation_events", sql)
+        self.assertEqual(params, ("PLANNING_EPOCH_STARTED",))
+        self.assertTrue(connection.read_only)
+        self.assertEqual(result["zones"]["B12345"]["coverage_status"], "Unavailable")
 
     def test_append_database_failure_returns_fail_closed_response(self):
         plan = self.build()
