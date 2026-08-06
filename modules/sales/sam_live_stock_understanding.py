@@ -135,11 +135,14 @@ def is_order_commitment_confirmation(text: str) -> bool:
         r"\b(?:i want|i would like|i'd like) to go ahead\b",
         r"\blet(?:'s| us) (?:proceed|go ahead)\b",
         r"\bplease (?:proceed|go ahead)(?: with (?:it|the (?:pig|order)))?\b",
+        r"\b(?:we|i)(?:'ll| will)? (?:take|accept) (?:it|them|the (?:quote|quotation|offer))\b",
+        r"\b(?:we|i) (?:accept|approve) (?:the )?(?:quote|quotation|offer)\b",
         r"\bek is gereed om voort te gaan\b",
         r"\bja,? (?:asseblief )?gaan voort\b",
         r"\bek wil (?:daarmee )?voortgaan\b",
         r"\bons kan (?:daarmee )?voortgaan\b",
         r"\bgaan asseblief voort(?: met (?:dit|die (?:vark|bestelling)))?\b",
+        r"\b(?:ons|ek) (?:aanvaar|vat) (?:die )?(?:kwotasie|aanbod)\b",
     )
     return any(re.search(pattern, lower) for pattern in patterns)
 
