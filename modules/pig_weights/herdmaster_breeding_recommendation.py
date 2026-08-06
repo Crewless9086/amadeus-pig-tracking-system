@@ -85,7 +85,13 @@ def _female_case(female, boars, evidence, today):
     recommendation = qualified[0] if state == "eligible_for_mating_review" and qualified and not top_tied else None
     if state == "eligible_for_mating_review" and not qualified:
         action = "Resolve the listed pair-specific evidence; no boar is currently evidence-qualified."
-    question = _smallest_physical_question(female, state)
+    physical_only = bool(blockers) and all(_physical_blocker(item) for item in blockers)
+    pairing_assessment = (
+        "recommended" if recommendation
+        else "possible_but_needs_one_observation" if state == "missing_evidence" and physical_only and qualified
+        else "not_eligible"
+    )
+    question = _smallest_physical_question(female, state) if pairing_assessment == "possible_but_needs_one_observation" else None
     return {
         "pig_id": pig_id,
         "tag_number": _text(female.get("tag_number")) or pig_id,
@@ -99,6 +105,7 @@ def _female_case(female, boars, evidence, today):
         "hypotheses": hypotheses,
         "unknowns": sorted(set(unknowns + blockers)),
         "smallest_physical_question": question,
+        "pairing_assessment": pairing_assessment,
         "recommended_boar": recommendation,
         "owner_choice_required": state == "eligible_for_mating_review" and top_tied,
         "boar_assessments": rankings,
@@ -236,7 +243,7 @@ def _service_performance(female, boar, evidence):
     pairings = [r for r in evidence.get("pairings", []) if _text(r.get("sow_pig_id")) == female_id and _text(r.get("boar_pig_id")) == boar_id]
     litters = [r for r in evidence.get("litters", []) if _text(r.get("sow_pig_id")) == female_id and _text(r.get("boar_pig_id")) == boar_id]
     born = sum(int(r.get("born_alive") or 0) for r in litters)
-    surviving = sum(int(r.get("surviving_or_weaned") or 0) for r in litters)
+    surviving = sum(int(r["surviving_or_weaned"] if r.get("surviving_or_weaned") is not None else r["weaned_count"] if r.get("weaned_count") is not None else 0) for r in litters)
     survival = round(100 * surviving / born, 1) if born else None
     growth = [r.get("offspring_growth") for r in litters if r.get("offspring_growth")]
     growth_state = "unknown" if not growth else "adverse" if "adverse" in growth else "positive" if "positive" in growth else "mixed"
@@ -286,6 +293,10 @@ def _smallest_physical_question(row, state):
     return None if not gaps else f"For {row.get('tag_number') or row.get('pig_id')}, please report " + ", ".join(gaps) + " from one current inspection."
 
 
+def _physical_blocker(value):
+    return any(word in value for word in ("body condition", "legs", "visible concern", "heat"))
+
+
 def _next_action(blockers):
     physical = [b for b in blockers if any(word in b for word in ("body condition", "legs", "visible concern", "heat"))]
     return "Record one current inspection: " + ", ".join(physical) + "." if physical else "Resolve the listed governed evidence before mating review."
@@ -312,7 +323,7 @@ def _oom_packet(cases, digest):
     for row in cases:
         rows.append({
             "pig_id": _safe_text(row["pig_id"]), "tag_number": _safe_text(row["tag_number"]),
-            "state": row["state"], "next_action": _safe_text(row["next_action"], 240),
+            "state": row["state"], "pairing_assessment": row["pairing_assessment"], "next_action": _safe_text(row["next_action"], 240),
             "smallest_physical_question": _safe_text(row.get("smallest_physical_question"), 240) or None,
             "recommended_boar": ({"pig_id": _safe_text(row["recommended_boar"]["pig_id"]), "tag_number": _safe_text(row["recommended_boar"]["tag_number"]), "reasoning": [_safe_text(item, 200) for item in row["recommended_boar"]["reasoning"]]} if row.get("recommended_boar") else None),
             "boar_exclusions": [{"pig_id": _safe_text(item["pig_id"]), "tag_number": _safe_text(item["tag_number"]), "reasons": [_safe_text(reason, 200) for reason in item["exclusion_reasons"]]} for item in row["boar_assessments"] if item["excluded"]],
