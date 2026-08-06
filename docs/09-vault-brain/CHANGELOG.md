@@ -268,6 +268,10 @@
 - Added disposable-PostgreSQL concurrency and replay coverage to the audit-rails workflow.
 - Retained webhook-secret validation, owner allowlisting, generation-bound final approval, and the no-live-canary owner-authorization boundary.
 
+## 2026-07-22 - Herdmaster weight-stage reconciliation
+
+- Clarified that Pig Allocation preserves recorded `animal_type` separately from read-only, latest-weight-derived `weight_stage`; the Grower band is 35 kg inclusive to under 60 kg.
+
 ## 2026-07-21 - Pig lifecycle audit rail
 
 - Defined the additive, unapplied `pig_lifecycle_events` contract for append-only lifecycle evidence tied to canonical pigs while retaining `pigs` as the mutable current-state projection.
