@@ -25,6 +25,29 @@ from modules.charlie.evidence_reconciliation import (
     targeted_workflow_return,
 )
 from modules.charlie.adaptive_orchestration import validate_orchestration_binding
+from modules.charlie.mission_replacement import (
+    create_replacement_owner_authorization,
+    execute_many_to_one_replacement,
+    prepare_many_to_one_replacement,
+    record_replacement_owner_authorization,
+    validate_replacement_owner_authorization,
+)
+from modules.charlie.development_mission_adapter import (
+    create_development_authorization,
+    create_development_dispatch_grant,
+    prepare_development_mission,
+    validate_development_authorization,
+    validate_development_dispatch_grant,
+)
+from modules.charlie.development_mission_store_adapter import (
+    authorize_and_insert_development_mission,
+    record_development_authorization,
+    record_development_dispatch,
+    record_development_dispatch_authorization,
+    record_development_lineage_authorization,
+    record_development_state,
+    release_development_mission,
+)
 
 
 MISSION_STATUSES = {
@@ -555,6 +578,11 @@ def _not_durably_superseded_sql():
     """Keep immutable legacy rows visible generally but out of execution queues."""
     return """
                       not exists (
+                          select 1
+                          from public.charlie_mission_replacement_bindings as many_replacement
+                          where many_replacement.predecessor_mission_id = public.charlie_missions.mission_id
+                      )
+                      and not exists (
                           select 1
                           from public.charlie_missions as replacement
                           where replacement.metadata_json->'supersession'->>'status' = 'current_contract_replacement'
@@ -1088,6 +1116,10 @@ def create_owner_execution_hold(mission_id, generation_identity, reason, *, owne
                     """
                     select status, coalesce(metadata_json, '{}'::jsonb),
                            not exists (
+                               select 1 from public.charlie_mission_replacement_bindings as many_replacement
+                               where many_replacement.predecessor_mission_id = %(mission_id)s
+                           )
+                           and not exists (
                                select 1 from public.charlie_missions as replacement
                                where replacement.metadata_json->'supersession'->>'status' = 'current_contract_replacement'
                                  and replacement.metadata_json->'supersession'->>'supersedes_mission_id' = %(mission_id)s

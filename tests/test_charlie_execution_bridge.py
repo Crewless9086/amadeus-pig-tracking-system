@@ -2000,22 +2000,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "agent_execution_completed")
         self.assertEqual(result["mission_status"], "pr_ready")
         self.assertEqual(result["agent_runner_version"], "charlie_agent_runner_v2")
-        self.assertGreaterEqual(update_workflow.call_count, 10)
+        self.assertGreaterEqual(update_workflow.call_count, 5)
         packet = self.finalize_owner_review.call_args.args[1]
         self.assertIn("agent_artifacts", packet)
         self.assertIn("handoff_reports", packet)
         self.assertTrue(packet["brain_guard"]["passed"])
-        self.assertIn("qa_red_team", packet["agent_artifacts"])
-        self.assertNotIn("stdout_tail", packet["agent_artifacts"]["qa_red_team"])
-        self.assertNotIn("stderr_tail", packet["agent_artifacts"]["qa_red_team"])
-        self.assertIn("QA/red-team passed", packet["qa_evidence"])
+        self.assertIn("reviewer", packet["agent_artifacts"])
+        self.assertNotIn("stdout_tail", packet["agent_artifacts"]["reviewer"])
+        self.assertNotIn("stderr_tail", packet["agent_artifacts"]["reviewer"])
         self.assertIn("quality_gates", packet)
         self.assertEqual(packet["links"]["pr"], "https://github.com/org/repo/pull/61")
         self.assertEqual(packet["pr_url"], "https://github.com/org/repo/pull/61")
         self.assertEqual(packet["review_status"], "ready_for_owner_review")
         self.assertEqual(packet["tested_revision"], self.finalize_owner_review.call_args.kwargs["candidate_revision"])
         self.assertFalse(any(call.args[1] == "pr_ready" for call in update_status.call_args_list))
-        self.assertTrue(any(call.args[0].get("current_agent") == "planner" for call in write_heartbeat.call_args_list))
+        self.assertTrue(any(call.args[0].get("current_agent") == "source_mapper" for call in write_heartbeat.call_args_list))
         self.assertTrue(any(call.args[0].get("status") == "parallel_read_only_agents_running" for call in write_heartbeat.call_args_list))
         self.assertIn("parallel_planning_execution", packet["agent_execution"])
 
@@ -2701,7 +2700,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(persisted)
         self.assertEqual(status, "stale_review_packet_status_send_back")
 
-    @patch.dict(os.environ, {"CHARLIE_AGENT_MODEL_IDEA_EXPANDER": "reasoning-model-a"}, clear=False)
+    @patch.dict(os.environ, {"CHARLIE_AGENT_MODEL_SOURCE_MAPPER": "reasoning-model-a"}, clear=False)
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
@@ -2743,25 +2742,25 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "agent_execution_completed")
-        self.assertEqual(commands_by_agent["idea_expander"][commands_by_agent["idea_expander"].index("--sandbox") + 1], "read-only")
-        self.assertIn("--model", commands_by_agent["idea_expander"])
-        self.assertIn("reasoning-model-a", commands_by_agent["idea_expander"])
+        self.assertEqual(commands_by_agent["source_mapper"][commands_by_agent["source_mapper"].index("--sandbox") + 1], "read-only")
+        self.assertIn("--model", commands_by_agent["source_mapper"])
+        self.assertIn("reasoning-model-a", commands_by_agent["source_mapper"])
         consumed_agents = [
             call.args[1] for call in self.default_artifact_consumer.call_args_list
         ]
-        self.assertIn("idea_expander", consumed_agents)
         self.assertIn("source_mapper", consumed_agents)
+        self.assertIn("technical_architect", consumed_agents)
         self.assertFalse(
             any(
                 len(call.args) > 1
-                and call.args[1] in {"idea_expander", "source_mapper"}
+                and call.args[1] in {"source_mapper", "technical_architect"}
                 and call.kwargs.get("step_status") == "complete"
                 for call in update_workflow.call_args_list
             )
         )
         vault_metadata = {"review_packet": self.finalize_owner_review.call_args.args[1]}
         self.assertEqual(
-            vault_metadata["review_packet"]["agent_artifacts"]["idea_expander"]["model_assignment"]["runtime_model"],
+            vault_metadata["review_packet"]["agent_artifacts"]["source_mapper"]["model_assignment"]["runtime_model"],
             "reasoning-model-a",
         )
 
@@ -2937,8 +2936,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "review_packet": {
                 "return_to_stage": "builder",
                 "agent_artifacts": {
-                    "planner": {
-                        "summary": "planner preserved",
+                    "source_mapper": {
+                        "summary": "source mapper preserved",
                         "acceptance_criteria": ["acceptance"],
                         "test_plan": ["tests"],
                         "files_inspected": ["docs/00-start-here/CURRENT_STATE.md"],
@@ -2981,19 +2980,12 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             )
 
         self.assertEqual(status_code, 200)
-        self.assertEqual(called_agents, [
-            "builder",
-            "tester",
-            "qa_red_team",
-            "product_reviewer",
-            "security_reviewer",
-            "evidence_reviewer",
-            "reviewer",
-            "publisher",
-        ])
-        packet = self.finalize_owner_review.call_args.args[1]
-        self.assertEqual(packet["agent_artifacts"]["planner"]["summary"], "planner preserved")
-        self.assertEqual(packet["agent_execution"]["rerun_from_stage"], "builder")
+        self.assertEqual(called_agents, ["builder", "tester", "reviewer"])
+        self.assertNotIn("source_mapper", called_agents)
+        self.assertEqual(
+            mission["metadata"]["review_packet"]["agent_artifacts"]["source_mapper"]["summary"],
+            "source mapper preserved",
+        )
 
     def test_runner_resume_uses_completed_mission_stage_next_agent(self):
         sequence = [

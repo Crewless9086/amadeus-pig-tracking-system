@@ -1,0 +1,36 @@
+name: CHARLIE CORE Development Adapter PostgreSQL
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  development-adapter-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: charlie_core_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d charlie_core_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/charlie_core_test
+      PYTHONDONTWRITEBYTECODE: "1"
+      CHARLIE_TEST_ISOLATION: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt
+      - name: Run exact queue-migration and development-adapter gates
+        run: python -m unittest tests.test_charlie_development_mission_adapter_postgres

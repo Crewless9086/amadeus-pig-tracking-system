@@ -1,0 +1,30 @@
+{
+  "authorize_insert": {
+    "action": "authorize_insert",
+    "authorization_digest": null,
+    "expires_at": null,
+    "issued_at": null,
+    "mission_id": "CHARLIE-CORE-T1-POST-P0-HANDOVER-CORRECTION",
+    "owner_identity_hash": null,
+    "plan_id": "CORE-PLAN-AFA1EBB81D2DA466F366CBFC",
+    "proposal_digest": "4c8e6d67cd1e048c3364e6078b199bd96bd0423b1dc11947428ffb63c7c6c3b2",
+    "signature": null,
+    "transaction_identity": "CORE-DEVELOPMENT-4C8E6D67CD1E048C3364E607",
+    "version": "charlie_development_mission_adapter_v1"
+  },
+  "release": {
+    "action": "release",
+    "authorization_digest": null,
+    "expires_at": null,
+    "issued_at": null,
+    "mission_id": "CHARLIE-CORE-T1-POST-P0-HANDOVER-CORRECTION",
+    "owner_identity_hash": null,
+    "plan_id": "CORE-PLAN-AFA1EBB81D2DA466F366CBFC",
+    "proposal_digest": "4c8e6d67cd1e048c3364e6078b199bd96bd0423b1dc11947428ffb63c7c6c3b2",
+    "signature": null,
+    "transaction_identity": "CORE-DEVELOPMENT-4C8E6D67CD1E048C3364E607",
+    "version": "charlie_development_mission_adapter_v1"
+  },
+  "notice": "Preview only. Charl/CHARLIE has not signed or authorized either action. Insertion and release require separate fresh signatures.",
+  "version": "charlie_development_authorization_preview_v1"
+}

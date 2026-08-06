@@ -20,7 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 from modules.charlie.core_workflow import build_core_plan
 from modules.charlie.adaptive_orchestration import validate_orchestration_binding
 from modules.charlie.environment import env_value
-from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, transition_mission_review_state, update_mission_status, update_mission_vault
+from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, create_development_dispatch_grant, get_mission, list_missions, list_owner_work_missions, prepare_development_mission, record_development_dispatch, record_development_dispatch_authorization, record_development_state, transition_mission_review_state, update_mission_status, update_mission_vault
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids, mission_execution_dependency_ids
 from modules.charlie.repository_guard import RepositoryOperationLock, inspect_git_operation_markers, repository_lock_path
 from modules.charlie.runner_control import (
@@ -1165,6 +1165,53 @@ def _run_analyst_cycle(mission_id, trigger, notify=False):
             mission_id=mission_id,
         )
     return {**result, "status_code": status_code}
+
+
+def prepare_exact_development_dispatch(
+    proposal, *, worker_id, dispatch_id, dispatch_secret,
+    authorizer_database_url=None, writer_database_url=None,
+    connect_factory=None, now=None,
+):
+    """Create and persist one exact Builder assignment without queue scanning."""
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {"success": False, "status": "runner_contained", "reason": reason}, 423
+    prepared = prepare_development_mission(proposal)
+    grant = create_development_dispatch_grant(
+        prepared, worker_id=worker_id, worker_role=prepared["selected_worker"],
+        dispatch_id=dispatch_id, secret=dispatch_secret, issued_at=now,
+    )
+    recorded, code = record_development_dispatch_authorization(
+        prepared, grant, database_url=authorizer_database_url,
+        connect_factory=connect_factory, secret=dispatch_secret, now=now,
+    )
+    if code >= 400:
+        return recorded, code
+    dispatched, code = record_development_dispatch(
+        proposal, grant, database_url=writer_database_url,
+        connect_factory=connect_factory, secret=dispatch_secret, now=now,
+    )
+    return ({**dispatched, "dispatch_grant": grant} if code < 400 else dispatched), code
+
+
+def pick_up_exact_development_mission(
+    proposal, *, worker_id, worker_role, dispatch_id, acknowledged_at,
+    event_id, dispatch_grant, database_url=None, connect_factory=None, now=None,
+    dispatch_secret=None,
+):
+    """Acknowledge one explicitly released adaptive mission by exact identity.
+
+    This bypasses queue scanning, performs no Codex launch, and delegates the
+    durable selected-worker check to the existing mission-store boundary.
+    """
+    return record_development_state(
+        proposal,
+        {"type": "acknowledged", "event_id": event_id, "worker_id": worker_id,
+         "worker_role": worker_role, "dispatch_id": dispatch_id,
+         "acknowledged_at": acknowledged_at, "dispatch_grant": dispatch_grant},
+        database_url=database_url, connect_factory=connect_factory, now=now,
+        dispatch_secret=dispatch_secret,
+    )
 
 
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):
