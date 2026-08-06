@@ -145,3 +145,115 @@ Prepared is not Integrated, Operational or Business-complete. The first
 business-complete acceptance still requires a real owner observation to change
 the explanation safely, with no unintended farm mutation, through deployed Oom
 Sakkie consumption.
+
+## Successor canonical-evidence reconciliation (2026-08-06)
+
+Successor status: Prepared / source-only / unmerged. PR #729 remains unchanged
+at reviewed head `0046b84b4339da4c31fd2c1b54dee88d6b036b67`; its commit is retained
+in this branch lineage as content-equivalent commit `7dcda909`. The successor
+was reconciled onto `origin/main`
+`45c74c06dc2e3b8a5a38e47e520790481b196290` after SAM PR #731. No runtime,
+Telegram, farm write, mating action or protected action was used.
+
+The earlier statement that all breeding pens were Unknown was a loader defect,
+not an owner-data gap. `current_canonical_pig_state` and each latest valid
+movement agree for all 21 breeders:
+
+| Pen | Current breeders |
+|---|---|
+| D3 | Baby, Lolly, Lucy, Olive, Shupe, Sophie |
+| D4 | Bola, Prince, Tyson |
+| D5 | Mona, Mysikind |
+| Kraam Saal 01 | Maya, Teena |
+| Kraam Saal 02 | Linda |
+| Kraam Saal 03 | Bonnie |
+| Kraam Saal 04 | Waki |
+| Kraam Saal 05 | Bella |
+| Kraam Saal 06 | Zigay |
+| Kraam Saal 07 | Clovy |
+| Kraam Saal 08 | Molly |
+| Kraam Saal 09 | Ms Piggy |
+
+### Evidence classification
+
+- **Present but omitted by the old loader:** all 21 current pens; 15 exact
+  service records (Bola 8, Prince 1, Tyson 6); canonical litter outcomes and
+  attributable child survival/growth rows where recorded; boar ages derived
+  from canonical birth dates.
+- **Recoverable deterministically:** a current pen only when current state and
+  latest valid movement agree; parentage only from explicit dam/sire columns or
+  an exact non-superseded litter origin; withdrawal end only from an
+  attributable treatment date plus governed withdrawal days (with any recorded
+  end required to agree); unreserved only under a complete-through ledger;
+  pair performance only from exact sow/boar mating and litter identities.
+- **Genuinely absent:** `mother_pig_id` and `father_pig_id` for Baby, Bella,
+  Bola, Bonnie, Clovy, Linda, Lolly, Lucy, Maya, Molly, Mona, Ms Piggy,
+  Mysikind, Olive, Prince, Shupe, Sophie, Teena, Tyson, Waki and Zigay. None has
+  an attributable litter origin that supplies those links. This is 42 exact
+  missing direct-parent links, not a generic family-tree gap.
+- **Coverage unavailable, therefore Unknown:** the active-reservation sources
+  contain no breeder references, but no complete-through breeding-reservation
+  boundary exists; the breeder medical query contains no attributable event,
+  but no complete-through withdrawal boundary exists. Silence proves neither
+  unreserved nor cleared.
+- **Stale/conflicting:** current and latest pen projections had zero conflicts;
+  direct versus litter parentage had zero conflicts. Existing historical
+  pregnancy results remain historical and do not establish a current cycle.
+- **Physical family observations:** current heat, body condition, legs/movement
+  and visible concerns for a genuinely short-listed female; current legs, feet,
+  build and visible-concern evidence for a short-listed boar. These are not
+  requested while system-side pedigree, reservation or withdrawal evidence
+  already blocks the pair.
+
+### Second real assessment
+
+Assessment identity: `HERD-BREED-7D4D523649536A4C0DAC55DB634069A1` at the
+2026-08-06 cutoff. It assessed 18 females and three boars. All 54 pair-specific
+pedigrees remain Unknown because the exact parent links above are absent; none
+is silently converted to unrelated. There are zero Recommended and zero
+Possible-but-needs-one-observation pairings, and 18 female cases are currently
+Not eligible for a pairing recommendation. This is precise containment, not a
+claim that every management conclusion is blocked:
+
+- Mona and Mysikind remain Assumed Pregnant against their exact 2026-05-02
+  matings; proportional farrowing preparation continues and is not clinical
+  confirmation.
+- Baby remains Inconclusive; no additional mating is recommended.
+- Maya's governed cycle, Bonnie/Teena/Waki/Zigay nursing work and Ms Piggy's
+  post-weaning recovery continue to outrank a mating recommendation.
+- Bella, Clovy, Linda, Lolly, Lucy, Molly, Olive, Shupe and Sophie require a
+  current reproductive-state determination, but the evaluator does not ask for
+  redundant physical inspections before the system-side pair gates are fixed.
+
+English and Afrikaans outputs retain these distinct cycle states and every boar
+assessment exposes its own inclusion/exclusion reasons. The evaluator and
+reconciler both report zero writes and zero protected actions; unchanged input
+and input-row reordering produce the same internal packet and assessment ID.
+
+### Successor source and adapter handover
+
+- `modules/pig_weights/herdmaster_breeding_evidence.py` is the new pure,
+  deterministic, zero-I/O canonical reconciler. The existing authenticated
+  manager read service must supply its rows; it is not a parallel database,
+  router or writer.
+- `modules/pig_weights/herdmaster_breeding_recommendation.py` now labels each
+  case `recommended`, `possible_but_needs_one_observation`, or `not_eligible`.
+  It asks the grouped physical question only when all female blockers are
+  physical and at least one boar has cleared the independent pair gates.
+- `tests/test_herdmaster_breeding_evidence.py` covers recovered and conflicting
+  pens, complete and incomplete reservation coverage, withdrawal calculation
+  and conflict, litter-origin parentage, exact pedigree exclusions, partial
+  pedigree, one valid recommendation, proportional questioning and replay.
+
+Later, during an explicitly assigned serialized window, extend only the
+existing authenticated read assembly in `farm_supabase_read_service.py` and
+`mating_routes.py` to provide current pig state, latest valid movement,
+non-superseded litter origins, mating/litter/child performance, medical rows and
+explicit reservation/withdrawal coverage markers to the reconciler. Publish
+only its sanitized evaluator packet through the existing Oom Sakkie specialist
+consumer. The live proof must show recovered pens, the preserved current-cycle
+states, exact pair exclusions, no repeated owner fact, stable replay identity,
+zero Telegram send by HERDMASTER, zero farm/protected writes and unchanged
+unrelated state. Missing complete-through ledgers require a governed projection
+improvement; they must not be replaced by owner questions or silence-based
+clearance.
