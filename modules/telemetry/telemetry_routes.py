@@ -25,6 +25,16 @@ from modules.telemetry.rootline_operating_policy import (
     propose_policy,
     review_policy,
 )
+from modules.telemetry.rootline_ewelink_oauth import (
+    OAuthFailure,
+    complete_authorization,
+    create_authorization_request,
+    oauth_readiness,
+)
+from modules.telemetry.rootline_ewelink_oauth_store import (
+    PostgresOAuthStateStore,
+    PostgresOAuthTokenStore,
+)
 from modules.telemetry.irrigation_daily_plan_service import get_current_daily_plan
 from modules.telemetry.irrigation_command_service import (
     approve_plan_only_command,
@@ -52,6 +62,48 @@ from modules.telemetry.weather_service import (
 
 
 telemetry_bp = Blueprint("telemetry", __name__)
+
+
+@telemetry_bp.route("/rootline/provider/ewelink/oauth/readiness", methods=["GET"])
+def rootline_ewelink_oauth_readiness():
+    guard = require_strict_owner_admin_access()
+    if guard:
+        return guard
+    result = oauth_readiness()
+    return jsonify(result), 200 if result["status"] == "ready" else 503
+
+
+@telemetry_bp.route("/rootline/provider/ewelink/oauth/start", methods=["POST"])
+def rootline_ewelink_oauth_start():
+    guard = require_strict_owner_admin_access()
+    if guard:
+        return guard
+    try:
+        result = create_authorization_request(
+            principal=strict_owner_admin_principal(),
+            state_store=PostgresOAuthStateStore(),
+        )
+    except OAuthFailure as exc:
+        return jsonify({"status": "rejected", "reason": str(exc)}), 409
+    except Exception:
+        return jsonify({"status": "unavailable", "reason": "oauth_state_persistence_failed"}), 503
+    return jsonify(result), 201
+
+
+@telemetry_bp.route("/rootline/provider/ewelink/oauth/callback", methods=["GET"])
+def rootline_ewelink_oauth_callback():
+    try:
+        result = complete_authorization(
+            query=request.args,
+            state_store=PostgresOAuthStateStore(),
+            token_store=PostgresOAuthTokenStore(),
+        )
+    except OAuthFailure as exc:
+        return jsonify({"status": "rejected", "reason": str(exc), "secrets_exposed": False}), 400
+    except Exception:
+        return jsonify({"status": "unavailable", "reason": "oauth_callback_persistence_failed",
+                        "secrets_exposed": False}), 503
+    return jsonify(result), 200
 
 
 @telemetry_bp.route("/telemetry/power/current", methods=["GET"])
