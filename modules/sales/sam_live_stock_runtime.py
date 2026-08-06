@@ -772,7 +772,9 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
         else {}
     )
     if (
-        read_context.get("context_errors")
+        _critical_delivery_context_errors(
+            read_context.get("context_errors")
+        )
         or (
             isinstance(read_context.get("chatwoot_history"), dict)
             and read_context["chatwoot_history"].get(
@@ -1291,6 +1293,20 @@ def _webhook_identity_evidence(payload, conversation, sender, contact):
         "authoritative_conversation_lookup": {"attempted": False, "status": "not_attempted"},
         "configured_allowlist_used_as_evidence": False,
     }
+
+
+def _critical_delivery_context_errors(errors):
+    """Only identity/chronology loss blocks an otherwise canonical reply."""
+    optional_statuses = {
+        "order_intake_context_read_failed",
+        "sales_availability_read_failed",
+    }
+    return [
+        error
+        for error in (errors or [])
+        if not isinstance(error, dict)
+        or error.get("status") not in optional_statuses
+    ]
 
 
 def _normal_provider_identity(value):
@@ -3220,14 +3236,9 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         blockers.append("breeding_or_replacement_stock_owner_gate")
     if facts.get("reservation_requested"):
         blockers.append("reservation_request_owner_gate")
-    critical_context_errors = [
-        error
-        for error in (context_packet.get("context_errors") or [])
-        if not (
-            isinstance(error, dict)
-            and error.get("status") == "sales_availability_read_failed"
-        )
-    ]
+    critical_context_errors = _critical_delivery_context_errors(
+        context_packet.get("context_errors")
+    )
     if critical_context_errors:
         blockers.append("read_context_error")
 

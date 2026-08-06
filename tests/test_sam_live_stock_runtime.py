@@ -4214,7 +4214,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["lane_decision"]["cross_lane_handoff_allowed"])
         self.assertFalse(result["sent"])
 
-    def test_context_read_failure_fails_closed_without_write_authority(self):
+    def test_optional_intake_failure_keeps_canonical_reply_without_write_authority(self):
         def failing_intake(_conversation_id):
             raise RuntimeError("database offline")
 
@@ -4225,8 +4225,15 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
 
         decision = result["sam_decision"]
-        self.assertIn("read_context_error", decision["blockers"])
-        self.assertTrue(decision["owner_gate_required"])
+        self.assertNotIn("read_context_error", decision["blockers"])
+        self.assertIn(
+            "order_intake_context_read_failed",
+            [
+                error.get("status")
+                for error in decision["read_context"]["context_errors"]
+            ],
+        )
+        self.assertTrue(decision["suggested_reply_text"])
         self.assertFalse(decision["writes_allowed"])
         self.assertFalse(decision["customer_send_allowed"])
 
@@ -5695,6 +5702,85 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             "routine_reply_preclaim_chronology_changed",
         )
         self.assertEqual(calls, [])
+
+    def test_optional_context_failures_do_not_block_supported_claim_boundary(self):
+        calls = []
+        delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            {
+                "conversation_id": "2013",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+                "content": "Hi",
+                "identity_provenance": verified_identity(
+                    "2013", "699428938", "96568"
+                ),
+            },
+            {
+                "conversation_ownership": "AUTO_GENERAL",
+                "canonical_composition_authorized": True,
+                "suggested_reply_text": "Hi! How can I help?",
+                "reply_source": "llm_auto_general_reply_draft",
+                "should_reply": True,
+                "llm_draft": {"used": True, "confidence": 0.99},
+                "specialist_lane_selected": False,
+                "specialist_tools_called": [],
+                "owner_escalation_required": False,
+                "read_context": {
+                    "chatwoot_history": {
+                        "chronology_evidence_complete": True,
+                    },
+                    "context_errors": [
+                        {"status": "order_intake_context_read_failed"},
+                        {"status": "sales_availability_read_failed"},
+                    ],
+                },
+            },
+            {"safe_to_send": True, "escalation_required": False},
+            {
+                "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+                "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+                "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "2013",
+                "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "699428938",
+                "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "96568",
+            },
+            preclaim_chronology_verifier=lambda *_args: {"allowed": True},
+            delivery_claim=lambda *_args: (
+                calls.append("claim")
+                or {"success": True, "created": False}
+            ),
+            chatwoot_sender=lambda *_args: calls.append("send"),
+        )
+        self.assertEqual(delivery["status"], "routine_reply_duplicate_withheld")
+        self.assertEqual(calls, ["claim"])
+
+    def test_unknown_context_error_fails_closed_before_claim_or_send(self):
+        for context_status in (
+            "future_identity_evidence_failure",
+            "chatwoot_conversation_identity_read_failed",
+        ):
+            with self.subTest(context_status=context_status):
+                calls = []
+                delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+                    {"conversation_id": "2013", "contact_id": "99", "inbox_id": "77"},
+                    {
+                        "canonical_composition_authorized": True,
+                        "suggested_reply_text": "Which size would suit you?",
+                        "should_reply": True,
+                        "read_context": {
+                            "chatwoot_history": {"chronology_evidence_complete": True},
+                            "context_errors": [{"status": context_status}],
+                        },
+                    },
+                    {"safe_to_send": True, "escalation_required": False},
+                    {},
+                    delivery_claim=lambda *_args: calls.append("claim"),
+                    chatwoot_sender=lambda *_args: calls.append("send"),
+                )
+                self.assertEqual(
+                    delivery["status"],
+                    "routine_reply_chronology_evidence_unavailable",
+                )
+                self.assertEqual(calls, [])
 
     def test_auto_general_invalid_chronology_blocks_before_claim_or_send(self):
         for timestamp in (None, "malformed", "NaN", "Infinity", "-Infinity"):
