@@ -2666,7 +2666,7 @@ def _customer_sale_category_value(value):
     return ""
 
 
-def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
+def load_chatwoot_conversation_history(conversation_id, environ=None, limit=100):
     source = environ if environ is not None else os.environ
     conversation_id = _clean(conversation_id, 100)
     base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV), 200).rstrip("/")
@@ -2935,7 +2935,11 @@ def _prior_context_from_chatwoot_history(history, inbound):
     if latest_reset_index is not None:
         incoming_texts = incoming_texts[latest_reset_index:]
     facts = {}
-    for text in incoming_texts[-8:]:
+    # Reconstruct the complete bounded customer request since the latest
+    # explicit reset. Returning customers often qualify one order over many
+    # terse turns; limiting this to the latest eight incoming messages drops
+    # confirmed quantity/sex facts and causes repeated questions.
+    for text in incoming_texts:
         extracted = extract_live_stock_facts(text, inbound or {})
         extracted_lane = extracted.get("sales_lane")
         extracted_confidence = float(

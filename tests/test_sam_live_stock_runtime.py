@@ -5228,6 +5228,54 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(prior["latest_context_at"], 1785313800)
 
+    def test_long_returning_customer_history_retains_original_order_facts(self):
+        inbound = {
+            "message_id": "current",
+            "account_id": "147387",
+            "conversation_id": "1490",
+            "contact_id": "781066279",
+            "inbox_id": "90568",
+            "content": "Hi we will take the quote",
+        }
+        texts = [
+            "19kg 4 females and 1 male please",
+            "Thank you",
+            "Is there below 15 KG",
+            "Good day",
+            "May I please have an update on my request",
+            "Anyone available",
+            "The 10th please",
+            "Its Monday coming",
+            "Collection in Riversdale",
+        ]
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": str(index),
+                    "message_type": 0,
+                    "created_at": 1785313600 + index,
+                    "content": text,
+                }
+                for index, text in enumerate(texts, start=1)
+            ],
+        }
+        prior = sam_live_stock_runtime._prior_context_from_chatwoot_history(
+            history, inbound
+        )
+        current = sam_live_stock_runtime.extract_live_stock_facts(
+            inbound["content"], inbound
+        )
+        merged = sam_live_stock_runtime.merge_prior_live_stock_context(
+            current, prior
+        )
+        self.assertEqual(merged["quantity"], 5)
+        self.assertEqual(merged["sex"], "split")
+        self.assertEqual(merged["sex_split"], {"female": 4, "male": 1})
+        self.assertEqual(merged["location"], "Riversdale")
+        self.assertTrue(merged["order_commitment"])
+        self.assertEqual(merged["sales_lane"], "live_stock_sales")
+
     def test_auto_general_unsupported_availability_wording_is_never_authorized(self):
         inbound = {
             "content": "Both",
