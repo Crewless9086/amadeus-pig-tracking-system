@@ -30,6 +30,7 @@ REGION_HOSTS = {
 CALLBACK_PATH = "/api/rootline/provider/ewelink/oauth/callback"
 STATE_TTL_SECONDS = 600
 CODE_MAX_AGE_SECONDS = 30
+MIN_SECRET_CHARS = 32
 ADAPTER_VERSION = "rootline_ewelink_oauth_v1"
 REQUIRED_ENV = (
     "EWELINK_CLIENT_ID", "EWELINK_CLIENT_SECRET",
@@ -51,12 +52,17 @@ def oauth_readiness(environ=None):
         _false(source.get("EWELINK_READBACK_ENABLED"))
         and _false(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED"))
     )
+    strong_secrets = all(
+        len(str(source.get(name) or "")) >= MIN_SECRET_CHARS
+        for name in ("EWELINK_CLIENT_SECRET", "EWELINK_OAUTH_STATE_SECRET")
+    )
     return {
-        "status": "ready" if not missing and redirect == expected_redirect and flags_safe else "not_ready",
+        "status": "ready" if not missing and redirect == expected_redirect and flags_safe and strong_secrets else "not_ready",
         "configured": not missing,
         "missing_secret_names": missing,
         "redirect_uri_matches": bool(redirect and redirect == expected_redirect),
         "activation_flags_false": flags_safe,
+        "secret_strength_valid": strong_secrets,
         "readback_enabled": False,
         "autonomous_control_enabled": False,
         "provider_control_implemented": False,
@@ -232,9 +238,10 @@ def _complete_device_status(params):
 
 def _provider_request(method, url, *, body=None, mode, token=None, environ):
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname not in {
-        urllib.parse.urlparse(value).hostname for value in REGION_HOSTS.values()}:
+    if parsed.scheme != "https" or parsed.netloc not in {
+        urllib.parse.urlparse(value).netloc for value in REGION_HOSTS.values()}:
         raise OAuthFailure("ewelink_provider_host_rejected")
+    _enforce_provider_operation(method, parsed, body, mode, environ)
     headers = {"Accept": "application/json", "X-CK-Appid": str(environ["EWELINK_CLIENT_ID"])}
     data = None
     if body is not None:
@@ -251,13 +258,47 @@ def _provider_request(method, url, *, body=None, mode, token=None, environ):
         raise OAuthFailure("ewelink_provider_auth_mode_rejected")
     try:
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
-        with urllib.request.urlopen(request, timeout=15) as response:
+        opener = urllib.request.build_opener(_RejectRedirects())
+        with opener.open(request, timeout=min(15, CODE_MAX_AGE_SECONDS)) as response:
+            if response.geturl() != url:
+                raise OAuthFailure("ewelink_provider_redirect_rejected")
             packet = json.loads(response.read().decode("utf-8"))
+    except OAuthFailure:
+        raise
     except Exception:
         raise OAuthFailure("ewelink_provider_request_failed") from None
     if not isinstance(packet, dict) or packet.get("error") != 0 or not isinstance(packet.get("data"), dict):
         raise OAuthFailure("ewelink_provider_response_rejected")
     return packet["data"]
+
+
+def _enforce_provider_operation(method, parsed, body, mode, environ):
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    expected_device = str(environ["EWELINK_EXPECTED_DEVICE_ID"])
+    allowed = (
+        method == "POST" and mode == "signed" and parsed.path == "/v2/user/oauth/token"
+        and not query and isinstance(body, dict)
+        and set(body) == {"code", "redirectUrl", "grantType"}
+        and body.get("grantType") == "authorization_code"
+        and body.get("redirectUrl") == environ["EWELINK_OAUTH_REDIRECT_URI"]
+    ) or (
+        method == "GET" and mode == "bearer" and body is None
+        and parsed.path == "/v2/family" and not query
+    ) or (
+        method == "GET" and mode == "bearer" and body is None
+        and parsed.path == "/v2/device/thing" and query == {"num": ["0"]}
+    ) or (
+        method == "GET" and mode == "bearer" and body is None
+        and parsed.path == "/v2/device/thing/status"
+        and query == {"type": ["1"], "id": [expected_device]}
+    )
+    if not allowed:
+        raise OAuthFailure("ewelink_provider_operation_rejected")
+
+
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise OAuthFailure("ewelink_provider_redirect_rejected")
 
 
 def _token_key(source):

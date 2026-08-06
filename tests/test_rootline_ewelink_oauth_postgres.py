@@ -1,5 +1,6 @@
 import os
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -31,6 +32,7 @@ class EWeLinkOAuthPostgresTests(unittest.TestCase):
         with psycopg.connect(DATABASE_URL) as connection:
             connection.execute("truncate app_private.rootline_ewelink_oauth_states")
             connection.execute("truncate app_private.rootline_ewelink_oauth_tokens")
+            connection.execute("truncate app_private.rootline_ewelink_account_binding")
 
     def test_state_is_consumed_exactly_once(self):
         now = datetime.now(timezone.utc)
@@ -56,6 +58,27 @@ class EWeLinkOAuthPostgresTests(unittest.TestCase):
         with self.assertRaises(Exception):
             store.append({**item, "token_binding_id": "ROOTLINE-EWELINK-OTHER",
                           "provider_account_digest": "c" * 64})
+
+    def test_concurrent_first_callbacks_cannot_bind_different_accounts(self):
+        now = datetime.now(timezone.utc)
+        base = {"device_id": "100204e9bc", "region": "eu",
+                "access_token_ciphertext": "encrypted-a", "refresh_token_ciphertext": "encrypted-r",
+                "access_expires_at": now + timedelta(days=30),
+                "refresh_expires_at": now + timedelta(days=60),
+                "adapter_version": "rootline_ewelink_oauth_v1", "status_field_names": ["switches"],
+                "created_at": now}
+        items = [{**base, "token_binding_id": "ROOTLINE-EWELINK-A",
+                  "provider_account_digest": "a" * 64, "response_digest": "b" * 64},
+                 {**base, "token_binding_id": "ROOTLINE-EWELINK-B",
+                  "provider_account_digest": "c" * 64, "response_digest": "d" * 64}]
+        def append(item):
+            try:
+                return PostgresOAuthTokenStore(DATABASE_URL).append(item)
+            except Exception:
+                return False
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(append, items))
+        self.assertEqual(results.count(True), 1)
 
 
 if __name__ == "__main__":

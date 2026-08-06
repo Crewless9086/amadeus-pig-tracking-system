@@ -37,6 +37,15 @@ class PostgresOAuthTokenStore:
         import psycopg
         with psycopg.connect(self.database_url, connect_timeout=5) as connection:
             with connection.cursor() as cursor:
+                cursor.execute("""insert into app_private.rootline_ewelink_account_binding
+                    (binding_key,provider_account_digest) values (true,%s)
+                    on conflict (binding_key) do nothing""", (item["provider_account_digest"],))
+                cursor.execute("""select provider_account_digest
+                    from app_private.rootline_ewelink_account_binding
+                    where binding_key=true for update""")
+                binding = cursor.fetchone()
+                if not binding or binding[0] != item["provider_account_digest"]:
+                    raise ValueError("ewelink_provider_account_binding_mismatch")
                 cursor.execute("""insert into app_private.rootline_ewelink_oauth_tokens
                     (token_binding_id,provider_account_digest,device_id,region,
                      access_token_ciphertext,refresh_token_ciphertext,access_expires_at,

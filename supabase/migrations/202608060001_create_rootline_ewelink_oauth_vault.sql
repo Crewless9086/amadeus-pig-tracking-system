@@ -23,6 +23,12 @@ create table if not exists app_private.rootline_ewelink_oauth_tokens (
     created_at timestamptz not null
 );
 
+create table if not exists app_private.rootline_ewelink_account_binding (
+    binding_key boolean primary key default true check (binding_key),
+    provider_account_digest text not null check (provider_account_digest ~ '^[0-9a-f]{64}$'),
+    bound_at timestamptz not null default now()
+);
+
 drop index if exists app_private.rootline_ewelink_oauth_tokens_response_uq;
 
 create or replace function app_private.rootline_ewelink_tokens_append_only()
@@ -36,24 +42,9 @@ create trigger trg_rootline_ewelink_tokens_append_only
 before update or delete on app_private.rootline_ewelink_oauth_tokens
 for each row execute function app_private.rootline_ewelink_tokens_append_only();
 
-create or replace function app_private.rootline_ewelink_account_binding_guard()
-returns trigger language plpgsql as $$ declare existing_account text; begin
-    select provider_account_digest into existing_account
-      from app_private.rootline_ewelink_oauth_tokens limit 1;
-    if existing_account is not null and existing_account <> new.provider_account_digest then
-        raise exception 'ROOTLINE eWeLink provider account binding mismatch';
-    end if;
-    return new;
-end $$;
-
-drop trigger if exists trg_rootline_ewelink_account_binding_guard
-on app_private.rootline_ewelink_oauth_tokens;
-create trigger trg_rootline_ewelink_account_binding_guard
-before insert on app_private.rootline_ewelink_oauth_tokens
-for each row execute function app_private.rootline_ewelink_account_binding_guard();
-
 revoke all on app_private.rootline_ewelink_oauth_states from public,anon,authenticated;
 revoke all on app_private.rootline_ewelink_oauth_tokens from public,anon,authenticated;
+revoke all on app_private.rootline_ewelink_account_binding from public,anon,authenticated;
 
 insert into app_private.migration_log(migration_id,description)
 values ('202608060001_create_rootline_ewelink_oauth_vault',

@@ -15,9 +15,14 @@ access tokens and refresh tokens must never be copied into chat or Telegram.
 - Exact callback: `https://amadeus-pig-tracking-system.onrender.com/api/rootline/provider/ewelink/oauth/callback`
 - Start: `POST /api/rootline/provider/ewelink/oauth/start` (strict owner-admin session)
 - Readiness: `GET /api/rootline/provider/ewelink/oauth/readiness` (strict owner-admin session)
-- State and nonce are random, HMAC-bound, durable and single-use.
-- The provider's 30-second code is exchanged immediately once. A replay is
-  rejected before any provider request.
+- State and nonce are random, HMAC-bound, durable, single-use and expire after
+  ten minutes so the owner can complete private login. This is not the code
+  lifetime.
+- CoolKit issues the callback authorization code and enforces its 30-second
+  lifetime. The callback consumes state atomically and starts one synchronous
+  exchange with a 15-second network timeout; the application never queues or
+  retries a code. It has no provider-issued code timestamp from which to claim
+  a second local age. A replay is rejected before any provider request.
 - Only the allowlisted CoolKit regional API hosts are accepted.
 - The callback performs the token exchange and exactly three read requests:
   family, owned device and current device status.

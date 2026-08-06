@@ -6,16 +6,17 @@ import pytest
 from modules.telemetry.rootline_ewelink_oauth import (
     OAuthFailure, complete_authorization, create_authorization_request, oauth_readiness,
 )
+from modules.telemetry import rootline_ewelink_oauth as oauth_module
 
 NOW = datetime(2026, 8, 6, 8, 0, tzinfo=timezone.utc)
 REDIRECT = "https://amadeus-pig-tracking-system.onrender.com/api/rootline/provider/ewelink/oauth/callback"
 
 
 def env(**changes):
-    result = {"EWELINK_CLIENT_ID": "client-id", "EWELINK_CLIENT_SECRET": "client-secret",
+    result = {"EWELINK_CLIENT_ID": "client-id", "EWELINK_CLIENT_SECRET": "c" * 40,
               "EWELINK_EXPECTED_DEVICE_ID": "100204e9bc",
               "EWELINK_OAUTH_REDIRECT_URI": REDIRECT,
-              "EWELINK_OAUTH_STATE_SECRET": "state-secret",
+              "EWELINK_OAUTH_STATE_SECRET": "s" * 40,
               "EWELINK_READBACK_ENABLED": "false", "ROOTLINE_AUTONOMOUS_BC_ENABLED": "false"}
     result.update(changes)
     return result
@@ -84,7 +85,8 @@ def test_readiness_requires_exact_redirect_and_false_flags():
 def test_start_binds_nonce_and_persists_no_raw_secret():
     states, result, query = start()
     assert query["redirectUrl"] == [REDIRECT] and query["nonce"] and query["state"]
-    assert "client-secret" not in repr(states.item) and "state-secret" not in repr(states.item)
+    assert env()["EWELINK_CLIENT_SECRET"] not in repr(states.item)
+    assert env()["EWELINK_OAUTH_STATE_SECRET"] not in repr(states.item)
     assert result["readback_enabled"] is False and result["autonomous_control_enabled"] is False
 
 
@@ -138,3 +140,43 @@ def test_tampered_and_expired_state_are_rejected_before_provider_calls():
             token_store=Tokens(), environ=env(), http_request=request,
             now=NOW + timedelta(minutes=11))
     assert calls == []
+
+
+def test_weak_secrets_and_unallowlisted_provider_operations_are_rejected():
+    assert oauth_readiness(env(EWELINK_CLIENT_SECRET="short"))["status"] == "not_ready"
+    assert oauth_readiness(env(EWELINK_OAUTH_STATE_SECRET="short"))["status"] == "not_ready"
+    with pytest.raises(OAuthFailure, match="operation_rejected"):
+        oauth_module._provider_request("POST", "https://eu-apia.coolkit.cc/v2/device/thing/status",
+            body={"switch": "on"}, mode="signed", environ=env())
+    with pytest.raises(OAuthFailure, match="operation_rejected"):
+        oauth_module._provider_request("GET", "https://eu-apia.coolkit.cc/v2/device/thing?num=1",
+            mode="bearer", token="not-used", environ=env())
+    with pytest.raises(OAuthFailure, match="host_rejected"):
+        oauth_module._provider_request("GET", "https://evil.example/v2/family",
+            mode="bearer", token="not-used", environ=env())
+
+
+def test_transport_exchanges_once_with_bounded_timeout_and_rejects_redirect(monkeypatch):
+    import json
+    target = "https://eu-apia.coolkit.cc/v2/user/oauth/token"
+    calls = []
+    class Response:
+        def __init__(self, final_url): self.final_url = final_url
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def geturl(self): return self.final_url
+        def read(self): return json.dumps({"error": 0, "data": {"ok": True}}).encode()
+    class Opener:
+        def __init__(self, final_url): self.final_url = final_url
+        def open(self, request, timeout):
+            calls.append((request.full_url, timeout))
+            return Response(self.final_url)
+    monkeypatch.setattr(oauth_module.urllib.request, "build_opener", lambda *_: Opener(target))
+    body = {"code": "one-use", "redirectUrl": REDIRECT, "grantType": "authorization_code"}
+    assert oauth_module._provider_request("POST", target, body=body, mode="signed", environ=env()) == {"ok": True}
+    assert calls == [(target, 15)]
+
+    monkeypatch.setattr(oauth_module.urllib.request, "build_opener",
+                        lambda *_: Opener("https://eu-apia.coolkit.cc/v2/family"))
+    with pytest.raises(OAuthFailure, match="redirect_rejected"):
+        oauth_module._provider_request("POST", target, body=body, mode="signed", environ=env())
