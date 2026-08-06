@@ -197,6 +197,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     conversation_identity_loader=None,
     availability_loader=None,
     availability_evidence=None,
+    pricing_projection=None,
     intake_writer=None,
     draft_order_creator=None,
     draft_order_syncer=None,
@@ -342,6 +343,7 @@ def handle_sam_live_stock_chatwoot_inbound(
                 source,
                 llm_drafter=llm_drafter,
                 owner_example_loader=owner_example_loader,
+                pricing_projection=pricing_projection,
             )
             if facts.get("sales_lane") == LANE_FARM_GENERAL
             else build_sam_general_decision(
@@ -507,6 +509,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         source,
         llm_drafter=llm_drafter,
         owner_example_loader=owner_example_loader,
+        pricing_projection=pricing_projection,
     )
     decision["sales_autonomy_level1_inbound_evidence"] = level1_inbound
     decision["contextual_sales_route"] = contextual_route
@@ -2358,11 +2361,12 @@ def load_live_stock_read_context(
             supplied = availability_evidence if isinstance(availability_evidence, dict) else {}
             herdmaster_evidence = {
                 "agent": {"agent_id": "herdmaster", "authority_tier": "read_only"},
-                "status": "replay_supplied_read_only_evidence",
+                "status": supplied.get("status") or "supplied_read_only_evidence",
                 "provenance": supplied.get("provenance") or "replay_fixture",
                 "freshness": supplied.get("freshness") or "sanitized_fixture",
                 "summary": supplied.get("summary") if isinstance(supplied.get("summary"), dict) else {},
-                "source_mode": "sanitized_replay_fixture",
+                "source_mode": supplied.get("source_mode") or "sanitized_replay_fixture",
+                "canonical_row_count": supplied.get("canonical_row_count"),
             }
         else:
             availability_rows = list(get_sales_availability() or [])
@@ -3139,7 +3143,7 @@ def _chatwoot_message_is_activity(message):
     return value == 2 or str(value).strip().lower() == "activity"
 
 
-def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, llm_drafter=None, owner_example_loader=None):
+def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, llm_drafter=None, owner_example_loader=None, pricing_projection=None):
     route = classify_sam_sales_lane(inbound.get("content"), prior_context={"lane": facts.get("sales_lane")})
     if facts.get("sales_lane") == LANE_LIVE_STOCK and route["lane"] != LANE_LIVE_STOCK:
         route = {
@@ -3216,15 +3220,28 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         blockers.append("breeding_or_replacement_stock_owner_gate")
     if facts.get("reservation_requested"):
         blockers.append("reservation_request_owner_gate")
-    if context_packet.get("context_errors"):
+    critical_context_errors = [
+        error
+        for error in (context_packet.get("context_errors") or [])
+        if not (
+            isinstance(error, dict)
+            and error.get("status") == "sales_availability_read_failed"
+        )
+    ]
+    if critical_context_errors:
         blockers.append("read_context_error")
 
     ready_for_runtime_next_step = route["lane"] == LANE_LIVE_STOCK and not missing and not blockers
     try:
-        pricing_projection, pricing_status = list_live_stock_price_entries(
-            limit=500,
-            database_url=(environ or {}).get("DATABASE_URL"),
-        )
+        if isinstance(pricing_projection, dict):
+            pricing_status = (
+                200 if pricing_projection.get("success") is True else 503
+            )
+        else:
+            pricing_projection, pricing_status = list_live_stock_price_entries(
+                limit=500,
+                database_url=(environ or {}).get("DATABASE_URL"),
+            )
     except Exception as exc:
         pricing_projection = {
             "success": False,
@@ -7475,7 +7492,9 @@ def _send_chatwoot_message(conversation_id, message, source, amadeus_source="sam
         method="POST",
     )
     try:
-        with urllib_request.urlopen(request, timeout=10) as response:
+        with urllib_request.urlopen(
+            request, timeout=_chatwoot_write_timeout(source)
+        ) as response:
             raw = response.read().decode("utf-8", errors="replace")
             return {
                 "status_code": getattr(response, "status", 200),
@@ -7494,6 +7513,17 @@ def _chatwoot_read_timeout(source):
     try:
         configured = float(
             source.get("SAM_CHATWOOT_READ_TIMEOUT_SECONDS", "5")
+        )
+    except (TypeError, ValueError):
+        configured = 5.0
+    return max(1.0, min(10.0, configured))
+
+
+def _chatwoot_write_timeout(source):
+    source = source or {}
+    try:
+        configured = float(
+            source.get("SAM_CHATWOOT_WRITE_TIMEOUT_SECONDS", "5")
         )
     except (TypeError, ValueError):
         configured = 5.0

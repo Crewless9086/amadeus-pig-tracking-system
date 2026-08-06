@@ -1448,6 +1448,69 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertNotIn("currently eligible", decision["suggested_reply_text"])
         self.assertFalse(result["sent"])
 
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_prefetched_pricing_preserves_exact_response_and_avoids_repeat_read(self, price_list):
+        projection = self._active_big_pig_prices()
+        price_list.return_value = (projection, 200)
+        kwargs = {
+            "environ": {},
+            "intake_context_loader": lambda *_args: {
+                "success": True,
+                "known_fields": {},
+                "items": [],
+            },
+            "conversation_history_loader": lambda *_args: {
+                "success": True,
+                "messages": [],
+            },
+            "availability_loader": lambda: [],
+        }
+        baseline, _ = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="big ones pricce"), **kwargs
+        )
+        price_list.reset_mock()
+        prefetched, _ = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="big ones pricce"),
+            pricing_projection=projection,
+            **kwargs,
+        )
+        self.assertEqual(
+            prefetched["sam_decision"]["suggested_reply_text"],
+            baseline["sam_decision"]["suggested_reply_text"],
+        )
+        price_list.assert_not_called()
+
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_unavailable_prefetch_keeps_useful_claim_free_qualification(self, price_list):
+        result, _ = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="I am interested in piglets"),
+            environ={},
+            intake_context_loader=lambda *_args: {
+                "success": True,
+                "known_fields": {},
+                "items": [],
+            },
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [],
+            },
+            availability_loader=lambda: (_ for _ in ()).throw(
+                RuntimeError("inventory unavailable")
+            ),
+            pricing_projection={
+                "success": False,
+                "status": "canonical_price_projection_unavailable",
+                "price_entries": [],
+            },
+        )
+        reply = result["sam_decision"]["suggested_reply_text"]
+        self.assertTrue(reply)
+        self.assertEqual(reply.count("?"), 1)
+        self.assertNotIn("available", reply.lower())
+        self.assertNotIn("R", reply)
+        self.assertFalse(result["sent"])
+        price_list.assert_not_called()
+
     def test_pricce_spelling_is_a_livestock_price_signal_with_current_context(self):
         facts = sam_live_stock_runtime.extract_live_stock_facts("pricce")
         self.assertTrue(facts["quote_requested"])
@@ -3385,6 +3448,23 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(
             sam_live_stock_runtime._chatwoot_read_timeout({
                 "SAM_CHATWOOT_READ_TIMEOUT_SECONDS": "30"
+            }),
+            10.0,
+        )
+
+    def test_chatwoot_write_timeout_is_proportionally_bounded(self):
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_write_timeout({}), 5.0
+        )
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_write_timeout({
+                "SAM_CHATWOOT_WRITE_TIMEOUT_SECONDS": "0"
+            }),
+            1.0,
+        )
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_write_timeout({
+                "SAM_CHATWOOT_WRITE_TIMEOUT_SECONDS": "60"
             }),
             10.0,
         )

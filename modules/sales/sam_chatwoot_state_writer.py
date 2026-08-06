@@ -227,10 +227,24 @@ def _request(method, path, environ, body=None):
             **({"Content-Type": "application/json"} if data is not None else {}),
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    timeout = _bounded_timeout(
+        environ.get("SAM_CHATWOOT_STATE_WRITE_TIMEOUT_SECONDS"),
+        default=5.0,
+        minimum=1.0,
+        maximum=10.0,
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         raw = response.read()
         return json.loads(raw) if raw else {}
 
 
 def _account(environ):
     return str(environ.get("CHATWOOT_ACCOUNT_ID") or "147387")
+
+
+def _bounded_timeout(value, *, default, minimum, maximum):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))

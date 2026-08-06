@@ -2,11 +2,13 @@ import unittest
 import threading
 import urllib.error
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from modules.sales.sam_live_stock_inbox_operator import (
     SamInboxOperationFailure,
     operate_livestock_inbox,
 )
+from modules.sales import sam_live_stock_inbox_operator
 
 
 class SamLiveStockInboxOperatorTests(unittest.TestCase):
@@ -78,6 +80,88 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         )
         self.assertEqual(calls, ["1"])
         self.assertEqual(packet["customers_answered"], 1)
+
+    def test_canonical_evidence_prefetch_overlaps_remaining_inventory_pages(self):
+        evidence_started = threading.Event()
+        captured = []
+
+        def prefetch(_source):
+            evidence_started.set()
+            return {"version": "evidence-v1", "availability_rows": []}
+
+        rows = [self.row(str(index)) for index in range(1, 27)]
+        rows[0]["last_non_activity_message"] = {
+            "id": 101,
+            "created_at": 100,
+            "message_type": 0,
+            "private": False,
+        }
+
+        def page_loader(page):
+            if page == 2:
+                self.assertTrue(evidence_started.wait(timeout=1))
+            selected = rows[:25] if page == 1 else rows[25:]
+            return self.page_with_total(selected, len(rows))
+
+        operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=page_loader,
+            history_loader=lambda cid, _env: (
+                self.history("101", "I want five weaned piglets"), 200
+            ),
+            claim_exists=lambda cid, mid: False,
+            canonical_evidence_prefetcher=prefetch,
+            inbound_processor=lambda payload: captured.append(payload) or {},
+            max_process_count=None,
+        )
+        self.assertEqual(
+            captured[0]["_sam_prefetched_canonical_evidence"]["version"],
+            "evidence-v1",
+        )
+
+    def test_failed_optional_evidence_prefetch_does_not_cross_claim_boundary(self):
+        row = self.row("1")
+        row["last_non_activity_message"] = {
+            "id": 101,
+            "created_at": 100,
+            "message_type": 0,
+            "private": False,
+        }
+        captured = []
+        operate_livestock_inbox(
+            environ={},
+            conversation_page_loader=lambda page: self.page([row]),
+            history_loader=lambda cid, _env: (
+                self.history("101", "I want five weaned piglets"), 200
+            ),
+            claim_exists=lambda cid, mid: False,
+            canonical_evidence_prefetcher=lambda _source: (_ for _ in ()).throw(
+                TimeoutError("availability slow")
+            ),
+            inbound_processor=lambda payload: captured.append(payload) or {},
+            max_process_count=None,
+        )
+        self.assertEqual(
+            captured[0]["_sam_prefetched_canonical_evidence"]["status"],
+            "canonical_evidence_prefetch_unavailable",
+        )
+
+    def test_first_page_failure_never_starts_canonical_prefetch_work(self):
+        prefetch_calls = []
+        with self.assertRaises(SamInboxOperationFailure):
+            operate_livestock_inbox(
+                environ={},
+                conversation_page_loader=lambda _page: (_ for _ in ()).throw(
+                    TimeoutError("provider unavailable")
+                ),
+                history_loader=lambda *_args: self.fail("no history"),
+                claim_exists=lambda *_args: False,
+                canonical_evidence_prefetcher=lambda _source: (
+                    prefetch_calls.append(True) or {}
+                ),
+                inbound_processor=lambda _payload: self.fail("no process"),
+            )
+        self.assertEqual(prefetch_calls, [])
 
     def test_exact_accepted_attempt_is_durable_pending_provider_work(self):
         packet = operate_livestock_inbox(
@@ -990,6 +1074,40 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
                 max_process_count=1,
             )
         self.assertEqual(raised.exception.stage, "preclaim_response_processing")
+        self.assertEqual(raised.exception.effect_boundary, "not_crossed")
+        self.assertEqual(claims, set())
+
+    def test_exhausted_cycle_budget_stops_before_processor_and_claim(self):
+        row = self.row("1")
+        row["last_non_activity_message"] = {
+            "id": 992001,
+            "created_at": 100,
+            "message_type": 0,
+            "private": False,
+        }
+        claims = set()
+        with patch.object(
+            sam_live_stock_inbox_operator.time,
+            "monotonic",
+            side_effect=[100.0, 116.0],
+        ):
+            with self.assertRaises(SamInboxOperationFailure) as raised:
+                operate_livestock_inbox(
+                    environ={
+                        "SAM_INBOX_RECONCILE_REQUEST_BUDGET_SECONDS": "25"
+                    },
+                    conversation_page_loader=lambda page: self.page([row]),
+                    history_loader=lambda cid, _env: (
+                        self.history("992001", "I want weaned piglets"), 200
+                    ),
+                    claim_exists=lambda cid, mid: (cid, mid) in claims,
+                    claimed_inbound_loader=lambda identities: claims,
+                    inbound_processor=lambda payload: self.fail(
+                        "expired preclaim budget must not process"
+                    ),
+                    max_process_count=1,
+                )
+        self.assertEqual(raised.exception.stage, "preclaim_request_budget")
         self.assertEqual(raised.exception.effect_boundary, "not_crossed")
         self.assertEqual(claims, set())
 

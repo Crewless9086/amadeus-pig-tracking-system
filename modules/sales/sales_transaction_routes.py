@@ -1079,6 +1079,7 @@ def sam_live_stock_chatwoot_reconcile():
             ),
             max_process_count=1,
             isolate_provider_read_failures=True,
+            canonical_evidence_prefetcher=_prefetch_sam_canonical_sales_evidence,
             inbound_processor=_operate_sam_live_stock_exact_payload,
         )
         return jsonify(packet), 200
@@ -1106,16 +1107,51 @@ def sam_live_stock_chatwoot_reconcile():
 
 
 def _operate_sam_live_stock_exact_payload(payload):
+    source = _sam_reconcile_composition_environ(payload)
     authoritative_history = (
         payload.get("_sam_authoritative_history")
         if isinstance(payload.get("_sam_authoritative_history"), dict)
         else {}
     )
+    prefetched = payload.get("_sam_prefetched_canonical_evidence")
+    prefetched = prefetched if isinstance(prefetched, dict) else {}
+    availability_rows = prefetched.get("availability_rows")
+    pricing_projection = prefetched.get("pricing_projection")
+    if prefetched.get("version") and not isinstance(
+        pricing_projection, dict
+    ):
+        pricing_projection = {
+            "success": False,
+            "status": "canonical_price_projection_unavailable",
+            "price_entries": [],
+        }
     result, _status = handle_sam_live_stock_chatwoot_inbound(
         payload,
+        environ=source,
         allow_provider_current_backlog=True,
         conversation_history_loader=(
             lambda *_args, **_kwargs: authoritative_history
+        ),
+        availability_loader=(
+            (lambda: list(availability_rows))
+            if isinstance(availability_rows, list)
+            else (
+                lambda: (_ for _ in ()).throw(
+                    RuntimeError("canonical_sales_availability_unavailable")
+                )
+            )
+            if prefetched.get("version")
+            else None
+        ),
+        availability_evidence=(
+            prefetched.get("availability_evidence")
+            if isinstance(prefetched.get("availability_evidence"), dict)
+            else None
+        ),
+        pricing_projection=(
+            pricing_projection
+            if isinstance(pricing_projection, dict)
+            else None
         ),
         preclaim_chronology_verifier=verify_chatwoot_current_inbound,
         routine_delivery_claim=_claim_sam_live_stock_routine_delivery,
@@ -1132,6 +1168,67 @@ def _operate_sam_live_stock_exact_payload(payload):
         )
     result["_operation_status_code"] = int(_status)
     return result
+
+
+def _prefetch_sam_canonical_sales_evidence(source):
+    """Overlap immutable canonical reads with provider inventory scanning."""
+    packet = {"version": "sam_canonical_sales_evidence_prefetch_v1"}
+    try:
+        rows = get_sales_availability()
+        packet["availability_rows"] = list(rows or [])
+        packet["availability_evidence"] = {
+            "status": "canonical_sales_availability_reader",
+            "provenance": "get_sales_availability",
+            "freshness": "request_cycle_prefetch",
+            "canonical_row_count": len(packet["availability_rows"]),
+            "source_mode": "canonical_request_cycle_prefetch",
+        }
+    except Exception as exc:
+        packet["availability_error_type"] = exc.__class__.__name__
+    try:
+        pricing, status = list_live_stock_price_entries(
+            limit=500,
+            database_url=source.get("DATABASE_URL"),
+        )
+        if status == 200 and isinstance(pricing, dict):
+            packet["pricing_projection"] = pricing
+        else:
+            packet["pricing_error_type"] = "canonical_price_projection_unavailable"
+            packet["pricing_projection"] = {
+                "success": False,
+                "status": "canonical_price_projection_unavailable",
+                "price_entries": [],
+            }
+    except Exception as exc:
+        packet["pricing_error_type"] = exc.__class__.__name__
+        packet["pricing_projection"] = {
+            "success": False,
+            "status": "canonical_price_projection_unavailable",
+            "price_entries": [],
+        }
+    return packet
+
+
+def _sam_reconcile_composition_environ(payload):
+    import time
+
+    source = dict(os.environ)
+    try:
+        deadline = float(payload.get("_sam_reconcile_deadline_monotonic"))
+        remaining = max(0.0, deadline - time.monotonic())
+    except (TypeError, ValueError):
+        return source
+    # Canonical chronology, inventory, pricing and policy remain authoritative.
+    # LLM wording is optional guidance and must leave ten seconds for the
+    # durable claim, provider call and reconciliation boundary.
+    optional_budget = remaining - 10.0
+    if optional_budget < 5.0:
+        source["SAM_LIVE_STOCK_BACKEND_LLM_ENABLED"] = "0"
+    else:
+        source["SAM_LIVE_STOCK_BACKEND_LLM_TIMEOUT_SECONDS"] = str(
+            max(1, min(4, int(optional_budget)))
+        )
+    return source
 
 
 def _load_sam_live_stock_history_with_status(conversation_id, environ):
