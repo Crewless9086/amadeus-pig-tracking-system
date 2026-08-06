@@ -116,6 +116,19 @@
   envelope checksums; no migration exists and no evidence row is written by
   this candidate.
 
+### ROOTLINE eWeLink secure onboarding
+
+- OAuth service: `modules/telemetry/rootline_ewelink_oauth.py`
+- Private store: `modules/telemetry/rootline_ewelink_oauth_store.py`
+- Routes: `modules/telemetry/telemetry_routes.py`
+- Migration: `supabase/migrations/202608060001_create_rootline_ewelink_oauth_vault.sql`
+- Tests: `tests/test_rootline_ewelink_oauth.py`
+- Operations: `docs/06-operations/ROOTLINE_EWELINK_OAUTH_ONBOARDING.md`
+- Authority is limited to owner-authenticated authorization start, a
+  HMAC-bound single-use callback, encrypted persistence and three allowlisted
+  provider GETs. Readback and autonomous B/C activation remain disabled; no
+  provider control call is implemented.
+
 Status: active machine-aligned map, maintained with `modules/charlie/source_map.py`.
 
 Purpose: tell CHARLIE CORE where real implementation truth lives before it advises or builds. Vault Brain carries doctrine and strategy; this map links doctrine to code, routes, tests, migrations, and legacy sources.
