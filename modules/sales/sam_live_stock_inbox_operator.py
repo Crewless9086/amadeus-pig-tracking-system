@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import time
 import urllib.parse
 import urllib.error
 import urllib.request
@@ -42,6 +43,7 @@ def operate_livestock_inbox(
     quarantined_conversation_loader: Callable | None = None,
     attention_queue_operator: Callable | None = None,
     attention_sam_state: Mapping | None = None,
+    canonical_evidence_prefetcher: Callable | None = None,
     max_process_count: int | None = None,
     isolate_provider_read_failures: bool = False,
     now=None,
@@ -49,6 +51,13 @@ def operate_livestock_inbox(
     """Process every independently eligible current inbound exactly once."""
     source = environ if environ is not None else os.environ
     clock = now or datetime.now(timezone.utc)
+    request_budget_seconds = _bounded_timeout(
+        source.get("SAM_INBOX_RECONCILE_REQUEST_BUDGET_SECONDS"),
+        default=25.0,
+        minimum=10.0,
+        maximum=25.0,
+    )
+    request_deadline = time.monotonic() + request_budget_seconds
     page_loader = conversation_page_loader or (
         lambda page: _conversation_page(page, source)
     )
@@ -82,8 +91,17 @@ def operate_livestock_inbox(
 
     loaded = {}
     provider_read_failures = []
+    prefetched_evidence = {}
     if page_count > 1:
-        with ThreadPoolExecutor(max_workers=min(24, page_count - 1)) as pool:
+        worker_count = min(24, page_count - 1)
+        if canonical_evidence_prefetcher is not None:
+            worker_count += 1
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            evidence_future = (
+                pool.submit(canonical_evidence_prefetcher, source)
+                if canonical_evidence_prefetcher is not None
+                else None
+            )
             futures = {
                 pool.submit(load_page, page): page
                 for page in range(2, page_count + 1)
@@ -103,6 +121,16 @@ def operate_livestock_inbox(
                         "page": futures[future],
                         "error_type": exc.__class__.__name__,
                     })
+            prefetched_evidence = _resolve_prefetched_evidence(
+                evidence_future
+            )
+    elif canonical_evidence_prefetcher is not None:
+        try:
+            loaded_evidence = canonical_evidence_prefetcher(source)
+            if isinstance(loaded_evidence, Mapping):
+                prefetched_evidence = dict(loaded_evidence)
+        except Exception as exc:
+            prefetched_evidence = _unavailable_prefetch(exc)
     for page in range(2, page_count + 1):
         if page in loaded:
             rows.extend(loaded[page])
@@ -271,6 +299,8 @@ def operate_livestock_inbox(
             ),
             can_process=can_process,
             require_durable_result=max_process_count is not None,
+            request_deadline=request_deadline,
+            prefetched_evidence=prefetched_evidence,
             now=clock,
         )
         if disposition.get("selected_for_processing") is True:
@@ -394,6 +424,8 @@ def _inspect_and_operate(
     conversation_quarantined,
     can_process,
     require_durable_result,
+    request_deadline,
+    prefetched_evidence,
     now,
 ):
     conversation_id = str(row.get("id") or "")
@@ -561,6 +593,18 @@ def _inspect_and_operate(
     )
     selected_for_processing = bool(eligible and can_process)
     if selected_for_processing:
+        remaining_seconds = request_deadline - time.monotonic()
+        if remaining_seconds < 10.0:
+            raise SamInboxOperationFailure(
+                "sam_reconcile_preclaim_budget_unavailable",
+                stage="preclaim_request_budget",
+                effect_boundary="not_crossed",
+            )
+        payload["_sam_reconcile_deadline_monotonic"] = request_deadline
+        if prefetched_evidence:
+            payload["_sam_prefetched_canonical_evidence"] = (
+                prefetched_evidence
+            )
         try:
             result = inbound_processor(payload)
         except Exception as exc:
@@ -785,6 +829,24 @@ def build_sam_status_summary(
             if any(row.get("provider_confirmed") is True for row in rows)
             else ""
         ),
+    }
+
+
+def _resolve_prefetched_evidence(future):
+    if future is None:
+        return {}
+    try:
+        loaded = future.result()
+        return dict(loaded) if isinstance(loaded, Mapping) else {}
+    except Exception as exc:
+        return _unavailable_prefetch(exc)
+
+
+def _unavailable_prefetch(exc):
+    return {
+        "version": "sam_canonical_sales_evidence_prefetch_v1",
+        "status": "canonical_evidence_prefetch_unavailable",
+        "error_type": exc.__class__.__name__,
     }
 
 

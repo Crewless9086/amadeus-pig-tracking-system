@@ -4,9 +4,24 @@ from modules.sales.sam_chatwoot_state_writer import (
     apply_delivery_state,
     apply_new_inbound_state,
 )
+from modules.sales import sam_chatwoot_state_writer
 
 
 class SamChatwootStateWriterTests(unittest.TestCase):
+    def test_state_write_timeout_is_proportionally_bounded(self):
+        self.assertEqual(
+            sam_chatwoot_state_writer._bounded_timeout(
+                None, default=5.0, minimum=1.0, maximum=10.0
+            ),
+            5.0,
+        )
+        self.assertEqual(
+            sam_chatwoot_state_writer._bounded_timeout(
+                30, default=5.0, minimum=1.0, maximum=10.0
+            ),
+            10.0,
+        )
+
     def inbound(self):
         return {
             "account_id": "147387",

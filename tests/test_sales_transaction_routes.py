@@ -46,6 +46,100 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             sales_transaction_routes.verify_chatwoot_current_inbound,
         )
 
+    def test_reconcile_budget_omits_optional_llm_when_claim_reserve_would_be_lost(self):
+        payload = {"_sam_reconcile_deadline_monotonic": 112.0}
+        with patch("time.monotonic", return_value=100.0), patch.dict(
+            sales_transaction_routes.os.environ,
+            {"SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1"},
+            clear=False,
+        ):
+            source = (
+                sales_transaction_routes
+                ._sam_reconcile_composition_environ(payload)
+            )
+        self.assertEqual(
+            source["SAM_LIVE_STOCK_BACKEND_LLM_ENABLED"], "0"
+        )
+
+    def test_reconcile_budget_caps_optional_llm_and_reserves_effect_boundary(self):
+        payload = {"_sam_reconcile_deadline_monotonic": 130.0}
+        with patch("time.monotonic", return_value=100.0), patch.dict(
+            sales_transaction_routes.os.environ,
+            {"SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1"},
+            clear=False,
+        ):
+            source = (
+                sales_transaction_routes
+                ._sam_reconcile_composition_environ(payload)
+            )
+        self.assertEqual(
+            source["SAM_LIVE_STOCK_BACKEND_LLM_ENABLED"], "1"
+        )
+        self.assertEqual(
+            source["SAM_LIVE_STOCK_BACKEND_LLM_TIMEOUT_SECONDS"], "4"
+        )
+
+    def test_exact_payload_reuses_prefetched_canonical_inventory_and_pricing(self):
+        availability = [{"pig_id": "PIG-1"}]
+        pricing = {"success": True, "price_entries": []}
+        payload = {
+            "_sam_authoritative_history": {"success": True, "messages": []},
+            "_sam_prefetched_canonical_evidence": {
+                "availability_rows": availability,
+                "availability_evidence": {
+                    "provenance": "get_sales_availability"
+                },
+                "pricing_projection": pricing,
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=({"processed": False}, 200),
+        ) as handle:
+            sales_transaction_routes._operate_sam_live_stock_exact_payload(
+                payload
+            )
+        kwargs = handle.call_args.kwargs
+        self.assertEqual(kwargs["availability_loader"](), availability)
+        self.assertIs(kwargs["pricing_projection"], pricing)
+
+    def test_prefetch_isolates_one_unavailable_canonical_dependency(self):
+        pricing = {"success": True, "price_entries": [{"category": "weaned"}]}
+        with patch.object(
+            sales_transaction_routes,
+            "get_sales_availability",
+            side_effect=TimeoutError("slow inventory"),
+        ), patch.object(
+            sales_transaction_routes,
+            "list_live_stock_price_entries",
+            return_value=(pricing, 200),
+        ):
+            packet = sales_transaction_routes._prefetch_sam_canonical_sales_evidence({})
+        self.assertEqual(packet["availability_error_type"], "TimeoutError")
+        self.assertIs(packet["pricing_projection"], pricing)
+
+    def test_failed_prefetch_never_falls_back_to_request_critical_reads(self):
+        payload = {
+            "_sam_authoritative_history": {"success": True, "messages": []},
+            "_sam_prefetched_canonical_evidence": {
+                "version": "sam_canonical_sales_evidence_prefetch_v1",
+                "status": "canonical_evidence_prefetch_unavailable",
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=({"processed": False}, 200),
+        ) as handle:
+            sales_transaction_routes._operate_sam_live_stock_exact_payload(
+                payload
+            )
+        kwargs = handle.call_args.kwargs
+        with self.assertRaises(RuntimeError):
+            kwargs["availability_loader"]()
+        self.assertFalse(kwargs["pricing_projection"]["success"])
+
     def test_operator_isolates_post_send_review_adjunct_failure(self):
         result = {
             "processed": True,
