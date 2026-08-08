@@ -13,6 +13,7 @@ import hmac
 import json
 import os
 import secrets
+import string
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -78,7 +79,11 @@ def create_authorization_request(*, principal, state_store, environ=None, now=No
         raise OAuthFailure("oauth_onboarding_not_ready")
     now = _aware(now or datetime.now(timezone.utc))
     expires = now + timedelta(seconds=STATE_TTL_SECONDS)
-    nonce = secrets.token_urlsafe(12)[:16]
+    # CoolKit's authorization page requires exactly eight alphanumeric
+    # characters.  URL-safe tokens may contain '-' or '_' and cause the
+    # hosted page to remain on its loading screen instead of rejecting the
+    # request visibly.
+    nonce = _coolkit_nonce()
     jti = secrets.token_urlsafe(24)
     payload = {
         "v": 1, "jti": jti, "iat": int(now.timestamp()),
@@ -251,7 +256,7 @@ def _provider_request(method, url, *, body=None, mode, token=None, environ):
         signature = base64.b64encode(hmac.new(str(environ["EWELINK_CLIENT_SECRET"]).encode(),
                                                data or b"", hashlib.sha256).digest()).decode()
         headers["Authorization"] = "Sign " + signature
-        headers["X-CK-Nonce"] = secrets.token_urlsafe(8)[:8]
+        headers["X-CK-Nonce"] = _coolkit_nonce()
     elif mode == "bearer" and token:
         headers["Authorization"] = "Bearer " + token
     else:
@@ -321,6 +326,12 @@ def _millis_time(value):
 
 def _false(value):
     return str(value or "").strip().lower() in {"", "0", "false", "off", "no"}
+
+
+def _coolkit_nonce():
+    """Return the exact eight-character nonce required by CoolKit APIs."""
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(8))
 
 
 def _aware(value):
