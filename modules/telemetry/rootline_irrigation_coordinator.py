@@ -9,6 +9,10 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 from modules.telemetry.rootline_irrigation_execution_contract import validate_commissioning
+from modules.telemetry.rootline_execution_authority import (
+    equivalent_fresh_eligibility, validate_execution_eligibility,
+)
+from modules.telemetry.rootline_ewelink_commissioned_baseline import validate_commissioned_baseline
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
@@ -40,18 +44,19 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     # immediately before the durable claim. It prevents a fresh rain Hold or
     # evidence-generation change from racing a previously eligible decision.
     revalidated = eligibility_revalidator(decision)
-    if (not isinstance(revalidated, dict) or revalidated.get("eligible") is not True
-            or revalidated.get("observed_rain") is not False
-            or revalidated.get("decision_id") != decision.get("decision_id")
-            or revalidated.get("evidence_generation") != decision.get("evidence_generation")):
+    if (not equivalent_fresh_eligibility(
+            decision.get("execution_eligibility"), revalidated, now=now)
+            or revalidated.get("zone_id") != decision.get("zone_id")):
         return _result("execution_eligibility_changed", commands=0, messages=0)
     execution = {
         "execution_id": decision["execution_id"], "eligibility_id": decision["eligibility_id"],
         "evidence_generation": decision["evidence_generation"], "zone_id": decision["zone_id"],
         "channel": ZONES[decision["zone_id"]], "planned_runtime_minutes": decision["runtime_minutes"],
+        "planned_runtime_seconds": decision["runtime_seconds"],
         "claimed_at": now.isoformat(),
-        "primary_stop_deadline": (now + timedelta(minutes=decision["runtime_minutes"])).isoformat(),
-        "native_fail_stop_deadline": (now + timedelta(minutes=60)).isoformat(),
+        "primary_stop_deadline": (now + timedelta(seconds=decision["runtime_seconds"])).isoformat(),
+        "native_fail_stop_deadline": (now + timedelta(
+            seconds=commissioning["native_inching_seconds"])).isoformat(),
         "commissioning_id": commissioning_id,
         "state": "claimed", "on_attempts": 0, "off_attempts": 0,
     }
@@ -73,24 +78,28 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         verified = shutdown.get("authoritative") is True and shutdown.get("state") == "OFF"
         store("record_ambiguous_shutdown", {**execution, "state": "ambiguous",
               "shutdown_verified": verified, "shutdown_evidence": shutdown})
-        notify("Exception", {**execution, "reason": "ambiguous_on", "recovery": recovery,
-                              "shutdown_verified": verified})
+        delivery = _notify(notify, store, "Intervention", {**execution,
+            "reason": "ambiguous_on", "recovery": recovery, "shutdown_verified": verified})
         return _result("ambiguous_on_contained" if verified else "ambiguous_on_shutdown_unverified",
-                       commands=1 + recovery["commands"], messages=1)
+                       commands=1 + recovery["commands"], messages=delivery["confirmed"],
+                       notification=delivery)
     started = transport.read_output_state(device_id="100204e9bc", channel=execution["channel"])
     if started.get("authoritative") is not True or started.get("state") != "ON":
         store("record_start_unverified", {**execution, "on_attempts": 1,
               "provider_acceptance": accepted, "output_readback": started})
         recovery = _bounded_off(execution, store, transport)
         store("contain_zone", {**execution, "state": "ambiguous", "shutdown_verified": False})
-        notify("Exception", {**execution, "reason": "start_unverified", "recovery": recovery})
-        return _result("start_unverified_contained", commands=1 + recovery["commands"], messages=1)
+        delivery = _notify(notify, store, "Intervention", {**execution,
+            "reason": "start_unverified", "recovery": recovery})
+        return _result("start_unverified_contained", commands=1 + recovery["commands"],
+                       messages=delivery["confirmed"], notification=delivery)
     active_execution = {**execution, "state": "Active", "on_attempts": 1,
                         "start_evidence": started}
     store("mark_active", active_execution)
-    notify("Active", active_execution)
-    return _result("segment_started", commands=1, messages=1, execution=active_execution,
-                   autonomous_on_enabled=True)
+    delivery = _notify(notify, store, "Started", active_execution)
+    return _result("segment_started", commands=1, messages=delivery["confirmed"],
+                   execution=active_execution, notification=delivery,
+                   autonomous_on_enabled=True, writes_farm_data=True)
 
 
 def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
@@ -105,34 +114,46 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
         verified = shutdown.get("authoritative") is True and shutdown.get("state") == "OFF"
         store("record_claim_recovery", {**active, "shutdown_verified": verified,
               "shutdown_evidence": shutdown})
-        notify("Exception", {**active, "reason": "interrupted_start_contained",
-                              "shutdown_verified": verified})
+        delivery = _notify(notify, store, "Intervention", {**active,
+            "reason": "interrupted_start_contained", "shutdown_verified": verified})
         return _result("interrupted_start_contained" if verified else "interrupted_start_shutdown_unverified",
-                       commands=recovery["commands"], messages=1)
+                       commands=recovery["commands"], messages=delivery["confirmed"],
+                       notification=delivery)
     primary_deadline = _timestamp(active.get("primary_stop_deadline"))
     native_deadline = _timestamp(active.get("native_fail_stop_deadline"))
     if primary_deadline is None or native_deadline is None or primary_deadline > native_deadline:
         recovery = _bounded_off(active, store, transport)
-        notify("Exception", {**active, "reason": "fail_stop_deadline_missing", "recovery": recovery})
-        return _result("active_segment_contained", commands=recovery["commands"], messages=1)
+        delivery = _notify(notify, store, "Intervention", {**active,
+            "reason": "fail_stop_deadline_missing", "recovery": recovery})
+        return _result("active_segment_contained", commands=recovery["commands"],
+                       messages=delivery["confirmed"], notification=delivery)
     if now < primary_deadline:
         return _result("active_segment_owned", commands=0, messages=0, execution=active)
     recovery = _bounded_off(active, store, transport)
     shutdown = transport.read_output_state(device_id="100204e9bc", channel=active["channel"])
     if shutdown.get("state") != "OFF" or shutdown.get("authoritative") is not True:
         store("contain_zone", {**active, "state": "ambiguous", "shutdown_verified": False})
-        notify("Exception", {**active, "reason": "shutdown_unverified"})
-        return _result("shutdown_unverified", commands=recovery["commands"], messages=1)
+        delivery = _notify(notify, store, "Intervention", {**active,
+            "reason": "shutdown_unverified"})
+        return _result("shutdown_unverified", commands=recovery["commands"],
+                       messages=delivery["confirmed"], notification=delivery)
     objective = _canonical_outcome(
         outcome_reader(active["execution_id"]), active, shutdown, now)
     completed = {**active, "state": "Completed", "shutdown_verified": True,
                  "objective_satisfied": objective.get("objective_satisfied") is True,
                  "objective_evidence": objective,
                  "shutdown_evidence": shutdown, "completed_at": now.isoformat()}
-    store("record_completed", completed)
-    notify("Completed", completed)
-    return _result("segment_completed", commands=recovery["commands"], messages=1,
-                   execution=completed)
+    recorded = store("record_completed", completed)
+    if not isinstance(recorded, dict) or recorded.get("success") is not True:
+        delivery = _notify(notify, store, "Intervention", {**completed,
+            "reason": "canonical_completion_persistence_unproven"})
+        return _result("completion_persistence_unproven", commands=recovery["commands"],
+                       messages=delivery["confirmed"], execution=completed,
+                       notification=delivery, writes_farm_data=False)
+    delivery = _notify(notify, store, "Completed", completed)
+    return _result("segment_completed", commands=recovery["commands"],
+                   messages=delivery["confirmed"], execution=completed,
+                   notification=delivery, writes_farm_data=True)
 
 
 def _bounded_off(execution, store, transport):
@@ -164,7 +185,9 @@ def _eligible(decision, decision_id, commissioning, now):
     canonical = {key: value for key, value in decision.items() if key != "decision_sha256"}
     zone = decision.get("zone_id")
     assessed = _timestamp(decision.get("assessed_at"))
-    return (decision.get("decision_id") == decision_id and supplied == _digest(canonical)
+    artifact = validate_execution_eligibility(decision.get("execution_eligibility"), now=now)
+    return (artifact is not None
+            and decision.get("decision_id") == decision_id and supplied == _digest(canonical)
             and zone in ZONES and decision.get("decision") == "Run now"
             and decision.get("standing_authority") is True
             and decision.get("runtime_minutes") in range(1, MAX_MINUTES + 1)
@@ -174,11 +197,31 @@ def _eligible(decision, decision_id, commissioning, now):
             and commissioning.get("commissioned") is True
             and decision.get("commissioning_id") == commissioning.get("commissioning_id")
             and decision.get("commissioning_generation") == commissioning.get("configuration_generation")
-            and commissioning.get("native_inching_seconds") == 3600)
+            and 0 < int(commissioning.get("native_inching_seconds") or 0) <= 3600
+            and artifact.get("execution_id") == decision.get("execution_id")
+            and artifact.get("eligibility_id") == decision.get("eligibility_id")
+            and artifact.get("plan_generation") == decision.get("evidence_generation")
+            and artifact.get("maximum_duration_seconds") == decision.get("runtime_seconds")
+            and artifact.get("channel") == ZONES[zone])
 
 
 def _canonical_commissioning(packet, commissioning_id, now):
     if not isinstance(packet, dict) or packet.get("commissioning_id") != commissioning_id:
+        return None
+    baseline = packet.get("accepted_controller_baseline")
+    if isinstance(baseline, dict):
+        zone = str(packet.get("zone_id") or "")
+        expected = (baseline.get("b_commissioning_id") if zone == "B12345"
+                    else baseline.get("c_commissioning_id") if zone == "C12345" else None)
+        validated = validate_commissioned_baseline(baseline, device_id="100204e9bc",
+            firmware=str(packet.get("firmware") or ""), observed_at=now)
+        if (validated and expected == commissioning_id
+                and packet.get("channel") == ZONES.get(zone)
+                and int(packet.get("native_inching_seconds") or 0) in range(1, 3601)):
+            return {"commissioning_id": expected, "zone_id": zone,
+                    "channel": ZONES[zone], "commissioned": True,
+                    "configuration_generation": baseline["configuration_generation"],
+                    "native_inching_seconds": int(packet["native_inching_seconds"])}
         return None
     try:
         evidence = packet.get("evidence") or {}
@@ -223,10 +266,39 @@ def _safe_configuration(value, zone):
 
 
 def _result(status, *, commands, messages, **extra):
+    writes_farm_data = bool(extra.pop("writes_farm_data", False))
     return {"success": True, "status": status, "hardware_commands": commands,
             "telegram_messages": messages, "automatic_on_retry": False,
             "simultaneous_zones": False, "borehole_authority": False,
-            "fertilizer_authority": False, **extra}
+            "fertilizer_authority": False, "writes_farm_data": writes_farm_data,
+            **extra}
+
+
+def _notify(notify, store, state, payload):
+    identity = f"{payload.get('execution_id')}:{state}"
+    claim = store("claim_notification", {**payload,
+        "notification_identity": identity, "notification_state": state})
+    if not isinstance(claim, dict) or claim.get("created") is not True:
+        return {"confirmed": 0, "ambiguous": False,
+                "status": "replayed_noop", "provider_message_id": ""}
+    try:
+        delivery = notify(state, payload)
+    except Exception:
+        delivery = {"success": False, "status": "notification_delivery_failed"}
+    delivery = delivery if isinstance(delivery, dict) else {}
+    confirmed = bool(delivery.get("success") is True
+                     and delivery.get("provider_delivery_confirmed") is True
+                     and delivery.get("provider_message_id"))
+    ambiguous = bool(delivery.get("provider_delivery_ambiguous") is True
+                     or "ambiguous" in str(delivery.get("status") or ""))
+    record = {**payload, "notification_identity": identity,
+              "notification_state": state, "delivery_confirmed": confirmed,
+              "delivery_ambiguous": ambiguous,
+              "provider_message_id": str(delivery.get("provider_message_id") or "")}
+    store("record_notification_delivery", record)
+    return {"confirmed": int(confirmed), "ambiguous": ambiguous,
+            "status": "confirmed" if confirmed else "ambiguous" if ambiguous else "failed",
+            "provider_message_id": record["provider_message_id"]}
 
 
 def _timestamp(value):
