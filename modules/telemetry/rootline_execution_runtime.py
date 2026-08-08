@@ -21,9 +21,10 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
                                  token_store=None, transport=None,
                                  outcome_reader=lambda _identity: None,
                                  evidence_loader=read_current_water_energy_evidence,
-                                 readback=read_current_device):
+                                 readback=read_current_device, clock=None):
     source = environ if environ is not None else os.environ
-    now = _aware(now or datetime.now(timezone.utc))
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    now = _aware(now or clock())
     if str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() != "true":
         return _safe("autonomous_bc_disabled")
     token_store = token_store or PostgresOAuthTokenStore(database_url)
@@ -34,7 +35,7 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
         return advance_irrigation_execution(decision_id="", commissioning_id="",
             decision_reader=lambda _identity: {}, commissioning_reader=lambda _identity: {},
             store=store, transport=transport, notify=notify,
-            outcome_reader=outcome_reader, now=now)
+            outcome_reader=outcome_reader, now=now, clock=clock)
     initial = _current(evidence_loader, readback, token_store, source, database_url, now)
     artifact = initial["artifact"]
     if artifact.get("eligible") is not True:
@@ -64,13 +65,14 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
         "native_inching_seconds": selected["native_auto_off_seconds"],
         "accepted_controller_baseline": baseline}
     def revalidate(_decision):
+        current_now = _aware(clock())
         return _current(evidence_loader, readback, token_store, source,
-                        database_url, now)["artifact"]
+                        database_url, current_now)["artifact"]
     return advance_irrigation_execution(decision_id=decision["decision_id"],
         commissioning_id=commissioning_id, decision_reader=lambda _identity: decision,
         commissioning_reader=lambda _identity: commissioning, store=store,
         transport=transport, notify=notify, outcome_reader=outcome_reader,
-        eligibility_revalidator=revalidate, now=now)
+        eligibility_revalidator=revalidate, now=now, clock=clock)
 
 
 def _current(evidence_loader, readback, token_store, source, database_url, now):

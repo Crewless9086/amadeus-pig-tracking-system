@@ -109,6 +109,10 @@ def _claim_single_controller(body):
     """Atomically serialize B/C claims with one transaction advisory lock."""
     import psycopg
     execution_id = str(body["execution_id"])
+    consumption_key = str(body.get("consumption_key") or "").strip()
+    if not consumption_key:
+        return {"success": False, "created": False,
+                "status": "consumption_key_missing"}
     event_id = _event_id("claim_before_on", body)
     with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
         with connection.cursor() as cursor:
@@ -117,6 +121,15 @@ def _claim_single_controller(body):
                 where review_event_id=%s""", (event_id,))
             if cursor.fetchone():
                 return {"success": True, "created": False, "status": "execution_replay"}
+            cursor.execute("""select 1
+                from public.sam_live_stock_conversation_review_events
+                where event_source=%s
+                  and review_json->'rootline_execution'->>'action'='claim_before_on'
+                  and review_json->'rootline_execution'->>'consumption_key'=%s
+                limit 1""", (EVENT_SOURCE, consumption_key))
+            if cursor.fetchone():
+                return {"success": True, "created": False,
+                        "status": "eligibility_already_consumed"}
             cursor.execute("""select 1
                 from public.sam_live_stock_conversation_review_events claim
                 where claim.event_source=%s
@@ -155,8 +168,7 @@ def _append_history(action, body):
     from datetime import datetime, timezone
     from modules.telemetry.rootline_irrigation_history import build_typed_history_event
     event_at = _time(body.get("completed_at") or body.get("claimed_at")) or datetime.now(timezone.utc)
-    claimed = _time(body.get("claimed_at")); completed = _time(body.get("completed_at"))
-    actual = ((completed-claimed).total_seconds()/60 if claimed and completed else None)
+    actual = _verified_runtime(body)
     details = {"execution_id": body.get("execution_id"),
         "start_evidence_id": (body.get("start_evidence") or {}).get("evidence_id") or "Unavailable",
         "maximum_runtime_minutes": body.get("planned_runtime_minutes"),
@@ -165,6 +177,7 @@ def _append_history(action, body):
         "shutdown_verified": body.get("shutdown_verified") is True,
         "objective_satisfied": body.get("objective_satisfied") is True,
         "evidence_cutoff": body.get("completed_at") or body.get("claimed_at"),
+        "shutdown_observed_at": body.get("completed_at"),
         "provenance": "rootline_execution_coordinator",
         "classification": event_type.lower()}
     event_id = "ROOTLINE-HISTORY-" + hashlib.sha256(
@@ -213,3 +226,16 @@ def _numeric_equal(left, right):
         return float(left) == float(right)
     except (TypeError, ValueError):
         return False
+
+
+def _verified_runtime(body):
+    evidence = body.get("objective_evidence")
+    if not isinstance(evidence, dict):
+        return None
+    value = evidence.get("verified_runtime_minutes")
+    try:
+        runtime = float(value)
+        maximum = float(body.get("planned_runtime_minutes") or 0)
+    except (TypeError, ValueError):
+        return None
+    return runtime if 0 <= runtime <= maximum else None

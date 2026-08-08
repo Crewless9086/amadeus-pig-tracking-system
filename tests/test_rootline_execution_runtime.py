@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from modules.telemetry.rootline_execution_runtime import run_rootline_execution_cycle
@@ -56,7 +56,7 @@ class Transport:
     def read_output_state(self,**kwargs): return {"authoritative":True,"state":"ON","evidence_id":"OUT-1"}
 
 
-def run(store,transport,rain=0,notify=None):
+def run(store,transport,rain=0,notify=None,clock=lambda:NOW):
     loader=lambda **_kwargs:(evidence(rain),"2026-08-08",NOW)
     with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",
                     return_value=plan()):
@@ -64,7 +64,7 @@ def run(store,transport,rain=0,notify=None):
             "provider_delivery_confirmed":True,"provider_message_id":"MSG-1"}),
             environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=store,
             token_store=object(),transport=transport,evidence_loader=loader,
-            readback=lambda **_kwargs:controller())
+            readback=lambda **_kwargs:controller(),clock=clock)
 
 
 def test_rain_hold_creates_no_artifact_command_or_notification():
@@ -101,3 +101,11 @@ def test_disabled_flag_is_zero_effect():
         environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"false"},now=NOW,
         store=store,token_store=object(),transport=transport)
     assert value["status"]=="autonomous_bc_disabled" and store.rows==[] and transport.calls==[]
+
+
+def test_expired_artifact_at_real_preclaim_time_creates_no_on():
+    store=Store(); transport=Transport()
+    later=NOW+timedelta(minutes=16)
+    value=run(store,transport,clock=lambda:later)
+    assert value["status"]=="execution_eligibility_changed"
+    assert transport.calls==[]

@@ -73,11 +73,22 @@ def test_expiry_and_fresh_equivalence_are_exactly_bound():
     assert validate_execution_eligibility(first,now=NOW+timedelta(minutes=16)) is None
 
 
-def test_power_never_enters_artifact_or_changes_eligibility():
+def test_regenerated_unchanged_decision_keeps_one_durable_consumption_key():
+    plan,evidence,controller=inputs()
+    first=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,now=NOW)
+    controller["trusted_receipt_at"]=(NOW+timedelta(minutes=1)).isoformat()
+    second=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,
+                                       now=NOW+timedelta(minutes=1))
+    assert first["execution_id"] != second["execution_id"]
+    assert first["consumption_key"] == second["consumption_key"]
+
+
+def test_power_never_changes_eligibility_but_canonical_generation_remains_bound():
     plan,evidence,controller=inputs()
     first=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,now=NOW)
     evidence["power"]={"battery_soc_pct":1,"grid_power_w":9999}
     changed=build_execution_eligibility(plan={**plan,"evidence_generation":"POWER-CHANGED"},
         evidence=evidence,controller=controller,now=NOW)
     assert changed["eligible"] is True and "power" not in changed and "battery" not in repr(changed).lower()
-    assert changed["eligibility_id"]==first["eligibility_id"]
+    assert changed["eligible"] is True
+    assert changed["eligibility_id"] != first["eligibility_id"]

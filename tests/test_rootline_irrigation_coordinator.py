@@ -86,7 +86,7 @@ def run(store, transport, notices, value=None, now=NOW, outcome=None, revalidate
         commissioning_reader=lambda _:commissioned, store=store, transport=transport,
         notify=lambda *x:(notices.append(x) or {"success":True,"provider_delivery_confirmed":True,
             "provider_message_id":f"MSG-{len(notices)}"}), outcome_reader=lambda _:outcome,
-        eligibility_revalidator=revalidate, now=now)
+        eligibility_revalidator=revalidate, now=now, clock=lambda: now)
 
 
 def test_missing_provider_safety_readback_disables_on():
@@ -109,7 +109,9 @@ def test_exactly_one_unambiguous_on_after_durable_claim():
     assert [call["state"] for call in transport.calls]==["ON"]
     assert store.rows[0][0]=="claim_before_on" and notices[0][0]=="Started"
     active=next(value for name,value in store.rows if name=="mark_active")
-    assert result["execution"]==active==notices[0][1]
+    assert result["execution"]==active
+    assert notices[0][1]=={**active,
+        "notification_identity":f"{active['execution_id']}:Started"}
     assert active["state"]=="Active" and active["start_evidence"]["authoritative"] is True
 
 
@@ -190,7 +192,8 @@ def test_verified_segment_can_carry_canonical_objective_satisfaction():
     result=run(store,Transport(readback="OFF"),notices,outcome=outcome)
     assert result["status"]=="segment_completed"
     assert result["execution"]["objective_satisfied"] is True
-    assert notices==[("Completed",result["execution"])]
+    assert notices[0][0]=="Completed"
+    assert notices[0][1]["notification_identity"]=="EXEC-1:Completed"
 
 
 def test_pre_stop_objective_packet_cannot_discharge_completion():
@@ -207,6 +210,19 @@ def test_pre_stop_objective_packet_cannot_discharge_completion():
     outcome["outcome_sha256"]=_digest(outcome)
     result=run(Store(active),Transport(readback="OFF"),[],outcome=outcome)
     assert result["execution"]["objective_satisfied"] is False
+
+
+def test_shutdown_without_objective_is_truthfully_intervention_not_completed():
+    active={"execution_id":"EXEC-1","zone_id":"B12345","channel":1,
+            "eligibility_id":"ELIG-1","evidence_generation":"GEN-1",
+            "claimed_at":(NOW-timedelta(minutes=60)).isoformat(),
+            "primary_stop_deadline":(NOW-timedelta(seconds=1)).isoformat(),
+            "native_fail_stop_deadline":(NOW+timedelta(minutes=1)).isoformat()}
+    notices=[]
+    result=run(Store(active),Transport(readback="OFF"),notices)
+    assert result["status"]=="segment_stopped_outcome_unconfirmed"
+    assert notices[0][0]=="Intervention"
+    assert notices[0][1]["notification_identity"]=="EXEC-1:Intervention"
 
 
 def test_contained_zone_cannot_restart_after_unverified_shutdown():

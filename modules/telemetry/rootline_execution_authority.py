@@ -64,6 +64,11 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None):
         "rank": task.get("rank"), "planned_duration_minutes": task.get("planned_duration_minutes"),
         "weekly_obligation": obligation, "reason": task.get("reason")}
     plan_generation = "ROOTLINE-BC-PLAN-" + _digest(irrigation_plan_material)[:24].upper()
+    consumption_key = "ROOTLINE-BC-CONSUMPTION-" + _digest({
+        "source_plan_generation": source_plan_generation,
+        "irrigation_plan_generation": plan_generation,
+        "zone_id": zone,
+    })[:24].upper()
     duration = min(60, int(task["planned_duration_minutes"]))
     cutoff = max(weather_time, water_time, controller_status["retrieved_at"])
     notification = "ROOTLINE-IRRIGATION-NOTIFY-" + _digest({
@@ -71,6 +76,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None):
     material = {
         "contract_version": CONTRACT_VERSION,
         "authority_source": STANDING_AUTHORITY,
+        "source_plan_generation": source_plan_generation,
         "plan_generation": plan_generation,
         "plan_evidence_digest": _digest({"plan_generation": plan_generation,
             "irrigation_plan": irrigation_plan_material, "weather": weather, "tanks": tanks}),
@@ -91,6 +97,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None):
         "expires_at": (now + timedelta(minutes=15)).isoformat(),
         "command_mapping": dict(ZONE[zone]),
         "notification_identity": notification,
+        "consumption_key": consumption_key,
         "single_use": True, "simultaneous_bc": False,
         "automatic_second_segment": False,
     }
@@ -120,6 +127,9 @@ def validate_execution_eligibility(value, *, now=None):
             or value.get("zone_id") not in ZONE
             or value.get("channel") != ZONE[value["zone_id"]]["channel"]
             or value.get("command_mapping") != ZONE[value["zone_id"]]
+            or not str(value.get("source_plan_generation") or "")
+            or not str(value.get("consumption_key") or "").startswith(
+                "ROOTLINE-BC-CONSUMPTION-")
             or value.get("single_use") is not True or value.get("simultaneous_bc") is not False
             or value.get("automatic_second_segment") is not False
             or value.get("command_authority") is not True or value.get("hardware_control") is not True):
@@ -137,7 +147,7 @@ def equivalent_fresh_eligibility(original, fresh, *, now=None):
     fresh = validate_execution_eligibility(fresh, now=now)
     if not original or not fresh:
         return False
-    keys = ("plan_generation", "plan_evidence_digest", "zone_id", "channel",
+    keys = ("source_plan_generation", "plan_generation", "plan_evidence_digest", "zone_id", "channel",
             "maximum_duration_seconds", "weekly_debt", "command_mapping",
             "controller_safety_generation")
     return all(original.get(key) == fresh.get(key) for key in keys)

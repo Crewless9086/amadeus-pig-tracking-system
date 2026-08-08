@@ -454,7 +454,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     zone = str(execution.get("zone_id") or "irrigation")
                     answer = ({"Started": f"{zone} irrigation started; maximum 60 minutes.",
                                "Completed": f"{zone} irrigation stopped and completed.",
-                               "Intervention": f"{zone} irrigation needs intervention; automatic reuse is contained."}
+                               "Intervention": (f"{zone} irrigation stopped, but its outcome needs confirmation."
+                                                if execution.get("shutdown_verified") is True
+                                                else f"{zone} irrigation needs intervention; automatic reuse is contained.")}
                               .get(state, f"{zone} irrigation: {state}."))
                     delivery = deliver(parsed, {"success": True, "status": state.lower(),
                         "answer": answer}, specialist="ROOTLINE",

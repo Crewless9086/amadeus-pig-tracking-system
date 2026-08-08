@@ -22,8 +22,10 @@ ZONES = {"B12345": 1, "C12345": 2}
 def advance_irrigation_execution(*, decision_id, commissioning_id,
                                  decision_reader, commissioning_reader, store, transport,
                                  notify, outcome_reader=lambda _identity: None,
-                                 eligibility_revalidator=lambda _decision: None, now=None):
+                                 eligibility_revalidator=lambda _decision: None, now=None,
+                                 clock=None):
     now = _aware(now or datetime.now(timezone.utc))
+    clock = clock or (lambda: datetime.now(timezone.utc))
     active = store("load_active", None)
     if active:
         return _recover_or_observe(active, store, transport, notify, outcome_reader, now)
@@ -43,19 +45,21 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     # This read-only edge check is intentionally after provider safety and
     # immediately before the durable claim. It prevents a fresh rain Hold or
     # evidence-generation change from racing a previously eligible decision.
+    preclaim_now = _aware(clock())
     revalidated = eligibility_revalidator(decision)
     if (not equivalent_fresh_eligibility(
-            decision.get("execution_eligibility"), revalidated, now=now)
+            decision.get("execution_eligibility"), revalidated, now=preclaim_now)
             or revalidated.get("zone_id") != decision.get("zone_id")):
         return _result("execution_eligibility_changed", commands=0, messages=0)
     execution = {
         "execution_id": decision["execution_id"], "eligibility_id": decision["eligibility_id"],
+        "consumption_key": decision["execution_eligibility"]["consumption_key"],
         "evidence_generation": decision["evidence_generation"], "zone_id": decision["zone_id"],
         "channel": ZONES[decision["zone_id"]], "planned_runtime_minutes": decision["runtime_minutes"],
         "planned_runtime_seconds": decision["runtime_seconds"],
-        "claimed_at": now.isoformat(),
-        "primary_stop_deadline": (now + timedelta(seconds=decision["runtime_seconds"])).isoformat(),
-        "native_fail_stop_deadline": (now + timedelta(
+        "claimed_at": preclaim_now.isoformat(),
+        "primary_stop_deadline": (preclaim_now + timedelta(seconds=decision["runtime_seconds"])).isoformat(),
+        "native_fail_stop_deadline": (preclaim_now + timedelta(
             seconds=commissioning["native_inching_seconds"])).isoformat(),
         "commissioning_id": commissioning_id,
         "state": "claimed", "on_attempts": 0, "off_attempts": 0,
@@ -150,8 +154,13 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
         return _result("completion_persistence_unproven", commands=recovery["commands"],
                        messages=delivery["confirmed"], execution=completed,
                        notification=delivery, writes_farm_data=False)
-    delivery = _notify(notify, store, "Completed", completed)
-    return _result("segment_completed", commands=recovery["commands"],
+    lifecycle = "Completed" if completed["objective_satisfied"] else "Intervention"
+    if lifecycle == "Intervention":
+        completed["reason"] = "shutdown_verified_outcome_unconfirmed"
+    delivery = _notify(notify, store, lifecycle, completed)
+    return _result("segment_completed" if completed["objective_satisfied"]
+                   else "segment_stopped_outcome_unconfirmed",
+                   commands=recovery["commands"],
                    messages=delivery["confirmed"], execution=completed,
                    notification=delivery, writes_farm_data=True)
 
@@ -282,7 +291,7 @@ def _notify(notify, store, state, payload):
         return {"confirmed": 0, "ambiguous": False,
                 "status": "replayed_noop", "provider_message_id": ""}
     try:
-        delivery = notify(state, payload)
+        delivery = notify(state, {**payload, "notification_identity": identity})
     except Exception:
         delivery = {"success": False, "status": "notification_delivery_failed"}
     delivery = delivery if isinstance(delivery, dict) else {}
