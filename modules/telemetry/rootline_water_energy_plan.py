@@ -360,6 +360,15 @@ def read_current_water_energy_evidence(
             "zones": deepcopy(advisor.get("zones", [])),
             "active_zone": None,
             "source": "rootline_daily_advisor",
+            "adaptive_management": {
+                "enabled": True,
+                "contract_version": "rootline_adaptive_irrigation_v1",
+                "zones": [{"zone_id": "B12345"}, {"zone_id": "C12345"}],
+                "target_days_per_week": 4,
+                "max_execution_minutes": 60,
+                "simultaneous_zones_allowed": False,
+                "segment_two_requires_fresh_decision": True,
+            },
             "owner_candidate": {
                 "zone_id": "B12345",
                 "operating_date": "2026-08-01",
