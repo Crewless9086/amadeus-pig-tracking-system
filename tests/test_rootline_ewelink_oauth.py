@@ -56,7 +56,7 @@ def fake_provider(overrides=None):
         "/v2/device/thing": {"thingList": [{"itemType": 1, "itemData": {
             "deviceid": "100204e9bc", "apikey": "account", "online": True}}]},
         "/v2/device/thing/status": {"params": {
-            "switches": [{"outlet": 0, "switch": "off"}, {"outlet": 1, "switch": "off"}],
+            "switches": [{"outlet": outlet, "switch": "off"} for outlet in range(4)],
             "pulse": "on", "pulseWidth": 3600000, "startup": ["off"] * 4,
             "timers": [], "interlock": 0}},
     }
@@ -116,9 +116,12 @@ def test_wrong_account_or_device_rejected(changes, match):
     with pytest.raises(OAuthFailure, match=match): authorize(env(**changes))
 
 
-def test_incomplete_status_and_wrong_region_rejected():
+def test_missing_or_malformed_current_output_status_and_wrong_region_rejected():
     with pytest.raises(OAuthFailure, match="status_incomplete"):
         authorize(overrides={"/v2/device/thing/status": {"params": {"switches": []}}})
+    with pytest.raises(OAuthFailure, match="status_incomplete"):
+        authorize(overrides={"/v2/device/thing/status": {"params": {"switches": [
+            {"outlet": 0, "switch": "off"}, {"outlet": 1, "switch": "unknown"}]}}})
     states, _, query = start(); request, calls = fake_provider()
     with pytest.raises(OAuthFailure, match="malformed"):
         complete_authorization(query={"code": "code", "region": "evil", "state": query["state"][0]},
@@ -133,12 +136,31 @@ def test_device_and_status_params_are_composed_before_validation():
         "deviceid": "100204e9bc", "apikey": "account", "online": True,
         "params": device_params}}]}
     status = {"params": {"switches": [
-        {"outlet": 0, "switch": "off"}, {"outlet": 1, "switch": "off"}]}}
+        {"outlet": outlet, "switch": "off"} for outlet in range(4)]}}
     result, _, tokens, _, _, _ = authorize(overrides={
         "/v2/device/thing": things, "/v2/device/thing/status": status})
     assert result["binding_created"] is True
     assert set(tokens.records[0]["status_field_names"]) >= {
         "switches", "pulse", "pulseWidth", "startup", "timers", "interlock"}
+    assert result["safety_readback_complete"] is True
+    assert result["safety_readback_missing"] == []
+
+
+def test_valid_device_binding_and_current_outputs_preserve_grant_when_safety_fields_are_sparse():
+    status = {"params": {"switches": [
+        {"outlet": 0, "switch": "off"}, {"outlet": 1, "switch": "off"},
+        {"outlet": 2, "switch": "off"}, {"outlet": 3, "switch": "off"}]}}
+    result, _, tokens, calls, _, _ = authorize(overrides={
+        "/v2/device/thing/status": status})
+    assert result["binding_created"] is True
+    assert result["safety_readback_complete"] is False
+    assert result["safety_readback_missing"] == [
+        "interlock", "native_auto_off_duration", "native_auto_off_enabled",
+        "power_restoration", "timers"]
+    assert tokens.records[0]["status_field_names"] == ["switches"]
+    assert calls[-1] == ("GET", "/v2/device/thing/status", "bearer")
+    assert result["readback_enabled"] is False
+    assert result["autonomous_control_enabled"] is False
 
 
 def test_tampered_and_expired_state_are_rejected_before_provider_calls():
