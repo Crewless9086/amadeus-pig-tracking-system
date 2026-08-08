@@ -187,6 +187,16 @@ def test_conflicting_current_mating_or_litter_blocks_cycle_and_recommendation():
     sow=next(row for row in result["females"] if row["pig_id"]=="SOW")
     assert sow["current_cycle"]["state"]=="missing_evidence"
     assert sow["cycle_evidence"]["status"]=="conflicting"
+
+
+def test_two_current_litter_ids_for_same_sow_and_farrowing_date_conflict():
+    first={"litter_id":"LIT-A","sow_pig_id":"SOW","boar_pig_id":"BOAR","farrowing_date":"2026-08-01","born_alive":2,"weaned_count":None,"is_superseded":False}
+    second={**first,"litter_id":"LIT-B"}
+    result=reconcile_breeding_evidence(snapshot(litters=[first,second]),today=TODAY)
+    sow=next(row for row in result["females"] if row["pig_id"]=="SOW")
+    assert result["litters"]==[]
+    assert sow["cycle_evidence"]["status"]=="conflicting"
+    assert evaluate_breeding_attention(result,today=TODAY)["cases"][0]["recommended_boar"] is None
     assert evaluate_breeding_attention(result,today=TODAY)["cases"][0]["recommended_boar"] is None
     litter={"litter_id":"LIT-X","sow_pig_id":"SOW","boar_pig_id":"BOAR","farrowing_date":"2026-08-01","born_alive":2,"weaned_count":None,"is_superseded":False}
     result=reconcile_breeding_evidence(snapshot(litters=[litter,{**litter,"born_alive":3}]),today=TODAY)

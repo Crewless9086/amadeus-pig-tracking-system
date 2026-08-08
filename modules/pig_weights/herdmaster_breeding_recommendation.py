@@ -40,6 +40,7 @@ def evaluate_breeding_attention(evidence, *, today=None):
     boar_inventory = sorted((_boar_inventory(row, today) for row in boars), key=lambda row: (row["tag_number"].lower(), row["pig_id"]))
     material = {
         "contract_version": CONTRACT_VERSION,
+        "reconciliation_digest": evidence.get("evidence_digest"),
         "cases": cases,
         "boar_inventory": boar_inventory,
     }
