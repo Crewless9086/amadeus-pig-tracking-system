@@ -1,4 +1,5 @@
 import urllib.parse
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -85,6 +86,7 @@ def test_readiness_requires_exact_redirect_and_false_flags():
 def test_start_binds_nonce_and_persists_no_raw_secret():
     states, result, query = start()
     assert query["redirectUrl"] == [REDIRECT] and query["nonce"] and query["state"]
+    assert re.fullmatch(r"[A-Za-z0-9]{8}", query["nonce"][0])
     assert env()["EWELINK_CLIENT_SECRET"] not in repr(states.item)
     assert env()["EWELINK_OAUTH_STATE_SECRET"] not in repr(states.item)
     assert result["readback_enabled"] is False and result["autonomous_control_enabled"] is False
@@ -169,12 +171,13 @@ def test_transport_exchanges_once_with_bounded_timeout_and_rejects_redirect(monk
     class Opener:
         def __init__(self, final_url): self.final_url = final_url
         def open(self, request, timeout):
-            calls.append((request.full_url, timeout))
+            calls.append((request.full_url, timeout, request.get_header("X-ck-nonce")))
             return Response(self.final_url)
     monkeypatch.setattr(oauth_module.urllib.request, "build_opener", lambda *_: Opener(target))
     body = {"code": "one-use", "redirectUrl": REDIRECT, "grantType": "authorization_code"}
     assert oauth_module._provider_request("POST", target, body=body, mode="signed", environ=env()) == {"ok": True}
-    assert calls == [(target, 15)]
+    assert len(calls) == 1 and calls[0][:2] == (target, 15)
+    assert re.fullmatch(r"[A-Za-z0-9]{8}", calls[0][2])
 
     monkeypatch.setattr(oauth_module.urllib.request, "build_opener",
                         lambda *_: Opener("https://eu-apia.coolkit.cc/v2/family"))
