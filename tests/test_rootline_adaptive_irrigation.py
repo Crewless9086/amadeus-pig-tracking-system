@@ -84,8 +84,15 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         item["zones"][1]["visible_need"] = "urgent"
         result = zones(build_adaptive_irrigation_decisions(item, now=NOW))["C12345"]
         self.assertEqual(result["decision"], "Run now")
-        self.assertTrue(result["grid_exposure_may_be_justified"])
+        self.assertFalse(result["grid_exposure_may_be_justified"])
         self.assertFalse(result["command_authority"])
+
+    def test_gravity_fed_bc_ignores_missing_power_for_decision_and_confidence(self):
+        item = evidence(); item["power"] = {}
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))["B12345"]
+        self.assertEqual(result["decision"], "Run now")
+        self.assertNotIn("power_unavailable", result["evidence_gaps"])
+        self.assertFalse(result["grid_exposure_may_be_justified"])
 
     def test_adequate_solar_with_stale_water_blocks_only_execution(self):
         item = evidence()

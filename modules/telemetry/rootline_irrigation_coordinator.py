@@ -17,7 +17,8 @@ ZONES = {"B12345": 1, "C12345": 2}
 
 def advance_irrigation_execution(*, decision_id, commissioning_id,
                                  decision_reader, commissioning_reader, store, transport,
-                                 notify, outcome_reader=lambda _identity: None, now=None):
+                                 notify, outcome_reader=lambda _identity: None,
+                                 eligibility_revalidator=lambda _decision: None, now=None):
     now = _aware(now or datetime.now(timezone.utc))
     active = store("load_active", None)
     if active:
@@ -35,6 +36,15 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     if not _safe_configuration(safety, decision["zone_id"]):
         return _result("provider_safety_readback_unavailable", commands=0, messages=0,
                        autonomous_on_enabled=False)
+    # This read-only edge check is intentionally after provider safety and
+    # immediately before the durable claim. It prevents a fresh rain Hold or
+    # evidence-generation change from racing a previously eligible decision.
+    revalidated = eligibility_revalidator(decision)
+    if (not isinstance(revalidated, dict) or revalidated.get("eligible") is not True
+            or revalidated.get("observed_rain") is not False
+            or revalidated.get("decision_id") != decision.get("decision_id")
+            or revalidated.get("evidence_generation") != decision.get("evidence_generation")):
+        return _result("execution_eligibility_changed", commands=0, messages=0)
     execution = {
         "execution_id": decision["execution_id"], "eligibility_id": decision["eligibility_id"],
         "evidence_generation": decision["evidence_generation"], "zone_id": decision["zone_id"],
@@ -53,9 +63,20 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     store("record_on_outcome", {**execution, "on_attempts": 1, "on_outcome": accepted})
     if accepted.get("accepted_unambiguous") is not True:
         # Never issue another ON. OFF recovery is safe even after ambiguous ON.
+        store("contain_zone", {**execution, "state": "ambiguous",
+              "shutdown_verified": False, "reason": "ambiguous_on"})
         recovery = _bounded_off(execution, store, transport)
-        notify("Exception", {**execution, "reason": "ambiguous_on", "recovery": recovery})
-        return _result("ambiguous_on_contained", commands=1 + recovery["commands"], messages=1)
+        try:
+            shutdown = transport.read_output_state(device_id="100204e9bc", channel=execution["channel"])
+        except Exception:
+            shutdown = {"authoritative": False, "state": "Unknown"}
+        verified = shutdown.get("authoritative") is True and shutdown.get("state") == "OFF"
+        store("record_ambiguous_shutdown", {**execution, "state": "ambiguous",
+              "shutdown_verified": verified, "shutdown_evidence": shutdown})
+        notify("Exception", {**execution, "reason": "ambiguous_on", "recovery": recovery,
+                              "shutdown_verified": verified})
+        return _result("ambiguous_on_contained" if verified else "ambiguous_on_shutdown_unverified",
+                       commands=1 + recovery["commands"], messages=1)
     started = transport.read_output_state(device_id="100204e9bc", channel=execution["channel"])
     if started.get("authoritative") is not True or started.get("state") != "ON":
         store("record_start_unverified", {**execution, "on_attempts": 1,
@@ -73,6 +94,21 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
 
 
 def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
+    if active.get("state") in {"claimed", "claimed_recovery_required"}:
+        store("contain_zone", {**active, "state": "ambiguous",
+              "shutdown_verified": False, "reason": "restart_after_pre_on_claim"})
+        recovery = _bounded_off(active, store, transport)
+        try:
+            shutdown = transport.read_output_state(device_id="100204e9bc", channel=active["channel"])
+        except Exception:
+            shutdown = {"authoritative": False, "state": "Unknown"}
+        verified = shutdown.get("authoritative") is True and shutdown.get("state") == "OFF"
+        store("record_claim_recovery", {**active, "shutdown_verified": verified,
+              "shutdown_evidence": shutdown})
+        notify("Exception", {**active, "reason": "interrupted_start_contained",
+                              "shutdown_verified": verified})
+        return _result("interrupted_start_contained" if verified else "interrupted_start_shutdown_unverified",
+                       commands=recovery["commands"], messages=1)
     primary_deadline = _timestamp(active.get("primary_stop_deadline"))
     native_deadline = _timestamp(active.get("native_fail_stop_deadline"))
     if primary_deadline is None or native_deadline is None or primary_deadline > native_deadline:
@@ -182,7 +218,8 @@ def _safe_configuration(value, zone):
             and 0 < int(value.get("native_inching_seconds") or 0) <= 3600
             and value.get("power_restoration_state") == "OFF"
             and value.get("schedules_enabled") is False
-            and value.get("interlock_enabled") is False)
+            and value.get("interlock_enabled") is False
+            and value.get("scenes_enabled") is False)
 
 
 def _result(status, *, commands, messages, **extra):
