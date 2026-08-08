@@ -51,6 +51,8 @@ def test_zero_command_readback_normalizes_exact_device_and_is_deterministic():
     assert first["actuation_safety_complete"] is True
     assert first["actuation_eligible"] is False
     assert first["provider_control_calls"] == 0
+    assert first["freshness_clock_source"] == "provider_observation_timestamp"
+    assert first["observation_fresh"] is True
     assert calls == [("GET", "/v2/family"), ("GET", "/v2/device/thing"),
         ("GET", "/v2/device/thing/status")]*2
 

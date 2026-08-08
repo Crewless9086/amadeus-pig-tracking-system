@@ -259,9 +259,13 @@ def _missing_safety_status(params):
             isinstance(item.get("width"), int) for item in pulses.values()),
         "power_restoration": bool(configured),
         "timers": isinstance(params.get("timers"), list),
-        "interlock": params.get("interlock") in {0, 1, False, True},
     }
-    return sorted(name for name, present in checks.items() if not present)
+    missing = [name for name, present in checks.items() if not present]
+    _, scenes_supported, _ = _scene_evidence(params)
+    if (params.get("interlock") not in {0, 1, False, True}
+            or not scenes_supported):
+        missing.append("conflicting_control_paths")
+    return sorted(missing)
 
 
 def normalize_device_readback(*, device, status, retrieved_at):
@@ -275,19 +279,41 @@ def normalize_device_readback(*, device, status, retrieved_at):
     pulses = _outlet_records(params.get("pulses"), "pulse", {"on", "off"})
     configured = _outlet_records(params.get("configure"), "startup", {"on", "off", "stay"})
     retrieved_at = _aware(retrieved_at)
-    observed_at = status.get("updatedAt") or status.get("updateTime") or device.get("updatedAt")
+    provider_timestamp_supplied = False
+    observed_at = None
+    for packet, field in ((status, "updatedAt"), (status, "updateTime"),
+                          (device, "updatedAt")):
+        if field in packet:
+            observed_at = packet[field]
+            provider_timestamp_supplied = True
+            break
     observed_time = _provider_timestamp(observed_at)
     timestamp_fresh = (observed_time is not None and
         timedelta(seconds=-30) <= retrieved_at - observed_time <= timedelta(minutes=5))
+    # The official CoolKit UIID9 profile does not promise a provider timestamp
+    # in either GET response.  A completed authenticated, non-redirected GET is
+    # nevertheless a current observation receipt.  Keep that clock distinct
+    # from a provider/device observation time instead of manufacturing one.
+    freshness_clock_source = (
+        "provider_observation_timestamp" if observed_time is not None
+        else "invalid_provider_timestamp" if provider_timestamp_supplied
+        else "trusted_authenticated_receipt"
+    )
+    observation_fresh = timestamp_fresh if provider_timestamp_supplied else True
     timers = params.get("timers") if isinstance(params.get("timers"), list) else None
-    scenes = params.get("scenes") if isinstance(params.get("scenes"), list) else (
-        params.get("scene") if isinstance(params.get("scene"), list) else None)
+    scenes, provider_scenes_supported, scene_evidence_conflict = _scene_evidence(params)
     interlock = params.get("interlock")
     missing = _missing_safety_status(params)
-    if not timestamp_fresh:
+    if provider_timestamp_supplied and not timestamp_fresh:
         missing.append("provider_timestamp")
-    if scenes is None:
-        missing.append("scenes")
+    # UIID9 documents switches, pulses, configure and timers.  It does not
+    # expose scene membership or an interlock parameter, and the official
+    # scene-list API is not open.  Absence therefore means unsupported, never
+    # disabled.  Collapse both unobservable activation paths into one precise
+    # external safety prerequisite.
+    provider_interlock_supported = interlock in {0, 1, False, True}
+    if not provider_interlock_supported or not provider_scenes_supported:
+        missing.append("conflicting_control_paths")
     missing = sorted(set(missing))
     channel_rows = [{
         "channel": outlet + 1,
@@ -320,7 +346,13 @@ def normalize_device_readback(*, device, status, retrieved_at):
         "scenes_enabled": bool(scenes) if scenes is not None else None,
         "interlock_enabled": bool(interlock) if interlock in {0, 1, False, True} else None,
         "provider_observed_at": observed_time.isoformat() if observed_time else None,
-        "provider_timestamp_fresh": timestamp_fresh,
+        "provider_timestamp_fresh": timestamp_fresh if observed_time is not None else None,
+        "trusted_receipt_at": retrieved_at.isoformat(),
+        "freshness_clock_source": freshness_clock_source,
+        "observation_fresh": observation_fresh,
+        "provider_interlock_supported": provider_interlock_supported,
+        "provider_scenes_supported": provider_scenes_supported,
+        "scene_evidence_conflict": scene_evidence_conflict,
         "retrieved_at": retrieved_at.isoformat(),
         "safety_readback_missing": missing,
         "secrets_exposed": False,
@@ -341,6 +373,18 @@ def _outlet_records(value, field, allowed):
 
 def _timer_disabled(value):
     return isinstance(value, dict) and value.get("enabled") in {0, False, "off"}
+
+
+def _scene_evidence(params):
+    primary_present = "scenes" in params
+    alias_present = "scene" in params
+    primary = params.get("scenes")
+    alias = params.get("scene")
+    conflict = primary_present and alias_present and primary != alias
+    if conflict:
+        return None, False, True
+    selected = primary if primary_present else alias if alias_present else None
+    return (selected, True, False) if isinstance(selected, list) else (None, False, False)
 
 
 def _provider_timestamp(value):

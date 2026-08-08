@@ -157,8 +157,8 @@ def test_valid_device_binding_and_current_outputs_preserve_grant_when_safety_fie
     assert result["binding_created"] is True
     assert result["safety_readback_complete"] is False
     assert result["safety_readback_missing"] == [
-        "interlock", "native_auto_off_duration", "native_auto_off_enabled",
-        "power_restoration", "timers"]
+        "conflicting_control_paths", "native_auto_off_duration",
+        "native_auto_off_enabled", "power_restoration", "timers"]
     assert tokens.records[0]["status_field_names"] == ["switches"]
     assert calls[-1] == ("GET", "/v2/device/thing/status", "bearer")
     assert result["readback_enabled"] is False
@@ -187,7 +187,7 @@ def test_genuine_four_channel_shape_normalizes_nested_pulses_and_power_restorati
     assert result["interlock_enabled"] is False and result["timers_enabled"] is False
 
 
-def test_configure_does_not_prove_interlock_and_missing_timestamp_and_scenes_fail_closed():
+def test_configure_does_not_prove_interlock_and_unexposed_control_paths_fail_closed():
     params = {"switches": [{"outlet": outlet, "switch": "off"} for outlet in range(4)],
         "pulses": [{"outlet": outlet, "pulse": "on", "width": 3600000} for outlet in range(4)],
         "configure": [{"outlet": outlet, "startup": "off"} for outlet in range(4)], "timers": []}
@@ -195,7 +195,15 @@ def test_configure_does_not_prove_interlock_and_missing_timestamp_and_scenes_fai
         "params": params}, status={"params": {}}, retrieved_at=NOW)
     assert result["authoritative"] is True and result["interlock_enabled"] is None
     assert result["actuation_safety_complete"] is False
-    assert set(result["safety_readback_missing"]) >= {"interlock", "provider_timestamp", "scenes"}
+    assert "conflicting_control_paths" in result["safety_readback_missing"]
+    assert "provider_timestamp" not in result["safety_readback_missing"]
+    assert result["freshness_clock_source"] == "trusted_authenticated_receipt"
+    assert result["trusted_receipt_at"] == NOW.isoformat()
+    assert result["provider_observed_at"] is None
+    assert result["provider_timestamp_fresh"] is None
+    assert result["observation_fresh"] is True
+    assert result["provider_interlock_supported"] is False
+    assert result["provider_scenes_supported"] is False
 
 
 @pytest.mark.parametrize("observed", ["malformed", "2026-08-08T07:00:00Z", "2026-08-08T08:01:00Z"])
@@ -211,6 +219,45 @@ def test_stale_malformed_or_future_provider_timestamp_blocks_only_actuation(obse
     assert "provider_timestamp" in result["safety_readback_missing"]
 
 
+@pytest.mark.parametrize("observed", ["", None, 0, False])
+def test_falsey_but_supplied_provider_timestamp_is_malformed_not_absent(observed):
+    params = {"switches": [{"outlet": outlet, "switch": "off"} for outlet in range(4)],
+        "pulses": [{"outlet": outlet, "pulse": "on", "width": 3600000} for outlet in range(4)],
+        "configure": [{"outlet": outlet, "startup": "off"} for outlet in range(4)],
+        "timers": [], "scenes": [], "interlock": 0}
+    result = normalize_device_readback(device={"deviceid": "100204e9bc", "online": True,
+        "params": params}, status={"params": {}, "updatedAt": observed}, retrieved_at=NOW)
+    assert result["observation_fresh"] is False
+    assert result["freshness_clock_source"] == "invalid_provider_timestamp"
+    assert "provider_timestamp" in result["safety_readback_missing"]
+
+
+def test_conflicting_scene_aliases_fail_closed_without_hiding_active_scene():
+    params = {"switches": [{"outlet": outlet, "switch": "off"} for outlet in range(4)],
+        "pulses": [{"outlet": outlet, "pulse": "on", "width": 3600000} for outlet in range(4)],
+        "configure": [{"outlet": outlet, "startup": "off"} for outlet in range(4)],
+        "timers": [], "scenes": [], "scene": [{"enabled": True}], "interlock": 0}
+    result = normalize_device_readback(device={"deviceid": "100204e9bc", "online": True,
+        "updatedAt": NOW.isoformat(), "params": params}, status={"params": {}}, retrieved_at=NOW)
+    assert result["scene_evidence_conflict"] is True
+    assert result["provider_scenes_supported"] is False
+    assert result["actuation_configuration_safe"] is False
+    assert "conflicting_control_paths" in result["safety_readback_missing"]
+
+
+def test_consistent_scene_aliases_are_accepted_once():
+    scenes = []
+    params = {"switches": [{"outlet": outlet, "switch": "off"} for outlet in range(4)],
+        "pulses": [{"outlet": outlet, "pulse": "on", "width": 3600000} for outlet in range(4)],
+        "configure": [{"outlet": outlet, "startup": "off"} for outlet in range(4)],
+        "timers": [], "scenes": scenes, "scene": scenes, "interlock": 0}
+    result = normalize_device_readback(device={"deviceid": "100204e9bc", "online": True,
+        "updatedAt": NOW.isoformat(), "params": params}, status={"params": {}}, retrieved_at=NOW)
+    assert result["scene_evidence_conflict"] is False
+    assert result["provider_scenes_supported"] is True
+    assert result["actuation_safety_complete"] is True
+
+
 @pytest.mark.parametrize("scenes", [None, "malformed", {"enabled": False}])
 def test_malformed_scene_evidence_cannot_complete_actuation_safety(scenes):
     params = {"switches": [{"outlet": outlet, "switch": "off"} for outlet in range(4)],
@@ -221,7 +268,7 @@ def test_malformed_scene_evidence_cannot_complete_actuation_safety(scenes):
         "params": params, "updatedAt": NOW.isoformat()}, status={"params": {}}, retrieved_at=NOW)
     assert result["actuation_safety_complete"] is False
     assert result["actuation_configuration_safe"] is False
-    assert "scenes" in result["safety_readback_missing"]
+    assert "conflicting_control_paths" in result["safety_readback_missing"]
 
 
 def test_tampered_and_expired_state_are_rejected_before_provider_calls():
