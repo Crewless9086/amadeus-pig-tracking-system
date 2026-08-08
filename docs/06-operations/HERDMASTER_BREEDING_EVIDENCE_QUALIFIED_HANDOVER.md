@@ -256,4 +256,98 @@ states, exact pair exclusions, no repeated owner fact, stable replay identity,
 zero Telegram send by HERDMASTER, zero farm/protected writes and unchanged
 unrelated state. Missing complete-through ledgers require a governed projection
 improvement; they must not be replaced by owner questions or silence-based
-clearance.
+  clearance.
+
+## 2026-08-08 proactive-management successor
+
+This source-only reconciliation used canonical production evidence through
+2026-08-08 and current main `0691d78b9d55cd7ae6d43eff9411a50548cb13f1`.
+It performed no delivery, protected action or farm write.
+The external read-only capture is
+`C:\tmp\herdmaster-breeding-recovery-evidence-20260808.md`, SHA-256
+`EFFDB0B5753429EAF3B06A54394122513A15EAA4C88D1B5704FD1F0A3EB93C50`;
+the values below are production evidence, not a committed synthetic fixture.
+
+### Exact pedigree recovery matrix
+
+All 21 breeder master records have attributable import provenance in
+`GS-MIG-5-2026-06-29`, but none has a canonical dam, sire or litter-origin
+link. No exact alias row supplies a missing link. Each row below is therefore
+Unknown, without a duplicate or cyclic pedigree; the source row is identity
+evidence only and must not be treated as parentage.
+
+| Breeder | Pig ID | Source row | Dam | Sire |
+|---|---|---:|---|---|
+| Baby | PIG-2026-7DAA | 3 | Unknown | Unknown |
+| Bella | PIG-2026-8F76 | 19 | Unknown | Unknown |
+| Bola | PIG-2026-8645 | 15 | Unknown | Unknown |
+| Bonnie | PIG-2026-5376 | 8 | Unknown | Unknown |
+| Clovy | PIG-2026-42B7 | 2 | Unknown | Unknown |
+| Linda | PIG-2026-5AA8 | 11 | Unknown | Unknown |
+| Lolly | PIG-2026-94B9 | 6 | Unknown | Unknown |
+| Lucy | PIG-2026-1248 | 13 | Unknown | Unknown |
+| Maya | PIG-2026-5EB0 | 148 | Unknown | Unknown |
+| Molly | PIG-2026-B87A | 17 | Unknown | Unknown |
+| Mona | PIG-2026-D050 | 21 | Unknown | Unknown |
+| Ms Piggy | PIG-2026-92F3 | 12 | Unknown | Unknown |
+| Mysikind | PIG-2026-21BE | 20 | Unknown | Unknown |
+| Olive | PIG-2026-069E | 5 | Unknown | Unknown |
+| Prince | PIG-2026-E057 | 18 | Unknown | Unknown |
+| Shupe | PIG-2026-34BF | 4 | Unknown | Unknown |
+| Sophie | PIG-2026-5FA6 | 14 | Unknown | Unknown |
+| Teena | PIG-2026-74FF | 10 | Unknown | Unknown |
+| Tyson | PIG-2026-3B5F | 7 | Unknown | Unknown |
+| Waki | PIG-2026-7531 | 9 | Unknown | Unknown |
+| Zigay | PIG-2026-EEAC | 16 | Unknown | Unknown |
+
+Recovered parent links: **0**. Genuinely missing parent links: **42**. All 54
+internal sow/boar combinations remain unknown-related and cannot become mating
+recommendations. Reservation and withdrawal ledgers both lack a complete-
+through boundary for all 21 breeders, so negative status remains Unknown. The
+absence of breeder order/allocation or medical rows is not clearance.
+
+The live litter projection exposes both `LIT-2026-A523` and `LIT-2026-B1A8`
+as non-superseded Zigay litters on 2026-07-10. The reconciler now fails this
+same-sow/same-date chronology closed and removes it from the current-cycle
+index. It changes neither record.
+
+### Maximum-three management packet
+
+Packet `HERD-BREED-MGMT-B0001DA9D68C8EB10773CE2DD67137D7` contains:
+
+1. Zigay: resolve the exact duplicate current litter chronology through its
+   governed data-quality rail; no physical observation is requested.
+2. Mona, Mysikind and Maya: continue proportional farrowing preparation and
+   grouped monitoring. Mona and Mysikind remain Assumed Pregnant planning
+   states, not clinical confirmation. Observe progression, appetite, movement,
+   discharge and labour/illness signs at the next normal round.
+3. Baby: preserve Inconclusive and observe heat/non-heat and ordinary
+   reproductive changes at the scheduled reassessment; do not remate.
+
+Nursing and recovery cases remain supported in the full assessment and are not
+erased merely because only three actions are published. The packet has stable
+English/Afrikaans rendering, deterministic identity, zero I/O, zero delivery,
+zero mating authority and zero write authority.
+
+### Smallest recovery and safe fallback
+
+Ask once for an attributable historical breeder register, import sheet,
+purchase/birth record or other source naming dam and sire for any listed
+breeder; if no such source exists, record once that historical parentage is
+unavailable. Reservation and withdrawal coverage are system-owned projection
+gaps, not questions for the family.
+
+If pedigree is permanently unavailable, retain the internal pair blocks and
+seek attributable pedigree/DNA evidence or an externally documented unrelated
+boar. This is an owner-review proposal only: unknown is never silently treated
+as unrelated and no mating is authorized.
+
+### Later serialized integration proof
+
+After ROOTLINE explicitly releases production, integrate the exact reviewed PR
+normally, require exact-merge CI and exact deployment lineage, and feed the
+existing authenticated Oom Sakkie specialist-consumption boundary with this
+read-only packet. Prove the same 21 identities/pens, 15 services, 0/42 parent
+links, incomplete clearance coverage, Zigay conflict containment, maximum
+three actions, English/Afrikaans rendering, deterministic replay and zero
+Telegram/farm/protected writes. Release the lane immediately afterward.

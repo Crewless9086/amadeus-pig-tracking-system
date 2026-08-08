@@ -118,6 +118,13 @@ def _litters(rows):
         normalized={json.dumps(dict(r),sort_keys=True,default=str,separators=(",",":")) for r in values}
         if len(pairs)>1 or len(normalized)>1: conflicts.add(litter_id)
         else: index[litter_id]=values[0]
+    chronology=defaultdict(list)
+    for litter_id,row in index.items():
+        sow_id=_text(row.get("sow_pig_id")); farrowing=_date_text(row.get("farrowing_date"))
+        if sow_id and farrowing: chronology[(sow_id,farrowing)].append(litter_id)
+    for litter_ids in chronology.values():
+        if len(litter_ids)>1: conflicts.update(litter_ids)
+    for litter_id in conflicts: index.pop(litter_id,None)
     return index, conflicts
 
 
