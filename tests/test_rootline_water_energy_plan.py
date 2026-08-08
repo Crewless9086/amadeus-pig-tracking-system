@@ -12,6 +12,7 @@ from modules.telemetry.rootline_water_energy_plan import (
     _read_historical_context,
     _read_latest_tank_observation,
     _read_recent_irrigation_history,
+    read_current_water_energy_evidence,
 )
 
 
@@ -379,6 +380,29 @@ class WaterEnergyPlanTests(unittest.TestCase):
             empty = _read_historical_context("postgresql://production-shaped")
         self.assertIsNone(empty["average_coverage_pct"])
         json.dumps(empty)
+
+    @mock.patch("modules.telemetry.rootline_water_energy_plan._read_latest_tank_observation",
+                return_value={})
+    @mock.patch("modules.telemetry.rootline_water_energy_plan._read_recent_irrigation_history",
+                return_value={})
+    @mock.patch("modules.telemetry.rootline_water_energy_plan._read_historical_context",
+                return_value={})
+    @mock.patch("modules.telemetry.rootline_daily_advisor.get_rootline_daily_advisor",
+                return_value=({"zones": []}, 200))
+    @mock.patch("modules.telemetry.weather_service.get_weather_forecast",
+                return_value=({}, 200))
+    @mock.patch("modules.telemetry.weather_service.get_current_weather_state",
+                return_value=({}, 200))
+    @mock.patch("modules.telemetry.power_service.get_current_power_state",
+                return_value=({}, 200))
+    def test_canonical_reader_supplies_deployed_adaptive_bc_management(self, *_mocks):
+        current, _, _ = read_current_water_energy_evidence(now=NOW)
+        adaptive=current["irrigation"]["adaptive_management"]
+        self.assertTrue(adaptive["enabled"])
+        self.assertEqual([row["zone_id"] for row in adaptive["zones"]],
+                         ["B12345", "C12345"])
+        self.assertEqual(adaptive["max_execution_minutes"], 60)
+        self.assertFalse(adaptive["simultaneous_zones_allowed"])
 
 
 if __name__ == "__main__":
