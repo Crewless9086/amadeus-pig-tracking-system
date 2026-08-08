@@ -6,6 +6,7 @@ import pytest
 
 from modules.telemetry.rootline_ewelink_oauth import (
     OAuthFailure, complete_authorization, create_authorization_request, oauth_readiness,
+    normalize_device_readback,
 )
 from modules.telemetry import rootline_ewelink_oauth as oauth_module
 
@@ -142,8 +143,9 @@ def test_device_and_status_params_are_composed_before_validation():
     assert result["binding_created"] is True
     assert set(tokens.records[0]["status_field_names"]) >= {
         "switches", "pulse", "pulseWidth", "startup", "timers", "interlock"}
-    assert result["safety_readback_complete"] is True
-    assert result["safety_readback_missing"] == []
+    assert result["safety_readback_complete"] is False
+    assert set(result["safety_readback_missing"]) >= {
+        "native_auto_off_enabled", "native_auto_off_duration", "power_restoration"}
 
 
 def test_valid_device_binding_and_current_outputs_preserve_grant_when_safety_fields_are_sparse():
@@ -161,6 +163,65 @@ def test_valid_device_binding_and_current_outputs_preserve_grant_when_safety_fie
     assert calls[-1] == ("GET", "/v2/device/thing/status", "bearer")
     assert result["readback_enabled"] is False
     assert result["autonomous_control_enabled"] is False
+
+
+def test_genuine_four_channel_shape_normalizes_nested_pulses_and_power_restoration():
+    params = {
+        "fwVersion": "3.8.2", "switches": [
+            {"outlet": outlet, "switch": "off"} for outlet in range(4)],
+        "pulses": [{"outlet": outlet, "pulse": "on", "width": 3600000}
+                   for outlet in range(4)],
+        "configure": [{"outlet": outlet, "startup": "off"} for outlet in range(4)],
+        "timers": [], "scenes": [], "interlock": 0,
+    }
+    result = normalize_device_readback(device={"deviceid": "100204e9bc", "online": True,
+        "params": params, "updatedAt": NOW.isoformat()}, status={"params": {}},
+        retrieved_at=NOW)
+    assert result["authoritative"] is True
+    assert result["actuation_safety_complete"] is True
+    assert result["actuation_configuration_safe"] is True
+    assert result["actuation_eligible"] is False
+    assert [item["output_state"] for item in result["channels"]] == ["OFF"] * 4
+    assert [item["native_auto_off_seconds"] for item in result["channels"]] == [3600] * 4
+    assert [item["power_restoration_state"] for item in result["channels"]] == ["OFF"] * 4
+    assert result["interlock_enabled"] is False and result["timers_enabled"] is False
+
+
+def test_configure_does_not_prove_interlock_and_missing_timestamp_and_scenes_fail_closed():
+    params = {"switches": [{"outlet": outlet, "switch": "off"} for outlet in range(4)],
+        "pulses": [{"outlet": outlet, "pulse": "on", "width": 3600000} for outlet in range(4)],
+        "configure": [{"outlet": outlet, "startup": "off"} for outlet in range(4)], "timers": []}
+    result = normalize_device_readback(device={"deviceid": "100204e9bc", "online": True,
+        "params": params}, status={"params": {}}, retrieved_at=NOW)
+    assert result["authoritative"] is True and result["interlock_enabled"] is None
+    assert result["actuation_safety_complete"] is False
+    assert set(result["safety_readback_missing"]) >= {"interlock", "provider_timestamp", "scenes"}
+
+
+@pytest.mark.parametrize("observed", ["malformed", "2026-08-08T07:00:00Z", "2026-08-08T08:01:00Z"])
+def test_stale_malformed_or_future_provider_timestamp_blocks_only_actuation(observed):
+    params = {"switches": [{"outlet": outlet, "switch": "off"} for outlet in range(4)],
+        "pulses": [{"outlet": outlet, "pulse": "on", "width": 3600000} for outlet in range(4)],
+        "configure": [{"outlet": outlet, "startup": "off"} for outlet in range(4)],
+        "timers": [], "scenes": [], "interlock": 0}
+    result = normalize_device_readback(device={"deviceid": "100204e9bc", "online": True,
+        "params": params, "updatedAt": observed}, status={"params": {}}, retrieved_at=NOW)
+    assert result["current_outputs_authoritative"] is True
+    assert result["actuation_safety_complete"] is False
+    assert "provider_timestamp" in result["safety_readback_missing"]
+
+
+@pytest.mark.parametrize("scenes", [None, "malformed", {"enabled": False}])
+def test_malformed_scene_evidence_cannot_complete_actuation_safety(scenes):
+    params = {"switches": [{"outlet": outlet, "switch": "off"} for outlet in range(4)],
+        "pulses": [{"outlet": outlet, "pulse": "on", "width": 3600000} for outlet in range(4)],
+        "configure": [{"outlet": outlet, "startup": "off"} for outlet in range(4)],
+        "timers": [], "scenes": scenes, "interlock": 0}
+    result = normalize_device_readback(device={"deviceid": "100204e9bc", "online": True,
+        "params": params, "updatedAt": NOW.isoformat()}, status={"params": {}}, retrieved_at=NOW)
+    assert result["actuation_safety_complete"] is False
+    assert result["actuation_configuration_safe"] is False
+    assert "scenes" in result["safety_readback_missing"]
 
 
 def test_tampered_and_expired_state_are_rejected_before_provider_calls():
