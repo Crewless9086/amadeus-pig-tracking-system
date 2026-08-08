@@ -109,3 +109,11 @@ def test_expired_artifact_at_real_preclaim_time_creates_no_on():
     value=run(store,transport,clock=lambda:later)
     assert value["status"]=="execution_eligibility_changed"
     assert transport.calls==[]
+
+
+def test_real_advancing_clock_accepts_fresh_revalidation_before_claim():
+    store=Store(); transport=Transport()
+    instants=iter((NOW+timedelta(seconds=1),NOW+timedelta(seconds=2)))
+    value=run(store,transport,clock=lambda:next(instants))
+    assert value["status"]=="segment_started"
+    assert [call["state"] for call in transport.calls]==["ON"]

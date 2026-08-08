@@ -45,8 +45,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     # This read-only edge check is intentionally after provider safety and
     # immediately before the durable claim. It prevents a fresh rain Hold or
     # evidence-generation change from racing a previously eligible decision.
-    preclaim_now = _aware(clock())
     revalidated = eligibility_revalidator(decision)
+    preclaim_now = _aware(clock())
     if (not equivalent_fresh_eligibility(
             decision.get("execution_eligibility"), revalidated, now=preclaim_now)
             or revalidated.get("zone_id") != decision.get("zone_id")):
