@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 import hashlib
 import json
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 
@@ -64,6 +65,7 @@ class FamilyAccessDecision:
     may_read_private_context: bool = False
     may_write_farm_data: bool = False
     may_confirm_protected_action: bool = False
+    replay_identity: str = ""
 
 
 def bound_family_manager_result(actions: list[Mapping[str, Any]], questions: list[str]) -> dict[str, Any]:
@@ -94,10 +96,12 @@ def resolve_family_principal(parsed: Mapping[str, Any], environ: Mapping[str, st
         return FamilyPrincipal(user_id, chat_id, FamilyRole.OWNER, "charl",
             frozenset({"*"}), frozenset({"*"}), "configured-owner",
             owner_id, "configured", _digest({"owner_user_id": owner_id}))
-    for record in _bindings(environ):
-        if _clean(record.get("telegram_user_id")) != user_id:
-            continue
-        principal = _principal_from_record(record, owner_id, chat_id)
+    rows = _bindings(environ)
+    matching = [record for record in rows if _clean(record.get("telegram_user_id")) == user_id]
+    family_matches = [record for record in rows if _clean(record.get("family_key")).lower()
+                      == _clean((matching[0] if matching else {}).get("family_key")).lower()]
+    if len(matching) == 1 and len(family_matches) == 1:
+        principal = _principal_from_record(matching[0], owner_id, chat_id)
         return principal if principal is not None else _unknown(user_id, chat_id)
     return _unknown(user_id, chat_id)
 
@@ -113,45 +117,71 @@ def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, An
         "authorization_id": principal.authorization_id,
         "binding_digest": principal.binding_digest,
     }
+    message_user = _clean(parsed.get("telegram_user_id"))
+    message_chat = _clean(parsed.get("telegram_chat_id"))
+    message_chat_type = _clean(parsed.get("telegram_chat_type")).lower()
+    if (not message_user or message_user != principal.telegram_user_id
+            or message_chat != principal.private_chat_id or message_chat != message_user
+            or message_chat_type != "private"):
+        return FamilyAccessDecision(False, "family_principal_message_binding_mismatch",
+                                    _unknown(message_user, message_chat), {
+            **attribution, "reporter_user_id": message_user, "family_key": "",
+            "authorization_id": "", "binding_digest": ""})
+    replay_identity = _digest({"contract": "oom_sakkie_family_access_v1",
+        "user_id": message_user, "chat_id": message_chat,
+        "provider_message_id": attribution["provider_message_id"],
+        "provider_timestamp": attribution["provider_timestamp"],
+        "content_sha256": hashlib.sha256(_clean(parsed.get("text")).encode("utf-8")).hexdigest(),
+        "capability": _clean(capability), "binding_digest": principal.binding_digest})
     if not principal.authenticated:
-        return FamilyAccessDecision(False, "unknown_sender_denied", principal, attribution)
+        return FamilyAccessDecision(False, "unknown_sender_denied", principal, attribution,
+                                    replay_identity=replay_identity)
     if not attribution["provider_message_id"] or not attribution["provider_timestamp"]:
-        return FamilyAccessDecision(False, "provider_provenance_required", principal, attribution)
+        return FamilyAccessDecision(False, "provider_provenance_required", principal, attribution,
+                                    replay_identity=replay_identity)
     capability = _clean(capability)
     if capability in PROTECTED_CAPABILITIES:
         allowed = principal.is_owner
         return FamilyAccessDecision(allowed,
             "owner_protected_authority" if allowed else "owner_authority_required",
             principal, attribution, may_read_private_context=allowed,
-            may_confirm_protected_action=allowed)
+            may_confirm_protected_action=allowed, replay_identity=replay_identity)
     if capability in REPORTER_CAPABILITIES:
         allowed = principal.is_owner or capability in principal.permissions
         if capability == "active_follow_up" and context_owner_user_id:
             allowed = allowed and principal.telegram_user_id == _clean(context_owner_user_id)
         return FamilyAccessDecision(allowed,
             "attributable_family_observation" if allowed else "family_reporting_not_permitted",
-            principal, attribution, may_read_private_context=allowed)
+            principal, attribution, may_read_private_context=allowed,
+            replay_identity=replay_identity)
     if capability == READ_ONLY_CAPABILITY:
         domain = _clean(summary_domain).lower()
         allowed = principal.is_owner or (capability in principal.permissions and
             (domain in principal.summary_domains or "*" in principal.summary_domains))
         return FamilyAccessDecision(allowed,
             "family_summary_permitted" if allowed else "family_summary_not_permitted",
-            principal, attribution, may_read_private_context=allowed)
-    return FamilyAccessDecision(False, "unsupported_family_capability", principal, attribution)
+            principal, attribution, may_read_private_context=allowed,
+            replay_identity=replay_identity)
+    return FamilyAccessDecision(False, "unsupported_family_capability", principal, attribution,
+                                replay_identity=replay_identity)
 
 
 def family_access_policy(environ: Mapping[str, str]) -> dict[str, Any]:
     owner_id = _owner_id(environ)
+    rows = _bindings(environ)
     principals = [_principal_from_record(row, owner_id, _clean(row.get("telegram_user_id")))
-                  for row in _bindings(environ)]
+                  for row in rows]
     principals = [item for item in principals if item is not None]
+    identities = [item.telegram_user_id for item in principals]
+    families = [item.family_key for item in principals]
+    valid = len(principals) == len(rows) and len(identities) == len(set(identities)) \
+        and len(families) == len(set(families))
     return {
         "contract_version": "oom_sakkie_family_access_v1",
         "owner_configured": bool(owner_id),
-        "authorized_identity_count": (1 if owner_id else 0) + len(principals),
-        "family_bindings_count": len(principals),
-        "family_keys": sorted(item.family_key for item in principals),
+        "configuration_valid": valid,
+        "authorized_identity_count": (1 if owner_id else 0) + len(principals) if valid else 0,
+        "family_bindings_count": len(principals) if valid else 0,
         "roles": [role.value for role in FamilyRole],
         "protected_actions_owner_only": True,
         "display_names_are_authority": False,
@@ -168,11 +198,12 @@ def _principal_from_record(record: Mapping[str, Any], owner_id: str, chat_id: st
     authorized_by = _clean(record.get("authorized_by_user_id"))
     authorization_id = _clean(record.get("authorization_id"))
     authorized_at = _clean(record.get("authorized_at"))
+    revoked_at = _clean(record.get("revoked_at"))
     family_key = _clean(record.get("family_key")).lower()
     if (role not in {FamilyRole.TRUSTED_FAMILY_REPORTER, FamilyRole.READ_ONLY_FAMILY_MEMBER}
             or not owner_id or authorized_by != owner_id or not user_id
             or user_id == owner_id or user_id != chat_id or family_key not in {"mum", "dad"}
-            or not authorization_id or not authorized_at):
+            or not authorization_id or not _effective_timestamp(authorized_at) or revoked_at):
         return None
     permissions = frozenset(_clean(item) for item in record.get("permissions", []) if _clean(item))
     summaries = frozenset(_clean(item).lower() for item in record.get("summary_domains", []) if _clean(item))
@@ -203,6 +234,16 @@ def _bindings(environ: Mapping[str, str]) -> list[Mapping[str, Any]]:
     except (TypeError, ValueError, json.JSONDecodeError):
         return []
     return [item for item in value if isinstance(item, Mapping)] if isinstance(value, list) else []
+
+
+def _effective_timestamp(value: str) -> bool:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return False
+        return parsed.astimezone(timezone.utc) <= datetime.now(timezone.utc)
+    except (TypeError, ValueError):
+        return False
 
 
 def _unknown(user_id: str, chat_id: str) -> FamilyPrincipal:

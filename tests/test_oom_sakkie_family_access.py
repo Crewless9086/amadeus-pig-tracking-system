@@ -1,9 +1,11 @@
 import json
+from unittest.mock import patch
 
 from modules.oom_sakkie.family_access import (
     FamilyRole, authorize_family_message, bound_family_manager_result, family_access_policy,
     resolve_family_principal,
 )
+from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 
 
 OWNER = "5721652188"
@@ -60,6 +62,16 @@ def test_contextual_reply_is_identity_bound_not_cross_family():
     assert denied.allowed is False
 
 
+def test_principal_cannot_be_reused_for_another_family_message():
+    env = _env([_binding(), _binding("1003", family="mum")])
+    dad = resolve_family_principal(_parsed("1002"), env)
+    result = authorize_family_message(dad, _parsed("1003"), capability="farm_observation")
+    assert result.allowed is False
+    assert result.status == "family_principal_message_binding_mismatch"
+    assert result.reporter_attribution["reporter_user_id"] == "1003"
+    assert result.reporter_attribution["family_key"] == ""
+
+
 def test_unknown_sender_and_display_name_impersonation_disclose_nothing():
     parsed = {**_parsed("9999"), "display_name": "Charl", "language": "af"}
     principal = resolve_family_principal(parsed, _env())
@@ -103,7 +115,37 @@ def test_replay_binding_is_deterministic_and_grants_zero_write_authority():
     second = authorize_family_message(resolve_family_principal(parsed, env), parsed,
                                       capability="farm_observation")
     assert first.reporter_attribution == second.reporter_attribution
+    assert first.replay_identity == second.replay_identity
     assert first.may_write_farm_data is second.may_write_farm_data is False
+
+    changed = authorize_family_message(resolve_family_principal(parsed, env),
+        {**parsed, "text": "Die reservoir is halfvol"}, capability="farm_observation")
+    assert changed.replay_identity != first.replay_identity
+
+
+def test_duplicate_or_malformed_authorization_configuration_fails_closed():
+    duplicate = [_binding(), _binding(role="read_only_family_member",
+                                      permissions=["explicit_summary"])]
+    assert family_access_policy(_env(duplicate))["configuration_valid"] is False
+    assert resolve_family_principal(_parsed("1002"), _env(duplicate)).role is FamilyRole.UNKNOWN_SENDER
+    malformed = _binding(); malformed["authorized_at"] = "someday"
+    assert resolve_family_principal(_parsed("1002"), _env([malformed])).role is FamilyRole.UNKNOWN_SENDER
+
+
+def test_gateway_never_issues_owner_task_or_owner_lifecycle_to_family_identity():
+    env = {**_env([_binding()]), "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": f"{OWNER},1002",
+           "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+           "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "g" * 40}
+    payload = {"message": {"message_id": 4001, "date": 1786176000,
+        "text": "Hy eet nog nie", "from": {"id": 1002, "first_name": "Charl"},
+        "chat": {"id": 1002, "type": "private"}}}
+    with patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input") as owner_task:
+        result, status = handle_telegram_gateway_message(
+            payload, headers={"Authorization": "Bearer " + "g" * 40}, environ=env)
+    assert status == 503 and result["status"] == "telegram_family_lifecycle_not_enabled"
+    assert result["writes"] is False and result["dispatch_enabled"] is False
+    assert "family_keys" not in result["telegram_gateway"]["family_access"]
+    owner_task.assert_not_called()
 
 
 def test_family_manager_output_is_three_priorities_one_question_and_suppresses_closed_work():

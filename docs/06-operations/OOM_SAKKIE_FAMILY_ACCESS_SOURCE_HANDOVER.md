@@ -21,7 +21,7 @@ The 5 August mortality-intelligence handover is completed historical evidence an
 
 Every non-owner binding requires an exact Telegram user/private-chat identity, `family_key` (`mum` or `dad`), role, separate permission list, summary-domain list, authorization identity and time, and `authorized_by_user_id=5721652188`. Invalid, incomplete, non-owner-authorized, group-chat, or cross-family bindings fail closed. The contract preserves reporter user ID, provider message ID, provider timestamp, authorization identity, and a deterministic binding digest. It grants zero send, dispatch, farm-write, customer, publication, or hardware authority.
 
-The existing semantic prompt now explicitly handles English, Afrikaans and mixed language while being forbidden to infer identity or permission. The gateway policy reports the family-access contract, but no Mum/Dad binding has been added.
+The existing semantic prompt now explicitly handles English, Afrikaans and mixed language while being forbidden to infer identity or permission. The public gateway policy reports only contract availability and the owner-only boundary; it exposes no family keys, identities, binding counts, or permission inventory. Owner authority is issued only when the resolved role is Owner. A configured family identity currently fails closed as `telegram_family_lifecycle_not_enabled` until the typed lifecycle integration below is reviewed; it can never fall through into owner handlers. No Mum/Dad binding has been added.
 
 ## Later onboarding (protected owner change)
 
@@ -43,13 +43,13 @@ No active specialist file was changed. Before family access becomes operational,
 3. Permit a Trusted Family Reporter only through typed observation/follow-up adapters after `authorize_family_message`; bind lifecycle context to that reporter identity. Never pass reporter input to owner confirmation handlers.
 4. Permit a Read-only Family Member only through the explicitly scoped summary composer. Apply the existing maximum-three-priorities/one-question presentation rule.
 5. Return a privacy-safe denial for Unknown Sender without revealing configured identities, cases, animals, or domains.
-6. Store the attribution block alongside specialist evidence and make the deterministic provider-message identity the replay key.
+6. Store the attribution block alongside specialist evidence and consume the prepared deterministic replay identity exactly once. The identity binds user, chat, provider message/time, content hash, capability, and authorization binding.
 
 Required integration tests: gateway ordering; owner regression; Mum/Dad independent configuration; Afrikaans and mixed-language semantic journeys; later contextual reply; unknown sender; cross-family context; protected confirmation; replay; privacy-safe denial; zero farm/customer/hardware writes.
 
 ## Acceptance evidence
 
-Focused tests prove Charl-only default, independently scoped Mum/Dad bindings, English/Afrikaans/mixed observation handling without language-derived authority, context isolation, exact attribution, unknown-sender privacy, owner-only protected actions, read-only domain scoping, deterministic replay, and the three-action/one-question result bound.
+Focused tests prove Charl-only default, independently scoped Mum/Dad bindings, language-neutral authorization (the same English/Afrikaans/mixed text receives the same identity policy), principal-to-current-message binding, duplicate/malformed binding rejection, context-owner isolation, exact attribution, unknown-sender privacy, owner-only protected actions, read-only domain scoping, deterministic replay identity construction, and the three-action/one-question result bound. Existing semantic-front-door regressions cover Afrikaans classification and short contextual domain replies; durable replay consumption and an end-to-end family semantic/context journey remain part of the shared integration and later production proof rather than being claimed here.
 
 No Telegram call, runtime acquisition, merge, deployment, farm/customer/hardware write, or ROOTLINE/HERDMASTER change was performed.
 

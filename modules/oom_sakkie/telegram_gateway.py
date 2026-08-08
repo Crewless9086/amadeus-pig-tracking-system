@@ -15,7 +15,7 @@ from modules.oom_sakkie.owner_operational_continuation import handle_owner_opera
 from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_message
 from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
 from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline, record_reassessment_delivery
-from modules.oom_sakkie.family_access import family_access_policy
+from modules.oom_sakkie.family_access import FamilyRole, family_access_policy, resolve_family_principal
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -82,7 +82,11 @@ def telegram_gateway_policy(environ=None):
         },
         "deterministic_only": not (semantic_policy["enabled"] and semantic_policy["configured"]),
         "semantic_front_door": semantic_policy,
-        "family_access": family_access_policy(source),
+        "family_access": {
+            "contract_version": "oom_sakkie_family_access_v1",
+            "configured": family_access_policy(source)["configuration_valid"],
+            "protected_actions_owner_only": True,
+        },
         "can_trigger_outbound_llm": semantic_policy["enabled"] and semantic_policy["configured"],
         "minimum_token_entropy": "Requires a long random token of at least 32 characters before the gateway can enable.",
         "direct_bot_cutover_enabled": False,
@@ -181,6 +185,16 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         return _gateway_result(False, "telegram_gateway_auth_denied", policy, 403)
 
     source = environ if environ is not None else os.environ
+    parsed = parse_telegram_gateway_payload(payload)
+    allowed_ids = _allowed_user_ids(source)
+    if allowed_ids and parsed["telegram_user_id"] not in allowed_ids:
+        return _gateway_result(False, "telegram_user_not_allowed", policy, 403)
+    family_principal = resolve_family_principal(parsed, source)
+    if family_principal.role is FamilyRole.UNKNOWN_SENDER:
+        return _gateway_result(False, "telegram_family_identity_not_authorized", policy, 403)
+    if family_principal.role is not FamilyRole.OWNER:
+        return _gateway_result(False, "telegram_family_lifecycle_not_enabled", policy, 503)
+
     owner_task, owner_task_status = handle_owner_task_input(
         payload,
         environ=source,
@@ -205,14 +219,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         })
         return owner_task, owner_task_status
 
-    parsed = parse_telegram_gateway_payload(payload)
     if not parsed["text"]:
         return _gateway_result(False, "telegram_text_required", policy, 400)
-    allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
-    if allowed_ids and parsed["telegram_user_id"] not in allowed_ids:
-        body, status_code = _gateway_result(False, "telegram_user_not_allowed", policy, 403)
-        body["telegram_user_id"] = parsed["telegram_user_id"]
-        return body, status_code
     gateway_authority = issue_gateway_owner_authority(
         parsed["telegram_user_id"],
         parsed["telegram_chat_id"],
