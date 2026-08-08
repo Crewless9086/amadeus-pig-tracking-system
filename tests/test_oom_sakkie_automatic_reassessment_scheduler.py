@@ -155,6 +155,32 @@ def test_gateway_scheduled_unchanged_records_receipt_and_zero_io():
     assert result["writes_farm_data"] is False and len(rows) == 2
 
 
+def test_enabled_scheduler_uses_canonical_execution_cycle_not_readonly_packet_authority():
+    rows,schedules=memory_store(); cycles=[]; deliveries=[]
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"true",
+         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
+         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42",
+         "ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"}
+    bound={**scheduled_payload(),"owner_user_id":"42","chat_id":"42","trigger":"declared_time",
+           "trigger_id":"AUTO-1","trigger_timestamp":"2026-08-05T10:15:00+02:00"}
+    def cycle(**kwargs):
+        cycles.append(kwargs)
+        proof=kwargs["notify"]("Started",{"zone_id":"B12345","execution_id":"EXEC-1",
+                                           "notification_identity":"NOTE-1"})
+        return {"success":True,"status":"segment_started","hardware_commands":1,
+                "telegram_messages":int(proof["provider_delivery_confirmed"]),
+                "writes_farm_data":False}
+    def deliver(*args,**kwargs):
+        deliveries.append((args,kwargs)); return {"success":True,"status":"family_message_delivered",
+            "telegram_message_id":"9100","telegram_sends":1}
+    value,status=handle_rootline_reassessment_trigger(bound,
+        {"X-Oom-Sakkie-Telegram-Token":"x"*40},env,schedule_store=schedules,
+        scheduler_now=NOW,family_delivery=deliver,execution_cycle=cycle,
+        specialist_loader=lambda:(_ for _ in ()).throw(AssertionError("read-only packet used")))
+    assert status==200 and value["status"]=="segment_started"
+    assert len(cycles)==len(deliveries)==1 and value["hardware_commands"]==1
+
+
 def test_scheduled_ambiguous_delivery_is_contained_and_never_claimed_complete():
     rows, schedules = memory_store(); state_rows = {}
     def state(action, identity, payload):

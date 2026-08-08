@@ -411,7 +411,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
 
 def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *, specialist_loader=None,
                                          state_store=None, family_delivery=None, schedule_store=None,
-                                         scheduler_now=None):
+                                         scheduler_now=None, execution_cycle=None):
     """Run one authenticated scheduled/evidence-change reassessment via the existing family rail."""
     source = environ if environ is not None else os.environ
     policy = telegram_gateway_policy(source)
@@ -440,6 +440,36 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 return {"success": False, "status": "scheduled_reassessment_evidence_after_cutoff"}
             return current
         def invoke():
+            if str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() == "true":
+                cycle = execution_cycle
+                if cycle is None:
+                    from modules.telemetry.rootline_execution_runtime import run_rootline_execution_cycle
+                    cycle = run_rootline_execution_cycle
+                parsed = {"telegram_user_id": str(manual_payload.get("owner_user_id") or ""),
+                          "telegram_chat_id": str(manual_payload.get("chat_id") or ""),
+                          "provider_message_id": f"scheduled:{manual_payload.get('trigger_id')}",
+                          "provider_timestamp": str(manual_payload.get("trigger_timestamp") or "")}
+                deliver = family_delivery or deliver_family_result
+                def notify(state, execution):
+                    zone = str(execution.get("zone_id") or "irrigation")
+                    answer = ({"Started": f"{zone} irrigation started; maximum 60 minutes.",
+                               "Completed": f"{zone} irrigation stopped and completed.",
+                               "Intervention": (f"{zone} irrigation stopped, but its outcome needs confirmation."
+                                                if execution.get("shutdown_verified") is True
+                                                else f"{zone} irrigation needs intervention; automatic reuse is contained.")}
+                              .get(state, f"{zone} irrigation: {state}."))
+                    delivery = deliver(parsed, {"success": True, "status": state.lower(),
+                        "answer": answer}, specialist="ROOTLINE",
+                        mission_id=str(execution.get("notification_identity")
+                                       or execution.get("execution_id") or ""),
+                        card_mission_id=str(execution.get("notification_identity")
+                                            or execution.get("execution_id") or ""))
+                    return {**delivery,
+                        "provider_delivery_confirmed": delivery.get("success") is True
+                            and bool(delivery.get("telegram_message_id")),
+                        "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
+                        "provider_message_id": str(delivery.get("telegram_message_id") or "")}
+                return cycle(notify=notify, environ=source, now=scheduler_now)
             result, nested_status = handle_rootline_reassessment_trigger(
                 manual_payload, headers=headers, environ=source, specialist_loader=scheduled_loader,
                 state_store=state_store, family_delivery=family_delivery)

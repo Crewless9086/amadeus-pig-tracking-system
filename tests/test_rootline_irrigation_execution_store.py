@@ -1,4 +1,14 @@
-from modules.telemetry.rootline_irrigation_execution_store import _event_id
+from concurrent.futures import ThreadPoolExecutor
+import os
+from pathlib import Path
+import uuid
+import json
+
+import pytest
+
+from modules.telemetry.rootline_irrigation_execution_store import (
+    _claim_single_controller, _event_id,
+)
 
 
 def test_on_claim_identity_is_atomic_and_stable_across_replay():
@@ -14,3 +24,33 @@ def test_off_attempt_claims_are_unique_per_execution_and_attempt():
                   for n in (1, 2, 3)}
     assert len(identities) == 3
     assert _event_id("claim_off_attempt", {"execution_id": "EXEC-1", "attempt": 1}) in identities
+
+
+@pytest.mark.skipif(not os.getenv("ROOTLINE_DISPOSABLE_POSTGRES_URL"),
+                    reason="disposable ROOTLINE PostgreSQL URL is required")
+def test_consumption_key_is_atomically_single_use_across_regenerated_executions(monkeypatch):
+    import psycopg
+    url=os.environ["ROOTLINE_DISPOSABLE_POSTGRES_URL"]
+    monkeypatch.setenv("DATABASE_URL",url)
+    migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
+    with psycopg.connect(url) as connection:
+        connection.execute(migration.read_text(encoding="utf-8"))
+    suffix=uuid.uuid4().hex
+    key=f"ROOTLINE-BC-CONSUMPTION-{suffix}"
+    def claim(index):
+        return _claim_single_controller({"execution_id":f"ROOTLINE-EXEC-{suffix}-{index}",
+            "consumption_key":key,"zone_id":"B12345"})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(claim,(1,2)))
+    assert sum(item.get("created") is True for item in results)==1
+    assert sorted(item.get("status") for item in results)==[
+        "claimed","eligibility_already_consumed"]
+    winner=1 if results[0].get("created") else 2
+    execution=f"ROOTLINE-EXEC-{suffix}-{winner}"
+    with psycopg.connect(url) as connection:
+        connection.execute("""insert into public.sam_live_stock_conversation_review_events
+            (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
+            values (%s,%s,'rootline_irrigation_execution','record_completed',%s::jsonb)""",
+            (f"ROOTLINE-TEST-TERMINAL-{suffix}",execution,
+             json.dumps({"rootline_execution":{"action":"record_completed",
+                 "execution_id":execution,"shutdown_verified":True}})))

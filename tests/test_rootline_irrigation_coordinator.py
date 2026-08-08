@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from modules.telemetry.rootline_irrigation_coordinator import advance_irrigation_execution, _digest
+from modules.telemetry.rootline_execution_authority import build_execution_eligibility
 from modules.telemetry.rootline_irrigation_execution_contract import validate_commissioning
 from tests.test_rootline_irrigation_execution_contract import evidence as commissioning_evidence
 
@@ -25,7 +26,7 @@ class Store:
         if action == "mark_active": self.active=payload
         if action == "contain_zone": self.contained.add(payload["zone_id"])
         if action in {"record_completed","contain_zone"}: self.active=None
-        return {"created": True}
+        return {"created": True, "success": True}
 
 
 class Transport:
@@ -47,11 +48,26 @@ class Transport:
 
 def decision(**changes):
     commissioned=commissioning(); proof=validate_commissioning("B12345",commissioned["evidence"],now=NOW)
+    plan={"evidence_generation":"GEN-1","candidate_tasks":[{"task_id":"irrigation_B12345",
+        "zone_decision":"Run now","recommendation":"Recommend","planned_duration_minutes":60,
+        "rank":1,"weekly_obligation":{"status":"available","delivery_debt_days":2,
+                                        "remaining_weekly_obligation_days":4}}]}
+    evidence={"weather":{"observed_at":NOW.isoformat(),"rain_rate_mm_h":0,"rain_today_mm":0},
+              "tanks":{"observed_at":NOW.isoformat(),"reservoir_state":"FULL","reservoir_fraction":1.0}}
+    controller={"device_id":"100204e9bc","online":True,"firmware":"3.8.2",
+        "actuation_configuration_safe":True,"timers_enabled":False,"scenes_enabled":False,
+        "interlock_enabled":False,"provider_control_calls":0,"trusted_receipt_at":NOW.isoformat(),
+        "commissioned_baseline_id":"BASELINE-1","response_digest":"READ-ELIG",
+        "channels":[{"channel":n,"output_state":"OFF","native_auto_off_enabled":True,
+            "native_auto_off_seconds":3599,"power_restoration_state":"OFF"} for n in range(1,5)]}
+    artifact=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,now=NOW)
     value={"decision_id":"DEC-1","decision":"Run now","standing_authority":True,"zone_id":"B12345",
-           "runtime_minutes":60,"execution_id":"EXEC-1","eligibility_id":"ELIG-1",
-           "evidence_generation":"GEN-1","assessed_at":NOW.isoformat(),
+           "runtime_minutes":59,"runtime_seconds":artifact["maximum_duration_seconds"],
+           "execution_id":artifact["execution_id"],"eligibility_id":artifact["eligibility_id"],
+           "evidence_generation":artifact["plan_generation"],"assessed_at":NOW.isoformat(),
            "commissioning_id":commissioned["commissioning_id"],
-           "commissioning_generation":proof["configuration_generation"]}
+           "commissioning_generation":proof["configuration_generation"],
+           "execution_eligibility":artifact}
     value.update(changes); value["decision_sha256"]=_digest(value); return value
 
 
@@ -60,10 +76,7 @@ def commissioning():
     return {"commissioning_id":proof["commissioning_id"],"evidence":raw}
 
 
-def valid_revalidation(value):
-    return {"eligible": True, "observed_rain": False,
-            "decision_id": value["decision_id"],
-            "evidence_generation": value["evidence_generation"]}
+def valid_revalidation(value): return value["execution_eligibility"]
 
 
 def run(store, transport, notices, value=None, now=NOW, outcome=None, revalidate=valid_revalidation):
@@ -71,8 +84,9 @@ def run(store, transport, notices, value=None, now=NOW, outcome=None, revalidate
     return advance_irrigation_execution(decision_id=chosen["decision_id"],
         commissioning_id=commissioned["commissioning_id"], decision_reader=lambda _:chosen,
         commissioning_reader=lambda _:commissioned, store=store, transport=transport,
-        notify=lambda *x:notices.append(x), outcome_reader=lambda _:outcome,
-        eligibility_revalidator=revalidate, now=now)
+        notify=lambda *x:(notices.append(x) or {"success":True,"provider_delivery_confirmed":True,
+            "provider_message_id":f"MSG-{len(notices)}"}), outcome_reader=lambda _:outcome,
+        eligibility_revalidator=revalidate, now=now, clock=lambda: now)
 
 
 def test_missing_provider_safety_readback_disables_on():
@@ -93,9 +107,11 @@ def test_exactly_one_unambiguous_on_after_durable_claim():
     result=run(store,transport,notices)
     assert result["status"]=="segment_started"
     assert [call["state"] for call in transport.calls]==["ON"]
-    assert store.rows[0][0]=="claim_before_on" and notices[0][0]=="Active"
+    assert store.rows[0][0]=="claim_before_on" and notices[0][0]=="Started"
     active=next(value for name,value in store.rows if name=="mark_active")
-    assert result["execution"]==active==notices[0][1]
+    assert result["execution"]==active
+    assert notices[0][1]=={**active,
+        "notification_identity":f"{active['execution_id']}:Started"}
     assert active["state"]=="Active" and active["start_evidence"]["authoritative"] is True
 
 
@@ -104,7 +120,7 @@ def test_ambiguous_on_is_never_retried_and_uses_safe_off():
     result=run(store,transport,notices)
     assert [call["state"] for call in transport.calls].count("ON")==1
     assert [call["state"] for call in transport.calls].count("OFF")==1
-    assert result["status"]=="ambiguous_on_shutdown_unverified" and notices==[("Exception",notices[0][1])]
+    assert result["status"]=="ambiguous_on_shutdown_unverified" and notices==[("Intervention",notices[0][1])]
     assert "B12345" in store.contained
     assert result["telegram_messages"]==1
 
@@ -115,7 +131,7 @@ def test_accepted_on_without_authoritative_on_state_never_becomes_active():
         result=run(store,transport,notices)
         assert result["status"]=="start_unverified_contained"
         assert not any(name=="mark_active" for name,_ in store.rows)
-        assert notices[-1][0]=="Exception"
+        assert notices[-1][0]=="Intervention"
 
 
 def test_restart_before_deadline_preserves_shutdown_ownership_without_commands():
@@ -136,7 +152,7 @@ def test_restart_after_claim_owns_immediate_off_recovery_and_never_reissues_on()
     result=run(store,transport,notices)
     assert result["status"]=="interrupted_start_contained"
     assert [call["state"] for call in transport.calls]==["OFF"]
-    assert "B12345" in store.contained and notices[0][0]=="Exception"
+    assert "B12345" in store.contained and notices[0][0]=="Intervention"
 
 
 def test_expired_active_segment_repeats_safe_off_and_requires_readback():
@@ -146,7 +162,7 @@ def test_expired_active_segment_repeats_safe_off_and_requires_readback():
     transport=Transport(readback=None); notices=[]
     result=run(Store(active),transport,notices)
     assert all(call["state"]=="OFF" for call in transport.calls)
-    assert result["status"]=="shutdown_unverified" and notices[-1][0]=="Exception"
+    assert result["status"]=="shutdown_unverified" and notices[-1][0]=="Intervention"
 
 
 def test_off_attempt_bound_is_durable_across_restart():
@@ -176,7 +192,8 @@ def test_verified_segment_can_carry_canonical_objective_satisfaction():
     result=run(store,Transport(readback="OFF"),notices,outcome=outcome)
     assert result["status"]=="segment_completed"
     assert result["execution"]["objective_satisfied"] is True
-    assert notices==[("Completed",result["execution"])]
+    assert notices[0][0]=="Completed"
+    assert notices[0][1]["notification_identity"]=="EXEC-1:Completed"
 
 
 def test_pre_stop_objective_packet_cannot_discharge_completion():
@@ -193,6 +210,19 @@ def test_pre_stop_objective_packet_cannot_discharge_completion():
     outcome["outcome_sha256"]=_digest(outcome)
     result=run(Store(active),Transport(readback="OFF"),[],outcome=outcome)
     assert result["execution"]["objective_satisfied"] is False
+
+
+def test_shutdown_without_objective_is_truthfully_intervention_not_completed():
+    active={"execution_id":"EXEC-1","zone_id":"B12345","channel":1,
+            "eligibility_id":"ELIG-1","evidence_generation":"GEN-1",
+            "claimed_at":(NOW-timedelta(minutes=60)).isoformat(),
+            "primary_stop_deadline":(NOW-timedelta(seconds=1)).isoformat(),
+            "native_fail_stop_deadline":(NOW+timedelta(minutes=1)).isoformat()}
+    notices=[]
+    result=run(Store(active),Transport(readback="OFF"),notices)
+    assert result["status"]=="segment_stopped_outcome_unconfirmed"
+    assert notices[0][0]=="Intervention"
+    assert notices[0][1]["notification_identity"]=="EXEC-1:Intervention"
 
 
 def test_contained_zone_cannot_restart_after_unverified_shutdown():
@@ -221,8 +251,7 @@ def test_fresh_rain_or_generation_change_immediately_before_claim_prevents_on():
 
 def test_revalidation_must_bind_exact_decision_generation():
     result=run(Store(),Transport(),[],revalidate=lambda value:{
-        "eligible":True,"observed_rain":False,"decision_id":value["decision_id"],
-        "evidence_generation":"OTHER"})
+        **value["execution_eligibility"],"plan_generation":"OTHER"})
     assert result["status"]=="execution_eligibility_changed"
 
 
