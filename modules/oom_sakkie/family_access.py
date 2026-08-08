@@ -131,7 +131,7 @@ def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, An
         "user_id": message_user, "chat_id": message_chat,
         "provider_message_id": attribution["provider_message_id"],
         "provider_timestamp": attribution["provider_timestamp"],
-        "content_sha256": hashlib.sha256(_clean(parsed.get("text")).encode("utf-8")).hexdigest(),
+        "content_sha256": hashlib.sha256(str(parsed.get("text") or "").strip().encode("utf-8")).hexdigest(),
         "capability": _clean(capability), "binding_digest": principal.binding_digest})
     if not principal.authenticated:
         return FamilyAccessDecision(False, "unknown_sender_denied", principal, attribution,

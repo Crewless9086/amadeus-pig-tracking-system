@@ -121,6 +121,13 @@ def test_replay_binding_is_deterministic_and_grants_zero_write_authority():
     changed = authorize_family_message(resolve_family_principal(parsed, env),
         {**parsed, "text": "Die reservoir is halfvol"}, capability="farm_observation")
     assert changed.replay_identity != first.replay_identity
+    prefix = "x" * 200
+    long_a = {**parsed, "text": prefix + " reservoir full"}
+    long_b = {**parsed, "text": prefix + " reservoir empty"}
+    assert authorize_family_message(resolve_family_principal(long_a, env), long_a,
+        capability="farm_observation").replay_identity != authorize_family_message(
+            resolve_family_principal(long_b, env), long_b,
+            capability="farm_observation").replay_identity
 
 
 def test_duplicate_or_malformed_authorization_configuration_fails_closed():
