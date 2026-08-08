@@ -535,3 +535,8 @@
 - Diagnosed the approximately 30-second HTTP 503 as a transient full-inventory Chatwoot page read reaching the previous hard timeout before any durable claim or external customer effect.
 - Bounded Chatwoot reads, isolated partial-page and exact-conversation chronology failures, preserved unrelated eligible work, and added fresh claim-boundary classification without weakening identity, chronology, usefulness, pricing, inventory, delivery or authority gates.
 - Recorded the exact source and production handover in `docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md`.
+# 2026-08-08 — Oom Sakkie family access and Afrikaans (source-only)
+
+- Added a closed, identity-bound family-role contract with Charl-only protected authority, independently configurable Mum/Dad permissions, privacy-safe unknown-sender denial, exact reporter provenance, and zero I/O authority.
+- Clarified that the semantic front door supports English, Afrikaans and mixed language but cannot infer identity or permission.
+- Added focused regressions and a governed onboarding/integration handover. No family identity was added; no runtime, Telegram, farm, customer, or hardware state changed.

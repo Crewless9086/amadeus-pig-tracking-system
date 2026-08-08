@@ -15,6 +15,7 @@ from modules.oom_sakkie.owner_operational_continuation import handle_owner_opera
 from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_message
 from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
 from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline, record_reassessment_delivery
+from modules.oom_sakkie.family_access import family_access_policy
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -81,6 +82,7 @@ def telegram_gateway_policy(environ=None):
         },
         "deterministic_only": not (semantic_policy["enabled"] and semantic_policy["configured"]),
         "semantic_front_door": semantic_policy,
+        "family_access": family_access_policy(source),
         "can_trigger_outbound_llm": semantic_policy["enabled"] and semantic_policy["configured"],
         "minimum_token_entropy": "Requires a long random token of at least 32 characters before the gateway can enable.",
         "direct_bot_cutover_enabled": False,
