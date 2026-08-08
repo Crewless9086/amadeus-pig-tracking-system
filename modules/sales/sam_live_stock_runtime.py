@@ -17,6 +17,7 @@ from modules.orders.order_intake_service import (
 from modules.orders.order_line_sync import sync_order_lines_from_request
 from modules.orders.order_service import create_order_with_lines
 from modules.orders.order_validation import validate_new_order_payload, validate_sync_order_lines_payload
+from modules.documents.quote_service import auto_generate_quote_if_ready
 from modules.pig_weights.pig_weights_service import get_sales_availability
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge, public_profile
 from modules.sales.sam_pricing import (
@@ -55,6 +56,7 @@ from modules.sales.sam_chatwoot_inbox_state import (
 from modules.sales.sam_live_stock_continuous_dispatch import (
     build_delivery_owner_exception,
 )
+from modules.sales.sam_live_stock_sales_lifecycle import build_sales_lifecycle_packet
 from modules.sales.sam_owner_example_projection import (
     read_owner_example_projection,
 )
@@ -92,6 +94,7 @@ OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV = "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_EN
 MEAT_PUBLIC_OFFER_ENABLED_ENV = "SAM_MEAT_PUBLIC_OFFER_ENABLED"
 INTAKE_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED"
 DRAFT_ORDER_CREATE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED"
+QUOTE_PREPARE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_QUOTE_PREPARE_ENABLED"
 OWNER_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED"
 CHATWOOT_BASE_URL_ENV = "CHATWOOT_BASE_URL"
 CHATWOOT_ACCOUNT_ID_ENV = "CHATWOOT_ACCOUNT_ID"
@@ -201,6 +204,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     intake_writer=None,
     draft_order_creator=None,
     draft_order_syncer=None,
+    quote_preparer=None,
     llm_drafter=None,
     owner_example_loader=None,
     voice_transcriber=None,
@@ -642,6 +646,13 @@ def handle_sam_live_stock_chatwoot_inbound(
         },
     )
     decision["canonical_evidence_offer"] = final_canonical_offer
+    decision["sales_lifecycle"] = _build_sales_lifecycle_decision_packet(
+        inbound,
+        facts,
+        context_packet,
+        decision,
+        pricing_projection,
+    )
     decision["canonical_composition_authorized"] = bool(
         final_canonical_offer.get("should_reply")
         and not final_canonical_offer.get("evidence_errors")
@@ -711,6 +722,31 @@ def handle_sam_live_stock_chatwoot_inbound(
             decision.setdefault("blockers", []).append(draft_order.get("status") or "draft_order_failed")
             decision["owner_gate_required"] = True
             _refresh_owner_action_packet_after_failed_draft_order(inbound, facts, decision, draft_order)
+    quote_prepare = prepare_live_stock_quote_if_enabled(
+        inbound,
+        facts,
+        decision,
+        source,
+        quote_preparer=quote_preparer,
+        isolated_runtime=isolated_level1_runtime,
+    )
+    decision["quote_prepare"] = quote_prepare
+    if quote_prepare.get("success"):
+        _refresh_owner_action_packet_after_quote(inbound, decision, quote_prepare)
+    elif quote_prepare.get("attempted"):
+        decision.setdefault("blockers", []).append(
+            quote_prepare.get("status") or "quote_prepare_failed"
+        )
+        decision["owner_gate_required"] = True
+    decision["sales_lifecycle"] = _build_sales_lifecycle_decision_packet(
+        inbound,
+        facts,
+        context_packet,
+        decision,
+        pricing_projection,
+        draft_order=draft_order,
+        quote_prepare=quote_prepare,
+    )
     routine_delivery = deliver_sam_live_stock_routine_reply_if_enabled(
         inbound,
         decision,
@@ -748,6 +784,61 @@ def handle_sam_live_stock_chatwoot_inbound(
             calls_chatwoot=routine_delivery.get("sent") is True,
         ),
     }, 200
+
+
+def _build_sales_lifecycle_decision_packet(
+    inbound,
+    facts,
+    context_packet,
+    decision,
+    pricing_projection,
+    *,
+    draft_order=None,
+    quote_prepare=None,
+):
+    """Project the existing canonical response evidence into one sales lifecycle."""
+    plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
+    order_state = dict(plan.get("order_state") or {})
+    result = (draft_order or {}).get("result") if isinstance((draft_order or {}).get("result"), dict) else {}
+    order_id = _clean(result.get("order_id") or result.get("Order_ID"), 100)
+    if order_id:
+        order_state["order_id"] = order_id
+    match = decision.get("match_packet") if isinstance(decision.get("match_packet"), dict) else {}
+    if match.get("selected_pig_ids"):
+        order_state["selected_pig_ids"] = list(match.get("selected_pig_ids") or [])
+        order_state["active_line_count"] = len(order_state["selected_pig_ids"])
+    document_state = dict(order_state.get("document_state") or {})
+    quote_result = (quote_prepare or {}).get("result") if isinstance((quote_prepare or {}).get("result"), dict) else {}
+    document_id = _clean(
+        quote_result.get("document_id")
+        or (quote_result.get("document") or {}).get("document_id")
+        or quote_result.get("Document_ID"),
+        100,
+    )
+    if document_id:
+        document_state = {
+            "document_id": document_id,
+            "current": True,
+            "status": _clean(quote_result.get("status") or "generated", 80),
+        }
+    provider_identity = {
+        "account_id": inbound.get("account_id"),
+        "inbox_id": inbound.get("inbox_id"),
+        "contact_id": inbound.get("contact_id"),
+        "conversation_id": inbound.get("conversation_id"),
+        "provider_identity_class": inbound.get("provider_identity_class"),
+    }
+    return build_sales_lifecycle_packet(
+        inbound=inbound,
+        chronology=context_packet.get("chatwoot_authority_messages") or [],
+        retained_facts=facts,
+        inventory=decision.get("availability") or context_packet.get("availability") or {},
+        pricing=(pricing_projection if isinstance(pricing_projection, dict) else {}),
+        order_state=order_state,
+        document_state=document_state,
+        claims=context_packet.get("delivery_claims") or [],
+        provider_identity=provider_identity,
+    )
 
 
 def deliver_sam_live_stock_routine_reply_if_enabled(
@@ -4480,6 +4571,102 @@ def _existing_draft_order_id_from_decision(decision):
     plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
     order_state = plan.get("order_state") if isinstance(plan.get("order_state"), dict) else {}
     return _clean(order_state.get("draft_order_id") or order_state.get("order_id"), 100)
+
+
+def prepare_live_stock_quote_if_enabled(
+    inbound,
+    facts,
+    decision,
+    environ=None,
+    *,
+    quote_preparer=None,
+    isolated_runtime=None,
+):
+    """Generate or reuse one formal quote PDF after a complete accepted request."""
+    source = environ if environ is not None else os.environ
+    facts = facts if isinstance(facts, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    if not _truthy(source.get(QUOTE_PREPARE_ENABLED_ENV)):
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_prepare_disabled"}
+    if isolated_runtime is not None and isolated_runtime.get("allowed") is not True:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_runtime_not_allowed"}
+    if decision.get("sales_lane") != LANE_LIVE_STOCK:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_wrong_lane"}
+    lifecycle = decision.get("sales_lifecycle") if isinstance(decision.get("sales_lifecycle"), dict) else {}
+    if lifecycle.get("accepted") is not True:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_customer_acceptance_required"}
+    if lifecycle.get("evidence_errors"):
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_evidence_invalid"}
+    if lifecycle.get("missing_qualification"):
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_qualification_incomplete"}
+    if lifecycle.get("stock_ready") is not True:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_stock_not_ready"}
+    if lifecycle.get("price_ready") is not True:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_price_not_ready"}
+    if lifecycle.get("handover_state") != "normal_handover":
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_handover_not_ready"}
+    order_id = _existing_draft_order_id_from_decision(decision)
+    if not order_id:
+        draft = decision.get("draft_order") if isinstance(decision.get("draft_order"), dict) else {}
+        result = draft.get("result") if isinstance(draft.get("result"), dict) else {}
+        order_id = _clean(result.get("order_id") or result.get("Order_ID"), 100)
+    if not order_id:
+        return {"attempted": True, "success": False, "status": "sam_live_stock_quote_order_required"}
+    try:
+        preparer = quote_preparer or auto_generate_quote_if_ready
+        result = preparer(order_id, created_by="Sam Live Stock")
+        document_id = _clean(
+            (result or {}).get("document_id")
+            or ((result or {}).get("document") or {}).get("document_id")
+            or (result or {}).get("Document_ID"),
+            100,
+        )
+        success = bool((result or {}).get("success") and document_id)
+        return {
+            "attempted": True,
+            "success": success,
+            "status": "sam_live_stock_quote_prepared" if success else "sam_live_stock_quote_prepare_failed",
+            "order_id": order_id,
+            "document_id": document_id,
+            "result": result,
+            "reserves_stock": False,
+            "sends_customer_message": False,
+            "owner_decision_required": True,
+        }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_quote_prepare_exception",
+            "error": _clean(str(exc), 240),
+            "order_id": order_id,
+        }
+
+
+def _refresh_owner_action_packet_after_quote(inbound, decision, quote_prepare):
+    order_id = _clean(quote_prepare.get("order_id"), 100)
+    document_id = _clean(quote_prepare.get("document_id"), 100)
+    conversation_id = _clean((inbound or {}).get("conversation_id"), 100)
+    packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
+    packet.update({
+        "status": "owner_reservation_and_document_delivery_decision_required",
+        "label": "Review exact reservation and current quote delivery",
+        "detail": "The draft order and current quote are prepared. No stock is reserved and no document is sent until the exact owner decision.",
+        "order_id": order_id,
+        "document_id": document_id,
+        "next_action": "escalate",
+        "internal_next_action": "owner_reservation_and_document_delivery_decision",
+        "routes": build_live_stock_owner_action_packet(
+            order_id=order_id,
+            conversation_id=conversation_id,
+            document_id=document_id,
+        ),
+    })
+    decision["owner_action_packet"] = packet
+    decision["owner_gate_required"] = True
+    decision["owner_authority_required"] = True
+    decision["protected_owner_exception_required"] = True
+    decision["next_action"] = "escalate"
 
 
 def build_live_stock_owner_action_packet(order_id="", conversation_id="", document_id=""):

@@ -79,6 +79,46 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_accepted_complete_request_prepares_one_quote_without_reservation_or_send(self):
+        calls = []
+        decision = {
+            "sales_lane": "live_stock_sales",
+            "conversation_plan": {"order_state": {"draft_order_id": "ORD-1"}},
+            "sales_lifecycle": {"accepted": True, "evidence_errors": [], "missing_qualification": [], "stock_ready": True, "price_ready": True, "handover_state": "normal_handover"},
+        }
+        result = sam_live_stock_runtime.prepare_live_stock_quote_if_enabled(
+            {"conversation_id": "1490"},
+            {"order_commitment": True},
+            decision,
+            {"SAM_LIVE_STOCK_BACKEND_QUOTE_PREPARE_ENABLED": "1"},
+            isolated_runtime={"allowed": True},
+            quote_preparer=lambda order_id, created_by="": calls.append((order_id, created_by)) or {
+                "success": True,
+                "document_id": "DOC-1",
+            },
+        )
+        self.assertEqual(calls, [("ORD-1", "Sam Live Stock")])
+        self.assertTrue(result["success"])
+        self.assertFalse(result["reserves_stock"])
+        self.assertFalse(result["sends_customer_message"])
+
+    def test_quote_prepare_waits_for_only_missing_payment_without_effect(self):
+        calls = []
+        result = sam_live_stock_runtime.prepare_live_stock_quote_if_enabled(
+            {"conversation_id": "1490"},
+            {"order_commitment": True},
+            {
+                "sales_lane": "live_stock_sales",
+                "conversation_plan": {"order_state": {"draft_order_id": "ORD-1"}},
+                "sales_lifecycle": {"accepted": True, "evidence_errors": [], "missing_qualification": ["payment_method"], "stock_ready": True, "price_ready": True, "handover_state": "normal_handover"},
+            },
+            {"SAM_LIVE_STOCK_BACKEND_QUOTE_PREPARE_ENABLED": "1"},
+            isolated_runtime={"allowed": True},
+            quote_preparer=lambda *_args, **_kwargs: calls.append("quote"),
+        )
+        self.assertEqual(result["status"], "sam_live_stock_quote_qualification_incomplete")
+        self.assertEqual(calls, [])
+
     def test_complete_eligible_projection_is_not_truncated_before_composition(self):
         fresh_weight_date = (
             datetime.now(timezone.utc).date() - timedelta(days=3)
