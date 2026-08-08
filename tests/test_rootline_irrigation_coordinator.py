@@ -36,7 +36,7 @@ class Transport:
         return {"authoritative": True, "zone_id": "B12345", "channel": 1,
                 "native_inching_enabled": True, "native_inching_seconds": 3600,
                 "power_restoration_state": "OFF", "schedules_enabled": False,
-                "interlock_enabled": False}
+                "interlock_enabled": False, "scenes_enabled": False}
     def set_state(self, **kwargs):
         self.calls.append(kwargs)
         return {"accepted_unambiguous": self.on == "accepted" or kwargs["state"] == "OFF"}
@@ -60,12 +60,19 @@ def commissioning():
     return {"commissioning_id":proof["commissioning_id"],"evidence":raw}
 
 
-def run(store, transport, notices, value=None, now=NOW, outcome=None):
+def valid_revalidation(value):
+    return {"eligible": True, "observed_rain": False,
+            "decision_id": value["decision_id"],
+            "evidence_generation": value["evidence_generation"]}
+
+
+def run(store, transport, notices, value=None, now=NOW, outcome=None, revalidate=valid_revalidation):
     chosen=value or decision(); commissioned=commissioning()
     return advance_irrigation_execution(decision_id=chosen["decision_id"],
         commissioning_id=commissioned["commissioning_id"], decision_reader=lambda _:chosen,
         commissioning_reader=lambda _:commissioned, store=store, transport=transport,
-        notify=lambda *x:notices.append(x), outcome_reader=lambda _:outcome, now=now)
+        notify=lambda *x:notices.append(x), outcome_reader=lambda _:outcome,
+        eligibility_revalidator=revalidate, now=now)
 
 
 def test_missing_provider_safety_readback_disables_on():
@@ -97,7 +104,8 @@ def test_ambiguous_on_is_never_retried_and_uses_safe_off():
     result=run(store,transport,notices)
     assert [call["state"] for call in transport.calls].count("ON")==1
     assert [call["state"] for call in transport.calls].count("OFF")==1
-    assert result["status"]=="ambiguous_on_contained" and notices==[("Exception",notices[0][1])]
+    assert result["status"]=="ambiguous_on_shutdown_unverified" and notices==[("Exception",notices[0][1])]
+    assert "B12345" in store.contained
     assert result["telegram_messages"]==1
 
 
@@ -117,6 +125,18 @@ def test_restart_before_deadline_preserves_shutdown_ownership_without_commands()
             "native_fail_stop_deadline":(NOW+timedelta(minutes=60)).isoformat()}
     transport=Transport(); result=run(Store(active),transport,[])
     assert result["status"]=="active_segment_owned" and transport.calls==[]
+
+
+def test_restart_after_claim_owns_immediate_off_recovery_and_never_reissues_on():
+    active={"execution_id":"EXEC-1","zone_id":"B12345","channel":1,
+            "state":"claimed_recovery_required",
+            "primary_stop_deadline":(NOW+timedelta(minutes=30)).isoformat(),
+            "native_fail_stop_deadline":(NOW+timedelta(minutes=60)).isoformat()}
+    store=Store(active); transport=Transport(readback="OFF"); notices=[]
+    result=run(store,transport,notices)
+    assert result["status"]=="interrupted_start_contained"
+    assert [call["state"] for call in transport.calls]==["OFF"]
+    assert "B12345" in store.contained and notices[0][0]=="Exception"
 
 
 def test_expired_active_segment_repeats_safe_off_and_requires_readback():
@@ -190,3 +210,25 @@ def test_second_segment_requires_new_fresh_execution_identity():
     stale=decision(assessed_at=(NOW-timedelta(minutes=16)).isoformat())
     result=run(Store(),Transport(),[],stale)
     assert result["status"]=="not_eligible" and result["hardware_commands"]==0
+
+
+def test_fresh_rain_or_generation_change_immediately_before_claim_prevents_on():
+    store=Store(); transport=Transport(); notices=[]
+    result=run(store,transport,notices,revalidate=lambda _decision:None)
+    assert result["status"]=="execution_eligibility_changed"
+    assert transport.calls==[] and store.active is None and notices==[]
+
+
+def test_revalidation_must_bind_exact_decision_generation():
+    result=run(Store(),Transport(),[],revalidate=lambda value:{
+        "eligible":True,"observed_rain":False,"decision_id":value["decision_id"],
+        "evidence_generation":"OTHER"})
+    assert result["status"]=="execution_eligibility_changed"
+
+
+def test_ambiguous_on_persists_containment_even_when_readback_raises():
+    class ThrowingReadback(Transport):
+        def read_output_state(self, **kwargs): raise RuntimeError("provider unavailable")
+    store=Store(); result=run(store,ThrowingReadback(on="ambiguous"),[])
+    assert result["status"]=="ambiguous_on_shutdown_unverified"
+    assert "B12345" in store.contained

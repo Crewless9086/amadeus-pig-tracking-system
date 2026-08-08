@@ -272,6 +272,7 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         reason = "Fresh local evidence records rain; reassess need after observed rain rather than relying on forecast."
     window = _window(decision, policy, power, now)
     urgent = need.lower() == "urgent"
+    gravity_fed = policy.get("gravity_fed_bc", True)
     return {
         "zone_id": zone_id,
         "channel": ZONES[zone_id]["channel"],
@@ -285,7 +286,7 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "fresh_decision_before_second_segment": True,
         "shutdown_verification_required": True,
         "simultaneous_with_other_zone": False,
-        "grid_exposure_may_be_justified": urgent,
+        "grid_exposure_may_be_justified": urgent and not gravity_fed,
         "evidence_gaps": gaps,
         "forecast_status": _freshness(forecast, now, 360),
         "local_weather_status": _freshness(weather, now, 30),
@@ -304,9 +305,17 @@ def _classify(score, need, policy, weather, water, power, now):
     reserve = policy["governing_reserve_soc_pct"]
     power_fresh = _freshness(power, now, 15) == "fresh"
     if urgent:
+        if policy.get("gravity_fed_bc", True):
+            return "Run now", "Urgent water need supports one bounded gravity-fed segment with the native fail-stop."
         return "Run now", "Urgent water continuity outweighs strict grid avoidance; retain the bounded native fail-stop."
     if score < 20:
         return "Hold", "Available evidence does not establish enough current deficit for irrigation."
+    # B/C are gravity-fed. Power remains reported evidence, but it cannot
+    # block, rank or time these commissioned irrigation zones.
+    if policy.get("gravity_fed_bc", True):
+        if policy["season"] == "summer" and not (now.hour >= 18 or now.hour < 6):
+            return "Run later", "Summer evaporation favours an evening or night window."
+        return "Run now", "Weekly irrigation demand, water and dry observed weather support one bounded gravity-fed segment."
     if not power_fresh:
         return "Run later", "Water need is supported but fresh power evidence is required at execution time."
     season = policy["season"]
@@ -376,10 +385,7 @@ def _confidence(zone, weather, forecast, water, power, now):
         gaps.append("forecast_unavailable")
     elif _freshness(forecast, now, 360) != "fresh":
         gaps.append("forecast_stale")
-    if not power:
-        gaps.append("power_unavailable")
-    elif _freshness(power, now, 15) != "fresh":
-        gaps.append("power_stale")
+    # Power is context, not eligibility evidence, for gravity-fed B/C.
     return ("high" if not gaps else "medium" if len(gaps) <= 2 else "low"), gaps
 
 
@@ -408,6 +414,7 @@ def _policy(value):
     value = _dict(value)
     return {
         "season": str(value.get("season") or "shoulder").lower(),
+        "gravity_fed_bc": value.get("gravity_fed_bc") is not False,
         "target_days_per_week": int(value.get("target_days_per_week") or 4),
         "governing_reserve_soc_pct": _number(value.get("governing_reserve_soc_pct")) or 63,
         "absolute_floor_soc_pct": _number(value.get("absolute_floor_soc_pct")) or 40,
