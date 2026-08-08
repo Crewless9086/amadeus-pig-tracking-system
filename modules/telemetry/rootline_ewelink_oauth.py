@@ -251,14 +251,104 @@ def _current_output_status(params):
 
 
 def _missing_safety_status(params):
+    pulses = _outlet_records(params.get("pulses"), "pulse", {"on", "off"})
+    configured = _outlet_records(params.get("configure"), "startup", {"on", "off", "stay"})
     checks = {
-        "native_auto_off_enabled": "pulse" in params or "pulses" in params,
-        "native_auto_off_duration": "pulseWidth" in params or "pulseWidths" in params,
-        "power_restoration": "startup" in params,
-        "timers": "timers" in params,
-        "interlock": "interlock" in params or "configure" in params,
+        "native_auto_off_enabled": bool(pulses),
+        "native_auto_off_duration": bool(pulses) and all(
+            isinstance(item.get("width"), int) for item in pulses.values()),
+        "power_restoration": bool(configured),
+        "timers": isinstance(params.get("timers"), list),
+        "interlock": params.get("interlock") in {0, 1, False, True},
     }
     return sorted(name for name, present in checks.items() if not present)
+
+
+def normalize_device_readback(*, device, status, retrieved_at):
+    """Return a secret-free, fail-closed projection of one authenticated GET snapshot."""
+    device_params = device.get("params") if isinstance(device.get("params"), dict) else {}
+    status_params = status.get("params") if isinstance(status.get("params"), dict) else {}
+    params = {**device_params, **status_params}
+    if not _current_output_status(params):
+        raise OAuthFailure("ewelink_device_status_incomplete")
+    outputs = _outlet_records(params["switches"], "switch", {"on", "off"})
+    pulses = _outlet_records(params.get("pulses"), "pulse", {"on", "off"})
+    configured = _outlet_records(params.get("configure"), "startup", {"on", "off", "stay"})
+    retrieved_at = _aware(retrieved_at)
+    observed_at = status.get("updatedAt") or status.get("updateTime") or device.get("updatedAt")
+    observed_time = _provider_timestamp(observed_at)
+    timestamp_fresh = (observed_time is not None and
+        timedelta(seconds=-30) <= retrieved_at - observed_time <= timedelta(minutes=5))
+    timers = params.get("timers") if isinstance(params.get("timers"), list) else None
+    scenes = params.get("scenes") if isinstance(params.get("scenes"), list) else (
+        params.get("scene") if isinstance(params.get("scene"), list) else None)
+    interlock = params.get("interlock")
+    missing = _missing_safety_status(params)
+    if not timestamp_fresh:
+        missing.append("provider_timestamp")
+    if scenes is None:
+        missing.append("scenes")
+    missing = sorted(set(missing))
+    channel_rows = [{
+        "channel": outlet + 1,
+        "output_state": outputs[outlet]["switch"].upper(),
+        "native_auto_off_enabled": ((pulses.get(outlet) or {}).get("pulse") == "on")
+            if outlet in pulses else None,
+        "native_auto_off_seconds": ((pulses.get(outlet) or {}).get("width") // 1000)
+            if isinstance((pulses.get(outlet) or {}).get("width"), int) else None,
+        "power_restoration_state": (configured.get(outlet) or {}).get("startup", "").upper() or None,
+    } for outlet in range(4)]
+    safety_complete = not missing and device.get("online") is True
+    configuration_safe = (safety_complete and all(
+        row["output_state"] == "OFF"
+        and row["native_auto_off_enabled"] is True
+        and 0 < int(row["native_auto_off_seconds"] or 0) <= 3600
+        and row["power_restoration_state"] == "OFF" for row in channel_rows)
+        and not any(not _timer_disabled(item) for item in timers)
+        and scenes == [] and interlock in {0, False})
+    return {
+        "authoritative": device.get("online") is True,
+        "current_outputs_authoritative": device.get("online") is True,
+        "actuation_safety_complete": safety_complete,
+        "actuation_configuration_safe": configuration_safe,
+        "actuation_eligible": False,
+        "device_id": str(device.get("deviceid") or ""),
+        "online": device.get("online") is True,
+        "firmware": str(params.get("fwVersion") or "") or None,
+        "channels": channel_rows,
+        "timers_enabled": any(not _timer_disabled(item) for item in timers) if timers is not None else None,
+        "scenes_enabled": bool(scenes) if scenes is not None else None,
+        "interlock_enabled": bool(interlock) if interlock in {0, 1, False, True} else None,
+        "provider_observed_at": observed_time.isoformat() if observed_time else None,
+        "provider_timestamp_fresh": timestamp_fresh,
+        "retrieved_at": retrieved_at.isoformat(),
+        "safety_readback_missing": missing,
+        "secrets_exposed": False,
+    }
+
+
+def _outlet_records(value, field, allowed):
+    if not isinstance(value, list) or len(value) != 4:
+        return {}
+    result = {}
+    for item in value:
+        if (not isinstance(item, dict) or not isinstance(item.get("outlet"), int)
+                or item.get("outlet") in result or item.get(field) not in allowed):
+            return {}
+        result[item["outlet"]] = item
+    return result if set(result) == {0, 1, 2, 3} else {}
+
+
+def _timer_disabled(value):
+    return isinstance(value, dict) and value.get("enabled") in {0, False, "off"}
+
+
+def _provider_timestamp(value):
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return _aware(parsed)
+    except (TypeError, ValueError):
+        return None
 
 
 def _provider_request(method, url, *, body=None, mode, token=None, environ):
@@ -335,6 +425,19 @@ def _token_key(source):
 def _encrypt(value, key, aad):
     nonce = secrets.token_bytes(12)
     return base64.b64encode(nonce + AESGCM(key).encrypt(nonce, value.encode(), aad)).decode()
+
+
+def decrypt_access_token(record, environ=None):
+    source = environ if environ is not None else os.environ
+    aad = (f"{record['region']}|{record['provider_account_digest']}|"
+           f"{record['device_id']}|{record['adapter_version']}").encode()
+    packet = base64.b64decode(record["access_token_ciphertext"], validate=True)
+    if len(packet) < 29:
+        raise OAuthFailure("ewelink_token_ciphertext_invalid")
+    try:
+        return AESGCM(_token_key(source)).decrypt(packet[:12], packet[12:], aad).decode()
+    except Exception:
+        raise OAuthFailure("ewelink_token_decryption_failed") from None
 
 
 def _millis_time(value):

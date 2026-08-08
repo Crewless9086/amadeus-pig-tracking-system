@@ -35,6 +35,7 @@ from modules.telemetry.rootline_ewelink_oauth_store import (
     PostgresOAuthStateStore,
     PostgresOAuthTokenStore,
 )
+from modules.telemetry.rootline_ewelink_readback import read_current_device
 from modules.telemetry.irrigation_daily_plan_service import get_current_daily_plan
 from modules.telemetry.irrigation_command_service import (
     approve_plan_only_command,
@@ -102,6 +103,22 @@ def rootline_ewelink_oauth_callback():
         return jsonify({"status": "rejected", "reason": str(exc), "secrets_exposed": False}), 400
     except Exception:
         return jsonify({"status": "unavailable", "reason": "oauth_callback_persistence_failed",
+                        "secrets_exposed": False}), 503
+    return jsonify(result), 200
+
+
+@telemetry_bp.route("/rootline/provider/ewelink/readback", methods=["GET"])
+def rootline_ewelink_readback():
+    guard = require_strict_owner_admin_access()
+    if guard:
+        return guard
+    try:
+        result = read_current_device(token_store=PostgresOAuthTokenStore())
+    except OAuthFailure as exc:
+        return jsonify({"status": "rejected", "reason": str(exc),
+                        "secrets_exposed": False}), 409
+    except Exception:
+        return jsonify({"status": "unavailable", "reason": "ewelink_readback_failed",
                         "secrets_exposed": False}), 503
     return jsonify(result), 200
 

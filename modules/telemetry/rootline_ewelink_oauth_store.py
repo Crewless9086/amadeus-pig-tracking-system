@@ -58,3 +58,20 @@ class PostgresOAuthTokenStore:
                      item["adapter_version"],__import__("json").dumps(item["status_field_names"]),
                      item["created_at"]))
                 return cursor.fetchone() is not None
+
+    def latest(self):
+        import psycopg
+        with psycopg.connect(self.database_url, connect_timeout=5) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select token_binding_id,provider_account_digest,device_id,region,
+                    access_token_ciphertext,refresh_token_ciphertext,access_expires_at,
+                    refresh_expires_at,response_digest,adapter_version,created_at
+                    from app_private.rootline_ewelink_oauth_tokens
+                    order by created_at desc limit 1""")
+                row = cursor.fetchone()
+        if not row:
+            return None
+        names = ("token_binding_id", "provider_account_digest", "device_id", "region",
+                 "access_token_ciphertext", "refresh_token_ciphertext", "access_expires_at",
+                 "refresh_expires_at", "response_digest", "adapter_version", "created_at")
+        return dict(zip(names, row))
