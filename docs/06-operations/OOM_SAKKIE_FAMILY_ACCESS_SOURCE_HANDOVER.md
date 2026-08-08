@@ -6,7 +6,7 @@ Production owner during preparation: ROOTLINE
 
 ## Current truth
 
-Production and `origin/main` were both verified at `e917793ef078add082578d852a2c76a551963ee4` before this branch was created. The current Telegram allow-list and all reviewed operational documentation identify exactly one authorized human Telegram identity: Charl, provider user/private-chat ID `5721652188`. Mum and Dad are **not** configured or authorized. Display names and language provide no identity authority.
+The branch was reconciled again after ROOTLINE advanced: production deployment `dep-d9rp1mrncjis739d3bh0` and `origin/main` were both verified at `1e89cbb43c6a47f5d158044b208efbcc7e92633c`. The current Telegram allow-list and all reviewed operational documentation identify exactly one authorized human Telegram identity: Charl, provider user/private-chat ID `5721652188`. Mum and Dad are **not** configured or authorized. Display names and language provide no identity authority.
 
 The 5 August mortality-intelligence handover is completed historical evidence and was not resumed, polled, or used to manufacture a proof.
 
