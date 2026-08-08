@@ -55,6 +55,7 @@ def list_sales_transactions(sale_stream="", limit=DEFAULT_LIMIT, database_url=No
                         st.sale_id,
                         st.sale_date,
                         st.sale_stream,
+                        st.sale_channel,
                         st.buyer_name,
                         st.destination,
                         st.linked_order_id,
@@ -62,6 +63,10 @@ def list_sales_transactions(sale_stream="", limit=DEFAULT_LIMIT, database_url=No
                         st.gross_total,
                         st.deductions_total,
                         st.net_total,
+                        st.lot_total,
+                        st.financial_interpretation,
+                        st.received_total,
+                        st.external_reference,
                         st.currency,
                         st.payment_status,
                         st.payment_method,
@@ -137,6 +142,7 @@ def get_sales_transaction(sale_id, database_url=None):
                         sale_id,
                         sale_date,
                         sale_stream,
+                        sale_channel,
                         buyer_name,
                         buyer_phone_raw,
                         destination,
@@ -145,6 +151,10 @@ def get_sales_transaction(sale_id, database_url=None):
                         gross_total,
                         deductions_total,
                         net_total,
+                        lot_total,
+                        financial_interpretation,
+                        received_total,
+                        external_reference,
                         currency,
                         payment_status,
                         payment_method,
@@ -262,8 +272,13 @@ def get_monthly_sales_transaction_summary(report_date=None, database_url=None):
                         st.sale_stream,
                         count(*)::int as transaction_count,
                         coalesce(sum(st.pig_count), 0)::int as pig_count,
-                        coalesce(sum(st.gross_total), 0)::numeric(12, 2) as gross_total,
-                        coalesce(sum(st.net_total), 0)::numeric(12, 2) as net_total,
+                        case when count(st.gross_total)=count(*) then sum(st.gross_total) end::numeric(12, 2) as gross_total,
+                        case when count(st.net_total)=count(*) then sum(st.net_total) end::numeric(12, 2) as net_total,
+                        coalesce(sum(st.lot_total), 0)::numeric(12, 2) as lot_total,
+                        case when count(st.received_total)=count(*) then sum(st.received_total) end::numeric(12, 2) as received_total,
+                        (count(*)-count(st.gross_total))::int as gross_unknown_count,
+                        (count(*)-count(st.net_total))::int as net_unknown_count,
+                        (count(*)-count(st.received_total))::int as received_unknown_count,
                         coalesce(sum(item_counts.item_count), 0)::int as item_count
                     from public.sales_transactions st
                     left join item_counts on item_counts.sale_id = st.sale_id
@@ -296,16 +311,26 @@ def get_monthly_sales_transaction_summary(report_date=None, database_url=None):
             "transaction_count": int(row.get("transaction_count") or 0),
             "pig_count": int(row.get("pig_count") or 0),
             "item_count": int(row.get("item_count") or 0),
-            "gross_total": _json_safe_value(row.get("gross_total")) or 0.0,
-            "net_total": _json_safe_value(row.get("net_total")) or 0.0,
+            "gross_total": _json_safe_value(row.get("gross_total")),
+            "net_total": _json_safe_value(row.get("net_total")),
+            "lot_total": _json_safe_value(row.get("lot_total")) or 0.0,
+            "received_total": _json_safe_value(row.get("received_total")),
+            "gross_unknown_count": int(row.get("gross_unknown_count") or 0),
+            "net_unknown_count": int(row.get("net_unknown_count") or 0),
+            "received_unknown_count": int(row.get("received_unknown_count") or 0),
         }
 
     totals = {
         "transaction_count": sum(stream["transaction_count"] for stream in streams.values()),
         "pig_count": sum(stream["pig_count"] for stream in streams.values()),
         "item_count": sum(stream["item_count"] for stream in streams.values()),
-        "gross_total": round(sum(float(stream["gross_total"] or 0) for stream in streams.values()), 2),
-        "net_total": round(sum(float(stream["net_total"] or 0) for stream in streams.values()), 2),
+        "gross_total": _complete_total(streams,"gross_total","gross_unknown_count"),
+        "net_total": _complete_total(streams,"net_total","net_unknown_count"),
+        "lot_total": round(sum(float(stream["lot_total"] or 0) for stream in streams.values()), 2),
+        "received_total": _complete_total(streams,"received_total","received_unknown_count"),
+        "gross_unknown_count": sum(stream["gross_unknown_count"] for stream in streams.values()),
+        "net_unknown_count": sum(stream["net_unknown_count"] for stream in streams.values()),
+        "received_unknown_count": sum(stream["received_unknown_count"] for stream in streams.values()),
     }
 
     return {
@@ -375,6 +400,11 @@ def _empty_stream_values():
         "item_count": 0,
         "gross_total": 0.0,
         "net_total": 0.0,
+        "lot_total": 0.0,
+        "received_total": 0.0,
+        "gross_unknown_count": 0,
+        "net_unknown_count": 0,
+        "received_unknown_count": 0,
     }
 
 
@@ -385,7 +415,19 @@ def _empty_totals():
         "item_count": 0,
         "gross_total": 0.0,
         "net_total": 0.0,
+        "lot_total": 0.0,
+        "received_total": 0.0,
+        "gross_unknown_count": 0,
+        "net_unknown_count": 0,
+        "received_unknown_count": 0,
     }
+
+
+def _complete_total(streams, value_key, unknown_key):
+    active = [stream for stream in streams.values() if stream["transaction_count"]]
+    if any(stream[unknown_key] for stream in active):
+        return None
+    return round(sum(float(stream[value_key] or 0) for stream in active), 2)
 
 
 def _source_metadata():
