@@ -268,7 +268,7 @@ def _missing_safety_status(params):
     return sorted(missing)
 
 
-def normalize_device_readback(*, device, status, retrieved_at):
+def normalize_device_readback(*, device, status, retrieved_at, commissioned_baseline=None):
     """Return a secret-free, fail-closed projection of one authenticated GET snapshot."""
     device_params = device.get("params") if isinstance(device.get("params"), dict) else {}
     status_params = status.get("params") if isinstance(status.get("params"), dict) else {}
@@ -312,8 +312,33 @@ def normalize_device_readback(*, device, status, retrieved_at):
     # disabled.  Collapse both unobservable activation paths into one precise
     # external safety prerequisite.
     provider_interlock_supported = interlock in {0, 1, False, True}
-    if not provider_interlock_supported or not provider_scenes_supported:
+    firmware = str(params.get("fwVersion") or "") or None
+    baseline = None
+    if commissioned_baseline is not None:
+        from modules.telemetry.rootline_ewelink_commissioned_baseline import (
+            validate_commissioned_baseline,
+        )
+        baseline = validate_commissioned_baseline(
+            commissioned_baseline,
+            device_id=str(device.get("deviceid") or ""),
+            firmware=firmware,
+            observed_at=retrieved_at,
+        )
+    baseline_control_paths = bool(
+        baseline
+        and not scene_evidence_conflict
+        and baseline.get("interlock_enabled") is False
+        and baseline.get("conflicting_scenes") == []
+    )
+    if provider_interlock_supported and baseline and bool(interlock) != baseline["interlock_enabled"]:
+        baseline_control_paths = False
+    if provider_scenes_supported and baseline and bool(scenes) != bool(baseline["conflicting_scenes"]):
+        baseline_control_paths = False
+    if ((not provider_interlock_supported or not provider_scenes_supported)
+            and not baseline_control_paths):
         missing.append("conflicting_control_paths")
+    elif baseline_control_paths:
+        missing = [item for item in missing if item != "conflicting_control_paths"]
     missing = sorted(set(missing))
     channel_rows = [{
         "channel": outlet + 1,
@@ -331,7 +356,8 @@ def normalize_device_readback(*, device, status, retrieved_at):
         and 0 < int(row["native_auto_off_seconds"] or 0) <= 3600
         and row["power_restoration_state"] == "OFF" for row in channel_rows)
         and not any(not _timer_disabled(item) for item in timers)
-        and scenes == [] and interlock in {0, False})
+        and (scenes == [] if provider_scenes_supported else baseline_control_paths)
+        and (interlock in {0, False} if provider_interlock_supported else baseline_control_paths))
     return {
         "authoritative": device.get("online") is True,
         "current_outputs_authoritative": device.get("online") is True,
@@ -340,11 +366,27 @@ def normalize_device_readback(*, device, status, retrieved_at):
         "actuation_eligible": False,
         "device_id": str(device.get("deviceid") or ""),
         "online": device.get("online") is True,
-        "firmware": str(params.get("fwVersion") or "") or None,
+        "firmware": firmware,
         "channels": channel_rows,
         "timers_enabled": any(not _timer_disabled(item) for item in timers) if timers is not None else None,
-        "scenes_enabled": bool(scenes) if scenes is not None else None,
-        "interlock_enabled": bool(interlock) if interlock in {0, 1, False, True} else None,
+        "scenes_enabled": (bool(scenes) if provider_scenes_supported
+            else False if baseline_control_paths else None),
+        "interlock_enabled": (bool(interlock) if provider_interlock_supported
+            else False if baseline_control_paths else None),
+        "interlock_evidence_source": ("provider_readback" if provider_interlock_supported
+            else "commissioned_configuration_baseline" if baseline_control_paths else None),
+        "scenes_evidence_source": ("provider_readback" if provider_scenes_supported
+            else "commissioned_configuration_baseline" if baseline_control_paths else None),
+        "control_path_evidence_source": ("provider_readback" if
+            provider_interlock_supported and provider_scenes_supported else
+            "mixed_provider_and_commissioned_baseline" if baseline_control_paths and
+                (provider_interlock_supported or provider_scenes_supported) else
+            "commissioned_configuration_baseline" if baseline_control_paths else None),
+        "commissioned_baseline_id": baseline.get("baseline_id") if baseline else None,
+        "commissioned_baseline_sha256": baseline.get("baseline_sha256") if baseline else None,
+        "configuration_generation": baseline.get("configuration_generation") if baseline else None,
+        "commissioned_baseline_valid_until": baseline.get("valid_until") if baseline else None,
+        "commissioned_baseline_fresh": baseline.get("baseline_fresh") if baseline else False,
         "provider_observed_at": observed_time.isoformat() if observed_time else None,
         "provider_timestamp_fresh": timestamp_fresh if observed_time is not None else None,
         "trusted_receipt_at": retrieved_at.isoformat(),
