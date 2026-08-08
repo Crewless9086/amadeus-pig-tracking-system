@@ -9,6 +9,7 @@ from modules.telemetry.rootline_ewelink_oauth import (
     ADAPTER_VERSION, REGION_HOSTS, OAuthFailure, _bind_account_device,
     _digest, _provider_request, decrypt_access_token, normalize_device_readback,
 )
+from modules.telemetry.rootline_ewelink_commissioned_baseline import commissioned_controller_baseline
 
 
 def read_current_device(*, token_store, environ=None, http_request=None, now=None):
@@ -34,7 +35,8 @@ def read_current_device(*, token_store, environ=None, http_request=None, now=Non
     status = request("GET", host + "/v2/device/thing/status?" +
         urllib.parse.urlencode({"type": 1, "id": expected}),
         mode="bearer", token=access, environ=source)
-    result = normalize_device_readback(device=device, status=status, retrieved_at=now)
+    result = normalize_device_readback(device=device, status=status, retrieved_at=now,
+        commissioned_baseline=commissioned_controller_baseline())
     if result["device_id"] != expected:
         raise OAuthFailure("ewelink_readback_device_mismatch")
     safe_material = {key: value for key, value in result.items() if key != "response_digest"}
