@@ -126,6 +126,21 @@ def test_incomplete_status_and_wrong_region_rejected():
     assert calls == [] and states.used is False
 
 
+def test_device_and_status_params_are_composed_before_validation():
+    device_params = {"pulse": "on", "pulseWidth": 3600000,
+                     "startup": ["off"] * 4, "timers": [], "interlock": 0}
+    things = {"thingList": [{"itemType": 1, "itemData": {
+        "deviceid": "100204e9bc", "apikey": "account", "online": True,
+        "params": device_params}}]}
+    status = {"params": {"switches": [
+        {"outlet": 0, "switch": "off"}, {"outlet": 1, "switch": "off"}]}}
+    result, _, tokens, _, _, _ = authorize(overrides={
+        "/v2/device/thing": things, "/v2/device/thing/status": status})
+    assert result["binding_created"] is True
+    assert set(tokens.records[0]["status_field_names"]) >= {
+        "switches", "pulse", "pulseWidth", "startup", "timers", "interlock"}
+
+
 def test_tampered_and_expired_state_are_rejected_before_provider_calls():
     states, _, query = start()
     request, calls = fake_provider()

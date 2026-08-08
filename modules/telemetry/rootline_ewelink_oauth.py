@@ -155,12 +155,19 @@ def complete_authorization(*, query, state_store, token_store, environ=None,
     status = request("GET", REGION_HOSTS[region] + "/v2/device/thing/status?" +
                      urllib.parse.urlencode({"type": 1, "id": expected_device}),
                      mode="bearer", token=access, environ=source)
-    params = status.get("params")
+    device_params = device.get("params") if isinstance(device.get("params"), dict) else {}
+    status_params = status.get("params") if isinstance(status.get("params"), dict) else {}
+    # CoolKit distributes one authenticated device snapshot across the thing
+    # record and the status response.  Status may contain only fields changed
+    # or selected for the device; validate the composed snapshot rather than
+    # falsely requiring every configuration field in that one packet.
+    params = {**device_params, **status_params}
     if not _complete_device_status(params):
         raise OAuthFailure("ewelink_device_status_incomplete")
 
     response_digest = _digest(json.dumps({"family": family, "device": device,
-        "status": status}, sort_keys=True, default=str, separators=(",", ":")))
+        "status": status, "composedParams": params}, sort_keys=True, default=str,
+        separators=(",", ":")))
     aad = f"{region}|{_digest(account_id)}|{expected_device}|{ADAPTER_VERSION}".encode()
     key = _token_key(source)
     token_generation_digest = hmac.new(
