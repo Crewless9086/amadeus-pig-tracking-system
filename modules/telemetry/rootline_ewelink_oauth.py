@@ -162,8 +162,9 @@ def complete_authorization(*, query, state_store, token_store, environ=None,
     # or selected for the device; validate the composed snapshot rather than
     # falsely requiring every configuration field in that one packet.
     params = {**device_params, **status_params}
-    if not _complete_device_status(params):
+    if not _current_output_status(params):
         raise OAuthFailure("ewelink_device_status_incomplete")
+    safety_missing = _missing_safety_status(params)
 
     response_digest = _digest(json.dumps({"family": family, "device": device,
         "status": status, "composedParams": params}, sort_keys=True, default=str,
@@ -189,6 +190,8 @@ def complete_authorization(*, query, state_store, token_store, environ=None,
             "binding_created": bool(created), "device_bound": True,
             "provider_account_bound": True, "region": region,
             "status_field_names": record["status_field_names"],
+            "safety_readback_complete": not safety_missing,
+            "safety_readback_missing": safety_missing,
             "readback_enabled": False, "autonomous_control_enabled": False,
             "provider_control_implemented": False, "secrets_exposed": False}
 
@@ -234,18 +237,28 @@ def _bind_account_device(family, things, expected_device, source):
     return account_id, device
 
 
-def _complete_device_status(params):
+def _current_output_status(params):
     if not isinstance(params, dict):
         return False
     switches = params.get("switches")
-    if not isinstance(switches, list) or len(switches) < 2:
+    if not isinstance(switches, list) or len(switches) != 4:
         return False
-    if any(not isinstance(item, dict) or "switch" not in item or "outlet" not in item
-           for item in switches):
+    if any(not isinstance(item, dict) or item.get("switch") not in {"on", "off"}
+           or not isinstance(item.get("outlet"), int) for item in switches):
         return False
-    return (("pulse" in params or "pulses" in params)
-            and ("pulseWidth" in params or "pulseWidths" in params)
-            and "startup" in params and "timers" in params and "interlock" in params)
+    outlets = {item["outlet"] for item in switches}
+    return outlets == {0, 1, 2, 3}
+
+
+def _missing_safety_status(params):
+    checks = {
+        "native_auto_off_enabled": "pulse" in params or "pulses" in params,
+        "native_auto_off_duration": "pulseWidth" in params or "pulseWidths" in params,
+        "power_restoration": "startup" in params,
+        "timers": "timers" in params,
+        "interlock": "interlock" in params or "configure" in params,
+    }
+    return sorted(name for name, present in checks.items() if not present)
 
 
 def _provider_request(method, url, *, body=None, mode, token=None, environ):
