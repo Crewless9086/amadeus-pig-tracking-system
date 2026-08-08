@@ -1,4 +1,21 @@
 # Vault Brain Changelog
+## 2026-08-08 - SAM protected salesperson lifecycle integrated
+
+- Integrated independently approved PR #737 at reviewed head
+  `257b5802418e34297d157c43aac1bef2e3e96d98`; all exact-head and exact-merge
+  CI gates passed and Render deployed merge
+  `d67518a4f159e74339f51624bd00938527444ae7` as
+  `dep-d9rkosrbc2fs73aocdqg` with healthy `/health`.
+- Added one replay-safe lifecycle over the existing authenticated SAM path:
+  complete chronology and retained facts, exact stock/price/order/document
+  evidence, semantic English/Afrikaans acceptance, duplicate suppression,
+  draft/current quote preparation and a single protected reservation/document
+  delivery decision.
+- Delia's five exact order lines remain unreserved. The quote document remains
+  Generated with no sent audit while Chatwoot contains an outgoing attachment
+  message, so delivery is unresolved and no retry occurred. Conversation 2101
+  remains closed-window claim-free regression evidence.
+
 ## 2026-08-05 - SAM provider-identity deployment contained
 
 - Integrated clean green PR #727 at exact reviewed head

@@ -395,6 +395,19 @@ Current status: live pig sales behavior is not yet a clean backend-native agent 
 
 Current Stage 4 surface:
 
+- End-to-end protected sales lifecycle:
+  `modules/sales/sam_live_stock_sales_lifecycle.py`, integrated through the
+  existing `modules/sales/sam_live_stock_runtime.py` path, binds exact provider
+  identity, chronology, retained facts, selected eligible stock, canonical
+  pricing, order/document state, claims and owner authority. It prepares one
+  draft/current formal quote only after complete accepted evidence, then
+  requires a stable atomic effect claim and exact verified owner scope before
+  reservation/document delivery. Provider ambiguity is no-retry and cannot
+  project handled state. Coverage:
+  `tests/test_sam_live_stock_sales_lifecycle.py` and
+  `tests/test_sam_live_stock_runtime.py`. PR #737 deployed at merge
+  `d67518a4f159e74339f51624bd00938527444ae7`.
+
 - Manager-summary contract: `modules/sales/sam_manager_summary.py` with focused
   coverage in `tests/test_sam_manager_summary.py`. It aggregates exact-bound
   sales outcomes for Oom Sakkie's existing specialist-consumption boundary and
@@ -418,7 +431,11 @@ Current Stage 4 surface:
 - code: `modules/sales/sam_sales_router.py`, `modules/sales/sam_live_stock_runtime.py`, `modules/pig_weights/pig_weights_service.py`, `modules/orders/order_intake_service.py`, `modules/orders/order_service.py`, `modules/orders/order_write.py`, `modules/orders/order_routes.py`, `modules/sales/sales_transaction_read.py`, `modules/sales/sales_transaction_create.py`;
 - tests: `tests/test_sam_sales_router.py`, `tests/test_sam_live_stock_runtime.py`, `tests/test_order_intake_service.py`, `tests/test_order_routes.py`, `tests/test_order_service_reservation.py`, `tests/test_sales_transaction_read.py`, `tests/test_pig_allocation_readiness_service.py`;
 - legacy references to mine only: `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md`, `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json`, `docs/03-google-sheets/sheets/SALES_PRICING.md`, `docs/03-google-sheets/sheets/SALES_AVAILABILITY.md`, `docs/03-google-sheets/sheets/SALES_STOCK_TOTALS.md`;
-- rule: Stage 4 permits env-gated writes only to the existing order-intake service after validation. Customer sends, order creation, stock reservation, quotes, and sales transactions remain blocked until later owner-approved stages.
+- rule: ordinary Level 1 replies retain their existing control boundary.
+  Complete accepted Livestock requests may prepare one env-gated draft order
+  and current quote from exact evidence. Reservation and quote delivery remain
+  protected, require an exact verified owner decision and atomic claim, and
+  never retry ambiguous provider delivery.
 # SAM bounded inbox reconciliation
 
 - `modules/sales/sam_live_stock_inbox_operator.py` — bounded Chatwoot inventory/chronology reads, conversation-specific provider-read isolation, current coverage evidence and pre/post-claim failure classification.

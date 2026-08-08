@@ -112,6 +112,16 @@ autonomous authority.
 
 ## P0 Operational / Live Issues
 
+- SAM Livestock salesperson lifecycle PR #737 is integrated and deployed at
+  merge `d67518a4f159e74339f51624bd00938527444ae7`. Conversation 2101 is retired
+  as closed-window regression evidence. Delia's order `ORD-2026-2AB36F`
+  remains Draft/Pending with five unreserved lines. Document
+  `DOC-2026-2E4D68` remains Generated with no sent audit, while Chatwoot
+  contains an outgoing attachment message; do not retry. The next action is
+  the protected owner decision to revalidate and approve/reject exact
+  reservation, plus authoritative reconciliation of that prior attachment
+  before any document-delivery decision.
+
 - CORE ownership bootstrap and observe-only mode are merged. PR #539 merged
   as `ce8971dff7605a91120a63c26dd22d81ca413360`; current main and exact
   Render deployment are now
