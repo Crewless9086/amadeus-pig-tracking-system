@@ -13,6 +13,10 @@
   mixer contained because CH2 Inching remains OFF and Interlock/Scene state is
   not provider-verifiable; all outputs and power-restoration states are OFF and
   timers are disabled.
+- The first production replay exposed semantic routing ahead of durable replay
+  lookup and delivered defect clarification `3485`. Added exact provider replay
+  precedence before LLM/context routing; cached outcomes revalidate zero
+  authority and suppress sends/edits, while mismatches fail closed.
 
 ## 2026-08-09 - Oom Sakkie farm-manager spine closeout assessed
 

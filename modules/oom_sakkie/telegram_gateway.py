@@ -7,7 +7,8 @@ from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.service import TELEGRAM_OWNER_AUTHORITY, handle_message
 from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
-from modules.oom_sakkie.operational_specialist_intake import handle_operational_specialist_message
+from modules.oom_sakkie.operational_specialist_intake import (
+    handle_operational_specialist_message, recover_contextual_specialist_replay)
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 from modules.oom_sakkie.owner_conversation_front_door import build_owner_clarification
@@ -227,6 +228,20 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     )
     if parsed["telegram_chat_type"] != "private":
         gateway_authority = None
+
+    if gateway_authority is not None:
+        replay_result = recover_contextual_specialist_replay(parsed)
+        if replay_result and replay_result.get("handled"):
+            body, _ = _gateway_result(True, str(replay_result.get("status") or "replay_suppressed"),
+                                      policy, 200)
+            body.update({"telegram_user_id": parsed["telegram_user_id"],
+                "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+                "answer": replay_result.get("answer", ""), "message": replay_result,
+                "delivery": {"success": True, "status": "owner_delivery_suppressed_replay_or_metadata",
+                             "telegram_sends": 0, "telegram_edits": 0},
+                "records_audit_trace": True,
+                "reply_transport": "backend_handles_owner_task_delivery", "sends_telegram": False})
+            return body, 200
 
     semantic_policy = semantic_front_door_policy(source)
     semantic_authoritative = bool(gateway_authority is not None and semantic_policy.get("enabled"))

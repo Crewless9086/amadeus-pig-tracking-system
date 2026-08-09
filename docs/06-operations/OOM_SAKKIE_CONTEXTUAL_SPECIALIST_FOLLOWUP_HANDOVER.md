@@ -32,3 +32,9 @@ one availability continuation, while `3482` remains unchanged. Replay must
 produce zero sends, edits, commands, observations and configuration changes.
 Only a later fresh, provider-bound reply plus safe readback may reach ROOTLINE's
 separately governed supervised mixer coordinator.
+
+Production recovery advanced card `3480`, but its replay was semantically
+reclassified before the durable provider guard and created defect message
+`3485`. Preserve `3485`; do not edit, delete or retry it. The follow-up
+correction resolves an exact provider-bound terminal outcome before LLM/context
+routing and suppresses all replay delivery. Binding conflicts fail closed.
