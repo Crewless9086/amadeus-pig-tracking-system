@@ -973,14 +973,27 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             "zone_id", "visible_need", "visible_need_observed_at",
             "visible_need_source", "completion_events",
             "completed_days_last_7_days", "latest_segment", "owner_correction",
+            "water_balance",
         }
         history_zones = _dict(irrigation_history.get("zones"))
+        evidence_zones = {
+            str(item.get("zone_id")): item
+            for item in irrigation.get("zones", [])
+            if isinstance(item, dict) and item.get("zone_id")
+        }
         canonical_zones = []
         for item in adaptive.get("zones", []):
             if not isinstance(item, dict):
                 continue
             zone = {key: deepcopy(value) for key, value in item.items()
                     if key in allowed_zone_fields}
+            # The canonical evidence reader attaches the independently current
+            # balance to irrigation.zones.  Adaptive-management metadata stays
+            # policy-only, so compose that read projection here rather than
+            # silently dropping the balance before the governed planner.
+            evidence_zone = _dict(evidence_zones.get(str(item.get("zone_id") or "")))
+            if "water_balance" in evidence_zone:
+                zone["water_balance"] = deepcopy(evidence_zone["water_balance"])
             canonical = _dict(history_zones.get(str(item.get("zone_id") or "")))
             zone["completion_events"] = [{
                 "completed_at": event.get("event_at_sast"), "state": "Completed",
