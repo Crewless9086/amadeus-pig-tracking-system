@@ -1,4 +1,17 @@
 # Vault Brain Changelog
+## 2026-08-09 - Oom Sakkie owner-observation correction prepared
+
+- Diagnosed authenticated Telegram `3477` as a generic prose-to-typed-fact
+  boundary failure: admission and routing succeeded, but zero canonical tank
+  rows were written and the same mission was safely contained.
+- Added closed multilingual semantic water facts, two independent
+  provider-bound tank identities committed transactionally, exact-generation
+  readback, bounded zero-write continuation and clean owner wording.
+- Added regression coverage for natural English/Afrikaans/mixed variants,
+  compound observations, ambiguity, rollback, readback failure, restart,
+  replay and unchanged ROOTLINE notification silence. Production recovery is
+  still pending reviewed integration and exact deployment.
+
 ## 2026-08-05 - SAM provider-identity deployment contained
 
 - Integrated clean green PR #727 at exact reviewed head

@@ -4,7 +4,7 @@ from unittest.mock import patch
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_health_loss_runtime import _resolve_active_context
 from modules.oom_sakkie.semantic_front_door import (
-    SemanticInterpretation, interpret_owner_message, parse_semantic_response,
+    SemanticInterpretation, _eligible_clarification_context, interpret_owner_message, parse_semantic_response,
     semantic_front_door_policy,
 )
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
@@ -26,6 +26,7 @@ def _semantic(domain, intent, **extra):
     return {"domain": domain, "intent": intent, "message_kind": extra.get("message_kind", "general"),
         "entity_refs": extra.get("entity_refs", []),
         "continuation": extra.get("continuation", False), "observation": extra.get("observation", ""),
+        "observation_facts": extra.get("observation_facts", []),
         "requested_action": extra.get("requested_action", ""), "language": extra.get("language", "en"),
         "confidence": extra.get("confidence", .98), "needs_clarification": False,
         "clarification_question": ""}
@@ -69,6 +70,79 @@ def test_afrikaans_irrigation_followup_is_understood():
         entity_refs=["C-kamp"], continuation=True, language="af",
         observation="C Camp irrigation physically stopped.")))
     assert result.language == "af" and result.domain == "rootline"
+
+
+def test_typed_water_facts_preserve_two_independent_observations():
+    result = parse_semantic_response(_response(_semantic("rootline", "water_levels_observed",
+        message_kind="observation", observation="Storage tanks and reservoir are full.",
+        observation_facts=[{"subject":"storage_tanks","state":"FULL"},
+                           {"subject":"reservoir","state":"FULL"}])))
+    assert result.observation_facts == ({"subject":"storage_tanks","state":"FULL"},
+                                        {"subject":"reservoir","state":"FULL"})
+
+
+def test_malformed_or_duplicated_typed_water_facts_fail_closed():
+    for facts in ([{"subject":"tank","state":"FULL"}],
+                  [{"subject":"reservoir","state":"FULL"},{"subject":"reservoir","state":"LOW"}],
+                  [{"subject":"storage_tanks","numerator":4,"denominator":0}]):
+        result = parse_semantic_response(_response(_semantic("rootline", "water_levels_observed",
+            message_kind="observation", observation="tank update", observation_facts=facts)))
+        assert result.observation_facts == ()
+
+
+def test_only_fresh_earlier_unambiguous_clarification_context_is_exposed():
+    parsed={"provider_timestamp":"2026-08-09T07:33:06+00:00","reply_to_message_id":"700"}
+    fresh={"state":"delivered","telegram_message_id":"700",
+        "delivery_provider_timestamp":"2026-08-09T07:30:00+00:00",
+        "clarification_question":"Storage tanks, reservoir, or both?","semantic_domain":"rootline"}
+    stale={**fresh,"telegram_message_id":"699","delivery_provider_timestamp":"2026-08-08T07:30:00+00:00"}
+    unrelated={**fresh,"telegram_message_id":"701","clarification_question":"Which animals?",
+        "semantic_domain":"herd_management"}
+    assert _eligible_clarification_context([stale,unrelated,fresh],parsed)==[fresh]
+    assert _eligible_clarification_context([fresh],{**parsed,"reply_to_message_id":"999"})==[]
+
+
+def test_stale_context_cannot_turn_ambiguous_reply_into_canonical_water_facts():
+    response=_semantic("rootline","water_levels_observed",message_kind="observation",
+        observation="Both reported full.",observation_facts=[
+            {"subject":"storage_tanks","state":"FULL"},{"subject":"reservoir","state":"FULL"}])
+    result=interpret_owner_message({"text":"Albei vol","provider_message_id":"3477",
+        "provider_timestamp":"2026-08-09T07:33:06+00:00"},
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1","OOM_SAKKIE_LLM_ROUTER_MODEL":"test",
+                 "OPENAI_API_KEY":"secret"},http_open=lambda *_args,**_kwargs:_HttpResponse(_response(response)),
+        context_loader=lambda _parsed:{"recent_turns":[{"state":"delivered","telegram_message_id":"700",
+            "delivery_provider_timestamp":"2026-08-08T07:30:00+00:00","semantic_domain":"rootline",
+            "clarification_question":"Storage tanks, reservoir, or both?"}]})
+    assert result.observation_facts==() and result.needs_clarification is True
+
+
+def test_generic_singular_tank_words_cannot_select_a_canonical_subject():
+    for text in ("The tank is full", "Die tenk is vol"):
+        response=_semantic("rootline","water_levels_observed",message_kind="observation",
+            observation=text,observation_facts=[{"subject":"storage_tanks","state":"FULL"}])
+        result=interpret_owner_message({"text":text,"provider_message_id":"3477",
+            "provider_timestamp":"2026-08-09T07:33:06+00:00"},
+            environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1","OOM_SAKKIE_LLM_ROUTER_MODEL":"test",
+                     "OPENAI_API_KEY":"secret"},http_open=lambda *_args,body=_response(response),**_kwargs:_HttpResponse(body),
+            context_loader=lambda _parsed:{"recent_turns":[]})
+        assert result.observation_facts==()
+        assert result.needs_clarification is True
+        assert "storage tanks" in result.clarification_question.lower()
+
+
+def test_fresh_exact_context_allows_natural_afrikaans_short_reply():
+    response=_semantic("rootline","water_levels_observed",message_kind="observation",
+        observation="Both are full.",observation_facts=[
+            {"subject":"storage_tanks","state":"FULL"},{"subject":"reservoir","state":"FULL"}])
+    context={"recent_turns":[{"state":"delivered","telegram_message_id":"700",
+        "delivery_provider_timestamp":"2026-08-09T07:30:00+00:00","semantic_domain":"rootline",
+        "clarification_question":"Storage tanks, reservoir, or both?"}]}
+    result=interpret_owner_message({"text":"Albei vol","provider_message_id":"3477",
+        "provider_timestamp":"2026-08-09T07:33:06+00:00","reply_to_message_id":"700"},
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1","OOM_SAKKIE_LLM_ROUTER_MODEL":"test",
+                 "OPENAI_API_KEY":"secret"},http_open=lambda *_args,**_kwargs:_HttpResponse(_response(response)),
+        context_loader=lambda _parsed:context)
+    assert len(result.observation_facts)==2 and result.needs_clarification is False
 
 
 def test_active_health_context_can_resolve_afrikaans_semantic_entity():

@@ -531,6 +531,88 @@ def record_tank_observation(payload, actor_identity, database_url=None):
                 "error_type": exc.__class__.__name__, "write_outcome": "indeterminate"}, 503
 
 
+def record_tank_observations_transactional(payloads, actor_identity, database_url=None):
+    """Append independent tank observations atomically and prove exact readback."""
+    if not actor_identity or not isinstance(payloads, list) or not 1 <= len(payloads) <= 2:
+        return {"success": False, "status": "tank_observation_batch_invalid"}, 400
+    normalized = []
+    try:
+        for payload in payloads:
+            if not isinstance(payload, dict):
+                raise ValueError("tank_observation_batch_invalid")
+            storage_fraction = _fraction(payload.get("storage_fraction"), "storage_fraction")
+            reservoir_fraction = _fraction(payload.get("reservoir_fraction"), "reservoir_fraction")
+            if bool(storage_fraction) == bool(reservoir_fraction):
+                raise ValueError("one_independent_tank_required")
+            observed = datetime.fromisoformat(str(payload["observed_at"]).replace("Z", "+00:00"))
+            if observed.tzinfo is None or observed.astimezone(timezone.utc) > datetime.now(timezone.utc):
+                raise ValueError("observed_at_invalid")
+            provider_id = str(payload.get("provider_message_id") or "").strip()
+            key = str(payload.get("idempotency_key") or "").strip()
+            source = str(payload.get("source") or "")
+            if not provider_id or not key or source != "oom_sakkie_owner":
+                raise ValueError("provider_bound_observation_required")
+            kind = "storage" if storage_fraction else "reservoir"
+            fraction = storage_fraction or reservoir_fraction
+            state = _tank_state(payload.get(f"{kind}_state"))
+            normalized.append({"kind": kind, "fraction": fraction, "state": state,
+                "observed": observed, "provider_message_id": provider_id, "key": key, "source": source,
+                "identity": "ROOTLINE-TANK-" + sha256(key.encode()).hexdigest()[:24].upper()})
+        if len({row["kind"] for row in normalized}) != len(normalized):
+            raise ValueError("duplicate_independent_tank")
+        if len({row["provider_message_id"] for row in normalized}) != 1:
+            raise ValueError("shared_provider_message_required")
+    except (KeyError, TypeError, ValueError) as exc:
+        return {"success": False, "status": str(exc)}, 400
+    database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
+    try:
+        import psycopg
+        created_count = 0
+        readback = []
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                for row in normalized:
+                    storage = row["kind"] == "storage"
+                    cursor.execute("""insert into public.rootline_tank_observations (
+                        observation_id,idempotency_key,storage_state,reservoir_state,observed_at,
+                        reporter_identity,source,storage_fraction_numerator,storage_fraction_denominator,
+                        reservoir_fraction_numerator,reservoir_fraction_denominator,provider_message_id)
+                        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        on conflict (idempotency_key) do nothing returning observation_id""",
+                        (row["identity"], row["key"], row["state"] if storage else UNKNOWN,
+                         row["state"] if not storage else UNKNOWN, row["observed"], actor_identity,
+                         row["source"], row["fraction"][0] if storage else None,
+                         row["fraction"][1] if storage else None, row["fraction"][0] if not storage else None,
+                         row["fraction"][1] if not storage else None, row["provider_message_id"]))
+                    created_count += int(cursor.fetchone() is not None)
+                    cursor.execute("""select observation_id,storage_state,reservoir_state,observed_at,
+                        reporter_identity,source,storage_fraction_numerator,storage_fraction_denominator,
+                        reservoir_fraction_numerator,reservoir_fraction_denominator,provider_message_id
+                        from public.rootline_tank_observations where idempotency_key=%s""", (row["key"],))
+                    actual = cursor.fetchone()
+                    storage_actual = row["kind"] == "storage"
+                    fraction = list(actual[6:8] if storage_actual else actual[8:10])
+                    state = actual[1] if storage_actual else actual[2]
+                    if (actual[0] != row["identity"] or state != row["state"]
+                            or actual[3].astimezone(timezone.utc) != row["observed"].astimezone(timezone.utc)
+                            or actual[4] != actor_identity or actual[5] != row["source"]
+                            or fraction != list(row["fraction"]) or actual[10] != row["provider_message_id"]):
+                        raise ValueError("tank_observation_idempotency_conflict")
+                    readback.append({"observation_id": actual[0], "kind": row["kind"],
+                        "fraction": fraction, "state": state, "observed_at": actual[3].isoformat(),
+                        "provider_message_id": actual[10]})
+        generation = sha256(json.dumps(readback, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        return {"success": True, "status": "recorded" if created_count else "exact_replay",
+            "created_count": created_count, "observation_ids": [row["observation_id"] for row in readback],
+            "observation_generation": generation, "readback": readback,
+            "hardware_control_performed": False}, 201 if created_count else 200
+    except ValueError as exc:
+        return {"success": False, "status": str(exc), "write_outcome": "rolled_back"}, 409
+    except Exception as exc:
+        return {"success": False, "status": "tank_observation_batch_write_failed",
+            "error_type": exc.__class__.__name__, "write_outcome": "indeterminate"}, 503
+
+
 def _reserve(power, power_state, profile, confidence):
     learned = OPERATING_KNOWLEDGE["energy"]["learned_reserve_candidates_pct"]
     candidate = learned.get(profile, 70) if confidence != UNAVAILABLE else 70
