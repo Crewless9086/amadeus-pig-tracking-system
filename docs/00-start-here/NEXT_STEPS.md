@@ -337,3 +337,9 @@ autonomous authority.
 - Integrate the reviewed bounded provider-read correction from `fix/sam-bounded-inbox-reconciliation` only after independent commercial/CX and backend/security/privacy/authority approval.
 - After exact deployment, refresh authoritative chronology and summary evidence. Treat conversation 2101/inbound 777634477 as a fresh candidate only if it remains latest, unanswered, open-window, claim-free, ordinary Level 1 and free of protected decisions.
 - Never retry the contained HTTP 503 execution; it created no claim or provider attempt.
+# Oom Sakkie family access (source-only, 2026-08-08)
+
+- Keep Mum and Dad unconfigured until Charl supplies each exact Telegram identity and confirms an individual role/permission preview.
+- Integrate `modules/oom_sakkie/family_access.py` through the existing authenticated gateway and lifecycle only in a Control Tower production window; follow `docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md`.
+- Require exact-head review/CI and the identity/privacy/replay production proof. Do not infer access from display names or Afrikaans.
+- Integrate the reconciled family contract and daily ROOTLINE presentation in the assigned serialized window. Keep Mum and Dad unconfigured; prove Charl's owner route, one fresh daily plan, and unchanged scheduler silence before release.

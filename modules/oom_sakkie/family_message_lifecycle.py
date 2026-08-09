@@ -24,7 +24,8 @@ def mission_identity(parsed: Mapping[str, Any], specialist: str) -> str:
 
 def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], *,
                           specialist: str, mission_id: str = "", card_mission_id: str = "",
-                          event_store=None, sender=None, editor=None) -> dict[str, Any]:
+                          event_store=None, sender=None, editor=None,
+                          delivery_retry_authority=None) -> dict[str, Any]:
     """Persist and visibly deliver one result; duplicate input is a no-op."""
     mission_id = mission_id or mission_identity(parsed, specialist)
     card_mission_id = card_mission_id or mission_id
@@ -88,7 +89,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 1}
 
-    attempt_id = card_mission_id + "-DELIVERY-ATTEMPT"
+    from modules.oom_sakkie.delivery_retry_authority import validates_delivery_retry_authority
+    retry_two = validates_delivery_retry_authority(delivery_retry_authority,
+        mission_id=mission_id, card_mission_id=card_mission_id, text=text)
+    attempt_id = card_mission_id + ("-DELIVERY-RETRY-2" if retry_two else "-DELIVERY-ATTEMPT")
     claimed = store("record", attempt_id, {**payload, "event_id": attempt_id, "state": "delivery_attempted"})
     if claimed.get("created") is False:
         return {"success": False, "status": "family_message_delivery_ambiguous",
@@ -99,7 +103,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         store("record", attempt_id + "-CONTAINED", {**payload, "event_id": attempt_id + "-CONTAINED",
             "state": "contained", "reason": "telegram_delivery_unconfirmed"})
         return {"success": False, "status": "family_message_delivery_contained",
-                "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
+                "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0,
+                "delivery_definitely_not_sent": response.get("delivery_definitely_not_sent") is True}
     delivered_id = card_mission_id + "-DELIVERED"
     store("record", delivered_id, {**payload, "event_id": delivered_id, "state": "delivered",
         "telegram_message_id": message_id,

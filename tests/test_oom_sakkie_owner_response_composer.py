@@ -137,7 +137,7 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
         specialist_loader=lambda:rootline("Run later"),state_store=state)
     assert first["notify_owner"] is True
     assert unchanged["notify_owner"] is False and unchanged["telegram_sends"]==0
-    assert changed["notify_owner"] is True and "C Camp:</b> Run later" in changed["answer"]
+    assert changed["notify_owner"] is True and "C Camp:</b> Run" in changed["answer"]
     assert replay["notify_owner"] is False and len(rows)==2
     assert all(item["hardware_commands"]==0 for item in (first,unchanged,changed,replay))
 

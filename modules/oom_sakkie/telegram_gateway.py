@@ -15,6 +15,7 @@ from modules.oom_sakkie.owner_operational_continuation import handle_owner_opera
 from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_message
 from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
 from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline, record_reassessment_delivery
+from modules.oom_sakkie.family_access import FamilyRole, family_access_policy, resolve_family_principal
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -81,6 +82,11 @@ def telegram_gateway_policy(environ=None):
         },
         "deterministic_only": not (semantic_policy["enabled"] and semantic_policy["configured"]),
         "semantic_front_door": semantic_policy,
+        "family_access": {
+            "contract_version": "oom_sakkie_family_access_v1",
+            "configured": family_access_policy(source)["configuration_valid"],
+            "protected_actions_owner_only": True,
+        },
         "can_trigger_outbound_llm": semantic_policy["enabled"] and semantic_policy["configured"],
         "minimum_token_entropy": "Requires a long random token of at least 32 characters before the gateway can enable.",
         "direct_bot_cutover_enabled": False,
@@ -179,6 +185,16 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         return _gateway_result(False, "telegram_gateway_auth_denied", policy, 403)
 
     source = environ if environ is not None else os.environ
+    parsed = parse_telegram_gateway_payload(payload)
+    allowed_ids = _allowed_user_ids(source)
+    if allowed_ids and parsed["telegram_user_id"] not in allowed_ids:
+        return _gateway_result(False, "telegram_user_not_allowed", policy, 403)
+    family_principal = resolve_family_principal(parsed, source)
+    if family_principal.role is FamilyRole.UNKNOWN_SENDER:
+        return _gateway_result(False, "telegram_family_identity_not_authorized", policy, 403)
+    if family_principal.role is not FamilyRole.OWNER:
+        return _gateway_result(False, "telegram_family_lifecycle_not_enabled", policy, 503)
+
     owner_task, owner_task_status = handle_owner_task_input(
         payload,
         environ=source,
@@ -203,14 +219,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         })
         return owner_task, owner_task_status
 
-    parsed = parse_telegram_gateway_payload(payload)
     if not parsed["text"]:
         return _gateway_result(False, "telegram_text_required", policy, 400)
-    allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
-    if allowed_ids and parsed["telegram_user_id"] not in allowed_ids:
-        body, status_code = _gateway_result(False, "telegram_user_not_allowed", policy, 403)
-        body["telegram_user_id"] = parsed["telegram_user_id"]
-        return body, status_code
     gateway_authority = issue_gateway_owner_authority(
         parsed["telegram_user_id"],
         parsed["telegram_chat_id"],
@@ -418,10 +428,22 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
     if not policy["enabled"] or not _token_matches(headers or {}, environ=source):
         return _gateway_result(False, "rootline_reassessment_auth_denied", policy, 403)
     if str((payload or {}).get("scheduler_identity") or "").strip():
+        scheduled_owner = str((payload or {}).get("owner_user_id") or "").strip()
+        scheduled_chat = str((payload or {}).get("chat_id") or "").strip()
+        scheduled_principal = resolve_family_principal({
+            "telegram_user_id": scheduled_owner, "telegram_chat_id": scheduled_chat,
+            "telegram_chat_type": "private"}, source)
+        if (scheduled_owner not in _allowed_user_ids(source)
+                or scheduled_principal.role is not FamilyRole.OWNER):
+            return _gateway_result(False, "rootline_reassessment_owner_binding_denied", policy, 403)
         from modules.oom_sakkie.automatic_reassessment_scheduler import run_due_reassessment
+        from modules.oom_sakkie.rootline_daily_presentation import present_daily_rootline_plan
         if schedule_store is None:
             from modules.oom_sakkie.automatic_reassessment_store import automatic_reassessment_store
             schedule_store = automatic_reassessment_store
+        if state_store is None:
+            from modules.oom_sakkie.rootline_reassessment_store import rootline_reassessment_state_store
+            state_store = rootline_reassessment_state_store
         manual_payload = {key: value for key, value in (payload or {}).items()
                           if key not in {"scheduler_identity", "specialist", "due_at", "evidence_cutoff"}}
         base_scheduled_loader = specialist_loader
@@ -440,6 +462,18 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 return {"success": False, "status": "scheduled_reassessment_evidence_after_cutoff"}
             return current
         def invoke():
+            deliver = family_delivery or deliver_family_result
+            try:
+                daily = present_daily_rootline_plan(
+                    owner_user_id=str(manual_payload.get("owner_user_id") or ""),
+                    chat_id=str(manual_payload.get("chat_id") or ""),
+                    specialist_loader=scheduled_loader, state_store=state_store,
+                    deliver=deliver, now=scheduler_now,
+                    language=str(manual_payload.get("language") or "en"))
+            except Exception:
+                daily = {"success": False, "status": "rootline_daily_presentation_unavailable",
+                         "telegram_sends": 0, "telegram_edits": 0,
+                         "hardware_commands": 0, "writes_farm_data": False}
             if str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() == "true":
                 cycle = execution_cycle
                 if cycle is None:
@@ -449,27 +483,33 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                           "telegram_chat_id": str(manual_payload.get("chat_id") or ""),
                           "provider_message_id": f"scheduled:{manual_payload.get('trigger_id')}",
                           "provider_timestamp": str(manual_payload.get("trigger_timestamp") or "")}
-                deliver = family_delivery or deliver_family_result
                 def notify(state, execution):
                     zone = str(execution.get("zone_id") or "irrigation")
-                    answer = ({"Started": f"{zone} irrigation started; maximum 60 minutes.",
-                               "Completed": f"{zone} irrigation stopped and completed.",
-                               "Intervention": (f"{zone} irrigation stopped, but its outcome needs confirmation."
+                    answer = ({"Started": f"<b>💧 IRRIGATION STARTED</b>\n\n{zone} is running for no more than 59 minutes 59 seconds.",
+                               "Completed": f"<b>✅ IRRIGATION COMPLETED</b>\n\n{zone} is stopped and the supported segment is complete.",
+                               "Intervention": (f"<b>🚨 IRRIGATION INTERVENTION</b>\n\n{zone} is stopped, but its outcome needs confirmation."
                                                 if execution.get("shutdown_verified") is True
-                                                else f"{zone} irrigation needs intervention; automatic reuse is contained.")}
+                                                else f"<b>🚨 IRRIGATION INTERVENTION</b>\n\n{zone} shutdown is uncertain. Automatic reuse is contained and owner attention is required.")}
                               .get(state, f"{zone} irrigation: {state}."))
+                    base_identity = str(execution.get("notification_identity")
+                                        or execution.get("execution_id") or "")
+                    event_identity = f"{base_identity}:{str(state).upper()}"
                     delivery = deliver(parsed, {"success": True, "status": state.lower(),
                         "answer": answer}, specialist="ROOTLINE",
-                        mission_id=str(execution.get("notification_identity")
-                                       or execution.get("execution_id") or ""),
-                        card_mission_id=str(execution.get("notification_identity")
-                                            or execution.get("execution_id") or ""))
+                        mission_id=event_identity, card_mission_id=event_identity)
                     return {**delivery,
                         "provider_delivery_confirmed": delivery.get("success") is True
                             and bool(delivery.get("telegram_message_id")),
                         "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
                         "provider_message_id": str(delivery.get("telegram_message_id") or "")}
-                return cycle(notify=notify, environ=source, now=scheduler_now)
+                cycle_result = dict(cycle(notify=notify, environ=source, now=scheduler_now) or {})
+                return {**cycle_result,
+                    "daily_presentation_status": str(daily.get("status") or ""),
+                    "daily_presentation_identity": str(daily.get("daily_identity") or ""),
+                    "telegram_sends": int(daily.get("telegram_sends") or 0)
+                        + int(cycle_result.get("telegram_sends") or cycle_result.get("telegram_messages") or 0),
+                    "telegram_edits": int(daily.get("telegram_edits") or 0)
+                        + int(cycle_result.get("telegram_edits") or 0)}
             result, nested_status = handle_rootline_reassessment_trigger(
                 manual_payload, headers=headers, environ=source, specialist_loader=scheduled_loader,
                 state_store=state_store, family_delivery=family_delivery)
@@ -477,7 +517,10 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 return {**result, "success": False,
                         "scheduled_underlying_status": str(result.get("status") or ""),
                         "status": "scheduled_reassessment_delivery_contained"}
-            return result
+            return {**result, "daily_presentation_status": str(daily.get("status") or ""),
+                    "daily_presentation_identity": str(daily.get("daily_identity") or ""),
+                    "telegram_sends": int(daily.get("telegram_sends") or 0)
+                        + int(result.get("telegram_sends") or 0)}
         scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=schedule_store,
                                          now=scheduler_now)
         return scheduled, 200 if scheduled.get("success") else 202
@@ -549,7 +592,8 @@ def _send_owner_task_telegram(chat_id, text, source):
     from modules.sales.sam_live_stock_launch_control import _telegram_api
     token = _owner_task_bot_token(source)
     if not token:
-        return {"success": False, "status": "owner_task_telegram_token_not_configured"}
+        return {"success": False, "status": "owner_task_telegram_token_not_configured",
+                "delivery_definitely_not_sent": True}
     try:
         response = _telegram_api(token, "sendMessage", {
             "chat_id": str(chat_id), "text": str(text), "parse_mode": "HTML",
@@ -564,6 +608,7 @@ def _send_owner_task_telegram(chat_id, text, source):
                           if provider_date is not None else "")
     return {"success": response.get("ok") is True and bool(message_id),
             "status": "owner_task_telegram_delivered" if message_id else "owner_task_telegram_delivery_unconfirmed",
+            "delivery_definitely_not_sent": response.get("ok") is False and not message_id,
             "telegram_message_id": message_id,
             "provider_timestamp": provider_timestamp}
 

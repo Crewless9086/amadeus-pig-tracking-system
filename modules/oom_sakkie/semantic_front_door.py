@@ -146,8 +146,9 @@ def _load_recent_specialist_context(parsed):
 
 def _payload(parsed, context, source):
     system = (
-        "You are Oom Sakkie's semantic front door for authenticated private farm-owner messages. "
-        "Understand natural English or Afrikaans, typos, short follow-ups, and references to active cases. "
+        "You are Oom Sakkie's semantic front door for authenticated private farm-family messages. "
+        "Understand natural English, Afrikaans, mixed-language text, typos, short follow-ups, and references to active cases. "
+        "Identity and permissions are supplied by deterministic gateway policy; never infer either from a name or language. "
         "Classify meaning only; never claim a write, send, publication, sale, treatment, mating, or hardware action. "
         "Domains: herd_health only for a specific animal welfare/death/loss/health report; herd_management for herd, "
         "breeding, weighing, farrowing or animal-work planning; rootline for water, tanks, irrigation, power, valves "

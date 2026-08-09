@@ -181,6 +181,32 @@ def test_enabled_scheduler_uses_canonical_execution_cycle_not_readonly_packet_au
     assert len(cycles)==len(deliveries)==1 and value["hardware_commands"]==1
 
 
+def test_scheduler_denies_unknown_or_configured_family_before_load_delivery_or_execution():
+    calls = []
+    family_binding = __import__("json").dumps([{"telegram_user_id": "43",
+        "role": "trusted_family_reporter", "family_key": "dad",
+        "permissions": ["farm_observation"], "summary_domains": [],
+        "authorization_id": "AUTH-1", "authorized_by_user_id": "42",
+        "authorized_at": "2026-08-01T08:00:00+02:00"}])
+    env = {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "true",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "x" * 40,
+        "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID": "42",
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42,43",
+        "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON": family_binding,
+        "ROOTLINE_AUTONOMOUS_BC_ENABLED": "true"}
+    for target in ("43", "99"):
+        value, status = handle_rootline_reassessment_trigger(
+            {**scheduled_payload(), "owner_user_id": target, "chat_id": target,
+             "trigger": "declared_time", "trigger_id": "DENIED-" + target,
+             "trigger_timestamp": "2026-08-05T10:15:00+02:00"},
+            {"X-Oom-Sakkie-Telegram-Token": "x" * 40}, env,
+            specialist_loader=lambda: calls.append("load"),
+            family_delivery=lambda *a, **k: calls.append("send"),
+            execution_cycle=lambda **k: calls.append("execute"))
+        assert status == 403 and value["status"] == "rootline_reassessment_owner_binding_denied"
+    assert calls == []
+
+
 def test_scheduled_ambiguous_delivery_is_contained_and_never_claimed_complete():
     rows, schedules = memory_store(); state_rows = {}
     def state(action, identity, payload):
