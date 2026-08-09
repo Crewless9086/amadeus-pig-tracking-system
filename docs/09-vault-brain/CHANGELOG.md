@@ -1,5 +1,20 @@
 # Vault Brain Changelog
-## 2026-08-09 - Oom Sakkie owner-observation correction prepared
+## 2026-08-09 - Oom Sakkie farm-manager spine closeout assessed
+
+- Reconciled the single authenticated Telegram-to-manager lifecycle across
+  semantic interpretation, bounded context, typed evidence, canonical service,
+  durable receipt/readback, specialist consumption, human presentation and
+  scheduled continuation.
+- Published the evidence-backed journey scorecard. Six of eight journey
+  families are operational; Afrikaans provider presentation and a genuine
+  scheduler material-change notification remain automatic future proofs.
+- Kept the overall spine at `91% / Technical gap`: the consolidated manager
+  runtime still represents SAM and BEACON as missing. Those adapters remain
+  explicitly outside this closeout rather than being silently claimed.
+- Preserved ROOTLINE rain Hold and B/C authority, every excluded PR, family
+  permissions, farm/customer data and all provider-ambiguous no-retry guards.
+
+## 2026-08-09 - Oom Sakkie owner-observation correction completed
 
 - Diagnosed authenticated Telegram `3477` as a generic prose-to-typed-fact
   boundary failure: admission and routing succeeded, but zero canonical tank
@@ -9,8 +24,18 @@
   readback, bounded zero-write continuation and clean owner wording.
 - Added regression coverage for natural English/Afrikaans/mixed variants,
   compound observations, ambiguity, rollback, readback failure, restart,
-  replay and unchanged ROOTLINE notification silence. Production recovery is
-  still pending reviewed integration and exact deployment.
+  replay and unchanged ROOTLINE notification silence.
+- Integrated PRs #750-#753; live merge
+  `d7f8b3a3054baf0b59026e10d425f718f81db678` is deployed as
+  `dep-d9s46i9srm7s73avildg` with healthy exact lineage.
+- Recovered genuine Telegram `3477` exactly once. Storage observation
+  `ROOTLINE-TANK-582FCE42A6219D6B832CBEAB` and reservoir observation
+  `ROOTLINE-TANK-0DA1FF5B057C55DCA54B456F` share the authenticated provider
+  source and were read back at generation
+  `05b6cbeaabdf4db8c535c33e52a29d2ca00ece8f863bd8196495e45401e9cf91`.
+- Existing card `3478` was corrected once; exact replay produced zero rows,
+  sends, edits, lifecycle events and hardware commands. ROOTLINE retained its
+  observed-rain Hold.
 
 ## 2026-08-05 - SAM provider-identity deployment contained
 
