@@ -2,15 +2,32 @@
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
 
-## OOM-SAKKIE-OWNER-OBSERVATION-LIFECYCLE-1
+## ROOTLINE-FERTILIZER-AND-WATER-BALANCE-1
 
-Complete the generic recovery of authenticated Telegram `3477` under its
-existing ROOTLINE mission. Deploy the typed multilingual water-fact contract
-and atomic independent tank observation bridge, then prove storage FULL and
-reservoir FULL as two exact canonical identities with one shared source,
-authoritative readback, one concise acknowledgement, normal ROOTLINE
-consumption, unchanged rain-Hold silence, zero commands and a no-op replay.
-Preserve HERDMASTER #732 and auction #747 unmerged.
+Next serialized production mission after the Oom Sakkie spine closeout:
+integrate and commission reviewed fertilizer PR #749, then implement the
+effective-rainfall/water-balance model. Preserve ROOTLINE's existing rain Hold,
+commissioned B/C coordinator, one-zone/3,599-second envelope, native auto-OFF,
+shutdown verification and unchanged-reassessment silence. Fertilizer mixing
+and bounded injection require their own governed commissioning evidence and
+must not inherit B/C irrigation authority.
+
+## OOM-SAKKIE-FARM-MANAGER-SPINE-CLOSEOUT
+
+Telegram `3477` is complete, not active work: storage FULL and reservoir FULL
+were committed atomically as two canonical observations, read back at exact
+generation `05b6cbeaabdf4db8c535c33e52a29d2ca00ece8f863bd8196495e45401e9cf91`,
+acknowledged once through existing card `3478`, consumed by ROOTLINE and replayed
+with zero effects. The closeout scorecard for the deployed spine is maintained in
+`docs/06-operations/OOM_SAKKIE_FARM_MANAGER_SPINE_SCORECARD_20260809.md`.
+
+Do not call the entire cross-specialist manager spine closed while the existing
+farm-manager runtime still represents SAM and BEACON as missing. Their typed
+read-only manager adapters are later scoped work; they are not part of this
+bounded closeout and must not be added while ROOTLINE owns the next production
+window. A real Afrikaans provider journey and a real scheduler material-change
+notification remain automatic future acceptance proofs and must not be
+manufactured.
 
 ## SAM-LIVESTOCK-MANAGER-SUMMARY-1
 
