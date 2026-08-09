@@ -43,7 +43,7 @@ def test_real_read_only_fixture_and_management_estimates():
     }
 
 def test_management_weight_estimates_fail_only_the_analysis_when_evidence_is_incomplete_or_stale():
-    for patch in ({"latest_weight_kg":None},{"latest_weight_kg":"bad"},{"latest_weight_date":"2026-08-02"}):
+    for patch in ({"latest_weight_kg":None},{"latest_weight_kg":"bad"},{"latest_weight_kg":"NaN"},{"latest_weight_kg":"Infinity"},{"latest_weight_date":"2026-08-02"}):
         changed=evidence(); changed["pigs"][0].update(patch)
         result=build_auction_sale_preview(report(),changed)
         assert result["success"] and result["ready_for_confirmation"]
@@ -116,7 +116,7 @@ def test_confirmation_binding_atomic_success_replay_and_rollback():
 
 def test_migration_has_vat_commission_payable_and_duplicate_guards():
     sql = Path("supabase/migrations/202608080001_add_governed_livestock_auction_sales.sql").read_text(encoding="utf-8")
-    for field in ("output_vat","gross_including_vat","commission_ex_vat","commission_input_vat","commission_including_vat","other_deductions","net_settlement_payable","payment_received_evidence_json"):
+    for field in ("output_vat","gross_including_vat","commission_ex_vat","commission_input_vat","commission_including_vat","other_deductions","net_settlement_payable","payment_received_evidence_json","payment_evidence_sha256"):
         assert field in sql
     assert "uq_sales_transactions_auction_reference" in sql and "sales_transactions_auction_invoice_arithmetic_check" in sql
 
@@ -125,6 +125,7 @@ def test_later_payment_reconciliation_updates_same_sale_and_replays_zero():
     cur, conn = PaymentCursor(), Conn()
     result,status=reconcile_auction_payment("SALE-1",evidence_row,authority={"principal_type":"service","principal_id":"ledger"},authority_verifier=lambda _:True,connect_factory=lambda:conn.bind(cur))
     assert status==200 and result["rows_changed"]==1 and sum("update sales_transactions" in sql for sql,_ in cur.calls)==1
+    assert any("sale_date::date" in sql for sql,_ in cur.calls)
     replay_cur,replay_conn=PaymentCursor(received=True),Conn()
     replay,status=reconcile_auction_payment("SALE-1",evidence_row,authority={"principal_type":"service","principal_id":"ledger"},authority_verifier=lambda _:True,connect_factory=lambda:replay_conn.bind(replay_cur))
     assert status==200 and replay["status"]=="payment_replayed_zero_rows" and replay["rows_changed"]==0
@@ -134,7 +135,7 @@ def test_payment_chronology_and_cross_sale_duplicate_evidence_fail_closed():
     cur,conn=PaymentCursor(),Conn()
     result,status=reconcile_auction_payment("SALE-1",row,authority={"principal_type":"service","principal_id":"ledger"},authority_verifier=lambda _:True,connect_factory=lambda:conn.bind(cur))
     assert status==409 and result["status"]=="payment_date_precedes_sale"
-    row["received_date"]="2026-08-09"
+    row["received_date"]="2026-08-09"; row["evidence_id"]="DIFFERENT-METADATA-SAME-SHA"
     cur,conn=DuplicatePaymentCursor(),Conn()
     result,status=reconcile_auction_payment("SALE-2",row,authority={"principal_type":"service","principal_id":"ledger"},authority_verifier=lambda _:True,connect_factory=lambda:conn.bind(cur))
     assert status==409 and result["status"]=="payment_evidence_already_bound"
@@ -164,8 +165,7 @@ class PaymentCursor(Cursor):
         self.payment_fetches+=1
         identity={"evidence_id":"BANK-PRIVATE-1","sha256":"b"*64,"received_date":"2026-08-09","amount":"4470.51"}
         if self.payment_fetches==1:
-            digest=__import__('hashlib').sha256(json.dumps(identity,sort_keys=True,separators=(",",":")).encode()).hexdigest()
-            return ("Auction","4470.51","4470.51" if self.received else None,identity if self.received else None,date(2026,8,5),digest if self.received else None)
+            return ("Auction","4470.51","4470.51" if self.received else None,identity if self.received else None,date(2026,8,5),"b"*64 if self.received else None)
         return None
 class DuplicatePaymentCursor(PaymentCursor):
     def fetchone(self):

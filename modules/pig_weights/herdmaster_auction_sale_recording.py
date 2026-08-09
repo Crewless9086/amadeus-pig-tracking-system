@@ -79,18 +79,18 @@ def reconcile_auction_payment(sale_id, evidence, *, authority, authority_verifie
       with connect_factory() as connection:
        with connection.cursor() as cur:
         identity={"evidence_id":str(evidence["evidence_id"]),"sha256":str(evidence["evidence_sha256"]).lower(),"received_date":received_date.isoformat(),"amount":"4470.51"}
-        evidence_digest=hashlib.sha256(json.dumps(identity,sort_keys=True,separators=(",",":")).encode()).hexdigest()
-        cur.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",("herdmaster-auction-payment:"+evidence_digest,))
-        cur.execute("select sale_channel,net_settlement_payable,received_total,payment_received_evidence_json,sale_date,payment_evidence_digest from sales_transactions where sale_id=%s for update",(sale_id,))
+        evidence_sha256=identity["sha256"]
+        cur.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",("herdmaster-auction-payment:"+evidence_sha256,))
+        cur.execute("select sale_channel,net_settlement_payable,received_total,payment_received_evidence_json,sale_date::date,payment_evidence_sha256 from sales_transactions where sale_id=%s for update",(sale_id,))
         row=cur.fetchone()
         if not row or row[0]!="Auction" or str(row[1])!="4470.51": return _result(False,"auction_sale_not_found_or_amount_mismatch"),409
         if received_date<row[4]: return _result(False,"payment_date_precedes_sale"),409
         if row[2] is not None:
-            if str(row[2])=="4470.51" and row[3]==identity and row[5]==evidence_digest: return _result(True,"payment_replayed_zero_rows",rows_changed=0),200
+            if str(row[2])=="4470.51" and row[3]==identity and row[5]==evidence_sha256: return _result(True,"payment_replayed_zero_rows",rows_changed=0),200
             return _result(False,"payment_reconciliation_conflict"),409
-        cur.execute("select sale_id from sales_transactions where payment_evidence_digest=%s and sale_id<>%s",(evidence_digest,sale_id))
+        cur.execute("select sale_id from sales_transactions where payment_evidence_sha256=%s and sale_id<>%s",(evidence_sha256,sale_id))
         if cur.fetchone(): return _result(False,"payment_evidence_already_bound"),409
-        cur.execute("update sales_transactions set received_total=4470.51,payment_status='Paid',payment_date=%s::date,payment_received_evidence_json=%s::jsonb,payment_evidence_digest=%s,updated_at=now() where sale_id=%s and received_total is null",(identity["received_date"],json.dumps(identity,sort_keys=True),evidence_digest,sale_id))
+        cur.execute("update sales_transactions set received_total=4470.51,payment_status='Paid',payment_date=%s::date,payment_received_evidence_json=%s::jsonb,payment_evidence_sha256=%s,updated_at=now() where sale_id=%s and received_total is null",(identity["received_date"],json.dumps(identity,sort_keys=True),evidence_sha256,sale_id))
         if cur.rowcount!=1: raise RuntimeError("concurrent_payment_state_change")
       return _result(True,"payment_reconciled",rows_changed=1,sale_id=str(sale_id)),200
     except Exception as exc:
