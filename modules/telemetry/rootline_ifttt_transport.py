@@ -35,19 +35,26 @@ class RootlineIFTTTTransport:
         row = self._channel(snapshot, channel)
         return {
             "authoritative": snapshot.get("actuation_configuration_safe") is True,
+            "device_id": snapshot.get("device_id"),
             "zone_id": contract["identity"] if contract["collection"] == "irrigation_zones" else None,
             "auxiliary_device_id": (contract["identity"]
                 if contract["collection"] == "irrigation_auxiliary_devices" else None),
             "device_type": contract["device_type"],
             "channel": channel,
+            "output_state": row.get("output_state"),
             "native_inching_enabled": row.get("native_auto_off_enabled"),
             "native_inching_seconds": row.get("native_auto_off_seconds"),
             "power_restoration_state": row.get("power_restoration_state"),
             "schedules_enabled": snapshot.get("timers_enabled"),
+            "timers_enabled": snapshot.get("timers_enabled"),
             "interlock_enabled": snapshot.get("interlock_enabled"),
             "scenes_enabled": snapshot.get("scenes_enabled"),
             "baseline_id": snapshot.get("commissioned_baseline_id"),
+            "controller_safety_generation": snapshot.get("response_digest"),
+            "physical_commissioning_generation": snapshot.get("commissioned_baseline_id"),
+            "commissioned": bool(snapshot.get("commissioned_baseline_id")),
             "response_digest": snapshot.get("response_digest"),
+            "observed_at": snapshot.get("retrieved_at"),
         }
 
     def read_output_state(self, *, device_id, channel):

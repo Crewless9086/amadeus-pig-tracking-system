@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
 
@@ -8,6 +9,7 @@ def snapshot(**changes):
              "current_outputs_authoritative": True,
              "actuation_configuration_safe": True, "timers_enabled": False,
              "interlock_enabled": False, "scenes_enabled": False,
+             "commissioned_baseline_id": "BASELINE-1",
              "response_digest": "READ-1", "retrieved_at": "2026-08-08T18:00:00Z",
              "channels": [{"channel": i, "output_state": "OFF",
                 "native_auto_off_enabled": True, "native_auto_off_seconds": 3599,
@@ -59,6 +61,10 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         state = transport.read_output_state(device_id="100204e9bc", channel=2)
         self.assertEqual((safety["zone_id"], safety["channel"]), ("C12345", 2))
         self.assertTrue(safety["authoritative"])
+        self.assertEqual((safety["device_id"],safety["output_state"]),("100204e9bc","OFF"))
+        self.assertEqual(safety["controller_safety_generation"],"READ-1")
+        self.assertEqual(safety["physical_commissioning_generation"],"BASELINE-1")
+        self.assertTrue(safety["commissioned"])
         self.assertEqual(safety["native_inching_seconds"], 3599)
         self.assertEqual(state["state"], "OFF")
 
@@ -105,6 +111,29 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         self.assertEqual(injection["event"],"controller_1_ch1_on")
         self.assertEqual(mixing["event"],"controller_1_ch2_off")
         self.assertEqual(len(calls),2)
+
+    def test_real_transport_safety_schema_passes_auxiliary_edge_revalidation(self):
+        from modules.telemetry.rootline_auxiliary_management import (
+            build_auxiliary_eligibility,revalidate_auxiliary_execution_edge)
+        now=datetime(2026,8,8,18,0,tzinfo=timezone.utc)
+        fertilizer=snapshot(device_id="100204d497")
+        fertilizer["channels"][0]["native_auto_off_seconds"]=120
+        transport,_calls=self.transport(fertilizer)
+        safety_value=transport.read_safety_configuration(device_id="100204d497",channel=1)
+        context={"plan_generation":"PLAN-EDGE","batch_generation":"BATCH-EDGE",
+            "active_zone_ids":["B12345"],"zone_execution_id":"ZONE-EDGE",
+            "zone_start_evidence":{"evidence_id":"START-EDGE",
+                "zone_execution_id":"ZONE-EDGE","observed_at":(now-timedelta(minutes=10)).isoformat()},
+            "zone_output_evidence":{"evidence_id":"OUTPUT-EDGE",
+                "zone_execution_id":"ZONE-EDGE","observed_at":now.isoformat(),"state":"ON"},
+            "irrigation_stop_deadline":(now+timedelta(minutes=30)).isoformat(),
+            "completed_pulses":0,"mixer_active":False,"prior_shutdown_unverified":False}
+        artifact=build_auxiliary_eligibility(task={
+            "auxiliary_device_id":"FERTILIZER-INJECTION-CH1"},safety=safety_value,
+            context=context,flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":True},now=now)
+        self.assertTrue(artifact["eligible"])
+        self.assertTrue(revalidate_auxiliary_execution_edge(artifact,
+            current_context=context,current_safety=safety_value,now=now))
 
 
 if __name__ == "__main__":
