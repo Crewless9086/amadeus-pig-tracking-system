@@ -23,7 +23,7 @@ CONTRACT_VERSION = "oom_sakkie_operational_specialist_intake_v1"
 ROOTLINE_PRESENCE_MAX_AGE_SECONDS = 300
 
 
-def recover_contextual_specialist_replay(parsed, *, replay_loader=None):
+def recover_contextual_specialist_replay(parsed, *, replay_loader=None, delivery_loader=None):
     """Resolve an exact durable specialist replay before non-deterministic routing."""
     provider_id = str((parsed or {}).get("provider_message_id") or "").strip()
     provider_at = str((parsed or {}).get("provider_timestamp") or "").strip()
@@ -61,6 +61,18 @@ def recover_contextual_specialist_replay(parsed, *, replay_loader=None):
             "status": "contextual_specialist_provider_replay_outcome_invalid",
             "answer": "", "replay_suppressed": True, "suppress_owner_delivery": True,
             "provider_control_calls": 0, "writes_farm_data": False, **ZERO_AUTHORITY}
+    try:
+        delivered = (delivery_loader or _contextual_delivery_terminal)(outcome)
+    except Exception:
+        return {**outcome, "handled": True, "success": False,
+            "replay_suppressed": True, "suppress_owner_delivery": True,
+            "delivery_recovery_required": False,
+            "status": "contextual_specialist_delivery_receipt_lookup_unavailable",
+            **ZERO_AUTHORITY}
+    if delivered is not True:
+        return {**outcome, "handled": True, "replay_suppressed": False,
+            "suppress_owner_delivery": False, "delivery_recovery_required": True,
+            "status": str(outcome.get("status") or "contained"), **ZERO_AUTHORITY}
     return {**outcome, "handled": True, "replay_suppressed": True,
         "suppress_owner_delivery": True,
         "status": "contextual_specialist_provider_replay_suppressed", **ZERO_AUTHORITY}
@@ -82,6 +94,31 @@ def _load_contextual_provider_replay(provider_message_id):
                       in ('contextual_followup_completed','contextual_followup_contained')
                 order by created_at,review_event_id""", (provider_message_id,))
             return [row[0] for row in cursor.fetchall()]
+
+
+def _contextual_delivery_terminal(outcome):
+    import psycopg
+    mission_id = str((outcome or {}).get("mission_id") or "")
+    card_id = str((outcome or {}).get("card_mission_id") or "")
+    provider_id = str((outcome or {}).get("provider_message_id") or "")
+    answer_sha = hashlib.sha256(str((outcome or {}).get("answer") or "").encode("utf-8")).hexdigest()
+    if not all((mission_id, card_id, provider_id)):
+        return False
+    terminal_states = (("notification_delivered",) if outcome.get("requires_visible_notification") is True
+                       else ("delivered", "updated"))
+    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            cursor.execute("""select count(*)
+                from public.sam_live_stock_conversation_review_events
+                where event_source='oom_sakkie_family_message_lifecycle'
+                  and review_json->'family_message_lifecycle'->>'mission_id'=%s
+                  and review_json->'family_message_lifecycle'->>'card_mission_id'=%s
+                  and review_json->'family_message_lifecycle'->>'provider_message_id'=%s
+                  and review_json->'family_message_lifecycle'->>'text_sha256'=%s
+                  and review_json->'family_message_lifecycle'->>'state'=any(%s)""",
+                (mission_id, card_id, provider_id, answer_sha, list(terminal_states)))
+            return int(cursor.fetchone()[0]) == 1
 _ROOTLINE_PRESENCE = re.compile(
     r"\bB and C valve area\b.*\bobserve both camps\b.*\bintervene immediately\b.*\bsupervised commissioning\b",
     re.I,

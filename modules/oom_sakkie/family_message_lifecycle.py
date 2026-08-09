@@ -42,6 +42,16 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     inbound_binding = _inbound_binding(parsed, specialist)
     material_update = _material_update_authorized(parsed, result, specialist,
         mission_id, card_mission_id)
+    payload = _event(parsed, mission_id, card_mission_id, specialist,
+                     str(result.get("status") or "working"), text_sha)
+    for key in ("execution_id", "entity_id", "domain", "contextual_task_kind",
+                "confirmation_prompt_sha256"):
+        if str(result.get(key) or "").strip():
+            payload[key] = str(result.get(key))
+    if isinstance(result.get("required_owner_confirmations"), (list, tuple)):
+        payload["required_owner_confirmations"] = list(result["required_owner_confirmations"])
+    if isinstance(result.get("accepted_owner_confirmation_binding"), Mapping):
+        payload["accepted_owner_confirmation_binding"] = dict(result["accepted_owner_confirmation_binding"])
     provider_replay = next((row for row in reversed(events)
         if row.get("state") in {"delivered", "updated", "provider_binding"}
         and str(row.get("provider_message_id") or "") == inbound_binding["provider_message_id"]), None)
@@ -56,6 +66,22 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
                 "telegram_sends": 0, "telegram_edits": 0}
+    if (provider_replay and result.get("requires_visible_notification") is True
+            and provider_replay.get("state") == "updated"
+            and str(provider_replay.get("text_sha256") or "") == text_sha):
+        notification_id = card_mission_id + "-VISIBLE-WAIT-" + text_sha[:20].upper()
+        notification_events = [row for row in events
+            if str(row.get("event_id") or "").startswith(notification_id)]
+        if any(row.get("state") == "notification_delivered" for row in notification_events):
+            return {"success": True, "status": "family_message_provider_replay_noop",
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 0}
+        if notification_events:
+            return {"success": False, "status": "family_message_notification_ambiguous",
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 0}
+        return _deliver_visible_notification(parsed, payload, text, mission_id,
+            card_mission_id, card_id, text_sha, store, sender, prior_edits=0)
     if provider_replay and not material_update:
         return {"success": True, "status": "family_message_provider_replay_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
@@ -66,16 +92,6 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 0}
 
-    payload = _event(parsed, mission_id, card_mission_id, specialist,
-                     str(result.get("status") or "working"), text_sha)
-    for key in ("execution_id", "entity_id", "domain", "contextual_task_kind",
-                "confirmation_prompt_sha256"):
-        if str(result.get(key) or "").strip():
-            payload[key] = str(result.get(key))
-    if isinstance(result.get("required_owner_confirmations"), (list, tuple)):
-        payload["required_owner_confirmations"] = list(result["required_owner_confirmations"])
-    if isinstance(result.get("accepted_owner_confirmation_binding"), Mapping):
-        payload["accepted_owner_confirmation_binding"] = dict(result["accepted_owner_confirmation_binding"])
     if card_id:
         update_id = card_mission_id + "-UPDATE-" + text_sha[:20].upper()
         claimed = store("record", update_id, {**payload, "event_id": update_id,
@@ -92,34 +108,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         store("record", update_id + "-DELIVERED", {**payload, "event_id": update_id + "-DELIVERED",
             "state": "updated", "telegram_message_id": card_id})
         if result.get("requires_visible_notification") is True:
-            notification_id = card_mission_id + "-VISIBLE-WAIT-" + text_sha[:20].upper()
-            notification_claim = store("record", notification_id, {**payload,
-                "event_id": notification_id, "state": "notification_attempted",
-                "telegram_message_id": card_id})
-            if notification_claim.get("created") is not True:
-                return {"success": False, "status": "family_message_notification_ambiguous",
-                    "mission_id": mission_id, "card_mission_id": card_mission_id,
-                    "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 1}
-            notification = (sender or _send_telegram)(
-                str(parsed.get("telegram_chat_id") or ""), text)
-            notification_message_id = str(notification.get("telegram_message_id") or "")
-            if not notification.get("success") or not notification_message_id:
-                store("record", notification_id + "-CONTAINED", {**payload,
-                    "event_id": notification_id + "-CONTAINED", "state": "contained",
-                    "reason": "telegram_notification_unconfirmed", "telegram_message_id": card_id})
-                return {"success": False, "status": "family_message_notification_contained",
-                    "mission_id": mission_id, "card_mission_id": card_mission_id,
-                    "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 1}
-            store("record", notification_id + "-DELIVERED", {**payload,
-                "event_id": notification_id + "-DELIVERED", "state": "notification_delivered",
-                "telegram_message_id": card_id,
-                "notification_message_id": notification_message_id,
-                "delivery_provider_timestamp": str(notification.get("provider_timestamp") or "")})
-            return {"success": True, "status": "family_message_card_updated_and_notified",
-                "mission_id": mission_id, "card_mission_id": card_mission_id,
-                "telegram_message_id": card_id,
-                "notification_message_id": notification_message_id,
-                "telegram_sends": 1, "telegram_edits": 1}
+            return _deliver_visible_notification(parsed, payload, text, mission_id,
+                card_mission_id, card_id, text_sha, store, sender, prior_edits=1)
         return {"success": True, "status": "family_message_card_updated",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 1}
@@ -147,6 +137,35 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     return {"success": True, "status": "family_message_delivered",
             "mission_id": mission_id, "card_mission_id": card_mission_id,
             "telegram_message_id": message_id, "telegram_sends": 1, "telegram_edits": 0}
+
+
+def _deliver_visible_notification(parsed, payload, text, mission_id, card_mission_id,
+                                   card_id, text_sha, store, sender, *, prior_edits):
+    notification_id = card_mission_id + "-VISIBLE-WAIT-" + text_sha[:20].upper()
+    notification_claim = store("record", notification_id, {**payload,
+        "event_id": notification_id, "state": "notification_attempted",
+        "telegram_message_id": card_id})
+    if notification_claim.get("created") is not True:
+        return {"success": False, "status": "family_message_notification_ambiguous",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": prior_edits}
+    notification = (sender or _send_telegram)(str(parsed.get("telegram_chat_id") or ""), text)
+    notification_message_id = str(notification.get("telegram_message_id") or "")
+    if not notification.get("success") or not notification_message_id:
+        store("record", notification_id + "-CONTAINED", {**payload,
+            "event_id": notification_id + "-CONTAINED", "state": "contained",
+            "reason": "telegram_notification_unconfirmed", "telegram_message_id": card_id})
+        return {"success": False, "status": "family_message_notification_contained",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": prior_edits}
+    store("record", notification_id + "-DELIVERED", {**payload,
+        "event_id": notification_id + "-DELIVERED", "state": "notification_delivered",
+        "telegram_message_id": card_id, "notification_message_id": notification_message_id,
+        "delivery_provider_timestamp": str(notification.get("provider_timestamp") or "")})
+    return {"success": True, "status": "family_message_card_updated_and_notified",
+        "mission_id": mission_id, "card_mission_id": card_mission_id,
+        "telegram_message_id": card_id, "notification_message_id": notification_message_id,
+        "telegram_sends": 1, "telegram_edits": prior_edits}
 
 
 def bind_existing_card(parsed: Mapping[str, Any], *, specialist: str, mission_id: str,

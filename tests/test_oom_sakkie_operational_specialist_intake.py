@@ -419,9 +419,49 @@ def test_exact_provider_replay_loads_terminal_before_routing():
             "response_contract_version":"contextual_specialist_response_v2",
             "authority":{"configuration_write":False,"hardware_control":False,
                          "farm_write":False,"telegram_send":False}}}
-    value=recover_contextual_specialist_replay(item,replay_loader=lambda _:[row])
+    value=recover_contextual_specialist_replay(item,replay_loader=lambda _:[row],
+        delivery_loader=lambda _:True)
     assert value["replay_suppressed"] is True and value["suppress_owner_delivery"] is True
     assert value["hardware_commands"]==0
+
+
+def test_exact_provider_outcome_without_delivery_resumes_delivery_not_specialist():
+    item=operational("Done; at fertilizer valves now")
+    text_sha=__import__("hashlib").sha256(item["text"].encode()).hexdigest()
+    row={"state":"contextual_followup_completed","context":{
+        "owner_user_id":"42","chat_id":"42","provider_message_id":item["provider_message_id"],
+        "provider_timestamp":item["provider_timestamp"],"text_sha256":text_sha},
+        "outcome":{"status":"waiting_for_input","answer":"Are you still there?",
+            "mission_id":"FERTILIZER-1","card_mission_id":"FERTILIZER-1",
+            "provider_message_id":item["provider_message_id"],"requires_visible_notification":True,
+            "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False,
+            "response_contract_version":"contextual_specialist_response_v2",
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False}}}
+    value=recover_contextual_specialist_replay(item,replay_loader=lambda _:[row],
+        delivery_loader=lambda _:False)
+    assert value["delivery_recovery_required"] is True
+    assert value["replay_suppressed"] is False
+    assert value["suppress_owner_delivery"] is False
+    assert value["answer"]=="Are you still there?" and value["hardware_commands"]==0
+
+
+def test_provider_delivery_lookup_failure_does_not_claim_suppression():
+    item=operational("Done; at fertilizer valves now")
+    text_sha=__import__("hashlib").sha256(item["text"].encode()).hexdigest()
+    row={"state":"contextual_followup_completed","context":{
+        "owner_user_id":"42","chat_id":"42","provider_message_id":item["provider_message_id"],
+        "provider_timestamp":item["provider_timestamp"],"text_sha256":text_sha},
+        "outcome":{"hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False,
+            "response_contract_version":"contextual_specialist_response_v2",
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False}}}
+    def unavailable(_): raise RuntimeError("database unavailable")
+    value=recover_contextual_specialist_replay(item,replay_loader=lambda _:[row],
+        delivery_loader=unavailable)
+    assert value["status"]=="contextual_specialist_delivery_receipt_lookup_unavailable"
+    assert value["replay_suppressed"] is True and value["suppress_owner_delivery"] is True
+    assert value["delivery_recovery_required"] is False and value["hardware_commands"]==0
 
 
 def test_changed_provider_replay_binding_is_not_recovered():
