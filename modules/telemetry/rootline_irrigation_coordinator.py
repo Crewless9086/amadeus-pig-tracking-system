@@ -13,6 +13,9 @@ from modules.telemetry.rootline_execution_authority import (
     equivalent_fresh_eligibility, validate_execution_eligibility,
 )
 from modules.telemetry.rootline_ewelink_commissioned_baseline import validate_commissioned_baseline
+from modules.telemetry.rootline_auxiliary_management import (
+    revalidate_auxiliary_execution_edge, validate_auxiliary_eligibility,
+)
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
@@ -104,6 +107,149 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     return _result("segment_started", commands=1, messages=delivery["confirmed"],
                    execution=active_execution, notification=delivery,
                    autonomous_on_enabled=True, writes_farm_data=True)
+
+
+def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=None, now=None):
+    """Advance one typed irrigation-auxiliary execution on the existing rail.
+
+    This function owns no planner or provider mapping.  It consumes one
+    planner-minted artifact, uses caller-supplied canonical effects, and
+    contains only the auxiliary device on failure.  B/C shutdown ownership is
+    never removed.
+    """
+    now = _aware(now or datetime.now(timezone.utc))
+    active = store("load_active_auxiliary", None)
+    if active:
+        return _recover_auxiliary(active, store, transport, now)
+    artifact = validate_auxiliary_eligibility(eligibility, now=now)
+    if not artifact:
+        return _aux_result("auxiliary_not_eligible")
+    containment=store("load_auxiliary_containment",artifact["auxiliary_device_id"])
+    if isinstance(containment,dict) and containment.get("contained") is True:
+        return _aux_result("auxiliary_device_contained",fertilizer_debt=True,
+            auxiliary_contained=True)
+    if not callable(revalidate):
+        return _aux_result("auxiliary_edge_revalidation_unavailable")
+    current_context=revalidate(artifact)
+    try:
+        current_safety=transport.read_safety_configuration(
+            device_id=artifact["device_id"],channel=artifact["channel"])
+    except Exception:
+        current_safety={}
+    if not revalidate_auxiliary_execution_edge(artifact,current_context=current_context,
+            current_safety=current_safety,now=now):
+        return _aux_result("auxiliary_edge_revalidation_failed")
+    execution = {"execution_id":artifact["execution_id"],
+        "eligibility_id":artifact["eligibility_id"],
+        "consumption_key":artifact["consumption_key"],
+        "auxiliary_device_id":artifact["auxiliary_device_id"],
+        "device_type":artifact["device_type"],"device_id":artifact["device_id"],
+        "channel":artifact["channel"],"zone_id":artifact.get("zone_id"),
+        "pulse_number":artifact.get("pulse_number"),
+        "maximum_duration_seconds":artifact["maximum_duration_seconds"],
+        "claimed_at":now.isoformat(),"primary_stop_deadline":(
+            now+timedelta(seconds=artifact["maximum_duration_seconds"])).isoformat(),
+        "state":"claimed","on_attempts":0,"off_attempts":0}
+    claim=store("claim_auxiliary_before_on",execution)
+    if not isinstance(claim,dict) or claim.get("created") is not True:
+        return _aux_result("auxiliary_claim_conflict")
+    accepted=transport.set_state(device_id=execution["device_id"],channel=execution["channel"],
+        state="ON",idempotency_key=execution["execution_id"]+":ON")
+    store("record_auxiliary_on_outcome",{**execution,"on_attempts":1,"on_outcome":accepted})
+    if accepted.get("accepted_unambiguous") is not True:
+        recovery=_bounded_auxiliary_off(execution,store,transport)
+        shutdown=_read_auxiliary_output(execution,transport)
+        verified=shutdown.get("authoritative") is True and shutdown.get("state")=="OFF"
+        store("contain_auxiliary_device",{**execution,"reason":"ambiguous_on",
+            "shutdown_verified":verified,"shutdown_evidence":shutdown})
+        store("record_auxiliary_exception",{**execution,"reason":"ambiguous_on",
+            "fertilizer_debt":True,"shutdown_verified":verified})
+        return _aux_result("auxiliary_ambiguous_on_contained" if verified
+            else "auxiliary_shutdown_intervention_required",commands=1+recovery["commands"],
+            state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
+    started=_read_auxiliary_output(execution,transport)
+    if started.get("authoritative") is not True or started.get("state")!="ON":
+        recovery=_bounded_auxiliary_off(execution,store,transport)
+        store("contain_auxiliary_device",{**execution,"reason":"start_unverified",
+            "shutdown_verified":False})
+        return _aux_result("auxiliary_start_unverified",commands=1+recovery["commands"],
+            state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
+    active={**execution,"state":"Active","on_attempts":1,"start_evidence":started}
+    store("mark_auxiliary_active",active)
+    return _aux_result("auxiliary_started",commands=1,state="Started",execution=active)
+
+
+def _recover_auxiliary(active,store,transport,now):
+    deadline=_timestamp(active.get("primary_stop_deadline"))
+    claimed_at=_timestamp(active.get("claimed_at"))
+    if (active.get("state")=="claimed" and claimed_at is not None
+            and timedelta(0)<=now-claimed_at<=timedelta(seconds=30)):
+        return _aux_result("auxiliary_claim_in_progress",execution=active)
+    if active.get("state") in {"claimed","claimed_recovery_required"} or deadline is None:
+        recovery=_bounded_auxiliary_off(active,store,transport)
+        shutdown=_read_auxiliary_output(active,transport)
+        verified=shutdown.get("authoritative") is True and shutdown.get("state")=="OFF"
+        store("contain_auxiliary_device",{**active,"reason":"restart_or_deadline_ambiguous",
+            "shutdown_verified":verified,"shutdown_evidence":shutdown})
+        return _aux_result("auxiliary_restart_contained",commands=recovery["commands"],
+            state="Intervention",fertilizer_debt=True,auxiliary_contained=True)
+    if now<deadline:
+        return _aux_result("auxiliary_active",execution=active)
+    recovery=_bounded_auxiliary_off(active,store,transport)
+    shutdown=_read_auxiliary_output(active,transport)
+    if shutdown.get("authoritative") is not True or shutdown.get("state")!="OFF":
+        store("contain_auxiliary_device",{**active,"reason":"shutdown_unverified",
+            "shutdown_verified":False,"shutdown_evidence":shutdown})
+        store("record_auxiliary_exception",{**active,"reason":"shutdown_unverified",
+            "fertilizer_debt":True})
+        return _aux_result("auxiliary_shutdown_intervention_required",
+            commands=recovery["commands"],state="Intervention",fertilizer_debt=True,
+            auxiliary_contained=True)
+    completed={**active,"state":"Completed","shutdown_verified":True,
+        "shutdown_evidence":shutdown,"completed_at":now.isoformat(),
+        "maximum_runtime_seconds":active["maximum_duration_seconds"],
+        "verified_runtime_seconds":None,"physical_outcome":"Unknown",
+        "nutrient_dose":"Unknown","concentration":"Unknown",
+        "delivered_volume":"Unavailable"}
+    recorded=store("record_auxiliary_completed",completed)
+    if not isinstance(recorded,dict) or recorded.get("success") is not True:
+        return _aux_result("auxiliary_completion_persistence_unproven",
+            commands=recovery["commands"],state="Intervention",fertilizer_debt=True)
+    return _aux_result("auxiliary_completed",commands=recovery["commands"],
+        state="Completed",execution=completed)
+
+
+def _bounded_auxiliary_off(execution,store,transport):
+    commands=0; outcomes=[]
+    prior=store("load_auxiliary_off_attempts",execution["execution_id"]) or []
+    used={int(row.get("attempt") or 0) for row in prior if isinstance(row,dict)}
+    for attempt in range(1,MAX_OFF_ATTEMPTS+1):
+        if attempt in used: continue
+        claim=store("claim_auxiliary_off_attempt",{"execution_id":execution["execution_id"],
+            "attempt":attempt})
+        if not isinstance(claim,dict) or claim.get("created") is not True: continue
+        outcome=transport.set_state(device_id=execution["device_id"],channel=execution["channel"],
+            state="OFF",idempotency_key=f"{execution['execution_id']}:OFF:{attempt}")
+        commands+=1;outcomes.append(outcome)
+        store("record_auxiliary_off_outcome",{"execution_id":execution["execution_id"],
+            "attempt":attempt,"outcome":outcome})
+        if outcome.get("accepted_unambiguous") is True: break
+    return {"commands":commands,"outcomes":outcomes}
+
+
+def _read_auxiliary_output(execution,transport):
+    try:return transport.read_output_state(device_id=execution["device_id"],
+        channel=execution["channel"])
+    except Exception:return {"authoritative":False,"state":"Unknown"}
+
+
+def _aux_result(status,*,commands=0,state=None,fertilizer_debt=False,
+                auxiliary_contained=False,**extra):
+    return {"success":True,"status":status,"hardware_commands":commands,
+        "notification_state":state,"fertilizer_debt":fertilizer_debt,
+        "auxiliary_contained":auxiliary_contained,"irrigation_may_continue":True,
+        "irrigation_shutdown_authority_unchanged":True,"borehole_authority":False,
+        "channels_3_4_authority":False,"automatic_on_retry":False,**extra}
 
 
 def _recover_or_observe(active, store, transport, notify, outcome_reader, now):

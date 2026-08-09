@@ -18,6 +18,9 @@ from services.database_service import DATABASE_URL_ENV
 from modules.telemetry.rootline_adaptive_irrigation import (
     build_adaptive_irrigation_decisions,
 )
+from modules.telemetry.rootline_auxiliary_management import (
+    build_auxiliary_tasks, build_fertilizer_batch_lifecycle,
+)
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
@@ -105,11 +108,18 @@ OPERATING_KNOWLEDGE = {
         "product": "owner-produced natural liquid fertilizer",
         "ingredients": ["LAB", "earthworm tea", "leaf mulch", "weeds"],
         "minimum_irrigation_preflow_minutes": 10,
-        "maximum_injection_pulse_seconds": 60,
+        "maximum_injection_pulse_seconds": 120,
+        "injection_pulses_per_eligible_segment": 2,
         "minimum_pulse_spacing_minutes": 10,
         "clean_water_flush_required": True,
-        "mixing_candidate": "twice_daily_approximately_15_minutes",
-        "relay_api_mapping": UNKNOWN,
+        "mixing_segment_maximum_minutes": 5,
+        "mixing_daily_verified_maximum_minutes": 30,
+        "relay_api_mapping": {
+            "injection_on": "controller_1_ch1_on",
+            "injection_off": "controller_1_ch1_off",
+            "mixer_on": "controller_1_ch2_on",
+            "mixer_off": "controller_1_ch2_off",
+        },
         "deterministic_off_proven": False,
         "supervised_identity_proven": False,
     },
@@ -133,6 +143,9 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
     history = _dict(evidence.get("history"))
     irrigation_history = _dict(evidence.get("irrigation_history"))
     water_demand = _dict(evidence.get("water_demand"))
+    fertilizer_batch = build_fertilizer_batch_lifecycle(
+        observations=evidence.get("fertilizer_batch_observations"),
+        executions=evidence.get("fertilizer_executions"), now=now)
 
     power_state = _freshness(power, now)
     weather_state = _freshness(weather, now)
@@ -149,9 +162,11 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
                            weather, forecast, tanks,
                            tank_state, power, power_state, weather_state, now,
                            selected_date),
-        _fertilizer_injection_task(irrigation),
-        _fertilizer_mixing_task(tanks, tank_state, reserve),
     ]
+    auxiliary = build_auxiliary_tasks(batch=fertilizer_batch, power=power,
+        verified_mixing=evidence.get("fertilizer_executions"),
+        mixing_history_complete_through=evidence.get(
+            "fertilizer_history_complete_through"), now=now)
     status = _overall_status(tasks)
     evidence_observed_at = _latest_observed_at(power, weather, forecast, tanks, now)
     canonical_evidence = {
@@ -163,6 +178,8 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         "history": history,
         "irrigation_history": irrigation_history,
         "water_demand": water_demand,
+        "fertilizer_batch_observations": evidence.get("fertilizer_batch_observations") or [],
+        "fertilizer_executions": evidence.get("fertilizer_executions") or [],
     }
     evidence_hash = _canonical_sha(_material_evidence(canonical_evidence, now))
     plan = {
@@ -238,6 +255,9 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         },
         "water_demand": water_demand or {"status": "standing_essential"},
         "candidate_tasks": tasks,
+        "irrigation_auxiliary_devices": auxiliary["irrigation_auxiliary_devices"],
+        "irrigation_auxiliary_tasks": auxiliary["irrigation_auxiliary_tasks"],
+        "fertilizer_batch_lifecycle": fertilizer_batch,
         "outcome_separation": {
             "plan": "advice_only",
             "command_acceptance": "separate_future_evidence",
@@ -1107,42 +1127,6 @@ def _irrigation_season(now):
     if now.month in {6, 7, 8}:
         return "winter"
     return "shoulder"
-
-
-def _fertilizer_injection_task(irrigation):
-    active = irrigation.get("active_zone")
-    elapsed = _number(irrigation.get("active_zone_observed_minutes"))
-    spacing = _number(irrigation.get("minutes_since_last_injection"))
-    flush = irrigation.get("clean_water_flush_supported") is True
-    compatibility = irrigation.get("exact_product_zone_compatibility_confirmed") is True
-    no_overlap = irrigation.get("no_overlapping_fertilizer_pulse") is True
-    flush_minutes = _number(irrigation.get("remaining_clean_water_flush_minutes"))
-    if not active:
-        rec, reason = "Do Not Run", "No compatible active irrigation zone."
-    elif elapsed is None or elapsed < 10:
-        rec, reason = "Hold", "At least 10 observed pre-flow minutes are required."
-    elif not compatibility or not no_overlap:
-        rec, reason = "Hold", "Exact product/zone compatibility or no-overlap evidence is incomplete."
-    elif spacing is None or spacing < 10 or not flush or flush_minutes is None:
-        rec, reason = "Hold", "Pulse spacing or bounded clean-water flush evidence is incomplete."
-    else:
-        rec, reason = "Needs Data", "Physical relay mapping and supervised identity remain unproven."
-    task = _task("fertilizer_injection_ch1", rec, reason, "during_compatible_irrigation",
-                 ["active_zone", "10_min_preflow", "10_min_spacing",
-                  "maximum_60_seconds", "clean_water_flush",
-                  "exact_product_zone_compatibility", "no_overlapping_pulse",
-                  "relay_binding_unresolved"], {})
-    task["maximum_duration_seconds"] = 60
-    return task
-
-
-def _fertilizer_mixing_task(tanks, tank_state, reserve):
-    return _task(
-        "fertilizer_mixing_ch2", "Needs Data",
-        "Twice-daily 15-minute mixing is a candidate only; relay identity is unproven.",
-        "surplus_solar_candidate", ["mixing_need", "relay_binding_unresolved"],
-        reserve,
-    )
 
 
 def _task(identity, recommendation, reason, window, dependencies, reserve):

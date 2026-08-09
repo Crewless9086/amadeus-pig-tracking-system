@@ -7,7 +7,7 @@ import json
 import pytest
 
 from modules.telemetry.rootline_irrigation_execution_store import (
-    _claim_single_controller, _event_id,
+    _claim_single_auxiliary, _claim_single_controller, _event_id,
 )
 
 
@@ -24,6 +24,32 @@ def test_off_attempt_claims_are_unique_per_execution_and_attempt():
                   for n in (1, 2, 3)}
     assert len(identities) == 3
     assert _event_id("claim_off_attempt", {"execution_id": "EXEC-1", "attempt": 1}) in identities
+
+
+def test_auxiliary_claim_and_off_identities_are_stable_and_separate():
+    claim=_event_id("claim_auxiliary_before_on",{"execution_id":"AUX-1"})
+    assert claim==_event_id("claim_auxiliary_before_on",{
+        "execution_id":"AUX-1","untrusted_extra":"ignored"})
+    assert _event_id("claim_auxiliary_off_attempt",{
+        "execution_id":"AUX-1","attempt":1})!=_event_id(
+            "claim_auxiliary_off_attempt",{"execution_id":"AUX-1","attempt":2})
+
+
+@pytest.mark.skipif(not os.getenv("ROOTLINE_DISPOSABLE_POSTGRES_URL"),
+                    reason="disposable ROOTLINE PostgreSQL URL is required")
+def test_auxiliary_consumption_is_atomic_without_blocking_bc_claim(monkeypatch):
+    import psycopg
+    url=os.environ["ROOTLINE_DISPOSABLE_POSTGRES_URL"];monkeypatch.setenv("DATABASE_URL",url)
+    migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
+    with psycopg.connect(url) as connection:connection.execute(migration.read_text(encoding="utf-8"))
+    suffix=uuid.uuid4().hex;key=f"ROOTLINE-AUX-CONSUME-{suffix}"
+    def claim(index):
+        return _claim_single_auxiliary({"execution_id":f"ROOTLINE-AUX-{suffix}-{index}",
+            "consumption_key":key,"auxiliary_device_id":"FERTILIZER-INJECTION-CH1"})
+    with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(claim,(1,2)))
+    assert sum(item.get("created") is True for item in results)==1
+    assert sorted(item.get("status") for item in results)==[
+        "claimed","eligibility_already_consumed"]
 
 
 @pytest.mark.skipif(not os.getenv("ROOTLINE_DISPOSABLE_POSTGRES_URL"),
