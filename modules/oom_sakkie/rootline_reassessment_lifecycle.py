@@ -3,7 +3,8 @@
 from __future__ import annotations
 import hashlib, json
 from typing import Any, Callable, Mapping
-from modules.oom_sakkie.owner_response_composer import compose_rootline
+from modules.oom_sakkie.rootline_daily_presentation import compose_daily_rootline_plan
+from modules.oom_sakkie.rootline_material import rootline_material_digest, stable_reassessment
 
 
 def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
@@ -26,7 +27,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
               "trigger": trigger, "material_digest": material,
               "result_id": str(current.get("result_id") or ""),
               "evidence_generation": str(current.get("generation") or current.get("evidence_cutoff") or ""),
-              "answer": compose_rootline(current, language=language), "delivery_state": "pending"}
+              "answer": compose_daily_rootline_plan(current, language=language), "delivery_state": "pending"}
     recorded = state_store("claim_pending", identity, packet)
     if not isinstance(recorded, Mapping) or recorded.get("success") is not True:
         return _contained("rootline_reassessment_persistence_unproven")
@@ -68,27 +69,11 @@ def _result(status, material, *, notify):
 
 
 def _material_digest(result):
-    selected = {"overall_status": result.get("overall_status"),
-        "recommendations": [{key: row.get(key) for key in ("subject", "status", "recommendation", "reason")}
-                            for row in result.get("recommendations") or () if isinstance(row, Mapping)],
-        "next_reassessment": _stable_reassessment(result.get("next_reassessment")),
-        "owner_question": (result.get("owner_brief") or {}).get("family_fact_needed")}
-    return hashlib.sha256(json.dumps(selected, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+    return rootline_material_digest(result)
 
 
 def _stable_reassessment(value):
-    if not isinstance(value, Mapping):
-        return value
-    trigger = str(value.get("trigger") or "")
-    stable = {key: value.get(key) for key in (
-        "trigger", "reason", "also_on", "recovery_if_window_is_missed", "automatic_command"
-    ) if key in value}
-    # Current-read models legitimately regenerate the next-read timestamp on
-    # every observation. It is presentation metadata, not a changed farm
-    # decision. Fixed plan/forecast deadlines remain material.
-    if trigger not in {"new_canonical_evidence", "new_canonical_evidence_or_next_read"} and "at" in value:
-        stable["at"] = value.get("at")
-    return stable
+    return stable_reassessment(value)
 
 
 def _declared_next_due(result):

@@ -1,12 +1,12 @@
 # Oom Sakkie Family Access And Afrikaans — Source Handover
 
 Date: 2026-08-08  
-Stage: Source-ready; not integrated, deployed, configured, or operationally proven  
-Production owner during preparation: ROOTLINE
+Stage: reconciled integration candidate; not yet deployed or operationally proven
+Production owner during preparation: Oom Sakkie serialized mission
 
 ## Current truth
 
-The branch was reconciled again after ROOTLINE advanced: production deployment `dep-d9rp1mrncjis739d3bh0` and `origin/main` were both verified at `1e89cbb43c6a47f5d158044b208efbcc7e92633c`. The current Telegram allow-list and all reviewed operational documentation identify exactly one authorized human Telegram identity: Charl, provider user/private-chat ID `5721652188`. Mum and Dad are **not** configured or authorized. Display names and language provide no identity authority.
+The branch was reconciled against ROOTLINE production base `aa4cd71184d3ce5a6d844fddbfa34958d36275f8`. The current Telegram allow-list and all reviewed operational documentation identify exactly one authorized human Telegram identity: Charl, provider user/private-chat ID `5721652188`. Mum and Dad are **not** configured or authorized. Display names and language provide no identity authority.
 
 The 5 August mortality-intelligence handover is completed historical evidence and was not resumed, polled, or used to manufacture a proof.
 
@@ -21,7 +21,7 @@ The 5 August mortality-intelligence handover is completed historical evidence an
 
 Every non-owner binding requires an exact Telegram user/private-chat identity, `family_key` (`mum` or `dad`), role, separate permission list, summary-domain list, authorization identity and time, and `authorized_by_user_id=5721652188`. Invalid, incomplete, non-owner-authorized, group-chat, or cross-family bindings fail closed. The contract preserves reporter user ID, provider message ID, provider timestamp, authorization identity, and a deterministic binding digest. It grants zero send, dispatch, farm-write, customer, publication, or hardware authority.
 
-The existing semantic prompt now explicitly handles English, Afrikaans and mixed language while being forbidden to infer identity or permission. The public gateway policy reports only contract availability and the owner-only boundary; it exposes no family keys, identities, binding counts, or permission inventory. Owner authority is issued only when the resolved role is Owner. A configured family identity currently fails closed as `telegram_family_lifecycle_not_enabled` until the typed lifecycle integration below is reviewed; it can never fall through into owner handlers. No Mum/Dad binding has been added.
+The existing semantic prompt explicitly handles English, Afrikaans and mixed language while being forbidden to infer identity or permission. The public gateway policy reports only contract availability and the owner-only boundary; it exposes no family keys, identities, binding counts, or permission inventory. Owner authority is issued only when the resolved role is Owner. A configured family identity fails closed as `telegram_family_lifecycle_not_enabled` before owner-task, semantic/private-context loading or any owner handler until its separately permitted reporter/summary adapter is enabled. That failure is identity-local and does not block Charl. No Mum/Dad binding has been added.
 
 ## Later onboarding (protected owner change)
 

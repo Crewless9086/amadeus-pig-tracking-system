@@ -540,3 +540,8 @@
 - Added a closed, identity-bound family-role contract with Charl-only protected authority, independently configurable Mum/Dad permissions, privacy-safe unknown-sender denial, exact reporter provenance, and zero I/O authority.
 - Clarified that the semantic front door supports English, Afrikaans and mixed language but cannot infer identity or permission.
 - Added focused regressions and a governed onboarding/integration handover. No family identity was added; no runtime, Telegram, farm, customer, or hardware state changed.
+# 2026-08-09 — Oom Sakkie daily ROOTLINE presentation integration
+
+- Reconciled the reviewed family-access contract onto current ROOTLINE production without adding Mum or Dad.
+- Added one date-bound 07:00 SAST presentation lifecycle on the existing 15-minute scheduler and reassessment rail. It waits for fresh canonical evidence, presents only B/C decisions and genuine owner input, and suppresses volatile timestamp/format changes.
+- Kept unchanged reassessments silent and made Started, Completed and Intervention visible state-bound notifications. No new planner, command path, scheduler, Telegram path, database table or ROOTLINE authority was added.

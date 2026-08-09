@@ -62,6 +62,7 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 - `docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md`
 - `docs/06-operations/GS_MIG_FINAL_AUDIT.md`
 - `docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md`
+- `docs/06-operations/OOM_SAKKIE_ROOTLINE_DAILY_PRESENTATION_HANDOVER.md`
 
 ## Static Agent Assets
 

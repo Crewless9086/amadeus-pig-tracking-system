@@ -429,9 +429,13 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         return _gateway_result(False, "rootline_reassessment_auth_denied", policy, 403)
     if str((payload or {}).get("scheduler_identity") or "").strip():
         from modules.oom_sakkie.automatic_reassessment_scheduler import run_due_reassessment
+        from modules.oom_sakkie.rootline_daily_presentation import present_daily_rootline_plan
         if schedule_store is None:
             from modules.oom_sakkie.automatic_reassessment_store import automatic_reassessment_store
             schedule_store = automatic_reassessment_store
+        if state_store is None:
+            from modules.oom_sakkie.rootline_reassessment_store import rootline_reassessment_state_store
+            state_store = rootline_reassessment_state_store
         manual_payload = {key: value for key, value in (payload or {}).items()
                           if key not in {"scheduler_identity", "specialist", "due_at", "evidence_cutoff"}}
         base_scheduled_loader = specialist_loader
@@ -450,6 +454,18 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 return {"success": False, "status": "scheduled_reassessment_evidence_after_cutoff"}
             return current
         def invoke():
+            deliver = family_delivery or deliver_family_result
+            try:
+                daily = present_daily_rootline_plan(
+                    owner_user_id=str(manual_payload.get("owner_user_id") or ""),
+                    chat_id=str(manual_payload.get("chat_id") or ""),
+                    specialist_loader=scheduled_loader, state_store=state_store,
+                    deliver=deliver, now=scheduler_now,
+                    language=str(manual_payload.get("language") or "en"))
+            except Exception:
+                daily = {"success": False, "status": "rootline_daily_presentation_unavailable",
+                         "telegram_sends": 0, "telegram_edits": 0,
+                         "hardware_commands": 0, "writes_farm_data": False}
             if str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() == "true":
                 cycle = execution_cycle
                 if cycle is None:
@@ -459,27 +475,33 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                           "telegram_chat_id": str(manual_payload.get("chat_id") or ""),
                           "provider_message_id": f"scheduled:{manual_payload.get('trigger_id')}",
                           "provider_timestamp": str(manual_payload.get("trigger_timestamp") or "")}
-                deliver = family_delivery or deliver_family_result
                 def notify(state, execution):
                     zone = str(execution.get("zone_id") or "irrigation")
-                    answer = ({"Started": f"{zone} irrigation started; maximum 60 minutes.",
-                               "Completed": f"{zone} irrigation stopped and completed.",
-                               "Intervention": (f"{zone} irrigation stopped, but its outcome needs confirmation."
+                    answer = ({"Started": f"<b>💧 IRRIGATION STARTED</b>\n\n{zone} is running for no more than 59 minutes 59 seconds.",
+                               "Completed": f"<b>✅ IRRIGATION COMPLETED</b>\n\n{zone} is stopped and the supported segment is complete.",
+                               "Intervention": (f"<b>🚨 IRRIGATION INTERVENTION</b>\n\n{zone} is stopped, but its outcome needs confirmation."
                                                 if execution.get("shutdown_verified") is True
-                                                else f"{zone} irrigation needs intervention; automatic reuse is contained.")}
+                                                else f"<b>🚨 IRRIGATION INTERVENTION</b>\n\n{zone} shutdown is uncertain. Automatic reuse is contained and owner attention is required.")}
                               .get(state, f"{zone} irrigation: {state}."))
+                    base_identity = str(execution.get("notification_identity")
+                                        or execution.get("execution_id") or "")
+                    event_identity = f"{base_identity}:{str(state).upper()}"
                     delivery = deliver(parsed, {"success": True, "status": state.lower(),
                         "answer": answer}, specialist="ROOTLINE",
-                        mission_id=str(execution.get("notification_identity")
-                                       or execution.get("execution_id") or ""),
-                        card_mission_id=str(execution.get("notification_identity")
-                                            or execution.get("execution_id") or ""))
+                        mission_id=event_identity, card_mission_id=event_identity)
                     return {**delivery,
                         "provider_delivery_confirmed": delivery.get("success") is True
                             and bool(delivery.get("telegram_message_id")),
                         "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
                         "provider_message_id": str(delivery.get("telegram_message_id") or "")}
-                return cycle(notify=notify, environ=source, now=scheduler_now)
+                cycle_result = dict(cycle(notify=notify, environ=source, now=scheduler_now) or {})
+                return {**cycle_result,
+                    "daily_presentation_status": str(daily.get("status") or ""),
+                    "daily_presentation_identity": str(daily.get("daily_identity") or ""),
+                    "telegram_sends": int(daily.get("telegram_sends") or 0)
+                        + int(cycle_result.get("telegram_sends") or cycle_result.get("telegram_messages") or 0),
+                    "telegram_edits": int(daily.get("telegram_edits") or 0)
+                        + int(cycle_result.get("telegram_edits") or 0)}
             result, nested_status = handle_rootline_reassessment_trigger(
                 manual_payload, headers=headers, environ=source, specialist_loader=scheduled_loader,
                 state_store=state_store, family_delivery=family_delivery)
@@ -487,7 +509,10 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 return {**result, "success": False,
                         "scheduled_underlying_status": str(result.get("status") or ""),
                         "status": "scheduled_reassessment_delivery_contained"}
-            return result
+            return {**result, "daily_presentation_status": str(daily.get("status") or ""),
+                    "daily_presentation_identity": str(daily.get("daily_identity") or ""),
+                    "telegram_sends": int(daily.get("telegram_sends") or 0)
+                        + int(result.get("telegram_sends") or 0)}
         scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=schedule_store,
                                          now=scheduler_now)
         return scheduled, 200 if scheduled.get("success") else 202

@@ -342,3 +342,4 @@ autonomous authority.
 - Keep Mum and Dad unconfigured until Charl supplies each exact Telegram identity and confirms an individual role/permission preview.
 - Integrate `modules/oom_sakkie/family_access.py` through the existing authenticated gateway and lifecycle only in a Control Tower production window; follow `docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md`.
 - Require exact-head review/CI and the identity/privacy/replay production proof. Do not infer access from display names or Afrikaans.
+- Integrate the reconciled family contract and daily ROOTLINE presentation in the assigned serialized window. Keep Mum and Dad unconfigured; prove Charl's owner route, one fresh daily plan, and unchanged scheduler silence before release.
