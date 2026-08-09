@@ -17,6 +17,7 @@ from modules.oom_sakkie.gateway_authority import (
 )
 from modules.oom_sakkie.rootline_commissioning_adapter import accept_supervised_commissioning_presence
 from modules.oom_sakkie.rootline_operational_adapter import dispatch_rootline_operation, persist_rootline_observations
+from modules.oom_sakkie.rootline_fertilizer_commissioning_adapter import assess_fertilizer_commissioning_reply
 
 CONTRACT_VERSION = "oom_sakkie_operational_specialist_intake_v1"
 ROOTLINE_PRESENCE_MAX_AGE_SECONDS = 300
@@ -40,6 +41,8 @@ def handle_operational_specialist_message(
     rootline_dispatcher: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = accept_supervised_commissioning_presence,
     rootline_operations_dispatcher: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = dispatch_rootline_operation,
     rootline_observation_writer: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    pending_specialist_loader=None,
+    contextual_specialist_dispatcher=None,
     operation_store=None,
 ) -> tuple[dict[str, Any], int]:
     text = str((parsed or {}).get("text") or "").strip()
@@ -48,6 +51,21 @@ def handle_operational_specialist_message(
     semantic_rootline_observation = (semantic.get("domain") == "rootline"
         and semantic.get("message_kind") in {"observation", "correction"}
         and not semantic.get("needs_clarification"))
+    pending = _pending_specialist_context(
+        parsed, pending_specialist_loader or _load_pending_specialist_context)
+    if pending and pending.get("binding_error"):
+        result = _contained(parsed, "pending_specialist_context_ambiguous",
+                            (now or datetime.now(timezone.utc)).astimezone(timezone.utc))
+        result.update({"success": True, "status": "waiting_for_input",
+            "answer": ("<b>OOM SAKKIE — ONE DETAIL NEEDED</b>\n\n"
+                       "I could not safely bind this reply to one current ROOTLINE setup. Which current setup are you confirming?"),
+            "question_count": 1})
+        return result, 200
+    if pending:
+        return _handle_contextual_specialist_followup(
+            parsed, gateway_authority, pending,
+            contextual_specialist_dispatcher or assess_fertilizer_commissioning_reply,
+            now, operation_store or _operation_event_store)
     legacy_rootline_observation = not semantic_present and _ROOTLINE_OPERATIONAL.search(text)
     if (semantic_rootline_observation or legacy_rootline_observation) and not _ROOTLINE_PRESENCE.search(text):
         return _handle_rootline_operation(parsed, gateway_authority, rootline_operations_dispatcher,
@@ -290,6 +308,199 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         _apply_write_truth(result, observation_result, write_truth)
         return result, 503
     return outcome, 200
+
+
+def _pending_specialist_context(parsed, loader):
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
+    domain = str(semantic.get("domain") or "").lower()
+    continuation = semantic.get("continuation") is True
+    intent = str(semantic.get("intent") or "").lower()
+    message_kind = str(semantic.get("message_kind") or "").lower()
+    if domain != "rootline" or not (continuation or message_kind == "confirmation"
+            or intent in {"status_update", "commissioning_ready", "availability_confirmation"}):
+        return None
+    try:
+        candidates = list(loader(parsed) or ())
+    except Exception:
+        return {"binding_error": "context_unavailable"}
+    matches = [item for item in candidates
+        if str(item.get("specialist_identity") or "").upper() == "ROOTLINE"
+        and str(item.get("task_state") or "") == "waiting_for_input"
+        and str(item.get("owner_user_id") or "") == str(parsed.get("telegram_user_id") or "")
+        and str(item.get("chat_id") or "") == str(parsed.get("telegram_chat_id") or "")
+        and str(item.get("contextual_task_kind") or item.get("semantic_intent") or "")
+            == "fertilizer_commissioning"]
+    reply_to = str(parsed.get("reply_to_message_id") or "")
+    if reply_to:
+        exact = [item for item in matches
+                 if str(item.get("telegram_message_id") or "") == reply_to]
+        return exact[0] if len(exact) == 1 else {"binding_error": "reply_identity_mismatch"}
+    if len(matches) == 1:
+        return matches[0]
+    return {"binding_error": "several_pending_contexts"} if len(matches) > 1 else None
+
+
+def _handle_contextual_specialist_followup(parsed, gateway_authority, pending, dispatcher, now, store):
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    provider_id = str(parsed.get("provider_message_id") or "").strip()
+    provider_at = _time(parsed.get("provider_timestamp"))
+    bound = bind_gateway_owner_authority(gateway_authority, ROOTLINE_READ_ONLY_TOOL)
+    if (not provider_id or provider_at is None or not validates_rootline_gateway_authority(bound)
+            or bound.owner_user_id != str(parsed.get("telegram_user_id") or "")
+            or bound.private_chat_id != str(parsed.get("telegram_chat_id") or "")):
+        return _contained(parsed, "operational_specialist_auth_or_chronology_invalid", now), 409
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
+    required_confirmations = tuple(pending.get("required_owner_confirmations") or ())
+    prompt_sha = str(pending.get("confirmation_prompt_sha256") or "")
+    parent_text_sha = str(pending.get("text_sha256") or "")
+    confirmation_facts = semantic.get("confirmation_facts")
+    exact_setup_confirmation = (
+        str(semantic.get("message_kind") or "").lower() == "confirmation"
+        and required_confirmations == ("interlock_off", "no_enabled_scene")
+        and len(prompt_sha) == 64 and prompt_sha == parent_text_sha
+        and isinstance(confirmation_facts, Mapping)
+        and confirmation_facts.get("interlock_off") is True
+        and confirmation_facts.get("no_enabled_scene") is True)
+    context = {
+        "contract_version": "oom_sakkie_contextual_specialist_followup_v1",
+        "mission_id": str(pending.get("mission_id") or ""),
+        "card_mission_id": str(pending.get("card_mission_id") or ""),
+        "specialist_identity": "ROOTLINE",
+        "owner_user_id": str(parsed.get("telegram_user_id") or ""),
+        "chat_id": str(parsed.get("telegram_chat_id") or ""),
+        "provider_message_id": provider_id,
+        "provider_timestamp": provider_at.isoformat(),
+        "parent_telegram_message_id": str(pending.get("telegram_message_id") or ""),
+        "parent_provider_timestamp": str(pending.get("delivery_provider_timestamp") or ""),
+        "contextual_task_kind": str(pending.get("contextual_task_kind")
+                                    or pending.get("semantic_intent") or ""),
+        "required_owner_confirmations": list(required_confirmations),
+        "owner_confirmation_facts": dict(confirmation_facts or {}),
+        "confirmation_prompt_sha256": prompt_sha,
+        "owner_confirmed_requested_setup": exact_setup_confirmation,
+        "language": str(semantic.get("language") or "unknown"),
+        "text_sha256": hashlib.sha256(str(parsed.get("text") or "").encode("utf-8")).hexdigest(),
+        "authority": {"readback": True, "configuration_write": False,
+                      "hardware_control": False, "telegram_send": False},
+    }
+    if not context["mission_id"] or not context["card_mission_id"]:
+        return _contained(parsed, "pending_specialist_context_invalid", now), 409
+    parent_at = _time(context["parent_provider_timestamp"])
+    if parent_at is None or not (0 <= (provider_at - parent_at).total_seconds() <= 6 * 60 * 60):
+        return _contained(parsed, "pending_specialist_chronology_invalid", now), 409
+    context_identity = _digest(context)[:20].upper()
+    try:
+        prior = list(store("load", context["mission_id"], None) or ())
+    except Exception:
+        return _contained(parsed, "contextual_specialist_persistence_unavailable", now), 503
+    completed = next((row for row in reversed(prior)
+                      if row.get("state") in {"contextual_followup_completed",
+                                              "contextual_followup_contained"}
+                      and row.get("context") == context), None)
+    if completed:
+        return {**dict(completed.get("outcome") or {}), "handled": True,
+            "status": "contextual_specialist_replay_suppressed",
+            "replay_suppressed": True, **ZERO_AUTHORITY}, 200
+    claim_id = context["mission_id"] + "-CONTEXT-" + context_identity
+    try:
+        claim = store("record", claim_id, {"event_id": claim_id,
+            "mission_id": context["mission_id"], "state": "contextual_followup_claimed",
+            "context": context})
+    except Exception:
+        return _contained(parsed, "contextual_specialist_persistence_unavailable", now), 503
+    if claim.get("success") is not True or claim.get("created") is not True:
+        return _contained(parsed, "contextual_specialist_in_progress", now), 202
+    try:
+        result = dict(dispatcher(context, now=now) or {})
+    except Exception:
+        result = {}
+    expected_authority = {"configuration_write": False, "hardware_control": False,
+                          "farm_write": False, "telegram_send": False}
+    if (result.get("contract_version") != "rootline_fertilizer_commissioning_followup_v1"
+            or result.get("authority") != expected_authority
+            or type(result.get("hardware_commands")) is not int
+            or result.get("hardware_commands") != 0
+            or result.get("provider_control_calls") != 0
+            or result.get("writes_farm_data") is not False):
+        contained = _contained(parsed, "contextual_specialist_result_invalid", now)
+        contained.update({"mission_id": context["mission_id"],
+            "card_mission_id": context["card_mission_id"],
+            "answer": ("<b>FERTILIZER CHECK CONTAINED</b>\n\n"
+                       "I linked your reply to the existing fertilizer check, but safe controller readback was not proven. "
+                       "No setting or output was changed.")})
+        terminal = _record_contextual_terminal(store, claim_id, context, contained, "contained")
+        return (terminal if terminal is not None else contained), 503
+    outcome = {**result, "handled": True, "specialist_identity": "ROOTLINE",
+        "mission_id": context["mission_id"], "card_mission_id": context["card_mission_id"],
+        "provider_message_id": provider_id, "provider_timestamp": provider_at.isoformat(),
+        "contextual_task_kind": context["contextual_task_kind"], **ZERO_AUTHORITY}
+    complete_id = claim_id + "-COMPLETED"
+    try:
+        recorded = store("record", complete_id, {"event_id": complete_id,
+            "mission_id": context["mission_id"], "state": "contextual_followup_completed",
+            "context": context, "outcome": outcome})
+    except Exception:
+        return _contained(parsed, "contextual_specialist_persistence_unavailable", now), 503
+    if recorded.get("success") is not True or recorded.get("created") is not True:
+        return _contained(parsed, "contextual_specialist_persistence_unavailable", now), 503
+    return outcome, 200
+
+
+def _record_contextual_terminal(store, claim_id, context, outcome, state):
+    identity = claim_id + "-" + state.upper()
+    try:
+        recorded = store("record", identity, {"event_id": identity,
+            "mission_id": context["mission_id"], "state": "contextual_followup_" + state,
+            "context": context, "outcome": outcome})
+    except Exception:
+        return None
+    return outcome if recorded.get("success") is True else None
+
+
+def _load_pending_specialist_context(parsed):
+    import psycopg
+    owner = str(parsed.get("telegram_user_id") or "")
+    chat = str(parsed.get("telegram_chat_id") or "")
+    observed = _time(parsed.get("provider_timestamp"))
+    if not owner or not chat or observed is None:
+        return []
+    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            cursor.execute("""select review_json->'family_message_lifecycle'
+                from public.sam_live_stock_conversation_review_events
+                where event_source='oom_sakkie_family_message_lifecycle'
+                  and review_json->'family_message_lifecycle'->>'owner_user_id'=%s
+                  and review_json->'family_message_lifecycle'->>'chat_id'=%s
+                  and created_at > %s::timestamptz-interval '6 hours'
+                  and created_at <= %s::timestamptz
+                order by created_at,review_event_id""",
+                (owner, chat, observed.isoformat(), observed.isoformat()))
+            rows = [row[0] for row in cursor.fetchall()]
+    histories = {}
+    for item in rows:
+        card = str(item.get("card_mission_id") or "")
+        if card:
+            histories.setdefault(card, []).append(item)
+    latest = []
+    for history in histories.values():
+        current = dict(history[-1])
+        delivered = next((item for item in reversed(history)
+                          if str(item.get("delivery_provider_timestamp") or "")), {})
+        original = history[0]
+        current["delivery_provider_timestamp"] = delivered.get("delivery_provider_timestamp")
+        current["telegram_message_id"] = current.get("telegram_message_id") or delivered.get("telegram_message_id")
+        current["contextual_task_kind"] = current.get("contextual_task_kind") or original.get("semantic_intent")
+        current["required_owner_confirmations"] = (current.get("required_owner_confirmations")
+            or original.get("required_owner_confirmations") or [])
+        current["confirmation_prompt_sha256"] = (current.get("confirmation_prompt_sha256")
+            or original.get("confirmation_prompt_sha256") or "")
+        delivered_at = _time(current.get("delivery_provider_timestamp"))
+        if delivered_at is not None and 0 <= (observed - delivered_at).total_seconds() <= 6 * 60 * 60:
+            latest.append(current)
+    return [item for item in latest
+            if item.get("state") in {"delivered", "updated"}
+            and item.get("task_state") == "waiting_for_input"]
 
 
 def _canonical_write_truth(observation_result):

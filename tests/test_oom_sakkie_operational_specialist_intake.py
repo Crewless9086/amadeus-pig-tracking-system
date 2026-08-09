@@ -151,6 +151,205 @@ def test_ambiguous_tank_observation_asks_no_writer_or_dispatcher():
     assert status==200 and value["handled"] is False
 
 
+@pytest.mark.parametrize("text,language", [
+    ("Done; at fertilizer valves now", "en"),
+    ("Klaar; ek is nou by die kunsmiskleppe", "af"),
+    ("Done, ek is nou by die fertilizer valves", "mixed"),
+])
+def test_contextual_commissioning_reply_binds_existing_specialist_before_observation(text, language):
+    item={**operational(text),"provider_message_id":"3481","semantic":{
+        "domain":"rootline","intent":"status_update","message_kind":"observation",
+        "continuation":True,"observation":"True","observation_facts":[],
+        "language":language,"needs_clarification":False}}
+    pending=lambda _:[{"mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "card_mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "owner_user_id":"42","chat_id":"42",
+        "specialist_identity":"ROOTLINE","task_state":"waiting_for_input",
+        "telegram_message_id":"3480","delivery_provider_timestamp":NOW.isoformat(),
+        "semantic_intent":"fertilizer_commissioning"}]
+    calls=[]
+    def followup(context,now=None):
+        calls.append(context)
+        return {"success":True,"contract_version":"rootline_fertilizer_commissioning_followup_v1",
+            "status":"waiting_for_input","answer":"Exact controller conflict",
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False},
+            "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=pending,contextual_specialist_dispatcher=followup,
+        rootline_observation_writer=lambda *_:pytest.fail("context reply must not enter observation writer"))
+    assert status==200 and value["mission_id"]=="OOM-ROOTLINE-FERTILIZER-CONFIG-20260809"
+    assert value["card_mission_id"]=="OOM-ROOTLINE-FERTILIZER-CONFIG-20260809"
+    assert value["hardware_commands"]==0 and len(calls)==1
+
+
+def test_multiple_pending_specialist_questions_do_not_enter_observation_writer():
+    item={**operational("Done; at the valves now"),"semantic":{
+        "domain":"rootline","intent":"status_update","message_kind":"observation",
+        "continuation":True,"observation":"True","observation_facts":[],
+        "needs_clarification":False}}
+    pending=lambda _:[{"mission_id":str(i),"card_mission_id":str(i),"specialist_identity":"ROOTLINE",
+        "owner_user_id":"42","chat_id":"42","contextual_task_kind":"fertilizer_commissioning",
+        "task_state":"waiting_for_input","telegram_message_id":str(i)} for i in (1,2)]
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=pending,
+        rootline_observation_writer=lambda *_:pytest.fail("ambiguous continuation must not write"))
+    assert status==200 and value["status"]=="waiting_for_input"
+    assert value["question_count"]==1 and value["hardware_commands"]==0
+
+
+def test_context_loader_failure_fails_closed_before_observation_writer():
+    item={**operational("Done; at fertilizer valves now"),"semantic":{
+        "domain":"rootline","intent":"status_update","message_kind":"observation",
+        "continuation":True,"observation":"True","observation_facts":[],
+        "needs_clarification":False}}
+    def unavailable(_): raise RuntimeError("database unavailable")
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=unavailable,
+        rootline_observation_writer=lambda *_:pytest.fail("lookup failure must not become observation"))
+    assert status==200 and value["status"]=="waiting_for_input"
+    assert value["hardware_commands"]==0 and value["writes_farm_data"] is False
+
+
+def test_reply_identity_mismatch_fails_closed_before_observation_writer():
+    item={**operational("Done; at fertilizer valves now"),"reply_to_message_id":"9999","semantic":{
+        "domain":"rootline","intent":"status_update","message_kind":"confirmation",
+        "continuation":True,"observation":"False","observation_facts":[],
+        "needs_clarification":False}}
+    pending=lambda _:[{"mission_id":"FERTILIZER-1","card_mission_id":"FERTILIZER-1",
+        "owner_user_id":"42","chat_id":"42",
+        "specialist_identity":"ROOTLINE","task_state":"waiting_for_input",
+        "telegram_message_id":"3480","delivery_provider_timestamp":NOW.isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning"}]
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=pending,
+        rootline_observation_writer=lambda *_:pytest.fail("reply mismatch must not become observation"))
+    assert status==200 and value["status"]=="waiting_for_input"
+
+
+def test_contextual_followup_replay_uses_durable_result_without_second_readback():
+    item={**operational("Done; at fertilizer valves now"),"provider_message_id":"3481","semantic":{
+        "domain":"rootline","intent":"status_update","message_kind":"confirmation",
+        "continuation":True,"observation":"False","observation_facts":[],
+        "language":"en","needs_clarification":False}}
+    pending=lambda _:[{"mission_id":"FERTILIZER-1","card_mission_id":"FERTILIZER-1",
+        "owner_user_id":"42","chat_id":"42",
+        "specialist_identity":"ROOTLINE","task_state":"waiting_for_input",
+        "telegram_message_id":"3480","delivery_provider_timestamp":NOW.isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning"}]
+    calls=[]
+    def followup(context,now=None):
+        calls.append(context)
+        return {"success":True,"contract_version":"rootline_fertilizer_commissioning_followup_v1",
+            "status":"waiting_for_input","answer":"CH2 remains off",
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False},
+            "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+    authority=issue_gateway_owner_authority("42","42")
+    first,first_status=handle_operational_specialist_message(item,authority,now=NOW,
+        pending_specialist_loader=pending,contextual_specialist_dispatcher=followup)
+    second,second_status=handle_operational_specialist_message(item,authority,now=NOW,
+        pending_specialist_loader=pending,contextual_specialist_dispatcher=followup)
+    assert first_status==second_status==200 and len(calls)==1
+    assert second["status"]=="contextual_specialist_replay_suppressed"
+    assert second["hardware_commands"]==0
+
+
+def test_presence_only_does_not_become_structured_configuration_confirmation():
+    item={**operational("I am at the fertilizer valves"),"semantic":{
+        "domain":"rootline","intent":"status_update","message_kind":"observation",
+        "continuation":True,"language":"en","needs_clarification":False}}
+    pending=lambda _:[{"mission_id":"FERTILIZER-1","card_mission_id":"FERTILIZER-1",
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+        "task_state":"waiting_for_input","telegram_message_id":"3480",
+        "delivery_provider_timestamp":NOW.isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning",
+        "required_owner_confirmations":["interlock_off","no_enabled_scene"],
+        "confirmation_prompt_sha256":"a"*64,"text_sha256":"a"*64}]
+    captured=[]
+    def followup(context,now=None):
+        captured.append(context)
+        return {"success":True,"contract_version":"rootline_fertilizer_commissioning_followup_v1",
+            "status":"waiting_for_input","answer":"Setup evidence still needed",
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False},
+            "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=pending,contextual_specialist_dispatcher=followup)
+    assert status==200 and captured[0]["owner_confirmed_requested_setup"] is False
+    assert value["hardware_commands"]==0
+
+
+@pytest.mark.parametrize("text,language", [
+    ("No, Interlock is still on and a Scene is enabled", "en"),
+    ("Nee, Interlock is nog aan en 'n Scene is aktief", "af"),
+])
+def test_negative_configuration_confirmation_never_becomes_setup_proof(text,language):
+    item={**operational(text),"semantic":{
+        "domain":"rootline","intent":"commissioning_ready","message_kind":"confirmation",
+        "continuation":True,"language":language,"needs_clarification":False,
+        "confirmation_facts":{"interlock_off":False,"no_enabled_scene":False}}}
+    pending=lambda _:[{"mission_id":"FERTILIZER-1","card_mission_id":"FERTILIZER-1",
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+        "task_state":"waiting_for_input","telegram_message_id":"3480",
+        "delivery_provider_timestamp":NOW.isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning",
+        "required_owner_confirmations":["interlock_off","no_enabled_scene"],
+        "confirmation_prompt_sha256":"a"*64,"text_sha256":"a"*64}]
+    captured=[]
+    def followup(context,now=None):
+        captured.append(context)
+        return {"success":True,"contract_version":"rootline_fertilizer_commissioning_followup_v1",
+            "status":"waiting_for_input","answer":"Unsafe settings remain",
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False},
+            "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=pending,contextual_specialist_dispatcher=followup)
+    assert status==200 and captured[0]["owner_confirmed_requested_setup"] is False
+    assert captured[0]["owner_confirmation_facts"]=={
+        "interlock_off":False,"no_enabled_scene":False}
+    assert value["hardware_commands"]==0
+
+
+def test_invalid_dispatch_result_is_terminal_and_replay_does_not_dispatch_again():
+    item={**operational("Done; at fertilizer valves now"),"semantic":{
+        "domain":"rootline","intent":"commissioning_ready","message_kind":"confirmation",
+        "continuation":True,"language":"en","needs_clarification":False}}
+    pending=lambda _:[{"mission_id":"FERTILIZER-1","card_mission_id":"FERTILIZER-1",
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+        "task_state":"waiting_for_input","telegram_message_id":"3480",
+        "delivery_provider_timestamp":NOW.isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning"}]
+    calls=[]
+    def invalid(*args,**kwargs): calls.append(1); return {}
+    authority=issue_gateway_owner_authority("42","42")
+    first,first_status=handle_operational_specialist_message(item,authority,now=NOW,
+        pending_specialist_loader=pending,contextual_specialist_dispatcher=invalid)
+    second,second_status=handle_operational_specialist_message(item,authority,now=NOW,
+        pending_specialist_loader=pending,contextual_specialist_dispatcher=invalid)
+    assert first_status==503 and second_status==200 and len(calls)==1
+    assert second["replay_suppressed"] is True and second["hardware_commands"]==0
+
+
+@pytest.mark.parametrize("parent_at", [None, NOW+timedelta(seconds=1), NOW-timedelta(hours=7)])
+def test_invalid_parent_provider_chronology_fails_closed(parent_at):
+    item={**operational("Done; at fertilizer valves now"),"semantic":{
+        "domain":"rootline","intent":"status_update","message_kind":"confirmation",
+        "continuation":True,"needs_clarification":False}}
+    pending=lambda _:[{"mission_id":"FERTILIZER-1","card_mission_id":"FERTILIZER-1",
+        "owner_user_id":"42","chat_id":"42",
+        "specialist_identity":"ROOTLINE","task_state":"waiting_for_input",
+        "telegram_message_id":"3480",
+        "delivery_provider_timestamp":parent_at.isoformat() if parent_at else None,
+        "contextual_task_kind":"fertilizer_commissioning"}]
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=pending,
+        contextual_specialist_dispatcher=lambda *_:pytest.fail("invalid chronology must not dispatch"))
+    assert status==409 and value["status"]=="contained"
+    assert value["systemic_exception"]=="pending_specialist_chronology_invalid"
+
+
 def test_recoverable_zero_write_containment_advances_same_mission_once():
     item={**operational("Storage tanks and Reservoir is full"),"semantic":{"domain":"rootline",
         "intent":"water_levels_observed","message_kind":"observation","observation":"Both are full.",

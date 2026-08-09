@@ -68,9 +68,12 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
 
     payload = _event(parsed, mission_id, card_mission_id, specialist,
                      str(result.get("status") or "working"), text_sha)
-    for key in ("execution_id", "entity_id", "domain"):
+    for key in ("execution_id", "entity_id", "domain", "contextual_task_kind",
+                "confirmation_prompt_sha256"):
         if str(result.get(key) or "").strip():
             payload[key] = str(result.get(key))
+    if isinstance(result.get("required_owner_confirmations"), (list, tuple)):
+        payload["required_owner_confirmations"] = list(result["required_owner_confirmations"])
     if card_id:
         update_id = card_mission_id + "-UPDATE-" + text_sha[:20].upper()
         claimed = store("record", update_id, {**payload, "event_id": update_id,
