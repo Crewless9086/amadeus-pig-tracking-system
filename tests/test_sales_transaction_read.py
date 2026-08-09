@@ -132,14 +132,21 @@ class SalesTransactionReadTests(unittest.TestCase):
             ("net_total",),
             ("lot_total",),
             ("received_total",),
+            ("output_vat",),
+            ("gross_including_vat",),
+            ("commission_ex_vat",),
+            ("commission_input_vat",),
+            ("commission_including_vat",),
+            ("other_deductions",),
+            ("net_settlement_payable",),
             ("gross_unknown_count",),
             ("net_unknown_count",),
             ("received_unknown_count",),
             ("item_count",),
         ]
         cursor.fetchall.return_value = [
-            ("Slaughter", 1, 1, Decimal("2500.00"), Decimal("2400.00"), Decimal("2500.00"), Decimal("2400.00"), 0, 0, 0, 1),
-            ("Livestock", 2, 5, Decimal("5000.00"), Decimal("5000.00"), Decimal("9470.51"), Decimal("4470.51"), 0, 0, 0, 5),
+            ("Slaughter", 1, 1, Decimal("2500.00"), Decimal("2400.00"), Decimal("2500.00"), Decimal("2400.00"), Decimal("0"), Decimal("2500"), Decimal("100"), Decimal("15"), Decimal("115"), Decimal("0"), Decimal("2400"), 0, 0, 0, 1),
+            ("Livestock", 2, 5, Decimal("5000.00"), Decimal("5000.00"), Decimal("9470.51"), Decimal("4470.51"), Decimal("627"), Decimal("7307"), Decimal("292.60"), Decimal("43.89"), Decimal("336.49"), Decimal("0"), Decimal("4470.51"), 0, 0, 0, 5),
         ]
         cursor_context = Mock()
         cursor_context.__enter__ = Mock(return_value=cursor)
@@ -165,6 +172,9 @@ class SalesTransactionReadTests(unittest.TestCase):
         self.assertEqual(result["totals"]["net_total"], 7400.0)
         self.assertEqual(result["totals"]["lot_total"], 11970.51)
         self.assertEqual(result["totals"]["received_total"], 6870.51)
+        self.assertEqual(result["totals"]["output_vat"], 627.0)
+        self.assertEqual(result["totals"]["commission_including_vat"], 451.49)
+        self.assertEqual(result["totals"]["net_settlement_payable"], 6870.51)
         cursor.execute.assert_called_once()
 
 

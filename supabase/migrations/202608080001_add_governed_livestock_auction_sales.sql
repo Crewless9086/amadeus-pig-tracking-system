@@ -3,6 +3,14 @@ alter table public.sales_transactions add column if not exists sale_channel text
 alter table public.sales_transactions add column if not exists lot_total numeric(12,2);
 alter table public.sales_transactions add column if not exists financial_interpretation text;
 alter table public.sales_transactions add column if not exists received_total numeric(12,2);
+alter table public.sales_transactions add column if not exists output_vat numeric(12,2);
+alter table public.sales_transactions add column if not exists gross_including_vat numeric(12,2);
+alter table public.sales_transactions add column if not exists commission_ex_vat numeric(12,2);
+alter table public.sales_transactions add column if not exists commission_input_vat numeric(12,2);
+alter table public.sales_transactions add column if not exists commission_including_vat numeric(12,2);
+alter table public.sales_transactions add column if not exists other_deductions numeric(12,2);
+alter table public.sales_transactions add column if not exists net_settlement_payable numeric(12,2);
+alter table public.sales_transactions add column if not exists payment_received_evidence_json jsonb;
 alter table public.sales_transactions add column if not exists external_reference text;
 alter table public.sales_transactions add column if not exists evidence_json jsonb not null default '{}'::jsonb;
 alter table public.sales_transactions add column if not exists operation_id text;
@@ -14,11 +22,21 @@ alter table public.sales_transactions add constraint sales_transactions_payment_
 alter table public.sales_transactions drop constraint if exists sales_transactions_channel_check;
 alter table public.sales_transactions add constraint sales_transactions_channel_check check(sale_channel is null or (sale_stream='Livestock' and sale_channel='Auction'));
 alter table public.sales_transactions drop constraint if exists sales_transactions_financial_interpretation_check;
-alter table public.sales_transactions add constraint sales_transactions_financial_interpretation_check check(financial_interpretation is null or financial_interpretation in ('gross_proceeds','net_proceeds','money_received','unknown'));
+alter table public.sales_transactions add constraint sales_transactions_financial_interpretation_check check(financial_interpretation is null or financial_interpretation in ('gross_proceeds','net_proceeds','money_received','seller_settlement_payable','unknown'));
 alter table public.sales_transactions drop constraint if exists sales_transactions_auction_lot_check;
 alter table public.sales_transactions add constraint sales_transactions_auction_lot_check check(sale_channel is distinct from 'Auction' or (lot_total is not null and pig_count>0 and operation_id is not null and confirmed_preview_hash is not null));
+alter table public.sales_transactions drop constraint if exists sales_transactions_auction_invoice_arithmetic_check;
+alter table public.sales_transactions add constraint sales_transactions_auction_invoice_arithmetic_check check(
+  sale_channel is distinct from 'Auction' or (
+    gross_total + output_vat = gross_including_vat and
+    commission_ex_vat + commission_input_vat = commission_including_vat and
+    gross_including_vat - commission_including_vat - other_deductions = net_settlement_payable and
+    (received_total is null or received_total <= net_settlement_payable)
+  )
+);
 create unique index if not exists uq_sales_transactions_operation_id on public.sales_transactions(operation_id) where operation_id is not null;
 create unique index if not exists uq_sales_transactions_auction_reference on public.sales_transactions(destination,external_reference) where sale_channel='Auction' and external_reference is not null;
+create unique index if not exists uq_sales_transactions_auction_invoice_reference on public.sales_transactions(external_reference) where sale_channel='Auction' and external_reference is not null;
 create or replace function app_private.guard_reserved_pig_current_state() returns trigger language plpgsql as $$
 declare v_status text; v_on_farm boolean;
 begin
