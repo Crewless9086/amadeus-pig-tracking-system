@@ -398,7 +398,8 @@ def _same_source_context(left, right):
     if not isinstance(left, Mapping) or not isinstance(right, Mapping):
         return False
     keys = set(left) | set(right)
-    return all(left.get(key) == right.get(key) for key in keys if key != "observations")
+    volatile_semantic = {"observations", "semantic_observation", "semantic_intent"}
+    return all(left.get(key) == right.get(key) for key in keys if key not in volatile_semantic)
 
 
 def _time(value):
