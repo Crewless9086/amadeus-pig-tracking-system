@@ -180,38 +180,20 @@ class WaterEnergyPlanTests(unittest.TestCase):
         plan = self.build()
         self.assertEqual(self.task(plan, "irrigation_C12345")["recommendation"], "Hold")
 
-    def test_fertilizer_preflow_spacing_flush_and_maximum(self):
-        insufficient = self.build(irrigation={
-            "zones": [], "active_zone": "C12345",
-            "active_zone_observed_minutes": 9,
-            "minutes_since_last_injection": 20,
-            "clean_water_flush_supported": True,
-        })
-        injection = self.task(insufficient, "fertilizer_injection_ch1")
-        self.assertEqual(injection["recommendation"], "Hold")
-        self.assertEqual(injection["maximum_duration_seconds"], 60)
-
-        no_spacing = self.build(irrigation={
-            "zones": [], "active_zone": "C12345",
-            "active_zone_observed_minutes": 12,
-            "minutes_since_last_injection": 5,
-            "clean_water_flush_supported": True,
-        })
-        self.assertEqual(self.task(no_spacing, "fertilizer_injection_ch1")["recommendation"], "Hold")
-
-        no_flush = self.build(irrigation={
-            "zones": [], "active_zone": "C12345",
-            "active_zone_observed_minutes": 12,
-            "minutes_since_last_injection": 12,
-            "clean_water_flush_supported": False,
-        })
-        self.assertEqual(self.task(no_flush, "fertilizer_injection_ch1")["recommendation"], "Hold")
+    def test_fertilizer_is_typed_only_as_auxiliary_work(self):
+        plan=self.build()
+        self.assertFalse(any("fertilizer" in row["task_id"]
+                             for row in plan["candidate_tasks"]))
+        self.assertEqual(plan["irrigation_auxiliary_devices"],
+                         ["FERTILIZER-INJECTION-CH1","FERTILIZER-MIXER-CH2"])
+        self.assertEqual({row["device_type"] for row in plan["irrigation_auxiliary_tasks"]},
+                         {"fertilizer_injection_valve","fertilizer_mixer"})
 
     def test_unused_channels_and_unproven_binding(self):
         fertilizer = OPERATING_KNOWLEDGE["fertilizer"]
         self.assertEqual(fertilizer["channels"]["3"], "unused")
         self.assertEqual(fertilizer["channels"]["4"], "unused")
-        self.assertEqual(fertilizer["relay_api_mapping"], "Unknown")
+        self.assertEqual(fertilizer["maximum_injection_pulse_seconds"], 120)
         self.assertFalse(fertilizer["supervised_identity_proven"])
 
     def test_stale_manual_observation(self):

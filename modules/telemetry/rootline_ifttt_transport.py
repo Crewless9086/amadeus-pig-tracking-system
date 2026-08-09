@@ -1,14 +1,15 @@
-"""Least-privilege state-setting transport for commissioned B/C irrigation.
+"""Least-privilege state-setting transport for registered ROOTLINE devices.
 
-The adapter owns no eligibility or scheduling.  It accepts only the two
-commissioned channels, obtains safety/output truth from eWeLink, and sends a
-single IFTTT event for each caller-owned idempotency identity.
+The adapter owns no eligibility or scheduling. It obtains safety/output truth
+from eWeLink and emits the registry-bound event for a caller-owned idempotency
+identity. Auxiliary authority remains independently disabled by default.
 """
 from __future__ import annotations
 
 import json
 import os
 from urllib import parse as urllib_parse, request as urllib_request
+from modules.telemetry.rootline_device_registry import find_device_contract
 
 DEVICE_ID = "100204e9bc"
 EVENTS = {
@@ -29,11 +30,15 @@ class RootlineIFTTTTransport:
         self.readback = readback
 
     def read_safety_configuration(self, *, device_id, channel):
+        contract = self._binding(device_id, channel)
         snapshot = self._snapshot(device_id, channel)
         row = self._channel(snapshot, channel)
         return {
             "authoritative": snapshot.get("actuation_configuration_safe") is True,
-            "zone_id": "B12345" if channel == 1 else "C12345",
+            "zone_id": contract["identity"] if contract["collection"] == "irrigation_zones" else None,
+            "auxiliary_device_id": (contract["identity"]
+                if contract["collection"] == "irrigation_auxiliary_devices" else None),
+            "device_type": contract["device_type"],
             "channel": channel,
             "native_inching_enabled": row.get("native_auto_off_enabled"),
             "native_inching_seconds": row.get("native_auto_off_seconds"),
@@ -54,15 +59,18 @@ class RootlineIFTTTTransport:
                 "retrieved_at": snapshot.get("retrieved_at")}
 
     def set_state(self, *, device_id, channel, state, idempotency_key):
-        self._binding(device_id, channel)
+        contract = self._binding(device_id, channel)
         state = str(state or "").upper()
-        event = EVENTS.get((channel, state))
+        if (contract["collection"] == "irrigation_auxiliary_devices"
+                and str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"):
+            return {"accepted_unambiguous": False, "status": "auxiliary_authority_disabled"}
+        event = contract.get("on_event" if state == "ON" else "off_event" if state == "OFF" else "")
         secret = str(self.environ.get("ROOTLINE_IFTTT_MAKER_KEY") or "").strip()
         if not event or not secret or not str(idempotency_key or "").strip():
             return {"accepted_unambiguous": False, "status": "transport_not_configured"}
         url = "https://maker.ifttt.com/trigger/{}/with/key/{}".format(
             event, urllib_parse.quote(secret, safe=""))
-        body = json.dumps({"value1": str(idempotency_key), "value2": DEVICE_ID,
+        body = json.dumps({"value1": str(idempotency_key), "value2": device_id,
                            "value3": str(channel)}).encode()
         req = urllib_request.Request(url, data=body,
             headers={"Content-Type": "application/json"}, method="POST")
@@ -81,7 +89,7 @@ class RootlineIFTTTTransport:
         value = self.readback(token_store=self.token_store, environ=self.environ)
         rows = value.get("channels") if isinstance(value, dict) else None
         identities = [row.get("channel") for row in rows or () if isinstance(row, dict)]
-        if (not isinstance(value, dict) or value.get("device_id") != DEVICE_ID
+        if (not isinstance(value, dict) or value.get("device_id") != device_id
                 or len(rows or ()) != 4 or sorted(identities) != [1, 2, 3, 4]
                 or value.get("provider_control_calls") != 0):
             raise RuntimeError("ewelink_safety_readback_invalid")
@@ -93,5 +101,7 @@ class RootlineIFTTTTransport:
 
     @staticmethod
     def _binding(device_id, channel):
-        if device_id != DEVICE_ID or channel not in (1, 2):
-            raise ValueError("rootline_bc_transport_binding_invalid")
+        try:
+            return find_device_contract(device_id, channel)
+        except (TypeError, ValueError):
+            raise ValueError("rootline_device_transport_binding_invalid")

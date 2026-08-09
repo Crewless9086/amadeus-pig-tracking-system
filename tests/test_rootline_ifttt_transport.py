@@ -82,6 +82,26 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "readback_invalid"):
             bad.read_output_state(device_id="100204e9bc", channel=1)
 
+    def test_fertilizer_events_are_exact_and_separately_disabled_by_default(self):
+        fertilizer=snapshot(device_id="100204d497")
+        fertilizer["channels"][0]["native_auto_off_seconds"]=120
+        fertilizer["channels"][1]["native_auto_off_seconds"]=300
+        disabled,calls=self.transport(fertilizer,environ={"ROOTLINE_IFTTT_MAKER_KEY":"secret"})
+        result=disabled.set_state(device_id="100204d497",channel=1,state="ON",
+            idempotency_key="AUX-1:ON")
+        self.assertEqual(result["status"],"auxiliary_authority_disabled")
+        self.assertEqual(calls,[])
+        enabled,calls=self.transport(fertilizer,environ={"ROOTLINE_IFTTT_MAKER_KEY":"secret",
+            "ROOTLINE_FERTILIZER_INJECTION_ENABLED":"true",
+            "ROOTLINE_FERTILIZER_MIXING_ENABLED":"true"})
+        injection=enabled.set_state(device_id="100204d497",channel=1,state="ON",
+            idempotency_key="AUX-1:ON")
+        mixing=enabled.set_state(device_id="100204d497",channel=2,state="OFF",
+            idempotency_key="AUX-2:OFF")
+        self.assertEqual(injection["event"],"controller_1_ch1_on")
+        self.assertEqual(mixing["event"],"controller_1_ch2_off")
+        self.assertEqual(len(calls),2)
+
 
 if __name__ == "__main__":
     unittest.main()
