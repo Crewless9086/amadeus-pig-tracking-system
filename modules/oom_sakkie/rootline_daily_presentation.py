@@ -79,7 +79,7 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
         return {**_safe("rootline_daily_delivered"), "daily_identity": identity,
             "material_digest": packet["material_digest"], "telegram_sends": int(delivery.get("telegram_sends") or 1),
             "provider_message_id": proof["provider_message_id"], "answer": packet["answer"]}
-    if "ambiguous" in str(delivery.get("status") or ""):
+    if delivery.get("delivery_definitely_not_sent") is not True:
         state_store("mark_ambiguous", identity, {**packet, "delivery_state": "ambiguous"})
         return {**_safe("rootline_daily_delivery_ambiguous", success=False),
                 "daily_identity": identity}

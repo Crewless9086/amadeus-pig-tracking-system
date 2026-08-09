@@ -592,7 +592,8 @@ def _send_owner_task_telegram(chat_id, text, source):
     from modules.sales.sam_live_stock_launch_control import _telegram_api
     token = _owner_task_bot_token(source)
     if not token:
-        return {"success": False, "status": "owner_task_telegram_token_not_configured"}
+        return {"success": False, "status": "owner_task_telegram_token_not_configured",
+                "delivery_definitely_not_sent": True}
     try:
         response = _telegram_api(token, "sendMessage", {
             "chat_id": str(chat_id), "text": str(text), "parse_mode": "HTML",
@@ -607,6 +608,7 @@ def _send_owner_task_telegram(chat_id, text, source):
                           if provider_date is not None else "")
     return {"success": response.get("ok") is True and bool(message_id),
             "status": "owner_task_telegram_delivered" if message_id else "owner_task_telegram_delivery_unconfirmed",
+            "delivery_definitely_not_sent": response.get("ok") is False and not message_id,
             "telegram_message_id": message_id,
             "provider_timestamp": provider_timestamp}
 

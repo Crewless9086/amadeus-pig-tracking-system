@@ -85,7 +85,8 @@ def test_proven_zero_delivery_failure_retries_once_then_is_silent():
     def send(parsed, packet, **kwargs):
         calls.append(1)
         if len(calls) == 1:
-            return {"success": False, "status": "provider_rejected_before_send", "telegram_sends": 0}
+            return {"success": False, "status": "provider_rejected_before_send", "telegram_sends": 0,
+                    "delivery_definitely_not_sent": True}
         return {"success": True, "status": "family_message_delivered",
                 "telegram_message_id": "5002", "telegram_sends": 1}
     first = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
@@ -97,6 +98,22 @@ def test_proven_zero_delivery_failure_retries_once_then_is_silent():
     assert first["status"] == "rootline_daily_delivery_failed_retryable"
     assert second["status"] == "rootline_daily_delivered" and second["telegram_sends"] == 1
     assert replay["status"] == "rootline_daily_replayed_noop" and len(calls) == 2
+
+
+def test_contained_or_unknown_delivery_is_ambiguous_and_never_retried():
+    for first_shape in (
+        {"success": False, "status": "family_message_delivery_contained", "telegram_sends": 0},
+        {"success": False, "status": "unexpected_transport_failure", "telegram_sends": 0},
+    ):
+        rows, state = store(); calls = []; now = datetime(2026, 8, 9, 7, 1, tzinfo=SAST)
+        def send(*args, **kwargs):
+            calls.append(1); return dict(first_shape)
+        first = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+            state_store=state, deliver=send, now=now)
+        replay = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+            state_store=state, deliver=send, now=now)
+        assert first["status"] == replay["status"] == "rootline_daily_delivery_ambiguous"
+        assert len(calls) == 1 and replay["telegram_sends"] == 0
 
 
 def test_started_completed_and_intervention_are_separate_visible_event_words():
