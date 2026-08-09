@@ -35,7 +35,9 @@ from modules.telemetry.rootline_ewelink_oauth_store import (
     PostgresOAuthStateStore,
     PostgresOAuthTokenStore,
 )
-from modules.telemetry.rootline_ewelink_readback import read_current_device
+from modules.telemetry.rootline_ewelink_readback import (
+    read_current_device, read_registered_device,
+)
 from modules.telemetry.irrigation_daily_plan_service import get_current_daily_plan
 from modules.telemetry.irrigation_command_service import (
     approve_plan_only_command,
@@ -113,7 +115,10 @@ def rootline_ewelink_readback():
     if guard:
         return guard
     try:
-        result = read_current_device(token_store=PostgresOAuthTokenStore())
+        requested = str(request.args.get("device_id") or "").strip()
+        result = (read_registered_device(
+            requested, token_store=PostgresOAuthTokenStore())
+            if requested else read_current_device(token_store=PostgresOAuthTokenStore()))
     except OAuthFailure as exc:
         return jsonify({"status": "rejected", "reason": str(exc),
                         "secrets_exposed": False}), 409

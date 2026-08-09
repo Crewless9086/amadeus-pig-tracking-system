@@ -4,7 +4,9 @@ import urllib.parse
 import pytest
 
 from modules.telemetry.rootline_ewelink_oauth import ADAPTER_VERSION, OAuthFailure, _digest, _encrypt, _token_key
-from modules.telemetry.rootline_ewelink_readback import read_current_device
+from modules.telemetry.rootline_ewelink_readback import (
+    read_current_device, read_registered_device,
+)
 
 NOW = datetime(2026, 8, 8, 16, 30, tzinfo=timezone.utc)
 
@@ -71,3 +73,43 @@ def test_disabled_stale_offline_and_missing_interlock_fail_closed():
     result=read_current_device(token_store=Store(), environ=env(), http_request=request, now=NOW)
     assert result["authoritative"] is False
     assert result["actuation_safety_complete"] is False
+
+
+def test_registered_fertilizer_device_uses_anchor_token_for_zero_command_read():
+    fertilizer_params = {
+        "fwVersion": "3.8.2",
+        "switches": [{"outlet": i, "switch": "off"} for i in range(4)],
+        "pulses": [
+            {"outlet": 0, "pulse": "on", "width": 120000},
+            {"outlet": 1, "pulse": "off", "width": 1000},
+            {"outlet": 2, "pulse": "off", "width": 1000},
+            {"outlet": 3, "pulse": "off", "width": 1000},
+        ],
+        "configure": [{"outlet": i, "startup": "off"} for i in range(4)],
+        "timers": [],
+    }
+    things = {"thingList": [
+        {"itemType": 1, "itemData": {"deviceid": "100204e9bc",
+            "apikey": "account", "online": True, "params": {}}},
+        {"itemType": 1, "itemData": {"deviceid": "100204d497",
+            "apikey": "account", "online": True,
+            "updatedAt": NOW.isoformat(), "params": fertilizer_params}},
+    ]}
+    request, calls = provider({"/v2/device/thing": things})
+    result = read_registered_device("100204d497", token_store=Store(),
+        environ=env(), http_request=request, now=NOW)
+    assert result["device_id"] == "100204d497"
+    assert result["channels"][0]["native_auto_off_seconds"] == 120
+    assert result["channels"][1]["native_auto_off_enabled"] is False
+    assert result["registered_discovery_only"] is True
+    assert result["provider_control_calls"] == 0
+    assert calls == [("GET", "/v2/family"), ("GET", "/v2/device/thing"),
+                     ("GET", "/v2/device/thing/status")]
+
+
+def test_unregistered_device_is_rejected_before_provider_or_token_access():
+    class NoAccess:
+        def latest(self):
+            raise AssertionError("token must not be read")
+    with pytest.raises(OAuthFailure, match="registered_device_rejected"):
+        read_registered_device("unregistered", token_store=NoAccess(), environ=env(), now=NOW)
