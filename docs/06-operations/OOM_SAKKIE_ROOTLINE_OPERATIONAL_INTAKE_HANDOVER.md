@@ -63,3 +63,22 @@ creates no row and changed evidence conflicts.
 Operational intake persists and verifies canonical readback before asking
 ROOTLINE to reassess. This grants observation-write authority only; Telegram,
 planning, schedules, ON/OFF and all other hardware authority remain separate.
+
+## 2026-08-09 owner-observation lifecycle correction
+
+Telegram `3477` (`2026-08-09T07:33:06+00:00`) was authenticated as Charl but
+the deployed semantic result carried prose without typed water facts. The
+bridge therefore recorded zero rows and mission
+`OOM-ROOTLINE-63675AC53BB3936B9697CFAD` ended in a recoverable, zero-write
+containment. The generic semantic contract now emits closed, typed storage and
+reservoir facts for natural English, Afrikaans, mixed-language and bounded
+contextual replies. The governed bridge appends each tank as an independent
+identity in one database transaction and proves exact generation readback
+before ROOTLINE receives the evidence.
+
+The original mission can advance only from the exact zero-write bridge failure
+with the same owner, chat, provider message, timestamp, content digest and
+semantic context. A successful continuation becomes terminal and exact replay
+is silent. Ambiguous tank wording remains untyped and can produce only one
+bounded clarification. Presentation renders human reassessment wording and
+never exposes internal triggers, digests or worker states.

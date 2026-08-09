@@ -2,6 +2,16 @@
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
 
+## OOM-SAKKIE-OWNER-OBSERVATION-LIFECYCLE-1
+
+Complete the generic recovery of authenticated Telegram `3477` under its
+existing ROOTLINE mission. Deploy the typed multilingual water-fact contract
+and atomic independent tank observation bridge, then prove storage FULL and
+reservoir FULL as two exact canonical identities with one shared source,
+authoritative readback, one concise acknowledgement, normal ROOTLINE
+consumption, unchanged rain-Hold silence, zero commands and a no-op replay.
+Preserve HERDMASTER #732 and auction #747 unmerged.
+
 ## SAM-LIVESTOCK-MANAGER-SUMMARY-1
 
 PR #727 merged as `ec56263182763dc2475ca6069a3dd26853781441` and deployed as

@@ -19,8 +19,9 @@ def operation_store(monkeypatch):
         events[identity]=dict(payload); return {"success":True,"created":True}
     monkeypatch.setattr(operational_specialist_intake,"_operation_event_store",store)
     monkeypatch.setattr(operational_specialist_intake,"persist_rootline_observations",
-        lambda _context,_authority:{"success":True,"contract_version":"rootline_owner_observation_bridge_v1",
-                         "status":"exact_replay","created":False,"canonical_writes":0})
+        lambda context,_authority:{"success":True,"contract_version":"rootline_owner_observation_bridge_v1",
+                         "status":"exact_replay","created":False,"canonical_writes":0,
+                         "observation_ids":[f"OBS-{index}" for index,_ in enumerate(context["observations"])]})
     return events
 
 def parsed(at=NOW, message="3181"):
@@ -119,6 +120,66 @@ def test_one_water_level_routes_independently_without_demanding_both():
     assert status==200 and len(value["observations"])==1
     assert value["observations"][0]["kind"]=="storage_level"
 
+
+@pytest.mark.parametrize("text,language,facts", [
+    ("Storage tanks and Reservoir is full", "en", [{"subject":"storage_tanks","state":"FULL"},{"subject":"reservoir","state":"FULL"}]),
+    ("Storage and reservoir are full.", "en", [{"subject":"storage_tanks","state":"FULL"},{"subject":"reservoir","state":"FULL"}]),
+    ("Both tanks are full.", "en", [{"subject":"storage_tanks","state":"FULL"},{"subject":"reservoir","state":"FULL"}]),
+    ("Die opgaartenks en reservoir is vol.", "af", [{"subject":"storage_tanks","state":"FULL"},{"subject":"reservoir","state":"FULL"}]),
+    ("Reservoir vol, storage ook vol.", "mixed", [{"subject":"reservoir","state":"FULL"},{"subject":"storage_tanks","state":"FULL"}]),
+    ("Storage 3/4 and reservoir full.", "en", [{"subject":"storage_tanks","numerator":3,"denominator":4},{"subject":"reservoir","state":"FULL"}]),
+])
+def test_semantic_water_observation_family_is_typed_without_phrase_rules(text, language, facts):
+    item={**operational(text),"semantic":{"domain":"rootline","intent":"water_levels_observed",
+        "message_kind":"observation","observation":text,"observation_facts":facts,
+        "language":language,"needs_clarification":False}}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),now=NOW,
+        rootline_operations_dispatcher=lambda _context:operational_result(recommendation="Hold"))
+    assert status==200 and [row["kind"] for row in value["observations"]]==[
+        "storage_level" if fact["subject"]=="storage_tanks" else "reservoir_level" for fact in facts]
+    assert value["answer"].startswith("<b>WATER LEVELS RECORDED</b>")
+    assert "No command" not in value["answer"]
+
+
+def test_ambiguous_tank_observation_asks_no_writer_or_dispatcher():
+    item={**operational("the tank is fine"),"semantic":{"domain":"rootline","intent":"water_level_ambiguous",
+        "message_kind":"observation","observation":"A tank is described as fine.","observation_facts":[],
+        "needs_clarification":True,"clarification_question":"Do you mean the storage tanks or the reservoir?"}}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),now=NOW,
+        rootline_operations_dispatcher=lambda _:pytest.fail("ambiguous evidence must not dispatch"),
+        rootline_observation_writer=lambda *_:pytest.fail("ambiguous evidence must not write"))
+    assert status==200 and value["handled"] is False
+
+
+def test_recoverable_zero_write_containment_advances_same_mission_once():
+    item={**operational("Storage tanks and Reservoir is full"),"semantic":{"domain":"rootline",
+        "intent":"water_levels_observed","message_kind":"observation","observation":"Both are full.",
+        "observation_facts":[{"subject":"storage_tanks","state":"FULL"},{"subject":"reservoir","state":"FULL"}],
+        "needs_clarification":False}}
+    mission=operational_specialist_intake._mission(item)
+    old_context={"contract_version":"oom_rootline_operational_dispatch_v1","mission_id":mission,
+        "owner_user_id":"42","chat_id":"42","provider_message_id":"3213","provider_timestamp":NOW.isoformat(),
+        "observations":[],"visible_irrigation_need_zone":None,"semantic_observation":"Both are full.",
+        "semantic_intent":"water_levels_observed","content_sha256":__import__("hashlib").sha256(item["text"].encode()).hexdigest(),
+        "authority":{"farm_observation_write":False,"hardware_control":False,"telegram_send":False,"automatic_on_retry":False}}
+    events={mission+"-DISPATCH":{"event_id":mission+"-DISPATCH","mission_id":mission,"state":"claimed","context":old_context},
+        mission+"-COMPLETED":{"event_id":mission+"-COMPLETED","mission_id":mission,"state":"completed","context":old_context,
+            "outcome":{"systemic_exception":"rootline_canonical_observation_bridge_failed","writes_farm_data":False}}}
+    def store(action, identity, payload):
+        if action=="load": return list(events.values())
+        if identity in events:return {"success":True,"created":False}
+        events[identity]=dict(payload);return {"success":True,"created":True}
+    writer=lambda *_:{"success":True,"contract_version":"rootline_owner_observation_bridge_v1","status":"recorded",
+        "canonical_writes":2,"observation_ids":["S","R"],"observation_generation":"G","readback":[]}
+    first,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),now=NOW,
+        rootline_operations_dispatcher=lambda _:operational_result(recommendation="Hold"),
+        rootline_observation_writer=writer,operation_store=store)
+    second,_=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),now=NOW,
+        rootline_operations_dispatcher=lambda _:pytest.fail("completed replay must not redispatch"),
+        rootline_observation_writer=lambda *_:pytest.fail("completed replay must not rewrite"),operation_store=store)
+    assert status==200 and first["mission_id"]==mission and first["writes_farm_data"] is True
+    assert second["replay_suppressed"] is True
+
 def test_unavailable_operational_adapter_is_visible_and_never_falls_to_v1():
     value,status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("42","42"),
         now=NOW,rootline_operations_dispatcher=None)
@@ -184,7 +245,7 @@ def test_3213_canonical_observation_write_and_dispatch_are_exactly_once(monkeypa
     monkeypatch.setattr(operational_specialist_intake,"persist_rootline_observations",
         lambda context,authority:(writes.append((context["mission_id"],authority.provider_message_id)) or
             {"success":True,"contract_version":"rootline_owner_observation_bridge_v1",
-             "status":"recorded","created":True,"canonical_writes":1,"observation_id":"ROOTLINE-TANK-3213"}))
+             "status":"recorded","created":True,"canonical_writes":1,"observation_ids":["ROOTLINE-TANK-3213"]}))
     dispatcher=lambda context:(dispatches.append(context["mission_id"]) or operational_result())
     first,status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("42","42"),
         now=NOW,rootline_operations_dispatcher=dispatcher)
@@ -196,7 +257,7 @@ def test_3213_canonical_observation_write_and_dispatch_are_exactly_once(monkeypa
 
 def test_committed_observation_truth_survives_invalid_dispatch_and_completion_failure(monkeypatch,operation_store):
     committed={"success":True,"contract_version":"rootline_owner_observation_bridge_v1",
-        "status":"recorded","created":True,"canonical_writes":1,"observation_id":"ROOTLINE-TANK-3213"}
+        "status":"recorded","created":True,"canonical_writes":1,"observation_ids":["ROOTLINE-TANK-3213"]}
     monkeypatch.setattr(operational_specialist_intake,"persist_rootline_observations",lambda *_:committed)
     invalid,status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("42","42"),
         now=NOW,rootline_operations_dispatcher=lambda _:{} )
@@ -209,7 +270,7 @@ def test_committed_observation_truth_survives_invalid_dispatch_and_completion_fa
     failed,status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("42","42"),
         now=NOW,rootline_operations_dispatcher=lambda _:operational_result(),operation_store=completion_fails)
     assert status==503 and failed["writes_farm_data"] is True
-    assert failed["canonical_observation_id"]=="ROOTLINE-TANK-3213"
+    assert failed["canonical_observation_ids"]==["ROOTLINE-TANK-3213"]
 
 def test_malformed_successful_writer_result_is_unknown_not_false(monkeypatch):
     monkeypatch.setattr(operational_specialist_intake,"persist_rootline_observations",lambda *_:{

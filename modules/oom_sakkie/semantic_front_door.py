@@ -6,9 +6,11 @@ specialist boundaries retain every write, send, publication and control gate.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime, timezone
 import json
 import os
+import re
 from typing import Any, Callable, Mapping
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -19,6 +21,7 @@ ENABLED_ENV = "OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED"
 DOMAINS = frozenset({"herd_health", "herd_management", "rootline", "manager_round", "sam", "beacon", "general"})
 MESSAGE_KINDS = frozenset({"observation", "question", "request", "command", "confirmation", "correction", "general"})
 MAX_CONTEXT_ITEMS = 8
+CONTEXT_MAX_AGE_SECONDS = 6 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,7 @@ class SemanticInterpretation:
     entity_refs: tuple[str, ...] = ()
     continuation: bool = False
     observation: str = ""
+    observation_facts: tuple[Mapping[str, Any], ...] = ()
     requested_action: str = ""
     language: str = "unknown"
     confidence: float = 0.0
@@ -67,7 +71,11 @@ def interpret_owner_message(parsed: Mapping[str, Any], *, environ=None,
             body = response.read().decode("utf-8")
     except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError, ValueError):
         return None
-    return parse_semantic_response(body)
+    result = parse_semantic_response(body)
+    if result and result.observation_facts and not _facts_context_allowed(parsed, context):
+        return replace(result, observation_facts=(), needs_clarification=True,
+            clarification_question="Are you reporting the storage tanks, the reservoir, or both?")
+    return result
 
 
 def parse_semantic_response(body: str) -> SemanticInterpretation | None:
@@ -82,11 +90,13 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         message_kind = str(value.get("message_kind") or "general").strip().lower()
         if message_kind not in MESSAGE_KINDS:
             return None
+        facts = _observation_facts(value.get("observation_facts"))
         return SemanticInterpretation(domain=domain,
             intent=str(value.get("intent") or domain).strip()[:100], entity_refs=refs,
             message_kind=message_kind,
             continuation=bool(value.get("continuation")),
             observation=str(value.get("observation") or "").strip()[:500],
+            observation_facts=facts,
             requested_action=str(value.get("requested_action") or "").strip()[:120],
             language=str(value.get("language") or "unknown").strip()[:20],
             confidence=max(0.0, min(1.0, float(value.get("confidence") or 0))),
@@ -134,14 +144,17 @@ def _load_recent_specialist_context(parsed):
                 rows = [row[0] for row in cursor.fetchall()]
     except Exception:
         return []
+    eligible = _eligible_clarification_context(rows, parsed)
     return [{"specialist": str(row.get("specialist_identity") or "")[:40],
              "task_state": str(row.get("task_state") or "")[:40],
              "card_mission_id": str(row.get("card_mission_id") or "")[:80],
              "provider_message_id": str(row.get("provider_message_id") or "")[:40],
+             "provider_timestamp": str(row.get("provider_timestamp") or "")[:40],
+             "delivery_provider_timestamp": str(row.get("delivery_provider_timestamp") or "")[:40],
              "semantic_domain": str(row.get("semantic_domain") or "")[:40],
              "semantic_intent": str(row.get("semantic_intent") or "")[:100],
              "clarification_question": str(row.get("clarification_question") or "")[:240]}
-            for row in rows if isinstance(row, Mapping)]
+            for row in eligible]
 
 
 def _payload(parsed, context, source):
@@ -163,8 +176,13 @@ def _payload(parsed, context, source):
         "Classify message_kind as observation only when the owner asserts a physical/current fact; use question or request "
         "when asking for information or a plan, command when asking for an action, confirmation for an approval/confirmation, "
         "and correction when replacing prior evidence. Return JSON only with domain,intent,message_kind,entity_refs,continuation,"
-        "observation,requested_action,language,confidence,"
+        "observation,observation_facts,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
+        " For physical water observations, observation_facts must contain zero, one, or two objects using only "
+        "subject storage_tanks or reservoir and either state LOW/OK/FULL or an exact fraction numerator/denominator. "
+        "Resolve phrases such as both tanks or their Afrikaans equivalents from the message and bounded active question; "
+        "do not invent a missing tank or value. A short reply may answer only a chronologically earlier active question; "
+        "never use stale context to satisfy a newer unrelated question."
     )
     user = {"message": str(parsed.get("text") or "")[:2000],
             "provider_message_id": str(parsed.get("provider_message_id") or "")[:80], "context": context}
@@ -196,3 +214,87 @@ def _strip_fence(value):
             lines.pop()
         return "\n".join(lines).strip()
     return text
+
+
+def _observation_facts(value):
+    if not isinstance(value, list) or len(value) > 2:
+        return ()
+    result = []
+    for raw in value:
+        if not isinstance(raw, Mapping):
+            return ()
+        subject = str(raw.get("subject") or "").strip().lower()
+        state = str(raw.get("state") or "").strip().upper()
+        numerator, denominator = raw.get("numerator"), raw.get("denominator")
+        if subject not in {"storage_tanks", "reservoir"}:
+            return ()
+        if state in {"LOW", "OK", "FULL"} and numerator is None and denominator is None:
+            result.append({"subject": subject, "state": state})
+        elif (not state and type(numerator) is int and type(denominator) is int
+              and denominator > 0 and 0 <= numerator <= denominator):
+            result.append({"subject": subject, "numerator": numerator, "denominator": denominator})
+        else:
+            return ()
+    if len({row["subject"] for row in result}) != len(result):
+        return ()
+    return tuple(result)
+
+
+def _eligible_clarification_context(rows, parsed):
+    incoming = _timestamp(parsed.get("provider_timestamp"))
+    if incoming is None:
+        return []
+    reply_to = str(parsed.get("reply_to_message_id") or "").strip()
+    candidates = []
+    for row in rows:
+        if not isinstance(row, Mapping) or row.get("state") != "delivered":
+            continue
+        if not str(row.get("clarification_question") or "").strip():
+            continue
+        delivered = _timestamp(row.get("delivery_provider_timestamp"))
+        if delivered is None:
+            continue
+        age = (incoming - delivered).total_seconds()
+        if age < 0 or age > CONTEXT_MAX_AGE_SECONDS:
+            continue
+        if reply_to and str(row.get("telegram_message_id") or "") != reply_to:
+            continue
+        candidates.append((delivered, row))
+    if not candidates:
+        return []
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    newest = candidates[0][0]
+    newest_rows = [row for delivered, row in candidates if delivered == newest]
+    return newest_rows if len(newest_rows) == 1 else []
+
+
+def _facts_context_allowed(parsed, context):
+    text = str(parsed.get("text") or "").lower()
+    explicit_subject = re.search(
+        r"\b(reservoir|storage(?:\s+tanks?)?|opgaartenks?|both\s+tanks?|albei\s+tenks?|beide\s+tenks?)\b",
+        text)
+    if explicit_subject:
+        return True
+    recent = list(context.get("recent_turns") or [])
+    if len(recent) != 1:
+        return False
+    row = recent[0]
+    incoming = _timestamp(parsed.get("provider_timestamp"))
+    delivered = _timestamp(row.get("delivery_provider_timestamp"))
+    if (incoming is None or delivered is None
+            or not 0 <= (incoming - delivered).total_seconds() <= CONTEXT_MAX_AGE_SECONDS):
+        return False
+    reply_to = str(parsed.get("reply_to_message_id") or "").strip()
+    if reply_to and str(row.get("telegram_message_id") or "") != reply_to:
+        return False
+    question = str(row.get("clarification_question") or "").lower()
+    return (str(row.get("semantic_domain") or "") == "rootline"
+            and re.search(r"\b(reservoir|storage|opgaartenks?|tanks?|tenks?)\b", question) is not None)
+
+
+def _timestamp(value):
+    try:
+        result = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+        return result.astimezone(timezone.utc) if result.tzinfo else None
+    except (TypeError, ValueError):
+        return None

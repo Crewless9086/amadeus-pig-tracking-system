@@ -133,6 +133,9 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     visible_need = "C12345" if _C_NEED.search(raw_text) and not _C_NO_NEED.search(raw_text) else None
     semantic_observation = str(semantic.get("observation") or "").strip()
+    semantic_facts = semantic.get("observation_facts") if isinstance(semantic.get("observation_facts"), (list, tuple)) else ()
+    if not observations:
+        observations = _typed_water_observations(semantic_facts, provider_id, provider_at.isoformat())
     if not observations and not visible_need and not semantic_observation:
         return {"handled": False, "status": "operational_specialist_intake_not_applicable"}, 200
     mission = _mission(parsed)
@@ -158,15 +161,20 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         result["answer"] = "<b>IRRIGATION FOLLOW-UP CONTAINED</b>\n\nDurable intake storage is unavailable. No ROOTLINE dispatch or irrigation command was attempted."
         return result, 503
     completed = next((row for row in reversed(prior) if row.get("state") == "completed"), None)
+    recoverable = False
     if completed and isinstance(completed.get("outcome"), Mapping):
-        if completed.get("context") != context:
+        recoverable = (completed["outcome"].get("systemic_exception") == "rootline_canonical_observation_bridge_failed"
+                       and completed["outcome"].get("writes_farm_data") is False
+                       and observations and _same_source_context(completed.get("context"), context))
+        if completed.get("context") != context and not recoverable:
             result = _contained(parsed, "rootline_operational_replay_binding_conflict", now)
             result["answer"] = "<b>IRRIGATION FOLLOW-UP CONTAINED</b>\n\nThe provider identity conflicts with the preserved evidence. Nothing was dispatched or changed."
             return result, 409
-        return {**dict(completed["outcome"]), "status": "operational_replay_suppressed",
-                "replay_suppressed": True, "hardware_commands": 0}, 200
+        if not recoverable:
+            return {**dict(completed["outcome"]), "status": "operational_replay_suppressed",
+                    "replay_suppressed": True, "hardware_commands": 0}, 200
     claimed_prior = next((row for row in reversed(prior) if row.get("state") == "claimed"), None)
-    if claimed_prior:
+    if claimed_prior and not recoverable:
         if claimed_prior.get("context") != context:
             result = _contained(parsed, "rootline_operational_replay_binding_conflict", now)
             result["answer"] = "<b>IRRIGATION FOLLOW-UP CONTAINED</b>\n\nThe provider identity conflicts with the in-progress evidence. Nothing was dispatched or changed."
@@ -174,7 +182,8 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         result = _contained(parsed, "rootline_operational_dispatch_in_progress", now)
         result["answer"] = "<b>IRRIGATION FOLLOW-UP IN PROGRESS</b>\n\nThis exact handover is already being processed. No duplicate dispatch or irrigation command was created."
         return result, 202
-    claim_id = mission + "-DISPATCH"
+    context_identity = _digest(context)[:20].upper()
+    claim_id = mission + "-DISPATCH-" + context_identity
     try:
         claimed = store("record", claim_id, {"event_id": claim_id, "mission_id": mission,
             "state": "claimed", "context": context})
@@ -236,10 +245,13 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         return result, 503
     digest = _digest({"context": context, "result": evidence})
     recommendation = str(evidence.get("recommendation") or "Needs Data")
-    answer = str(evidence.get("owner_answer") or "").strip() or (
-        f"<b>ROOTLINE UPDATE</b>\n\nI received the current water observations. "
-        f"ROOTLINE's current decision is <b>{recommendation}</b>. No command was sent by this intake step."
-    )
+    recorded_labels = []
+    for item in observations:
+        label = "Storage tanks" if item["kind"] == "storage_level" else "Reservoir"
+        value = str(item.get("semantic_state") or item.get("value") or "")
+        recorded_labels.append(f"{label} {value}")
+    answer = ("<b>WATER LEVELS RECORDED</b>\n\nRecorded: " + "; ".join(recorded_labels) +
+              ".\n\nROOTLINE will reassess automatically.")
     outcome = {"handled": True, "success": True, "status": "specialist_accepted",
         "dispatch_state": "specialist_accepted", "specialist_identity": "ROOTLINE",
         "mission_id": mission, "card_mission_id": mission, "provider_message_id": provider_id,
@@ -250,7 +262,7 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         "adapter_version": CONTRACT_VERSION, "result_digest": digest, "answer": answer,
         **ZERO_AUTHORITY}
     _apply_write_truth(outcome, observation_result, write_truth)
-    complete_id = mission + "-COMPLETED"
+    complete_id = mission + "-COMPLETED-" + context_identity
     try:
         recorded = store("record", complete_id, {"event_id": complete_id, "mission_id": mission,
             "state": "completed", "context": context, "outcome": outcome})
@@ -268,17 +280,22 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
 
 def _canonical_write_truth(observation_result):
     count = observation_result.get("canonical_writes")
-    if type(count) is not int or count not in (0, 1):
+    if type(count) is not int or count < 0 or count > 2:
         return None
-    if count == 1 and not str(observation_result.get("observation_id") or "").strip():
+    identities = observation_result.get("observation_ids")
+    if (not isinstance(identities, list) or not 1 <= len(identities) <= 2
+            or count > len(identities)
+            or not all(str(value or "").strip() for value in identities)):
         return None
-    return count == 1
+    return count > 0
 
 
 def _apply_write_truth(result, observation_result, write_truth):
     result["writes_farm_data"] = write_truth
     result["writes_farm_data_unknown"] = write_truth is None
     result["canonical_observation_id"] = observation_result.get("observation_id")
+    result["canonical_observation_ids"] = observation_result.get("observation_ids")
+    result["canonical_observation_generation"] = observation_result.get("observation_generation")
     result["canonical_observation"] = observation_result
 
 
@@ -311,7 +328,7 @@ def _operation_event_store(action, identity, payload):
 
 
 def _record_terminal(store, mission, context, outcome):
-    identity = mission + "-COMPLETED"
+    identity = mission + "-COMPLETED-" + _digest(context)[:20].upper()
     try:
         return store("record", identity, {"event_id": identity, "mission_id": mission,
             "state": "completed", "context": context, "outcome": outcome})
@@ -340,6 +357,35 @@ def _mission(parsed):
     return "OOM-ROOTLINE-" + _digest({"owner": str(parsed.get("telegram_user_id") or ""),
         "chat": str(parsed.get("telegram_chat_id") or ""),
         "message": str(parsed.get("provider_message_id") or "")})[:24].upper()
+
+
+def _typed_water_observations(facts, provider_id, observed_at):
+    result = []
+    for fact in facts:
+        if not isinstance(fact, Mapping):
+            return []
+        subject = str(fact.get("subject") or "").lower()
+        if subject not in {"storage_tanks", "reservoir"}:
+            return []
+        state = str(fact.get("state") or "").upper()
+        if state in {"LOW", "OK", "FULL"}:
+            numerator, denominator = ({"LOW": (0, 1), "FULL": (1, 1), "OK": (1, 2)}[state])
+        else:
+            numerator, denominator = fact.get("numerator"), fact.get("denominator")
+            if (type(numerator) is not int or type(denominator) is not int
+                    or denominator < 1 or numerator < 0 or numerator > denominator):
+                return []
+        result.append({"kind": "storage_level" if subject == "storage_tanks" else "reservoir_level",
+            "value": f"{numerator}/{denominator}", "numerator": numerator, "denominator": denominator,
+            "semantic_state": state or None, "provider_message_id": provider_id, "observed_at": observed_at})
+    return result
+
+
+def _same_source_context(left, right):
+    if not isinstance(left, Mapping) or not isinstance(right, Mapping):
+        return False
+    keys = set(left) | set(right)
+    return all(left.get(key) == right.get(key) for key in keys if key != "observations")
 
 
 def _time(value):

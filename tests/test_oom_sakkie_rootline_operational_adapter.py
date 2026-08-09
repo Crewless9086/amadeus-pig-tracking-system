@@ -70,14 +70,15 @@ def test_malformed_observation_and_identity_are_rejected_before_rootline_read():
     item=context(); item["observations"]=[{**item["observations"][0],"kind":"<b>unsafe</b>"}]
     assert dispatch_rootline_operation(item)["reason"]=="owner_observation_binding_invalid"
 
-@patch("modules.oom_sakkie.rootline_operational_adapter.read_tank_observation")
-@patch("modules.oom_sakkie.rootline_operational_adapter.record_tank_observation")
-def test_fraction_observations_write_once_and_require_exact_canonical_readback(writer,reader):
+@patch("modules.oom_sakkie.rootline_operational_adapter.record_tank_observations_transactional")
+def test_fraction_observations_write_once_and_require_exact_canonical_readback(writer):
     both=context();both["observations"].append({"kind":"storage_level","value":"2/4","numerator":2,"denominator":4,
         "provider_message_id":"3213","observed_at":both["provider_timestamp"]})
-    writer.return_value=({"success":True,"status":"recorded","created":True,"observation_id":"ROOTLINE-TANK-1"},201)
-    reader.return_value={"storage_fraction":[2,4],"reservoir_fraction":[4,4],
-        "provider_message_id":"3213","observed_at":both["provider_timestamp"]}
+    writer.return_value=({"success":True,"status":"recorded","created_count":2,
+        "observation_ids":["ROOTLINE-TANK-S","ROOTLINE-TANK-R"],"observation_generation":"gen",
+        "readback":[
+            {"kind":"storage","fraction":[2,4],"state":"OK","provider_message_id":"3213","observed_at":both["provider_timestamp"]},
+            {"kind":"reservoir","fraction":[4,4],"state":"FULL","provider_message_id":"3213","observed_at":both["provider_timestamp"]}]},201)
     from modules.oom_sakkie.gateway_authority import (
         issue_gateway_owner_authority,
         issue_rootline_observation_write_authority,
@@ -90,11 +91,11 @@ def test_fraction_observations_write_once_and_require_exact_canonical_readback(w
         content_sha256=both["content_sha256"],
     )
     result=persist_rootline_observations(both,authority,database_url="postgresql://test")
-    assert result["success"] is True and result["canonical_writes"]==1
-    payload=writer.call_args.args[0]
-    assert payload["storage_fraction"]==[2,4] and payload["reservoir_fraction"]==[4,4]
-    assert payload["storage_state"]=="OK" and payload["reservoir_state"]=="FULL"
-    reader.return_value={}
+    assert result["success"] is True and result["canonical_writes"]==2
+    payloads=writer.call_args.args[0]
+    assert payloads[0]["storage_fraction"]==[2,4] and payloads[1]["reservoir_fraction"]==[4,4]
+    writer.return_value=({"success":True,"status":"recorded","created_count":2,
+        "observation_ids":["ROOTLINE-TANK-S","ROOTLINE-TANK-R"],"readback":[]},201)
     assert persist_rootline_observations(both,authority,database_url="postgresql://test")["status"]=="canonical_observation_readback_mismatch"
 
 
@@ -122,7 +123,7 @@ def test_invalid_or_duplicate_observations_never_reach_writer():
     authority=issue_rootline_observation_write_authority(issue_gateway_owner_authority("42","42"),
         mission_id=item["mission_id"],provider_message_id=item["provider_message_id"],
         provider_timestamp=item["provider_timestamp"],content_sha256=item["content_sha256"])
-    with patch("modules.oom_sakkie.rootline_operational_adapter.record_tank_observation") as writer:
+    with patch("modules.oom_sakkie.rootline_operational_adapter.record_tank_observations_transactional") as writer:
         malformed={**item,"observations":[{**item["observations"][0],"denominator":0}]}
         assert persist_rootline_observations(malformed,authority)["status"]=="owner_observation_binding_invalid"
         duplicate={**item,"observations":[item["observations"][0],dict(item["observations"][0])]}
@@ -130,7 +131,7 @@ def test_invalid_or_duplicate_observations_never_reach_writer():
         writer.assert_not_called()
 
 
-@patch("modules.oom_sakkie.rootline_operational_adapter.record_tank_observation")
+@patch("modules.oom_sakkie.rootline_operational_adapter.record_tank_observations_transactional")
 def test_indeterminate_database_failure_never_claims_zero_writes(writer):
     from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority,issue_rootline_observation_write_authority
     item=context()

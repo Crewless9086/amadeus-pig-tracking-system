@@ -12,7 +12,7 @@ from datetime import datetime
 import re
 
 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
-from modules.telemetry.rootline_water_energy_plan import record_tank_observation, read_tank_observation
+from modules.telemetry.rootline_water_energy_plan import record_tank_observations_transactional
 from modules.oom_sakkie.gateway_authority import validates_rootline_observation_write_authority
 
 CONTRACT_VERSION = "rootline_operational_dispatch_result_v1"
@@ -45,30 +45,37 @@ def persist_rootline_observations(context: Mapping[str, Any], authority, *, data
     provider_id = str(context.get("provider_message_id") or "")
     provider_at = str(context.get("provider_timestamp") or "")
     owner = str(context.get("owner_user_id") or "")
-    payload = {"storage_fraction": [storage["numerator"], storage["denominator"]] if storage else None,
-        "reservoir_fraction": [reservoir["numerator"], reservoir["denominator"]] if reservoir else None,
-        "storage_state": _fraction_state(storage), "reservoir_state": _fraction_state(reservoir),
-        "provider_message_id": provider_id, "observed_at": provider_at, "source": "oom_sakkie_owner",
-        "idempotency_key": f"telegram:{context.get('mission_id')}:{provider_id}:rootline-water:{context.get('content_sha256')}"}
+    payloads = []
+    for kind, item in (("storage", storage), ("reservoir", reservoir)):
+        if not item:
+            continue
+        payloads.append({f"{kind}_fraction": [item["numerator"], item["denominator"]],
+            f"{kind}_state": _fraction_state(item), "provider_message_id": provider_id,
+            "observed_at": provider_at, "source": "oom_sakkie_owner",
+            "idempotency_key": (f"telegram:{context.get('mission_id')}:{provider_id}:"
+                                f"rootline-water:{kind}:{context.get('content_sha256')}")})
     actor = "telegram-owner:" + __import__("hashlib").sha256(owner.encode()).hexdigest()[:16]
-    result, status = record_tank_observation(payload, actor, database_url)
+    result, status = record_tank_observations_transactional(payloads, actor, database_url)
     if status >= 400 or result.get("success") is not True:
         return {"success": False, "contract_version": "rootline_owner_observation_bridge_v1",
                 "status": str(result.get("status") or "canonical_observation_write_failed"),
                 "canonical_writes": None if result.get("write_outcome")=="indeterminate" else 0,
                 "write_outcome": result.get("write_outcome") or "not_written"}
-    readback = read_tank_observation(result.get("observation_id"), database_url)
-    expected = {"storage_fraction": payload["storage_fraction"],
-        "reservoir_fraction": payload["reservoir_fraction"],
-        "provider_message_id": provider_id, "observed_at": provider_at}
-    if any(readback.get(key) != value for key, value in expected.items()):
+    readback = result.get("readback") if isinstance(result.get("readback"), list) else []
+    expected = [{"kind": kind, "fraction": [item["numerator"], item["denominator"]],
+                 "state": _fraction_state(item), "provider_message_id": provider_id,
+                 "observed_at": provider_at}
+                for kind, item in (("storage", storage), ("reservoir", reservoir)) if item]
+    actual = [{key: row.get(key) for key in ("kind", "fraction", "state", "provider_message_id", "observed_at")}
+              for row in readback]
+    if actual != expected:
         return {"success": False, "contract_version": "rootline_owner_observation_bridge_v1",
-                "status": "canonical_observation_readback_mismatch", "canonical_writes": int(result.get("created") is True),
-                "observation_id": result.get("observation_id")}
+                "status": "canonical_observation_readback_mismatch", "canonical_writes": result.get("created_count"),
+                "observation_ids": result.get("observation_ids")}
     return {"success": True, "contract_version": "rootline_owner_observation_bridge_v1",
-        "status": str(result.get("status")), "created": result.get("created") is True,
-        "canonical_writes": int(result.get("created") is True), "observation_id": result.get("observation_id"),
-        "readback": expected}
+        "status": str(result.get("status")), "created": result.get("created_count", 0) > 0,
+        "canonical_writes": result.get("created_count"), "observation_ids": result.get("observation_ids"),
+        "observation_generation": result.get("observation_generation"), "readback": expected}
 
 
 def _fraction_state(item):

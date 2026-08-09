@@ -425,3 +425,10 @@ Current Stage 4 surface:
 - `modules/sales/sales_transaction_routes.py` — existing authenticated reconciliation route; enables provider-read isolation without adding a router, webhook or consumer.
 - `modules/sales/sam_live_stock_runtime.py` — bounded shared Chatwoot identity and chronology read timeout used by the existing Front Door/Livestock path.
 - `tests/test_sam_live_stock_inbox_operator.py` — normal, slow-page, per-conversation timeout, pre/post-claim, ambiguous delivery and replay regressions.
+# Oom Sakkie owner-observation lifecycle
+
+- Semantic typing and bounded context: `modules/oom_sakkie/semantic_front_door.py`
+- Durable operational lifecycle: `modules/oom_sakkie/operational_specialist_intake.py`
+- Governed ROOTLINE bridge: `modules/oom_sakkie/rootline_operational_adapter.py`
+- Atomic canonical observation rail: `modules/telemetry/rootline_water_energy_plan.py`
+- Human daily rendering: `modules/oom_sakkie/rootline_daily_presentation.py`

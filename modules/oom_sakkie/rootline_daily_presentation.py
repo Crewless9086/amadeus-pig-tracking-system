@@ -111,7 +111,7 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
                         ("C12345", "C Kamp" if af else "C Camp")):
         row = recommendations.get(zone, {})
         decision = _decision(row.get("status") or row.get("recommendation"), af)
-        window = str(row.get("preferred_window") or "").strip()
+        window = _human_window(row.get("preferred_window"))
         suffix = f" · {html.escape(window)}" if window and window.lower() not in {"unavailable", "unknown"} else ""
         lines.append(f"• <b>{label}:</b> {decision}{suffix}")
         reason = str(row.get("reason") or "").strip()
@@ -120,7 +120,7 @@ def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> 
     why = _short_reason(reasons[0] if reasons else str(result.get("reason") or ""), af)
     brief = result.get("owner_brief") if isinstance(result.get("owner_brief"), Mapping) else {}
     question = str(brief.get("family_fact_needed") or "").strip()
-    next_check = str(brief.get("reassess") or _next_reassessment(result)).strip()
+    next_check = _human_reassessment(brief.get("reassess") or _next_reassessment(result), now_hint=result.get("evidence_cutoff"))
     lines.extend(["", f"<b>{'Hoekom' if af else 'Why'}:</b> {html.escape(why)}",
         f"<b>{'Wat ek van jou nodig het' if af else 'What I need from you'}:</b> " +
         (html.escape(question) if question else ("Niks" if af else "Nothing")),
@@ -164,6 +164,33 @@ def _next_reassessment(result: Mapping[str, Any]) -> str:
     if not isinstance(value, Mapping):
         return ""
     return str(value.get("at") or value.get("reason") or value.get("trigger") or "")
+
+
+def _human_window(value):
+    text = " ".join(str(value or "").split())
+    if not text or text.casefold() in {"unavailable", "unknown", "on_material_evidence_change"}:
+        return ""
+    return text
+
+
+def _human_reassessment(value, now_hint=None):
+    text = " ".join(str(value or "").split())
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(SAST)
+        return f"around {parsed:%H:%M}"
+    except (TypeError, ValueError):
+        pass
+    import re
+    match = re.search(r"\bat\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})", text)
+    if match:
+        try:
+            parsed = datetime.fromisoformat(match.group(1)).astimezone(SAST)
+            return f"around {parsed:%H:%M}"
+        except ValueError:
+            pass
+    if text in {"refresh_missing_or_stale_evidence", "on_material_evidence_change"}:
+        return "when conditions change"
+    return text or "on the next automatic check"
 
 
 def _daily_due(now: datetime) -> datetime:
