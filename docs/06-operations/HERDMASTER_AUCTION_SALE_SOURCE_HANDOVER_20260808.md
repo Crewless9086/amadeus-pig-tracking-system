@@ -3,6 +3,35 @@
 Status: Prepared/source-only. No runtime, Telegram, customer, farm, order,
 allocation, sales or accounting mutation occurred.
 
+## BKB invoice-aware addendum — 2026-08-09
+
+Private seller settlement evidence `S-EE02-2710` proves BKB, Riversdal,
+sale/exit date 2026-08-05, eighteen piglets, gross livestock revenue R4,180.00
+excluding VAT, output VAT R627.00, gross invoice value R4,807.00 including VAT,
+commission R292.60 excluding VAT, commission input VAT R43.89, commission
+R336.49 including VAT, other deductions R0.00, net settlement payable
+R4,470.51, and stated method EFT. The private PDF is not source material and
+must never be committed or exposed.
+
+Payment received remains Unknown. The transaction records the August sale and
+receivable independently; later attributable bank evidence updates the same
+sale through an idempotent payment-reconciliation operation. Tag-to-lot
+membership and all individual pig proceeds remain Unknown and do not block the
+sale.
+
+The preview contains the exact eighteen tag/Pig-ID mappings, all Sold/off-farm
+effects, separate VAT and commission facts, settlement payable, Unknown receipt,
+and no manufactured line prices. Its single optional grouped question is:
+“Has the R4,470.51 EFT reached the bank account, and if known, which eight pigs
+were in V10?”
+
+Management-only analysis uses the 2026-08-03 recorded weights: combined 154.6
+kg, average 8.59 kg, approximate gross including VAT per pig R267.06,
+approximate net settlement per pig R248.36, and approximate net settlement per
+recorded kilogram R28.92/kg. The invoice supplies no auction mass. No
+continue-feeding/direct-sale recommendation is supported until attributable
+feed-cost, growth-rate, direct-sale-value, and pen-capacity evidence exists.
+
 ## Canonical reconciliation
 
 Read-only cutoff: 2026-08-08. All 18 tags resolve exactly once. Every row is
