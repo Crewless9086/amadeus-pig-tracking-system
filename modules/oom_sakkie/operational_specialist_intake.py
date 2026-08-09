@@ -21,6 +21,67 @@ from modules.oom_sakkie.rootline_fertilizer_commissioning_adapter import assess_
 
 CONTRACT_VERSION = "oom_sakkie_operational_specialist_intake_v1"
 ROOTLINE_PRESENCE_MAX_AGE_SECONDS = 300
+
+
+def recover_contextual_specialist_replay(parsed, *, replay_loader=None):
+    """Resolve an exact durable specialist replay before non-deterministic routing."""
+    provider_id = str((parsed or {}).get("provider_message_id") or "").strip()
+    provider_at = str((parsed or {}).get("provider_timestamp") or "").strip()
+    owner = str((parsed or {}).get("telegram_user_id") or "").strip()
+    chat = str((parsed or {}).get("telegram_chat_id") or "").strip()
+    text_sha = hashlib.sha256(str((parsed or {}).get("text") or "").encode("utf-8")).hexdigest()
+    if not all((provider_id, provider_at, owner, chat)):
+        return None
+    try:
+        rows = list((replay_loader or _load_contextual_provider_replay)(provider_id) or ())
+    except Exception:
+        return {"handled": True, "success": False,
+            "status": "contextual_specialist_provider_replay_lookup_unavailable",
+            "answer": "", "replay_suppressed": True, "suppress_owner_delivery": True,
+            "provider_control_calls": 0, "writes_farm_data": False, **ZERO_AUTHORITY}
+    exact = [row for row in rows if isinstance(row, Mapping)
+        and str((row.get("context") or {}).get("owner_user_id") or "") == owner
+        and str((row.get("context") or {}).get("chat_id") or "") == chat
+        and str((row.get("context") or {}).get("provider_timestamp") or "") == provider_at
+        and str((row.get("context") or {}).get("text_sha256") or "") == text_sha
+        and row.get("state") in {"contextual_followup_completed", "contextual_followup_contained"}]
+    if not rows:
+        return None
+    if len(exact) != 1:
+        return {"handled": True, "success": False,
+            "status": "contextual_specialist_provider_replay_binding_conflict",
+            "answer": "", "replay_suppressed": True, "suppress_owner_delivery": True,
+            "provider_control_calls": 0, "writes_farm_data": False, **ZERO_AUTHORITY}
+    outcome = dict(exact[0].get("outcome") or {})
+    if (outcome.get("hardware_commands") != 0
+            or outcome.get("provider_control_calls") != 0
+            or outcome.get("writes_farm_data") is not False
+            or outcome.get("authority") != {"configuration_write": False,
+                "hardware_control": False, "farm_write": False, "telegram_send": False}):
+        return {"handled": True, "success": False,
+            "status": "contextual_specialist_provider_replay_outcome_invalid",
+            "answer": "", "replay_suppressed": True, "suppress_owner_delivery": True,
+            "provider_control_calls": 0, "writes_farm_data": False, **ZERO_AUTHORITY}
+    return {**outcome, "handled": True, "replay_suppressed": True,
+        "suppress_owner_delivery": True,
+        "status": "contextual_specialist_provider_replay_suppressed", **ZERO_AUTHORITY}
+
+
+def _load_contextual_provider_replay(provider_message_id):
+    import psycopg
+    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            cursor.execute("""select review_json->'rootline_operational_intake'
+                from public.sam_live_stock_conversation_review_events
+                where event_source='oom_sakkie_rootline_operational_intake'
+                  and review_json->'rootline_operational_intake'->'context'->>'contract_version'
+                      ='oom_sakkie_contextual_specialist_followup_v1'
+                  and review_json->'rootline_operational_intake'->'context'->>'provider_message_id'=%s
+                  and review_json->'rootline_operational_intake'->>'state'
+                      in ('contextual_followup_completed','contextual_followup_contained')
+                order by created_at,review_event_id""", (provider_message_id,))
+            return [row[0] for row in cursor.fetchall()]
 _ROOTLINE_PRESENCE = re.compile(
     r"\bB and C valve area\b.*\bobserve both camps\b.*\bintervene immediately\b.*\bsupervised commissioning\b",
     re.I,
@@ -487,14 +548,15 @@ def _load_pending_specialist_context(parsed):
         current = dict(history[-1])
         delivered = next((item for item in reversed(history)
                           if str(item.get("delivery_provider_timestamp") or "")), {})
-        original = history[0]
         current["delivery_provider_timestamp"] = delivered.get("delivery_provider_timestamp")
         current["telegram_message_id"] = current.get("telegram_message_id") or delivered.get("telegram_message_id")
-        current["contextual_task_kind"] = current.get("contextual_task_kind") or original.get("semantic_intent")
-        current["required_owner_confirmations"] = (current.get("required_owner_confirmations")
-            or original.get("required_owner_confirmations") or [])
-        current["confirmation_prompt_sha256"] = (current.get("confirmation_prompt_sha256")
-            or original.get("confirmation_prompt_sha256") or "")
+        def retained(key, fallback=""):
+            return current.get(key) or next((item.get(key) for item in reversed(history)
+                                             if item.get(key)), fallback)
+        current["contextual_task_kind"] = retained("contextual_task_kind") or retained("semantic_intent")
+        current["required_owner_confirmations"] = retained("required_owner_confirmations", [])
+        current["confirmation_prompt_sha256"] = retained("confirmation_prompt_sha256")
+        current["text_sha256"] = retained("text_sha256")
         delivered_at = _time(current.get("delivery_provider_timestamp"))
         if delivered_at is not None and 0 <= (observed - delivered_at).total_seconds() <= 6 * 60 * 60:
             latest.append(current)

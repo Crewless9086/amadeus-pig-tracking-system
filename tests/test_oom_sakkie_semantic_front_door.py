@@ -205,12 +205,51 @@ def test_gateway_attaches_semantic_hint_before_specialist_routing(interpret, ope
         "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"}
     payload = {"message": {"message_id": 3219, "date": 1785790000, "text": "C Camp has stopped",
         "from": {"id": 42}, "chat": {"id": 42, "type": "private"}}}
-    with patch.dict("os.environ", env, clear=True):
+    with patch.dict("os.environ", env, clear=True), patch(
+            "modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",return_value=None):
         result, status = handle_telegram_gateway_message(payload,
             headers={"Authorization": "Bearer " + "g" * 40})
     assert status == 200 and result["message"]["specialist_identity"] == "ROOTLINE"
     routed = operational.call_args.args[0]
     assert routed["semantic"]["intent"] == "irrigation_shutdown_observed"
+
+
+@patch("modules.oom_sakkie.telegram_gateway.interpret_owner_message",
+       side_effect=AssertionError("semantic routing must not precede exact provider replay"))
+@patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay")
+def test_gateway_exact_provider_replay_precedes_semantic_and_sends_nothing(recover, _interpret):
+    recover.return_value={"handled":True,"success":True,
+        "status":"contextual_specialist_provider_replay_suppressed",
+        "answer":"CH2 remains off","replay_suppressed":True,
+        "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"1","OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"g"*40,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
+    payload={"message":{"message_id":3481,"date":1786273205,
+        "text":"Done; at fertilizer valves now","from":{"id":42},
+        "chat":{"id":42,"type":"private"}}}
+    with patch.dict("os.environ",env,clear=True):
+        result,status=handle_telegram_gateway_message(payload,
+            headers={"Authorization":"Bearer "+"g"*40})
+    assert status==200 and result["message"]["replay_suppressed"] is True
+    assert result["delivery"]["telegram_sends"]==0 and result["delivery"]["telegram_edits"]==0
+
+
+@patch("modules.oom_sakkie.telegram_gateway.interpret_owner_message",
+       side_effect=AssertionError("ledger failure must not fall into semantic routing"))
+@patch("modules.oom_sakkie.operational_specialist_intake._load_contextual_provider_replay",
+       side_effect=RuntimeError("database unavailable"))
+def test_gateway_replay_ledger_failure_suppresses_semantic_and_delivery(_loader,_interpret):
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"1","OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"g"*40,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
+    payload={"message":{"message_id":3481,"date":1786273205,
+        "text":"Done; at fertilizer valves now","from":{"id":42},
+        "chat":{"id":42,"type":"private"}}}
+    with patch.dict("os.environ",env,clear=True):
+        result,status=handle_telegram_gateway_message(payload,
+            headers={"Authorization":"Bearer "+"g"*40})
+    assert status==200
+    assert result["message"]["status"]=="contextual_specialist_provider_replay_lookup_unavailable"
+    assert result["delivery"]["telegram_sends"]==0 and result["delivery"]["telegram_edits"]==0
 
 
 @patch("modules.oom_sakkie.service.classify_intent",

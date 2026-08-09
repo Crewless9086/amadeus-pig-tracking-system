@@ -3,7 +3,8 @@ from unittest.mock import patch
 import pytest
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
-from modules.oom_sakkie.operational_specialist_intake import handle_operational_specialist_message
+from modules.oom_sakkie.operational_specialist_intake import (
+    handle_operational_specialist_message, recover_contextual_specialist_replay)
 from modules.oom_sakkie import operational_specialist_intake
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 
@@ -332,6 +333,40 @@ def test_invalid_dispatch_result_is_terminal_and_replay_does_not_dispatch_again(
     assert second["replay_suppressed"] is True and second["hardware_commands"]==0
 
 
+def test_exact_provider_replay_loads_terminal_before_routing():
+    item=operational("Done; at fertilizer valves now")
+    text_sha=__import__("hashlib").sha256(item["text"].encode()).hexdigest()
+    row={"state":"contextual_followup_completed","context":{
+        "owner_user_id":"42","chat_id":"42","provider_message_id":item["provider_message_id"],
+        "provider_timestamp":item["provider_timestamp"],"text_sha256":text_sha},
+        "outcome":{"status":"waiting_for_input","answer":"CH2 remains off",
+            "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False,
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False}}}
+    value=recover_contextual_specialist_replay(item,replay_loader=lambda _:[row])
+    assert value["replay_suppressed"] is True and value["suppress_owner_delivery"] is True
+    assert value["hardware_commands"]==0
+
+
+def test_changed_provider_replay_binding_is_not_recovered():
+    item=operational("Different text")
+    row={"state":"contextual_followup_completed","context":{
+        "owner_user_id":"42","chat_id":"42","provider_message_id":item["provider_message_id"],
+        "provider_timestamp":item["provider_timestamp"],"text_sha256":"0"*64},
+        "outcome":{"hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}}
+    value=recover_contextual_specialist_replay(item,replay_loader=lambda _:[row])
+    assert value["status"]=="contextual_specialist_provider_replay_binding_conflict"
+    assert value["suppress_owner_delivery"] is True and value["hardware_commands"]==0
+
+
+def test_provider_replay_ledger_failure_is_delivery_suppressed():
+    item=operational("Done; at fertilizer valves now")
+    def unavailable(_): raise RuntimeError("database unavailable")
+    value=recover_contextual_specialist_replay(item,replay_loader=unavailable)
+    assert value["status"]=="contextual_specialist_provider_replay_lookup_unavailable"
+    assert value["suppress_owner_delivery"] is True and value["hardware_commands"]==0
+
+
 @pytest.mark.parametrize("parent_at", [None, NOW+timedelta(seconds=1), NOW-timedelta(hours=7)])
 def test_invalid_parent_provider_chronology_fails_closed(parent_at):
     item={**operational("Done; at fertilizer valves now"),"semantic":{
@@ -517,7 +552,8 @@ def test_exact_3213_gateway_path_never_reaches_legacy_sheet(owner_task,deliver,l
     payload={"message":{"message_id":3213,"date":1785774127,
         "text":"Reservoir 4/4 and the storage tanks are 2/4. C camps do need irrigation now.",
         "from":{"id":42},"chat":{"id":42,"type":"private"}}}
-    value,status=handle_telegram_gateway_message(payload,headers={"Authorization":"Bearer "+"x"*40},environ=env)
+    with patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",return_value=None):
+        value,status=handle_telegram_gateway_message(payload,headers={"Authorization":"Bearer "+"x"*40},environ=env)
     assert status==200 and value["message"]["specialist_identity"]=="ROOTLINE"
     assert value["message"].get("tool_used")!="irrigation_status"
     assert "irrigation sheet" not in value["answer"].lower()
@@ -536,7 +572,8 @@ def test_visible_containment_is_transport_success_not_silent_backend_failure(own
          "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
     payload={"message":{"message_id":3181,"date":1785684198,"text":TEXT,
              "from":{"id":42},"chat":{"id":42,"type":"private"}}}
-    value,status=handle_telegram_gateway_message(payload,headers={"Authorization":"Bearer "+"x"*40},environ=env)
+    with patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",return_value=None):
+        value,status=handle_telegram_gateway_message(payload,headers={"Authorization":"Bearer "+"x"*40},environ=env)
     assert status==200 and value["success"] is True
     assert value["message"]["success"] is False and value["delivery"]["success"] is True
     assert value["reply_transport"]=="backend_handles_owner_task_delivery"
@@ -554,5 +591,6 @@ def test_gateway_preserves_indeterminate_write_truth(owner_task,operational,deli
          "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
     payload={"message":{"message_id":3213,"date":1785774127,"text":"Storage tanks 2/4",
         "from":{"id":42},"chat":{"id":42,"type":"private"}}}
-    value,status=handle_telegram_gateway_message(payload,headers={"Authorization":"Bearer "+"x"*40},environ=env)
+    with patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",return_value=None):
+        value,status=handle_telegram_gateway_message(payload,headers={"Authorization":"Bearer "+"x"*40},environ=env)
     assert status==200 and value["writes"] is None and value["writes_unknown"] is True
