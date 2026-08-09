@@ -42,14 +42,15 @@ def build_zone_water_balance(zone_id, *, activation_at, complete_through,
     supported_supply=min(SUPPORTED_NEED_MM,effective+irrigation_mm)
     remaining=max(0.0,min(SUPPORTED_NEED_MM,SUPPORTED_NEED_MM+ demand-prior-supported_supply))
     credit=min(SUPPORTED_NEED_MM,supported_supply)
-    if rain["status"] in {"stale","conflicting","incomplete",
-            "coverage_crosses_activation_boundary"} or irrigation["conflicting"]:
+    warnings=[]
+    if rain["status"]!="fresh":warnings.append("rain_evidence_"+rain["status"])
+    if irrigation["conflicting"]:
         effect="Needs Data"
     elif credit>=SUPPORTED_NEED_MM:
         effect="satisfied"
     elif credit>0:
         effect="partial credit"
-    elif rain["observed_mm"]>0:
+    elif rain["status"]=="fresh" and rain["observed_mm"]>0:
         effect="Hold with no credit"
     else:
         effect="no credit"
@@ -69,11 +70,15 @@ def build_zone_water_balance(zone_id, *, activation_at, complete_through,
         "schedule_debt_rewritten":False,"forecast_water_credit_mm":0.0,
         "reservoir_water_credit_mm":0.0,"on_receipts_counted":0,
         "provisional":True,"command_authority":False,"hardware_control":False}
+    material["evidence_warnings"]=warnings
+    material["material_notification_identity"]=_material_identity(material)
+    canonical=json.dumps(material,sort_keys=True,separators=(",",":"),default=str)
     digest=_digest(material)
     return {"status":"Available",**material,
         "water_balance_event_id":"ROOTLINE-WB-"+digest[:24].upper(),
-        "evidence_digest":digest,
-        "family_explanation":_explanation(zone_id,effect,effective,remaining),
+        "evidence_digest":digest,"canonical_material":canonical,
+        "family_explanation":_explanation(zone_id,effect,effective,irrigation_mm,
+            remaining,warnings),
         "material_notification":effect in {"partial credit","satisfied","Needs Data"}}
 
 
@@ -106,26 +111,34 @@ def append_zone_water_balance(value, database_url):
         "water_balance_event_id":value["water_balance_event_id"]}
 
 
-def read_latest_zone_water_balances(database_url, *, now=None):
+def read_latest_zone_water_balances(database_url, *, now=None, freshness_minutes=30):
     now=_aware(now or datetime.now(timezone.utc))
     try:
         import psycopg
         with psycopg.connect(database_url,connect_timeout=10) as connection:
             connection.read_only=True
             with connection.cursor() as cursor:
-                cursor.execute("""select distinct on (zone_id) balance_json
+                cursor.execute("""select distinct on (zone_id) balance_json,complete_through
                     from public.irrigation_water_balance_events
                     where complete_through<=%s order by zone_id,complete_through desc,event_id desc""",(now,))
                 rows=cursor.fetchall()
-        values={row[0]["zone_id"]:row[0] for row in rows}
-        return {"status":"Available","contract_version":CONTRACT,"zones":values,
-            "complete_through":max((row["complete_through"] for row in values.values()),default=None)}
+        values={}
+        for payload,cutoff in rows:
+            item=dict(payload);current=timedelta(0)<=now-_aware(cutoff)<=timedelta(
+                minutes=freshness_minutes)
+            item["ledger_current"]=current;values[item["zone_id"]]=item
+        complete=len(values)==len(ZONES) and all(row["ledger_current"] for row in values.values())
+        return {"status":"Available" if complete else "Unavailable",
+            "contract_version":CONTRACT,"zones":values,
+            "complete_through":min((row["complete_through"] for row in values.values()),default=None),
+            "required_zones_present":sorted(values)==sorted(ZONES)}
     except Exception as exc:
         return {"status":"Unavailable","reason":exc.__class__.__name__,"zones":{}}
 
 
-def notification_projection(current, previous_evidence_digest=None):
-    changed=current.get("evidence_digest")!=previous_evidence_digest
+def notification_projection(current, previous_material_notification_identity=None):
+    identity=current.get("material_notification_identity")
+    changed=bool(identity and identity!=previous_material_notification_identity)
     return {"emit":bool(changed and current.get("material_notification")),
         "message":current.get("family_explanation") if changed else None,
         "unchanged_silent":not changed,"raw_calculations_included":False}
@@ -136,9 +149,10 @@ def _rain(value,activation,cutoff):
     amount=_number(row.get("rain_mm"));station=str(row.get("station_id") or "")
     coverage_start=_time(row.get("coverage_start"))
     status=("conflicting" if row.get("conflicting") is True else "incomplete"
-        if observed is None or amount is None or not station else "outside_activation_boundary"
+        if observed is None or coverage_start is None or amount is None or not station
+        else "outside_activation_boundary"
         if observed<activation or observed>cutoff else "coverage_crosses_activation_boundary"
-        if coverage_start is not None and coverage_start<activation else "fresh"
+        if coverage_start<activation else "fresh"
         if row.get("fresh") is True else "stale")
     supported=status=="fresh" and amount>=2.0
     return {"status":status,"station_id":station or None,
@@ -181,7 +195,8 @@ def _irrigation(rows,zone_id,zone,activation,cutoff):
         items.append({"execution_id":identity,"eligible":eligible,"credited_mm":round(mm,3),
             "method":method,"confidence":"Measured" if measured is not None else "Provisional",
             "flow_inferred":False,"on_receipt_counted":False})
-    return {"credited_mm":round(min(SUPPORTED_NEED_MM,credited),3),"outcomes":items,
+    return {"credited_mm":round(min(SUPPORTED_NEED_MM,credited),3) if not conflict else 0.0,
+        "outcomes":items,
         "conflicting":conflict,"nominal_application_mm_h":NOMINAL_APPLICATION_MM_H}
 
 
@@ -189,17 +204,30 @@ def _valid(value):
     if not isinstance(value,dict) or value.get("contract_version")!=CONTRACT:return False
     material={key:item for key,item in value.items() if key not in {
         "status","water_balance_event_id","evidence_digest","family_explanation",
-        "material_notification"}}
+        "material_notification","canonical_material"}}
     digest=_digest(material)
-    return (value.get("evidence_digest")==digest and
+    canonical=json.dumps(material,sort_keys=True,separators=(",",":"),default=str)
+    return (value.get("canonical_material")==canonical and value.get("evidence_digest")==digest and
         value.get("water_balance_event_id")=="ROOTLINE-WB-"+digest[:24].upper())
 
 
-def _explanation(zone,effect,effective,remaining):
-    if effect=="satisfied":return f"Observed rain satisfied {zone}'s current water-equivalent obligation provisionally."
-    if effect=="partial credit":return f"Observed rain reduced {zone}'s current obligation; {remaining:.1f} mm remains provisionally."
-    if effect=="Needs Data":return f"{zone}'s rain evidence is stale or conflicting, so existing obligation remains unchanged."
+def _explanation(zone,effect,effective,irrigation,remaining,warnings):
+    sources=[]
+    if effective>0:sources.append("observed effective rain")
+    if irrigation>0:sources.append("verified irrigation")
+    supplied=" and ".join(sources) or "no supported water evidence"
+    if effect=="satisfied":return f"{supplied.capitalize()} satisfied {zone}'s current water-equivalent obligation provisionally."
+    if effect=="partial credit":return f"{supplied.capitalize()} reduced {zone}'s current obligation; {remaining:.1f} mm remains provisionally."
+    if effect=="Needs Data":return f"{zone}'s irrigation evidence conflicts; supported schedule debt remains unchanged."
     return f"{zone}'s current obligation remains; observed rain did not earn supported water credit."
+
+
+def _material_identity(material):
+    credit=round((_number(material.get("credited_supply_mm")) or 0)*2)/2
+    remaining=round((_number(material.get("remaining_water_need_mm")) or 0)*2)/2
+    return "ROOTLINE-WB-NOTIFY-"+_digest({"zone_id":material.get("zone_id"),
+        "obligation_effect":material.get("obligation_effect"),"credited_band_mm":credit,
+        "remaining_band_mm":remaining,"warnings":material.get("evidence_warnings")})[:24].upper()
 
 
 def _unavailable(zone,reason):return {"status":"Unavailable","zone_id":zone,

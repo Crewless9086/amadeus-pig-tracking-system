@@ -1,4 +1,5 @@
 -- Separate append-only crop-water ledger. Existing irrigation_events debt is untouched.
+create extension if not exists pgcrypto;
 create table if not exists public.irrigation_water_balance_events (
   event_id text primary key,
   zone_id text not null check (zone_id in ('B12345','C12345')),
@@ -36,12 +37,22 @@ on public.rootline_water_balance_learning_proposals for each row execute functio
 create or replace function public.rootline_append_water_balance_event(
   p_event_id text,p_zone_id text,p_activation_at timestamptz,p_complete_through timestamptz,
   p_evidence_digest text,p_balance jsonb) returns boolean
-language plpgsql security definer set search_path=public,pg_temp as $$ begin
-  if p_zone_id not in ('B12345','C12345')
-    or p_balance->>'contract_version'<>'rootline_zone_water_balance.v1'
-    or p_balance->>'rule_version'<>'rootline_effective_rainfall_provisional_v1'
-    or p_balance->>'evidence_digest'<>p_evidence_digest
-    or p_balance->>'zone_id'<>p_zone_id
+language plpgsql security definer set search_path=public,pg_temp as $$
+declare stored public.irrigation_water_balance_events%rowtype;
+begin
+  if p_zone_id not in ('B12345','C12345') or p_event_id is null
+    or p_activation_at is null or p_complete_through is null
+    or p_balance->>'contract_version' is distinct from 'rootline_zone_water_balance.v1'
+    or p_balance->>'rule_version' is distinct from 'rootline_effective_rainfall_provisional_v1'
+    or p_balance->>'evidence_digest' is distinct from p_evidence_digest
+    or p_balance->>'zone_id' is distinct from p_zone_id
+    or p_balance->>'canonical_material' is null
+    or (p_balance->>'canonical_material')::jsonb is distinct from
+       (p_balance - 'status' - 'water_balance_event_id' - 'evidence_digest'
+        - 'canonical_material' - 'family_explanation' - 'material_notification')
+    or encode(digest(convert_to(p_balance->>'canonical_material','UTF8'),'sha256'),'hex')
+       is distinct from p_evidence_digest
+    or p_event_id is distinct from 'ROOTLINE-WB-'||upper(substr(p_evidence_digest,1,24))
     or p_complete_through<p_activation_at then
     raise exception 'invalid ROOTLINE water balance';
   end if;
@@ -49,7 +60,16 @@ language plpgsql security definer set search_path=public,pg_temp as $$ begin
     complete_through,evidence_digest,rule_version,balance_json)
   values(p_event_id,p_zone_id,p_activation_at,p_complete_through,p_evidence_digest,
     p_balance->>'rule_version',p_balance) on conflict(event_id) do nothing;
-  return found;
+  if found then return true; end if;
+  select * into stored from public.irrigation_water_balance_events where event_id=p_event_id;
+  if stored.event_id is null or stored.zone_id is distinct from p_zone_id
+    or stored.activation_at is distinct from p_activation_at
+    or stored.complete_through is distinct from p_complete_through
+    or stored.evidence_digest is distinct from p_evidence_digest
+    or stored.balance_json is distinct from p_balance then
+    raise exception 'ROOTLINE water balance replay conflict';
+  end if;
+  return false;
 end $$;
 
 revoke insert,update,delete,truncate on public.irrigation_water_balance_events,

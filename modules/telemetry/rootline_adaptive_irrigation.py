@@ -256,7 +256,7 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     else:
         score = _need_score(need, latest, zone, now, obligation)
         decision, reason = _classify(score, need, policy, weather, water, power, now)
-    if water_balance.get("status")=="Available":
+    if water_balance.get("status")=="Available" and water_balance.get("ledger_current") is True:
         effect=water_balance.get("obligation_effect")
         fraction=max(0.0,min(1.0,_number(water_balance.get("partial_obligation_credit")) or 0.0))
         score=max(0,int(score-round(fraction*40)))
@@ -266,6 +266,10 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         elif effect=="partial credit" and decision in {"Run now","Run later"}:
             reason=(f"Observed effective rainfall supplied partial credit; "
                     f"{water_balance.get('remaining_water_need_mm')} mm remains provisionally.")
+        elif effect=="Hold with no credit" and decision!="recovery required":
+            decision="Hold"
+            reason=("Trace observed rain pauses this start for bounded infiltration reassessment; "
+                    "it earns no water or schedule-obligation credit.")
         elif effect=="Needs Data" and decision!="recovery required":
             decision="Needs Data"
             reason="Current observed-rain evidence is stale or conflicting; preserve schedule debt and reassess without manufacturing credit."

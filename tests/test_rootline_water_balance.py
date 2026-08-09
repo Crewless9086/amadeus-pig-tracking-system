@@ -6,7 +6,7 @@ import pytest
 
 from modules.telemetry.rootline_water_balance import (
     RULE_VERSION, append_zone_water_balance, build_learning_proposal,
-    build_zone_water_balance, notification_projection,
+    build_zone_water_balance, notification_projection,read_latest_zone_water_balances,
 )
 
 NOW=datetime(2026,8,9,10,0,tzinfo=timezone.utc)
@@ -15,7 +15,8 @@ ACTIVATION=datetime(2026,8,9,9,0,tzinfo=timezone.utc)
 
 def rain(mm,**changes):
     value={"station_id":"farm-weather-station","observed_at":NOW.isoformat(),
-        "rain_mm":mm,"coverage":"B/C nearby station","fresh":True}
+        "coverage_start":ACTIVATION.isoformat(),"rain_mm":mm,
+        "coverage":"B/C nearby station","fresh":True}
     value.update(changes);return value
 
 
@@ -83,12 +84,15 @@ def test_activation_boundary_prevents_manufactured_historical_credit():
         ACTIVATION-timedelta(seconds=1)).isoformat()))
     assert crossing["observed_rain"]["status"]=="coverage_crosses_activation_boundary"
     assert crossing["effective_rainfall_mm"]==0
+    missing=balance(observed_rain=rain(30,coverage_start=None))
+    assert missing["observed_rain"]["status"]=="incomplete"
+    assert missing["effective_rainfall_mm"]==0
 
 
 def test_stale_and_conflicting_evidence_fail_only_rain_credit():
     stale=balance(observed_rain=rain(10,fresh=False))
     conflict=balance(observed_rain=rain(10,conflicting=True))
-    assert stale["obligation_effect"]==conflict["obligation_effect"]=="Needs Data"
+    assert stale["obligation_effect"]==conflict["obligation_effect"]=="no credit"
     assert stale["schedule_debt_rewritten"] is False
     duplicate={"execution_id":"DUP","zone_id":"B12345","completed_at":NOW.isoformat(),
         "shutdown_verified":True,"verified_runtime_minutes":60}
@@ -100,8 +104,32 @@ def test_stale_and_conflicting_evidence_fail_only_rain_credit():
 def test_replay_identity_and_notification_are_deterministic():
     first=balance(mm=10);replay=balance(mm=10)
     assert first["water_balance_event_id"]==replay["water_balance_event_id"]
-    assert notification_projection(first,first["evidence_digest"])["unchanged_silent"]
+    assert notification_projection(first,first["material_notification_identity"])["unchanged_silent"]
     assert notification_projection(first,None)["emit"] is True
+
+
+def test_irrigation_only_explanation_and_stale_rain_are_proportional():
+    outcomes=[{"execution_id":"EXEC-IRR","zone_id":"B12345",
+        "completed_at":NOW.isoformat(),"shutdown_verified":True,
+        "verified_runtime_minutes":60}]
+    value=balance(observed_rain=rain(10,fresh=False),irrigation_outcomes=outcomes)
+    assert value["obligation_effect"]=="partial credit"
+    assert value["effective_rainfall_mm"]==0
+    assert value["verified_irrigation"]["credited_mm"]==7
+    assert value["family_explanation"].startswith("Verified irrigation reduced")
+    assert "rain_evidence_stale" in value["evidence_warnings"]
+
+
+def test_notification_identity_suppresses_same_material_new_digest():
+    first=balance(mm=10)
+    later=build_zone_water_balance("B12345",activation_at=ACTIVATION,
+        complete_through=NOW+timedelta(minutes=1),observed_rain=rain(10,
+            observed_at=(NOW+timedelta(minutes=1)).isoformat()),
+        now=NOW+timedelta(minutes=1))
+    assert first["evidence_digest"]!=later["evidence_digest"]
+    assert first["material_notification_identity"]==later["material_notification_identity"]
+    assert notification_projection(later,first["material_notification_identity"])[
+        "unchanged_silent"] is True
 
 
 def test_learning_is_versioned_review_only_and_cannot_silently_apply():
@@ -126,6 +154,20 @@ def test_exact_replay_store_returns_zero_new_rows(monkeypatch):
     monkeypatch.setitem(sys.modules,"psycopg",fake)
     result=append_zone_water_balance(balance(mm=10),"postgres://disposable")
     assert result["status"]=="exact_replay" and result["created"] is False
+
+
+def test_reader_requires_both_current_zones(monkeypatch):
+    import sys,types
+    value=balance(mm=10)
+    class Reader(FakeDatabase):
+        read_only=False
+        def fetchall(self):return [(value,NOW-timedelta(minutes=31))]
+    fake=types.SimpleNamespace(connect=lambda *_args,**_kwargs:Reader())
+    monkeypatch.setitem(sys.modules,"psycopg",fake)
+    result=read_latest_zone_water_balances("postgres://disposable",now=NOW)
+    assert result["status"]=="Unavailable"
+    assert result["required_zones_present"] is False
+    assert result["zones"]["B12345"]["ledger_current"] is False
 
 
 @pytest.mark.skipif(not os.getenv("ROOTLINE_DISPOSABLE_POSTGRES_URL"),
