@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import os
+from pathlib import Path
 import uuid
 
 import pytest
@@ -156,6 +157,14 @@ def test_exact_replay_store_returns_zero_new_rows(monkeypatch):
     assert result["status"]=="exact_replay" and result["created"] is False
 
 
+def test_supabase_pgcrypto_schema_is_in_restricted_function_search_path():
+    migration = (Path(__file__).parents[1] / "supabase" / "migrations" /
+        "202608090002_fix_rootline_water_balance_pgcrypto_search_path.sql")
+    sql = migration.read_text(encoding="utf-8").lower()
+    assert "set search_path = pg_catalog, extensions, pg_temp" in sql
+    assert "revoke create on schema extensions" in sql
+
+
 def test_reader_requires_both_current_zones(monkeypatch):
     import sys,types
     value=balance(mm=10)
@@ -182,6 +191,16 @@ def test_disposable_postgres_append_only_replay_and_schedule_separation():
             "rain_mm":10,"coverage":"B/C","fresh":True},now=now)
     with psycopg.connect(url,connect_timeout=10) as connection:
         with connection.cursor() as cursor:
+            cursor.execute("""select p.proconfig from pg_proc p
+                join pg_namespace n on n.oid=p.pronamespace
+                where n.nspname='public'
+                  and p.proname='rootline_append_water_balance_event'""")
+            assert cursor.fetchone()[0] == [
+                "search_path=pg_catalog, extensions, pg_temp"]
+            for role in ("anon", "authenticated", "service_role"):
+                cursor.execute(
+                    "select has_schema_privilege(%s,'extensions','CREATE')", (role,))
+                assert cursor.fetchone()[0] is False
             cursor.execute("select count(*) from public.irrigation_events")
             before=cursor.fetchone()[0]
     first=append_zone_water_balance(value,url);replay=append_zone_water_balance(value,url)
