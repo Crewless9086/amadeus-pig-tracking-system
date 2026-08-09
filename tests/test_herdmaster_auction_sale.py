@@ -1,4 +1,5 @@
 from copy import deepcopy
+from datetime import date
 import json
 from pathlib import Path
 
@@ -41,6 +42,15 @@ def test_real_read_only_fixture_and_management_estimates():
         "recommendation":"Unavailable until attributable feed-cost, growth-rate, direct-sale value, and pen-capacity evidence exists.",
     }
 
+def test_management_weight_estimates_fail_only_the_analysis_when_evidence_is_incomplete_or_stale():
+    for patch in ({"latest_weight_kg":None},{"latest_weight_kg":"bad"},{"latest_weight_date":"2026-08-02"}):
+        changed=evidence(); changed["pigs"][0].update(patch)
+        result=build_auction_sale_preview(report(),changed)
+        assert result["success"] and result["ready_for_confirmation"]
+        assert result["management_analysis"]["combined_latest_weight_kg"]=="Unknown"
+        assert result["management_analysis"]["average_latest_weight_kg"]=="Unknown"
+        assert result["management_analysis"]["net_settlement_per_latest_kg"]=="Unknown"
+
 def test_sanitized_invoice_fixture_preserves_only_supported_public_accounting_facts():
     settlement=json.loads(Path("tests/fixtures/herdmaster_bkb_settlement_sanitized_20260809.json").read_text(encoding="utf-8"))
     assert settlement["gross_revenue_ex_vat"]=="4180.00" and settlement["net_settlement_payable"]=="4470.51"
@@ -81,13 +91,15 @@ def test_payable_does_not_imply_received_and_payment_can_reconcile_later():
     unpaid = build_auction_sale_preview(report(), evidence())
     paid = build_auction_sale_preview(report(payment_received=True), evidence())
     assert unpaid["net_settlement_payable"] == paid["net_settlement_payable"] == "4470.51"
-    assert unpaid["payment_received_total"] == "Unknown" and paid["payment_received_total"] == "4470.51"
-    assert unpaid["operation_id"] != paid["operation_id"]
+    assert unpaid["payment_received_total"] == paid["payment_received_total"] == "Unknown"
+    assert paid["payment_received_report"] == "Owner_reports_received_pending_reconciliation"
+    assert unpaid["operation_id"] == paid["operation_id"]
 
 def test_confirmation_binding_atomic_success_replay_and_rollback():
     preview = build_auction_sale_preview(report(), evidence())
     confirm = {"owner_confirmed":True,"confirmation_id":"CONF-1","preview_hash":preview["preview_hash"],"operation_id":preview["operation_id"],"evidence_generation":preview["evidence_generation"]}
-    mismatch, status = record_confirmed_auction_sale(report(), evidence, {**confirm,"preview_hash":"wrong"}, authority={"principal_type":"service","principal_id":"oom"}, authority_verifier=lambda _:True, connect_factory=lambda:None)
+    mismatch_cur,mismatch_conn=Cursor(),Conn()
+    mismatch, status = record_confirmed_auction_sale(report(), evidence, {**confirm,"preview_hash":"wrong"}, authority={"principal_type":"service","principal_id":"oom"}, authority_verifier=lambda _:True, connect_factory=lambda:mismatch_conn.bind(mismatch_cur))
     assert status == 409 and mismatch["status"] == "confirmation_preview_mismatch"
     cur, conn = Cursor(), Conn()
     result, status = record_confirmed_auction_sale(report(), evidence, confirm, authority={"principal_type":"service","principal_id":"oom","actor_reference":"owner"}, authority_verifier=lambda _:True, connect_factory=lambda:conn.bind(cur))
@@ -96,7 +108,7 @@ def test_confirmation_binding_atomic_success_replay_and_rollback():
     header = next(args for sql,args in cur.calls if "insert into sales_transactions" in sql)
     assert header[1:7] == ("2026-08-05","4470.51","4180.00","627.00","4807.00","336.49")
     replay_cur, replay_conn = Cursor(replay=True, preview=preview["preview_hash"]), Conn()
-    replay, status = record_confirmed_auction_sale(report(), evidence, confirm, authority={"principal_type":"service","principal_id":"oom"}, authority_verifier=lambda _:True, connect_factory=lambda:replay_conn.bind(replay_cur))
+    replay, status = record_confirmed_auction_sale(report(), lambda: (_ for _ in ()).throw(AssertionError("post-sale evidence must not be loaded for replay")), confirm, authority={"principal_type":"service","principal_id":"oom"}, authority_verifier=lambda _:True, connect_factory=lambda:replay_conn.bind(replay_cur))
     assert status == 200 and replay["rows_created"] == 0
     fail_cur, fail_conn = Cursor(fail=True), Conn()
     failed, status = record_confirmed_auction_sale(report(), evidence, confirm, authority={"principal_type":"service","principal_id":"oom"}, authority_verifier=lambda _:True, connect_factory=lambda:fail_conn.bind(fail_cur))
@@ -116,6 +128,16 @@ def test_later_payment_reconciliation_updates_same_sale_and_replays_zero():
     replay_cur,replay_conn=PaymentCursor(received=True),Conn()
     replay,status=reconcile_auction_payment("SALE-1",evidence_row,authority={"principal_type":"service","principal_id":"ledger"},authority_verifier=lambda _:True,connect_factory=lambda:replay_conn.bind(replay_cur))
     assert status==200 and replay["status"]=="payment_replayed_zero_rows" and replay["rows_changed"]==0
+
+def test_payment_chronology_and_cross_sale_duplicate_evidence_fail_closed():
+    row={"amount":"4470.51","received_date":"2026-08-04","evidence_id":"BANK-PRIVATE-1","evidence_sha256":"b"*64}
+    cur,conn=PaymentCursor(),Conn()
+    result,status=reconcile_auction_payment("SALE-1",row,authority={"principal_type":"service","principal_id":"ledger"},authority_verifier=lambda _:True,connect_factory=lambda:conn.bind(cur))
+    assert status==409 and result["status"]=="payment_date_precedes_sale"
+    row["received_date"]="2026-08-09"
+    cur,conn=DuplicatePaymentCursor(),Conn()
+    result,status=reconcile_auction_payment("SALE-2",row,authority={"principal_type":"service","principal_id":"ledger"},authority_verifier=lambda _:True,connect_factory=lambda:conn.bind(cur))
+    assert status==409 and result["status"]=="payment_evidence_already_bound"
 
 class Cursor:
     def __init__(self,replay=False,fail=False,preview=None): self.replay=replay; self.fail=fail; self.preview=preview; self.calls=[]; self.rowcount=1; self.fetches=0
@@ -137,7 +159,15 @@ class Conn:
     def __enter__(self): return self
     def __exit__(self,typ,*args): self.rolled_back=typ is not None; self.committed=typ is None
 class PaymentCursor(Cursor):
-    def __init__(self,received=False): super().__init__(); self.received=received
+    def __init__(self,received=False): super().__init__(); self.received=received; self.payment_fetches=0
     def fetchone(self):
+        self.payment_fetches+=1
         identity={"evidence_id":"BANK-PRIVATE-1","sha256":"b"*64,"received_date":"2026-08-09","amount":"4470.51"}
-        return ("Auction","4470.51","4470.51" if self.received else None,identity if self.received else None)
+        if self.payment_fetches==1:
+            digest=__import__('hashlib').sha256(json.dumps(identity,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+            return ("Auction","4470.51","4470.51" if self.received else None,identity if self.received else None,date(2026,8,5),digest if self.received else None)
+        return None
+class DuplicatePaymentCursor(PaymentCursor):
+    def fetchone(self):
+        value=super().fetchone()
+        return ("SALE-1",) if self.payment_fetches==2 else value

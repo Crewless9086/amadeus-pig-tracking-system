@@ -32,6 +32,8 @@ def build_auction_sale_preview(report, evidence):
     tags = [_tag(value) for value in report.get("tags", []) if _tag(value)]
     if len(tags) != 18 or len(set(tags)) != 18:
         return _fail("exactly_18_unique_tags_required")
+    if not _text(evidence.get("evidence_generation")):
+        return _fail("canonical_evidence_generation_required")
     rows = evidence.get("pigs") if isinstance(evidence.get("pigs"), list) else []
     if not all(isinstance(row, dict) for row in rows):
         return _fail("canonical_pig_rows_required")
@@ -83,24 +85,32 @@ def build_auction_sale_preview(report, evidence):
         conflicts.append({"reason": "v10_membership_must_be_exactly_8_sale_tags"})
     v11_tags = [tag for tag in tags if tag not in v10_tags] if v10_tags else []
 
-    total_weight = sum((Decimal(str(row.get("latest_weight_kg"))) for row in rows if _tag(row.get("tag_number")) in tags and row.get("latest_weight_kg") is not None), Decimal("0"))
+    weight_values=[]
+    for tag in tags:
+        matches=[row for row in rows if _tag(row.get("tag_number"))==tag]
+        try: weight=Decimal(str(matches[0].get("latest_weight_kg"))) if len(matches)==1 else Decimal("0")
+        except (InvalidOperation,ValueError,TypeError): weight=Decimal("0")
+        if len(matches)!=1 or weight<=0 or _text(matches[0].get("latest_weight_date"))!="2026-08-03":
+            weight_values=[]; break
+        weight_values.append(weight)
+    total_weight=sum(weight_values,Decimal("0")) if len(weight_values)==18 else None
     analytics = {
         "basis": "Analytical estimates using latest recorded weights dated 2026-08-03; invoice auction mass is zero/absent.",
-        "combined_latest_weight_kg": str(total_weight.quantize(Decimal("0.1"))),
-        "average_latest_weight_kg": str((total_weight / Decimal("18")).quantize(Decimal("0.01"))),
+        "combined_latest_weight_kg": str(total_weight.quantize(Decimal("0.1"))) if total_weight is not None else "Unknown",
+        "average_latest_weight_kg": str((total_weight / Decimal("18")).quantize(Decimal("0.01"))) if total_weight is not None else "Unknown",
         "gross_including_vat_per_pig": "267.06",
         "net_settlement_per_pig": "248.36",
-        "net_settlement_per_latest_kg": "28.92",
+        "net_settlement_per_latest_kg": str((Decimal("4470.51")/total_weight).quantize(Decimal("0.01"))) if total_weight is not None else "Unknown",
         "recommendation": "Unavailable until attributable feed-cost, growth-rate, direct-sale value, and pen-capacity evidence exists.",
     }
-    payment_status = "Received" if payment_received is True else "Not_received" if payment_received is False else "Unknown"
+    payment_report = "Owner_reports_received_pending_reconciliation" if payment_received is True else "Owner_reports_not_received" if payment_received is False else "Unknown"
     payload = {
         "success": not conflicts, "contract_version": CONTRACT_VERSION,
         "evidence_generation": evidence.get("evidence_generation"), "tags": tags, "pig_count": len(matrix),
         "matrix": matrix, "currency": "ZAR", "sale_stream": "Livestock", "sale_channel": "Auction",
-        **INVOICE_FACTS, "payment_status": payment_status,
-        "payment_received_total": "4470.51" if payment_received is True else "Unknown",
-        "payment_received_evidence": "owner_or_bank_evidence_required" if payment_received is None else "owner_report_pending_persistence",
+        **INVOICE_FACTS, "payment_status": "Unknown", "payment_received_report": payment_report,
+        "payment_received_total": "Unknown",
+        "payment_received_evidence": "separate_attributable_bank_or_owner_payment_evidence_required",
         "individual_proceeds": "Unknown", "v10_tags": v10_tags or "Unknown", "v11_tags": v11_tags or "Unknown",
         "invoice_evidence_identity": invoice_identity, "management_analysis": analytics,
         "missing_facts": [], "conflicts": conflicts, "ready_for_confirmation": not conflicts,
@@ -110,7 +120,7 @@ def build_auction_sale_preview(report, evidence):
         "delivery_enabled": False, "write_enabled": False, "payment_reconciliation_enabled": False,
         "mating_execution_enabled": False, "customer_contact_enabled": False,
     }
-    operation_facts = {key: payload[key] for key in (*INVOICE_FACTS.keys(), "tags", "payment_status", "v10_tags", "invoice_evidence_identity")}
+    operation_facts = {key: payload[key] for key in (*INVOICE_FACTS.keys(), "tags", "v10_tags", "invoice_evidence_identity")}
     payload["operation_id"] = "HERD-AUCTION-" + _digest(operation_facts)[:32].upper()
     payload["english"] = _render(payload, "en")
     payload["afrikaans"] = _render(payload, "af")
@@ -121,8 +131,8 @@ def build_auction_sale_preview(report, evidence):
 def _render(p, lang):
     mappings = ", ".join(f"{row['tag']} → {row['pig_id']}" for row in p["matrix"])
     if lang == "af":
-        return f"BKB Riversdal-veiling op 5 Augustus 2026, faktuur S-EE02-2710. 18 varke: {mappings}. Bruto inkomste uitgesluit BTW R4 180,00; uitset-BTW R627,00; bruto ingesluit BTW R4 807,00; kommissie uitgesluit BTW R292,60; kommissie-inset-BTW R43,89; kommissie ingesluit BTW R336,49; ander aftrekkings R0,00; netto vereffening betaalbaar R4 470,51 via EFT. Betaling ontvang: {('Ja' if p['payment_status']=='Received' else 'Nee' if p['payment_status']=='Not_received' else 'Onbekend')}. Individuele varkpryse en lotlidmaatskap: Onbekend. Voorgestel: merk al 18 Verkoop en van die plaas af; behou geskiedenis. Niks word geskryf voor die presiese voorskou bevestig is nie."
-    return f"BKB Riversdal auction on 5 August 2026, invoice S-EE02-2710. 18 pigs: {mappings}. Gross revenue excluding VAT R4,180.00; output VAT R627.00; gross including VAT R4,807.00; commission excluding VAT R292.60; commission input VAT R43.89; commission including VAT R336.49; other deductions R0.00; net settlement payable R4,470.51 by EFT. Payment received: {p['payment_status']}. Individual pig prices and tag-to-lot membership: Unknown. Proposed: mark all 18 Sold and off-farm; preserve history. Nothing is recorded until the exact preview is confirmed."
+        return f"BKB Riversdal-veiling op 5 Augustus 2026, faktuur S-EE02-2710. Bewese algehele verkopingslidmaatskap vir 18 varke: {mappings}. Bruto inkomste uitgesluit BTW R4 180,00; uitset-BTW R627,00; bruto ingesluit BTW R4 807,00; kommissie uitgesluit BTW R292,60; kommissie-inset-BTW R43,89; kommissie ingesluit BTW R336,49; ander aftrekkings R0,00; netto vereffening betaalbaar R4 470,51 via EFT. Betaling ontvang: Onbekend. Individuele varkpryse en V10/V11-sublotlidmaatskap: Onbekend. Voorgestel: merk al 18 Verkoop en van die plaas af; behou geskiedenis. Niks word geskryf voor die presiese voorskou bevestig is nie."
+    return f"BKB Riversdal auction on 5 August 2026, invoice S-EE02-2710. Proven overall sale membership for 18 pigs: {mappings}. Gross revenue excluding VAT R4,180.00; output VAT R627.00; gross including VAT R4,807.00; commission excluding VAT R292.60; commission input VAT R43.89; commission including VAT R336.49; other deductions R0.00; net settlement payable R4,470.51 by EFT. Payment received: Unknown. Individual pig prices and V10/V11 sublot membership: Unknown. Proposed: mark all 18 Sold and off-farm; preserve history. Nothing is recorded until the exact preview is confirmed."
 
 
 def _fail(reason): return {"success": False, "contract_version": CONTRACT_VERSION, "reason": reason, "delivery_enabled": False, "write_enabled": False, "payment_reconciliation_enabled": False, "mating_execution_enabled": False, "customer_contact_enabled": False}
