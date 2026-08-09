@@ -261,6 +261,19 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         "evidence_generation": str(evidence.get("evidence_generation") or ""),
         "adapter_version": CONTRACT_VERSION, "result_digest": digest, "answer": answer,
         **ZERO_AUTHORITY}
+    if recoverable:
+        binding = {"owner": context["owner_user_id"], "chat": context["chat_id"],
+            "provider_message_id": provider_id, "provider_timestamp": provider_at.isoformat(),
+            "content_digest": context["content_sha256"],
+            "contract_version": "oom_rootline_observation_recovery_v1"}
+        outcome["binding"] = binding
+        outcome["material_recomposition_authority"] = {
+            "from_systemic_exception": "rootline_canonical_observation_bridge_failed",
+            "to_contract": "oom_rootline_observation_recovery_v1",
+            "provider_binding_digest": _digest(binding),
+            "prior_result_digest": str(completed["outcome"].get("result_digest") or ""),
+            "current_result_digest": digest,
+            "replacement_text_digest": hashlib.sha256(answer.encode("utf-8")).hexdigest()}
     _apply_write_truth(outcome, observation_result, write_truth)
     complete_id = mission + "-COMPLETED-" + context_identity
     try:

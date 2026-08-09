@@ -164,7 +164,8 @@ def test_recoverable_zero_write_containment_advances_same_mission_once():
         "authority":{"farm_observation_write":False,"hardware_control":False,"telegram_send":False,"automatic_on_retry":False}}
     events={mission+"-DISPATCH":{"event_id":mission+"-DISPATCH","mission_id":mission,"state":"claimed","context":old_context},
         mission+"-COMPLETED":{"event_id":mission+"-COMPLETED","mission_id":mission,"state":"completed","context":old_context,
-            "outcome":{"systemic_exception":"rootline_canonical_observation_bridge_failed","writes_farm_data":False}}}
+            "outcome":{"systemic_exception":"rootline_canonical_observation_bridge_failed","writes_farm_data":False,
+                       "result_digest":"a"*64}}}
     def store(action, identity, payload):
         if action=="load": return list(events.values())
         if identity in events:return {"success":True,"created":False}
@@ -178,6 +179,7 @@ def test_recoverable_zero_write_containment_advances_same_mission_once():
         rootline_operations_dispatcher=lambda _:pytest.fail("completed replay must not redispatch"),
         rootline_observation_writer=lambda *_:pytest.fail("completed replay must not rewrite"),operation_store=store)
     assert status==200 and first["mission_id"]==mission and first["writes_farm_data"] is True
+    assert first["material_recomposition_authority"]["prior_result_digest"]=="a"*64
     assert second["replay_suppressed"] is True
 
 def test_unavailable_operational_adapter_is_visible_and_never_falls_to_v1():

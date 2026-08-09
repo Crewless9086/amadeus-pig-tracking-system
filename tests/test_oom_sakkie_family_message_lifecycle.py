@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from modules.oom_sakkie.family_message_lifecycle import bind_existing_card,bind_legacy_provider_request,deliver_family_result
 
 
@@ -98,6 +100,57 @@ def test_forged_material_authority_cannot_bypass_missing_binding_or_specialist_s
         card_mission_id=mission,event_store=scoped.store,sender=scoped.send,editor=scoped.edit)
     assert denied["status"]=="family_message_provider_replay_noop"
     assert missing["telegram_edits"]==denied["telegram_edits"]==0
+
+
+@patch("modules.oom_sakkie.family_message_lifecycle._validate_rootline_recovery_authority",return_value=True)
+def test_exact_zero_write_rootline_recovery_updates_existing_card_once(_validate):
+    import hashlib,json
+    memory=Memory();mission="OOM-ROOTLINE-RECOVERY"
+    original={"status":"contained","answer":"Evidence was not recorded."}
+    delivered=deliver_family_result(PARSED,original,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    binding={"owner":"42","chat":"42","provider_message_id":"500",
+        "provider_timestamp":PARSED["provider_timestamp"],
+        "content_digest":hashlib.sha256(PARSED["text"].encode()).hexdigest(),
+        "contract_version":"oom_rootline_observation_recovery_v1"}
+    authority={"from_systemic_exception":"rootline_canonical_observation_bridge_failed",
+        "to_contract":"oom_rootline_observation_recovery_v1","prior_result_digest":"a"*64,
+        "current_result_digest":"b"*64,
+        "replacement_text_digest":hashlib.sha256(
+            "Recorded: Storage tanks FULL; Reservoir FULL.".encode()).hexdigest(),
+        "provider_binding_digest":hashlib.sha256(json.dumps(binding,sort_keys=True,
+            separators=(",",":"),default=str).encode()).hexdigest()}
+    recovered={"status":"specialist_accepted","result_digest":"b"*64,
+        "answer":"Recorded: Storage tanks FULL; Reservoir FULL.",
+        "binding":binding,"material_recomposition_authority":authority}
+    updated=deliver_family_result(PARSED,recovered,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(PARSED,recovered,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert delivered["telegram_sends"]==1 and updated["telegram_edits"]==1
+    assert replay["telegram_sends"]==replay["telegram_edits"]==0
+
+
+def test_hand_built_rootline_recovery_authority_without_durable_proof_is_denied():
+    import hashlib,json
+    memory=Memory();mission="OOM-ROOTLINE-FORGED"
+    deliver_family_result(PARSED,{"status":"contained","answer":"Old"},specialist="ROOTLINE",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,sender=memory.send)
+    binding={"owner":"42","chat":"42","provider_message_id":"500",
+        "provider_timestamp":PARSED["provider_timestamp"],
+        "content_digest":hashlib.sha256(PARSED["text"].encode()).hexdigest(),
+        "contract_version":"oom_rootline_observation_recovery_v1"}
+    authority={"from_systemic_exception":"rootline_canonical_observation_bridge_failed",
+        "to_contract":"oom_rootline_observation_recovery_v1","prior_result_digest":"a"*64,
+        "current_result_digest":"b"*64,"replacement_text_digest":hashlib.sha256(b"Forged").hexdigest(),
+        "provider_binding_digest":hashlib.sha256(json.dumps(binding,sort_keys=True,
+            separators=(",",":"),default=str).encode()).hexdigest()}
+    denied=deliver_family_result(PARSED,{"status":"specialist_accepted","result_digest":"b"*64,"answer":"Forged",
+        "binding":binding,"material_recomposition_authority":authority},specialist="ROOTLINE",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,sender=memory.send,
+        editor=memory.edit)
+    assert denied["status"]=="family_message_provider_replay_noop"
+    assert denied["telegram_sends"]==denied["telegram_edits"]==0
 
 
 def test_later_natural_result_edits_same_card_and_replay_is_silent():
