@@ -35,6 +35,13 @@ The sanitized accounting fixture is
 `tests/fixtures/herdmaster_bkb_settlement_sanitized_20260809.json`; it contains
 no bank, contact, personal, or tax identifiers.
 
+For compatibility with existing readers, generic `gross_total` means gross
+revenue excluding VAT, `deductions_total` means commission including VAT,
+`net_total` and `net_settlement_payable` both project the supported seller
+settlement payable, and legacy `lot_total` also carries that payable amount.
+These are compatibility projections of the same invoice evidence, not separate
+financial facts. The explicit VAT/commission/payable fields are authoritative.
+
 ## Canonical reconciliation
 
 Read-only cutoff: 2026-08-08. All 18 tags resolve exactly once. Every row is

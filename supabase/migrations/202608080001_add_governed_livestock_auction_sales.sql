@@ -11,6 +11,7 @@ alter table public.sales_transactions add column if not exists commission_includ
 alter table public.sales_transactions add column if not exists other_deductions numeric(12,2);
 alter table public.sales_transactions add column if not exists net_settlement_payable numeric(12,2);
 alter table public.sales_transactions add column if not exists payment_received_evidence_json jsonb;
+alter table public.sales_transactions add column if not exists payment_evidence_digest text;
 alter table public.sales_transactions add column if not exists external_reference text;
 alter table public.sales_transactions add column if not exists evidence_json jsonb not null default '{}'::jsonb;
 alter table public.sales_transactions add column if not exists operation_id text;
@@ -28,15 +29,24 @@ alter table public.sales_transactions add constraint sales_transactions_auction_
 alter table public.sales_transactions drop constraint if exists sales_transactions_auction_invoice_arithmetic_check;
 alter table public.sales_transactions add constraint sales_transactions_auction_invoice_arithmetic_check check(
   sale_channel is distinct from 'Auction' or (
+    gross_total is not null and output_vat is not null and gross_including_vat is not null and
+    commission_ex_vat is not null and commission_input_vat is not null and commission_including_vat is not null and
+    other_deductions is not null and net_total is not null and net_settlement_payable is not null and
     gross_total + output_vat = gross_including_vat and
     commission_ex_vat + commission_input_vat = commission_including_vat and
     gross_including_vat - commission_including_vat - other_deductions = net_settlement_payable and
     (received_total is null or received_total <= net_settlement_payable)
   )
 );
+alter table public.sales_transactions drop constraint if exists sales_transactions_auction_paid_evidence_check;
+alter table public.sales_transactions add constraint sales_transactions_auction_paid_evidence_check check(
+  sale_channel is distinct from 'Auction' or payment_status<>'Paid' or
+  (received_total=net_settlement_payable and payment_date is not null and payment_received_evidence_json is not null and payment_evidence_digest is not null)
+);
 create unique index if not exists uq_sales_transactions_operation_id on public.sales_transactions(operation_id) where operation_id is not null;
 create unique index if not exists uq_sales_transactions_auction_reference on public.sales_transactions(destination,external_reference) where sale_channel='Auction' and external_reference is not null;
 create unique index if not exists uq_sales_transactions_auction_invoice_reference on public.sales_transactions(external_reference) where sale_channel='Auction' and external_reference is not null;
+create unique index if not exists uq_sales_transactions_payment_evidence_digest on public.sales_transactions(payment_evidence_digest) where payment_evidence_digest is not null;
 create or replace function app_private.guard_reserved_pig_current_state() returns trigger language plpgsql as $$
 declare v_status text; v_on_farm boolean;
 begin

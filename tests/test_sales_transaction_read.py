@@ -5,6 +5,7 @@ from decimal import Decimal
 from unittest.mock import Mock, patch
 
 from modules.sales.sales_transaction_read import (
+    _complete_total,
     get_sales_transaction,
     get_monthly_sales_transaction_summary,
     list_sales_transactions,
@@ -12,6 +13,10 @@ from modules.sales.sales_transaction_read import (
 
 
 class SalesTransactionReadTests(unittest.TestCase):
+    def test_vat_monthly_total_is_unknown_when_any_active_stream_is_incomplete(self):
+        streams={"livestock":{"transaction_count":1,"output_vat":None,"output_vat_unknown_count":1}}
+        self.assertIsNone(_complete_total(streams,"output_vat","output_vat_unknown_count"))
+
     def test_list_sales_transactions_reports_missing_database_url_without_importing_driver(self):
         with patch.dict(os.environ, {}, clear=True):
             result, status_code = list_sales_transactions()
