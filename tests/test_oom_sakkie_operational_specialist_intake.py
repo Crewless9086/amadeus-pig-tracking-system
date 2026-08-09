@@ -159,8 +159,8 @@ def test_recoverable_zero_write_containment_advances_same_mission_once():
     mission=operational_specialist_intake._mission(item)
     old_context={"contract_version":"oom_rootline_operational_dispatch_v1","mission_id":mission,
         "owner_user_id":"42","chat_id":"42","provider_message_id":"3213","provider_timestamp":NOW.isoformat(),
-        "observations":[],"visible_irrigation_need_zone":None,"semantic_observation":"Both are full.",
-        "semantic_intent":"water_levels_observed","content_sha256":__import__("hashlib").sha256(item["text"].encode()).hexdigest(),
+        "observations":[],"visible_irrigation_need_zone":None,"semantic_observation":"True",
+        "semantic_intent":"rootline_reassessment","content_sha256":__import__("hashlib").sha256(item["text"].encode()).hexdigest(),
         "authority":{"farm_observation_write":False,"hardware_control":False,"telegram_send":False,"automatic_on_retry":False}}
     events={mission+"-DISPATCH":{"event_id":mission+"-DISPATCH","mission_id":mission,"state":"claimed","context":old_context},
         mission+"-COMPLETED":{"event_id":mission+"-COMPLETED","mission_id":mission,"state":"completed","context":old_context,
