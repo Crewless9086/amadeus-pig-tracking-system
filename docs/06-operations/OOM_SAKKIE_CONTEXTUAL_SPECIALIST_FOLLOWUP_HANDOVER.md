@@ -51,3 +51,10 @@ ordinary new request; only a positively proven terminal replay is suppressed.
 The two observed failures are correlated at the pre-routing/context boundary
 but remain distinct: execution `63371` lost retained lifecycle facts, while CI
 proved that unavailable replay lookup could incorrectly suppress a new request.
+
+The first v2 production recovery then completed its internal assessment but
+the client/process ended before any family-card delivery claim existed. An
+internal specialist terminal is therefore not delivery proof. Exact replay now
+suppresses only after the matching answer digest has a terminal family-delivery
+receipt; otherwise the stored zero-authority outcome resumes only its existing
+deterministic delivery rail, without rerunning interpretation or ROOTLINE.

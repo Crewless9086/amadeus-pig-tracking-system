@@ -1,4 +1,5 @@
 from unittest.mock import patch
+import pytest
 
 from modules.oom_sakkie.family_message_lifecycle import bind_existing_card,bind_legacy_provider_request,deliver_family_result
 
@@ -176,6 +177,33 @@ def test_waiting_question_updates_card_and_creates_one_visible_notification():
         event_store=memory.store,sender=memory.send,editor=memory.edit)
     assert changed["status"]=="family_message_card_updated_and_notified"
     assert changed["telegram_edits"]==1 and changed["telegram_sends"]==1
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
+    assert len(memory.edited)==1 and len(memory.sent)==2
+
+
+def test_updated_card_without_notification_claim_resumes_notification_only():
+    memory=Memory();mission="OOM-ROOTLINE-WAIT-INTERRUPTED"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    follow_parsed={**PARSED,"provider_message_id":"501"}
+    follow={**RESULT,"answer":"Are you still at the valves?","requires_visible_notification":True}
+    interrupted=True
+    def crash_before_notification(action,identity,payload):
+        nonlocal interrupted
+        if action=="record" and "-VISIBLE-WAIT-" in identity and interrupted:
+            interrupted=False
+            raise RuntimeError("process stopped before notification claim")
+        return memory.store(action,identity,payload)
+    with pytest.raises(RuntimeError):
+        deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+            card_mission_id=mission,event_store=crash_before_notification,
+            sender=memory.send,editor=memory.edit)
+    resumed=deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert resumed["status"]=="family_message_card_updated_and_notified"
+    assert resumed["telegram_edits"]==0 and resumed["telegram_sends"]==1
     assert replay["telegram_edits"]==replay["telegram_sends"]==0
     assert len(memory.edited)==1 and len(memory.sent)==2
 

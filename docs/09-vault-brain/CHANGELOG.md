@@ -24,6 +24,10 @@
   provider lookup was unavailable. Restored ordinary routing unless replay is
   positively proven, retained typed parent evidence, and made every genuine
   waiting question visibly notify once while updating the durable card.
+- Closed the subsequent process-interruption gap between an internally complete
+  contextual outcome and owner delivery. Replay suppression now requires the
+  matching terminal family-delivery receipt; an undelivered stored outcome
+  resumes only deterministic delivery and never reruns specialist work.
 
 ## 2026-08-09 - Oom Sakkie farm-manager spine closeout assessed
 

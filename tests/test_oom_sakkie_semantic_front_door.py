@@ -234,6 +234,32 @@ def test_gateway_exact_provider_replay_precedes_semantic_and_sends_nothing(recov
     assert result["delivery"]["telegram_sends"]==0 and result["delivery"]["telegram_edits"]==0
 
 
+@patch("modules.oom_sakkie.telegram_gateway.interpret_owner_message",
+       side_effect=AssertionError("delivery recovery must not rerun semantic routing"))
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+@patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay")
+def test_gateway_resumes_unattempted_contextual_delivery_once(recover, deliver, _interpret):
+    recover.return_value={"handled":True,"success":True,"status":"waiting_for_input",
+        "answer":"Are you still there?","delivery_recovery_required":True,
+        "replay_suppressed":False,"suppress_owner_delivery":False,
+        "mission_id":"FERTILIZER-1","card_mission_id":"FERTILIZER-1",
+        "specialist_identity":"ROOTLINE","hardware_commands":0,
+        "provider_control_calls":0,"writes_farm_data":False}
+    deliver.return_value={"success":True,"status":"family_message_card_updated_and_notified",
+        "telegram_sends":1,"telegram_edits":1}
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"1","OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"g"*40,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
+    payload={"message":{"message_id":3486,"date":1786290019,
+        "text":"CH2 inching is now on at 300 seconds","from":{"id":42},
+        "chat":{"id":42,"type":"private"}}}
+    with patch.dict("os.environ",env,clear=True):
+        result,status=handle_telegram_gateway_message(payload,
+            headers={"Authorization":"Bearer "+"g"*40})
+    assert status==200 and result["answer"]=="Are you still there?"
+    assert result["delivery"]["telegram_sends"]==1 and result["delivery"]["telegram_edits"]==1
+    deliver.assert_called_once()
+
+
 @patch("modules.oom_sakkie.telegram_gateway.handle_message")
 @patch("modules.oom_sakkie.telegram_gateway.interpret_owner_message",return_value=None)
 @patch("modules.oom_sakkie.operational_specialist_intake._load_contextual_provider_replay",
