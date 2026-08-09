@@ -32,20 +32,29 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
     if existing.get("delivery_state") == "ambiguous":
         return {**_safe("rootline_daily_delivery_ambiguous", success=False),
                 "daily_identity": identity}
-    try:
-        result = specialist_loader()
-    except Exception:
-        result = {}
-    if not _fresh_result(result, now):
-        return {**_safe("rootline_daily_waiting_for_fresh_evidence"),
-                "daily_identity": identity, "retry_on_next_scheduler_tick": True}
-    material = rootline_material_digest(result)
-    packet = {"contract_version": CONTRACT_VERSION, "identity": identity,
-        "owner_user_id": owner_user_id, "chat_id": chat_id,
-        "operating_date": now.date().isoformat(), "material_digest": material,
-        "evidence_cutoff": str(result.get("evidence_cutoff") or ""),
-        "delivery_state": "pending", "answer": compose_daily_rootline_plan(result, language=language)}
-    claimed = state_store("claim_pending", identity, packet)
+    if existing.get("delivery_state") == "failed":
+        attempt = int(existing.get("attempt_count") or 1) + 1
+        if attempt > 2:
+            return {**_safe("rootline_daily_delivery_failed", success=False),
+                    "daily_identity": identity}
+        packet = {**existing, "delivery_state": "pending", "attempt_count": attempt}
+        claimed = state_store(f"claim_retry_{attempt}", identity, packet)
+    else:
+        try:
+            result = specialist_loader()
+        except Exception:
+            result = {}
+        if not _fresh_result(result, now):
+            return {**_safe("rootline_daily_waiting_for_fresh_evidence"),
+                    "daily_identity": identity, "retry_on_next_scheduler_tick": True}
+        material = rootline_material_digest(result)
+        packet = {"contract_version": CONTRACT_VERSION, "identity": identity,
+            "owner_user_id": owner_user_id, "chat_id": chat_id,
+            "operating_date": now.date().isoformat(), "material_digest": material,
+            "evidence_cutoff": str(result.get("evidence_cutoff") or ""),
+            "delivery_state": "pending", "attempt_count": 1,
+            "answer": compose_daily_rootline_plan(result, language=language)}
+        claimed = state_store("claim_pending", identity, packet)
     if not isinstance(claimed, Mapping) or claimed.get("success") is not True:
         return _safe("rootline_daily_claim_unproven", success=False)
     bound = state_store("load_identity", identity, None) or packet
@@ -68,13 +77,22 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
         if not isinstance(stored, Mapping) or stored.get("success") is not True:
             return _safe("rootline_daily_delivery_persistence_unproven", success=False)
         return {**_safe("rootline_daily_delivered"), "daily_identity": identity,
-            "material_digest": material, "telegram_sends": int(delivery.get("telegram_sends") or 1),
+            "material_digest": packet["material_digest"], "telegram_sends": int(delivery.get("telegram_sends") or 1),
             "provider_message_id": proof["provider_message_id"], "answer": packet["answer"]}
     if "ambiguous" in str(delivery.get("status") or ""):
         state_store("mark_ambiguous", identity, {**packet, "delivery_state": "ambiguous"})
         return {**_safe("rootline_daily_delivery_ambiguous", success=False),
                 "daily_identity": identity}
-    return {**_safe("rootline_daily_delivery_unproven", success=False), "daily_identity": identity}
+    attempt = int(packet.get("attempt_count") or 1)
+    failed = state_store(f"mark_failed_{attempt}", identity,
+        {**packet, "delivery_state": "failed", "attempt_count": attempt,
+         "failure_status": str(delivery.get("status") or "delivery_failed")})
+    if not isinstance(failed, Mapping) or failed.get("success") is not True:
+        return {**_safe("rootline_daily_failure_persistence_unproven", success=False),
+                "daily_identity": identity}
+    return {**_safe("rootline_daily_delivery_failed_retryable" if attempt < 2
+                    else "rootline_daily_delivery_failed", success=False),
+            "daily_identity": identity, "retry_on_next_scheduler_tick": attempt < 2}
 
 
 def compose_daily_rootline_plan(result: Mapping[str, Any], *, language="en") -> str:

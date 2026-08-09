@@ -24,7 +24,7 @@ def store():
         if action == "load_identity": return rows.get(identity)
         if action == "claim_pending":
             created = identity not in rows; rows.setdefault(identity, dict(payload)); return {"success": True, "created": created}
-        if action in {"mark_delivered", "mark_ambiguous"}:
+        if action.startswith("mark_") or action.startswith("claim_retry_"):
             rows[identity] = {**rows.get(identity, {}), **dict(payload)}; return {"success": True, "created": True}
     return rows, use
 
@@ -74,6 +74,29 @@ def test_volatile_cutoff_and_formatting_never_change_material_decision_content()
     a = result(cutoff="2026-08-09T06:55:00+02:00")
     b = {**result(cutoff="2026-08-09T06:56:00+02:00"), "generated_at": "later"}
     assert _material_digest(a) == _material_digest(b)
+    reordered = {**b, "overall_status": "  Hold ",
+        "recommendations": list(reversed([{**row, "reason": "  " + str(row.get("reason") or "").replace(" ", "   ") + "  "}
+                                            for row in b["recommendations"]]))}
+    assert _material_digest(a) == _material_digest(reordered)
+
+
+def test_proven_zero_delivery_failure_retries_once_then_is_silent():
+    rows, state = store(); calls = []; now = datetime(2026, 8, 9, 7, 1, tzinfo=SAST)
+    def send(parsed, packet, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return {"success": False, "status": "provider_rejected_before_send", "telegram_sends": 0}
+        return {"success": True, "status": "family_message_delivered",
+                "telegram_message_id": "5002", "telegram_sends": 1}
+    first = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+        state_store=state, deliver=send, now=now)
+    second = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+        state_store=state, deliver=send, now=now)
+    replay = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+        state_store=state, deliver=send, now=now)
+    assert first["status"] == "rootline_daily_delivery_failed_retryable"
+    assert second["status"] == "rootline_daily_delivered" and second["telegram_sends"] == 1
+    assert replay["status"] == "rootline_daily_replayed_noop" and len(calls) == 2
 
 
 def test_started_completed_and_intervention_are_separate_visible_event_words():

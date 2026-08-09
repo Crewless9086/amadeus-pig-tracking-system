@@ -428,6 +428,14 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
     if not policy["enabled"] or not _token_matches(headers or {}, environ=source):
         return _gateway_result(False, "rootline_reassessment_auth_denied", policy, 403)
     if str((payload or {}).get("scheduler_identity") or "").strip():
+        scheduled_owner = str((payload or {}).get("owner_user_id") or "").strip()
+        scheduled_chat = str((payload or {}).get("chat_id") or "").strip()
+        scheduled_principal = resolve_family_principal({
+            "telegram_user_id": scheduled_owner, "telegram_chat_id": scheduled_chat,
+            "telegram_chat_type": "private"}, source)
+        if (scheduled_owner not in _allowed_user_ids(source)
+                or scheduled_principal.role is not FamilyRole.OWNER):
+            return _gateway_result(False, "rootline_reassessment_owner_binding_denied", policy, 403)
         from modules.oom_sakkie.automatic_reassessment_scheduler import run_due_reassessment
         from modules.oom_sakkie.rootline_daily_presentation import present_daily_rootline_plan
         if schedule_store is None:
