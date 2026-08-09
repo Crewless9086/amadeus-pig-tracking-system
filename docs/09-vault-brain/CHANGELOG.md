@@ -1,4 +1,19 @@
 # Vault Brain Changelog
+## 2026-08-09 - Contextual specialist follow-up correction prepared
+
+- Diagnosed Telegram `3481` as a generic active-specialist context precedence
+  failure: a valid ROOTLINE commissioning reply was treated as a tank
+  observation and produced immutable defect card `3482`.
+- Added owner/chat/provider-bound pending specialist resolution before generic
+  observation handling, including English, Afrikaans and mixed-language
+  readiness replies and fail-closed multi-case ambiguity.
+- Bound unavailable checklist evidence to the exact parent digest and explicit
+  typed affirmative values; presence, negative and partial replies fail closed.
+- Added a zero-command fertilizer follow-up adapter. Current readback keeps the
+  mixer contained because CH2 Inching remains OFF and Interlock/Scene state is
+  not provider-verifiable; all outputs and power-restoration states are OFF and
+  timers are disabled.
+
 ## 2026-08-09 - Oom Sakkie farm-manager spine closeout assessed
 
 - Reconciled the single authenticated Telegram-to-manager lifecycle across

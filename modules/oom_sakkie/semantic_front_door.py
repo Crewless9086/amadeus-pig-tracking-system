@@ -33,6 +33,7 @@ class SemanticInterpretation:
     continuation: bool = False
     observation: str = ""
     observation_facts: tuple[Mapping[str, Any], ...] = ()
+    confirmation_facts: Mapping[str, bool] | None = None
     requested_action: str = ""
     language: str = "unknown"
     confidence: float = 0.0
@@ -91,12 +92,14 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         if message_kind not in MESSAGE_KINDS:
             return None
         facts = _observation_facts(value.get("observation_facts"))
+        confirmation_facts = _confirmation_facts(value.get("confirmation_facts"))
         return SemanticInterpretation(domain=domain,
             intent=str(value.get("intent") or domain).strip()[:100], entity_refs=refs,
             message_kind=message_kind,
             continuation=bool(value.get("continuation")),
             observation=str(value.get("observation") or "").strip()[:500],
             observation_facts=facts,
+            confirmation_facts=confirmation_facts,
             requested_action=str(value.get("requested_action") or "").strip()[:120],
             language=str(value.get("language") or "unknown").strip()[:20],
             confidence=max(0.0, min(1.0, float(value.get("confidence") or 0))),
@@ -175,14 +178,19 @@ def _payload(parsed, context, source):
         "Use active context and reply identity. Ask one clarification only when meaning or entity truly cannot be determined. "
         "Classify message_kind as observation only when the owner asserts a physical/current fact; use question or request "
         "when asking for information or a plan, command when asking for an action, confirmation for an approval/confirmation, "
-        "and correction when replacing prior evidence. Return JSON only with domain,intent,message_kind,entity_refs,continuation,"
-        "observation,observation_facts,requested_action,language,confidence,"
+        "and correction when replacing prior evidence. For a reply to a structured checklist, return confirmation_facts only "
+        "for facts the owner affirmatively or negatively states; supported keys are interlock_off and no_enabled_scene with "
+        "literal true/false values. Never turn presence alone into setting facts. Return JSON only with "
+        "domain,intent,message_kind,entity_refs,continuation,"
+        "observation,observation_facts,confirmation_facts,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
         " For physical water observations, observation_facts must contain zero, one, or two objects using only "
         "subject storage_tanks or reservoir and either state LOW/OK/FULL or an exact fraction numerator/denominator. "
         "Resolve phrases such as both tanks or their Afrikaans equivalents from the message and bounded active question; "
         "do not invent a missing tank or value. A short reply may answer only a chronologically earlier active question; "
-        "never use stale context to satisfy a newer unrelated question."
+        "never use stale context to satisfy a newer unrelated question. "
+        "Treat natural readiness replies such as 'Done; at the valves now', 'Ek is nou by die kleppe', or mixed-language "
+        "equivalents as a continuation of one unambiguous recent specialist setup question, not as a new physical tank observation."
     )
     user = {"message": str(parsed.get("text") or "")[:2000],
             "provider_message_id": str(parsed.get("provider_message_id") or "")[:80], "context": context}
@@ -238,6 +246,16 @@ def _observation_facts(value):
     if len({row["subject"] for row in result}) != len(result):
         return ()
     return tuple(result)
+
+
+def _confirmation_facts(value):
+    if value is None or not isinstance(value, Mapping):
+        return None
+    allowed = {"interlock_off", "no_enabled_scene"}
+    if not value or any(key not in allowed or type(item) is not bool
+                        for key, item in value.items()):
+        return None
+    return {key: value[key] for key in sorted(value)}
 
 
 def _eligible_clarification_context(rows, parsed):

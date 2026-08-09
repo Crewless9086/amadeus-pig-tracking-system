@@ -27,6 +27,7 @@ def _semantic(domain, intent, **extra):
         "entity_refs": extra.get("entity_refs", []),
         "continuation": extra.get("continuation", False), "observation": extra.get("observation", ""),
         "observation_facts": extra.get("observation_facts", []),
+        "confirmation_facts": extra.get("confirmation_facts"),
         "requested_action": extra.get("requested_action", ""), "language": extra.get("language", "en"),
         "confidence": extra.get("confidence", .98), "needs_clarification": False,
         "clarification_question": ""}
@@ -88,6 +89,20 @@ def test_malformed_or_duplicated_typed_water_facts_fail_closed():
         result = parse_semantic_response(_response(_semantic("rootline", "water_levels_observed",
             message_kind="observation", observation="tank update", observation_facts=facts)))
         assert result.observation_facts == ()
+
+
+def test_typed_configuration_confirmation_preserves_explicit_polarity():
+    result = parse_semantic_response(_response(_semantic("rootline", "commissioning_ready",
+        message_kind="confirmation", continuation=True,
+        confirmation_facts={"interlock_off":False,"no_enabled_scene":False})))
+    assert result.confirmation_facts=={"interlock_off":False,"no_enabled_scene":False}
+
+
+def test_malformed_configuration_confirmation_facts_fail_closed():
+    for facts in ({"interlock_off":"yes"},{"unknown_setting":True},{}):
+        result = parse_semantic_response(_response(_semantic("rootline", "commissioning_ready",
+            message_kind="confirmation", continuation=True,confirmation_facts=facts)))
+        assert result.confirmation_facts is None
 
 
 def test_only_fresh_earlier_unambiguous_clarification_context_is_exposed():
