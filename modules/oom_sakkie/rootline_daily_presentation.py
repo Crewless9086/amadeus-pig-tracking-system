@@ -7,6 +7,7 @@ import html
 from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
 from modules.oom_sakkie.rootline_material import rootline_material_digest
+from modules.oom_sakkie.delivery_retry_authority import issue_delivery_retry_authority
 
 SAST = ZoneInfo("Africa/Johannesburg")
 DAILY_PLAN_TIME = time(7, 0)
@@ -39,7 +40,11 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
                     "daily_identity": identity}
         packet = {**existing, "delivery_state": "pending", "attempt_count": attempt}
         claimed = state_store(f"claim_retry_{attempt}", identity, packet)
+        retry_authority = issue_delivery_retry_authority(mission_id=identity,
+            card_mission_id=identity, text=str(packet.get("answer") or ""),
+            proof_identity=f"{identity}-MARK_FAILED-1")
     else:
+        retry_authority = None
         try:
             result = specialist_loader()
         except Exception:
@@ -68,7 +73,7 @@ def present_daily_rootline_plan(*, owner_user_id: str, chat_id: str,
         "semantic": {"domain": "water_energy", "intent": "rootline_daily_plan", "language": language}}
     delivery = deliver(parsed, {"success": True, "status": "rootline_daily_plan",
         "answer": packet["answer"]}, specialist="ROOTLINE", mission_id=identity,
-        card_mission_id=identity)
+        card_mission_id=identity, delivery_retry_authority=retry_authority)
     if delivery.get("success") is True and delivery.get("telegram_message_id"):
         proof = {**packet, "delivery_state": "delivered",
             "provider_message_id": str(delivery["telegram_message_id"]),

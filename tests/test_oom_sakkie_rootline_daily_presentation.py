@@ -116,6 +116,39 @@ def test_contained_or_unknown_delivery_is_ambiguous_and_never_retried():
         assert len(calls) == 1 and replay["telegram_sends"] == 0
 
 
+def test_known_zero_retry_executes_through_real_family_delivery_lifecycle_once():
+    from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+    daily_rows, daily_state = store(); lifecycle_rows = {}; sender_calls = []
+    now = datetime(2026, 8, 9, 7, 1, tzinfo=SAST)
+    def event_store(action, identity, payload):
+        if action == "load":
+            return list(lifecycle_rows.values())
+        if action == "record":
+            created = identity not in lifecycle_rows
+            lifecycle_rows.setdefault(identity, dict(payload)); return {"success": True, "created": created}
+    def sender(chat, text):
+        sender_calls.append(1)
+        if len(sender_calls) == 1:
+            return {"success": False, "status": "provider_rejected_before_send",
+                    "delivery_definitely_not_sent": True}
+        return {"success": True, "telegram_message_id": "5003",
+                "provider_timestamp": "2026-08-09T05:16:00+00:00"}
+    def real_delivery(parsed, packet, **kwargs):
+        return deliver_family_result(parsed, packet, event_store=event_store, sender=sender, **kwargs)
+    first = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+        state_store=daily_state, deliver=real_delivery, now=now)
+    second = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+        state_store=daily_state, deliver=real_delivery, now=now)
+    replay = present_daily_rootline_plan(owner_user_id="42", chat_id="42", specialist_loader=result,
+        state_store=daily_state, deliver=real_delivery, now=now)
+    assert first["status"] == "rootline_daily_delivery_failed_retryable"
+    assert second["status"] == "rootline_daily_delivered"
+    assert replay["status"] == "rootline_daily_replayed_noop"
+    assert len(sender_calls) == 2
+    assert any(key.endswith("-DELIVERY-ATTEMPT") for key in lifecycle_rows)
+    assert any(key.endswith("-DELIVERY-RETRY-2") for key in lifecycle_rows)
+
+
 def test_started_completed_and_intervention_are_separate_visible_event_words():
     source = __import__("inspect").getsource(
         __import__("modules.oom_sakkie.telegram_gateway", fromlist=["handle_rootline_reassessment_trigger"]))
