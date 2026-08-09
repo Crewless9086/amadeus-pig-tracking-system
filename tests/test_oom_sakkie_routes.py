@@ -249,8 +249,17 @@ class OomSakkieRouteTests(unittest.TestCase):
     @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result", return_value={
         "success": True, "status": "family_message_delivered", "telegram_sends": 1,
         "telegram_edits": 0, "telegram_message_id": "4001"})
+    @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input",
+           return_value=({"handled": False}, 200))
+    @patch("modules.oom_sakkie.telegram_gateway.handle_owner_operational_continuation",
+           return_value=({"handled": False}, 200))
+    @patch("modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message",
+           return_value=({"handled": False}, 200))
+    @patch("modules.oom_sakkie.telegram_gateway.handle_farm_manager_round",
+           return_value=({"handled": False}, 200))
     @patch("modules.oom_sakkie.telegram_gateway.handle_message")
-    def test_telegram_gateway_route_returns_read_only_reply_payload(self, mock_handle, _deliver):
+    def test_telegram_gateway_route_returns_read_only_reply_payload(
+            self, mock_handle, _manager, _specialist, _continuation, _owner_task, _deliver):
         mock_handle.return_value = ({
             "success": True,
             "answer": "Read-only answer.",
@@ -267,9 +276,9 @@ class OomSakkieRouteTests(unittest.TestCase):
                 "message": {
                     "message_id": 9001,
                     "date": 1785668400,
-                    "text": "what needs attention today",
+                    "text": "legacy read-only request",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
@@ -279,8 +288,8 @@ class OomSakkieRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["success"])
-        self.assertEqual(data["answer"], "Read-only answer.")
-        self.assertEqual(data["reply"]["chat_id"], "67890")
+        self.assertEqual(data["answer"], "Read-only answer.", data)
+        self.assertEqual(data["reply"]["chat_id"], "12345")
         self.assertFalse(data["reply"]["sends_telegram"])
         self.assertTrue(data["sends_telegram"])
         self.assertEqual(data["reply_transport"], "backend_handles_owner_task_delivery")
@@ -289,9 +298,9 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(data["audit_trace_mode"], "tool_dependent")
         self.assertFalse(data["dispatch_enabled"])
         mock_handle.assert_called_once_with({
-            "text": "what needs attention today",
+            "text": "legacy read-only request",
             "channel": "telegram_read_only",
-            "session_id": "telegram-67890",
+            "session_id": "telegram-12345",
             "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
             "gateway_authority": ANY,
         })
