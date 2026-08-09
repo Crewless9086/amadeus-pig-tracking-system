@@ -62,7 +62,7 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         self.assertEqual((safety["zone_id"], safety["channel"]), ("C12345", 2))
         self.assertTrue(safety["authoritative"])
         self.assertEqual((safety["device_id"],safety["output_state"]),("100204e9bc","OFF"))
-        self.assertEqual(safety["controller_safety_generation"],"READ-1")
+        self.assertEqual(safety["controller_safety_generation"],"BASELINE-1")
         self.assertEqual(safety["physical_commissioning_generation"],"BASELINE-1")
         self.assertTrue(safety["commissioned"])
         self.assertEqual(safety["native_inching_seconds"], 3599)
@@ -132,8 +132,17 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
             "auxiliary_device_id":"FERTILIZER-INJECTION-CH1"},safety=safety_value,
             context=context,flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":True},now=now)
         self.assertTrue(artifact["eligible"])
+        second_snapshot=dict(fertilizer,response_digest="READ-2",
+            retrieved_at=(now+timedelta(seconds=1)).isoformat())
+        second_transport,_calls=self.transport(second_snapshot)
+        current_safety=second_transport.read_safety_configuration(
+            device_id="100204d497",channel=1)
+        self.assertNotEqual(safety_value["response_digest"],current_safety["response_digest"])
+        self.assertEqual(safety_value["controller_safety_generation"],
+            current_safety["controller_safety_generation"])
         self.assertTrue(revalidate_auxiliary_execution_edge(artifact,
-            current_context=context,current_safety=safety_value,now=now))
+            current_context=context,current_safety=current_safety,
+            now=now+timedelta(seconds=1)))
 
 
 if __name__ == "__main__":

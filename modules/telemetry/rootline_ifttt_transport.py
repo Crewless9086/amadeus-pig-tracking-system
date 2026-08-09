@@ -50,7 +50,7 @@ class RootlineIFTTTTransport:
             "interlock_enabled": snapshot.get("interlock_enabled"),
             "scenes_enabled": snapshot.get("scenes_enabled"),
             "baseline_id": snapshot.get("commissioned_baseline_id"),
-            "controller_safety_generation": snapshot.get("response_digest"),
+            "controller_safety_generation": snapshot.get("commissioned_baseline_id"),
             "physical_commissioning_generation": snapshot.get("commissioned_baseline_id"),
             "commissioned": bool(snapshot.get("commissioned_baseline_id")),
             "response_digest": snapshot.get("response_digest"),
