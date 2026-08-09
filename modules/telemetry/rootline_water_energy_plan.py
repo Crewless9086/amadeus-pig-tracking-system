@@ -21,6 +21,7 @@ from modules.telemetry.rootline_adaptive_irrigation import (
 from modules.telemetry.rootline_auxiliary_management import (
     build_auxiliary_tasks, build_fertilizer_batch_lifecycle,
 )
+from modules.telemetry.rootline_water_balance import read_latest_zone_water_balances
 
 
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
@@ -143,6 +144,7 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
     history = _dict(evidence.get("history"))
     irrigation_history = _dict(evidence.get("irrigation_history"))
     water_demand = _dict(evidence.get("water_demand"))
+    water_balance = _dict(evidence.get("water_balance"))
     fertilizer_batch = build_fertilizer_batch_lifecycle(
         observations=evidence.get("fertilizer_batch_observations"),
         executions=evidence.get("fertilizer_executions"), now=now)
@@ -178,6 +180,7 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
         "history": history,
         "irrigation_history": irrigation_history,
         "water_demand": water_demand,
+        "water_balance":water_balance,
         "fertilizer_batch_observations": evidence.get("fertilizer_batch_observations") or [],
         "fertilizer_executions": evidence.get("fertilizer_executions") or [],
     }
@@ -254,6 +257,7 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
             "litres_inferred": False,
         },
         "water_demand": water_demand or {"status": "standing_essential"},
+        "zone_water_balance":water_balance or {"status":UNAVAILABLE,"zones":{}},
         "candidate_tasks": tasks,
         "irrigation_auxiliary_devices": auxiliary["irrigation_auxiliary_devices"],
         "irrigation_auxiliary_tasks": auxiliary["irrigation_auxiliary_tasks"],
@@ -372,12 +376,18 @@ def read_current_water_energy_evidence(
     weather_packet, _ = get_current_weather_state(database_url=database_url)
     forecast_packet, _ = get_weather_forecast(days=3, database_url=database_url)
     advisor, _ = get_rootline_daily_advisor(selected, now=now)
+    balances=read_latest_zone_water_balances(database_url,now=now)
+    advisor_zones=deepcopy(advisor.get("zones", []))
+    for zone in advisor_zones:
+        if isinstance(zone,dict):
+            zone["water_balance"]=_dict(balances.get("zones")).get(
+                str(zone.get("zone_id")),{"status":UNAVAILABLE})
     evidence = {
         "power": _normalize_power(power_packet),
         "weather": _normalize_weather(weather_packet),
         "forecast": _normalize_forecast(forecast_packet),
         "irrigation": {
-            "zones": deepcopy(advisor.get("zones", [])),
+            "zones": advisor_zones,
             "active_zone": None,
             "source": "rootline_daily_advisor",
             "adaptive_management": {
@@ -402,6 +412,7 @@ def read_current_water_energy_evidence(
             "status": "standing_essential",
             "owner_reclassification_required": False,
         },
+        "water_balance":balances,
     }
     return evidence, selected, now
 

@@ -224,6 +224,7 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     obligation = project_weekly_delivery_obligation(
         zone, now=now, target_days_per_week=policy["target_days_per_week"],
         additional_outcomes=correction_outcomes)
+    water_balance=_dict(zone.get("water_balance"))
     sufficient_latest = _latest_completion(completions, require_objective_satisfied=True)
     completed_today = (sufficient_latest is not None
                        and sufficient_latest.astimezone(ZA_TZ).date() == now.date())
@@ -255,6 +256,19 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     else:
         score = _need_score(need, latest, zone, now, obligation)
         decision, reason = _classify(score, need, policy, weather, water, power, now)
+    if water_balance.get("status")=="Available":
+        effect=water_balance.get("obligation_effect")
+        fraction=max(0.0,min(1.0,_number(water_balance.get("partial_obligation_credit")) or 0.0))
+        score=max(0,int(score-round(fraction*40)))
+        if effect=="satisfied" and decision!="recovery required":
+            decision="Hold"
+            reason="Observed effective rainfall provisionally satisfied this zone's current water-equivalent obligation."
+        elif effect=="partial credit" and decision in {"Run now","Run later"}:
+            reason=(f"Observed effective rainfall supplied partial credit; "
+                    f"{water_balance.get('remaining_water_need_mm')} mm remains provisionally.")
+        elif effect=="Needs Data" and decision!="recovery required":
+            decision="Needs Data"
+            reason="Current observed-rain evidence is stale or conflicting; preserve schedule debt and reassess without manufacturing credit."
     confidence, gaps = _confidence(zone, weather, forecast, water, power, now)
     if obligation["status"] == "Unavailable":
         gaps.append("verified_completion_ledger_coverage_unavailable")
@@ -295,6 +309,7 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "flow_rate": "Unavailable",
         "rank": None,
         "weekly_obligation": obligation,
+        "water_balance":water_balance or {"status":"Unavailable"},
         **AUTHORITY,
     }
 

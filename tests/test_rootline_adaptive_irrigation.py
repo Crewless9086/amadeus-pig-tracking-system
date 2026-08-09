@@ -396,6 +396,25 @@ class AdaptiveIrrigationTests(unittest.TestCase):
                  build_water_energy_plan(canonical, now=NOW)["candidate_tasks"]}
         self.assertEqual(tasks["irrigation_C12345"]["zone_decision"], "Needs Data")
 
+    def test_satisfied_water_balance_holds_without_rewriting_schedule_debt(self):
+        item=evidence()
+        item["zones"][0]["water_balance"]={"status":"Available",
+            "obligation_effect":"satisfied","partial_obligation_credit":1.0,
+            "remaining_water_need_mm":0,"schedule_debt_rewritten":False}
+        result=zones(build_adaptive_irrigation_decisions(item,now=NOW))["B12345"]
+        self.assertEqual(result["decision"],"Hold")
+        self.assertEqual(result["weekly_obligation"]["delivery_debt_days"],1)
+        self.assertFalse(result["water_balance"]["schedule_debt_rewritten"])
+
+    def test_partial_water_balance_reduces_need_but_preserves_remaining_work(self):
+        item=evidence()
+        item["zones"][1]["water_balance"]={"status":"Available",
+            "obligation_effect":"partial credit","partial_obligation_credit":0.5,
+            "remaining_water_need_mm":7.0,"schedule_debt_rewritten":False}
+        result=zones(build_adaptive_irrigation_decisions(item,now=NOW))["C12345"]
+        self.assertIn(result["decision"],{"Run now","Run later","Hold"})
+        self.assertEqual(result["water_balance"]["remaining_water_need_mm"],7.0)
+
 
 if __name__ == "__main__":
     unittest.main()
