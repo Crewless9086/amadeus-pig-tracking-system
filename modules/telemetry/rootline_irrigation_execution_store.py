@@ -9,7 +9,9 @@ EVENT_SOURCE = "rootline_irrigation_execution"
 
 
 def rootline_irrigation_execution_store(action, payload):
-    if action in {"load_active", "load_off_attempts", "load_zone_containment"}:
+    if action in {"load_active", "load_off_attempts", "load_zone_containment",
+                  "load_active_auxiliary", "load_auxiliary_off_attempts",
+                  "load_auxiliary_containment"}:
         return _load(action, payload)
     body = dict(payload or {})
     execution_id = str(body.get("execution_id") or "").strip()
@@ -17,6 +19,8 @@ def rootline_irrigation_execution_store(action, payload):
         return {"success": False, "created": False}
     if action == "claim_before_on":
         return _claim_single_controller(body)
+    if action == "claim_auxiliary_before_on":
+        return _claim_single_auxiliary(body)
     history_created = None
     if action == "record_completed":
         history_created = _append_history(action, body)
@@ -48,11 +52,11 @@ def rootline_irrigation_execution_store(action, payload):
 
 def _event_id(action, body):
     execution = str(body.get("execution_id") or "")
-    if action == "claim_before_on":
+    if action in {"claim_before_on", "claim_auxiliary_before_on"}:
         material = f"{execution}:CLAIM"
     elif action == "claim_notification":
         material = f"{execution}:NOTIFY:{body.get('notification_state')}"
-    elif action == "claim_off_attempt":
+    elif action in {"claim_off_attempt", "claim_auxiliary_off_attempt"}:
         material = f"{execution}:OFF:{int(body.get('attempt') or 0)}"
     else:
         material = json.dumps({"action": action, "body": body}, sort_keys=True,
@@ -65,7 +69,13 @@ def _load(action, payload):
     with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
         connection.read_only = True
         with connection.cursor() as cursor:
-            if action == "load_active":
+            if action in {"load_active", "load_active_auxiliary"}:
+                auxiliary=action=="load_active_auxiliary"
+                claim_action="claim_auxiliary_before_on" if auxiliary else "claim_before_on"
+                active_action="mark_auxiliary_active" if auxiliary else "mark_active"
+                terminal_actions=({"record_auxiliary_completed","contain_auxiliary_device"}
+                    if auxiliary else {"record_completed","contain_zone",
+                        "record_ambiguous_shutdown","record_claim_recovery"})
                 cursor.execute("""select review_json->'rootline_execution'
                     from public.sam_live_stock_conversation_review_events
                     where event_source=%s order by created_at desc""", (EVENT_SOURCE,))
@@ -73,28 +83,36 @@ def _load(action, payload):
                 for row in cursor.fetchall():
                     item = row[0] if isinstance(row[0], dict) else json.loads(row[0])
                     identity = str(item.get("execution_id") or "")
-                    if (item.get("action") == "record_completed"
-                            or (item.get("action") in {"contain_zone", "record_ambiguous_shutdown",
-                                                       "record_claim_recovery"}
-                                and item.get("shutdown_verified") is True)):
+                    if item.get("action") in terminal_actions:
                         terminal.add(identity)
-                    elif item.get("action") in {"mark_active", "claim_before_on"}:
+                    elif item.get("action") in {active_action, claim_action}:
                         candidates.setdefault(identity, item)
                 for identity, item in candidates.items():
                     if identity not in terminal:
-                        if item.get("action") == "claim_before_on":
+                        if item.get("action") == claim_action:
                             item = {**item, "state": "claimed_recovery_required"}
                         return item
                 return None
-            if action == "load_off_attempts":
+            if action in {"load_off_attempts","load_auxiliary_off_attempts"}:
+                outcome_action=("record_auxiliary_off_outcome"
+                    if action=="load_auxiliary_off_attempts" else "record_off_outcome")
                 cursor.execute("""select review_json->'rootline_execution'
                     from public.sam_live_stock_conversation_review_events
                     where event_source=%s
                       and review_json->'rootline_execution'->>'execution_id'=%s
-                      and review_json->'rootline_execution'->>'action'='record_off_outcome'
-                    order by created_at""", (EVENT_SOURCE, str(payload or "")))
+                      and review_json->'rootline_execution'->>'action'=%s
+                    order by created_at""", (EVENT_SOURCE, str(payload or ""),outcome_action))
                 return [row[0] if isinstance(row[0], dict) else json.loads(row[0])
                         for row in cursor.fetchall()]
+            if action == "load_auxiliary_containment":
+                cursor.execute("""select review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source=%s
+                      and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
+                      and review_json->'rootline_execution'->>'action'='contain_auxiliary_device'
+                    order by created_at desc limit 1""", (EVENT_SOURCE,str(payload or "")))
+                row=cursor.fetchone()
+                return {"contained":True,"evidence":row[0]} if row else {"contained":False}
             cursor.execute("""select review_json->'rootline_execution'
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
@@ -157,6 +175,54 @@ def _claim_single_controller(body):
                     sort_keys=True, separators=(",", ":"), default=str)))
             return {"success": True, "created": cursor.rowcount == 1,
                     "status": "claimed" if cursor.rowcount == 1 else "execution_replay"}
+
+
+def _claim_single_auxiliary(body):
+    """Atomically consume one auxiliary artifact without blocking its B/C zone."""
+    import psycopg
+    execution_id=str(body["execution_id"]);consumption_key=str(body.get("consumption_key") or "")
+    auxiliary_id=str(body.get("auxiliary_device_id") or "")
+    if not consumption_key or not auxiliary_id:
+        return {"success":False,"created":False,"status":"auxiliary_claim_incomplete"}
+    event_id=_event_id("claim_auxiliary_before_on",body)
+    with psycopg.connect(os.environ["DATABASE_URL"],connect_timeout=10) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
+            cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
+                where event_source=%s and (review_event_id=%s or
+                  (review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
+                   and review_json->'rootline_execution'->>'consumption_key'=%s)) limit 1""",
+                (EVENT_SOURCE,event_id,consumption_key))
+            if cursor.fetchone():
+                return {"success":True,"created":False,"status":"eligibility_already_consumed"}
+            cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events claim
+                where claim.event_source=%s
+                  and claim.review_json->'rootline_execution'->>'action'='claim_auxiliary_before_on'
+                  and not exists (select 1 from public.sam_live_stock_conversation_review_events terminal
+                    where terminal.event_source=%s
+                      and terminal.review_json->'rootline_execution'->>'execution_id'=
+                          claim.review_json->'rootline_execution'->>'execution_id'
+                      and terminal.review_json->'rootline_execution'->>'action'
+                          in ('record_auxiliary_completed','contain_auxiliary_device')) limit 1""",
+                (EVENT_SOURCE,EVENT_SOURCE))
+            if cursor.fetchone():
+                return {"success":True,"created":False,"status":"auxiliary_active"}
+            cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
+                where event_source=%s
+                  and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
+                  and review_json->'rootline_execution'->>'action'='contain_auxiliary_device' limit 1""",
+                (EVENT_SOURCE,auxiliary_id))
+            if cursor.fetchone():
+                return {"success":True,"created":False,"status":"auxiliary_contained"}
+            cursor.execute("""insert into public.sam_live_stock_conversation_review_events
+                (review_event_id,chatwoot_conversation_id,source_agent,event_source,
+                 recommended_action,review_json)
+                values (%s,%s,'rootline_backend',%s,'claim_auxiliary_before_on',%s::jsonb)
+                on conflict (review_event_id) do nothing""",(event_id,execution_id,EVENT_SOURCE,
+                json.dumps({"rootline_execution":{"action":"claim_auxiliary_before_on",
+                    "event_id":event_id,**body}},sort_keys=True,separators=(",",":"),default=str)))
+            return {"success":True,"created":cursor.rowcount==1,
+                "status":"claimed" if cursor.rowcount==1 else "execution_replay"}
 
 
 def _append_history(action, body):

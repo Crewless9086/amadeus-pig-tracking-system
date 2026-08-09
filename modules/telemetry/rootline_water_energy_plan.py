@@ -164,7 +164,9 @@ def build_water_energy_plan(evidence, operating_date=None, now=None):
                            selected_date),
     ]
     auxiliary = build_auxiliary_tasks(batch=fertilizer_batch, power=power,
-        verified_mixing=evidence.get("fertilizer_executions"), now=now)
+        verified_mixing=evidence.get("fertilizer_executions"),
+        mixing_history_complete_through=evidence.get(
+            "fertilizer_history_complete_through"), now=now)
     status = _overall_status(tasks)
     evidence_observed_at = _latest_observed_at(power, weather, forecast, tanks, now)
     canonical_evidence = {

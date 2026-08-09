@@ -43,9 +43,12 @@ def safety(device="injection",**changes):
 def injection_context(**changes):
     value={"plan_generation":"PLAN-1","batch_generation":"BATCH-1",
         "active_zone_ids":["B12345"],"zone_execution_id":"ZONE-EXEC-1",
-        "zone_output_verified_on":True,"preflow_verified":True,
-        "preflow_seconds":600,"completed_pulses":0,
-        "seconds_since_prior_pulse_off":0,"remaining_irrigation_seconds":1800,
+        "zone_start_evidence":{"evidence_id":"START-1","zone_execution_id":"ZONE-EXEC-1",
+            "observed_at":(NOW-timedelta(seconds=600)).isoformat()},
+        "zone_output_evidence":{"evidence_id":"OUTPUT-1","zone_execution_id":"ZONE-EXEC-1",
+            "observed_at":NOW.isoformat(),"state":"ON"},
+        "irrigation_stop_deadline":(NOW+timedelta(seconds=1800)).isoformat(),
+        "completed_pulses":0,
         "mixer_active":False,"prior_shutdown_unverified":False}
     value.update(changes);return value
 
@@ -59,7 +62,8 @@ def injection_eligibility(**context_changes):
 
 def mixer_eligibility(**context_changes):
     context={"plan_generation":"PLAN-MIX-1","injection_active":False,
-        "verified_mixing_minutes_today":0,"power_suitable":True}
+        "verified_mixing_minutes_today":0,"verified_mixing_sessions_today":0,
+        "mixing_history_complete_through":NOW.isoformat(),"power_suitable":True}
     context.update(context_changes)
     return build_auxiliary_eligibility(task={"auxiliary_device_id":"FERTILIZER-MIXER-CH2"},
         safety=safety("mixer"),context=context,
@@ -117,16 +121,26 @@ def test_sequence_has_two_120_second_pulses_preflow_spacing_and_flush():
 def test_injection_requires_exact_zone_preflow_spacing_flush_and_only_two_pulses():
     first=injection_eligibility()
     assert first["eligible"] and first["pulse_number"]==1
-    second=injection_eligibility(completed_pulses=1,seconds_since_prior_pulse_off=600)
+    second=injection_eligibility(completed_pulses=1,prior_pulse_shutdown_evidence={
+        "evidence_id":"PULSE-1-OFF","zone_execution_id":"ZONE-EXEC-1",
+        "shutdown_verified":True,"observed_at":(NOW-timedelta(seconds=600)).isoformat()})
     assert second["eligible"] and second["pulse_number"]==2
     cases=[
         ({"active_zone_ids":[]},"exactly_one_bc_zone_required"),
         ({"active_zone_ids":["B12345","C12345"]},"exactly_one_bc_zone_required"),
-        ({"preflow_seconds":599},"clean_water_preflow_incomplete"),
-        ({"preflow_verified":False},"clean_water_preflow_incomplete"),
-        ({"remaining_irrigation_seconds":1439},"clean_water_flush_window_incomplete"),
-        ({"completed_pulses":1,"seconds_since_prior_pulse_off":599},"pulse_spacing_incomplete"),
-        ({"remaining_irrigation_seconds":719},"clean_water_flush_window_incomplete"),
+        ({"zone_start_evidence":{"evidence_id":"START-X","zone_execution_id":"ZONE-EXEC-1",
+            "observed_at":(NOW-timedelta(seconds=599)).isoformat()}},"clean_water_preflow_incomplete"),
+        ({"irrigation_stop_deadline":(NOW+timedelta(seconds=1439)).isoformat()},
+            "clean_water_flush_window_incomplete"),
+        ({"completed_pulses":1,"prior_pulse_shutdown_evidence":{
+            "evidence_id":"PULSE-1-OFF","zone_execution_id":"ZONE-EXEC-1",
+            "shutdown_verified":True,"observed_at":(NOW-timedelta(seconds=599)).isoformat()}},
+            "pulse_spacing_incomplete"),
+        ({"completed_pulses":1,"prior_pulse_shutdown_evidence":{
+            "evidence_id":"PULSE-1-OFF","zone_execution_id":"ZONE-EXEC-1",
+            "shutdown_verified":True,"observed_at":(NOW-timedelta(seconds=600)).isoformat()},
+            "irrigation_stop_deadline":(NOW+timedelta(seconds=719)).isoformat()},
+            "clean_water_flush_window_incomplete"),
         ({"mixer_active":True},"mixer_must_be_off"),
         ({"completed_pulses":2},"two_pulse_limit_reached"),
     ]
@@ -174,19 +188,38 @@ def test_batch_lifecycle_monday_dedup_dilution_and_unknown_nutrients():
     assert notification["unchanged_auxiliary_tasks_silent"] is True
 
 
+def test_batch_lifecycle_rejects_future_malformed_and_prior_week_evidence():
+    value=build_fertilizer_batch_lifecycle(observations=[
+        {"event_type":"fertilizer_batch_prepared","observed_at":"2026-08-10T08:00:00+02:00"},
+        {"event_type":"water_only_refill","observed_at":"not-a-time"}],executions=[
+        {"execution_id":"OLD-MIX","device_type":"fertilizer_mixer",
+         "shutdown_verified":True,"completed_at":"2026-08-02T08:00:00+02:00"}],now=NOW)
+    assert value["state"]=="monday_batch_due"
+    assert value["dilution_acknowledged"] is False
+    assert value["invalid_timestamp_evidence_count"]==1
+    assert value["mixing_execution_ids"]==[]
+
+
 def test_auxiliary_tasks_never_become_zones_and_power_only_defers_mixing():
     batch=build_fertilizer_batch_lifecycle(now=NOW)
-    missing=build_auxiliary_tasks(batch=batch,power={},now=NOW)
+    incomplete=build_auxiliary_tasks(batch=batch,power={"battery_soc_pct":90,
+        "solar_power_w":2000,"grid_power_w":0},now=NOW)
+    assert incomplete["irrigation_auxiliary_tasks"][0]["decision"]=="Needs Data"
+    assert incomplete["irrigation_auxiliary_tasks"][0]["reason"]=="mixing_history_incomplete"
+    missing=build_auxiliary_tasks(batch=batch,power={},
+        mixing_history_complete_through=NOW.isoformat(),now=NOW)
     assert missing["irrigation_auxiliary_tasks"][0]["decision"]=="Needs Data"
     low=build_auxiliary_tasks(batch=batch,power={"battery_soc_pct":20,
-        "solar_power_w":0,"grid_power_w":0},now=NOW)
+        "solar_power_w":0,"grid_power_w":0},
+        mixing_history_complete_through=NOW.isoformat(),now=NOW)
     assert low["irrigation_zones"]==[] and low["zone_delivery_debt_changes"]==0
     tasks={row["device_type"]:row for row in low["irrigation_auxiliary_tasks"]}
     assert tasks["fertilizer_mixer"]["decision"]=="Run later"
     assert tasks["fertilizer_injection_valve"]["does_not_block_bc_irrigation"] is True
     capped=build_auxiliary_tasks(batch=batch,verified_mixing=[{
         "shutdown_verified":True,"verified_runtime_minutes":30,
-        "completed_at":"2026-08-09T07:00:00+02:00"}],now=NOW)
+        "completed_at":"2026-08-09T07:00:00+02:00"}],
+        mixing_history_complete_through=NOW.isoformat(),now=NOW)
     mixer=next(row for row in capped["irrigation_auxiliary_tasks"]
                if row["device_type"]=="fertilizer_mixer")
     assert mixer["decision"]=="Completed" and mixer["planned_seconds"]==0
@@ -195,8 +228,10 @@ def test_auxiliary_tasks_never_become_zones_and_power_only_defers_mixing():
 class Store:
     def __init__(self):
         self.active=None;self.rows=[];self.consumed=set();self.off=[];self.lock=Lock()
+        self.contained=False
     def __call__(self,action,payload):
         if action=="load_active_auxiliary":return self.active
+        if action=="load_auxiliary_containment":return {"contained":self.contained}
         if action=="load_auxiliary_off_attempts":return list(self.off)
         if action=="claim_auxiliary_before_on":
             with self.lock:
@@ -277,9 +312,19 @@ def test_restart_contains_auxiliary_only_with_repeatable_off():
     assert result["channels_3_4_authority"] is False
 
 
+def test_persisted_auxiliary_containment_blocks_new_artifact_without_on():
+    store=Store();store.contained=True;transport=Transport()
+    result=advance_auxiliary_execution(eligibility=injection_eligibility(),store=store,
+        transport=transport,now=NOW)
+    assert result["status"]=="auxiliary_device_contained"
+    assert transport.calls==[]
+
+
 def test_artifact_expiry_and_tamper_rejected():
     artifact=injection_eligibility()
     assert validate_auxiliary_eligibility(artifact,now=NOW)==artifact
     assert validate_auxiliary_eligibility(artifact,now=NOW+timedelta(minutes=6)) is None
     artifact["channel"]=3
+    assert validate_auxiliary_eligibility(artifact,now=NOW) is None
+    artifact=injection_eligibility();artifact["hardware_control"]=False
     assert validate_auxiliary_eligibility(artifact,now=NOW) is None

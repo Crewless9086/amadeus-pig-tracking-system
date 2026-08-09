@@ -122,6 +122,10 @@ def advance_auxiliary_execution(*, eligibility, store, transport, now=None):
     artifact = validate_auxiliary_eligibility(eligibility, now=now)
     if not artifact:
         return _aux_result("auxiliary_not_eligible")
+    containment=store("load_auxiliary_containment",artifact["auxiliary_device_id"])
+    if isinstance(containment,dict) and containment.get("contained") is True:
+        return _aux_result("auxiliary_device_contained",fertilizer_debt=True,
+            auxiliary_contained=True)
     execution = {"execution_id":artifact["execution_id"],
         "eligibility_id":artifact["eligibility_id"],
         "consumption_key":artifact["consumption_key"],

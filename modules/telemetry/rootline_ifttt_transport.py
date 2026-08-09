@@ -61,7 +61,7 @@ class RootlineIFTTTTransport:
     def set_state(self, *, device_id, channel, state, idempotency_key):
         contract = self._binding(device_id, channel)
         state = str(state or "").upper()
-        if (contract["collection"] == "irrigation_auxiliary_devices"
+        if (state == "ON" and contract["collection"] == "irrigation_auxiliary_devices"
                 and str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"):
             return {"accepted_unambiguous": False, "status": "auxiliary_authority_disabled"}
         event = contract.get("on_event" if state == "ON" else "off_event" if state == "OFF" else "")

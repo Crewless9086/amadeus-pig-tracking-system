@@ -91,6 +91,10 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
             idempotency_key="AUX-1:ON")
         self.assertEqual(result["status"],"auxiliary_authority_disabled")
         self.assertEqual(calls,[])
+        recovery=disabled.set_state(device_id="100204d497",channel=1,state="OFF",
+            idempotency_key="AUX-1:OFF:1")
+        self.assertTrue(recovery["accepted_unambiguous"])
+        self.assertEqual(recovery["event"],"controller_1_ch1_off")
         enabled,calls=self.transport(fertilizer,environ={"ROOTLINE_IFTTT_MAKER_KEY":"secret",
             "ROOTLINE_FERTILIZER_INJECTION_ENABLED":"true",
             "ROOTLINE_FERTILIZER_MIXING_ENABLED":"true"})
