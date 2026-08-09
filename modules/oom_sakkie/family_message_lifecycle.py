@@ -40,7 +40,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     latest = next((row for row in reversed(events) if row.get("state") in {"delivered", "updated"}), delivered)
     card_id = str((latest or {}).get("telegram_message_id") or "")
     inbound_binding = _inbound_binding(parsed, specialist)
-    material_update = _material_update_authorized(parsed, result, specialist)
+    material_update = _material_update_authorized(parsed, result, specialist,
+        mission_id, card_mission_id)
     provider_replay = next((row for row in reversed(events)
         if row.get("state") in {"delivered", "updated", "provider_binding"}
         and str(row.get("provider_message_id") or "") == inbound_binding["provider_message_id"]), None)
@@ -205,7 +206,7 @@ def _inbound_binding(parsed, specialist):
         "inbound_text_sha256": hashlib.sha256(normalized.encode("utf-8")).hexdigest()}
 
 
-def _material_update_authorized(parsed, result, specialist):
+def _material_update_authorized(parsed, result, specialist, mission_id="", card_mission_id=""):
     authority = result.get("material_recomposition_authority")
     binding = result.get("binding")
     if not isinstance(authority, Mapping) or not isinstance(binding, Mapping):
@@ -217,16 +218,78 @@ def _material_update_authorized(parsed, result, specialist):
         "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
         "content_digest": hashlib.sha256(
             str(parsed.get("text") or "").encode("utf-8")).hexdigest(),
-        "contract_version": "oom_sakkie_farm_manager_round_v5",
+        "contract_version": str(binding.get("contract_version") or ""),
     }
     binding_digest = hashlib.sha256(json.dumps(
         dict(binding), sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
-    return (specialist == "OOM_SAKKIE"
+    manager_update = (specialist == "OOM_SAKKIE"
         and result.get("status") == "farm_manager_round_ready"
+        and binding.get("contract_version") == "oom_sakkie_farm_manager_round_v5"
         and dict(binding) == expected_binding
         and authority.get("from_contract") == "oom_sakkie_farm_manager_round_v4"
         and authority.get("to_contract") == "oom_sakkie_farm_manager_round_v5"
         and authority.get("provider_binding_digest") == binding_digest)
+    observation_candidate = (specialist == "ROOTLINE"
+        and result.get("status") == "specialist_accepted"
+        and binding.get("contract_version") == "oom_rootline_observation_recovery_v1"
+        and dict(binding) == expected_binding
+        and authority.get("from_systemic_exception") == "rootline_canonical_observation_bridge_failed"
+        and authority.get("to_contract") == "oom_rootline_observation_recovery_v1"
+        and len(str(authority.get("prior_result_digest") or "")) == 64
+        and str(authority.get("current_result_digest") or "") == str(result.get("result_digest") or "")
+        and str(authority.get("replacement_text_digest") or "") == hashlib.sha256(
+            str(result.get("answer") or "").encode("utf-8")).hexdigest()
+        and authority.get("provider_binding_digest") == binding_digest)
+    observation_recovery = observation_candidate and _validate_rootline_recovery_authority(
+        authority, binding, mission_id, card_mission_id)
+    return manager_update or observation_recovery
+
+
+def _validate_rootline_recovery_authority(authority, binding, mission_id, card_mission_id):
+    if not mission_id or card_mission_id != mission_id or not str(os.environ.get("DATABASE_URL") or "").strip():
+        return False
+    try:
+        import psycopg
+        with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
+            connection.read_only = True
+            with connection.cursor() as cursor:
+                cursor.execute("""select review_json->'rootline_operational_intake'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='oom_sakkie_rootline_operational_intake'
+                      and review_json->'rootline_operational_intake'->>'mission_id'=%s
+                    order by created_at,review_event_id""", (mission_id,))
+                rows = [row[0] for row in cursor.fetchall()]
+    except Exception:
+        return False
+    prior_valid = False
+    current_valid = False
+    for row in rows:
+        context = row.get("context") if isinstance(row, Mapping) else None
+        outcome = row.get("outcome") if isinstance(row, Mapping) else None
+        if not isinstance(context, Mapping) or not isinstance(outcome, Mapping):
+            continue
+        exact = {"owner": str(context.get("owner_user_id") or ""),
+            "chat": str(context.get("chat_id") or ""),
+            "provider_message_id": str(context.get("provider_message_id") or ""),
+            "provider_timestamp": str(context.get("provider_timestamp") or ""),
+            "content_digest": str(context.get("content_sha256") or ""),
+            "contract_version": "oom_rootline_observation_recovery_v1"}
+        if (dict(binding) == exact
+                and outcome.get("systemic_exception") == "rootline_canonical_observation_bridge_failed"
+                and outcome.get("writes_farm_data") is False
+                and str(outcome.get("result_digest") or "") == str(authority.get("prior_result_digest") or "")):
+            prior_valid = True
+        canonical = outcome.get("canonical_observation")
+        if (dict(binding) == exact and outcome.get("success") is True
+                and outcome.get("status") == "specialist_accepted"
+                and outcome.get("writes_farm_data") is True
+                and isinstance(canonical, Mapping) and canonical.get("success") is True
+                and len(canonical.get("observation_ids") or []) == 2
+                and str(outcome.get("result_digest") or "") == str(authority.get("current_result_digest") or "")
+                and hashlib.sha256(str(outcome.get("answer") or "").encode("utf-8")).hexdigest()
+                    == str(authority.get("replacement_text_digest") or "")):
+            current_valid = True
+    return prior_valid and current_valid
 
 
 def _event_store(action, identity, payload):
