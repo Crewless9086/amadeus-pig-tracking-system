@@ -13,7 +13,9 @@ from modules.telemetry.rootline_execution_authority import (
     equivalent_fresh_eligibility, validate_execution_eligibility,
 )
 from modules.telemetry.rootline_ewelink_commissioned_baseline import validate_commissioned_baseline
-from modules.telemetry.rootline_auxiliary_management import validate_auxiliary_eligibility
+from modules.telemetry.rootline_auxiliary_management import (
+    revalidate_auxiliary_execution_edge, validate_auxiliary_eligibility,
+)
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
@@ -107,7 +109,7 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
                    autonomous_on_enabled=True, writes_farm_data=True)
 
 
-def advance_auxiliary_execution(*, eligibility, store, transport, now=None):
+def advance_auxiliary_execution(*, eligibility, store, transport, revalidate=None, now=None):
     """Advance one typed irrigation-auxiliary execution on the existing rail.
 
     This function owns no planner or provider mapping.  It consumes one
@@ -126,6 +128,17 @@ def advance_auxiliary_execution(*, eligibility, store, transport, now=None):
     if isinstance(containment,dict) and containment.get("contained") is True:
         return _aux_result("auxiliary_device_contained",fertilizer_debt=True,
             auxiliary_contained=True)
+    if not callable(revalidate):
+        return _aux_result("auxiliary_edge_revalidation_unavailable")
+    current_context=revalidate(artifact)
+    try:
+        current_safety=transport.read_safety_configuration(
+            device_id=artifact["device_id"],channel=artifact["channel"])
+    except Exception:
+        current_safety={}
+    if not revalidate_auxiliary_execution_edge(artifact,current_context=current_context,
+            current_safety=current_safety,now=now):
+        return _aux_result("auxiliary_edge_revalidation_failed")
     execution = {"execution_id":artifact["execution_id"],
         "eligibility_id":artifact["eligibility_id"],
         "consumption_key":artifact["consumption_key"],

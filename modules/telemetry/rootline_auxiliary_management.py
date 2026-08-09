@@ -271,6 +271,36 @@ def validate_auxiliary_eligibility(value, *, now=None):
     return value if decision and expires and decision<=now<=expires else None
 
 
+def revalidate_auxiliary_execution_edge(artifact, *, current_context, current_safety, now=None):
+    """Revalidate changing evidence immediately before an auxiliary ON edge."""
+    now=_aware(now or datetime.now(timezone.utc))
+    value=validate_auxiliary_eligibility(artifact,now=now)
+    if not value or not isinstance(current_context,dict) or not isinstance(current_safety,dict):
+        return False
+    contract=get_device_contract(value["auxiliary_device_id"])
+    if not contract or not _safe(contract,current_safety,now):
+        return False
+    if current_safety.get("controller_safety_generation")!=value.get(
+            "controller_safety_generation"):
+        return False
+    if value["device_type"]=="fertilizer_injection_valve":
+        if (current_context.get("zone_execution_id")!=value.get("zone_execution_id")
+                or current_context.get("active_zone_ids")!=[value.get("zone_id")]
+                or _time(current_context.get("irrigation_stop_deadline"))!=
+                    _time(value.get("irrigation_stop_deadline"))):
+            return False
+        output=current_context.get("zone_output_evidence") or {}
+        if (output.get("zone_execution_id")!=value.get("zone_execution_id")
+                or output.get("state")!="ON"):
+            return False
+        if value.get("pulse_number")==2:
+            prior=current_context.get("prior_pulse_shutdown_evidence") or {}
+            if prior.get("evidence_id")!=value.get("prior_pulse_shutdown_evidence_id"):
+                return False
+        return _injection_gate(current_context,now) is None
+    return _mixing_gate(current_context,now) is None
+
+
 def _injection_gate(context,now):
     zones=context.get("active_zone_ids") if isinstance(context.get("active_zone_ids"),list) else []
     pulse=int(context.get("completed_pulses") or 0)

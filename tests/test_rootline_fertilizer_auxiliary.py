@@ -256,18 +256,21 @@ class Transport:
         return {"accepted_unambiguous":accepted}
     def read_output_state(self,**_kwargs):return {"authoritative":True,"state":self.read,
         "evidence_id":"READ-1"}
+    def read_safety_configuration(self,**kwargs):
+        return safety("injection" if kwargs["channel"]==1 else "mixer")
 
 
 def test_coordinator_exactly_once_replay_completion_and_bounded_off():
     artifact=injection_eligibility();store=Store();transport=Transport()
     started=advance_auxiliary_execution(eligibility=artifact,store=store,
-        transport=transport,now=NOW)
+        transport=transport,revalidate=lambda _artifact:injection_context(),now=NOW)
     replay=advance_auxiliary_execution(eligibility=artifact,store=store,
         transport=transport,now=NOW+timedelta(seconds=1))
     completed=advance_auxiliary_execution(eligibility=artifact,store=store,
         transport=transport,now=NOW+timedelta(seconds=121))
     duplicate=advance_auxiliary_execution(eligibility=artifact,store=store,
-        transport=transport,now=NOW+timedelta(seconds=121))
+        transport=transport,revalidate=lambda _artifact:injection_context(),
+        now=NOW+timedelta(seconds=121))
     assert started["status"]=="auxiliary_started" and replay["status"]=="auxiliary_active"
     assert completed["status"]=="auxiliary_completed"
     assert duplicate["status"]=="auxiliary_claim_conflict"
@@ -281,7 +284,8 @@ def test_concurrent_consumption_creates_exactly_one_on_attempt():
     artifact=injection_eligibility();store=Store();transport=Transport()
     with ThreadPoolExecutor(max_workers=2) as pool:
         results=list(pool.map(lambda _index:advance_auxiliary_execution(
-            eligibility=artifact,store=store,transport=transport,now=NOW),range(2)))
+            eligibility=artifact,store=store,transport=transport,
+            revalidate=lambda _artifact:injection_context(),now=NOW),range(2)))
     assert "auxiliary_started" in [row["status"] for row in results]
     assert set(row["status"] for row in results)<={"auxiliary_started",
         "auxiliary_claim_conflict","auxiliary_claim_in_progress","auxiliary_active"}
@@ -291,12 +295,23 @@ def test_concurrent_consumption_creates_exactly_one_on_attempt():
 def test_ambiguous_on_never_retries_and_fertilizer_failure_preserves_irrigation():
     store=Store();transport=Transport(on=False,read="OFF")
     result=advance_auxiliary_execution(eligibility=injection_eligibility(),store=store,
-        transport=transport,now=NOW)
+        transport=transport,revalidate=lambda _artifact:injection_context(),now=NOW)
     assert [row["state"] for row in transport.calls]==["ON","OFF"]
     assert result["fertilizer_debt"] is True
     assert result["irrigation_may_continue"] is True
     assert result["irrigation_shutdown_authority_unchanged"] is True
     assert result["automatic_on_retry"] is False
+
+
+def test_injection_edge_revalidates_zone_on_and_flush_window_before_claim():
+    for current in (injection_context(zone_output_evidence={"evidence_id":"OUTPUT-2",
+            "zone_execution_id":"ZONE-EXEC-1","observed_at":NOW.isoformat(),"state":"OFF"}),
+            injection_context(irrigation_stop_deadline=(NOW+timedelta(seconds=1439)).isoformat())):
+        store=Store();transport=Transport()
+        result=advance_auxiliary_execution(eligibility=injection_eligibility(),store=store,
+            transport=transport,revalidate=lambda _artifact,current=current:current,now=NOW)
+        assert result["status"]=="auxiliary_edge_revalidation_failed"
+        assert transport.calls==[] and store.consumed==set()
 
 
 def test_restart_contains_auxiliary_only_with_repeatable_off():
