@@ -31,6 +31,9 @@ approximate net settlement per pig R248.36, and approximate net settlement per
 recorded kilogram R28.92/kg. The invoice supplies no auction mass. No
 continue-feeding/direct-sale recommendation is supported until attributable
 feed-cost, growth-rate, direct-sale-value, and pen-capacity evidence exists.
+The sanitized accounting fixture is
+`tests/fixtures/herdmaster_bkb_settlement_sanitized_20260809.json`; it contains
+no bank, contact, personal, or tax identifiers.
 
 ## Canonical reconciliation
 

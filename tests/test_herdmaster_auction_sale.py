@@ -41,6 +41,12 @@ def test_real_read_only_fixture_and_management_estimates():
         "recommendation":"Unavailable until attributable feed-cost, growth-rate, direct-sale value, and pen-capacity evidence exists.",
     }
 
+def test_sanitized_invoice_fixture_preserves_only_supported_public_accounting_facts():
+    settlement=json.loads(Path("tests/fixtures/herdmaster_bkb_settlement_sanitized_20260809.json").read_text(encoding="utf-8"))
+    assert settlement["gross_revenue_ex_vat"]=="4180.00" and settlement["net_settlement_payable"]=="4470.51"
+    assert settlement["payment_received"]==settlement["buyer_identity"]=="Unknown"
+    assert settlement["lots"][0]["tag_membership"]=="Unknown" and settlement["private_identifiers_included"] is False
+
 def test_optional_grouped_question_never_blocks_sale_confirmation():
     result = build_auction_sale_preview(report(), evidence())
     assert result["ready_for_confirmation"] and result["question_optional_for_sale"]
