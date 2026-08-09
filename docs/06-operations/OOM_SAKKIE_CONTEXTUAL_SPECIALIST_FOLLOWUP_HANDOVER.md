@@ -38,3 +38,16 @@ reclassified before the durable provider guard and created defect message
 `3485`. Preserve `3485`; do not edit, delete or retry it. The follow-up
 correction resolves an exact provider-bound terminal outcome before LLM/context
 routing and suppresses all replay delivery. Binding conflicts fail closed.
+
+Execution `63371` later admitted Telegram `3486` (`CH2 inching is now on at 300
+seconds and I’m back at the fertilizer valves ready for the test.`) at provider
+time `2026-08-09T15:40:19+00:00`. Readback proved CH2 ON/300 and every output
+OFF, but the lifecycle lost previously accepted Interlock/Scene evidence and
+returned `Your next step: None`; only card `3480` was edited, so the waiting
+state was operationally silent. The v2 boundary retains exact accepted parent
+facts, recovers incomplete v1 outcomes once, and requires every waiting state
+to contain one visible question. Replay lookup failure no longer claims an
+ordinary new request; only a positively proven terminal replay is suppressed.
+The two observed failures are correlated at the pre-routing/context boundary
+but remain distinct: execution `63371` lost retained lifecycle facts, while CI
+proved that unavailable replay lookup could incorrectly suppress a new request.

@@ -4,7 +4,9 @@ import pytest
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.operational_specialist_intake import (
-    handle_operational_specialist_message, recover_contextual_specialist_replay)
+    handle_operational_specialist_message, recover_contextual_specialist_replay,
+    _project_pending_history)
+from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie import operational_specialist_intake
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 
@@ -313,6 +315,79 @@ def test_negative_configuration_confirmation_never_becomes_setup_proof(text,lang
     assert value["hardware_commands"]==0
 
 
+def test_later_ch2_and_presence_reply_retains_prior_accepted_checklist_facts():
+    item={**operational("CH2 inching is now on at 300 seconds and I’m back at the fertilizer valves ready for the test."),
+        "provider_message_id":"3486","semantic":{"domain":"rootline","intent":"fertilizer_commissioning",
+        "message_kind":"observation","continuation":True,"language":"en",
+        "confirmation_facts":None,"needs_clarification":False}}
+    pending=lambda _:[{"mission_id":"FERTILIZER-1","card_mission_id":"FERTILIZER-1",
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+        "task_state":"waiting_for_input","telegram_message_id":"3480",
+        "delivery_provider_timestamp":NOW.isoformat(),"contextual_task_kind":"fertilizer_commissioning",
+        "required_owner_confirmations":["interlock_off","no_enabled_scene"],
+        "confirmation_prompt_sha256":"a"*64,"text_sha256":"a"*64,
+        "accepted_owner_confirmation_binding":{"prompt_sha256":"a"*64,
+            "facts":{"interlock_off":True,"no_enabled_scene":True}}}]
+    captured=[]
+    def followup(context,now=None):
+        captured.append(context)
+        return {"success":True,"contract_version":"rootline_fertilizer_commissioning_followup_v1",
+            "status":"specialist_accepted","answer":"Ready","provider_control_calls":0,
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False},
+            "hardware_commands":0,"writes_farm_data":False}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=pending,contextual_specialist_dispatcher=followup)
+    assert status==200 and captured[0]["owner_confirmed_requested_setup"] is True
+    assert captured[0]["owner_confirmation_facts"]=={"interlock_off":True,"no_enabled_scene":True}
+    assert value["response_contract_version"]=="contextual_specialist_response_v2"
+
+
+def test_confirmation_waiting_delivery_reload_then_ch2_presence_retains_original_binding():
+    rows={};mission="FERTILIZER-1";prompt_sha="a"*64
+    initial={"event_id":mission+"-DELIVERED","mission_id":mission,"card_mission_id":mission,
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+        "state":"delivered","task_state":"waiting_for_input","telegram_message_id":"3480",
+        "delivery_provider_timestamp":NOW.isoformat(),"text_sha256":prompt_sha,
+        "contextual_task_kind":"fertilizer_commissioning",
+        "required_owner_confirmations":["interlock_off","no_enabled_scene"],
+        "confirmation_prompt_sha256":prompt_sha}
+    rows[initial["event_id"]]=initial
+    def store(action,identity,payload):
+        if action=="load":return list(rows.values())
+        created=identity not in rows
+        if created:rows[identity]=dict(payload)
+        return {"success":True,"created":created}
+    waiting={"success":True,"status":"waiting_for_input","answer":"CH2 still reads OFF",
+        "required_owner_confirmations":["interlock_off","no_enabled_scene"],
+        "confirmation_prompt_sha256":prompt_sha,
+        "accepted_owner_confirmation_binding":{"prompt_sha256":prompt_sha,
+            "facts":{"interlock_off":True,"no_enabled_scene":True}}}
+    delivered=deliver_family_result({**operational("Done"),"provider_message_id":"500"},waiting,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,event_store=store,
+        editor=lambda *_:{"success":True,"telegram_message_id":"3480"})
+    assert delivered["telegram_edits"]==1
+    projected=_project_pending_history(list(rows.values()),NOW+timedelta(minutes=1))
+    assert projected["text_sha256"]!=projected["confirmation_prompt_sha256"]
+    item={**operational("CH2 inching is now on at 300 seconds and I’m back at the fertilizer valves ready for the test."),
+        "provider_message_id":"3486","provider_timestamp":(NOW+timedelta(minutes=1)).isoformat(),
+        "semantic":{"domain":"rootline","intent":"fertilizer_commissioning","message_kind":"observation",
+            "continuation":True,"language":"en","needs_clarification":False}}
+    captured=[]
+    def followup(context,now=None):
+        captured.append(context)
+        return {"success":True,"contract_version":"rootline_fertilizer_commissioning_followup_v1",
+            "status":"specialist_accepted","answer":"Ready","provider_control_calls":0,
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False},
+            "hardware_commands":0,"writes_farm_data":False}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW+timedelta(minutes=1),pending_specialist_loader=lambda _:[projected],
+        contextual_specialist_dispatcher=followup)
+    assert status==200 and captured[0]["owner_confirmed_requested_setup"] is True
+    assert value["hardware_commands"]==0 and value["writes_farm_data"] is False
+
+
 def test_invalid_dispatch_result_is_terminal_and_replay_does_not_dispatch_again():
     item={**operational("Done; at fertilizer valves now"),"semantic":{
         "domain":"rootline","intent":"commissioning_ready","message_kind":"confirmation",
@@ -341,6 +416,7 @@ def test_exact_provider_replay_loads_terminal_before_routing():
         "provider_timestamp":item["provider_timestamp"],"text_sha256":text_sha},
         "outcome":{"status":"waiting_for_input","answer":"CH2 remains off",
             "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False,
+            "response_contract_version":"contextual_specialist_response_v2",
             "authority":{"configuration_write":False,"hardware_control":False,
                          "farm_write":False,"telegram_send":False}}}
     value=recover_contextual_specialist_replay(item,replay_loader=lambda _:[row])
@@ -362,9 +438,7 @@ def test_changed_provider_replay_binding_is_not_recovered():
 def test_provider_replay_ledger_failure_is_delivery_suppressed():
     item=operational("Done; at fertilizer valves now")
     def unavailable(_): raise RuntimeError("database unavailable")
-    value=recover_contextual_specialist_replay(item,replay_loader=unavailable)
-    assert value["status"]=="contextual_specialist_provider_replay_lookup_unavailable"
-    assert value["suppress_owner_delivery"] is True and value["hardware_commands"]==0
+    assert recover_contextual_specialist_replay(item,replay_loader=unavailable) is None
 
 
 @pytest.mark.parametrize("parent_at", [None, NOW+timedelta(seconds=1), NOW-timedelta(hours=7)])

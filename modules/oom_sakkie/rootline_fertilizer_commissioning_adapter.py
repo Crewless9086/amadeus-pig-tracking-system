@@ -15,7 +15,7 @@ ZERO_AUTHORITY = {"configuration_write": False, "hardware_control": False,
 def assess_fertilizer_commissioning_reply(context: Mapping[str, Any], *, now=None,
                                            readback_loader=None) -> dict[str, Any]:
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    if (str(context.get("contract_version") or "") != "oom_sakkie_contextual_specialist_followup_v1"
+    if (str(context.get("contract_version") or "") != "oom_sakkie_contextual_specialist_followup_v2"
             or str(context.get("specialist_identity") or "") != "ROOTLINE"
             or not str(context.get("mission_id") or "")
             or str(context.get("card_mission_id") or "") != str(context.get("mission_id") or "")
@@ -107,18 +107,21 @@ def assess_fertilizer_commissioning_reply(context: Mapping[str, Any], *, now=Non
                    f"<b>ROOTLINE:</b> {rootline_action}.\n\n"
                    "Please make only the named change and tell me when you are back at the fertilizer valves."))
         return {**base, "status": "waiting_for_input", "safety_conflicts": conflicts,
-            "system_evidence_gaps": system_gaps, "answer": answer}
+            "system_evidence_gaps": system_gaps, "answer": answer,
+            "question_count": 1, "requires_visible_notification": True}
     observed = _time(context.get("provider_timestamp"))
     fresh = observed is not None and 0 <= (now - observed).total_seconds() <= PRESENCE_MAX_AGE_SECONDS
     af = str(context.get("language") or "").lower() == "af"
     if not fresh:
         return {**base, "status": "waiting_for_input",
             "answer": (("<b>KUNSMISKONTROLE — GEREED WANNEER JY IS</b>\n\n"
-                        "Die beheerder se veiligheidsopstelling is bevestig. Is jy nog by die kunsmiskleppe en kan jy die menger, pomp, hersirkulasie en ander kanale dophou?")
+                        "Is jy nog by die kunsmiskleppe en gereed vir die vyf-minuut-mengerproef?")
                        if af else
                        ("<b>FERTILIZER CHECK — READY WHEN YOU ARE</b>\n\n"
-                        "The controller safety setup is verified. Are you still at the fertilizer valves and able to observe the mixer, pump, recirculation and unrelated channels?"))}
+                        "Are you still at the fertilizer valves and ready for the five-minute mixer test?")),
+            "question_count": 1, "requires_visible_notification": True}
     return {**base, "status": "specialist_accepted", "ready_for_supervised_proof": True,
+        "next_specialist_step": "supervised_fertilizer_mixer_proof",
         "answer": (("<b>KUNSMISKONTROLE — GEREED</b>\n\n"
                     "Jou huidige teenwoordigheid is aan die bestaande kunsmisopstelling gekoppel en die beheerder se veiligheidskontrole het geslaag. ROOTLINE mag nou slegs die beheerde mengerproef onder toesig begin.")
                    if af else

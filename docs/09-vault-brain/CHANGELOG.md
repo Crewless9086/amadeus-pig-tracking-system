@@ -17,6 +17,13 @@
   lookup and delivered defect clarification `3485`. Added exact provider replay
   precedence before LLM/context routing; cached outcomes revalidate zero
   authority and suppress sends/edits, while mismatches fail closed.
+- Execution `63371` exposed the distinct retained-context defect: accepted
+  commissioning facts were not retained across a later CH2 and presence reply,
+  so the backend returned silent `waiting_for_input`. Separately, CI exposed an
+  over-broad replay-lookup branch that blanked an ordinary read-only answer when
+  provider lookup was unavailable. Restored ordinary routing unless replay is
+  positively proven, retained typed parent evidence, and made every genuine
+  waiting question visibly notify once while updating the durable card.
 
 ## 2026-08-09 - Oom Sakkie farm-manager spine closeout assessed
 

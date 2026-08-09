@@ -35,10 +35,7 @@ def recover_contextual_specialist_replay(parsed, *, replay_loader=None):
     try:
         rows = list((replay_loader or _load_contextual_provider_replay)(provider_id) or ())
     except Exception:
-        return {"handled": True, "success": False,
-            "status": "contextual_specialist_provider_replay_lookup_unavailable",
-            "answer": "", "replay_suppressed": True, "suppress_owner_delivery": True,
-            "provider_control_calls": 0, "writes_farm_data": False, **ZERO_AUTHORITY}
+        return None
     exact = [row for row in rows if isinstance(row, Mapping)
         and str((row.get("context") or {}).get("owner_user_id") or "") == owner
         and str((row.get("context") or {}).get("chat_id") or "") == chat
@@ -53,6 +50,8 @@ def recover_contextual_specialist_replay(parsed, *, replay_loader=None):
             "answer": "", "replay_suppressed": True, "suppress_owner_delivery": True,
             "provider_control_calls": 0, "writes_farm_data": False, **ZERO_AUTHORITY}
     outcome = dict(exact[0].get("outcome") or {})
+    if outcome.get("response_contract_version") != "contextual_specialist_response_v2":
+        return None
     if (outcome.get("hardware_commands") != 0
             or outcome.get("provider_control_calls") != 0
             or outcome.get("writes_farm_data") is not False
@@ -76,7 +75,8 @@ def _load_contextual_provider_replay(provider_message_id):
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_rootline_operational_intake'
                   and review_json->'rootline_operational_intake'->'context'->>'contract_version'
-                      ='oom_sakkie_contextual_specialist_followup_v1'
+                      in ('oom_sakkie_contextual_specialist_followup_v1',
+                          'oom_sakkie_contextual_specialist_followup_v2')
                   and review_json->'rootline_operational_intake'->'context'->>'provider_message_id'=%s
                   and review_json->'rootline_operational_intake'->>'state'
                       in ('contextual_followup_completed','contextual_followup_contained')
@@ -415,15 +415,25 @@ def _handle_contextual_specialist_followup(parsed, gateway_authority, pending, d
     prompt_sha = str(pending.get("confirmation_prompt_sha256") or "")
     parent_text_sha = str(pending.get("text_sha256") or "")
     confirmation_facts = semantic.get("confirmation_facts")
-    exact_setup_confirmation = (
-        str(semantic.get("message_kind") or "").lower() == "confirmation"
-        and required_confirmations == ("interlock_off", "no_enabled_scene")
-        and len(prompt_sha) == 64 and prompt_sha == parent_text_sha
-        and isinstance(confirmation_facts, Mapping)
-        and confirmation_facts.get("interlock_off") is True
-        and confirmation_facts.get("no_enabled_scene") is True)
+    retained_binding = (pending.get("accepted_owner_confirmation_binding")
+        if isinstance(pending.get("accepted_owner_confirmation_binding"), Mapping) else {})
+    retained_confirmation_facts = retained_binding.get("facts")
+    effective_confirmation_facts = (confirmation_facts
+        if isinstance(confirmation_facts, Mapping) and confirmation_facts
+        else retained_confirmation_facts)
+    facts_affirmative = (isinstance(effective_confirmation_facts, Mapping)
+        and effective_confirmation_facts.get("interlock_off") is True
+        and effective_confirmation_facts.get("no_enabled_scene") is True)
+    current_confirmation = (str(semantic.get("message_kind") or "").lower() == "confirmation"
+        and isinstance(confirmation_facts, Mapping) and bool(confirmation_facts)
+        and len(prompt_sha) == 64 and prompt_sha == parent_text_sha)
+    retained_confirmation = (isinstance(retained_confirmation_facts, Mapping)
+        and bool(retained_confirmation_facts) and len(prompt_sha) == 64
+        and str(retained_binding.get("prompt_sha256") or "") == prompt_sha)
+    exact_setup_confirmation = (required_confirmations == ("interlock_off", "no_enabled_scene")
+        and facts_affirmative and (current_confirmation or retained_confirmation))
     context = {
-        "contract_version": "oom_sakkie_contextual_specialist_followup_v1",
+        "contract_version": "oom_sakkie_contextual_specialist_followup_v2",
         "mission_id": str(pending.get("mission_id") or ""),
         "card_mission_id": str(pending.get("card_mission_id") or ""),
         "specialist_identity": "ROOTLINE",
@@ -436,7 +446,7 @@ def _handle_contextual_specialist_followup(parsed, gateway_authority, pending, d
         "contextual_task_kind": str(pending.get("contextual_task_kind")
                                     or pending.get("semantic_intent") or ""),
         "required_owner_confirmations": list(required_confirmations),
-        "owner_confirmation_facts": dict(confirmation_facts or {}),
+        "owner_confirmation_facts": dict(effective_confirmation_facts or {}),
         "confirmation_prompt_sha256": prompt_sha,
         "owner_confirmed_requested_setup": exact_setup_confirmation,
         "language": str(semantic.get("language") or "unknown"),
@@ -494,7 +504,12 @@ def _handle_contextual_specialist_followup(parsed, gateway_authority, pending, d
     outcome = {**result, "handled": True, "specialist_identity": "ROOTLINE",
         "mission_id": context["mission_id"], "card_mission_id": context["card_mission_id"],
         "provider_message_id": provider_id, "provider_timestamp": provider_at.isoformat(),
-        "contextual_task_kind": context["contextual_task_kind"], **ZERO_AUTHORITY}
+        "contextual_task_kind": context["contextual_task_kind"],
+        "required_owner_confirmations": list(required_confirmations),
+        "confirmation_prompt_sha256": prompt_sha,
+        "accepted_owner_confirmation_binding": ({"prompt_sha256": prompt_sha,
+            "facts": dict(effective_confirmation_facts)} if exact_setup_confirmation else {}),
+        "response_contract_version": "contextual_specialist_response_v2", **ZERO_AUTHORITY}
     complete_id = claim_id + "-COMPLETED"
     try:
         recorded = store("record", complete_id, {"event_id": complete_id,
@@ -533,36 +548,47 @@ def _load_pending_specialist_context(parsed):
                 where event_source='oom_sakkie_family_message_lifecycle'
                   and review_json->'family_message_lifecycle'->>'owner_user_id'=%s
                   and review_json->'family_message_lifecycle'->>'chat_id'=%s
-                  and created_at > %s::timestamptz-interval '6 hours'
-                  and created_at <= %s::timestamptz
+                  and (created_at > %s::timestamptz-interval '6 hours'
+                       or review_json->'family_message_lifecycle'->>'recovery_provider_message_id'=%s)
+                  and (created_at <= %s::timestamptz
+                       or review_json->'family_message_lifecycle'->>'recovery_provider_message_id'=%s)
                 order by created_at,review_event_id""",
-                (owner, chat, observed.isoformat(), observed.isoformat()))
+                (owner, chat, observed.isoformat(),
+                 str(parsed.get("provider_message_id") or ""), observed.isoformat(),
+                 str(parsed.get("provider_message_id") or "")))
             rows = [row[0] for row in cursor.fetchall()]
     histories = {}
     for item in rows:
         card = str(item.get("card_mission_id") or "")
         if card:
             histories.setdefault(card, []).append(item)
-    latest = []
-    for history in histories.values():
-        current = dict(history[-1])
-        delivered = next((item for item in reversed(history)
-                          if str(item.get("delivery_provider_timestamp") or "")), {})
-        current["delivery_provider_timestamp"] = delivered.get("delivery_provider_timestamp")
-        current["telegram_message_id"] = current.get("telegram_message_id") or delivered.get("telegram_message_id")
-        def retained(key, fallback=""):
-            return current.get(key) or next((item.get(key) for item in reversed(history)
-                                             if item.get(key)), fallback)
-        current["contextual_task_kind"] = retained("contextual_task_kind") or retained("semantic_intent")
-        current["required_owner_confirmations"] = retained("required_owner_confirmations", [])
-        current["confirmation_prompt_sha256"] = retained("confirmation_prompt_sha256")
-        current["text_sha256"] = retained("text_sha256")
-        delivered_at = _time(current.get("delivery_provider_timestamp"))
-        if delivered_at is not None and 0 <= (observed - delivered_at).total_seconds() <= 6 * 60 * 60:
-            latest.append(current)
+    latest = [projected for history in histories.values()
+              if (projected := _project_pending_history(history, observed)) is not None]
     return [item for item in latest
             if item.get("state") in {"delivered", "updated"}
             and item.get("task_state") == "waiting_for_input"]
+
+
+def _project_pending_history(history, observed):
+    if not history:
+        return None
+    current = dict(history[-1])
+    delivered = next((item for item in reversed(history)
+                      if str(item.get("delivery_provider_timestamp") or "")), {})
+    current["delivery_provider_timestamp"] = delivered.get("delivery_provider_timestamp")
+    current["telegram_message_id"] = current.get("telegram_message_id") or delivered.get("telegram_message_id")
+    def retained(key, fallback=""):
+        return current.get(key) or next((item.get(key) for item in reversed(history)
+                                         if item.get(key)), fallback)
+    current["contextual_task_kind"] = retained("contextual_task_kind") or retained("semantic_intent")
+    current["required_owner_confirmations"] = retained("required_owner_confirmations", [])
+    current["confirmation_prompt_sha256"] = retained("confirmation_prompt_sha256")
+    current["accepted_owner_confirmation_binding"] = retained("accepted_owner_confirmation_binding", {})
+    current["text_sha256"] = retained("text_sha256")
+    delivered_at = _time(current.get("delivery_provider_timestamp"))
+    if delivered_at is None or not 0 <= (observed - delivered_at).total_seconds() <= 6 * 60 * 60:
+        return None
+    return current
 
 
 def _canonical_write_truth(observation_result):

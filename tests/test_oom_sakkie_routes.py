@@ -246,8 +246,6 @@ class OomSakkieRouteTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "DATABASE_URL": "postgresql://test.invalid/db",
     }, clear=True)
-    @patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",
-           return_value=None)
     @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result", return_value={
         "success": True, "status": "family_message_delivered", "telegram_sends": 1,
         "telegram_edits": 0, "telegram_message_id": "4001"})
@@ -261,7 +259,7 @@ class OomSakkieRouteTests(unittest.TestCase):
            return_value=({"handled": False}, 200))
     @patch("modules.oom_sakkie.telegram_gateway.handle_message")
     def test_telegram_gateway_route_returns_read_only_reply_payload(
-            self, mock_handle, _manager, _specialist, _continuation, _owner_task, _deliver, _replay):
+            self, mock_handle, _manager, _specialist, _continuation, _owner_task, _deliver):
         mock_handle.return_value = ({
             "success": True,
             "answer": "Read-only answer.",

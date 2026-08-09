@@ -5,7 +5,7 @@ from modules.oom_sakkie.rootline_fertilizer_commissioning_adapter import assess_
 NOW=datetime(2026,8,9,11,1,tzinfo=timezone.utc)
 
 def context(at=NOW):
-    return {"contract_version":"oom_sakkie_contextual_specialist_followup_v1",
+    return {"contract_version":"oom_sakkie_contextual_specialist_followup_v2",
         "mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
         "card_mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
         "specialist_identity":"ROOTLINE","parent_telegram_message_id":"3480",
@@ -79,6 +79,8 @@ def test_safe_but_stale_presence_asks_only_fresh_availability():
         readback_loader=snapshot)
     assert value["status"]=="waiting_for_input" and "still at the fertilizer valves" in value["answer"]
     assert value["configuration_verified"] is True and value["hardware_commands"]==0
+    assert value["question_count"]==1 and value["requires_visible_notification"] is True
+    assert "five-minute mixer test" in value["answer"]
 
 def test_safe_fresh_context_is_ready_but_never_actuates():
     value=assess_fertilizer_commissioning_reply(context(),now=NOW,readback_loader=snapshot)

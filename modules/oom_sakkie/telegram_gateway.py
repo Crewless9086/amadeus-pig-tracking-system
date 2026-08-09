@@ -274,6 +274,18 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     )
     if operational_result.get("handled"):
         answer = str(operational_result.get("answer") or "")
+        if str(operational_result.get("status") or "") == "waiting_for_input":
+            if not answer.strip() or operational_result.get("question_count") != 1:
+                operational_result = {**operational_result,
+                    "success": False, "status": "operational_waiting_question_invalid",
+                    "answer": ("<b>OOM SAKKIE — FOLLOW-UP CONTAINED</b>\n\n"
+                               "I retained your reply, but could not prove the one remaining question. "
+                               "No farm or hardware action was taken."),
+                    "requires_visible_notification": True, "question_count": 0}
+            else:
+                operational_result = {**operational_result,
+                    "requires_visible_notification": True}
+            answer = str(operational_result.get("answer") or "")
         delivery = deliver_family_result(
             parsed, operational_result,
             specialist=str(operational_result.get("specialist_identity") or "OOM_SAKKIE"),
