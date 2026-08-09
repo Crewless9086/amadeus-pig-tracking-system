@@ -166,7 +166,8 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         recoverable = (completed["outcome"].get("systemic_exception") == "rootline_canonical_observation_bridge_failed"
                        and completed["outcome"].get("writes_farm_data") is False
                        and observations and _same_source_context(completed.get("context"), context))
-        if completed.get("context") != context and not recoverable:
+        replay_compatible = _same_replay_context(completed.get("context"), context)
+        if completed.get("context") != context and not recoverable and not replay_compatible:
             result = _contained(parsed, "rootline_operational_replay_binding_conflict", now)
             result["answer"] = "<b>IRRIGATION FOLLOW-UP CONTAINED</b>\n\nThe provider identity conflicts with the preserved evidence. Nothing was dispatched or changed."
             return result, 409
@@ -400,6 +401,11 @@ def _same_source_context(left, right):
     keys = set(left) | set(right)
     volatile_semantic = {"observations", "semantic_observation", "semantic_intent"}
     return all(left.get(key) == right.get(key) for key in keys if key not in volatile_semantic)
+
+
+def _same_replay_context(left, right):
+    return (_same_source_context(left, right)
+            and left.get("observations") == right.get("observations"))
 
 
 def _time(value):
