@@ -90,7 +90,7 @@ def build_auction_sale_preview(report, evidence):
         matches=[row for row in rows if _tag(row.get("tag_number"))==tag]
         try: weight=Decimal(str(matches[0].get("latest_weight_kg"))) if len(matches)==1 else Decimal("0")
         except (InvalidOperation,ValueError,TypeError): weight=Decimal("0")
-        if len(matches)!=1 or weight<=0 or _text(matches[0].get("latest_weight_date"))!="2026-08-03":
+        if len(matches)!=1 or not weight.is_finite() or weight<=0 or _text(matches[0].get("latest_weight_date"))!="2026-08-03":
             weight_values=[]; break
         weight_values.append(weight)
     total_weight=sum(weight_values,Decimal("0")) if len(weight_values)==18 else None
