@@ -175,7 +175,9 @@ def test_recoverable_zero_write_containment_advances_same_mission_once():
     first,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),now=NOW,
         rootline_operations_dispatcher=lambda _:operational_result(recommendation="Hold"),
         rootline_observation_writer=writer,operation_store=store)
-    second,_=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),now=NOW,
+    replay_item={**item,"semantic":{**item["semantic"],"observation":"Both water stores report full.",
+                                    "intent":"owner_water_observation"}}
+    second,_=handle_operational_specialist_message(replay_item,issue_gateway_owner_authority("42","42"),now=NOW,
         rootline_operations_dispatcher=lambda _:pytest.fail("completed replay must not redispatch"),
         rootline_observation_writer=lambda *_:pytest.fail("completed replay must not rewrite"),operation_store=store)
     assert status==200 and first["mission_id"]==mission and first["writes_farm_data"] is True
