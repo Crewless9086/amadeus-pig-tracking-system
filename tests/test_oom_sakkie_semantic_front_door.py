@@ -234,22 +234,23 @@ def test_gateway_exact_provider_replay_precedes_semantic_and_sends_nothing(recov
     assert result["delivery"]["telegram_sends"]==0 and result["delivery"]["telegram_edits"]==0
 
 
-@patch("modules.oom_sakkie.telegram_gateway.interpret_owner_message",
-       side_effect=AssertionError("ledger failure must not fall into semantic routing"))
+@patch("modules.oom_sakkie.telegram_gateway.handle_message")
+@patch("modules.oom_sakkie.telegram_gateway.interpret_owner_message",return_value=None)
 @patch("modules.oom_sakkie.operational_specialist_intake._load_contextual_provider_replay",
        side_effect=RuntimeError("database unavailable"))
-def test_gateway_replay_ledger_failure_suppresses_semantic_and_delivery(_loader,_interpret):
+def test_gateway_replay_ledger_failure_preserves_new_read_only_route(_loader,_interpret,service):
+    service.return_value=({"success":True,"answer":"Read-only answer.","tool_used":"farm_attention_summary",
+        "trace_store":{"stored":False}},200)
     env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"1","OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"g"*40,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
-    payload={"message":{"message_id":3481,"date":1786273205,
-        "text":"Done; at fertilizer valves now","from":{"id":42},
-        "chat":{"id":42,"type":"private"}}}
-    with patch.dict("os.environ",env,clear=True):
-        result,status=handle_telegram_gateway_message(payload,
-            headers={"Authorization":"Bearer "+"g"*40})
-    assert status==200
-    assert result["message"]["status"]=="contextual_specialist_provider_replay_lookup_unavailable"
-    assert result["delivery"]["telegram_sends"]==0 and result["delivery"]["telegram_edits"]==0
+    payload={"message":{"message_id":9001,"date":1786273205,
+        "text":"What is today's farm plan?","from":{"id":42},"chat":{"id":42,"type":"private"}}}
+    with patch.dict("os.environ",env,clear=True), patch(
+            "modules.oom_sakkie.telegram_gateway.handle_owner_operational_continuation",return_value=({"handled":False},200)), patch(
+            "modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message",return_value=({"handled":False},200)), patch(
+            "modules.oom_sakkie.telegram_gateway.deliver_family_result",return_value={"success":True,"telegram_sends":1,"telegram_edits":0}):
+        result,status=handle_telegram_gateway_message(payload,headers={"Authorization":"Bearer "+"g"*40})
+    assert status==200 and result["answer"]=="Read-only answer."
 
 
 @patch("modules.oom_sakkie.service.classify_intent",

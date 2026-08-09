@@ -163,6 +163,23 @@ def test_later_natural_result_edits_same_card_and_replay_is_silent():
     assert replay["telegram_edits"]==0 and len(memory.edited)==1
 
 
+def test_waiting_question_updates_card_and_creates_one_visible_notification():
+    memory=Memory();mission="OOM-ROOTLINE-WAIT"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    follow={**RESULT,"answer":"Are you still at the valves?","requires_visible_notification":True}
+    changed=deliver_family_result({**PARSED,"provider_message_id":"501"},follow,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result({**PARSED,"provider_message_id":"501"},follow,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert changed["status"]=="family_message_card_updated_and_notified"
+    assert changed["telegram_edits"]==1 and changed["telegram_sends"]==1
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
+    assert len(memory.edited)==1 and len(memory.sent)==2
+
+
 def test_process_interruption_does_not_blindly_resend():
     memory=Memory();mission="OOM-HERD-INTERRUPTED"
     memory.store("record",mission+"-DELIVERY-ATTEMPT",{"card_mission_id":mission,
