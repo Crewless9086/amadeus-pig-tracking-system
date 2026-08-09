@@ -30,7 +30,8 @@ def resign(row):
 
 def safety(device="injection",**changes):
     channel=1 if device=="injection" else 2
-    value={"device_id":"100204d497","channel":channel,"output_state":"OFF",
+    value={"authoritative":True,"response_digest":"READ-SAFETY-1",
+        "device_id":"100204d497","channel":channel,"output_state":"OFF",
         "native_inching_enabled":True,"native_inching_seconds":120 if channel==1 else 300,
         "power_restoration_state":"OFF","schedules_enabled":False,"timers_enabled":False,
         "scenes_enabled":False,"interlock_enabled":False,
@@ -157,6 +158,12 @@ def test_unverified_reported_inching_and_disabled_flag_fail_closed():
         safety=unverified,context=injection_context(),
         flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":True},now=NOW)
     assert value["status"]=="auxiliary_safety_unproven"
+    for untrusted in (safety(authoritative=False),safety(response_digest=None)):
+        value=build_auxiliary_eligibility(task={
+            "auxiliary_device_id":"FERTILIZER-INJECTION-CH1"},safety=untrusted,
+            context=injection_context(),flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":True},
+            now=NOW)
+        assert value["status"]=="auxiliary_safety_unproven"
 
 
 def test_mixing_five_minute_fail_stop_daily_cap_and_low_power_deferral():

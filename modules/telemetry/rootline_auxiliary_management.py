@@ -354,7 +354,8 @@ def _mixing_gate(context,now):
 
 def _safe(contract,safety,now):
     observed=_time(safety.get("observed_at"))
-    return (safety.get("device_id")==contract["device_id"]
+    return (safety.get("authoritative") is True and bool(safety.get("response_digest"))
+        and safety.get("device_id")==contract["device_id"]
         and safety.get("channel")==contract["channel"] and safety.get("output_state")=="OFF"
         and safety.get("native_inching_enabled") is True
         and int(safety.get("native_inching_seconds") or 0)==contract["native_fail_stop_seconds"]
