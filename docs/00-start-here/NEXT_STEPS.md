@@ -2,6 +2,18 @@
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
 
+## 2026-08-10 P0 - Outcome-Bound Terminal Operation
+
+1. Stop accepting a PR, green CI, deployment, replay proof, containment packet or newly sent owner question as completion of a live business journey.
+2. Keep the exact terminal bound to one mission identity until a fresh post-deployment trigger completes the entire real-world loop: authenticated intake, retained context, specialist decision, authorized external action, authoritative readback, visible closure and automatic follow-up.
+3. Before requesting time-sensitive owner presence, deploy the complete candidate path and have the owning terminal observe the live journey while the evidence window remains fresh.
+4. After three owner attempts without the intended outcome, request no further repetition. Treat the journey as a systemic incident and require one correlated end-to-end trace before another live attempt.
+5. Distinguish documented facts from runtime-loaded and provider-verified evidence in every handover. A repository file or `C:/tmp` handover is not deployed-agent memory unless an authoritative loader supplies it.
+6. Do not combine an unresolved P0 incident with the next broad feature mission. Close or precisely contain the incident first, then start the next goal under a separate mission identity.
+7. Require every Control Tower assessment and target terminal to verify that `AGENTIC_OPERATING_MISSION_STANDARD.md` is Git-tracked and completely read in its own `HEAD`; never silently use fallback doctrine while claiming the standard was applied.
+
+Immediate acceptance: complete the existing ROOTLINE fertilizer-mixer lifecycle through one supervised five-minute run, native auto-OFF, provider and physical shutdown verification, one visible completion and zero-effect replay. The deployed Daily Farm Manager remains operational separately. No additional owner availability attempt is permitted until the complete fertilizer path is ready and actively observed.
+
 ## ROOTLINE-FERTILIZER-AND-WATER-BALANCE-1
 
 Next serialized production mission after the Oom Sakkie spine closeout:

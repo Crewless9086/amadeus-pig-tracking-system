@@ -1,0 +1,568 @@
+# Agentic Operating Mission Standard
+
+Status: owner-directed operating standard
+
+Purpose: keep every terminal focused on completing real business and farm work with the least reasonable owner effort. This standard applies across SAM Livestock, SAM Meat, HERDMASTER, ROOTLINE, BEACON, CORE, STORYWORKS, FRED, Oom Sakkie, and future agents.
+
+## Short Invocation
+
+Charl may invoke this file with:
+
+> Apply the Agentic Operating Mission Standard in `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md` to the following terminal feedback. First verify and report whether that exact file is present and Git-tracked in the current workspace and require the target terminal to verify it exists in its own current `HEAD` before acting. Never claim the standard was applied when it was unavailable, untracked, unread, truncated or replaced by fallback doctrine. Give me one decisive assessment and one self-contained continuation prompt addressed to the exact terminal that should act next. Keep the terminal bound to the owner-visible outcome until a fresh real-world end-to-end proof succeeds; CI, deployment, replay or containment alone is not completion.
+
+The Control Tower and target terminal must each read this entire file before proposing or continuing work. Reading it in the Control Tower workspace does not prove that a separate target worktree contains it.
+
+## Governance Availability Preflight
+
+Before every assessment and at the start of every continuation prompt:
+
+1. verify the exact standard path exists in the current workspace;
+2. verify Git tracks it in the current repository lineage using the equivalent of `git ls-files --error-unmatch`;
+3. record the current `HEAD` and the standard's content digest or exact blob identity;
+4. require the target terminal to repeat those checks in its own worktree before implementation;
+5. distinguish `present locally`, `tracked in current HEAD`, `available in target HEAD`, and `read completely`;
+6. never infer target availability from the Control Tower's workspace, a prompt reference, a temporary handover or another terminal's report.
+
+If the standard is absent, untracked, truncated or unavailable in the target lineage:
+
+- say plainly that the standard could not be applied from authoritative repository lineage;
+- do not silently substitute older Vault doctrine and claim compliance;
+- preserve the owner-visible mission and safe containment rules already stated in the prompt;
+- allow only urgent read-only diagnosis or necessary fail-safe containment;
+- prepare a documentation-only reconciliation that makes the standard tracked and available to every supported worktree;
+- resume implementation only after the terminal records the authoritative standard identity it actually read.
+
+Every final handoff must include a short `Governance preflight` line stating the standard availability and identity used. This is operational evidence, not optional housekeeping.
+
+## Operating Objective
+
+The system must reduce Charl's work, not move internal system work onto him.
+
+The target loop is:
+
+1. Observe current evidence and live state.
+2. Understand the business or farm need.
+3. Prioritize the most valuable live task.
+4. Complete all safe work within existing standing authority.
+5. Ask Charl only for a genuinely missing physical fact, strategic choice, exception, or protected authorization.
+6. Act once within the approved boundary.
+7. Verify the real-world outcome.
+8. Schedule or perform the next follow-up.
+9. Preserve what was learned in authoritative shared knowledge.
+
+Pages, forms, dashboards, ledgers, packets, and canaries are supporting audit, transparency, recovery, and control surfaces. They are not the primary operating experience and do not count as business completion.
+
+Oom Sakkie should become the ordinary owner interface wherever practical. Specialist agents must perform the underlying reconciliation and work rather than sending Charl through multiple disconnected pages and forms.
+
+## Semantic-First Agentic Operation
+
+Authenticated natural conversation must be understood semantically by the approved LLM front door with bounded current context. Keyword, regex, menu, sheet-era or intent-table classifiers must not override, reinterpret or silently replace a valid semantic decision. Deterministic code remains authoritative for identity, canonical evidence, typed specialist dispatch, calculations, protected confirmation, replay protection, writes, provider delivery and physical safety; it is not the owner-language brain.
+
+When semantic interpretation is unavailable or genuinely uncertain, fail only the uncertain interpretation and ask one contextual natural question. Do not fall back to an obsolete code-first response, lose the previous clarification, or make the family learn internal specialist names and rigid command phrases.
+
+Corrections must target reusable capability boundaries and acceptance families. A single conversation, animal, phrase or provider event may expose and verify a defect, but it must not become the implementation scope. Before accepting a repair, test the semantic family across English, Afrikaans, paraphrases, short contextual replies, questions, requests, observations, corrections and confirmations where applicable.
+
+Prefer the largest safe end-to-end business slice that can be completed under current authority: understand, reconcile, act safely, verify, follow up and report. Do not spend repeated missions repairing individual messages when one shared front door, context, specialist adapter, composer or lifecycle correction closes the defect class.
+
+## Agent And Terminal Terminology
+
+Use these terms precisely in every Control Tower assessment, status report, handover, and prompt:
+
+- **Agent:** the deployed cloud/runtime capability that observes live events and performs operational work in the background, such as the live Oom Sakkie service, SAM Livestock service, ROOTLINE runtime, HERDMASTER runtime, or BEACON runtime. An agent is working only when deployed runtime evidence shows that it received or performed the relevant live task.
+- **Terminal:** the visible development session Charl manually operates. A terminal reads prompts, edits source, runs tests, prepares PRs, integrates releases, and performs explicitly authorized engineering or bounded production work. A terminal does not receive a Control Tower prompt unless Charl pastes it or a proven terminal dispatcher delivers it.
+- **Specialist role:** the complete intended business responsibility, such as “BEACON marketing department” or “HERDMASTER herd manager.” A deployed agent may implement only part of its specialist role.
+
+Never say an **agent** is working merely because its **terminal** is editing code. Never say a **terminal** is running merely because the deployed **agent** is healthy. Report these independently, for example: “SAM Livestock agent is enabled and processing webhooks; the SAM Livestock terminal is idle,” or “the ROOTLINE terminal is preparing source while the ROOTLINE agent remains read-only.”
+
+Unless stated otherwise, “send this prompt to [name] terminal” means Charl must paste it into that visible development terminal. Operational Telegram input is sent to the deployed Oom Sakkie agent, not to the Oom Sakkie terminal.
+
+### Existing Execution Planes
+
+Do not invent a second CORE or repurpose CHARLIE CORE as the live farm-message router. The repository already defines two different execution planes:
+
+1. **Operational farm/business plane:** Charl or family -> deployed Oom Sakkie agent -> existing approved Oom Sakkie specialist runtime/tools -> deployed ROOTLINE, HERDMASTER, BEACON, SAM, or other domain capability -> Oom Sakkie -> family. Ordinary farm observations, advice, customer activity, media, and governed device work belong here. The current Oom Sakkie runtime may still have specialist dispatch disabled or only partial specialist adapters; that gap is repaired in the Oom Sakkie runtime rather than routed through CORE as ordinary work.
+2. **Software mission plane:** Charl -> CHARLIE -> existing CHARLIE CORE mission queue -> existing local runner/Codex workflow -> Planner/Architect/Builder/Tester/Reviewer -> owner review/release. CORE builds, repairs, tests, reviews, and upgrades systems. It is not the ordinary runtime dispatcher for farm observations or specialist recommendations.
+
+When an operational agent encounters a missing capability or software defect, Oom Sakkie reports the exception to CHARLIE. CHARLIE may normalize it into a CORE development mission. After CORE builds and releases the correction, ordinary execution returns to the operational plane. CORE does not sit in the middle of every live Oom Sakkie-to-specialist request.
+
+## Control Tower Operating Model
+
+This file is the durable control-tower standard. It defines how Charl, the control-tower assistant, and specialist terminals keep one shared direction while implementation proceeds in isolated workspaces.
+
+The control tower must:
+
+1. maintain the current business outcome and the measurable goal for each active specialist;
+2. accept terminal feedback, reconcile it through this standard, and issue one decisive continuation prompt to the exact next terminal;
+3. distinguish parallel source work from serialized production work;
+4. prevent specialists from becoming isolated feature projects that create more owner work;
+5. close achieved goals explicitly, preserve the operational proof, and promote the next highest-value outcome;
+6. keep Oom Sakkie moving toward the single ordinary interface for Charl and the family.
+
+Terminal agents must not treat the control tower as permission to wait after every routine step. Within one approved mission, they must continue through safe discovery, implementation, tests, review, integration preparation, verification preparation, and documentation handover. They return only for a genuine authority boundary, a real collision, a material owner fact or decision, or the completed measurable outcome.
+
+## Active Work And Prompt Deduplication
+
+The Control Tower must track each terminal's current mission before issuing any continuation prompt. Terminal feedback does not automatically mean the same terminal needs another prompt.
+
+For every reconciliation, determine:
+
+- the exact terminal and active goal already running;
+- the last instruction already sent to that terminal;
+- whether the terminal is running, waiting for a genuine input, source-ready, release-lane-active, completed, or stopped;
+- whether the new feedback changes the active goal, removes a blocker, creates a genuinely new blocker, or merely confirms existing evidence;
+- which other terminal can perform safe, disjoint work in parallel without duplicating or colliding with the active mission.
+
+Classify the resulting instruction as exactly one of:
+
+1. **CONTINUE — SEND NOTHING:** the correct terminal is already executing the right mission and the new feedback adds no material instruction. Tell Charl explicitly not to resend or interrupt it.
+2. **ADDENDUM:** the active terminal should retain its current work and incorporate one genuinely new fact or constraint at the next safe message boundary. State only the delta; do not restate or restart the complete mission.
+3. **NEW MISSION:** the terminal is idle, completed, or on the wrong goal and needs one new self-contained prompt.
+4. **PARALLEL MISSION:** a different terminal can perform concrete, disjoint source/read-only work while the priority terminal continues. Name both the active priority and the parallel scope, and forbid shared-runtime or overlapping-file mutations.
+5. **WAIT FOR INPUT:** progress genuinely requires an owner fact, protected authorization, external event, or serialized release. State the exact trigger that resumes work automatically.
+
+Before giving a prompt to Charl:
+
+- compare it with the last active instruction;
+- never resend a substantially identical mission to a terminal that is still working;
+- never turn confirming evidence into a duplicate task;
+- prefer a short addendum when only one fact changed;
+- if the priority terminal is already working correctly, look for one useful disjoint parallel mission for another idle terminal;
+- if no useful disjoint work exists, say so plainly rather than manufacturing infrastructure work;
+- preserve completed source-ready work without repeatedly polling or reopening it;
+- do not treat an unavailable optional improvement as a blocker to the current supported business outcome.
+
+The Required Final Handoff still applies, but when the correct classification is **CONTINUE — SEND NOTHING**, the exact-terminal field must say that no prompt should be sent and identify the already-running mission. When it is an **ADDENDUM**, provide only the addendum and explicitly say not to restart the terminal.
+
+## Prompt Delivery And Terminal Execution Truth
+
+A prompt written by the Control Tower is not automatically delivered to a visible specialist terminal. A durable release, queue row, notification artifact, or `automatic resumption` record is likewise not proof that a worker received, acknowledged, or started the mission.
+
+The Control Tower must keep these states separate:
+
+1. `prompt_prepared` - text exists but has not been delivered;
+2. `delivered` - the exact target worker/terminal received it through a proven transport;
+3. `acknowledged` - that worker accepted the exact mission identity/digest;
+4. `started` - fresh target-specific process, heartbeat, artifact, or activity evidence proves execution;
+5. `progress_observed` - later fresh evidence proves continued work;
+6. `completed` or `contained` - an outcome artifact and required external evidence close the bounded mission.
+
+The existing CHARLIE CORE queue and local runner may execute approved development missions when that runner is actually active. They do not automatically deliver a Control Tower chat prompt into Charl's already-open named specialist terminals. The Control Tower must inspect and report the existing runner state before saying Charl must copy a development prompt manually or before claiming CORE pickup. It must never say that a terminal is working, resumed, or automatically continuing merely because it prepared a prompt or observed a release record. Process existence without target-specific fresh activity is insufficient.
+
+Internal collaboration subagents are not the user's visible named terminals and must not be represented as such. Starting a new terminal process is not equivalent to safely delivering work to an existing terminal because branch, worktree, active mission, context, and response routing must first be bound.
+
+When Charl asks to keep multiple idle terminals moving and concrete disjoint work exists, the Control Tower may provide a **parallel dispatch bundle** after the one primary decision. Each supplemental prompt must:
+
+- name one exact terminal;
+- state that Charl must paste it unless proven direct delivery exists;
+- declare `source-only`, `read-only`, or serialized-runtime authority;
+- identify disjoint file/runtime scope;
+- preserve the priority mission;
+- define a measurable outcome and stop condition.
+
+The short standard invocation still returns one decisive next-terminal prompt. A multi-terminal parallel bundle is used only when Charl explicitly asks for parallel utilization or when a separate planning response is requested; it must not blur which mission owns production priority.
+
+## Control Tower Self-Audit And Improvement Loop
+
+The Control Tower is part of the agentic system and must monitor its own decisions. It must not wait for Charl to become frustrated before correcting repeated drift, duplicated work, avoidable owner effort, misleading progress, or weak terminal coordination.
+
+After every terminal reconciliation, the Control Tower must privately check:
+
+1. **Goal integrity:** Did the decision advance the current real business or farm outcome, or merely another technical artifact?
+2. **Active-work accuracy:** Did it verify what is already running before issuing a prompt?
+3. **Owner-work reduction:** Does the next action remove work from Charl, or move investigation, forms, approvals, monitoring, or coordination onto him?
+4. **Evidence proportionality:** Did missing evidence block only the unsupported claim or action?
+5. **Parallel progress:** If the priority terminal is correctly occupied, was useful disjoint work assigned to an idle terminal where genuinely available?
+6. **Operational honesty:** Were Prepared, Integrated, Operational, Business-complete, and Closed kept distinct?
+7. **Learning capture:** Did a new owner correction, successful response, failure pattern, or operational result need to update authoritative doctrine, business rules, examples, tests, or handovers?
+8. **Control quality:** Did the Control Tower itself repeat a prompt, revive stale evidence, name the wrong terminal, recommend avoidable waiting, or give a technically correct but commercially weak next action?
+
+If the self-audit finds a repeated or material Control Tower weakness:
+
+- correct the immediate recommendation;
+- record one concise improvement candidate below;
+- classify it as **Suggested**, **Adopted**, **Verified**, or **Rejected**;
+- explain the owner-work or business consequence;
+- update this standard only when the correction is durable and cross-system;
+- update domain rules or examples instead when the lesson is specialist-specific;
+- verify the improvement against later terminal feedback before marking it **Verified**.
+
+Do not change governance merely to appear busy. One isolated wording preference is not automatically a cross-system rule. Repeated failure, avoidable owner work, authority confusion, misleading progress, or coordination drift is sufficient evidence for a durable improvement.
+
+### Control Tower Improvement Register
+
+| Improvement | Status | Why it matters | Verification |
+|---|---|---|---|
+| Check the active mission and last instruction before generating a continuation prompt; use CONTINUE, ADDENDUM, NEW MISSION, PARALLEL MISSION, or WAIT | Adopted | Prevents duplicated prompts, restarts, and confusion while terminals are already working | Verify on subsequent feedback that already-running work receives “send nothing” rather than a repeated prompt |
+| Report both bounded component progress and readiness for the full intended agent role | Adopted | Prevents source PRs and isolated proofs from overstating how much work the agent actually performs for the family | Verify future progress summaries distinguish technical stage from real working autonomy |
+| Prefer one useful parallel mission for an idle specialist when the priority lane is occupied | Adopted | Keeps the program moving without colliding in shared runtime or manufacturing infrastructure | Verify parallel work produces a reusable business/farm result or is explicitly declined when no useful task exists |
+| Never equate a prepared prompt or durable release with delivery, acknowledgement, or terminal execution | Adopted | Prevents false claims that work is running and stops Charl waiting on an idle terminal | Verify future status reports require target-specific acknowledgement and fresh activity evidence; otherwise state that Charl must paste the prompt |
+| Distinguish deployed agents, visible development terminals, and complete specialist roles in every status report | Adopted | Prevents cloud activity, terminal engineering, and full-role readiness from being conflated and makes clear what Charl can actually use | Verify later reports independently name live agent state, terminal state, and remaining role capability |
+| Reuse the existing CHARLIE CORE mission queue, local runner, execution bridge, review workflow and release bridge for development automation; never invent a second CORE or place CORE inside ordinary farm-message routing | Adopted | Preserves the system already built and keeps software engineering separate from Oom Sakkie's live operational specialist work | Verify one approved development mission is picked up by the existing CORE runner and one ordinary Oom Sakkie specialist request completes without CORE in its runtime path |
+| Keep one terminal outcome-bound until the genuine real-world loop passes; do not accept CI, replay, deployment or a newly sent owner question as completion | Adopted | Prevents repeated narrow repairs from returning Charl to the same failed operational step | Verify the same terminal observes one fresh post-deployment input through specialist action, external outcome, readback and visible closure without another development prompt |
+| Verify the Mission Standard is Git-tracked and completely read in both Control Tower and target-terminal `HEAD` before claiming it was applied | Adopted | Prevents separate worktrees and CORE missions from silently operating with missing or stale governance | Every handoff reports standard path, target availability and exact blob/digest; missing governance blocks non-urgent implementation until reconciled |
+
+## Outcome-Bound Terminal Missions And Real-World Proof
+
+A terminal mission is bound to the stated business outcome, not to the first defect, PR, deployment or handover encountered while pursuing it. When one genuine journey exposes several sequential defects, the owning terminal must retain the same mission identity and continue after each safe correction until the complete live loop succeeds or one genuinely external blocker remains. It must not redefine success around the latest technical layer.
+
+Every outcome-bound mission packet must provide or discover:
+
+1. the owner-visible business outcome and explicit non-outcomes;
+2. the authoritative doctrine, workflow, source map, current production lineage, active claim and latest durable handover;
+3. the exact live acceptance journey, including trigger, retained context, specialist decision, protected action if any, provider effect, canonical readback, owner-visible closure and automatic follow-up;
+4. standing authority, prohibited actions and the one conditions that genuinely require owner input;
+5. the production observation plan, correlation identity, timeout and recovery path;
+6. regression families across natural English, Afrikaans, paraphrases, short contextual replies, scheduler races, replay and missing-provider evidence;
+7. the operational success measurement and the evidence required to call it Business-complete.
+
+Repository documents and temporary handovers are not automatically deployed-agent memory. The terminal must state which facts are merely documented, which are loaded into the runtime, and which were verified from the authoritative provider or canonical store. If required knowledge is not wired into the deployed evidence packet, documentation alone cannot satisfy readiness.
+
+For a live acceptance journey:
+
+- deploy and verify the complete candidate path before asking Charl to become physically available or submit the genuine proof input;
+- keep the terminal actively observing the bounded production journey while time-sensitive evidence is fresh;
+- correlate the owner request, provider message, lifecycle, specialist result, external action, readback and visible completion under one durable journey identity;
+- treat unit tests, CI, deployment health and replay as necessary technical evidence, never as substitutes for the fresh live path;
+- if the live proof exposes another internal defect, contain unsafe effects, repair the reusable boundary, redeploy and resume the same mission without asking Charl to restate known facts;
+- never declare a physical, customer, farm, financial or publication journey Operational until its intended real-world effect and required readback have occurred;
+- after three owner attempts without the intended outcome, stop requesting more owner input, classify the journey as a systemic incident, and require an end-to-end trace and correction before another live attempt.
+
+Do not combine a failing P0 operational incident with a broad new capability mission. Close or precisely contain the incident first, release its runtime, then start the next goal under a separate mission identity. Larger prompts are not a substitute for stronger completion gates.
+
+## Workspace And Release Discipline
+
+- One specialist terminal uses one named branch and one separate git worktree.
+- Never run two implementation terminals in the same working directory.
+- Source work that touches disjoint files may proceed in parallel.
+- A source-file claim does not grant production or shared-runtime ownership.
+- Merge, deployment, Render configuration, GateKeeper, n8n, Telegram routing, shared environment, migrations, and production mutation use one serialized release lane.
+- Only one terminal may own that release lane at a time. The owner must identify the exact scope, preserve unrelated configuration, complete or contain its bounded operation, release the scope promptly, and notify the named next terminal.
+- A terminal must not hold shared runtime while waiting for a customer reply, owner observation, future event, or another team.
+- A blocked terminal should continue safe disjoint work and leave a durable handover; it must not create a duplicate registry, workflow, or workaround interface.
+- Terminal windows are disposable. Git history, claim ledgers, authoritative documentation, and explicit handovers are the recovery truth.
+
+The preferred execution order is therefore:
+
+1. parallel disjoint source work where useful;
+2. one terminal enters the serialized release lane;
+3. operational proof or exact containment;
+4. explicit release and next-owner acknowledgement;
+5. the next terminal resumes automatically.
+
+## Active Goal Card
+
+Every active specialist must have one current goal card. Temporary revision identities and conversation-specific evidence belong in the specialist handover or operational ledger, not permanently in this cross-system standard.
+
+The goal card must state:
+
+- **Specialist terminal**
+- **Business mission**
+- **Current measurable outcome**
+- **Why it matters now**
+- **Current state:** queued / source-active / release-lane-active / waiting-on-owner-fact / operational / contained / closed
+- **Standing authority**
+- **Protected boundary**
+- **Success measurement**
+- **Stop condition**
+- **Release successor**
+- **Evidence/handover location**
+
+A terminal may perform supporting technical work, but every step must explain how it advances the current measurable outcome. If it does not, it belongs in the backlog rather than the active mission.
+
+## Current Program Direction
+
+The immediate program is to make the Oom Sakkie specialist team genuinely useful before returning to broad CORE/CHARLIE autonomy work.
+
+As of 2026-08-02, the controlling P0 is the Oom Sakkie operational spine in `docs/06-operations/OOM_SAKKIE_P0_OPERATIONAL_SPINE_MISSION_20260802.md`. No isolated specialist capability, source-ready PR, deployment, healthy endpoint, internal packet, or safe containment closes this goal. One genuine natural Telegram case must complete visible acknowledgement, deployed specialist dispatch, retained follow-up, consolidated preview, governed confirmation/write, replay proof, specialist reassessment and manager status without Charl copying prompts between terminals. The preserved Pig 125 found-dead report is the first acceptance case.
+
+The target roles are:
+
+- **Oom Sakkie:** the family-facing farm manager and operating coordinator. It consolidates specialist findings, ranks work, requests only missing owner facts or protected decisions, tracks follow-through, and reports outcomes.
+- **SAM Livestock:** the first sales priority. It continuously handles genuine ordinary livestock enquiries with useful, evidence-backed guidance, advances qualification, verifies delivery, and escalates only protected or exceptional work.
+- **SAM Customer Front Door:** the customer-facing entry point before specialist certainty exists. It handles greetings, small talk, public farm information, and one natural intent clarification; preserves context; and hands the same conversation to SAM Livestock, SAM Meat, or a genuine owner exception without making customers understand internal lanes.
+- **SAM Meat:** the second sales priority. It follows the proven SAM Livestock operating pattern for meat enquiries, qualification, quote preparation, and protected commercial handoff.
+- **HERDMASTER:** the herd manager and bloodline-improvement specialist. It identifies inspections and breeding readiness, brings together mating, weight, medical, withdrawal, family, litter, and performance evidence, recommends the best-supported pairing, records approved actions once, and schedules follow-up through Oom Sakkie.
+- **ROOTLINE:** the integrated water-and-energy manager. It produces and follows adaptive plans for water continuity, irrigation, borehole use, weather, solar, battery reserve, grid minimization, and controllable devices within proven policy and hardware boundaries.
+- **BEACON:** the marketing department. It requests useful private media, ingests and classifies it, prepares campaigns and promotion work, and performs public or paid actions only within explicit authority.
+- **CORE/CHARLIE:** remain contained or deferred while the Oom Sakkie operating system is made useful. They return when specialist loops and shared coordination are stable enough to benefit from broader orchestration.
+
+## Current Control-Tower Milestone
+
+The first milestone is not “all infrastructure complete.” It is a small set of proven end-to-end operating loops:
+
+1. HERDMASTER accepts one genuine farm fact through Oom Sakkie, previews it, records it once after required confirmation, and changes the next herd recommendation or follow-up.
+2. SAM Livestock operates a narrow always-on ordinary-sales lane whose next genuine unanswered customer receives a commercially useful response and advances without Charl writing it.
+3. SAM Customer Front Door responds warmly to general or unclear first contact, answers supported public farm facts, discovers intent with at most one useful clarification, and transfers retained context to the correct specialist without Charl intervening.
+4. BEACON ingests one newly requested private photo exactly once and presents it for owner review.
+5. ROOTLINE produces one reusable read-only water-and-energy specialist result containing current evidence, recommendations, reasons, next reassessment, and only genuine owner questions, with zero hardware authority.
+6. Oom Sakkie produces one consolidated daily family brief containing prioritized sales, herd, water/energy, and marketing work, with only genuine owner questions.
+7. Oom Sakkie's generic operational spine completes the genuine Pig 125 found-dead case end to end without a development-terminal handoff after deployment; containment or an internal packet alone does not pass.
+
+For the current serialized release sequence, SAM Livestock owns production priority until the always-on inbox and follow-up loop is genuinely operating. SAM Customer Front Door may proceed in a separate disjoint source-only worktree but must not acquire or mutate shared runtime. Green HERDMASTER, ROOTLINE, BEACON, and Oom Sakkie PRs remain source-ready and wait for explicit later release windows. SAM Meat, CORE, and CHARLIE may perform read-only or disjoint source work only when specifically placed on an active goal card.
+
+When this milestone is operationally proven, mark it closed in authoritative shared knowledge and replace it with the next measurable milestone. Do not leave completed infrastructure or historical test cases as permanent active goals.
+
+## Urgent Goal For 2026-07-30: SAM Autonomous Salesperson
+
+Owner decision: SAM Livestock automatic customer sending must remain disabled
+until the complete evidence-to-offer salesperson loop below is operationally
+proven. During containment, Charl and the Control Tower will answer live
+customers manually with read-only assistance from the same authoritative
+conversation, inventory, pricing, policy, and customer-history evidence that
+SAM must ultimately use. Telegram and Chatwoot intake may remain available,
+but no ordinary customer reply requires a Telegram approval button.
+
+Business mission:
+
+> SAM is an always-on autonomous salesperson that manages every eligible
+> customer conversation from first contact through qualification and quote
+> readiness, using complete conversation history, Farm Knowledge, live stock,
+> current prices and owner policy. SAM sends useful human responses, continues
+> follow-ups, updates the inbox correctly, and asks Charl only for genuine
+> protected decisions.
+
+This is one end-to-end product goal. It must not be reduced to fixing one
+historical message, adding another classifier, creating another page, or
+proving another isolated delivery canary.
+
+Required operating behaviour:
+
+1. Use one canonical evidence packet for every response: exact Chatwoot
+   chronology and identity, returning-customer context, retained facts,
+   canonical Farm Knowledge, current sale-eligible inventory, weight
+   freshness, active pricing, delivery claims, quarantines, and protected
+   decisions.
+2. Handle greetings, small talk, unclear first contacts, general public farm
+   questions, and natural follow-ups through one Customer Front Door; transfer
+   retained context to Livestock or Meat without asking the customer to repeat
+   information.
+3. For Livestock requests, find an exact supported match or calculate the best
+   commercially sensible alternatives, including category, unit price,
+   subtotal and total. Disclose stale evidence proportionally and keep the
+   answer useful.
+4. Normal livestock handover is Riversdale or Albertinia. Never disclose,
+   imply, or offer collection at the farm. Delivery or another arrangement is
+   a protected owner-reviewed exception.
+5. Ask only for facts that are genuinely missing. Never repeat a known
+   question or use context-blind fallbacks such as "What detail should I note
+   for the farm?"
+6. Produce warm, natural, commercially useful replies. A safe but useless
+   deferral fails the same quality gate as an unsupported claim.
+7. Continue operating after successful replies. A conversation-specific
+   ambiguous provider outcome quarantines only that message and never stops
+   unrelated eligible customers.
+8. After authoritative provider delivery, project the conversation into the
+   correct handled/read state without hiding genuine unanswered work.
+9. Telegram carries one consolidated brief containing only genuine protected
+   decisions or exceptions: special price, delivery commitment, reservation,
+   allocation, order, payment, or another owner-authority boundary.
+10. Preserve protected authority: no unsupported stock promise, reservation,
+    allocation, binding quote, order, payment, delivery commitment, or farm
+    mutation.
+11. Treat Chatwoot display labels as untrusted contact metadata. Use a display
+    label in a greeting only when it is clearly a natural personal or business
+    name. Never address a customer using a handle, emoji, phone-like value,
+    decorated label, profanity, slogan, or other obvious non-name.
+12. When the customer's real name is missing and obtaining it is useful, ask
+    for it naturally within the conversation rather than blocking an otherwise
+    supported answer. After the customer supplies it, update the exact
+    Chatwoot contact once with provider verification. Do not infer, manufacture,
+    or silently overwrite a name.
+
+Reusable acceptance journeys must cover greetings, unclear intent, returning
+customers, exact matches, best alternatives, category totals, stale weights,
+Riversdale/Albertinia handover, delivery requests, follow-ups, protected
+decisions, provider ambiguity, and transition from small talk to Livestock or
+Meat. Individual conversations may be regression evidence but may not become
+the project goal.
+
+Success measurement:
+
+- at least five genuine eligible customers receive correct, useful,
+  human-quality responses in production;
+- exact or best-alternative offers use supported inventory and accurate
+  category totals where appropriate;
+- known context is retained across follow-ups with zero repeated questions;
+- zero customer messages offer or reveal farm collection;
+- provider-confirmed replies receive correct Chatwoot handled/read state;
+- only genuine protected exceptions reach Charl;
+- SAM remains continuously enabled and healthy after the proof; and
+- Charl writes none of those five customer responses.
+
+Current state: contained / not operational.
+
+Current progress: `░░░░░░░░░░ 0%`. Existing components and earlier bounded
+replies are reusable implementation evidence, but they do not satisfy a stage
+of this replacement end-to-end salesperson goal.
+
+Immediate safe operating mode: SAM automatic customer sending off; manual
+Control Tower-assisted replies on; read-only reconciliation and source work
+allowed; no replay of ambiguous or quarantined sends.
+
+## Control Tower Goal Board
+
+This board provides a quick visual view of movement toward the current milestone. It is a control-tower summary, not a substitute for live evidence, specialist handovers, claim ledgers, or production verification.
+
+### Percentage Rule
+
+Each goal earns 20 percentage points for each completed outcome stage:
+
+1. **Prepared — 20%:** required doctrine/source work is ready and proportionately verified.
+2. **Integrated — 40%:** the required implementation is merged and deployed at verified production lineage.
+3. **Operational — 60%:** the live capability completes its intended bounded loop.
+4. **Business-complete — 80%:** the real customer, farm, marketing, or management outcome occurs and follow-up ownership is clear.
+5. **Closed — 100%:** authoritative shared knowledge reflects the outcome, obsolete targets are retired, and the next goal is active.
+
+Do not award partial points for repeated attempts, additional tests, more infrastructure, or another packet unless the goal advances into a new outcome stage. If later evidence invalidates a stage, reduce the percentage and record why.
+
+Progress bars use ten positions. Each filled block represents 10%.
+
+### Current Milestone Progress
+
+Snapshot date: 2026-07-29  
+Milestone: First proven Oom Sakkie specialist operating loops
+
+| Goal | Current state | Progress | Evidence-based next transition |
+|---|---|---:|---|
+| HERDMASTER: accept Shupe’s genuine fact through Oom Sakkie, preview it, preserve it exactly once after confirmation, and change the herd recommendation | Closed | `██████████ 100%` | Retain the completed route as regression evidence and continue with the separate ordinary herd-question quality goal |
+| HERDMASTER: answer ordinary pig questions through Oom Sakkie with consistent canonical facts, evidence gaps and one next recommendation | Operational | `██████░░░░ 60%` | Preserve PR #597’s corrected live semantics and prove the next genuine owner-visible herd answer without farm mutation |
+| HERDMASTER: accept an ordinary pig fact conversationally, preview the exact canonical effect, record only after confirmation, and return the updated recommendation | Prepared | `██░░░░░░░░ 20%` | Preserve green PR #603 source-ready; integrate and prove one confirmed conversational fact only in a later explicitly assigned HERDMASTER window |
+| SAM Livestock: narrow always-on ordinary-sales lane gives the next genuine unanswered customer a useful provider-confirmed response | Business-complete | `████████░░ 80%` | Keep the narrow lane healthy for customer follow-ups, reconcile durable doctrine and activate the next sales goal without retrying quarantined sends |
+| SAM Livestock: continuously operate the Livestock inbox, clear every eligible live backlog item, process each new follow-up automatically, and escalate only protected exceptions | Integrated | `████░░░░░░ 40%` | Deploy the smallest-question correction, recover every eligible open-window backlog item, keep the direct webhook lane persistently enabled, and operate without terminal-started cohorts |
+| SAM Customer Front Door: handle greetings, small talk, public farm information, and unclear first contact before transferring retained context to Livestock, Meat, or owner review | Prepared | `██░░░░░░░░ 20%` | Preserve green PR #608 and integrate it through SAM’s existing authenticated inbound adapter after the current Livestock correction is safely deployed |
+| BEACON: ingest one newly requested private photo exactly once and present it for owner review | Closed | `██████████ 100%` | Preserve the completed private intake as regression evidence; treat Library Accept and any public-use decision as separate bounded owner actions |
+| BEACON: prepare one evidence-backed marketing proposal or precise media request through Oom Sakkie with one consolidated owner decision | Prepared | `██░░░░░░░░ 20%` | Complete PR #602 exact-head CI and preserve it source-ready for a later explicitly assigned BEACON integration window |
+| ROOTLINE: produce one reusable read-only water-and-energy specialist result for Oom Sakkie with evidence, recommendations, reasons, next reassessment and genuine owner questions | Operational | `██████░░░░ 60%` | Preserve the authenticated zero-write live answer and produce the next genuine family-visible recommendation when asked |
+| Oom Sakkie: deliver one consolidated daily family brief covering sales, herd, water/energy, and marketing with only genuine owner questions | Prepared | `██░░░░░░░░ 20%` | Preserve reviewed PR #598 source-ready; integrate specialist adapters and prove one supervised family brief only after the current sales and serialized production queue releases |
+| **Overall milestone** | Active | `█████░░░░░ 50%` | SAM Livestock uses ROOTLINE’s explicit release to correct smallest-question planning, clear eligible customer work, and remain continuously enabled |
+
+The overall percentage is the arithmetic mean of the active goal percentages, rounded down to the nearest 5%. A specialist goal reaching 100% does not imply the whole milestone is closed.
+
+### Board Maintenance
+
+- The Control Tower updates this board only from authoritative terminal feedback and live operational evidence.
+- Every percentage change must name the stage gained or lost and its evidence in the relevant specialist handover, workflow, `NEXT_STEPS.md`, or Vault Brain changelog.
+- Terminals may propose a board change, but they must not mark their own goal operational, business-complete, or closed without the required external or production proof.
+- Waiting on another terminal does not reduce completed stages, but waiting itself earns no progress.
+- When all current goals are closed, replace this snapshot with the next milestone rather than extending completed goals indefinitely.
+
+## Progress And Goal Closure
+
+The control tower records progress by outcome state:
+
+- **Prepared:** doctrine, design, code, test, review, packet, or migration exists.
+- **Integrated:** merged and deployed at verified production lineage.
+- **Operational:** the live capability completed its intended bounded loop.
+- **Business-complete:** the customer, farm, sales, marketing, or management outcome occurred and follow-up ownership is clear.
+- **Closed:** authoritative documentation reflects current truth, obsolete targets are retired, and the next goal is active.
+
+Progress is movement between these states. Repeated technical attempts that do not advance the state are a signal to correct the operating approach, not evidence of business progress.
+
+At closure, update the relevant specialist doctrine/workflow/rules, implementation source map, `NEXT_STEPS.md`, owner decisions when applicable, and Vault Brain changelog. This standard should contain only durable cross-system direction and the current high-level milestone—not transient hashes, packet identities, customer data, or animal observations.
+
+## Required Reconciliation
+
+Before deciding what happens next, reconcile the feedback against:
+
+- the current live customer, farm, operational, and commercial need;
+- live production truth;
+- the latest direct owner instructions and durable owner decisions;
+- `docs/00-start-here/NEXT_STEPS.md`;
+- the relevant Vault Brain identity, agent, business, workflow, rule, standard, and example files;
+- the implementation source map;
+- active claims and concurrent terminal work;
+- deployed runtime behavior and authoritative external/provider chronology where relevant.
+
+Latest direct owner instruction outranks older documentation. A contradiction must be identified and reconciled; it must not silently revive stale behavior.
+
+## Exact Assessment Order
+
+Return the assessment in this order:
+
+1. **Business result:** State the real-world outcome. If none occurred, say **NO BUSINESS OUTCOME** plainly. Code, tests, reviews, PRs, migrations, deployments, policies, packets, and canaries do not count unless an operational or user-facing capability actually worked.
+2. **Operational usefulness:** State what the agent can now do for the business that it could not do before, and what Charl must still do manually.
+3. **Current relevance:** Confirm that the customer, conversation, animal, mission, device, or task is still live. Retire already-handled or stale targets immediately and retain them only as regression evidence.
+4. **Genuine blockers:** Classify each blocker as a missing factual/business decision, protected authority boundary, technical defect, routine reversible work, or documentation housekeeping.
+5. **Proportionality:** Decide whether controls are reasonable or are preventing supported useful work. Missing evidence must block only the unsupported claim or action, not every supported part of a response, recommendation, plan, or workflow.
+6. **Vision alignment:** State whether the work advances an agent that observes, reasons, acts within standing authority, verifies outcomes, follows up, and escalates only genuine exceptions.
+7. **Documentation truth:** Identify the smallest authoritative updates required. Documentation ownership must not block safe, disjoint operational work. If files are claimed, preserve an exact handover for later reconciliation.
+8. **Decision:** Recommend **YES**, **NO**, or **WAIT**. Do not recommend WAIT for ordinary, reversible, reviewed work merely because another packet or check could be prepared.
+9. **Single best next action:** Choose the action most likely to create the next measurable business or farm outcome, not another isolated infrastructure milestone.
+10. **Success measurement:** Define the observable result that proves completion.
+
+## Decision And Continuation Rules
+
+- Name the exact terminal that must receive the next prompt. Never say only "SAM" when SAM Livestock or SAM Meat is intended.
+- Challenge a terminal's proposed next action if it merely creates more infrastructure, another page, another canary, or another approval without advancing the operating outcome.
+- Do not allow a historical conversation, animal, mission, or test case to become the project goal.
+- Apply existing owner decisions and standing authority without asking Charl to repeat them.
+- Bundle implementation, tests, independent review, integration, deployment, safe verification, and knowledge handover into one continuation prompt when they can reasonably proceed under one decision.
+- Stop only before an action that genuinely requires new owner authority.
+- If one terminal blocks another, give the exact release/unblock instruction to the correct terminal and include automatic resumption for the blocked terminal.
+- If production is broken, restore the affected production capability before feature work.
+- Do not make or authorize external or protected actions unless Charl explicitly authorizes them.
+
+## Authority Proportionality
+
+Use strong controls for:
+
+- money, binding quotes, payments, refunds, discounts, and exceptional terms;
+- customer commitments, public sends, publication, advertising, and spend;
+- reservations, allocations, orders, slaughter bookings, or stock/farm mutations;
+- credentials, privilege changes, production configuration, and destructive operations;
+- medication, animal welfare, hardware actuation, irrigation, pumps, valves, and uncertain physical outcomes.
+
+Use lighter controls for:
+
+- read-only discovery and reconciliation;
+- internal classification and prioritization;
+- drafts and owner-review recommendations;
+- supported factual answers;
+- routine reversible implementation, testing, review, and documentation;
+- safe preparation and verification that creates no external commitment.
+
+Fail closed on the uncertain protected action, not on unrelated safe work.
+
+## Definition Of Done
+
+A durable decision or capability is complete only when the necessary parts of this chain are true:
+
+owner direction → authoritative doctrine/business rule → workflow → source map → runtime behavior → regression test → deployment → operational proof → changelog/NEXT_STEPS reconciliation.
+
+Not every task requires every link, but omitted links must be explicitly justified. "Built," "reviewed," "merged," "deployed," "operationally proven," and "business-complete" are separate states and must never be conflated.
+
+For an outcome-bound live journey, `operationally proven` requires one fresh post-deployment trigger to traverse the intended production path through its real external effect, authoritative readback and owner-visible closure. Replaying historical input, sending the next question, returning a safe Hold, or proving zero effects does not satisfy this requirement unless that exact contained result is the mission's stated business outcome.
+
+Examples of valid success measurements include:
+
+- a genuine unanswered customer received a correct response and advanced toward a quote;
+- a weekly breeding candidate was identified, inspected conversationally, matched, approved, recorded, and scheduled for follow-up;
+- a daily water-and-energy plan was produced from fresh evidence and a genuine exception was escalated;
+- owner-provided farm evidence was recorded once and changed the next recommendation;
+- media was ingested, classified, and presented for owner review;
+- a governed mission completed and produced its required artifact.
+
+## Required Final Handoff
+
+Finish every reconciliation with exactly:
+
+- **Decision: YES / NO / WAIT**
+- **Why:** one short business consequence
+- **Send this exact prompt to [EXACT TERMINAL]:** one self-contained prompt that executes the recommended decision and continues through every safe subsequent step without returning for another avoidable approval
+- **Expected business result:** one measurable sentence
+
+The continuation prompt must preserve the relevant safety boundaries while making the agent responsible for the work.
+
+## Knowledge Maintenance
+
+Update this standard when Charl changes the cross-system operating philosophy or when repeated terminal behavior reveals a missing general rule.
+
+Do not place domain-specific prices, animal facts, device mappings, customer chronology, or temporary deployment identities in this file. Store those in the relevant business, workflow, owner-decision, operational truth, or source-map file.
+
+Any update to this standard must:
+
+1. preserve the short invocation unless Charl changes it;
+2. record the reason in the Vault Brain changelog;
+3. reconcile the active documentation/source map;
+4. avoid overwriting concurrent claimed documentation;
+5. leave an exact deferred handover when immediate reconciliation is blocked.

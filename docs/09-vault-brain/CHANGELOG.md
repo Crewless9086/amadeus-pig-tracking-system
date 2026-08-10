@@ -1,4 +1,13 @@
 # Vault Brain Changelog
+
+## 2026-08-10 - Governance availability and outcome-bound proof
+
+- Added a mandatory governance preflight in both the Control Tower workspace and the target terminal's own `HEAD`.
+- Prohibited claiming that the Mission Standard was applied when it is absent, untracked, truncated, unread or replaced by fallback doctrine.
+- Required every handoff to report the exact standard identity actually read and distinguish documented facts from runtime-loaded and provider-verified evidence.
+- Bound terminals to the owner-visible outcome across sequential defects instead of allowing PRs, deployments, replay or containment to redefine completion.
+- Required fresh post-deployment end-to-end evidence through external effect, authoritative readback and visible closure before a live journey is Operational.
+- Added a three-owner-attempt systemic-incident threshold and prohibited combining an unresolved P0 incident with a broad new capability mission.
 ## 2026-08-09 - Contextual specialist follow-up correction prepared
 
 - Diagnosed Telegram `3481` as a generic active-specialist context precedence
