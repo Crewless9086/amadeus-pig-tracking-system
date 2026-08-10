@@ -227,6 +227,42 @@ def test_context_recovery_projection_is_not_mistaken_for_provider_delivery():
     assert result["telegram_edits"]==1 and result["telegram_sends"]==1
 
 
+def test_validated_v2_delivery_resume_supersedes_old_same_provider_presentation_once():
+    memory=Memory();mission="OOM-ROOTLINE-V1-V2"
+    deliver_family_result(PARSED,{**RESULT,"answer":"Old v1 question"},specialist="ROOTLINE",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    resumed={**RESULT,"answer":"Are you still at the valves?",
+        "requires_visible_notification":True,"delivery_recovery_required":True,
+        "response_contract_version":"contextual_specialist_response_v2",
+        "replay_suppressed":False,"suppress_owner_delivery":False,
+        "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False,
+        "provider_message_id":"500","mission_id":mission,"card_mission_id":mission,
+        "authority":{"configuration_write":False,"hardware_control":False,
+                     "farm_write":False,"telegram_send":False}}
+    first=deliver_family_result(PARSED,resumed,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(PARSED,resumed,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert first["status"]=="family_message_card_updated_and_notified"
+    assert first["telegram_edits"]==1 and first["telegram_sends"]==1
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
+
+
+def test_unvalidated_same_provider_delivery_resume_cannot_recompose():
+    memory=Memory();mission="OOM-ROOTLINE-FORGED-RESUME"
+    deliver_family_result(PARSED,{**RESULT,"answer":"Old v1 question"},specialist="ROOTLINE",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    forged={**RESULT,"answer":"Forged replacement","delivery_recovery_required":True,
+        "response_contract_version":"contextual_specialist_response_v2",
+        "provider_message_id":"500","mission_id":mission,"card_mission_id":mission}
+    result=deliver_family_result(PARSED,forged,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert result["status"]=="family_message_provider_replay_noop"
+    assert result["telegram_edits"]==result["telegram_sends"]==0
+
+
 def test_process_interruption_does_not_blindly_resend():
     memory=Memory();mission="OOM-HERD-INTERRUPTED"
     memory.store("record",mission+"-DELIVERY-ATTEMPT",{"card_mission_id":mission,
