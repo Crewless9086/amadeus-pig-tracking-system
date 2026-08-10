@@ -79,6 +79,8 @@ class SalesTransactionReadTests(unittest.TestCase):
         self.assertFalse(result["source"]["writes_to_supabase"])
         cursor.execute.assert_called_once()
         self.assertIn("created_at desc", cursor.execute.call_args[0][0].lower())
+        self.assertIn("to_jsonb(st)->>'external_reference'", cursor.execute.call_args[0][0].lower())
+        self.assertNotIn("st.external_reference", cursor.execute.call_args[0][0].lower())
 
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_get_sales_transaction_returns_header_and_items(self):
