@@ -2476,6 +2476,7 @@ class FrontendRouteContractTests(unittest.TestCase):
     def test_print_sheets_page_is_read_only_weight_capture_sheet(self):
         template = Path("templates/print-sheets.html").read_text(encoding="utf-8")
         js = Path("static/js/printSheets.js").read_text(encoding="utf-8")
+        css = Path("static/css/main.css").read_text(encoding="utf-8")
 
         self.assertIn("Weekly Weight Capture Sheet", template)
         self.assertIn("Previous Weight Date", template)
@@ -2491,6 +2492,12 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("window.print", js)
         self.assertIn("multiple", template)
         self.assertIn("/bulk-weights", template)
+        self.assertIn('class="print-pen-separator"', js)
+        self.assertIn("penTotals", js)
+        self.assertIn(".print-pen-separator th", css)
+        self.assertIn("_farm_nav.html", template)
+        self.assertIn("farmDashboardV2.css", template)
+        self.assertIn("dashboard-filter-card", template)
 
     def test_bulk_weights_page_uses_durable_batches_and_local_draft(self):
         template = Path("templates/bulk-weights.html").read_text(encoding="utf-8")

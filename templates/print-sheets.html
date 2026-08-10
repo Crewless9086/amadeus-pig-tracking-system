@@ -5,39 +5,47 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Printable Operation Sheets</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
 </head>
 <body>
-  <div class="page-shell">
-    <div class="page-card print-sheet-page">
-      <div class="page-header page-header-with-link">
+  <div class="farm-app-shell print-sheet-app-shell">
+    {% include '_farm_nav.html' %}
+    <main class="operations-page">
+    <div class="page-card print-sheet-page farm-record-page">
+      <div class="page-header page-header-with-link farm-record-hero">
         <div>
-          <h1>Printable Operation Sheets</h1>
-          <p>Print worker-ready capture sheets from current farm records.</p>
+          <span class="farm-eyebrow">Plaasrekords · Drukwerk</span>
+          <h1>Drukbare weeglys</h1>
+          <p>Maak ’n duidelike kamp-vir-kamp weeglys uit die huidige plaasrekords.</p>
         </div>
-        <a href="/" class="secondary-link">Back to Dashboard</a>
+        <a href="/" class="secondary-link">← Terug na Kontroleskerm</a>
       </div>
 
       <div id="print_sheets_message" class="message-box hidden"></div>
 
-      <form id="print_sheet_filters" class="weight-form no-print">
+      <form id="print_sheet_filters" class="weight-form no-print dashboard-filter-card">
+        <div class="dashboard-filter-heading">
+          <div><span class="farm-eyebrow">Stel die lys saam</span><h2>Weegdatum en kampe</h2></div>
+          <p>Laat die kampe leeg om elke aktiewe vark in te sluit.</p>
+        </div>
         <div class="form-grid">
           <div class="form-group">
-            <label for="sheet_date">Weighing Date</label>
+            <label for="sheet_date">Weegdatum</label>
             <input type="date" id="sheet_date" name="sheet_date" required />
           </div>
           <div class="form-group">
-            <label for="pen_filter">Pens (Optional)</label>
+            <label for="pen_filter">Kampe (Opsioneel)</label>
             <select id="pen_filter" name="pen_filter" multiple size="5"></select>
-            <small class="field-help">Leave empty for all active pigs.</small>
+            <small class="field-help">Laat leeg vir alle aktiewe varke.</small>
           </div>
         </div>
 
         <div class="form-actions compact-actions">
-          <button type="button" id="clear_pens_button" class="button-link button-link-secondary">All Pens</button>
-          <a href="/bulk-weights" class="button-link button-link-secondary">Bulk Entry</a>
+          <button type="button" id="clear_pens_button" class="button-link button-link-secondary">Alle Kampe</button>
+          <a href="/bulk-weights" class="button-link button-link-secondary">Grootmaat Invoer</a>
           <a href="/paring-werpselrekord" class="button-link button-link-secondary">Parings- en Werpselrekord</a>
           <a href="/verwagte-jongdatums" class="button-link button-link-secondary">Verwagte Jong Datums</a>
-          <button type="button" id="print_sheet_button">Print</button>
+          <button type="button" id="print_sheet_button">Druk Weeglys</button>
         </div>
       </form>
 
@@ -65,6 +73,7 @@
         </table>
       </div>
     </div>
+    </main>
   </div>
 
   <script src="{{ url_for('static', filename='js/printSheets.js') }}"></script>
