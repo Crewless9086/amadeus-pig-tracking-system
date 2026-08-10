@@ -416,6 +416,11 @@ def record_resolution_event(packet, *, database_url=None) -> tuple[dict, int]:
         import psycopg
         with psycopg.connect(url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
+                # The production pool uses a postgres session that is a member
+                # of service_role.  Enter the least-privileged governed role
+                # for this transaction before invoking the security-definer
+                # append RPC; never insert into the table directly.
+                cursor.execute("set local role service_role")
                 cursor.execute("select public.record_sam_review_obligation_resolution(%s::jsonb)", (json.dumps(packet),))
                 created = bool((cursor.fetchone() or [False])[0])
         return _result(
