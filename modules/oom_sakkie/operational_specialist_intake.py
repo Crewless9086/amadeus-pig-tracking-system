@@ -44,14 +44,22 @@ def recover_contextual_specialist_replay(parsed, *, replay_loader=None, delivery
         and row.get("state") in {"contextual_followup_completed", "contextual_followup_contained"}]
     if not rows:
         return None
-    if len(exact) != 1:
+    if not exact:
         return {"handled": True, "success": False,
             "status": "contextual_specialist_provider_replay_binding_conflict",
             "answer": "", "replay_suppressed": True, "suppress_owner_delivery": True,
             "provider_control_calls": 0, "writes_farm_data": False, **ZERO_AUTHORITY}
-    outcome = dict(exact[0].get("outcome") or {})
-    if outcome.get("response_contract_version") != "contextual_specialist_response_v2":
+    v2_exact = [row for row in exact
+        if isinstance(row.get("outcome"), Mapping)
+        and row["outcome"].get("response_contract_version") == "contextual_specialist_response_v2"]
+    if len(v2_exact) > 1:
+        return {"handled": True, "success": False,
+            "status": "contextual_specialist_provider_replay_binding_conflict",
+            "answer": "", "replay_suppressed": True, "suppress_owner_delivery": True,
+            "provider_control_calls": 0, "writes_farm_data": False, **ZERO_AUTHORITY}
+    if not v2_exact:
         return None
+    outcome = dict(v2_exact[0].get("outcome") or {})
     if (outcome.get("hardware_commands") != 0
             or outcome.get("provider_control_calls") != 0
             or outcome.get("writes_farm_data") is not False
