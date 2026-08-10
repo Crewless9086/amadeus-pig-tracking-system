@@ -17,6 +17,7 @@ from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_mess
 from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
 from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline, record_reassessment_delivery
 from modules.oom_sakkie.family_access import FamilyRole, family_access_policy, resolve_family_principal
+from modules.oom_sakkie.herdmaster_auction_runtime import handle_auction_confirmation
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -256,6 +257,26 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                 "records_audit_trace": True,
                 "reply_transport": "backend_handles_owner_task_delivery", "sends_telegram": False})
             return body, 200
+
+    auction_result, auction_status = handle_auction_confirmation(parsed, gateway_authority)
+    if auction_result.get("handled"):
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                     "status": "owner_delivery_suppressed_replay"}
+                    if auction_result.get("suppress_owner_delivery") else
+                    deliver_family_result(parsed, auction_result, specialist="HERDMASTER",
+                        mission_id=str(auction_result.get("mission_id") or ""),
+                        card_mission_id=str(auction_result.get("card_mission_id") or "")))
+        body, _ = _gateway_result(auction_result.get("success") is True,
+            str(auction_result.get("status") or "auction_confirmation_contained"),
+            policy, auction_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": auction_result.get("answer", ""), "message": auction_result,
+            "delivery": delivery, "records_audit_trace": True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": auction_result.get("writes_farm_data") is True})
+        return body, auction_status if delivery.get("success") else 202
 
     semantic_policy = semantic_front_door_policy(source)
     semantic_authoritative = bool(gateway_authority is not None and semantic_policy.get("enabled"))
