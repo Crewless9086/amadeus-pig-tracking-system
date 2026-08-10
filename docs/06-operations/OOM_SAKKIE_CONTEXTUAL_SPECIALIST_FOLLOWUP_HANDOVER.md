@@ -58,3 +58,5 @@ internal specialist terminal is therefore not delivery proof. Exact replay now
 suppresses only after the matching answer digest has a terminal family-delivery
 receipt; otherwise the stored zero-authority outcome resumes only its existing
 deterministic delivery rail, without rerunning interpretation or ROOTLINE.
+Context-recovery projections are not delivery receipts and cannot satisfy or
+block the provider-delivery replay guard.
