@@ -126,6 +126,27 @@ def test_runtime_replay_accepts_legacy_full_packet_digest_across_upgrade():
     assert replay["status"]=="herdmaster_management_round_replay_suppressed"
     assert recorded==[]
 
+
+def test_runtime_deterministically_binds_legacy_observation_to_only_current_pig_task():
+    legacy = [{key: value for key, value in observations()[0].items()
+               if key != "canonical_task_id"}]
+    result=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,
+        observation_loader=lambda _owner: legacy,active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
+    assert result["status"]=="herdmaster_management_round_consumed"
+    assert result["accepted_work_item_count"]<=3
+
+
+def test_runtime_drops_legacy_observation_when_no_current_task_exists():
+    legacy = [{**observations()[0], "pig_id": "PIG-NO-CURRENT-TASK"}]
+    legacy[0].pop("canonical_task_id")
+    result=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,
+        observation_loader=lambda _owner: legacy,active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
+    assert result["status"]=="herdmaster_management_round_consumed"
+
 def test_manager_can_retain_canonical_result_on_proven_replay_without_recording():
     first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
         owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
