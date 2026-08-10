@@ -147,6 +147,15 @@ def test_runtime_drops_legacy_observation_when_no_current_task_exists():
         prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
     assert result["status"]=="herdmaster_management_round_consumed"
 
+
+def test_runtime_accepts_evidence_generated_during_authenticated_load_window():
+    generated_during_load = NOW + timedelta(seconds=1)
+    result=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=lambda:canonical(generated_during_load),
+        observation_loader=lambda _owner: observations(),active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
+    assert result["status"]=="herdmaster_management_round_consumed"
+
 def test_manager_can_retain_canonical_result_on_proven_replay_without_recording():
     first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
         owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),

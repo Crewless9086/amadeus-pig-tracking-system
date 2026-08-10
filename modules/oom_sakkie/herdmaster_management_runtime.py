@@ -36,15 +36,25 @@ def consume_current_herdmaster_management(*, authority: Any, owner_user_id: str,
         observations = _bind_legacy_observation_tasks(observations, canonical)
     except Exception:
         return _contained("herdmaster_management_runtime_evidence_unavailable", now)
+    evidence_checked_at = now
+    try:
+        generated_at = datetime.fromisoformat(
+            str(canonical.get("generated_at") or "").replace("Z", "+00:00")
+        ).astimezone(timezone.utc)
+        if generated_at > evidence_checked_at:
+            evidence_checked_at = generated_at
+    except (AttributeError, TypeError, ValueError):
+        # The pure adapter remains authoritative for malformed timestamps.
+        pass
     result = consume_herdmaster_management_round(authority=authority,
         expected_owner_user_id=str(owner_user_id), canonical_round=canonical,
-        invocation_at=now, trusted_now=now, attributable_owner_observations=observations,
+        invocation_at=now, trusted_now=evidence_checked_at, attributable_owner_observations=observations,
         active_lifecycles=active, prior_consumptions=prior)
     if (retain_replay_result
             and result.get("status") == "herdmaster_management_round_replay_suppressed"):
         replay = consume_herdmaster_management_round(authority=authority,
             expected_owner_user_id=str(owner_user_id), canonical_round=canonical,
-            invocation_at=now, trusted_now=now,
+            invocation_at=now, trusted_now=evidence_checked_at,
             attributable_owner_observations=observations,
             active_lifecycles=active, prior_consumptions=())
         if isinstance(replay.get("specialist_result"), SpecialistResult):
