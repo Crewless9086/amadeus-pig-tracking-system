@@ -4,6 +4,7 @@ import json
 import unittest
 from unittest import mock
 import sys
+from pathlib import Path
 
 from modules.sales.sam_review_obligation_resolution import (
     CONTRACT_VERSION,
@@ -113,6 +114,15 @@ def evidence(index=1, **overrides):
 
 
 class SamReviewObligationResolutionTests(unittest.TestCase):
+    def test_production_rpc_search_path_includes_protected_pgcrypto_schema(self):
+        sql = (Path(__file__).resolve().parents[1] / "supabase" / "migrations" /
+               "202608100004_fix_sam_resolution_rpc_pgcrypto_path.sql").read_text(
+                   encoding="utf-8"
+               ).lower()
+        self.assertIn("alter function public.record_sam_review_obligation_resolution(jsonb)", sql)
+        self.assertIn("set search_path = pg_catalog, extensions, public", sql)
+        self.assertNotIn("grant", sql)
+
     def test_recorder_enters_service_role_before_governed_rpc(self):
         packet = resolve_review_obligation(
             review=review(), evidence=evidence(), represented_identity=represented()
