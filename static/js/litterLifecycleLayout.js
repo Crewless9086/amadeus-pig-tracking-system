@@ -37,8 +37,8 @@ function prepareLitterLifecycleLayout() {
   birthSnapshot.className = "lifecycle-birth-snapshot";
   birthSnapshot.innerHTML = `
     <div><span>Totaal gekoppel</span><strong id="lifecycle_birth_total">-</strong></div>
-    <div><span>Beertjies</span><strong id="lifecycle_birth_male">-</strong></div>
-    <div><span>Sogvarkies</span><strong id="lifecycle_birth_female">-</strong></div>
+    <div><span>Beertjies (telling)</span><strong id="lifecycle_birth_male">-</strong></div>
+    <div><span>Sogvarkies (telling)</span><strong id="lifecycle_birth_female">-</strong></div>
     <div><span>Lewend / aktief</span><strong id="lifecycle_birth_active">-</strong></div>
     <div><span>Doodgebore</span><strong id="lifecycle_birth_stillborn">-</strong></div>
     <div><span>Vrektes ná geboorte</span><strong id="lifecycle_birth_deaths">-</strong></div>`;
@@ -98,7 +98,12 @@ window.renderLitterLifecyclePresentation = function renderLitterLifecyclePresent
   };
   status("lifecycle_identity", "Voltooi", "is-complete");
   status("lifecycle_birth", reconciliation.mismatch ? "Aandag nodig" : "Voltooi", reconciliation.mismatch ? "needs-attention" : "is-complete");
-  status("lifecycle_first_care", state === "active" ? "Opsioneel" : "Gesluit", state === "active" ? "is-current" : "is-complete");
+  const firstCareComplete = litter.first_treatment_tally_recorded === true;
+  status(
+    "lifecycle_first_care",
+    firstCareComplete ? "Voltooi" : (state === "active" ? "Opsioneel" : "Gesluit"),
+    firstCareComplete || state !== "active" ? "is-complete" : "is-current"
+  );
   status("lifecycle_weaning", state === "active" ? "Besig" : "Voltooi", state === "active" ? "is-current" : "is-complete");
   status("lifecycle_notes", active ? "Beskikbaar" : "Geskiedenis", active ? "is-current" : "is-complete");
 

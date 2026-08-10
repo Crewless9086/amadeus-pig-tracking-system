@@ -2004,6 +2004,38 @@ class LitterNewbornHealthTests(unittest.TestCase):
         self.assertEqual(result["missing_columns"], ["Earmarked", "Earmark_Date"])
         update_pigs.assert_not_called()
 
+    def test_record_litter_newborn_health_keeps_sex_tally_at_litter_level(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-2", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                litter_id="LIT-1",
+                action_date_value="2026-08-10",
+                male_count=1,
+                female_count=1,
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["sex_count_recorded"])
+        self.assertEqual(result["sex_count_scope"], "litter_tally_only")
+        self.assertFalse(result["individual_piglet_sexes_assigned"])
+        self.assertEqual(result["planned_pig_updates"], {})
+        self.assertEqual(result["planned_litter_updates"], {
+            "Male_Count": 1,
+            "Female_Count": 1,
+            "Unknown_Sex_Count": 0,
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

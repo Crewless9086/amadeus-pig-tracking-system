@@ -648,6 +648,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
             "pig_id": to_clean_string(row.get("pig_id")),
             "tag_number": to_clean_string(row.get("tag_number")),
             "weight_kg": to_float(row.get("weight_kg")),
+            "sex": to_clean_string(row.get("sex")),
             "from_pen_id": to_clean_string(row.get("from_pen_id")),
             "to_pen_id": to_clean_string(row.get("to_pen_id")),
             "notes": to_clean_string(row.get("notes")),
@@ -706,7 +707,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
             cursor.execute(
                 """
                 select pig_id, tag_number, status, on_farm, animal_type,
-                       wean_date, wean_weight_kg, litter_size_weaned
+                       wean_date, wean_weight_kg, litter_size_weaned, sex
                 from public.pigs
                 where litter_id=%s and pig_id=any(%s)
                 order by pig_id for update
@@ -733,6 +734,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                 pig_id = to_clean_string(item.get("pig_id"))
                 tag_number = to_clean_string(item.get("tag_number"))
                 weight = to_float(item.get("weight_kg"))
+                requested_sex = to_clean_string(item.get("sex"))
                 item_notes = to_clean_string(item.get("notes"))
                 row = current[pig_id]
                 if row[2] != "Active" or row[3] is not True:
@@ -741,6 +743,10 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                     raise ValueError("conflicting_piglet_wean_date")
                 if row[6] is not None and float(row[6]) != weight:
                     raise ValueError("conflicting_piglet_wean_weight")
+                if requested_sex not in {"Male", "Female", "Castrated_Male"}:
+                    raise ValueError("valid_weaning_sex_required")
+                if to_clean_string(row[8]) not in ("", requested_sex) and to_clean_string(row[1]):
+                    raise ValueError("conflicting_piglet_sex")
                 if tag_number:
                     if to_clean_string(row[1]) not in ("", tag_number):
                         raise ValueError("conflicting_piglet_tag")
@@ -882,15 +888,16 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                     or row[6] is None
                     or float(row[6]) != weight
                     or row[7] != len(piglets)
+                    or to_clean_string(row[8]) != requested_sex
                 ):
                     cursor.execute(
                         """
                         update public.pigs
                         set animal_type='Weaner', litter_size_weaned=%s,
-                            wean_date=%s, wean_weight_kg=%s, updated_at=now()
+                            wean_date=%s, wean_weight_kg=%s, sex=%s, updated_at=now()
                         where pig_id=%s
                         """,
-                        (len(piglets), wean_date, weight, pig_id),
+                        (len(piglets), wean_date, weight, requested_sex, pig_id),
                     )
                     counts["piglets_updated"] += cursor.rowcount
 
