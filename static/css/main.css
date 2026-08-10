@@ -1872,6 +1872,7 @@ button:disabled {
   display: grid;
   gap: 22px;
 }
+.closed-litter-view.hidden { display: none; }
 
 .litter-workspace.hidden { display: none; }
 

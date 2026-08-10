@@ -46,3 +46,165 @@
   border-radius: .65rem;
   background: #f7f5ef;
 }
+
+/* Active litter workflow: shared Amadeus dashboard visual language. */
+.litter-detail-app-shell .lifecycle-next-action {
+  margin-bottom: 20px;
+  padding: 17px 19px;
+  border-color: #bfd0c2;
+  border-left-color: var(--farm-green);
+  border-radius: 16px;
+  background: var(--farm-green-soft);
+  box-shadow: 0 8px 24px rgba(38,58,45,.045);
+}
+.litter-detail-app-shell .lifecycle-next-kicker { background: var(--farm-green); }
+.litter-detail-app-shell .lifecycle-next-action strong { color: var(--farm-ink); }
+.litter-detail-app-shell .lifecycle-next-action > span:last-child { color: var(--farm-muted); }
+.litter-detail-app-shell .lifecycle-stages { gap: 18px; }
+.litter-detail-app-shell .lifecycle-stage {
+  border-color: var(--farm-line);
+  border-radius: 18px;
+  background: var(--farm-paper);
+  box-shadow: 0 10px 30px rgba(38,58,45,.055);
+}
+.litter-detail-app-shell .lifecycle-stage-header {
+  min-height: 72px;
+  padding: 15px 19px;
+  border-bottom-color: var(--farm-line);
+  background: #f7f5ee;
+}
+.litter-detail-app-shell .lifecycle-stage-number {
+  width: 36px;
+  height: 36px;
+  background: var(--farm-green);
+  box-shadow: 0 0 0 5px var(--farm-green-soft);
+}
+.litter-detail-app-shell .lifecycle-stage-header h2 {
+  color: var(--farm-ink);
+  font-family: Georgia, serif;
+  font-size: 22px;
+}
+.litter-detail-app-shell .lifecycle-stage-header p { color: var(--farm-muted); }
+.litter-detail-app-shell .lifecycle-stage-status {
+  padding: 6px 10px;
+  border: 1px solid var(--farm-line);
+  background: white;
+  color: var(--farm-muted);
+}
+.litter-detail-app-shell .lifecycle-stage-status.is-complete {
+  border-color: #bfd0c2;
+  background: var(--farm-green-soft);
+  color: var(--farm-green);
+}
+.litter-detail-app-shell .lifecycle-stage-status.is-current {
+  border-color: #e3c982;
+  background: #faf0d8;
+  color: #725313;
+}
+.litter-detail-app-shell .lifecycle-stage-status.needs-attention {
+  border-color: #d9b9aa;
+  background: #f6e8e1;
+  color: var(--farm-alert);
+}
+.litter-detail-app-shell .lifecycle-stage-body { padding: 20px; }
+.litter-detail-app-shell #lifecycle_identity .detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.litter-detail-app-shell #lifecycle_identity .detail-card {
+  min-height: 78px;
+  padding: 14px 16px;
+  border-color: var(--farm-line);
+  border-radius: 14px;
+  background: white;
+}
+.litter-detail-app-shell #lifecycle_identity .detail-label { color: var(--farm-muted); }
+.litter-detail-app-shell #lifecycle_identity .detail-value {
+  color: var(--farm-ink);
+  font-family: Georgia, serif;
+  font-size: 24px;
+}
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_id_value) { order: 1; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_mother_value) { order: 2; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_father_value) { order: 3; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_birth_date_value) { order: 4; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_mating_date_value) { order: 5; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_expected_farrowing_date_value) { order: 6; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_estimated_wean_date_value) { order: 7; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_wean_attention_start_value) { order: 8; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_days_until_wean_value) { order: 9; }
+.litter-detail-app-shell #lifecycle_identity #litter_mother_value,
+.litter-detail-app-shell #lifecycle_identity #litter_father_value {
+  color: var(--farm-green);
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.05;
+}
+.litter-detail-app-shell .lifecycle-birth-snapshot { gap: 12px; }
+.litter-detail-app-shell .lifecycle-birth-snapshot div {
+  min-height: 92px;
+  padding: 15px;
+  border-color: var(--farm-line);
+  border-radius: 13px;
+  background: white;
+}
+.litter-detail-app-shell .lifecycle-birth-snapshot span { color: var(--farm-muted); }
+.litter-detail-app-shell .lifecycle-birth-snapshot strong {
+  color: var(--farm-ink);
+  font-family: Georgia, serif;
+  font-size: 26px;
+}
+.litter-detail-app-shell .lifecycle-stage .form-field label,
+.litter-detail-app-shell .lifecycle-stage .section-subtitle { color: var(--farm-ink); }
+.litter-detail-app-shell .lifecycle-stage input,
+.litter-detail-app-shell .lifecycle-stage select,
+.litter-detail-app-shell .lifecycle-stage textarea {
+  border-color: var(--farm-line);
+  border-radius: 11px;
+  background: white;
+}
+.litter-detail-app-shell .lifecycle-stage input:focus,
+.litter-detail-app-shell .lifecycle-stage select:focus,
+.litter-detail-app-shell .lifecycle-stage textarea:focus {
+  border-color: var(--farm-green);
+  box-shadow: 0 0 0 3px var(--farm-green-soft);
+}
+.litter-detail-app-shell .lifecycle-stage button,
+.litter-detail-app-shell .lifecycle-stage .button-link {
+  border-color: var(--farm-green);
+  border-radius: 11px;
+  background: var(--farm-green);
+  color: white;
+  font-weight: 800;
+}
+.litter-detail-app-shell .lifecycle-stage .button-link-secondary {
+  border-color: var(--farm-line);
+  background: white;
+  color: var(--farm-green);
+}
+.litter-detail-app-shell .lifecycle-stage button:disabled { border-color: #aebbb2; background: #aebbb2; }
+.litter-detail-app-shell .lifecycle-stage-closure {
+  padding: 15px 17px;
+  border-color: #bfd0c2;
+  border-radius: 13px;
+  background: var(--farm-green-soft);
+}
+.litter-detail-app-shell .lifecycle-stage-closure strong { color: var(--farm-green); }
+.litter-detail-app-shell .litter-first-care-skip,
+.litter-detail-app-shell .lifecycle-corrections {
+  border-color: var(--farm-line);
+  border-radius: 14px;
+  background: #f7f5ee;
+}
+.litter-detail-app-shell .litter-piglet-table-wrap,
+.litter-detail-app-shell .simple-table-wrap { border-color: var(--farm-line); border-radius: 13px; }
+.litter-detail-app-shell .litter-piglet-table-wrap thead,
+.litter-detail-app-shell .simple-table-wrap thead { background: var(--farm-green-soft); }
+
+@media(max-width:900px) {
+  .litter-detail-app-shell #lifecycle_identity .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media(max-width:620px) {
+  .litter-detail-app-shell #lifecycle_identity .detail-grid { grid-template-columns: 1fr; }
+  .litter-detail-app-shell .lifecycle-stage-body { padding: 15px; }
+}
