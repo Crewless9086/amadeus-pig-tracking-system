@@ -117,11 +117,13 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
             "piglets": [
                 {
                     "pig_id": self.pigs[0], "tag_number": "901",
+                    "sex": "Male",
                     "weight_kg": 7.1, "from_pen_id": self.pen_from,
                     "to_pen_id": self.pen_to, "notes": "Weaning Day.",
                 },
                 {
                     "pig_id": self.pigs[1], "tag_number": "902",
+                    "sex": "Female",
                     "weight_kg": 7.4, "from_pen_id": self.pen_from,
                     "to_pen_id": self.pen_to, "notes": "Weaning Day.",
                 },
