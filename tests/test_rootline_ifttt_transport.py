@@ -116,27 +116,22 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         from modules.telemetry.rootline_auxiliary_management import (
             build_auxiliary_eligibility,revalidate_auxiliary_execution_edge)
         now=datetime(2026,8,8,18,0,tzinfo=timezone.utc)
-        fertilizer=snapshot(device_id="100204d497")
-        fertilizer["channels"][0]["native_auto_off_seconds"]=120
+        fertilizer=snapshot(device_id="100204d497",commissioned_supervised_channels=[2])
+        fertilizer["channels"][1]["native_auto_off_seconds"]=300
         transport,_calls=self.transport(fertilizer)
-        safety_value=transport.read_safety_configuration(device_id="100204d497",channel=1)
-        context={"plan_generation":"PLAN-EDGE","batch_generation":"BATCH-EDGE",
-            "active_zone_ids":["B12345"],"zone_execution_id":"ZONE-EDGE",
-            "zone_start_evidence":{"evidence_id":"START-EDGE",
-                "zone_execution_id":"ZONE-EDGE","observed_at":(now-timedelta(minutes=10)).isoformat()},
-            "zone_output_evidence":{"evidence_id":"OUTPUT-EDGE",
-                "zone_execution_id":"ZONE-EDGE","observed_at":now.isoformat(),"state":"ON"},
-            "irrigation_stop_deadline":(now+timedelta(minutes=30)).isoformat(),
-            "completed_pulses":0,"mixer_active":False,"prior_shutdown_unverified":False}
+        safety_value=transport.read_safety_configuration(device_id="100204d497",channel=2)
+        context={"plan_generation":"PLAN-EDGE","injection_active":False,
+            "verified_mixing_minutes_today":0,"verified_mixing_sessions_today":0,
+            "mixing_history_complete_through":now.isoformat(),"power_suitable":True}
         artifact=build_auxiliary_eligibility(task={
-            "auxiliary_device_id":"FERTILIZER-INJECTION-CH1"},safety=safety_value,
-            context=context,flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED":True},now=now)
+            "auxiliary_device_id":"FERTILIZER-MIXER-CH2"},safety=safety_value,
+            context=context,flags={"ROOTLINE_FERTILIZER_MIXING_ENABLED":True},now=now)
         self.assertTrue(artifact["eligible"])
         second_snapshot=dict(fertilizer,response_digest="READ-2",
             retrieved_at=(now+timedelta(seconds=1)).isoformat())
         second_transport,_calls=self.transport(second_snapshot)
         current_safety=second_transport.read_safety_configuration(
-            device_id="100204d497",channel=1)
+            device_id="100204d497",channel=2)
         self.assertNotEqual(safety_value["response_digest"],current_safety["response_digest"])
         self.assertEqual(safety_value["controller_safety_generation"],
             current_safety["controller_safety_generation"])

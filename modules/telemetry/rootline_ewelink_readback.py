@@ -9,7 +9,9 @@ from modules.telemetry.rootline_ewelink_oauth import (
     ADAPTER_VERSION, REGION_HOSTS, OAuthFailure, _bind_account_device,
     _digest, _provider_request, decrypt_access_token, normalize_device_readback,
 )
-from modules.telemetry.rootline_ewelink_commissioned_baseline import commissioned_controller_baseline
+from modules.telemetry.rootline_ewelink_commissioned_baseline import (
+    commissioned_controller_baseline, commissioned_registered_device_baseline,
+)
 from modules.telemetry.rootline_device_registry import rootline_device_registry
 
 
@@ -43,8 +45,8 @@ def read_registered_device(device_id, *, token_store, environ=None,
         source=source,
         http_request=http_request,
         now=now,
-        commissioned_baseline=None,
-        registered_discovery_only=True,
+        commissioned_baseline=commissioned_registered_device_baseline(requested),
+        registered_discovery_only=False,
     )
 
 
