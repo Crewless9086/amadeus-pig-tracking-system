@@ -67,7 +67,8 @@ def _sam_review_history_references(connection, superseded_ids, column_names):
     if "decision_json" not in column_names:
         return [], []
     patterns = [f"%{pig_id}%" for pig_id in superseded_ids]
-    other_columns = [column for column in column_names if column != "decision_json"]
+    json_history_columns = {"decision_json", "review_json"}
+    other_columns = [column for column in column_names if column not in json_history_columns]
     clauses, params = [], []
     for column_name in other_columns:
         for pig_id in superseded_ids:
@@ -143,29 +144,69 @@ def _sam_review_history_references(connection, superseded_ids, column_names):
 
     rows = connection.execute(
         """
-        select review_event_id,decision_json::text,
-               applies_learning_now,changes_prompt_now,changes_runtime_now,
-               sends_customer_message,calls_chatwoot,calls_telegram,
-               creates_order,reserves_stock,changes_stock,writes_farm_data,
-               safe_to_send,owner_send_required,no_reply_recommended,
-               escalation_required,recommended_action,
-               conversation_mode_recommendation,event_source
-          from public.sam_live_stock_conversation_review_events
-         where decision_json::text like any(%s)
-         order by review_event_id
+        select review.review_event_id,review.decision_json::text,
+               review.applies_learning_now,review.changes_prompt_now,review.changes_runtime_now,
+               review.sends_customer_message,review.calls_chatwoot,review.calls_telegram,
+               review.creates_order,review.reserves_stock,review.changes_stock,review.writes_farm_data,
+               review.safe_to_send,review.owner_send_required,review.no_reply_recommended,
+               review.escalation_required,review.recommended_action,
+               review.conversation_mode_recommendation,review.event_source,review.review_json::text
+          from public.sam_live_stock_conversation_review_events review
+          join public.current_sam_review_obligation_resolutions resolution
+            on resolution.review_event_id=review.review_event_id
+         where resolution.represented_pig_id=any(%s)
+         order by review.review_event_id
         """,
-        (patterns,),
+        (list(superseded_ids),),
     ).fetchall()
     references = []
     for row in rows:
-        # The first ten values are protected authority flags; the next four
-        # are owner/actionability flags. Strings are validated below.
-        if any(bool(value) for value in row[2:16]):
-            raise RuntimeError("action-bearing SAM review reference blocks correction")
+        # Immutable reviews can remain action-bearing only when a separately
+        # governed current resolution proves that the represented livestock
+        # identity is superseded while preserving the customer obligation.
+        action_bearing = any(bool(value) for value in row[2:16])
         recommended_action = str(row[16] or "").strip()
         conversation_mode = str(row[17] or "").strip().upper()
         event_source = str(row[18] or "").strip()
-        if (
+        legacy_historical = (
+            not action_bearing
+            and not recommended_action
+            and conversation_mode in {"", "READ_ONLY", "SHADOW"}
+            and event_source in HISTORICAL_SAM_REVIEW_EVENT_SOURCES
+        )
+        if not legacy_historical and not action_bearing:
+            raise RuntimeError("unsupported SAM review reference blocks correction")
+        resolution = None
+        if action_bearing:
+            resolution = connection.execute(
+                """
+                select resolution_event_id,represented_pig_id,
+                       represented_identity_status,
+                       same_animal_mapping_prohibited,
+                       canonical_same_animal_pig_id,
+                       governed_disposition_operation_id,
+                       customer_obligation_status,resolution_action,
+                       event_payload_sha256
+                  from public.current_sam_review_obligation_resolutions
+                 where review_event_id=%s
+                """,
+                (str(row[0]),),
+            ).fetchone()
+            if (
+                resolution is None
+                or resolution[1] not in superseded_ids
+                or resolution[2] != "superseded"
+                or resolution[3] is not True
+                or resolution[4] is not None
+                or not str(resolution[5] or "").strip()
+                or resolution[6] == "unknown_fail_closed"
+                or resolution[7] in {"indeterminate", "corrective_replanning"}
+                or len(str(resolution[8] or "")) != 64
+            ):
+                raise RuntimeError(
+                    "current governed SAM obligation resolution required"
+                )
+        elif (
             recommended_action
             or conversation_mode not in {"", "READ_ONLY", "SHADOW"}
             or event_source not in HISTORICAL_SAM_REVIEW_EVENT_SOURCES
@@ -176,15 +217,20 @@ def _sam_review_history_references(connection, superseded_ids, column_names):
         identity_paths = _exact_json_identity_paths(
             decision, frozenset(superseded_ids)
         )
+        review_text = str(row[19] or "{}")
+        review = json.loads(review_text)
+        review_identity_paths = _exact_json_identity_paths(
+            review, frozenset(superseded_ids)
+        )
         if not identity_paths:
             continue
-        if any(
+        if not resolution and any(
             not set(path) & HISTORICAL_IDENTITY_PATH_SEGMENTS
             for _identity, path in identity_paths
         ):
             raise RuntimeError("SAM review identity outside governed snapshot path")
         identities = sorted({identity for identity, _path in identity_paths})
-        references.append({
+        reference = {
             "table": table_name,
             "row_id": str(row[0]),
             "identities": identities,
@@ -193,8 +239,29 @@ def _sam_review_history_references(connection, superseded_ids, column_names):
                 for identity, path in sorted(identity_paths)
             ],
             "decision_json_sha256": hashlib.sha256(decision_text.encode()).hexdigest(),
-            "classification": "immutable_historical_review_snapshot",
-        })
+            "review_json_sha256": hashlib.sha256(review_text.encode()).hexdigest(),
+            "review_identity_paths": [
+                {"identity": identity, "path": list(path)}
+                for identity, path in sorted(review_identity_paths)
+            ],
+            "classification": (
+                "immutable_review_with_governed_current_obligation"
+                if resolution else "immutable_historical_review_snapshot"
+            ),
+        }
+        if resolution:
+            reference["current_resolution"] = {
+                "resolution_event_id": resolution[0],
+                "represented_pig_id": resolution[1],
+                "represented_identity_status": resolution[2],
+                "same_animal_mapping_prohibited": resolution[3],
+                "canonical_same_animal_pig_id": resolution[4],
+                "governed_disposition_operation_id": resolution[5],
+                "customer_obligation_status": resolution[6],
+                "resolution_action": resolution[7],
+                "event_payload_sha256": resolution[8],
+            }
+        references.append(reference)
     return references, append_only_guard
 
 
@@ -217,6 +284,7 @@ def _reference_digests(connection, superseded_ids, all_ids):
         "litter_supersessions", "litter_correction_authorizations",
         "litter_correction_authorization_revocations",
         "litter_supersession_audit_rows", "bulk_weight_batch_rows",
+        "sam_review_obligation_resolution_events",
     }
     grouped = {}
     for table_name, column_name in columns:
@@ -255,7 +323,10 @@ def _reference_digests(connection, superseded_ids, all_ids):
     )
     references.sort()
     if references:
-        raise RuntimeError("downstream factual reference blocks correction")
+        raise RuntimeError(
+            "downstream factual reference blocks correction: "
+            + json.dumps(references[:20])
+        )
     skipped = connection.execute(
         """
         select row_id::text,batch_id::text,pig_id,status,status_reason,idempotency_key
