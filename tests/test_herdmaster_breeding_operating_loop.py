@@ -272,6 +272,7 @@ def test_canonical_mating_creates_milestones_without_writes():
     }])
     case = result["cases"][0]
     assert case["classification"]["canonical_mating_exists"] is True
+    assert case["classification"]["latest_mating_id"] == "MAT-1"
     assert len(case["milestones"]) == 3
     assert result["reminder_plan"]["sent_count"] == 0
 
@@ -283,6 +284,8 @@ def test_due_pregnancy_check_is_worklist_attention():
         "expected_pregnancy_check_date": "2026-07-18",
         "is_overdue_check": "Yes",
     }])
+    assert result["tasks"][0]["known_evidence"]["current_mating_id"] == "MAT-1"
+    assert result["tasks"][0]["known_evidence"]["current_mating_date"] == "2026-06-20"
     assert result["tasks"][0]["task_group"] == "pregnancy check due"
 
 

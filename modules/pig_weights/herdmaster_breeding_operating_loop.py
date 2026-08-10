@@ -468,6 +468,7 @@ def _classify(
         "canonical_mating_exists": bool(
             _text(latest_mating.get("mating_id"))
         ),
+        "latest_mating_id": _text(latest_mating.get("mating_id")) or None,
         "latest_mating_date": _date_text(mating_date),
         "days_since_mating": days_since_mating,
         "expected_pregnancy_check": _text(
@@ -524,6 +525,7 @@ def _task(
         "conflicting": classification["conflicting"],
         "latest_weight_date": readiness.get("latest_weight_date"),
         "latest_mating_date": classification["latest_mating_date"],
+        "current_mating_id": classification["latest_mating_id"],
         "latest_litter_date": classification["latest_litter_date"],
         "male_recommendation_state": male_recommendation["status"],
         "male_recommendation": male_recommendation,
@@ -851,6 +853,8 @@ def _known_evidence(classification, readiness):
         "state": classification["state"],
         "latest_weight_kg": readiness.get("latest_weight_kg"),
         "latest_weight_date": readiness.get("latest_weight_date") or None,
+        "current_mating_id": classification["latest_mating_id"],
+        "current_mating_date": classification["latest_mating_date"],
         "latest_mating_date": classification["latest_mating_date"],
         "latest_litter_date": classification["latest_litter_date"],
         "medical": _display(
