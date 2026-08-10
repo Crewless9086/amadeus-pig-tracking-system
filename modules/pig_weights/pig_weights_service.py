@@ -2244,6 +2244,34 @@ def process_litter_weaning_day(
         and to_clean_string(row.get("pig_id"))
         and to_clean_string(row.get("tag_number"))
     }
+    requested_sexes = {
+        to_clean_string(row.get("pig_id")): to_clean_string(row.get("sex"))
+        for row in assignments if isinstance(row, dict)
+        and to_clean_string(row.get("pig_id"))
+        and to_clean_string(row.get("sex"))
+    }
+    sex_updates = {}
+    for pig_id, requested_sex in requested_sexes.items():
+        if requested_sex not in {"Male", "Female", "Castrated_Male"}:
+            validation_errors.append(f"Piglet {pig_id} has an invalid sex value.")
+            continue
+        current_sex = to_clean_string((current_by_id.get(pig_id) or {}).get(columns["sex"], ""))
+        current_tag = to_clean_string((current_by_id.get(pig_id) or {}).get("Tag_Number", ""))
+        if current_sex and current_sex != requested_sex and current_tag:
+            validation_errors.append(f"Piglet {pig_id} already has conflicting sex {current_sex}.")
+        elif current_sex != requested_sex:
+            sex_updates[pig_id] = {
+                "Sex": requested_sex,
+                "Updated_At": format_date_for_sheet(datetime.now().date()),
+            }
+    missing_sex_ids = [
+        pig_id for pig_id, row in current_by_id.items()
+        if not to_clean_string(row.get(columns["sex"], "")) and pig_id not in requested_sexes
+    ]
+    if missing_sex_ids:
+        validation_errors.append(
+            f"Choose a sex for all piglets at weaning; {len(missing_sex_ids)} still blank."
+        )
     new_tag_assignments = []
     for pig_id, requested_tag in requested_tags.items():
         current_tag = to_clean_string(
@@ -2324,7 +2352,7 @@ def process_litter_weaning_day(
                 "writes_to_sheets": False,
                 "writes_to_supabase": False,
             }, 409
-        return _weaning_day_result(
+        preview_result = _weaning_day_result(
             litter_id=litter_id,
             dry_run=True,
             action_date=action_date,
@@ -2335,7 +2363,9 @@ def process_litter_weaning_day(
             wean_result=wean_preview,
             weight_result=weight_preview,
             changed_by=changed_by,
-        ), 200
+        )
+        preview_result["sex_count"] = len(requested_sexes)
+        return preview_result, 200
 
     if farm_supabase_write_service.farm_supabase_writes_available():
         assignment_by_id = {
@@ -2361,6 +2391,10 @@ def process_litter_weaning_day(
                     or to_clean_string(row.get("Tag_Number", ""))
                 ),
                 "weight_kg": wean_weights[pig_id],
+                "sex": (
+                    to_clean_string(assignment.get("sex"))
+                    or to_clean_string(row.get(columns["sex"], ""))
+                ),
                 "from_pen_id": movement.get("from_pen_id", current_pen),
                 "to_pen_id": movement.get(
                     "to_pen_id", target_pen_id or current_pen
@@ -2440,6 +2474,10 @@ def process_litter_weaning_day(
     # Preserve the established Google Sheets fallback when canonical
     # Supabase writes are unavailable.
     applied = {}
+    if sex_updates:
+        batch_update_rows_by_id(
+            PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"], sex_updates
+        )
     if tag_plan["assignments"]:
         applied["tags"], tag_status = assign_litter_piglet_tag_numbers(
             litter_id=litter_id,
@@ -3375,6 +3413,8 @@ def record_litter_newborn_health(
     route: str = "",
     batch_lot_number: str = "",
     notes: str = "",
+    male_count=None,
+    female_count=None,
     dry_run: bool = True,
 ):
     litter_id = to_clean_string(litter_id)
@@ -3396,7 +3436,15 @@ def record_litter_newborn_health(
         errors.append("A valid action date is required.")
     if not changed_by:
         errors.append("changed_by is required.")
-    if not earmarked and not antiparasitic_product_id and not deworming_product_id and not vaccination_product_id:
+    sex_count_requested = male_count not in (None, "") or female_count not in (None, "")
+    male_count_value = to_float(male_count) if male_count not in (None, "") else None
+    female_count_value = to_float(female_count) if female_count not in (None, "") else None
+    if sex_count_requested:
+        if male_count_value is None or female_count_value is None:
+            errors.append("Enter both the male and female litter tally.")
+        elif male_count_value < 0 or female_count_value < 0 or not male_count_value.is_integer() or not female_count_value.is_integer():
+            errors.append("Male and female litter tallies must be whole numbers of zero or more.")
+    if not earmarked and not antiparasitic_product_id and not deworming_product_id and not vaccination_product_id and not sex_count_requested:
         errors.append("Select earmarking, antiparasitic/deworming product, or vaccination product before saving.")
     if errors:
         return {"success": False, "errors": errors}, 400
@@ -3432,6 +3480,17 @@ def record_litter_newborn_health(
             "litter_id": litter_id,
         }, 409
 
+    male_count_int = int(male_count_value) if male_count_value is not None else None
+    female_count_int = int(female_count_value) if female_count_value is not None else None
+    if sex_count_requested and male_count_int + female_count_int != len(active_piglets):
+        return {
+            "success": False,
+            "errors": [
+                f"The first-treatment tally must account for all {len(active_piglets)} active piglets."
+            ],
+            "active_piglet_count": len(active_piglets),
+        }, 409
+
     if earmarked:
         headers = set()
         for row in pig_rows:
@@ -3453,16 +3512,23 @@ def record_litter_newborn_health(
     action_date_sheet = format_date_for_sheet(action_date)
     today = format_date_for_sheet(datetime.now().date())
     pig_updates = {}
+    litter_tally_updates = {}
+    if sex_count_requested:
+        litter_tally_updates = {
+            "Male_Count": male_count_int,
+            "Female_Count": female_count_int,
+            "Unknown_Sex_Count": 0,
+        }
     treatment_rows = []
 
     for row in active_piglets:
         pig_id = to_clean_string(row.get(columns["pig_id"], ""))
         if earmarked:
-            pig_updates[pig_id] = {
+            pig_updates.setdefault(pig_id, {}).update({
                 "Earmarked": "Yes",
                 "Earmark_Date": action_date_sheet,
                 "Updated_At": today,
-            }
+            })
 
         if antiparasitic_product_id:
             antiparasitic_product = products[antiparasitic_product_id]
@@ -3509,6 +3575,7 @@ def record_litter_newborn_health(
     pig_rows_updated = 0
     treatment_rows_created = 0
     writes_to_supabase = False
+    litter_rows_updated = 0
     if not dry_run:
         supabase_available = farm_supabase_write_service.farm_supabase_writes_available()
         if supabase_available:
@@ -3519,9 +3586,16 @@ def record_litter_newborn_health(
                 treatment_rows
             )
             treatment_rows_created = treatment_result["created"]
+            if litter_tally_updates:
+                litter_rows_updated = _try_supabase_litter_update(litter_id, litter_tally_updates) or 0
             writes_to_supabase = True
         else:
             pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
+            if litter_tally_updates:
+                litter_rows_updated = batch_update_rows_by_id(
+                    PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"],
+                    {litter_id: litter_tally_updates},
+                )
             for row_values in treatment_rows:
                 append_row(medical_log_sheet, row_values)
                 treatment_rows_created += 1
@@ -3535,9 +3609,16 @@ def record_litter_newborn_health(
         "pig_ids": [to_clean_string(row.get(columns["pig_id"], "")) for row in active_piglets],
         "earmarked": earmarked,
         "treatment_rows_planned": len(treatment_rows),
+        "sex_count_recorded": sex_count_requested,
+        "sex_count_scope": "litter_tally_only",
+        "individual_piglet_sexes_assigned": False,
+        "male_count": male_count_int,
+        "female_count": female_count_int,
+        "litter_rows_updated": litter_rows_updated,
         "pig_rows_updated": pig_rows_updated,
         "treatment_rows_created": treatment_rows_created,
         "planned_pig_updates": pig_updates,
+        "planned_litter_updates": litter_tally_updates,
         "planned_treatment_rows": treatment_rows,
         "source": {
             "writes_to_sheets": (not dry_run) and not writes_to_supabase,

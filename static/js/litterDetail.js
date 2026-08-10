@@ -16,6 +16,8 @@ const newbornHealthAntiparasitic = document.getElementById("newborn_health_antip
 const newbornHealthDeworming = document.getElementById("newborn_health_deworming");
 const newbornHealthVaccination = document.getElementById("newborn_health_vaccination");
 const newbornHealthGivenBy = document.getElementById("newborn_health_given_by");
+const newbornHealthMaleCount = document.getElementById("newborn_health_male_count");
+const newbornHealthFemaleCount = document.getElementById("newborn_health_female_count");
 const newbornHealthNotes = document.getElementById("newborn_health_notes");
 const newbornHealthPreview = document.getElementById("newborn_health_preview");
 const newbornHealthPreviewButton = document.getElementById("newborn_health_preview_button");
@@ -576,16 +578,21 @@ function weaningDayPayload(dryRun) {
   document.querySelectorAll(".piglet-tag-input").forEach((input) => {
     const pigId = input.dataset.pigId || "";
     if (!assignmentByPigId.has(pigId)) {
-      assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "" });
+      assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
     }
     assignmentByPigId.get(pigId).tag_number = input.value.trim();
   });
   document.querySelectorAll(".piglet-wean-weight-input").forEach((input) => {
     const pigId = input.dataset.pigId || "";
     if (!assignmentByPigId.has(pigId)) {
-      assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "" });
+      assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
     }
     assignmentByPigId.get(pigId).wean_weight_kg = input.value.trim();
+  });
+  document.querySelectorAll(".piglet-sex-input").forEach((input) => {
+    const pigId = input.dataset.pigId || "";
+    if (!assignmentByPigId.has(pigId)) assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
+    assignmentByPigId.get(pigId).sex = input.value;
   });
   const assignments = Array.from(assignmentByPigId.values())
     .filter((assignment) => assignment.pig_id || assignment.tag_number || assignment.wean_weight_kg);
@@ -642,6 +649,7 @@ function renderWeaningDayPreview(preview) {
       <div><span class="history-label">Tags</span><span class="history-value">${preview.tag_count || 0}</span></div>
       <div><span class="history-label">Weight Log</span><span class="history-value">${preview.weight_count || 0}</span></div>
       <div><span class="history-label">Wean Weights</span><span class="history-value">${preview.wean_weights_captured || 0}</span></div>
+      <div><span class="history-label">Geslag</span><span class="history-value">${preview.sex_count || 0}</span></div>
       <div><span class="history-label">Treatments</span><span class="history-value">${preview.treatment_count || 0}</span></div>
       <div><span class="history-label">Pen Moves</span><span class="history-value">${preview.movement_count || 0}</span></div>
     </div>
@@ -850,6 +858,8 @@ function newbornHealthPayload(dryRun) {
     deworming_product_id: newbornHealthDeworming.value,
     vaccination_product_id: newbornHealthVaccination.value,
     notes: newbornHealthNotes.value,
+    male_count: newbornHealthMaleCount.value,
+    female_count: newbornHealthFemaleCount.value,
     dry_run: dryRun,
   };
 }
@@ -864,6 +874,7 @@ function renderNewbornHealthPreview(preview) {
       <strong>Preview ready</strong>
       <span>${pigletCount} piglet${pigletCount === 1 ? "" : "s"} / ${treatmentCount} treatment row${treatmentCount === 1 ? "" : "s"}</span>
     </div>
+    <p class="form-helper"><strong>Geslagtelling:</strong> ${preview.sex_count_recorded ? `${preview.male_count} beertjies en ${preview.female_count} sogvarkies as 'n werpseltelling. Geen anonieme varkie word outomaties 'n geslag toegeken nie.` : "Nie by hierdie stap aangeteken nie; voltooi dit by speen."}</p>
     <p class="form-helper">Earmarks and selected treatments will be saved for all active on-farm piglets in this litter.</p>
   `;
 }
@@ -1437,15 +1448,19 @@ function buildPigletTable(piglets) {
     const canEditTag = litterIsActive && piglet.status === "Active" && piglet.on_farm === "Yes" && !piglet.tag_number;
     const canEditWeanWeight = litterIsActive && piglet.status === "Active" && piglet.on_farm === "Yes";
     const tagCell = canEditTag
-      ? `<input class="piglet-tag-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="text" placeholder="Voeg tag by" aria-label="Tag nommer vir ${escapeHtml(piglet.pig_id || "varkie")}" />`
+      ? `<input class="piglet-tag-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="text" placeholder="Tag nr." aria-label="Voeg tag by vir ${escapeHtml(piglet.pig_id || "varkie")}" />`
       : `<strong>${escapeHtml(piglet.tag_number || "-")}</strong>`;
     const weanWeightCell = canEditWeanWeight
       ? `<input class="piglet-wean-weight-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="number" min="0.1" step="0.1" placeholder="kg" aria-label="Wean weight for ${escapeHtml(piglet.pig_id || "piglet")}" />`
       : escapeHtml(pigletWeanWeightText(piglet));
+    const sexValue = pigletSexText(piglet.sex);
+    const sexCell = canEditWeanWeight
+      ? `<select class="piglet-sex-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" aria-label="Geslag vir ${escapeHtml(piglet.tag_number || piglet.pig_id || "varkie")}"><option value="">Kies geslag</option><option value="Male" ${sexValue === "Reuntjie" ? "selected" : ""}>Reuntjie</option><option value="Female" ${sexValue === "Soggie" ? "selected" : ""}>Soggie</option><option value="Castrated_Male" ${sexValue === "Gekastreerde reuntjie" ? "selected" : ""}>Gekastreer</option></select>`
+      : escapeHtml(sexValue);
     return `
       <tr class="litter-piglet-row" data-pig-profile="${profileHref}" tabindex="0">
         <td>${tagCell}<span class="table-subtext">${escapeHtml(piglet.pig_id || "")}</span></td>
-        <td>${escapeHtml(pigletSexText(piglet.sex))}</td>
+        <td>${sexCell}</td>
         <td>${escapeHtml(pigletWeightText(piglet))}</td>
         <td>${weanWeightCell}</td>
         <td><span>${escapeHtml(pigletStatusText(piglet))}</span><span class="table-subtext">${escapeHtml(piglet.current_pen_id || "Geen kamp")}</span></td>
@@ -1456,10 +1471,10 @@ function buildPigletTable(piglets) {
 
   return `
     <div class="simple-table-wrap litter-piglet-table">
-      <table class="simple-table">
+      <table class="simple-table litter-weaning-table">
         <thead>
           <tr>
-            <th>Tag</th>
+            <th>Tag / voeg by</th>
             <th>Geslag</th>
             <th>Huidige gewig</th>
             <th>Speengewig</th>
@@ -1494,6 +1509,9 @@ function wirePigletTableRows() {
   });
   document.querySelectorAll(".piglet-wean-weight-input").forEach((input) => {
     input.addEventListener("input", resetWeaningDayPreview);
+    input.addEventListener("change", resetWeaningDayPreview);
+  });
+  document.querySelectorAll(".piglet-sex-input").forEach((input) => {
     input.addEventListener("change", resetWeaningDayPreview);
   });
 }
@@ -1628,6 +1646,8 @@ manualActionsToggle.addEventListener("click", () => {
   newbornHealthEarmarked,
   newbornHealthAntiparasitic,
   newbornHealthDeworming,
+  newbornHealthMaleCount,
+  newbornHealthFemaleCount,
   newbornHealthVaccination,
   newbornHealthNotes,
 ].forEach((element) => {

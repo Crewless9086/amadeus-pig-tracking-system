@@ -1516,15 +1516,15 @@ def get_litter_detail(litter_id, connect_factory=None):
     piglets = []
     current_weights = []
     wean_weights = []
-    male_count = 0
-    female_count = 0
+    identified_male_count = 0
+    identified_female_count = 0
     active_count = 0
     for pig in pigs:
         sex = _text(pig.get("sex"))
         if sex == "Male":
-            male_count += 1
+            identified_male_count += 1
         elif sex == "Female":
-            female_count += 1
+            identified_female_count += 1
         if _text(pig.get("status")).lower() == "active" and pig.get("on_farm") is True:
             active_count += 1
         weight = _float_or_none(pig.get("current_weight_kg"))
@@ -1553,6 +1553,8 @@ def get_litter_detail(litter_id, connect_factory=None):
     average_wean_weight = _average(wean_weights)
     average_weight = average_wean_weight if detail_state in {"weaned", "completed"} else average_current_weight
     wean_date = _date_text(litter.get("wean_date")) or next((piglet["wean_date"] for piglet in piglets if piglet["wean_date"]), "")
+    observed_male_count = _float_or_none(litter.get("male_count"))
+    observed_female_count = _float_or_none(litter.get("female_count"))
     return {
         "litter_id": _text(litter_id),
         "mother_pig_id": _text(litter.get("sow_pig_id")),
@@ -1565,8 +1567,13 @@ def get_litter_detail(litter_id, connect_factory=None):
         "litter_status": litter_status,
         "detail_state": detail_state,
         "count": len(piglets),
-        "male_count": male_count,
-        "female_count": female_count,
+        "male_count": observed_male_count if observed_male_count is not None else identified_male_count,
+        "female_count": observed_female_count if observed_female_count is not None else identified_female_count,
+        "observed_male_count": observed_male_count,
+        "observed_female_count": observed_female_count,
+        "identified_male_count": identified_male_count,
+        "identified_female_count": identified_female_count,
+        "first_treatment_tally_recorded": observed_male_count is not None and observed_female_count is not None,
         "active_count": active_count,
         "average_weight_kg": average_weight,
         "average_current_weight_kg": average_current_weight,

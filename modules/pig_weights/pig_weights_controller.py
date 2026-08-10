@@ -240,6 +240,8 @@ def record_litter_profile_newborn_health(litter_id: str, payload: dict):
         route=payload.get("route", ""),
         batch_lot_number=payload.get("batch_lot_number", ""),
         notes=payload.get("notes", ""),
+        male_count=payload.get("male_count", None),
+        female_count=payload.get("female_count", None),
         dry_run=payload.get("dry_run", True) is True,
     )
 
