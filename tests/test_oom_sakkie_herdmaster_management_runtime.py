@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_management_runtime import (consume_current_herdmaster_management,
@@ -70,6 +70,61 @@ def test_runtime_exact_replay_records_nothing():
         owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
         active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[prior],recorder=lambda value:recorded.append(value))
     assert replay["status"]=="herdmaster_management_round_replay_suppressed" and recorded==[]
+
+def test_runtime_replay_suppresses_volatile_generation_when_material_evidence_is_unchanged():
+    first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
+        active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[],
+        recorder=lambda _value:{"success":True,"created":True})
+    binding=first["binding"]
+    prior={"management_round_identity":binding["management_round_identity"],
+        "deduplication_key":binding["deduplication_key"],"result_digest":binding["result_digest"],
+        "evidence_generation":binding["evidence_generation"],
+        "active_case_digest":binding["active_case_deduplication_state"]["digest"],
+        "invocation_context_digest":binding["invocation_context"]["digest"]}
+    later_generation=NOW-timedelta(microseconds=1)
+    recorded=[]
+    replay=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=lambda:canonical(later_generation),
+        observation_loader=lambda _owner: observations(),active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[prior],recorder=lambda value:recorded.append(value))
+    assert replay["status"]=="herdmaster_management_round_replay_suppressed"
+    assert recorded==[]
+
+
+def test_runtime_replay_accepts_legacy_full_packet_digest_across_upgrade():
+    import hashlib
+    import json
+
+    legacy_generation = NOW - timedelta(microseconds=1)
+    legacy_packet = canonical(legacy_generation)
+    from modules.pig_weights.herdmaster_management_round import build_management_round
+    prepared = build_management_round(
+        legacy_packet,
+        active_specialist_cases=(),
+        attributable_owner_observations=observations(),
+        contained_animal_ids=tuple(sorted(row["pig_id"] for row in active())),
+    )
+    legacy_digest = hashlib.sha256(json.dumps(
+        prepared, sort_keys=True, separators=(",", ":"), default=str,
+    ).encode()).hexdigest()
+    first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=lambda:canonical(legacy_generation),
+        observation_loader=lambda _owner: observations(),active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
+    binding=first["binding"]
+    prior={"management_round_identity":binding["management_round_identity"],
+        "deduplication_key":binding["deduplication_key"],"result_digest":legacy_digest,
+        "evidence_generation":legacy_generation.isoformat(),
+        "active_case_digest":binding["active_case_deduplication_state"]["digest"],
+        "invocation_context_digest":binding["invocation_context"]["digest"]}
+    recorded=[]
+    replay=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,
+        observation_loader=lambda _owner: observations(),active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[prior],recorder=lambda value:recorded.append(value))
+    assert replay["status"]=="herdmaster_management_round_replay_suppressed"
+    assert recorded==[]
 
 def test_manager_can_retain_canonical_result_on_proven_replay_without_recording():
     first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
