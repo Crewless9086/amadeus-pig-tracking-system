@@ -287,6 +287,19 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         parsed, gateway_authority,
     )
     if operational_result.get("handled"):
+        if (str(operational_result.get("status") or "") == "specialist_accepted"
+                and str(operational_result.get("next_specialist_step") or "") ==
+                    "supervised_fertilizer_mixer_proof"):
+            from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
+                continue_fertilizer_commissioning,
+            )
+            continued = continue_fertilizer_commissioning(
+                owner_result=operational_result, parsed=parsed,
+                gateway_authority=gateway_authority)
+            operational_result = {**operational_result, **continued,
+                "mission_id": operational_result.get("mission_id"),
+                "card_mission_id": operational_result.get("card_mission_id"),
+                "specialist_identity": "ROOTLINE"}
         answer = str(operational_result.get("answer") or "")
         if str(operational_result.get("status") or "") == "waiting_for_input":
             if not answer.strip() or operational_result.get("question_count") != 1:
@@ -300,12 +313,14 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                 operational_result = {**operational_result,
                     "requires_visible_notification": True}
             answer = str(operational_result.get("answer") or "")
-        delivery = deliver_family_result(
-            parsed, operational_result,
-            specialist=str(operational_result.get("specialist_identity") or "OOM_SAKKIE"),
-            mission_id=str(operational_result.get("mission_id") or ""),
-            card_mission_id=str(operational_result.get("card_mission_id") or ""),
-        )
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                     "status": "owner_delivery_not_required"}
+                    if not answer and not operational_result.get("requires_visible_notification")
+                    else deliver_family_result(
+                        parsed, operational_result,
+                        specialist=str(operational_result.get("specialist_identity") or "OOM_SAKKIE"),
+                        mission_id=str(operational_result.get("mission_id") or ""),
+                        card_mission_id=str(operational_result.get("card_mission_id") or "")))
         body, _ = _gateway_result(
             delivery.get("success") is True,
             str(operational_result.get("status") or "contained"), policy, operational_status,
@@ -478,7 +493,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                 or scheduled_principal.role is not FamilyRole.OWNER):
             return _gateway_result(False, "rootline_reassessment_owner_binding_denied", policy, 403)
         from modules.oom_sakkie.automatic_reassessment_scheduler import run_due_reassessment
-        from modules.oom_sakkie.rootline_daily_presentation import present_daily_rootline_plan
+        from concurrent.futures import ThreadPoolExecutor, wait
+        from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
         if schedule_store is None:
             from modules.oom_sakkie.automatic_reassessment_store import automatic_reassessment_store
             schedule_store = automatic_reassessment_store
@@ -504,18 +520,89 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             return current
         def invoke():
             deliver = family_delivery or deliver_family_result
+            mixer_recovery = {"status": "fertilizer_recovery_unproven",
+                              "hardware_commands": 0, "telegram_sends": 0}
+            if not str(source.get("DATABASE_URL") or "").strip():
+                mixer_recovery = {"status": "no_active_fertilizer_commissioning",
+                    "hardware_commands": 0, "telegram_sends": 0}
+            else:
+                try:
+                    from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
+                        MISSION_ID, recover_fertilizer_commissioning,
+                    )
+                    mixer_recovery = recover_fertilizer_commissioning(
+                        now=scheduler_now, environ=source)
+                    if mixer_recovery.get("answer"):
+                        mixer_parsed = {
+                            "telegram_user_id": str(manual_payload.get("owner_user_id") or ""),
+                            "telegram_chat_id": str(manual_payload.get("chat_id") or ""),
+                            "provider_message_id": "scheduled:fertilizer:" + str(
+                                manual_payload.get("trigger_id") or ""),
+                            "provider_timestamp": str(manual_payload.get("trigger_timestamp") or "")}
+                        mixer_delivery = deliver(mixer_parsed, mixer_recovery,
+                            specialist="ROOTLINE", mission_id=MISSION_ID,
+                            card_mission_id=MISSION_ID)
+                        mixer_recovery = {**mixer_recovery,
+                            "telegram_sends": int(mixer_delivery.get("telegram_sends") or 0)}
+                except Exception:
+                    mixer_recovery = {"status": "fertilizer_recovery_unproven",
+                        "hardware_commands": 0, "telegram_sends": 0}
             try:
-                daily = present_daily_rootline_plan(
-                    owner_user_id=str(manual_payload.get("owner_user_id") or ""),
+                from modules.oom_sakkie.farm_manager_runtime import _load_herdmaster, _load_rootline
+                from modules.pig_weights.farm_supabase_read_service import get_breeding_attention_source_snapshot
+                from modules.sales.sales_transaction_read import list_sales_transactions
+                manager_now = scheduler_now or datetime.now(timezone.utc)
+                manager_owner = str(manual_payload.get("owner_user_id") or "")
+                authority = issue_gateway_owner_authority(manager_owner,
+                    str(manual_payload.get("chat_id") or ""))
+                executor = ThreadPoolExecutor(max_workers=4,
+                    thread_name_prefix="oom-daily-manager")
+                try:
+                    futures = {
+                        "herd": executor.submit(_load_herdmaster, authority,
+                            manager_owner, manager_now,
+                            str(manual_payload.get("language") or "en")),
+                        "rootline": executor.submit(_load_rootline, manager_now),
+                        "litters": executor.submit(get_breeding_attention_source_snapshot,
+                            deadline_seconds=20),
+                        "sales": executor.submit(list_sales_transactions),
+                    }
+                    done, pending = wait(tuple(futures.values()), timeout=40)
+                    if futures["herd"] not in done or futures["rootline"] not in done:
+                        raise TimeoutError("daily_manager_specialist_deadline")
+                    specialists = [futures["herd"].result(), futures["rootline"].result()]
+                    litter_rows = []
+                    if futures["litters"] in done:
+                        snapshot = futures["litters"].result()
+                        litter_rows = ((snapshot.get("allocation_inputs") or {})
+                            .get("litter_rows") or [])
+                    sale_rows = []
+                    if futures["sales"] in done:
+                        try:
+                            sales_payload, sales_status = futures["sales"].result()
+                            if sales_status == 200 and sales_payload.get("success") is True:
+                                sale_rows = sales_payload.get("sales_transactions") or []
+                        except Exception:
+                            sale_rows = []
+                    for future in pending:
+                        future.cancel()
+                finally:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                daily = run_daily_farm_manager(owner_user_id=manager_owner,
                     chat_id=str(manual_payload.get("chat_id") or ""),
-                    specialist_loader=scheduled_loader, state_store=state_store,
-                    deliver=deliver, now=scheduler_now,
+                    specialist_results=specialists, litter_rows=litter_rows,
+                    sale_rows=sale_rows,
+                    deliver=deliver, now=manager_now,
                     language=str(manual_payload.get("language") or "en"))
             except Exception:
-                daily = {"success": False, "status": "rootline_daily_presentation_unavailable",
+                daily = {"success": False, "status": "daily_farm_manager_unavailable",
                          "telegram_sends": 0, "telegram_edits": 0,
                          "hardware_commands": 0, "writes_farm_data": False}
-            if str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() == "true":
+            mixer_status = str(mixer_recovery.get("status") or "")
+            mixer_owns_controller = mixer_status not in {
+                "no_active_fertilizer_commissioning", "auxiliary_completed"}
+            if (str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() == "true"
+                    and not mixer_owns_controller):
                 cycle = execution_cycle
                 if cycle is None:
                     from modules.telemetry.rootline_execution_runtime import run_rootline_execution_cycle
@@ -545,12 +632,20 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "provider_message_id": str(delivery.get("telegram_message_id") or "")}
                 cycle_result = dict(cycle(notify=notify, environ=source, now=scheduler_now) or {})
                 return {**cycle_result,
+                    "fertilizer_commissioning_status": str(mixer_recovery.get("status") or ""),
                     "daily_presentation_status": str(daily.get("status") or ""),
                     "daily_presentation_identity": str(daily.get("daily_identity") or ""),
                     "telegram_sends": int(daily.get("telegram_sends") or 0)
+                        + int(mixer_recovery.get("telegram_sends") or 0)
                         + int(cycle_result.get("telegram_sends") or cycle_result.get("telegram_messages") or 0),
                     "telegram_edits": int(daily.get("telegram_edits") or 0)
                         + int(cycle_result.get("telegram_edits") or 0)}
+            if mixer_owns_controller:
+                return {**mixer_recovery,
+                    "daily_presentation_status": str(daily.get("status") or ""),
+                    "daily_presentation_identity": str(daily.get("daily_identity") or ""),
+                    "telegram_sends": int(daily.get("telegram_sends") or 0)
+                        + int(mixer_recovery.get("telegram_sends") or 0)}
             result, nested_status = handle_rootline_reassessment_trigger(
                 manual_payload, headers=headers, environ=source, specialist_loader=scheduled_loader,
                 state_store=state_store, family_delivery=family_delivery)

@@ -370,3 +370,10 @@ autonomous authority.
 - Integrate `modules/oom_sakkie/family_access.py` through the existing authenticated gateway and lifecycle only in a Control Tower production window; follow `docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md`.
 - Require exact-head review/CI and the identity/privacy/replay production proof. Do not infer access from display names or Afrikaans.
 - Integrate the reconciled family contract and daily ROOTLINE presentation in the assigned serialized window. Keep Mum and Dad unconfigured; prove Charl's owner route, one fresh daily plan, and unchanged scheduler silence before release.
+# Current serialized mission — Oom Sakkie Daily Farm Manager
+
+Complete the existing fertilizer commissioning lifecycle, then deploy and prove
+the scheduler-owned Daily Farm Manager Loop. See
+`docs/06-operations/OOM_SAKKIE_DAILY_FARM_MANAGER_LOOP_HANDOVER.md`. Do not
+expand unrelated specialist features until the exact deployed business proof is
+complete.

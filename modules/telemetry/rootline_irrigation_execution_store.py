@@ -11,7 +11,8 @@ EVENT_SOURCE = "rootline_irrigation_execution"
 def rootline_irrigation_execution_store(action, payload):
     if action in {"load_active", "load_off_attempts", "load_zone_containment",
                   "load_active_auxiliary", "load_auxiliary_off_attempts",
-                  "load_auxiliary_containment"}:
+                  "load_auxiliary_containment", "load_auxiliary_history",
+                  "load_auxiliary_physical_outcome"}:
         return _load(action, payload)
     body = dict(payload or {})
     execution_id = str(body.get("execution_id") or "").strip()
@@ -113,6 +114,26 @@ def _load(action, payload):
                     order by created_at desc limit 1""", (EVENT_SOURCE,str(payload or "")))
                 row=cursor.fetchone()
                 return {"contained":True,"evidence":row[0]} if row else {"contained":False}
+            if action == "load_auxiliary_history":
+                cursor.execute("""select review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source=%s
+                      and review_json->'rootline_execution'->>'action'=
+                          'record_auxiliary_completed'
+                      and review_json->'rootline_execution'->>'auxiliary_device_id'=%s
+                    order by created_at""", (EVENT_SOURCE, str(payload or "")))
+                return [row[0] if isinstance(row[0], dict) else json.loads(row[0])
+                        for row in cursor.fetchall()]
+            if action == "load_auxiliary_physical_outcome":
+                cursor.execute("""select review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source=%s
+                      and review_json->'rootline_execution'->>'execution_id'=%s
+                      and review_json->'rootline_execution'->>'action'=
+                          'record_auxiliary_physical_outcome'
+                    order by created_at desc limit 1""", (EVENT_SOURCE, str(payload or "")))
+                row = cursor.fetchone()
+                return row[0] if row and isinstance(row[0], dict) else json.loads(row[0]) if row else None
             cursor.execute("""select review_json->'rootline_execution'
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
