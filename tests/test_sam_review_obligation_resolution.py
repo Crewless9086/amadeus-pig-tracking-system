@@ -95,6 +95,16 @@ def evidence(index=1, **overrides):
         source["evidence_sha256"] = canonical_sha256(source["evidence_payload"])
     if "chronology_sha256" not in overrides:
         packet["chronology_sha256"] = canonical_sha256(packet["public_chronology"])
+    if packet.get("successor_work_item"):
+        source = packet["successor_work_item"]
+        if source.get("chronology_sha256") == "BOUND_TO_CURRENT_CHRONOLOGY":
+            source["chronology_sha256"] = packet["chronology_sha256"]
+        source.setdefault("evidence_id", "SUCCESSOR-WORK-EVIDENCE")
+        source["evidence_payload"] = {
+            name: value for name, value in source.items()
+            if name not in {"evidence_id", "evidence_sha256", "evidence_payload"}
+        }
+        source["evidence_sha256"] = canonical_sha256(source["evidence_payload"])
     return packet
 
 
@@ -269,7 +279,14 @@ class SamReviewObligationResolutionTests(unittest.TestCase):
             (
                 evidence(
                     later_inbound_message_id="IN-NEW",
-                    successor_work_item_id="SAM-WORK-IN-NEW",
+                    successor_work_item={
+                        "work_item_id": "SAM-WORK-IN-NEW",
+                        "contact_id": "CONTACT-001",
+                        "conversation_id": "CONV-001",
+                        "inbound_message_id": "IN-NEW",
+                        "current_actionable": True,
+                        "chronology_sha256": "BOUND_TO_CURRENT_CHRONOLOGY",
+                    },
                     public_chronology=[
                         {"message_id": "IN-001", "message_type": "incoming"},
                         {"message_id": "IN-NEW", "message_type": "incoming"},
@@ -293,6 +310,19 @@ class SamReviewObligationResolutionTests(unittest.TestCase):
         proofs.append(changed)
         proofs.append(evidence(public_chronology=[]))
         proofs.append(evidence(later_inbound_message_id="IN-NEW"))
+        proofs.append(evidence(
+            later_inbound_message_id="IN-NEW",
+            successor_work_item={
+                "work_item_id": "FABRICATED", "contact_id": "OTHER",
+                "conversation_id": "CONV-001", "inbound_message_id": "IN-NEW",
+                "current_actionable": True,
+                "chronology_sha256": "BOUND_TO_CURRENT_CHRONOLOGY",
+            },
+            public_chronology=[
+                {"message_id": "IN-001", "message_type": "incoming"},
+                {"message_id": "IN-NEW", "message_type": "incoming"},
+            ],
+        ))
         for proof in proofs:
             with self.subTest(proof=proof):
                 result = resolve_review_obligation(

@@ -82,7 +82,10 @@ def resolution_material(packet: Mapping[str, Any]) -> list:
             "protected_decision_evidence_id", "protected_decision_evidence_sha256",
             "whatsapp_window_evidence_id", "whatsapp_window_evidence_sha256",
             "resolution_action", "chronology_cutoff_at", "chronology_sha256",
-            "successor_work_item_id", "content_relied_on_superseded_identity",
+            "successor_work_item_id", "successor_contact_id",
+            "successor_conversation_id", "successor_inbound_message_id",
+            "successor_evidence_id", "successor_evidence_sha256",
+            "content_relied_on_superseded_identity",
             "source_generation", "service_authority", "resolution_errors",
         )
     ]
@@ -208,7 +211,8 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
         and str(outgoing.get("response_class_evidence_id") or "")
     )
     relied_on_superseded = content.get("relied_on_superseded_identity") is True
-    successor = str(evidence.get("successor_work_item_id") or "")
+    successor_evidence = dict(evidence.get("successor_work_item") or {})
+    successor = str(successor_evidence.get("work_item_id") or "")
     if later_inbound and later_inbound not in chronology_ids:
         errors.append("later_inbound_absent_from_chronology")
 
@@ -238,6 +242,24 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
     quarantine_evidence_id, quarantine_evidence_sha = evidence_binding(quarantine, "quarantine")
     protected_evidence_id, protected_evidence_sha = evidence_binding(protected, "protected_decision")
     window_evidence_id, window_evidence_sha = evidence_binding(window, "whatsapp_window")
+    successor_evidence_id = None
+    successor_evidence_sha = None
+    if later_inbound:
+        successor_evidence_id, successor_evidence_sha = evidence_binding(
+            successor_evidence, "successor_work_item"
+        )
+        if not successor:
+            errors.append("later_inbound_successor_binding_missing")
+        if str(successor_evidence.get("contact_id") or "") != str(identity.get("contact_id") or ""):
+            errors.append("successor_contact_identity_mismatch")
+        if str(successor_evidence.get("conversation_id") or "") != exact["conversation_id"]:
+            errors.append("successor_conversation_identity_mismatch")
+        if str(successor_evidence.get("inbound_message_id") or "") != later_inbound:
+            errors.append("successor_inbound_identity_mismatch")
+        if successor_evidence.get("current_actionable") is not True:
+            errors.append("successor_current_actionable_evidence_required")
+        if str(successor_evidence.get("chronology_sha256") or "") != chronology_sha:
+            errors.append("successor_chronology_binding_mismatch")
     if str(window.get("state") or "unknown") not in {"open", "closed", "unknown"}:
         errors.append("whatsapp_window_state_invalid")
     elif str(window.get("state") or "unknown") == "unknown":
@@ -250,11 +272,7 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
     elif quarantine.get("active") is True or delivery_status in AMBIGUOUS_DELIVERY:
         obligation, action = "quarantined_no_retry", "quarantined"
     elif later_inbound:
-        if successor:
-            obligation, action = "superseded_by_later_inbound", "historical"
-        else:
-            obligation, action = "unknown_fail_closed", "indeterminate"
-            errors.append("later_inbound_successor_binding_missing")
+        obligation, action = "superseded_by_later_inbound", "historical"
     elif window.get("state") == "closed" and not content_attributable:
         obligation, action = "closed_window_reengagement_required", "active"
     elif delivery_status in TERMINAL_DELIVERY:
@@ -311,6 +329,11 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
         "chronology_cutoff_at": cutoff,
         "chronology_sha256": chronology_sha,
         "successor_work_item_id": successor or None,
+        "successor_contact_id": successor_evidence.get("contact_id") or None,
+        "successor_conversation_id": successor_evidence.get("conversation_id") or None,
+        "successor_inbound_message_id": successor_evidence.get("inbound_message_id") or None,
+        "successor_evidence_id": successor_evidence_id,
+        "successor_evidence_sha256": successor_evidence_sha,
         "content_relied_on_superseded_identity": relied_on_superseded,
         "source_generation": str(evidence.get("source_generation") or "unavailable"),
         "service_authority": "sam_review_obligation_resolver",

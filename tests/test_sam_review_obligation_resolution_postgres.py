@@ -172,6 +172,72 @@ class SamReviewObligationResolutionPostgresTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(row, (False, "", "replan_from_current_canonical_inventory", "active", None))
 
+    def test_many_predecessors_project_exactly_one_bound_successor(self):
+        conversation_id = f"CONV-SUCCESSOR-{self.suffix}"
+        contact_id = "CONTACT-001"
+        successor_inbound = f"IN-SUCCESSOR-{self.suffix}"
+        successor_id = f"SAM-WORK-{successor_inbound}"
+        for index in range(3):
+            review_id = f"SAM-REVIEW-PREDECESSOR-{self.suffix}-{index}"
+            inbound_id = f"IN-PREDECESSOR-{self.suffix}-{index}"
+            decision = {"canonical_inventory_snapshot": {"selected_pig_ids": ["PIG-2026-1AC2"]}}
+            with psycopg.connect(self.url) as connection:
+                decision_text = connection.execute(
+                    "insert into public.sam_live_stock_conversation_review_events"
+                    "(review_event_id,chatwoot_conversation_id,chatwoot_message_id,decision_json) "
+                    "values(%s,%s,%s,%s::jsonb) returning decision_json::text",
+                    (review_id, conversation_id, inbound_id, json.dumps(decision)),
+                ).fetchone()[0]
+            reviewed = {
+                "review_event_id": review_id,
+                "chatwoot_conversation_id": conversation_id,
+                "chatwoot_message_id": inbound_id,
+                "decision_json": decision,
+                "decision_json_text": decision_text,
+                "decision_json_sha256": hashlib.sha256(decision_text.encode()).hexdigest(),
+            }
+            proof = evidence(1,
+                identity={
+                    "review_event_id": review_id, "account_id": "147387", "inbox_id": "96568",
+                    "contact_id": contact_id, "conversation_id": conversation_id,
+                    "bound_inbound_message_id": inbound_id,
+                    "latest_inbound_message_id": successor_inbound,
+                    "latest_public_message_type": "incoming",
+                },
+                later_inbound_message_id=successor_inbound,
+                public_chronology=[
+                    {"message_id": inbound_id, "message_type": "incoming"},
+                    {"message_id": successor_inbound, "message_type": "incoming"},
+                ],
+                successor_work_item={
+                    "work_item_id": successor_id, "contact_id": contact_id,
+                    "conversation_id": conversation_id, "inbound_message_id": successor_inbound,
+                    "current_actionable": True,
+                    "chronology_sha256": "BOUND_TO_CURRENT_CHRONOLOGY",
+                },
+            )
+            proof["delivery"].update(conversation_id=conversation_id, inbound_message_id=inbound_id)
+            proof["delivery"]["evidence_payload"] = {
+                key: value for key, value in proof["delivery"].items()
+                if key not in {"evidence_id", "evidence_sha256", "evidence_payload"}
+            }
+            proof["delivery"]["evidence_sha256"] = canonical_sha256(proof["delivery"]["evidence_payload"])
+            self.assertTrue(self.record(resolve_review_obligation(
+                review=reviewed, evidence=proof, represented_identity=represented()
+            )))
+        with psycopg.connect(self.url) as connection:
+            predecessors = connection.execute(
+                "select count(*) from public.current_actionable_sam_live_stock_review_events "
+                "where chatwoot_conversation_id=%s", (conversation_id,),
+            ).fetchone()[0]
+            successors = connection.execute(
+                "select count(*),min(inbound_message_id),min(resolution_action) "
+                "from public.current_actionable_sam_review_successor_work_items "
+                "where successor_work_item_id=%s", (successor_id,),
+            ).fetchone()
+        self.assertEqual(predecessors, 0)
+        self.assertEqual(successors, (1, successor_inbound, "active"))
+
 
 if __name__ == "__main__":
     unittest.main()

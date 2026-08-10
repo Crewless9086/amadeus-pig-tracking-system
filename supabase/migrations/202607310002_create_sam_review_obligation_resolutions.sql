@@ -69,6 +69,13 @@ create table if not exists public.sam_review_obligation_resolution_events (
   chronology_cutoff_at timestamptz not null,
   chronology_sha256 text not null check (chronology_sha256 ~ '^[0-9a-f]{64}$'),
   successor_work_item_id text,
+  successor_contact_id text,
+  successor_conversation_id text,
+  successor_inbound_message_id text,
+  successor_evidence_id text,
+  successor_evidence_sha256 text check (
+    successor_evidence_sha256 is null or successor_evidence_sha256 ~ '^[0-9a-f]{64}$'
+  ),
   content_relied_on_superseded_identity boolean not null default false,
   source_generation text not null check (source_generation<>''),
   service_authority text not null check (service_authority='sam_review_obligation_resolver'),
@@ -100,7 +107,12 @@ create table if not exists public.sam_review_obligation_resolution_events (
   ),
   constraint sam_review_successor_binding check (
     customer_obligation_status <> 'superseded_by_later_inbound'
-    or successor_work_item_id is not null
+    or (successor_work_item_id is not null
+        and successor_contact_id=contact_id
+        and successor_conversation_id=conversation_id
+        and successor_inbound_message_id<>inbound_message_id
+        and successor_evidence_id is not null
+        and successor_evidence_sha256 is not null)
   ),
   constraint sam_review_resolution_deterministic_identity check (
     resolution_event_id = 'SAM-REVIEW-RESOLUTION-'
@@ -171,6 +183,11 @@ begin
     p_event->>'whatsapp_window_evidence_id',p_event->>'whatsapp_window_evidence_sha256',
     p_event->>'resolution_action',p_event->>'chronology_cutoff_at',p_event->>'chronology_sha256',
     nullif(p_event->>'successor_work_item_id',''),
+    nullif(p_event->>'successor_contact_id',''),
+    nullif(p_event->>'successor_conversation_id',''),
+    nullif(p_event->>'successor_inbound_message_id',''),
+    nullif(p_event->>'successor_evidence_id',''),
+    nullif(p_event->>'successor_evidence_sha256',''),
     coalesce((p_event->>'content_relied_on_superseded_identity')::boolean,false),
     p_event->>'source_generation',p_event->>'service_authority',
     coalesce(p_event->'resolution_errors','[]'::jsonb)
@@ -236,6 +253,8 @@ begin
     protected_decision_evidence_id,protected_decision_evidence_sha256,
     whatsapp_window_evidence_id,whatsapp_window_evidence_sha256,
     chronology_cutoff_at,chronology_sha256,successor_work_item_id,
+    successor_contact_id,successor_conversation_id,successor_inbound_message_id,
+    successor_evidence_id,successor_evidence_sha256,
     content_relied_on_superseded_identity,source_generation,service_authority,resolution_errors,
     event_payload_sha256
   ) values (
@@ -258,6 +277,9 @@ begin
     p_event->>'protected_decision_evidence_sha256',p_event->>'whatsapp_window_evidence_id',
     p_event->>'whatsapp_window_evidence_sha256',(p_event->>'chronology_cutoff_at')::timestamptz,
     p_event->>'chronology_sha256',nullif(p_event->>'successor_work_item_id',''),
+    nullif(p_event->>'successor_contact_id',''),nullif(p_event->>'successor_conversation_id',''),
+    nullif(p_event->>'successor_inbound_message_id',''),nullif(p_event->>'successor_evidence_id',''),
+    nullif(p_event->>'successor_evidence_sha256',''),
     coalesce((p_event->>'content_relied_on_superseded_identity')::boolean,false),
     p_event->>'source_generation',p_event->>'service_authority',
     coalesce(p_event->'resolution_errors','[]'::jsonb),expected_hash
@@ -289,6 +311,25 @@ select
 from public.sam_live_stock_conversation_review_events review
 join public.current_sam_review_obligation_resolutions resolution
   on resolution.review_event_id=review.review_event_id;
+
+-- Canonical later-inbound work appears once even when many immutable reviews
+-- are predecessors. The evidence-bound successor is deliberately non-sending.
+create or replace view public.current_actionable_sam_review_successor_work_items as
+select distinct on (resolution.successor_work_item_id)
+  resolution.successor_work_item_id,
+  resolution.account_id,resolution.inbox_id,resolution.successor_contact_id as contact_id,
+  resolution.successor_conversation_id as conversation_id,
+  resolution.successor_inbound_message_id as inbound_message_id,
+  resolution.successor_evidence_id,resolution.successor_evidence_sha256,
+  resolution.chronology_cutoff_at,resolution.chronology_sha256,
+  'active_replan_required'::text as customer_obligation_status,
+  'active'::text as resolution_action,
+  false as safe_to_send,false as sends_customer_message,false as mutates_chatwoot
+from public.current_sam_review_obligation_resolutions resolution
+where resolution.customer_obligation_status='superseded_by_later_inbound'
+  and resolution.resolution_action='historical'
+order by resolution.successor_work_item_id,resolution.chronology_cutoff_at desc,
+         resolution.resolution_event_id desc;
 
 -- Keep PR #634's containment until an exact resolution exists. A resolved
 -- historical inventory action is never restored as send authority: active,
@@ -364,6 +405,7 @@ do $$ begin
     execute 'grant select on public.sam_review_obligation_resolution_events to service_role';
     execute 'grant select on public.current_sam_review_obligation_resolutions to service_role';
     execute 'grant select on public.current_resolved_sam_live_stock_review_events to service_role';
+    execute 'grant select on public.current_actionable_sam_review_successor_work_items to service_role';
     execute 'grant select on public.current_actionable_sam_live_stock_review_events to service_role';
     execute 'grant execute on function public.record_sam_review_obligation_resolution(jsonb) to service_role';
   end if;
