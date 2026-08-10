@@ -9,6 +9,7 @@ from modules.sales.sam_review_obligation_resolution import (
     canonical_sha256,
     resolve_review_obligation,
     resolution_identity,
+    successor_work_item_identity,
 )
 
 
@@ -280,7 +281,10 @@ class SamReviewObligationResolutionTests(unittest.TestCase):
                 evidence(
                     later_inbound_message_id="IN-NEW",
                     successor_work_item={
-                        "work_item_id": "SAM-WORK-IN-NEW",
+                        "work_item_id": successor_work_item_identity(
+                            account_id="147387", inbox_id="96568", contact_id="CONTACT-001",
+                            conversation_id="CONV-001", inbound_message_id="IN-NEW",
+                        ),
                         "contact_id": "CONTACT-001",
                         "conversation_id": "CONV-001",
                         "inbound_message_id": "IN-NEW",

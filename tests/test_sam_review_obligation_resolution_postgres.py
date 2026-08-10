@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 
 from modules.sales.sam_review_obligation_resolution import resolve_review_obligation
-from modules.sales.sam_review_obligation_resolution import canonical_sha256
+from modules.sales.sam_review_obligation_resolution import canonical_sha256, successor_work_item_identity
 from tests.test_sam_review_obligation_resolution import evidence, represented, review
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -176,7 +176,10 @@ class SamReviewObligationResolutionPostgresTests(unittest.TestCase):
         conversation_id = f"CONV-SUCCESSOR-{self.suffix}"
         contact_id = "CONTACT-001"
         successor_inbound = f"IN-SUCCESSOR-{self.suffix}"
-        successor_id = f"SAM-WORK-{successor_inbound}"
+        successor_id = successor_work_item_identity(
+            account_id="147387", inbox_id="96568", contact_id=contact_id,
+            conversation_id=conversation_id, inbound_message_id=successor_inbound,
+        )
         for index in range(3):
             review_id = f"SAM-REVIEW-PREDECESSOR-{self.suffix}-{index}"
             inbound_id = f"IN-PREDECESSOR-{self.suffix}-{index}"
@@ -237,6 +240,20 @@ class SamReviewObligationResolutionPostgresTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(predecessors, 0)
         self.assertEqual(successors, (1, successor_inbound, "active"))
+        collision = self.packet(0)
+        collision.update(
+            successor_work_item_id=successor_id,
+            successor_contact_id="CONTACT-001",
+            successor_conversation_id=collision["conversation_id"],
+            successor_inbound_message_id="OTHER-INBOUND",
+            successor_evidence_id="COLLISION-EVIDENCE",
+            successor_evidence_sha256="1" * 64,
+        )
+        from modules.sales.sam_review_obligation_resolution import resolution_payload_sha256, resolution_identity
+        collision["event_payload_sha256"] = resolution_payload_sha256(collision)
+        collision["resolution_event_id"] = resolution_identity(collision)
+        with self.assertRaises(psycopg.Error):
+            self.record(collision)
 
 
 if __name__ == "__main__":

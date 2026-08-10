@@ -49,6 +49,14 @@ def decision_payload_sha256(value: Any) -> str:
     return canonical_sha256(value if isinstance(value, Mapping) else {})
 
 
+def successor_work_item_identity(*, account_id, inbox_id, contact_id,
+                                 conversation_id, inbound_message_id) -> str:
+    material = "|".join(str(value or "") for value in (
+        account_id, inbox_id, contact_id, conversation_id, inbound_message_id,
+    ))
+    return "SAM-WORK-" + hashlib.sha256(material.encode()).hexdigest()[:24].upper()
+
+
 def resolution_identity(packet: Mapping[str, Any]) -> str:
     return "SAM-REVIEW-RESOLUTION-" + resolution_payload_sha256(packet)[:24].upper()
 
@@ -250,6 +258,14 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
         )
         if not successor:
             errors.append("later_inbound_successor_binding_missing")
+        expected_successor = successor_work_item_identity(
+            account_id=identity.get("account_id"), inbox_id=identity.get("inbox_id"),
+            contact_id=successor_evidence.get("contact_id"),
+            conversation_id=successor_evidence.get("conversation_id"),
+            inbound_message_id=successor_evidence.get("inbound_message_id"),
+        )
+        if successor != expected_successor:
+            errors.append("successor_work_item_identity_mismatch")
         if str(successor_evidence.get("contact_id") or "") != str(identity.get("contact_id") or ""):
             errors.append("successor_contact_identity_mismatch")
         if str(successor_evidence.get("conversation_id") or "") != exact["conversation_id"]:

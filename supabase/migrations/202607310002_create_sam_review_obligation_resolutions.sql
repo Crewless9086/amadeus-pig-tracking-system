@@ -114,6 +114,13 @@ create table if not exists public.sam_review_obligation_resolution_events (
         and successor_evidence_id is not null
         and successor_evidence_sha256 is not null)
   ),
+  constraint sam_review_successor_deterministic_identity check (
+    successor_work_item_id is null or successor_work_item_id =
+      'SAM-WORK-' || upper(substr(encode(digest(convert_to(
+        account_id || '|' || inbox_id || '|' || successor_contact_id || '|' ||
+        successor_conversation_id || '|' || successor_inbound_message_id,
+        'UTF8'), 'sha256'), 'hex'), 1, 24))
+  ),
   constraint sam_review_resolution_deterministic_identity check (
     resolution_event_id = 'SAM-REVIEW-RESOLUTION-'
       || upper(substr(event_payload_sha256,1,24))
@@ -315,7 +322,10 @@ join public.current_sam_review_obligation_resolutions resolution
 -- Canonical later-inbound work appears once even when many immutable reviews
 -- are predecessors. The evidence-bound successor is deliberately non-sending.
 create or replace view public.current_actionable_sam_review_successor_work_items as
-select distinct on (resolution.successor_work_item_id)
+select distinct on (
+  resolution.account_id,resolution.inbox_id,resolution.successor_contact_id,
+  resolution.successor_conversation_id,resolution.successor_inbound_message_id
+)
   resolution.successor_work_item_id,
   resolution.account_id,resolution.inbox_id,resolution.successor_contact_id as contact_id,
   resolution.successor_conversation_id as conversation_id,
@@ -328,8 +338,9 @@ select distinct on (resolution.successor_work_item_id)
 from public.current_sam_review_obligation_resolutions resolution
 where resolution.customer_obligation_status='superseded_by_later_inbound'
   and resolution.resolution_action='historical'
-order by resolution.successor_work_item_id,resolution.chronology_cutoff_at desc,
-         resolution.resolution_event_id desc;
+order by resolution.account_id,resolution.inbox_id,resolution.successor_contact_id,
+         resolution.successor_conversation_id,resolution.successor_inbound_message_id,
+         resolution.chronology_cutoff_at desc,resolution.resolution_event_id desc;
 
 -- Keep PR #634's containment until an exact resolution exists. A resolved
 -- historical inventory action is never restored as send authority: active,
