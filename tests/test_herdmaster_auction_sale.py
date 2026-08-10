@@ -57,10 +57,10 @@ def test_sanitized_invoice_fixture_preserves_only_supported_public_accounting_fa
     assert settlement["payment_received"]==settlement["buyer_identity"]=="Unknown"
     assert settlement["lots"][0]["tag_membership"]=="Unknown" and settlement["private_identifiers_included"] is False
 
-def test_optional_grouped_question_never_blocks_sale_confirmation():
+def test_unrecoverable_sublot_and_later_payment_facts_are_not_reasked_or_blocking():
     result = build_auction_sale_preview(report(), evidence())
     assert result["ready_for_confirmation"] and result["question_optional_for_sale"]
-    assert result["grouped_question"] == "Has the R4,470.51 EFT reached the bank account, and if known, which eight pigs were in V10?"
+    assert result["grouped_question"] is None
     complete = build_auction_sale_preview(report(payment_received=True, v10_tags=TAGS[:8]), evidence())
     assert complete["grouped_question"] is None and complete["v11_tags"] == TAGS[8:]
 
