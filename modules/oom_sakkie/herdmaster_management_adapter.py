@@ -109,7 +109,13 @@ def consume_herdmaster_management_round(
         age = (invocation_at - evidence_at).total_seconds()
         if age < 0 or age > MAX_EVIDENCE_AGE_SECONDS:
             return _exception("herdmaster_evidence_generation_stale", invocation_at, principal)
-        result_digest = _digest(prepared)
+        # Evidence generation is freshness metadata, not a material management
+        # result.  A loader may regenerate the same canonical packet a few
+        # microseconds later; bind replay to the actual result while retaining
+        # the generation separately for freshness checks and audit visibility.
+        material_result = dict(prepared)
+        material_result.pop("source_evidence_generation", None)
+        result_digest = _digest(material_result)
         replay = _replay_state(prepared, result_digest, active_digest, context_binding["digest"], prior_consumptions)
         if replay == "changed":
             return _exception("herdmaster_management_round_binding_changed", invocation_at, principal)
@@ -122,6 +128,7 @@ def consume_herdmaster_management_round(
             "invocation_timestamp": invocation_at.isoformat(),
             "invocation_context": context_binding,
             "result_digest": result_digest,
+            "result_digest_version": 2,
             "active_case_deduplication_state": {
                 "active_pig_ids": tuple(sorted(active)),
                 "digest": active_digest,
@@ -247,11 +254,17 @@ def _replay_state(prepared, result_digest, active_digest, context_digest, prior_
         )
         if not same_identity:
             continue
+        prior_digest = row.get("result_digest")
+        legacy_prepared = dict(prepared)
+        legacy_prepared["source_evidence_generation"] = row.get("evidence_generation")
+        digest_matches = prior_digest == result_digest or (
+            row.get("result_digest_version") in (None, 1)
+            and prior_digest == _digest(legacy_prepared)
+        )
         exact = (
             row.get("management_round_identity") == prepared["publication_id"]
             and row.get("deduplication_key") == prepared["deduplication_key"]
-            and row.get("result_digest") == result_digest
-            and row.get("evidence_generation") == prepared["source_evidence_generation"]
+            and digest_matches
             and row.get("active_case_digest") == active_digest
             and row.get("invocation_context_digest") == context_digest
         )

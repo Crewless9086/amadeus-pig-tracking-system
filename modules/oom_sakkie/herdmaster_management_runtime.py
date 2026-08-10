@@ -194,6 +194,7 @@ def _load_prior_consumptions(owner_user_id, invocation_context_digest):
             bindings = [row[0] for row in cursor.fetchall() if isinstance(row[0], dict)]
     return [{"management_round_identity": row.get("management_round_identity"),
         "deduplication_key": row.get("deduplication_key"), "result_digest": row.get("result_digest"),
+        "result_digest_version": row.get("result_digest_version"),
         "evidence_generation": row.get("evidence_generation"),
         "active_case_digest": (row.get("active_case_deduplication_state") or {}).get("digest"),
         "invocation_context_digest": (row.get("invocation_context") or {}).get("digest")} for row in bindings]
