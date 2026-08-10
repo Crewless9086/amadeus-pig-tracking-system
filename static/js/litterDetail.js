@@ -376,6 +376,105 @@ function renderLifecycleOutcomes(litter) {
   setText("litter_outcome_other", outcomes.other);
 }
 
+function afDate(value) {
+  if (!value) return "-";
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("af-ZA", { day: "numeric", month: "long", year: "numeric" }).format(parsed);
+}
+
+function closedOutcomeContext(piglet) {
+  if (piglet.sale_channel || piglet.sale_stream) {
+    const rawChannel = piglet.sale_channel || piglet.sale_stream;
+    const channel = ({ Auction: "Veiling", Livestock: "Lewendehawe", Meat: "Vleis" })[rawChannel] || rawChannel;
+    return `${channel}${piglet.sale_id ? ` / ${piglet.sale_id}` : ""}`;
+  }
+  if (piglet.outcome_category === "breeding") return "Teeldoel";
+  if (piglet.outcome_category === "active_on_farm") {
+    return piglet.current_pen_name || piglet.current_pen_id || piglet.purpose || "Op plaas";
+  }
+  if (piglet.outcome_category === "dead" && !piglet.wean_date) return "Voor speen";
+  const purpose = String(piglet.purpose || "");
+  return piglet.exit_reason || (purpose.toLowerCase() === "unknown" ? "" : purpose) || "-";
+}
+
+function renderClosedLitterView(litter) {
+  const state = detailState(litter);
+  const isClosed = state === "weaned" || state === "completed";
+  const closedView = document.getElementById("closed_litter_view");
+  const workspace = document.getElementById("litter_workspace");
+  const nextPanel = document.getElementById("lifecycle_next_panel");
+  if (!closedView || !workspace) return;
+  closedView.classList.toggle("hidden", !isClosed);
+  workspace.classList.toggle("hidden", isClosed);
+  if (nextPanel) nextPanel.classList.toggle("hidden", isClosed);
+  if (!isClosed) return;
+
+  setLinkedValue("closed_litter_sow", litter.mother_tag_number || litter.mother_pig_id, litter.mother_pig_id ? `/pig/${encodeURIComponent(litter.mother_pig_id)}` : "");
+  setLinkedValue("closed_litter_boar", litter.father_tag_number || litter.father_pig_id, litter.father_pig_id ? `/pig/${encodeURIComponent(litter.father_pig_id)}` : "");
+  setText("closed_litter_birth_date", afDate(litter.birth_date));
+  setText("closed_litter_wean_date", afDate(litter.wean_date));
+  setText("closed_born_alive", litter.born_alive);
+  setText("closed_weaned_count", litter.weaned_count);
+  const bornAlive = Number(litter.born_alive);
+  const weanedCount = Number(litter.weaned_count);
+  setText("closed_survival_rate", bornAlive > 0 && Number.isFinite(weanedCount) ? `${formatNumber((weanedCount / bornAlive) * 100, 1)}%` : "-");
+  setText("closed_average_wean_weight", litter.average_wean_weight_kg !== null && litter.average_wean_weight_kg !== undefined ? `${formatNumber(litter.average_wean_weight_kg, 2)} kg` : "Onbekend");
+  setText("closed_male_count", litter.weaned_male_count);
+  setText("closed_female_count", litter.weaned_female_count);
+
+  const labels = [
+    ["active_on_farm", "Aktief op plaas"], ["breeding", "Teelvarke"],
+    ["auction_sale", "Veilingsverkope"], ["livestock_sale", "Lewendehaweverkope"],
+    ["meat_sale", "Vleisverkope"], ["unclassified_sale", "Ongeklassifiseerde verkope"],
+    ["slaughtered", "Geslag"], ["dead", "Dood"], ["removed", "Verwyder"], ["other", "Ander"],
+  ];
+  const breakdown = litter.outcome_breakdown || {};
+  document.getElementById("closed_outcome_tiles").innerHTML = labels.map(([key, label]) => `
+    <article class="closed-outcome-tile ${(Number(breakdown[key] || 0) === 0) ? "is-zero" : ""}">
+      <span>${escapeHtml(label)}</span><strong>${Number(breakdown[key] || 0)}</strong>
+    </article>
+  `).join("");
+
+  const litterId = litter.litter_id;
+  document.getElementById("closed_outcome_table").innerHTML = `
+    <table class="simple-table closed-outcome-table">
+      <thead><tr><th>Tag</th><th>Geslag</th><th>Speengewig</th><th>Huidige / finale uitkoms</th><th>Gebruik / kanaal</th><th>Datum</th><th></th></tr></thead>
+      <tbody>${(litter.piglets || []).map((piglet) => {
+        const profileHref = pigProfileHref(piglet.pig_id, litterId);
+        const outcomeDate = piglet.sale_date || piglet.exit_date || (piglet.outcome_category === "active_on_farm" || piglet.outcome_category === "breeding" ? "" : piglet.wean_date);
+        return `<tr>
+          <td><strong>${escapeHtml(piglet.tag_number || "Geen tag")}</strong><span class="table-subtext">${escapeHtml(piglet.pig_id || "")}</span></td>
+          <td>${escapeHtml(pigletSexText(piglet.sex))}</td>
+          <td>${escapeHtml(pigletWeanWeightText(piglet))}</td>
+          <td><span class="closed-outcome-pill outcome-${escapeHtml(piglet.outcome_category || "other")}">${escapeHtml(piglet.outcome_label || "Ander")}</span></td>
+          <td>${escapeHtml(closedOutcomeContext(piglet))}</td>
+          <td>${escapeHtml(afDate(outcomeDate))}</td>
+          <td><a class="small-action-button" href="${profileHref}">Maak oop</a></td>
+        </tr>`;
+      }).join("")}</tbody>
+    </table>`;
+
+  const exceptions = [];
+  (litter.piglets || []).forEach((piglet) => {
+    const identity = piglet.tag_number || piglet.pig_id;
+    if (piglet.wean_date && (piglet.wean_weight_kg === null || piglet.wean_weight_kg === undefined)) exceptions.push(`${identity}: speengewig ontbreek.`);
+    if (!piglet.sex) exceptions.push(`${identity}: geslag is onbekend.`);
+    if (piglet.outcome_category === "unclassified_sale") exceptions.push(`${identity}: verkoopkanaal is onbekend.`);
+    if (["auction_sale", "livestock_sale", "meat_sale", "unclassified_sale", "slaughtered", "dead", "removed"].includes(piglet.outcome_category) && !piglet.sale_date && !piglet.exit_date) exceptions.push(`${identity}: uitkomsdatum ontbreek.`);
+  });
+  const exceptionPanel = document.getElementById("closed_litter_exceptions");
+  exceptionPanel.classList.toggle("hidden", exceptions.length === 0);
+  document.getElementById("closed_litter_exception_list").innerHTML = exceptions.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
+document.getElementById("closed_history_toggle")?.addEventListener("click", (event) => {
+  const workspace = document.getElementById("litter_workspace");
+  const showing = !workspace.classList.contains("hidden");
+  workspace.classList.toggle("hidden", showing);
+  event.currentTarget.textContent = showing ? "Wys rekordgeskiedenis" : "Versteek rekordgeskiedenis";
+});
+
 function reconcilePayload(dryRun) {
   return {
     target_born_alive: reconcileTargetBornAlive.value,
@@ -1615,6 +1714,7 @@ async function loadLitterDetail(options = {}) {
     if (window.renderLitterLifecyclePresentation) {
       window.renderLitterLifecyclePresentation(litter);
     }
+    renderClosedLitterView(litter);
     litterPigletsList.innerHTML = "";
 
     if (!litter.piglets.length) {

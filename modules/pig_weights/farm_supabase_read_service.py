@@ -279,10 +279,25 @@ def _current_state_rows(connect_factory=None):
             pig.father_pig_id,
             pig.wean_date,
             pig.wean_weight_kg,
+            pig.exit_date,
             pig.exit_reason,
-            pig.notes
+            pig.notes,
+            sale.sale_id,
+            sale.sale_date,
+            sale.sale_stream,
+            sale.sale_channel
         from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
+        left join lateral (
+            select transaction.sale_id, transaction.sale_date,
+                   transaction.sale_stream, transaction.sale_channel
+            from public.sales_transaction_items item
+            join public.sales_transactions transaction on transaction.sale_id = item.sale_id
+            where item.pig_id = state.pig_id
+              and coalesce(transaction.sale_status, '') <> 'Cancelled'
+            order by transaction.sale_date desc nulls last, transaction.sale_id desc
+            limit 1
+        ) sale on true
         order by coalesce(nullif(state.tag_number, ''), state.pig_id)
         """,
         connect_factory=connect_factory,
@@ -1262,6 +1277,50 @@ def _litter_lifecycle_outcomes(pigs):
     return outcomes
 
 
+def _litter_pig_outcome(row):
+    status = _text(row.get("status")).lower().replace("-", "_").replace(" ", "_")
+    exit_reason = _text(row.get("exit_reason")).lower().replace("-", "_").replace(" ", "_")
+    sale_channel = _text(row.get("sale_channel")).lower()
+    sale_stream = _text(row.get("sale_stream")).lower()
+    purpose = _text(row.get("purpose")).lower().replace("-", "_").replace(" ", "_")
+    if status in {"dead", "died", "deceased"} or exit_reason in {
+        "died", "dead", "deceased", "culled", "lost", "stillborn",
+        "died_after_birth", "crushed_by_sow", "weak_piglet",
+    }:
+        return "dead", "Dood"
+    if status == "slaughtered" or exit_reason in {
+        "slaughter", "slaughtered", "abattoir", "abattoir_sale", "sold_to_abattoir",
+    }:
+        return "slaughtered", "Geslag"
+    if status in {"removed", "disposed"} or exit_reason in {"removed", "disposed", "disposal"}:
+        return "removed", "Verwyder"
+    if status in {"sold", "completed_sale"}:
+        if sale_channel == "auction" or exit_reason == "auction_sale":
+            return "auction_sale", "Veilingsverkoop"
+        if sale_stream == "meat" or exit_reason in {
+            "meat", "meat_sale", "carcass", "carcass_sale", "pork_sale", "processed_meat_sale",
+        }:
+            return "meat_sale", "Vleisverkoop"
+        if sale_stream == "livestock" or sale_channel in {"direct", "livestock"} or exit_reason in {
+            "livestock", "livestock_sale", "live_sale",
+        }:
+            return "livestock_sale", "Lewendehaweverkoop"
+        return "unclassified_sale", "Ongeklassifiseerde verkoop"
+    if status == "active" and row.get("on_farm") is True:
+        if purpose == "breeding":
+            return "breeding", "Teelvark"
+        return "active_on_farm", "Aktief op plaas"
+    return "other", "Ander"
+
+
+def _empty_litter_outcome_breakdown():
+    return {
+        "active_on_farm": 0, "breeding": 0, "auction_sale": 0,
+        "livestock_sale": 0, "meat_sale": 0, "unclassified_sale": 0,
+        "slaughtered": 0, "dead": 0, "removed": 0, "other": 0,
+    }
+
+
 def _derive_litter_status(litter, reconciliation, lifecycle_outcomes):
     explicit_status = _text(litter.get("litter_status"))
     terminal_count = sum(int(lifecycle_outcomes.get(key) or 0) for key in ("sold", "slaughtered", "dead", "removed"))
@@ -1591,6 +1650,7 @@ def get_litter_detail(litter_id, connect_factory=None):
     identified_male_count = 0
     identified_female_count = 0
     active_count = 0
+    outcome_breakdown = _empty_litter_outcome_breakdown()
     for pig in pigs:
         sex = _text(pig.get("sex"))
         if sex == "Male":
@@ -1605,6 +1665,8 @@ def get_litter_detail(litter_id, connect_factory=None):
         wean_weight = _float_or_none(pig.get("wean_weight_kg"))
         if wean_weight is not None:
             wean_weights.append(wean_weight)
+        outcome_category, outcome_label = _litter_pig_outcome(pig)
+        outcome_breakdown[outcome_category] += 1
         piglets.append({
             "pig_id": _text(pig.get("pig_id")),
             "tag_number": _text(pig.get("tag_number")),
@@ -1619,10 +1681,22 @@ def get_litter_detail(litter_id, connect_factory=None):
             "wean_date": _date_text(pig.get("wean_date")),
             "calculated_stage": _calculated_stage(pig),
             "current_pen_id": _text(pig.get("current_pen_id")),
+            "current_pen_name": _text(pig.get("current_pen_name")),
+            "purpose": _text(pig.get("purpose")),
+            "exit_date": _date_text(pig.get("exit_date")),
+            "sale_id": _text(pig.get("sale_id")),
+            "sale_date": _date_text(pig.get("sale_date")),
+            "sale_stream": _text(pig.get("sale_stream")),
+            "sale_channel": _text(pig.get("sale_channel")),
+            "outcome_category": outcome_category,
+            "outcome_label": outcome_label,
         })
     piglets.sort(key=lambda item: (item["tag_number"] or item["pig_id"]).lower())
     average_current_weight = _average(current_weights)
     average_wean_weight = _average(wean_weights)
+    weaned_piglets = [piglet for piglet in piglets if piglet["wean_date"]]
+    weaned_male_count = len([piglet for piglet in weaned_piglets if piglet["sex"] == "Male"])
+    weaned_female_count = len([piglet for piglet in weaned_piglets if piglet["sex"] == "Female"])
     average_weight = average_wean_weight if detail_state in {"weaned", "completed"} else average_current_weight
     wean_date = _date_text(litter.get("wean_date")) or next((piglet["wean_date"] for piglet in piglets if piglet["wean_date"]), "")
     observed_male_count = _float_or_none(litter.get("male_count"))
@@ -1699,6 +1773,10 @@ def get_litter_detail(litter_id, connect_factory=None):
         "observed_female_count": observed_female_count,
         "identified_male_count": identified_male_count,
         "identified_female_count": identified_female_count,
+        "weaned_male_count": weaned_male_count,
+        "weaned_female_count": weaned_female_count,
+        "born_alive": reconciliation.get("born_alive"),
+        "weaned_count": _float_or_none(litter.get("weaned_count")),
         "first_treatment_tally_recorded": tally_recorded,
         "first_treatment_complete": first_treatment_complete,
         "first_treatment_partial": first_treatment_partial,
@@ -1715,6 +1793,7 @@ def get_litter_detail(litter_id, connect_factory=None):
         "attention": attention,
         "reconciliation": reconciliation,
         "lifecycle_outcomes": lifecycle_outcomes,
+        "outcome_breakdown": outcome_breakdown,
         **wean_timing,
         "wean_status": "Complete" if detail_state in {"weaned", "completed"} else "",
         "wean_date": wean_date,

@@ -2545,5 +2545,23 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('@pig_weights_bp.route("/bulk-batches/<batch_id>", methods=["GET"])', routes)
 
 
+    def test_closed_litter_view_prioritizes_performance_and_outcomes_in_afrikaans(self):
+        template = Path("templates/litter-detail.html").read_text(encoding="utf-8")
+        js = Path("static/js/litterDetail.js").read_text(encoding="utf-8")
+        css = Path("static/css/main.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="closed_litter_view"', template)
+        self.assertIn("Lewend gebore", template)
+        self.assertIn("Gespeen", template)
+        self.assertIn("Gem. speengewig", template)
+        self.assertIn("Waar is hulle nou?", template)
+        self.assertIn("Jong Datum", template)
+        self.assertIn("renderClosedLitterView", js)
+        self.assertIn("Veilingsverkope", js)
+        self.assertIn("Lewendehaweverkope", js)
+        self.assertIn("Ongeklassifiseerde verkope", js)
+        self.assertIn("closed-outcome-table", css)
+
+
 if __name__ == "__main__":
     unittest.main()

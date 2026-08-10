@@ -6,12 +6,16 @@
   <title>Amadeus Litter Detail</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/litterLifecycle.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
 </head>
 <body>
-  <div class="page-shell litter-detail-shell">
-    <div class="page-card litter-detail-page">
-      <div class="page-header page-header-with-link">
+  <div class="farm-app-shell litter-detail-app-shell">
+    {% include '_farm_nav.html' %}
+    <main class="operations-page litter-detail-shell">
+    <div class="page-card litter-detail-page farm-record-page">
+      <div class="page-header page-header-with-link farm-record-hero">
         <div>
+          <span class="farm-eyebrow">HERDMASTER · Werpselrekord</span>
           <h1 id="litter_title">Werpselrekord</h1>
           <p id="litter_subtitle">Laai werpselbesonderhede...</p>
         </div>
@@ -23,13 +27,59 @@
 
       <div id="litter_message" class="message-box hidden"></div>
 
-      <section class="lifecycle-next-action" aria-live="polite">
+      <section id="lifecycle_next_panel" class="lifecycle-next-action" aria-live="polite">
         <span class="lifecycle-next-kicker">Volgende stap</span>
         <strong id="lifecycle_next_action">Laai die werpsel se huidige stadium...</strong>
         <span id="lifecycle_next_reason"></span>
       </section>
 
-      <div class="litter-workspace">
+      <section id="closed_litter_view" class="closed-litter-view hidden">
+        <div class="closed-litter-hero farm-record-banner">
+          <div>
+            <span class="closed-litter-kicker">WERPSELSIKLUS VOLTOOI</span>
+            <h2>Werpselprestasie en uitkomste</h2>
+            <p>Die werpsel is klaar gespeen. Hierdie oorsig wys die speenresultaat en waar elke vark nou is.</p>
+          </div>
+          <button type="button" id="closed_history_toggle" class="button-link button-link-secondary">Wys rekordgeskiedenis</button>
+        </div>
+
+        <div class="closed-litter-parent-line">
+          <div><span>Sog</span><strong id="closed_litter_sow">-</strong></div>
+          <div><span>Beer</span><strong id="closed_litter_boar">-</strong></div>
+          <div><span>Jong Datum</span><strong id="closed_litter_birth_date">-</strong></div>
+          <div><span>Speen Datum</span><strong id="closed_litter_wean_date">-</strong></div>
+        </div>
+
+        <div class="closed-litter-metrics">
+          <article class="metric-born"><span>Lewend gebore</span><strong id="closed_born_alive">-</strong></article>
+          <article class="metric-weaned"><span>Gespeen</span><strong id="closed_weaned_count">-</strong></article>
+          <article class="metric-survival"><span>Speenoorlewing</span><strong id="closed_survival_rate">-</strong></article>
+          <article class="metric-weight"><span>Gem. speengewig</span><strong id="closed_average_wean_weight">-</strong></article>
+          <article class="metric-male"><span>Bere gespeen</span><strong id="closed_male_count">-</strong></article>
+          <article class="metric-female"><span>Soggies gespeen</span><strong id="closed_female_count">-</strong></article>
+        </div>
+
+        <section class="closed-litter-section">
+          <div class="section-title-row">
+            <div><h2>Waar is hulle nou?</h2><p>Elke vark verskyn in een bewysgebaseerde uitkoms.</p></div>
+          </div>
+          <div id="closed_outcome_tiles" class="closed-outcome-tiles"></div>
+        </section>
+
+        <section class="closed-litter-section">
+          <div class="section-title-row">
+            <div><h2>Varkuitkomste</h2><p>Speengewig, huidige gebruik en finale uitkoms per vark.</p></div>
+          </div>
+          <div id="closed_outcome_table" class="simple-table-wrap"></div>
+        </section>
+
+        <section id="closed_litter_exceptions" class="closed-litter-section closed-litter-exceptions hidden">
+          <div class="section-title-row"><div><h2>Ontbrekende of onsekere feite</h2></div></div>
+          <ul id="closed_litter_exception_list"></ul>
+        </section>
+      </section>
+
+      <div id="litter_workspace" class="litter-workspace">
         <main class="litter-main-column">
           <section id="litter_summary_panel" class="litter-summary-panel">
             <div class="section-title-row">
@@ -485,9 +535,10 @@
         </aside>
       </div>
     </div>
+    </main>
   </div>
 
   <script src="{{ url_for('static', filename='js/litterLifecycleLayout.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260810-lifecycle"></script>
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260810-closed-outcomes"></script>
 </body>
 </html>

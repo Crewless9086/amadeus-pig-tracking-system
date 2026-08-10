@@ -1557,5 +1557,34 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(result[0]["pen_name"], "Grower")
 
 
+    def test_closed_litter_detail_exposes_weaning_performance_and_exact_outcomes(self):
+        litters = [{
+            "litter_id": "LIT-CLOSED", "farrowing_date": date(2026, 5, 5),
+            "wean_date": date(2026, 6, 10), "weaned_count": 2,
+            "born_alive": 3, "total_born": 3, "litter_status": "Weaned",
+        }]
+        pigs = {"LIT-CLOSED": [
+            {"pig_id": "PIG-A", "tag_number": "101", "sex": "Female", "status": "Sold", "on_farm": False,
+             "litter_id": "LIT-CLOSED", "wean_date": date(2026, 6, 10), "wean_weight_kg": 5.0,
+             "sale_channel": "Auction", "sale_stream": "Livestock", "sale_id": "SALE-1", "sale_date": date(2026, 8, 5)},
+            {"pig_id": "PIG-B", "tag_number": "102", "sex": "Male", "status": "Active", "on_farm": True,
+             "purpose": "Breeding", "litter_id": "LIT-CLOSED", "wean_date": date(2026, 6, 10), "wean_weight_kg": 7.0},
+            {"pig_id": "PIG-C", "tag_number": "", "sex": "", "status": "Died", "on_farm": False,
+             "litter_id": "LIT-CLOSED", "wean_date": None, "wean_weight_kg": None},
+        ]}
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs)), \
+             patch.object(farm_supabase_read_service, "_fetch_all", return_value=[]):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-CLOSED")
+
+        self.assertEqual(detail["weaned_count"], 2.0)
+        self.assertEqual(detail["average_wean_weight_kg"], 6.0)
+        self.assertEqual(detail["weaned_male_count"], 1)
+        self.assertEqual(detail["weaned_female_count"], 1)
+        self.assertEqual(detail["outcome_breakdown"]["auction_sale"], 1)
+        self.assertEqual(detail["outcome_breakdown"]["breeding"], 1)
+        self.assertEqual(detail["outcome_breakdown"]["dead"], 1)
+        self.assertEqual(detail["piglets"][0]["outcome_label"], "Veilingsverkoop")
+
+
 if __name__ == "__main__":
     unittest.main()
