@@ -33,6 +33,7 @@ def consume_current_herdmaster_management(*, authority: Any, owner_user_id: str,
         prior = (prior_loader or _load_prior_consumptions)(
             str(owner_user_id), str(auth["context"].get("digest") or ""))
         canonical = canonical_loader()
+        observations = _bind_legacy_observation_tasks(observations, canonical)
     except Exception:
         return _contained("herdmaster_management_runtime_evidence_unavailable", now)
     result = consume_herdmaster_management_round(authority=authority,
@@ -60,6 +61,48 @@ def consume_current_herdmaster_management(*, authority: Any, owner_user_id: str,
             return {**result, "status": "herdmaster_management_round_replay_suppressed",
                 "specialist_result": None, "accepted_work_item_count": 0}
     return result
+
+
+def _bind_legacy_observation_tasks(observations, canonical):
+    """Bind older authenticated observations to their sole current pig task.
+
+    Early observation events predate ``canonical_task_id``.  Pig identity is
+    already authenticated and explicit; a binding is recoverable only when
+    the current canonical round contains exactly one task for that pig.
+    Observations with no current task are irrelevant to this round. Existing
+    task bindings are never rewritten, so mismatches still fail closed in the
+    pure evaluator.
+    """
+    task_ids = {}
+    ambiguous = set()
+    for raw in canonical.get("tasks") or () if isinstance(canonical, Mapping) else ():
+        if not isinstance(raw, Mapping):
+            continue
+        pig_id = str(raw.get("pig_id") or "").strip()
+        task_id = str(raw.get("task_id") or "").strip()
+        if not pig_id or not task_id:
+            continue
+        if pig_id in task_ids:
+            ambiguous.add(pig_id)
+        else:
+            task_ids[pig_id] = task_id
+    bound = []
+    for raw in observations:
+        if not isinstance(raw, Mapping):
+            bound.append(raw)
+            continue
+        row = dict(raw)
+        if row.get("canonical_task_id"):
+            bound.append(row)
+            continue
+        pig_id = str(row.get("pig_id") or "").strip()
+        if pig_id in ambiguous:
+            raise ValueError("legacy_owner_observation_task_ambiguous")
+        task_id = task_ids.get(pig_id)
+        if task_id:
+            row["canonical_task_id"] = task_id
+            bound.append(row)
+    return bound
 
 
 def _connect():
