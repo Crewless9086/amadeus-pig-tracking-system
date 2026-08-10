@@ -10,7 +10,12 @@ def record_confirmed_auction_sale(report,evidence_loader,confirmation,*,authorit
     if not isinstance(confirmation,dict) or confirmation.get("owner_confirmed") is not True or not confirmation.get("confirmation_id"): return _result(False,"durable_owner_confirmation_required"),403
     op=str(confirmation.get("operation_id") or "")
     confirmed_hash=str(confirmation.get("preview_hash") or "")
-    if not op or not confirmed_hash or not confirmation.get("evidence_generation"): return _result(False,"confirmation_operation_or_evidence_required"),409
+    provider_binding=tuple(str(confirmation.get(key) or "").strip() for key in
+        ("owner_user_id","private_chat_id","provider_message_id","provider_timestamp","confirmation_text_sha256"))
+    if (not op or not confirmed_hash or not confirmation.get("evidence_generation")
+            or not all(provider_binding) or provider_binding[0]!=provider_binding[1]
+            or not re.fullmatch(r"[0-9a-f]{64}",provider_binding[4])):
+        return _result(False,"confirmation_operation_or_provider_evidence_required"),409
     url=(database_url if database_url is not None else os.getenv(DATABASE_URL_ENV,"" )).strip()
     if connect_factory is None:
         import psycopg; connect_factory=lambda:psycopg.connect(url,connect_timeout=10)
@@ -21,6 +26,16 @@ def record_confirmed_auction_sale(report,evidence_loader,confirmation,*,authorit
         cur.execute("select sale_id,confirmed_preview_hash from sales_transactions where operation_id=%s",(op,)); existing=cur.fetchone()
         if existing:
             if str(existing[1])!=confirmed_hash: return _result(False,"operation_identity_conflict"),409
+            cur.execute("""select confirmation_id from app_private.herdmaster_auction_confirmation_claims
+              where operation_id=%s and preview_hash=%s and evidence_generation=%s
+                and owner_user_id=%s and private_chat_id=%s and provider_message_id=%s
+                and provider_timestamp=%s::timestamptz and confirmation_text_sha256=%s
+                and confirmation_id=%s""",(op,confirmed_hash,
+                confirmation["evidence_generation"],*provider_binding[:3],
+                confirmation["provider_timestamp"],provider_binding[4],confirmation["confirmation_id"]))
+            claim=cur.fetchone()
+            if not claim:
+                return _result(False,"operation_confirmation_identity_conflict"),409
             return _result(True,"replayed_zero_rows",sale_id=str(existing[0]),rows_created=0,replay=True),200
         initial=build_auction_sale_preview(report,evidence_loader())
         if not initial.get("success") or not initial.get("ready_for_confirmation"): return _result(False,"preview_not_ready",preview=initial),409
@@ -39,6 +54,12 @@ def record_confirmed_auction_sale(report,evidence_loader,confirmation,*,authorit
         cur.execute("""select pig_id,source_record_id,outlet_type from pig_active_outlets
           where pig_id=any(%s) and active order by pig_id for update""",(ids,))
         if cur.fetchall(): return _result(False,"current_reservation_conflict"),409
+        cur.execute("""insert into app_private.herdmaster_auction_confirmation_claims(
+          operation_id,preview_hash,evidence_generation,owner_user_id,private_chat_id,
+          provider_message_id,provider_timestamp,confirmation_text_sha256,confirmation_id)
+          values(%s,%s,%s,%s,%s,%s,%s::timestamptz,%s,%s)""",
+          (op,confirmed_hash,confirmation["evidence_generation"],*provider_binding[:3],
+           confirmation["provider_timestamp"],provider_binding[4],confirmation["confirmation_id"]))
         sale_id="SALE-AUCT-"+hashlib.sha256(op.encode()).hexdigest()[:20].upper()
         received=None
         payment_status="Unknown"
@@ -59,7 +80,21 @@ def record_confirmed_auction_sale(report,evidence_loader,confirmation,*,authorit
             cur.execute("""insert into pig_lifecycle_events(lifecycle_event_id,pig_id,lifecycle_event_type,effective_at,actor_reference,source_system,source_reference,event_note,event_payload,idempotency_key)
               values(%s,%s,'exited_farm',%s::date::timestamptz,%s,'owner',%s,'Auction Sale',%s::jsonb,%s)""",(event_id,pid,initial["sale_date"],str(authority.get("actor_reference") or "owner"),initial["preview_hash"],json.dumps({"sale_id":sale_id,"sale_channel":"Auction","resulting_status":"Sold","resulting_on_farm":False},sort_keys=True),op+":"+pid))
         cur.execute("update pig_active_outlets set active=false,released_at=now() where source_record_id=%s and outlet_type='customer_sale' and active",(sale_id,))
-      return _result(True,"auction_sale_recorded",sale_id=sale_id,rows_created=37,pig_count=18,gross_revenue_ex_vat="4180.00",net_settlement_payable="4470.51",payment_received=received is not None,replay=False),201
+        cur.execute("""select count(*),count(*) filter(where unit_price is null and line_total is null)
+          from sales_transaction_items where sale_id=%s""",(sale_id,)); item_counts=cur.fetchone()
+        cur.execute("select count(*) from pigs where pig_id=any(%s) and status='Sold' and on_farm=false",(ids,)); sold_count=cur.fetchone()[0]
+        cur.execute("select count(*) from pig_lifecycle_events where idempotency_key like %s",(op+':%',)); exit_count=cur.fetchone()[0]
+        cur.execute("""select gross_total,output_vat,gross_including_vat,commission_ex_vat,
+          commission_input_vat,commission_including_vat,other_deductions,net_settlement_payable,
+          received_total,payment_status from sales_transactions where sale_id=%s""",(sale_id,)); money=cur.fetchone()
+        expected_money=("4180.00","627.00","4807.00","292.60","43.89","336.49","0.00","4470.51",None,"Unknown")
+        actual_money=tuple(None if value is None else str(value) for value in money)
+        if tuple(item_counts)!=(18,18) or sold_count!=18 or exit_count!=18 or actual_money!=expected_money:
+            raise RuntimeError("auction_transaction_readback_mismatch")
+      return _result(True,"auction_sale_recorded",sale_id=sale_id,rows_created=37,pig_count=18,
+          sale_count=1,item_count=18,exit_count=18,sold_off_farm_count=18,
+          gross_revenue_ex_vat="4180.00",net_settlement_payable="4470.51",
+          payment_received=None,replay=False,transaction_readback_verified=True),201
     except Exception as exc: return _result(False,"auction_sale_transaction_rolled_back",error_type=exc.__class__.__name__),503
 
 def _result(success,status,**extra): return {"success":success,"status":status,"writes_to_sheets":False,**extra}

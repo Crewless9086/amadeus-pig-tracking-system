@@ -61,7 +61,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         payload["clarification_question"] = str(
             result.get("clarification_question") or text)[:240]
     for key in ("execution_id", "entity_id", "domain", "contextual_task_kind",
-                "confirmation_prompt_sha256"):
+                "confirmation_prompt_sha256", "operation_id", "preview_hash",
+                "evidence_generation", "confirmation_token",
+                "confirmation_provider_message_id", "confirmation_provider_timestamp",
+                "confirmation_text_sha256"):
         if str(result.get(key) or "").strip():
             payload[key] = str(result.get(key))
     if isinstance(result.get("required_owner_confirmations"), (list, tuple)):
@@ -407,6 +410,11 @@ def _event_store(action, identity, payload):
     event["decision_json"] = {}; event["facts_json"] = {}; event["customer_message_excerpt"] = ""; event["sam_reply_excerpt"] = ""
     result, status = record_sam_live_stock_review_event(event)
     return {**result, "success": status < 400 and result.get("success") is True}
+
+
+def load_family_lifecycle(card_mission_id: str, *, event_store=None):
+    """Read one existing family lifecycle without creating a second store."""
+    return list((event_store or _event_store)("load", str(card_mission_id or ""), None) or [])
 
 
 def _send_telegram(chat_id, text):

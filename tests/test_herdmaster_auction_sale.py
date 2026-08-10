@@ -97,13 +97,16 @@ def test_payable_does_not_imply_received_and_payment_can_reconcile_later():
 
 def test_confirmation_binding_atomic_success_replay_and_rollback():
     preview = build_auction_sale_preview(report(), evidence())
-    confirm = {"owner_confirmed":True,"confirmation_id":"CONF-1","preview_hash":preview["preview_hash"],"operation_id":preview["operation_id"],"evidence_generation":preview["evidence_generation"]}
+    confirm = {"owner_confirmed":True,"confirmation_id":"CONF-1","preview_hash":preview["preview_hash"],"operation_id":preview["operation_id"],"evidence_generation":preview["evidence_generation"],
+        "owner_user_id":"5721652188","private_chat_id":"5721652188","provider_message_id":"9001",
+        "provider_timestamp":"2026-08-10T12:00:00Z","confirmation_text_sha256":"b"*64}
     mismatch_cur,mismatch_conn=Cursor(),Conn()
     mismatch, status = record_confirmed_auction_sale(report(), evidence, {**confirm,"preview_hash":"wrong"}, authority={"principal_type":"service","principal_id":"oom"}, authority_verifier=lambda _:True, connect_factory=lambda:mismatch_conn.bind(mismatch_cur))
     assert status == 409 and mismatch["status"] == "confirmation_preview_mismatch"
     cur, conn = Cursor(), Conn()
     result, status = record_confirmed_auction_sale(report(), evidence, confirm, authority={"principal_type":"service","principal_id":"oom","actor_reference":"owner"}, authority_verifier=lambda _:True, connect_factory=lambda:conn.bind(cur))
     assert status == 201 and result["rows_created"] == 37 and conn.committed
+    assert result["transaction_readback_verified"] is True
     assert sum("insert into sales_transaction_items" in sql for sql,_ in cur.calls) == 18
     header = next(args for sql,args in cur.calls if "insert into sales_transactions" in sql)
     assert header[1:7] == ("2026-08-05","4470.51","4180.00","627.00","4807.00","336.49")
@@ -114,11 +117,38 @@ def test_confirmation_binding_atomic_success_replay_and_rollback():
     failed, status = record_confirmed_auction_sale(report(), evidence, confirm, authority={"principal_type":"service","principal_id":"oom"}, authority_verifier=lambda _:True, connect_factory=lambda:fail_conn.bind(fail_cur))
     assert status == 503 and fail_conn.rolled_back
 
+
+def test_prewrite_evidence_conflict_does_not_persist_confirmation_claim_and_retry_succeeds():
+    preview = build_auction_sale_preview(report(), evidence())
+    confirm = {"owner_confirmed":True,"confirmation_id":"CONF-RETRY",
+        "preview_hash":preview["preview_hash"],"operation_id":preview["operation_id"],
+        "evidence_generation":preview["evidence_generation"],"owner_user_id":"5721652188",
+        "private_chat_id":"5721652188","provider_message_id":"9002",
+        "provider_timestamp":"2026-08-10T12:01:00Z","confirmation_text_sha256":"c"*64}
+    changed = evidence(); changed["pigs"][0]["status"] = "Sold"; changed["pigs"][0]["on_farm"] = False
+    reads = iter((evidence(), changed))
+    conflict_cur, conflict_conn = Cursor(), Conn()
+    result, status = record_confirmed_auction_sale(report(), lambda: next(reads), confirm,
+        authority={"principal_type":"service","principal_id":"oom"},
+        authority_verifier=lambda _:True, connect_factory=lambda:conflict_conn.bind(conflict_cur))
+    assert status == 409 and result["status"] == "evidence_changed_repreview_required"
+    assert not any("insert into app_private.herdmaster_auction_confirmation_claims" in sql
+                   for sql, _ in conflict_cur.calls)
+    retry_cur, retry_conn = Cursor(), Conn()
+    result, status = record_confirmed_auction_sale(report(), evidence, confirm,
+        authority={"principal_type":"service","principal_id":"oom"},
+        authority_verifier=lambda _:True, connect_factory=lambda:retry_conn.bind(retry_cur))
+    assert status == 201 and result["transaction_readback_verified"] is True
+
 def test_migration_has_vat_commission_payable_and_duplicate_guards():
     sql = Path("supabase/migrations/202608080001_add_governed_livestock_auction_sales.sql").read_text(encoding="utf-8")
     for field in ("output_vat","gross_including_vat","commission_ex_vat","commission_input_vat","commission_including_vat","other_deductions","net_settlement_payable","payment_received_evidence_json","payment_evidence_sha256"):
         assert field in sql
     assert "uq_sales_transactions_auction_reference" in sql and "sales_transactions_auction_invoice_arithmetic_check" in sql
+    claim_sql = Path("supabase/migrations/202608100001_add_auction_confirmation_claims.sql").read_text(encoding="utf-8")
+    assert "operation_id text primary key" in claim_sql
+    assert "provider_message_id text not null unique" in claim_sql
+    assert "owner_user_id = private_chat_id" in claim_sql
 
 def test_later_payment_reconciliation_updates_same_sale_and_replays_zero():
     evidence_row={"amount":"4470.51","received_date":"2026-08-09","evidence_id":"BANK-PRIVATE-1","evidence_sha256":"b"*64}
@@ -148,6 +178,13 @@ class Cursor:
     def fetchone(self):
         self.fetches += 1
         if self.fetches == 1: return ("SALE-EXISTING",self.preview) if self.replay else None
+        if self.replay and self.fetches == 2:
+            return ("CONF-1",)
+        if not self.replay and self.fetches == 2: return (18,18)
+        if not self.replay and self.fetches in (3,4): return (18,)
+        if not self.replay and self.fetches == 5:
+            return ("4180.00","627.00","4807.00","292.60","43.89","336.49",
+                    "0.00","4470.51",None,"Unknown")
     def fetchall(self):
         sql=self.calls[-1][0]
         return [(pid,"Active",True,"Sale",False) for pid in sorted(PIG_IDS)] if "select p.pig_id,p.status,p.on_farm,p.purpose" in sql else []
