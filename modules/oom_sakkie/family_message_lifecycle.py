@@ -111,6 +111,29 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
 
     if card_id:
         update_id = card_mission_id + "-UPDATE-" + text_sha[:20].upper()
+        prior_update = [row for row in events
+            if str(row.get("event_id") or "").startswith(update_id)]
+        ambiguous_edit = any(row.get("state") == "contained"
+            and row.get("reason") == "telegram_edit_unconfirmed" for row in prior_update)
+        if ambiguous_edit and result.get("requires_visible_notification") is True:
+            # Never retry the ambiguous edit. A must-notice lifecycle question
+            # gets one separately claimed provider notification instead.
+            notification_id = card_mission_id + "-VISIBLE-WAIT-" + text_sha[:20].upper()
+            notification_events = [row for row in events
+                if str(row.get("event_id") or "").startswith(notification_id)]
+            if any(row.get("state") == "notification_delivered"
+                    for row in notification_events):
+                return {"success": True, "status": "family_message_replayed_noop",
+                    "mission_id": mission_id, "card_mission_id": card_mission_id,
+                    "telegram_message_id": card_id,
+                    "telegram_sends": 0, "telegram_edits": 0}
+            if notification_events:
+                return {"success": False, "status": "family_message_notification_ambiguous",
+                    "mission_id": mission_id, "card_mission_id": card_mission_id,
+                    "telegram_message_id": card_id,
+                    "telegram_sends": 0, "telegram_edits": 0}
+            return _deliver_visible_notification(parsed, payload, text, mission_id,
+                card_mission_id, card_id, text_sha, store, sender, prior_edits=0)
         claimed = store("record", update_id, {**payload, "event_id": update_id,
             "state": "update_attempted", "telegram_message_id": card_id})
         if claimed.get("created") is False:
