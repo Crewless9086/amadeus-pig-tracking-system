@@ -617,13 +617,23 @@ def _load_pending_specialist_context(parsed):
 def _project_pending_history(history, observed):
     if not history:
         return None
-    current = dict(history[-1])
-    delivered = next((item for item in reversed(history)
-                      if str(item.get("delivery_provider_timestamp") or "")), {})
+    lifecycle = next((item for item in reversed(history)
+                      if item.get("state") in {"delivered", "updated"}), None)
+    if lifecycle is None:
+        return None
+    current = dict(lifecycle)
+    lifecycle_mission = str(lifecycle.get("mission_id") or "")
+    lifecycle_card = str(lifecycle.get("card_mission_id") or "")
+    bound_history = [item for item in history
+                     if str(item.get("mission_id") or "") == lifecycle_mission
+                     and str(item.get("card_mission_id") or "") == lifecycle_card]
+    delivered = next((item for item in reversed(bound_history)
+                      if str(item.get("delivery_provider_timestamp") or "")
+                      ), {})
     current["delivery_provider_timestamp"] = delivered.get("delivery_provider_timestamp")
     current["telegram_message_id"] = current.get("telegram_message_id") or delivered.get("telegram_message_id")
     def retained(key, fallback=""):
-        return current.get(key) or next((item.get(key) for item in reversed(history)
+        return current.get(key) or next((item.get(key) for item in reversed(bound_history)
                                          if item.get(key)), fallback)
     current["contextual_task_kind"] = retained("contextual_task_kind") or retained("semantic_intent")
     current["required_owner_confirmations"] = retained("required_owner_confirmations", [])
