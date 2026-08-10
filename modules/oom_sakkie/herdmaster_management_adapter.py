@@ -106,7 +106,7 @@ def consume_herdmaster_management_round(
         )
         _validate_round(prepared)
         evidence_at = _time(prepared["source_evidence_generation"])
-        age = (invocation_at - evidence_at).total_seconds()
+        age = (trusted_now - evidence_at).total_seconds()
         if age < 0 or age > MAX_EVIDENCE_AGE_SECONDS:
             return _exception("herdmaster_evidence_generation_stale", invocation_at, principal)
         # Evidence generation is freshness metadata, not a material management
@@ -146,7 +146,7 @@ def consume_herdmaster_management_round(
                 "systemic_exception": None,
                 **ZERO_AUTHORITY,
             }
-        specialist_result = _to_specialist_result(prepared, evidence_at, invocation_at)
+        specialist_result = _to_specialist_result(prepared, evidence_at, trusted_now)
         return {
             "success": True,
             "status": "herdmaster_management_round_consumed",
