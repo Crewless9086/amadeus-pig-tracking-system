@@ -388,6 +388,55 @@ def test_confirmation_waiting_delivery_reload_then_ch2_presence_retains_original
     assert value["hardware_commands"]==0 and value["writes_farm_data"] is False
 
 
+def test_visible_notification_receipt_does_not_replace_active_waiting_lifecycle():
+    prompt_sha="a"*64; answer_sha="b"*64
+    history=[{"event_id":"MISSION-DELIVERED","state":"delivered",
+        "task_state":"waiting_for_input","mission_id":"MISSION","card_mission_id":"MISSION",
+        "telegram_message_id":"3480","delivery_provider_timestamp":(NOW-timedelta(minutes=4)).isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning","text_sha256":prompt_sha},
+        {"event_id":"MISSION-UPDATE-X-DELIVERED","state":"updated",
+         "task_state":"waiting_for_input","mission_id":"MISSION","card_mission_id":"MISSION",
+         "telegram_message_id":"3480","contextual_task_kind":"fertilizer_commissioning",
+         "text_sha256":answer_sha,"accepted_owner_confirmation_binding":{
+             "prompt_sha256":prompt_sha,"facts":{"interlock_off":True,"no_enabled_scene":True}}},
+        {"event_id":"MISSION-VISIBLE-WAIT-X-DELIVERED","state":"notification_delivered",
+         "task_state":"waiting_for_input","mission_id":"MISSION","card_mission_id":"MISSION",
+         "telegram_message_id":"3480","notification_message_id":"3489",
+         "delivery_provider_timestamp":(NOW-timedelta(minutes=1)).isoformat(),
+         "text_sha256":answer_sha}]
+    projected=_project_pending_history(history,NOW)
+    assert projected["state"]=="updated" and projected["task_state"]=="waiting_for_input"
+    assert projected["telegram_message_id"]=="3480"
+    assert projected["delivery_provider_timestamp"]==(NOW-timedelta(minutes=1)).isoformat()
+    assert projected["accepted_owner_confirmation_binding"]["facts"]=={
+        "interlock_off":True,"no_enabled_scene":True}
+
+
+def test_scheduler_notification_cannot_consume_contextual_owner_reply():
+    history=[{"event_id":"MISSION-UPDATE-X-DELIVERED","state":"updated",
+        "task_state":"waiting_for_input","mission_id":"MISSION","card_mission_id":"MISSION",
+        "telegram_message_id":"3480","delivery_provider_timestamp":(NOW-timedelta(minutes=2)).isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning","text_sha256":"a"*64},
+        {"event_id":"OOM-SCHEDULE-ROOTLINE-OTHER-DELIVERED","state":"notification_delivered",
+         "mission_id":"OOM-SCHEDULE-ROOTLINE-OTHER","card_mission_id":"MISSION",
+         "delivery_provider_timestamp":(NOW-timedelta(minutes=1)).isoformat()}]
+    projected=_project_pending_history(history,NOW)
+    assert projected["mission_id"]=="MISSION"
+    assert projected["contextual_task_kind"]=="fertilizer_commissioning"
+    assert projected["delivery_provider_timestamp"]==(NOW-timedelta(minutes=2)).isoformat()
+
+
+def test_fresh_other_mission_receipt_cannot_revive_stale_waiting_lifecycle():
+    history=[{"event_id":"MISSION-UPDATE-X-DELIVERED","state":"updated",
+        "task_state":"waiting_for_input","mission_id":"MISSION","card_mission_id":"MISSION",
+        "telegram_message_id":"3480","delivery_provider_timestamp":(NOW-timedelta(hours=7)).isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning","text_sha256":"a"*64},
+        {"event_id":"OOM-SCHEDULE-ROOTLINE-OTHER-DELIVERED","state":"notification_delivered",
+         "mission_id":"OOM-SCHEDULE-ROOTLINE-OTHER","card_mission_id":"MISSION",
+         "delivery_provider_timestamp":(NOW-timedelta(minutes=1)).isoformat()}]
+    assert _project_pending_history(history,NOW) is None
+
+
 def test_invalid_dispatch_result_is_terminal_and_replay_does_not_dispatch_again():
     item={**operational("Done; at fertilizer valves now"),"semantic":{
         "domain":"rootline","intent":"commissioning_ready","message_kind":"confirmation",

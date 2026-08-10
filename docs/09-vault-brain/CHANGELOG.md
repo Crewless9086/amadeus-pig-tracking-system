@@ -28,6 +28,10 @@
   contextual outcome and owner delivery. Replay suppression now requires the
   matching terminal family-delivery receipt; an undelivered stored outcome
   resumes only deterministic delivery and never reruns specialist work.
+- Corrected active-context projection after a visible notification. A
+  `notification_delivered` receipt now enriches chronology without replacing
+  the underlying waiting lifecycle, preventing short commissioning replies
+  from falling into a generic ROOTLINE water-and-power brief.
 
 ## 2026-08-09 - Oom Sakkie farm-manager spine closeout assessed
 

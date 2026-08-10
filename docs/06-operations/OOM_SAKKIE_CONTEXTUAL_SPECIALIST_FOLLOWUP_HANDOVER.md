@@ -60,3 +60,15 @@ receipt; otherwise the stored zero-authority outcome resumes only its existing
 deterministic delivery rail, without rerunning interpretation or ROOTLINE.
 Context-recovery projections are not delivery receipts and cannot satisfy or
 block the provider-delivery replay guard.
+
+Telegram `3490` (`Yes, I'm at the fertilizer valve`), provider time
+`2026-08-10T06:06:25+00:00`, owner/private chat `5721652188`, digest
+`ae5e4b8aee29f4403f5c17c686c357ce395d5cbe0d3fff587d19c44658435dda`,
+entered GateKeeper/relay executions `63490/63491`. Execution `63491` directly
+returned the generic water-and-power brief. Scheduler execution `63489` had
+already completed before the inbound, so it was not the direct response.
+The reusable cause was lifecycle projection: notification receipt `3489`
+became the newest family row and displaced the underlying `updated / waiting`
+card state. Notification receipts now enrich delivery chronology without
+replacing active lifecycle state, so contextual commissioning wins before
+generic manager or water-plan routing.
