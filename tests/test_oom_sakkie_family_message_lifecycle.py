@@ -214,7 +214,7 @@ def test_ambiguous_edit_is_never_retried_but_one_visible_question_is_sent():
         card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
     follow_parsed={**PARSED,"provider_message_id":"scheduled:stale-presence"}
     follow={**RESULT,"answer":"Are you at the fertilizer valves now?",
-        "requires_visible_notification":True}
+        "requires_visible_notification":True,"question_count":1}
     edits=[]
     def ambiguous_edit(*args):
         edits.append(args);return {"success":False,"status":"provider_outcome_ambiguous"}
@@ -231,6 +231,9 @@ def test_ambiguous_edit_is_never_retried_but_one_visible_question_is_sent():
     assert replay["status"]=="family_message_replayed_noop"
     assert replay["telegram_edits"]==replay["telegram_sends"]==0
     assert len(edits)==1 and len(memory.sent)==2
+    notice=next(row for row in memory.rows.values()
+        if row.get("state")=="notification_delivered")
+    assert notice["clarification_question"]=="Are you at the fertilizer valves now?"
 
 
 def test_context_recovery_projection_is_not_mistaken_for_provider_delivery():

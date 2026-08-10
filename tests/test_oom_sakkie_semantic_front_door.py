@@ -1,5 +1,6 @@
 import json
 from unittest.mock import patch
+import pytest
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_health_loss_runtime import _resolve_active_context
@@ -115,6 +116,75 @@ def test_only_fresh_earlier_unambiguous_clarification_context_is_exposed():
         "semantic_domain":"herd_management"}
     assert _eligible_clarification_context([stale,unrelated,fresh],parsed)==[fresh]
     assert _eligible_clarification_context([fresh],{**parsed,"reply_to_message_id":"999"})==[]
+
+
+def test_provider_notification_is_the_visible_reply_identity_for_typed_specialist_wait():
+    parsed={"provider_timestamp":"2026-08-10T09:44:00+00:00","reply_to_message_id":"3497"}
+    notice={"state":"notification_delivered","telegram_message_id":"3480",
+        "notification_message_id":"3497","task_state":"waiting_for_input",
+        "delivery_provider_timestamp":"2026-08-10T09:43:09+00:00",
+        "semantic_domain":"rootline","semantic_intent":"fertilizer_commissioning_presence",
+        "clarification_question":""}
+    projected=_eligible_clarification_context([notice],parsed)
+    assert len(projected)==1 and projected[0]["telegram_message_id"]=="3497"
+    delayed={**parsed,"provider_timestamp":"2026-08-17T09:44:00+00:00",
+        "reply_to_message_id":""}
+    assert len(_eligible_clarification_context([notice],delayed))==1
+    expired={**parsed,"provider_timestamp":"2026-09-10T09:44:00+00:00",
+        "reply_to_message_id":""}
+    assert _eligible_clarification_context([notice],expired)==[]
+    scheduler={**notice,"semantic_intent":"rootline_reassessment",
+        "notification_message_id":"3500"}
+    assert _eligible_clarification_context([scheduler],delayed)==[]
+
+
+@pytest.mark.parametrize("text,language", [
+    ("Yes, I'm still here.","en"),("Ja, ek is nog by die kleppe!","af")])
+def test_delayed_short_readiness_reply_receives_typed_active_context(text,language):
+    captured={}
+    def opener(request,timeout):
+        captured.update(json.loads(request.data.decode()))
+        return _HttpResponse(_response(_semantic("rootline","availability_confirmation",
+            message_kind="confirmation",continuation=True,language=language)))
+    notice={"state":"notification_delivered","telegram_message_id":"3480",
+        "notification_message_id":"3497","task_state":"waiting_for_input",
+        "delivery_provider_timestamp":"2026-08-10T09:43:09+00:00",
+        "semantic_domain":"rootline","semantic_intent":"fertilizer_commissioning_presence"}
+    result=interpret_owner_message({"text":text,"telegram_user_id":"42","telegram_chat_id":"42",
+        "provider_message_id":"3501","provider_timestamp":"2026-08-17T09:44:00+00:00"},
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"},
+        context_loader=lambda parsed:{"recent_turns":_eligible_clarification_context([notice],parsed)},
+        http_open=opener)
+    sent=json.loads(captured["messages"][1]["content"])["context"]
+    assert result.continuation is True and sent["recent_turns"][0]["telegram_message_id"]=="3497"
+
+
+@pytest.mark.parametrize("text,language", [("Ready","en"),("Ja","af")])
+def test_completed_lifecycle_suppresses_old_typed_wait_from_semantic_context(text,language):
+    notice={"state":"notification_delivered","mission_id":"MISSION","card_mission_id":"MISSION",
+        "telegram_message_id":"3480","notification_message_id":"3497",
+        "task_state":"waiting_for_input","delivery_provider_timestamp":"2026-08-10T09:43:09+00:00",
+        "semantic_domain":"rootline","semantic_intent":"fertilizer_commissioning_presence"}
+    completed={"state":"updated","mission_id":"MISSION","card_mission_id":"MISSION",
+        "telegram_message_id":"3480","task_state":"completed",
+        "provider_timestamp":"2026-08-10T10:00:00+00:00","semantic_domain":"rootline"}
+    parsed={"text":text,"provider_message_id":"3502",
+        "provider_timestamp":"2026-08-10T10:01:00+00:00","reply_to_message_id":"3497"}
+    assert _eligible_clarification_context([completed,notice],parsed)==[]
+    captured={}
+    def opener(request,timeout):
+        captured.update(json.loads(request.data.decode()))
+        return _HttpResponse(_response(_semantic("general","general_clarification",
+            message_kind="confirmation",continuation=False,language=language,
+            needs_clarification=True,clarification_question="What should I help with?")))
+    result=interpret_owner_message(parsed,
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED":"1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL":"test","OPENAI_API_KEY":"secret"},
+        context_loader=lambda value:{"recent_turns":_eligible_clarification_context(
+            [completed,notice],value)},http_open=opener)
+    sent=json.loads(captured["messages"][1]["content"])["context"]
+    assert sent["recent_turns"]==[] and result.continuation is False
 
 
 def test_stale_context_cannot_turn_ambiguous_reply_into_canonical_water_facts():

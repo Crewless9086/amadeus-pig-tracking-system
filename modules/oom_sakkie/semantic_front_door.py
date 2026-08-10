@@ -22,6 +22,8 @@ DOMAINS = frozenset({"herd_health", "herd_management", "rootline", "manager_roun
 MESSAGE_KINDS = frozenset({"observation", "question", "request", "command", "confirmation", "correction", "general"})
 MAX_CONTEXT_ITEMS = 8
 CONTEXT_MAX_AGE_SECONDS = 6 * 60 * 60
+ACTIVE_SPECIALIST_CONTEXT_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+MAX_CONTEXT_SCAN_ITEMS = 64
 
 
 @dataclass(frozen=True)
@@ -146,7 +148,7 @@ def _load_recent_specialist_context(parsed):
                       and review_json->'family_message_lifecycle'->>'chat_id'=%s
                     order by created_at desc,review_event_id desc limit %s""",
                     (str(parsed.get("telegram_user_id") or ""),
-                     str(parsed.get("telegram_chat_id") or ""), MAX_CONTEXT_ITEMS))
+                     str(parsed.get("telegram_chat_id") or ""), MAX_CONTEXT_SCAN_ITEMS))
                 rows = [row[0] for row in cursor.fetchall()]
     except Exception:
         return []
@@ -279,20 +281,42 @@ def _eligible_clarification_context(rows, parsed):
         return []
     reply_to = str(parsed.get("reply_to_message_id") or "").strip()
     candidates = []
-    for row in rows:
-        if not isinstance(row, Mapping) or row.get("state") != "delivered":
+    for row_index, row in enumerate(rows):
+        if (not isinstance(row, Mapping)
+                or row.get("state") not in {"delivered", "notification_delivered"}):
             continue
-        if not str(row.get("clarification_question") or "").strip():
+        typed_wait = (row.get("state") == "notification_delivered"
+            and row.get("task_state") == "waiting_for_input"
+            and str(row.get("semantic_intent") or "") in {
+                "fertilizer_commissioning_presence", "fertilizer_commissioning"})
+        if typed_wait:
+            mission = str(row.get("mission_id") or "")
+            card = str(row.get("card_mission_id") or "")
+            superseded = any(isinstance(newer, Mapping)
+                and str(newer.get("mission_id") or "") == mission
+                and str(newer.get("card_mission_id") or "") == card
+                and newer.get("state") in {"delivered", "updated"}
+                and newer.get("task_state") != "waiting_for_input"
+                for newer in rows[:row_index])
+            if superseded:
+                continue
+        if not str(row.get("clarification_question") or "").strip() and not typed_wait:
             continue
         delivered = _timestamp(row.get("delivery_provider_timestamp"))
         if delivered is None:
             continue
         age = (incoming - delivered).total_seconds()
-        if age < 0 or age > CONTEXT_MAX_AGE_SECONDS:
+        maximum_age = (ACTIVE_SPECIALIST_CONTEXT_MAX_AGE_SECONDS
+                       if typed_wait else CONTEXT_MAX_AGE_SECONDS)
+        if age < 0 or age > maximum_age:
             continue
-        if reply_to and str(row.get("telegram_message_id") or "") != reply_to:
+        visible_id = str(row.get("notification_message_id")
+                         or row.get("telegram_message_id") or "")
+        if reply_to and visible_id != reply_to:
             continue
-        candidates.append((delivered, row))
+        projected = dict(row)
+        projected["telegram_message_id"] = visible_id
+        candidates.append((delivered, projected))
     if not candidates:
         return []
     candidates.sort(key=lambda item: item[0], reverse=True)
