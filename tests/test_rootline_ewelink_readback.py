@@ -101,7 +101,7 @@ def test_registered_fertilizer_device_uses_anchor_token_for_zero_command_read():
     assert result["device_id"] == "100204d497"
     assert result["channels"][0]["native_auto_off_seconds"] == 120
     assert result["channels"][1]["native_auto_off_enabled"] is False
-    assert result["registered_discovery_only"] is True
+    assert result["registered_discovery_only"] is False
     assert result["provider_control_calls"] == 0
     assert calls == [("GET", "/v2/family"), ("GET", "/v2/device/thing"),
                      ("GET", "/v2/device/thing/status")]

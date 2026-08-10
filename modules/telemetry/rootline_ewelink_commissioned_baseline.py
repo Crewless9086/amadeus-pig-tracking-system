@@ -30,6 +30,29 @@ _MATERIAL = {
         "b85b940f411740a0bb7c33ff6b9e884c537816d673a446688a0f8b3b82b835b4",
     "evidence_source": "owner_authenticated_ewelink_ui_and_supervised_physical_commissioning",
 }
+_FERTILIZER_MATERIAL = {
+    "contract_version": "rootline_ewelink_commissioned_baseline_v1",
+    "device_id": "100204d497",
+    "firmware": "3.8.2",
+    "configuration_generation": 1,
+    "commissioned_at": "2026-08-10T06:50:23.947547+00:00",
+    "interlock_enabled": False,
+    "conflicting_scenes": [],
+    "conflicting_schedules": [],
+    "simultaneous_bc_authority": False,
+    "fertilizer_commissioning_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+    "supervised_commissioning_channels": [2],
+    "owner_confirmation_prompt_sha256":
+        "c5ed67170e9a222c0c9c3d7b7a7f714234c87aa646a95887208b35348c9b6b99",
+    "accepted_owner_message_sha256":
+        "ae5e4b8aee29f4403f5c17c686c357ce395d5cbe0d3fff587d19c44658435dda",
+    "accepted_confirmation_event_id":
+        "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809-CONTEXT-778DABF0D092BE07770D-COMPLETED",
+    "configuration_readback_sha256":
+        "88c8369bf859e941eea7b8cc639ce4d94f1160a01105abd4c8d945450b5f4859",
+    "configuration_readback_observed_at": "2026-08-10T09:29:59.974024+00:00",
+    "evidence_source": "durable_owner_acceptance_and_authenticated_provider_readback",
+}
 BASELINE_VALIDITY = timedelta(days=7)
 
 
@@ -40,8 +63,20 @@ def commissioned_controller_baseline():
             "baseline_sha256": digest, "revoked": False}
 
 
+def commissioned_registered_device_baseline(device_id):
+    """Return only an exact, immutable configuration baseline for a known device."""
+    material = (_MATERIAL if str(device_id) == _MATERIAL["device_id"] else
+                _FERTILIZER_MATERIAL if str(device_id) == _FERTILIZER_MATERIAL["device_id"] else None)
+    if material is None:
+        return None
+    value = deepcopy(material)
+    digest = sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return {**value, "baseline_id": "ROOTLINE-EWELINK-BASELINE-" + digest[:24].upper(),
+            "baseline_sha256": digest, "revoked": False}
+
+
 def validate_commissioned_baseline(value, *, device_id, firmware, observed_at):
-    expected = commissioned_controller_baseline()
+    expected = commissioned_registered_device_baseline(device_id)
     if not isinstance(value, dict) or value != expected or value.get("revoked") is not False:
         return None
     if value.get("device_id") != device_id or value.get("firmware") != firmware:

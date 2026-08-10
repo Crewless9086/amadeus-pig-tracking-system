@@ -4,6 +4,7 @@ from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
     continue_fertilizer_commissioning, recover_fertilizer_commissioning,
 )
 from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
+from modules.telemetry.rootline_auxiliary_management import build_auxiliary_eligibility
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 
 NOW = datetime(2026, 8, 10, 6, 51, 14, tzinfo=timezone.utc)
@@ -185,3 +186,39 @@ def test_afrikaans_and_short_affirmatives_use_same_typed_context_not_phrase_rule
             acceptance_loader=lambda *_args: True)
         assert result["status"] == "auxiliary_started"
         assert len(transport.commands) == 1
+
+
+def test_default_transport_reads_the_exact_registered_fertilizer_controller(monkeypatch):
+    observed = []
+    def exact(device_id, *, token_store, environ):
+        observed.append((device_id, token_store, environ))
+        return {"actuation_configuration_safe": True, "device_id": device_id,
+            "channels": [{"channel": number, "output_state": "OFF",
+                "native_auto_off_enabled": True,
+                "native_auto_off_seconds": 300 if number == 2 else 120,
+                "power_restoration_state": "OFF"} for number in (1, 2, 3, 4)],
+            "timers_enabled": False, "interlock_enabled": False, "scenes_enabled": False,
+            "commissioned_baseline_id": "FERTILIZER-BASELINE",
+            "commissioned_supervised_channels": [2],
+            "response_digest": "READBACK", "retrieved_at": NOW.isoformat(),
+            "provider_control_calls": 0, "current_outputs_authoritative": True}
+    monkeypatch.setattr("modules.telemetry.rootline_ewelink_readback.read_registered_device", exact)
+    transport = RootlineIFTTTTransport(token_store="TOKEN", environ={})
+    result = transport.read_safety_configuration(device_id="100204d497", channel=2)
+    assert observed == [("100204d497", "TOKEN", {})]
+    assert result["authoritative"] is True and result["commissioned"] is True
+    injection = transport.read_safety_configuration(device_id="100204d497", channel=1)
+    assert injection["authoritative"] is True
+    assert injection["controller_safety_generation"] == "FERTILIZER-BASELINE"
+    assert injection["physical_commissioning_generation"] is None
+    assert injection["commissioned"] is False
+    denied = build_auxiliary_eligibility(
+        task={"auxiliary_device_id": "FERTILIZER-INJECTION-CH1"}, safety=injection,
+        context={"plan_generation": "PLAN", "batch_generation": "BATCH",
+            "active_zone_ids": ["B12345"], "zone_execution_id": "ZONE",
+            "zone_start_evidence": {}, "zone_output_evidence": {},
+            "irrigation_stop_deadline": (NOW + timedelta(minutes=30)).isoformat(),
+            "completed_pulses": 0, "mixer_active": False,
+            "prior_shutdown_unverified": False},
+        flags={"ROOTLINE_FERTILIZER_INJECTION_ENABLED": True}, now=NOW)
+    assert denied["status"] == "auxiliary_safety_unproven"

@@ -5,6 +5,7 @@ import pytest
 
 from modules.telemetry.rootline_ewelink_commissioned_baseline import (
     commissioned_controller_baseline,
+    commissioned_registered_device_baseline,
     validate_commissioned_baseline,
 )
 from modules.telemetry.rootline_ewelink_oauth import normalize_device_readback
@@ -95,6 +96,25 @@ def test_baseline_identity_is_deterministic_and_exact():
     forged = deepcopy(first); forged["baseline_sha256"] = "0" * 64
     assert validate_commissioned_baseline(forged, device_id="100204e9bc", firmware="3.8.2",
         observed_at=NOW) is None
+
+
+def test_fertilizer_configuration_baseline_is_exact_and_device_bound():
+    observed = datetime(2026, 8, 10, 10, 0, tzinfo=timezone.utc)
+    baseline = commissioned_registered_device_baseline("100204d497")
+    assert baseline["device_id"] == "100204d497"
+    assert baseline["fertilizer_commissioning_id"] == "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809"
+    assert baseline["supervised_commissioning_channels"] == [2]
+    assert baseline["accepted_owner_message_sha256"] == (
+        "ae5e4b8aee29f4403f5c17c686c357ce395d5cbe0d3fff587d19c44658435dda")
+    assert baseline["configuration_readback_sha256"] == (
+        "88c8369bf859e941eea7b8cc639ce4d94f1160a01105abd4c8d945450b5f4859")
+    assert validate_commissioned_baseline(
+        baseline, device_id="100204d497", firmware="3.8.2", observed_at=observed,
+    )["baseline_fresh"] is True
+    assert validate_commissioned_baseline(
+        baseline, device_id="100204e9bc", firmware="3.8.2", observed_at=observed,
+    ) is None
+    assert commissioned_registered_device_baseline("unknown") is None
 
 
 def test_expired_commissioned_baseline_blocks_only_unobservable_control_paths():

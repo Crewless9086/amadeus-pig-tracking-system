@@ -384,6 +384,8 @@ def normalize_device_readback(*, device, status, retrieved_at, commissioned_base
             "commissioned_configuration_baseline" if baseline_control_paths else None),
         "commissioned_baseline_id": baseline.get("baseline_id") if baseline else None,
         "commissioned_baseline_sha256": baseline.get("baseline_sha256") if baseline else None,
+        "commissioned_supervised_channels": (
+            list(baseline.get("supervised_commissioning_channels") or []) if baseline else []),
         "configuration_generation": baseline.get("configuration_generation") if baseline else None,
         "commissioned_baseline_valid_until": baseline.get("valid_until") if baseline else None,
         "commissioned_baseline_fresh": baseline.get("baseline_fresh") if baseline else False,

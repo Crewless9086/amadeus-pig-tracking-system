@@ -24,9 +24,6 @@ class RootlineIFTTTTransport:
         self.environ = environ if environ is not None else os.environ
         self.token_store = token_store
         self.http_open = http_open or urllib_request.urlopen
-        if readback is None:
-            from modules.telemetry.rootline_ewelink_readback import read_current_device
-            readback = read_current_device
         self.readback = readback
         self.auxiliary_on_authorizer = auxiliary_on_authorizer
 
@@ -34,6 +31,11 @@ class RootlineIFTTTTransport:
         contract = self._binding(device_id, channel)
         snapshot = self._snapshot(device_id, channel)
         row = self._channel(snapshot, channel)
+        supervised_channels = snapshot.get("commissioned_supervised_channels") or []
+        channel_commissioning = (contract["identity"] == "FERTILIZER-MIXER-CH2"
+            and channel in supervised_channels)
+        if contract["collection"] == "irrigation_zones":
+            channel_commissioning = bool(snapshot.get("commissioned_baseline_id"))
         return {
             "authoritative": snapshot.get("actuation_configuration_safe") is True,
             "device_id": snapshot.get("device_id"),
@@ -52,8 +54,9 @@ class RootlineIFTTTTransport:
             "scenes_enabled": snapshot.get("scenes_enabled"),
             "baseline_id": snapshot.get("commissioned_baseline_id"),
             "controller_safety_generation": snapshot.get("commissioned_baseline_id"),
-            "physical_commissioning_generation": snapshot.get("commissioned_baseline_id"),
-            "commissioned": bool(snapshot.get("commissioned_baseline_id")),
+            "physical_commissioning_generation": (snapshot.get("commissioned_baseline_id")
+                if channel_commissioning else None),
+            "commissioned": channel_commissioning,
             "response_digest": snapshot.get("response_digest"),
             "observed_at": snapshot.get("retrieved_at"),
         }
@@ -97,7 +100,12 @@ class RootlineIFTTTTransport:
 
     def _snapshot(self, device_id, channel):
         self._binding(device_id, channel)
-        value = self.readback(token_store=self.token_store, environ=self.environ)
+        if self.readback is None:
+            from modules.telemetry.rootline_ewelink_readback import read_registered_device
+            value = read_registered_device(device_id, token_store=self.token_store,
+                                           environ=self.environ)
+        else:
+            value = self.readback(token_store=self.token_store, environ=self.environ)
         rows = value.get("channels") if isinstance(value, dict) else None
         identities = [row.get("channel") for row in rows or () if isinstance(row, dict)]
         if (not isinstance(value, dict) or value.get("device_id") != device_id
