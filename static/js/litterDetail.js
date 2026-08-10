@@ -105,6 +105,11 @@ function getLitterIdFromUrl() {
   return decodeURIComponent(parts[parts.length - 1] || "");
 }
 
+const litterRecordPrintLink = document.getElementById("litter_record_print_link");
+if (litterRecordPrintLink) {
+  litterRecordPrintLink.href = `/paring-werpselrekord?litter_id=${encodeURIComponent(getLitterIdFromUrl())}`;
+}
+
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }

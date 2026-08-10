@@ -14,6 +14,18 @@ class PrintSheetsRouteTests(unittest.TestCase):
         self.assertIn(b"Weekly Weight Capture Sheet", response.data)
         self.assertIn(b"printSheets.js", response.data)
 
+    def test_mating_litter_record_route_loads_in_afrikaans(self):
+        app.testing = True
+        client = app.test_client()
+
+        response = client.get("/paring-werpselrekord")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Parings- en Werpselrekord".encode("utf-8"), response.data)
+        self.assertIn("Eerste behandeling".encode("utf-8"), response.data)
+        self.assertIn("Vrektes en notas".encode("utf-8"), response.data)
+        self.assertIn(b"paringWerpselrekord.js", response.data)
+
 
 if __name__ == "__main__":
     unittest.main()
