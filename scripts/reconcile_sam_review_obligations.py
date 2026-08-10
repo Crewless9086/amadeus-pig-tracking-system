@@ -32,6 +32,7 @@ from modules.sales.sam_review_resolution_checkpoint import (  # noqa:E402
 
 EXPECTED_REVIEWS = 362
 EXPECTED_CONVERSATIONS = 149
+EXPECTED_LATEST_REVIEWS = 87
 REPRESENTED_PIG_ID = "PIG-2026-1AC2"
 
 
@@ -46,6 +47,20 @@ def parse_timestamp(value) -> datetime:
 
 def iso_timestamp(value) -> str:
     return parse_timestamp(value).isoformat()
+
+
+def canonical_message_type(value) -> str:
+    """Normalize Chatwoot's numeric and textual public message directions.
+
+    Chatwoot serializes incoming as integer ``0``.  Treating the value as a
+    truthy fallback erased that direction and made every WhatsApp window
+    unknowable.  Unknown values remain unknown and therefore fail closed.
+    """
+    if value in (0, "0", "incoming"):
+        return "incoming"
+    if value in (1, "1", "outgoing"):
+        return "outgoing"
+    return ""
 
 
 def bound_evidence(source: dict, prefix: str) -> dict:
@@ -110,8 +125,15 @@ class ProductionEvidenceSource:
             rows = connection.execute(
                 """select review_event_id,chatwoot_conversation_id,chatwoot_message_id,
                           decision_json::text,event_source,safe_to_send,owner_send_required,
-                          no_reply_recommended,escalation_required,created_at
-                     from public.sam_live_stock_conversation_review_events
+                          no_reply_recommended,escalation_required,created_at,
+                          not exists (
+                            select 1 from public.sam_live_stock_conversation_review_events newer
+                             where newer.chatwoot_conversation_id=review.chatwoot_conversation_id
+                               and (newer.created_at > review.created_at or
+                                    (newer.created_at=review.created_at and
+                                     newer.review_event_id>review.review_event_id))
+                          ) as is_latest_for_conversation
+                     from public.sam_live_stock_conversation_review_events review
                     where review_event_id=any(%s)
                     order by review_event_id""",
                 (review_ids,),
@@ -132,6 +154,7 @@ class ProductionEvidenceSource:
                 "no_reply_recommended": bool(row[7]),
                 "escalation_required": bool(row[8]),
                 "created_at": row[9].isoformat(),
+                "is_latest_for_conversation": bool(row[10]),
             })
         if {row["review_event_id"] for row in result} != set(review_ids):
             raise RuntimeError("incomplete_review_page")
@@ -171,7 +194,7 @@ class ProductionEvidenceSource:
                 attributes = message.get("content_attributes") or {}
                 messages.append({
                     "message_id": message_id,
-                    "message_type": str(message.get("message_type") or ""),
+                    "message_type": canonical_message_type(message.get("message_type")),
                     "provider_observed_at": created_at.isoformat(),
                     "provider_status": str(message.get("status") or ""),
                     "sender_id": str((message.get("sender") or {}).get("id") or ""),
@@ -210,7 +233,8 @@ class ProductionEvidenceSource:
 
 def capture(source: ProductionEvidenceSource, checkpoint: ResolutionCheckpoint,
             *, page_size: int, expected_reviews: int = EXPECTED_REVIEWS,
-            expected_conversations: int = EXPECTED_CONVERSATIONS) -> dict:
+            expected_conversations: int = EXPECTED_CONVERSATIONS,
+            expected_latest_reviews: int | None = None) -> dict:
     if checkpoint.metadata_path.exists():
         metadata = checkpoint.load_metadata()
         current_reviews, current_conversations = source.population()
@@ -255,18 +279,13 @@ def capture(source: ProductionEvidenceSource, checkpoint: ResolutionCheckpoint,
     return checkpoint.validate_complete(
         expected_review_count=expected_reviews,
         expected_conversation_count=expected_conversations,
+        expected_latest_review_count=expected_latest_reviews,
     )
 
 
 def build_evidence(complete: dict) -> dict:
     reviews = complete["reviews"]
     conversations = complete["conversations"]
-    latest_review_by_conversation = {}
-    for review in reviews:
-        conversation_id = review["chatwoot_conversation_id"]
-        key = (review["created_at"], review["review_event_id"])
-        if conversation_id not in latest_review_by_conversation or key > latest_review_by_conversation[conversation_id][0]:
-            latest_review_by_conversation[conversation_id] = (key, review["review_event_id"])
     evidence_by_review = {}
     for review in reviews:
         conversation_id = review["chatwoot_conversation_id"]
@@ -283,9 +302,11 @@ def build_evidence(complete: dict) -> dict:
         latest_incoming = next(
             (row for row in reversed(chronology) if row["message_type"] == "incoming"), None
         )
+        latest_review = review.get("is_latest_for_conversation") is True
         later_inbound = later_inbounds[-1]["message_id"] if later_inbounds else ""
         successor = None
-        if later_inbound and latest["message_type"] == "incoming" and latest["message_id"] == later_inbound:
+        if (latest_review and later_inbound and latest["message_type"] == "incoming"
+                and latest["message_id"] == later_inbound):
             successor_source = {
                 "work_item_id": successor_work_item_identity(
                     account_id=captured["account_id"], inbox_id=captured["inbox_id"],
@@ -299,8 +320,9 @@ def build_evidence(complete: dict) -> dict:
                 "chronology_sha256": captured["chronology_sha256"],
             }
             successor = bound_evidence(successor_source, "SUCCESSOR")
+        decision = review["decision_json"]
         attributable_outgoing = next(
-            (row for row in reversed(later)
+            (row for row in later
              if row["message_type"] == "outgoing" and row["in_reply_to"] == inbound_id),
             None,
         )
@@ -311,10 +333,10 @@ def build_evidence(complete: dict) -> dict:
                 "read": "provider_read", "delivered": "provider_delivered",
                 "sent": "chatwoot_accepted_unverified", "failed": "provider_failed",
             }.get(provider_status, "provider_outcome_ambiguous")
-        latest_review = latest_review_by_conversation[conversation_id][1] == review["review_event_id"]
-        protected_active = latest_review and bool(
+        historical_protected = bool(
             review["owner_send_required"] or review["escalation_required"]
         )
+        protected_active = latest_review and historical_protected
         window_state = "unknown"
         expires_at = None
         if latest_incoming:
@@ -349,10 +371,20 @@ def build_evidence(complete: dict) -> dict:
             "later_inbound_message_id": later_inbound,
             "delivery": bound_evidence(delivery_source, "DELIVERY"),
             "content_obligation": bound_evidence({
+                # Transport attribution alone never proves substantive coverage.
+                # A future governed content classifier may set this true only
+                # with its own immutable evidence packet.
                 "supported_obligation_answered": False,
-                "relied_on_superseded_identity": bool(attributable_outgoing),
+                "review_is_latest_for_conversation": latest_review,
+                "relied_on_superseded_identity": (
+                    bool(attributable_outgoing)
+                    and REPRESENTED_PIG_ID in json.dumps(decision.get("match_packet") or {}, sort_keys=True)
+                ),
             }, "OBLIGATION"),
-            "protected_decision": bound_evidence({"active": protected_active}, "PROTECTED"),
+            "protected_decision": bound_evidence({
+                "active": protected_active,
+                "historical_review_required": historical_protected,
+            }, "PROTECTED"),
             "quarantine": bound_evidence({
                 "active": delivery_status in {
                     "chatwoot_accepted_unverified", "provider_outcome_ambiguous"
@@ -373,6 +405,12 @@ def build_evidence(complete: dict) -> dict:
 
 
 def build_manifest(complete: dict) -> dict:
+    latest_count = sum(
+        review.get("is_latest_for_conversation") is True
+        for review in complete["reviews"]
+    )
+    if latest_count != EXPECTED_LATEST_REVIEWS:
+        raise RuntimeError(f"exact_latest_review_population_required:{latest_count}")
     represented = {
         "represented_pig_id": REPRESENTED_PIG_ID,
         "status": "superseded",
@@ -429,7 +467,10 @@ def main() -> int:
         raise SystemExit("page-size must be between 1 and 20")
     source = ProductionEvidenceSource()
     checkpoint = ResolutionCheckpoint(Path(args.checkpoint))
-    complete = capture(source, checkpoint, page_size=args.page_size)
+    complete = capture(
+        source, checkpoint, page_size=args.page_size,
+        expected_latest_reviews=EXPECTED_LATEST_REVIEWS,
+    )
     manifest = build_manifest(complete)
     manifest_path = checkpoint.root / "resolution_manifest.json"
     atomic_write_json(manifest_path, manifest)

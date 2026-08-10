@@ -23,6 +23,7 @@ OBLIGATION_STATUSES = {
     "completed_by_attributable_supported_reply",
     "corrective_replan_required_after_reply",
     "superseded_by_later_inbound",
+    "superseded_by_later_review",
     "quarantined_no_retry",
     "closed_window_reengagement_required",
     "protected_owner_action_required",
@@ -253,9 +254,15 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
     successor_evidence_id = None
     successor_evidence_sha = None
     if later_inbound:
-        if not successor:
+        successor_is_current = (
+            content.get("review_is_latest_for_conversation") is not False
+            and
+            str(identity.get("latest_public_message_type") or "") == "incoming"
+            and str(identity.get("latest_inbound_message_id") or "") == later_inbound
+        )
+        if successor_is_current and not successor:
             errors.append("later_inbound_successor_binding_missing")
-        else:
+        elif successor:
             successor_evidence_id, successor_evidence_sha = evidence_binding(
                 successor_evidence, "successor_work_item"
             )
@@ -288,6 +295,8 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
         obligation, action = "protected_owner_action_required", "protected"
     elif quarantine.get("active") is True or delivery_status in AMBIGUOUS_DELIVERY:
         obligation, action = "quarantined_no_retry", "quarantined"
+    elif content.get("review_is_latest_for_conversation") is False:
+        obligation, action = "superseded_by_later_review", "historical"
     elif later_inbound:
         obligation, action = "superseded_by_later_inbound", "historical"
     elif window.get("state") == "closed" and not content_attributable:
@@ -295,8 +304,10 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
     elif delivery_status in TERMINAL_DELIVERY:
         if content_attributable and content_answered and not relied_on_superseded:
             obligation, action = "completed_by_attributable_supported_reply", "completed"
-        elif relied_on_superseded or content_attributable:
+        elif relied_on_superseded:
             obligation, action = "corrective_replan_required_after_reply", "corrective_replanning"
+        elif content_attributable:
+            obligation, action = "delivered_attempt_requires_content_resolution", "indeterminate"
         else:
             obligation, action = "delivered_attempt_requires_content_resolution", "indeterminate"
     elif content_attributable:
