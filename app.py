@@ -309,6 +309,21 @@ def oom_sakkie_page():
     return render_template("oom-sakkie.html")
 
 
+@app.route("/weather")
+def weather_operations_page():
+    return render_template("weather.html")
+
+
+@app.route("/power")
+def power_operations_page():
+    return render_template("power.html")
+
+
+@app.route("/irrigation")
+def irrigation_operations_page():
+    return render_template("irrigation.html")
+
+
 @app.route("/charlie")
 def charlie_page():
     guard = require_owner_page_access()
