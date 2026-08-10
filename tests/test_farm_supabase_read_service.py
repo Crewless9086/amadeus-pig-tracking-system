@@ -750,6 +750,35 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(detail["mating_date"], "2026-04-10")
         self.assertEqual(detail["expected_farrowing_date"], "2026-08-02")
 
+    def test_litter_detail_derives_114_day_date_from_one_exact_historical_mating(self):
+        def fake_fetch_all(sql, params=(), connect_factory=None):
+            if "from public.current_canonical_litters" in sql:
+                return [{
+                    "litter_id": "LIT-DERIVED",
+                    "farrowing_date": date(2026, 8, 2),
+                    "sow_pig_id": "SOW-1",
+                    "boar_pig_id": "BOAR-1",
+                    "litter_status": "Active",
+                }]
+            if "from public.mating_events" in sql:
+                return [{
+                    "mating_id": "MAT-ATTRIBUTABLE",
+                    "related_litter_id": None,
+                    "sow_pig_id": "SOW-1",
+                    "boar_pig_id": "BOAR-1",
+                    "mating_date": date(2026, 4, 10),
+                    "expected_farrowing_date": None,
+                }]
+            return []
+
+        with patch.object(farm_supabase_read_service, "_fetch_all", side_effect=fake_fetch_all), \
+             patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[]):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-DERIVED")
+
+        self.assertEqual(detail["mating_id"], "MAT-ATTRIBUTABLE")
+        self.assertEqual(detail["mating_date"], "2026-04-10")
+        self.assertEqual(detail["expected_farrowing_date"], "2026-08-02")
+
     def test_active_litter_inside_wean_window_becomes_attention_item(self):
         birth_date = date.today() - timedelta(days=32)
         estimated_wean_date = birth_date + timedelta(days=35)

@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="af"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Verwagte Jong Datums</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='css/verwagteJongdatums.css') }}"></head>
+<body class="vjd-body">
+<div class="vjd-toolbar no-print"><a href="/matings" class="secondary-link">&larr; Terug na parings</a><p>Aktiewe parings, van die vroegste tot die jongste verwagte datum.</p><button id="vjd_print_button">Druk A4-lys</button></div>
+<main class="vjd-sheet">
+<header class="vjd-title"><img src="{{ url_for('static', filename='document-assets/amadeus-logo.png') }}" alt="Amadeus"><div><h1>Verwagte Jong Datums</h1><p>Paringslys vir die kraalboek</p></div></header>
+<table><thead><tr><th>Sog</th><th>Verwagte Jong Datum</th><th>Beer</th><th>Kontroleer</th></tr></thead><tbody id="vjd_rows"><tr><td colspan="4">Laai parings...</td></tr></tbody></table>
+<p id="vjd_note" class="vjd-note"></p>
+</main><script src="{{ url_for('static', filename='js/verwagteJongdatums.js') }}"></script></body></html>

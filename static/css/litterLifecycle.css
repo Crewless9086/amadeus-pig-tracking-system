@@ -23,7 +23,11 @@
 .lifecycle-stage .form-field:has(#weaning_day_recorded_by),
 .lifecycle-stage .form-field:has(#weaning_day_vaccination),
 .lifecycle-stage .form-field:has(#piglet_death_recorded_by) { display: none; }
-.lifecycle-primary-form { display: block !important; margin: 0 !important; }.lifecycle-primary-form.hidden { display: block !important; }
+.lifecycle-primary-form { display: block !important; margin: 0 !important; }.lifecycle-primary-form.hidden { display: none !important; }
+.lifecycle-stage-closure { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid #b9d8c6; border-radius: 10px; background: #f2faf5; }
+.lifecycle-stage-closure.hidden { display: none; }
+.lifecycle-stage-closure strong { color: #24613d; }
+.lifecycle-stage-closure span { color: var(--text-soft); line-height: 1.45; }
 #lifecycle_weaning .litter-piglet-section { margin-bottom: 16px; }#lifecycle_weaning .section-title-row h2 { font-size: 17px; }#lifecycle_weaning .section-title-row p { margin: 2px 0 8px; }
 .lifecycle-corrections { border: 1px solid var(--border); border-radius: 14px; background: #faf8f3; }.lifecycle-corrections summary { cursor: pointer; padding: 15px 18px; font-weight: 800; }.lifecycle-corrections summary span { margin-left: 8px; color: var(--text-soft); font-size: 12px; font-weight: 400; }.lifecycle-corrections-body { display: grid; gap: 14px; padding: 0 16px 16px; }.lifecycle-corrections-body > section { margin: 0; }
 @media(max-width:1000px){.lifecycle-birth-snapshot{grid-template-columns:repeat(3,1fr)}}

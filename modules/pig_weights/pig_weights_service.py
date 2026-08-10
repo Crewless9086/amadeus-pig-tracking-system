@@ -3480,6 +3480,22 @@ def record_litter_newborn_health(
             "litter_id": litter_id,
         }, 409
 
+    existing_detail = _try_supabase_read(farm_supabase_read_service.get_litter_detail, litter_id)
+    if isinstance(existing_detail, dict) and (
+        existing_detail.get("first_treatment_complete") is True
+        or existing_detail.get("first_treatment_partial") is True
+    ):
+        return {
+            "success": False,
+            "status": "first_treatment_already_closed",
+            "errors": [
+                "First treatment already has canonical medical evidence. Use the correction history instead of recording the whole-litter action again."
+            ],
+            "litter_id": litter_id,
+            "first_treatment_complete": existing_detail.get("first_treatment_complete") is True,
+            "first_treatment_partial": existing_detail.get("first_treatment_partial") is True,
+        }, 409
+
     male_count_int = int(male_count_value) if male_count_value is not None else None
     female_count_int = int(female_count_value) if female_count_value is not None else None
     if sex_count_requested and male_count_int + female_count_int != len(active_piglets):
