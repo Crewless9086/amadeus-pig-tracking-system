@@ -1187,9 +1187,9 @@ def _litter_rows_with_pigs(connect_factory=None):
     )
     mating_rows = _fetch_all(
         """
-        select mating_id, related_litter_id, mating_date, expected_farrowing_date
+        select mating_id, related_litter_id, sow_pig_id, boar_pig_id,
+               mating_date, expected_farrowing_date, farrowing_date
         from public.mating_events
-        where related_litter_id is not null
         order by mating_date desc nulls last, mating_id desc
         """,
         connect_factory=connect_factory,
@@ -1200,10 +1200,32 @@ def _litter_rows_with_pigs(connect_factory=None):
         if related_litter_id and related_litter_id not in latest_mating_by_litter:
             latest_mating_by_litter[related_litter_id] = mating
     for litter in litters:
-        mating = latest_mating_by_litter.get(_text(litter.get("litter_id"))) or {}
+        litter_id = _text(litter.get("litter_id"))
+        mating = latest_mating_by_litter.get(litter_id) or {}
+        if not mating:
+            litter_farrowing = litter.get("farrowing_date")
+            exact_candidates = []
+            for candidate in mating_rows:
+                mating_date = candidate.get("mating_date")
+                if not isinstance(litter_farrowing, date) or not isinstance(mating_date, date):
+                    continue
+                if _text(candidate.get("sow_pig_id")) != _text(litter.get("sow_pig_id")):
+                    continue
+                litter_boar = _text(litter.get("boar_pig_id"))
+                candidate_boar = _text(candidate.get("boar_pig_id"))
+                if litter_boar and candidate_boar and litter_boar != candidate_boar:
+                    continue
+                gestation_days = (litter_farrowing - mating_date).days
+                if 90 <= gestation_days <= 130:
+                    exact_candidates.append(candidate)
+            if len(exact_candidates) == 1:
+                mating = exact_candidates[0]
         litter["mating_id"] = _text(mating.get("mating_id"))
         litter["mating_date"] = mating.get("mating_date")
-        litter["expected_farrowing_date"] = mating.get("expected_farrowing_date")
+        litter["expected_farrowing_date"] = (
+            mating.get("expected_farrowing_date")
+            or (mating.get("mating_date") + timedelta(days=114) if isinstance(mating.get("mating_date"), date) else None)
+        )
     pigs = _current_state_rows(connect_factory=connect_factory)
     pigs_by_litter = {}
     for pig in pigs:
@@ -1555,6 +1577,38 @@ def get_litter_detail(litter_id, connect_factory=None):
     wean_date = _date_text(litter.get("wean_date")) or next((piglet["wean_date"] for piglet in piglets if piglet["wean_date"]), "")
     observed_male_count = _float_or_none(litter.get("male_count"))
     observed_female_count = _float_or_none(litter.get("female_count"))
+    tally_recorded = observed_male_count is not None and observed_female_count is not None
+    pig_ids = [item["pig_id"] for item in piglets if item["pig_id"]]
+    first_treatment_rows = _fetch_all(
+        """
+        select medical_event_id, pig_id, treatment_date, treatment_type, product_id
+        from public.pig_medical_events
+        where pig_id = any(%s)
+          and (
+            medical_notes ilike %s
+            or reason_for_treatment ilike %s
+          )
+        order by treatment_date, medical_event_id
+        """,
+        (
+            pig_ids,
+            f"%Litter {_text(litter_id)} newborn health action%",
+            "%litter newborn health action%",
+        ),
+        connect_factory=connect_factory,
+    ) if pig_ids and (connect_factory is not None or os.getenv(DATABASE_URL_ENV)) else []
+    treated_pig_ids = {_text(row.get("pig_id")) for row in first_treatment_rows if _text(row.get("pig_id"))}
+    active_pig_ids = {
+        item["pig_id"] for item in piglets
+        if item["status"] == "Active" and item["on_farm"] == "Yes"
+    }
+    treatment_packet_complete = bool(first_treatment_rows) and active_pig_ids.issubset(treated_pig_ids)
+    first_treatment_complete = treatment_packet_complete
+    first_treatment_partial = bool(first_treatment_rows) and not treatment_packet_complete
+    first_treatment_dates = [
+        _date_text(row.get("treatment_date")) for row in first_treatment_rows
+        if _date_text(row.get("treatment_date"))
+    ]
     return {
         "litter_id": _text(litter_id),
         "mother_pig_id": _text(litter.get("sow_pig_id")),
@@ -1573,7 +1627,12 @@ def get_litter_detail(litter_id, connect_factory=None):
         "observed_female_count": observed_female_count,
         "identified_male_count": identified_male_count,
         "identified_female_count": identified_female_count,
-        "first_treatment_tally_recorded": observed_male_count is not None and observed_female_count is not None,
+        "first_treatment_tally_recorded": tally_recorded,
+        "first_treatment_complete": first_treatment_complete,
+        "first_treatment_partial": first_treatment_partial,
+        "first_treatment_record_count": len(first_treatment_rows),
+        "first_treatment_pig_count": len(treated_pig_ids),
+        "first_treatment_date": max(first_treatment_dates) if first_treatment_dates else "",
         "active_count": active_count,
         "average_weight_kg": average_weight,
         "average_current_weight_kg": average_current_weight,
@@ -1685,6 +1744,8 @@ def project_mating_overview(rows, state_rows, today=None):
         is_open = _mating_is_open(row)
         expected_check = row.get("expected_pregnancy_check_date")
         expected_farrowing = row.get("expected_farrowing_date")
+        if not isinstance(expected_farrowing, date) and isinstance(row.get("mating_date"), date):
+            expected_farrowing = row["mating_date"] + timedelta(days=114)
         records.append({
             "mating_id": _text(row.get("mating_id")),
             "sow_pig_id": _text(row.get("sow_pig_id")),

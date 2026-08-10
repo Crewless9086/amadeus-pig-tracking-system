@@ -478,6 +478,11 @@ def mating_litter_record_page():
     return render_template("paring-werpselrekord.html")
 
 
+@app.route("/verwagte-jongdatums")
+def expected_farrowing_dates_page():
+    return render_template("verwagte-jongdatums.html")
+
+
 @app.route("/health")
 def health():
     return {"status": "ok"}, 200

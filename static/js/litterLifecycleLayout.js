@@ -48,6 +48,10 @@ function prepareLitterLifecycleLayout() {
     newbornForm.classList.add("lifecycle-primary-form");
     firstCare.querySelector(".lifecycle-stage-body").appendChild(newbornForm);
   }
+  const firstCareSummary = document.createElement("div");
+  firstCareSummary.id = "lifecycle_first_care_summary";
+  firstCareSummary.className = "lifecycle-stage-closure hidden";
+  firstCare.querySelector(".lifecycle-stage-body").prepend(firstCareSummary);
   if (piglets) weaning.querySelector(".lifecycle-stage-body").appendChild(piglets);
   if (weaningPanel) weaning.querySelector(".lifecycle-stage-body").appendChild(weaningPanel);
   if (deathPanel) notes.querySelector(".lifecycle-stage-body").appendChild(deathPanel);
@@ -98,12 +102,30 @@ window.renderLitterLifecyclePresentation = function renderLitterLifecyclePresent
   };
   status("lifecycle_identity", "Voltooi", "is-complete");
   status("lifecycle_birth", reconciliation.mismatch ? "Aandag nodig" : "Voltooi", reconciliation.mismatch ? "needs-attention" : "is-complete");
-  const firstCareComplete = litter.first_treatment_tally_recorded === true;
-  status(
-    "lifecycle_first_care",
-    firstCareComplete ? "Voltooi" : (state === "active" ? "Opsioneel" : "Gesluit"),
-    firstCareComplete || state !== "active" ? "is-complete" : "is-current"
+  const firstCareComplete = litter.first_treatment_complete === true;
+  const firstCarePartial = litter.first_treatment_partial === true;
+  const firstCareSkipped = state !== "active" && !firstCareComplete;
+  status("lifecycle_first_care",
+    firstCareComplete ? "Voltooi" : firstCareSkipped ? "Oorgeslaan · gesluit" : firstCarePartial ? "Kontroleer" : "Opsioneel",
+    firstCareComplete || firstCareSkipped ? "is-complete" : firstCarePartial ? "needs-attention" : "is-current"
   );
+  const firstCareSummary = document.getElementById("lifecycle_first_care_summary");
+  const newbornForm = document.getElementById("newborn_health_form");
+  const firstCareClosed = firstCareComplete || firstCareSkipped || firstCarePartial;
+  if (newbornForm) newbornForm.classList.toggle("hidden", firstCareClosed);
+  if (firstCareSummary) {
+    firstCareSummary.classList.toggle("hidden", !firstCareClosed);
+    if (firstCareComplete) {
+      const recordCount = Number(litter.first_treatment_record_count || 0);
+      const treatmentDate = litter.first_treatment_date || "datum nie beskikbaar nie";
+      const tallyText = litter.first_treatment_tally_recorded ? " Die werpselgeslagtelling is aangeteken." : "";
+      firstCareSummary.innerHTML = `<strong>Eerste behandeling voltooi</strong><span>${recordCount ? `${recordCount} mediese rekord${recordCount === 1 ? "" : "e"} op ${treatmentDate}.` : `Werpseltelling aangeteken.`}${tallyText} Hierdie stap is gesluit om duplisering te voorkom.</span>`;
+    } else if (firstCarePartial) {
+      firstCareSummary.innerHTML = `<strong>Behandeling moet gekontroleer word</strong><span>Slegs gedeeltelike mediese bewyse is beskikbaar. Die gewone hele-werpselaksie is gesluit om duplisering te voorkom; gebruik die regstellingspad.</span>`;
+    } else {
+      firstCareSummary.innerHTML = `<strong>Eerste behandeling oorgeslaan</strong><span>Speen is reeds voltooi. Hierdie vroeë behandelingstap is gesluit en kan nie nou per ongeluk herhaal word nie.</span>`;
+    }
+  }
   status("lifecycle_weaning", state === "active" ? "Besig" : "Voltooi", state === "active" ? "is-current" : "is-complete");
   status("lifecycle_notes", active ? "Beskikbaar" : "Geskiedenis", active ? "is-current" : "is-complete");
 

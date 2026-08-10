@@ -2036,6 +2036,32 @@ class LitterNewbornHealthTests(unittest.TestCase):
             "Unknown_Sex_Count": 0,
         })
 
+    def test_record_litter_newborn_health_rejects_duplicate_closed_packet(self):
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-2", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        with patch.object(pig_weights_service, "_get_pig_master_rows", return_value=pig_rows), \
+             patch.object(pig_weights_service, "get_products", return_value=[]), \
+             patch.object(pig_weights_service, "_try_supabase_read", return_value={
+                 "first_treatment_complete": True,
+                 "first_treatment_partial": False,
+             }), \
+             patch.object(pig_weights_service, "append_row") as append_row:
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                litter_id="LIT-1",
+                action_date_value="2026-08-10",
+                male_count=1,
+                female_count=1,
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "first_treatment_already_closed")
+        self.assertTrue(result["first_treatment_complete"])
+        append_row.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
