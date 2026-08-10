@@ -208,6 +208,31 @@ def test_updated_card_without_notification_claim_resumes_notification_only():
     assert len(memory.edited)==1 and len(memory.sent)==2
 
 
+def test_ambiguous_edit_is_never_retried_but_one_visible_question_is_sent():
+    memory=Memory();mission="OOM-ROOTLINE-WAIT-AMBIGUOUS"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    follow_parsed={**PARSED,"provider_message_id":"scheduled:stale-presence"}
+    follow={**RESULT,"answer":"Are you at the fertilizer valves now?",
+        "requires_visible_notification":True}
+    edits=[]
+    def ambiguous_edit(*args):
+        edits.append(args);return {"success":False,"status":"provider_outcome_ambiguous"}
+    first=deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=ambiguous_edit)
+    recovered=deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=ambiguous_edit)
+    replay=deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=ambiguous_edit)
+    assert first["status"]=="family_message_update_contained"
+    assert recovered["status"]=="family_message_card_updated_and_notified"
+    assert recovered["telegram_edits"]==0 and recovered["telegram_sends"]==1
+    assert replay["success"] is True
+    assert replay["status"]=="family_message_replayed_noop"
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
+    assert len(edits)==1 and len(memory.sent)==2
+
+
 def test_context_recovery_projection_is_not_mistaken_for_provider_delivery():
     memory=Memory();mission="OOM-ROOTLINE-CONTEXT-RECOVERY"
     deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
