@@ -36,6 +36,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         return {"success": False, "status": "family_message_visible_text_required",
                 "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
     text_sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    exclusive_completion = (
+        result.get("owner_visible_completion_policy") == "verified_edit_or_new_message"
+        and str(result.get("status") or "") == "completed"
+    )
     delivered = next((row for row in events if row.get("state") == "delivered"), None)
     latest = next((row for row in reversed(events) if row.get("state") in {"delivered", "updated"}), delivered)
     card_id = str((latest or {}).get("telegram_message_id") or "")
@@ -89,6 +93,11 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
                 "telegram_sends": 0, "telegram_edits": 0}
+    if provider_replay and exclusive_completion:
+        return {"success": True, "status": "family_message_completion_replayed_noop",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
+            "telegram_sends": 0, "telegram_edits": 0}
     if (provider_replay and result.get("requires_visible_notification") is True
             and provider_replay.get("state") == "updated"
             and str(provider_replay.get("text_sha256") or "") == text_sha):
@@ -121,6 +130,12 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             if str(row.get("event_id") or "").startswith(update_id)]
         ambiguous_edit = any(row.get("state") == "contained"
             and row.get("reason") == "telegram_edit_unconfirmed" for row in prior_update)
+        if ambiguous_edit and exclusive_completion:
+            return {"success": False,
+                "status": "family_message_completion_delivery_ambiguous",
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "telegram_message_id": card_id, "telegram_sends": 0,
+                "telegram_edits": 0}
         if ambiguous_edit and result.get("requires_visible_notification") is True:
             # Never retry the ambiguous edit. A must-notice lifecycle question
             # gets one separately claimed provider notification instead.
@@ -146,13 +161,22 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             return {"success": False, "status": "family_message_update_delivery_ambiguous",
                     "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
         response = (editor or _edit_telegram)(str(parsed.get("telegram_chat_id") or ""), card_id, text)
-        if not response.get("success"):
+        edit_verified = bool(response.get("success") and (
+            not exclusive_completion
+            or str(response.get("telegram_message_id") or "") == card_id
+        ))
+        if not edit_verified:
             store("record", update_id + "-CONTAINED", {**payload, "event_id": update_id + "-CONTAINED",
                 "state": "contained", "reason": "telegram_edit_unconfirmed"})
             return {"success": False, "status": "family_message_update_contained",
                     "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
         store("record", update_id + "-DELIVERED", {**payload, "event_id": update_id + "-DELIVERED",
             "state": "updated", "telegram_message_id": card_id})
+        if exclusive_completion:
+            return {"success": True, "status": "family_message_completion_card_updated",
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "telegram_message_id": card_id, "telegram_sends": 0,
+                "telegram_edits": 1}
         if result.get("requires_visible_notification") is True:
             return _deliver_visible_notification(parsed, payload, text, mission_id,
                 card_mission_id, card_id, text_sha, store, sender, prior_edits=1)
