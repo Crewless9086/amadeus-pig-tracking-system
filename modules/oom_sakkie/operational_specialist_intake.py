@@ -21,6 +21,7 @@ from modules.oom_sakkie.rootline_fertilizer_commissioning_adapter import assess_
 
 CONTRACT_VERSION = "oom_sakkie_operational_specialist_intake_v1"
 ROOTLINE_PRESENCE_MAX_AGE_SECONDS = 300
+ACTIVE_SPECIALIST_CONTEXT_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
 
 def recover_contextual_specialist_replay(parsed, *, replay_loader=None, delivery_loader=None):
@@ -439,7 +440,9 @@ def _pending_specialist_context(parsed, loader):
     reply_to = str(parsed.get("reply_to_message_id") or "")
     if reply_to:
         exact = [item for item in matches
-                 if str(item.get("telegram_message_id") or "") == reply_to]
+                 if reply_to in {str(item.get("telegram_message_id") or ""),
+                                 str(item.get("notification_message_id") or ""),
+                                 *[str(value) for value in item.get("reply_message_ids") or ()]}]
         return exact[0] if len(exact) == 1 else {"binding_error": "reply_identity_mismatch"}
     if len(matches) == 1:
         return matches[0]
@@ -502,7 +505,8 @@ def _handle_contextual_specialist_followup(parsed, gateway_authority, pending, d
     if not context["mission_id"] or not context["card_mission_id"]:
         return _contained(parsed, "pending_specialist_context_invalid", now), 409
     parent_at = _time(context["parent_provider_timestamp"])
-    if parent_at is None or not (0 <= (provider_at - parent_at).total_seconds() <= 6 * 60 * 60):
+    if parent_at is None or not (0 <= (provider_at - parent_at).total_seconds()
+                                 <= ACTIVE_SPECIALIST_CONTEXT_MAX_AGE_SECONDS):
         return _contained(parsed, "pending_specialist_chronology_invalid", now), 409
     context_identity = _digest(context)[:20].upper()
     try:
@@ -593,7 +597,7 @@ def _load_pending_specialist_context(parsed):
                 where event_source='oom_sakkie_family_message_lifecycle'
                   and review_json->'family_message_lifecycle'->>'owner_user_id'=%s
                   and review_json->'family_message_lifecycle'->>'chat_id'=%s
-                  and (created_at > %s::timestamptz-interval '6 hours'
+                  and (created_at > %s::timestamptz-interval '30 days'
                        or review_json->'family_message_lifecycle'->>'recovery_provider_message_id'=%s)
                   and (created_at <= %s::timestamptz
                        or review_json->'family_message_lifecycle'->>'recovery_provider_message_id'=%s)
@@ -617,8 +621,9 @@ def _load_pending_specialist_context(parsed):
 def _project_pending_history(history, observed):
     if not history:
         return None
-    lifecycle = next((item for item in reversed(history)
-                      if item.get("state") in {"delivered", "updated"}), None)
+    lifecycle_index = next((index for index in range(len(history) - 1, -1, -1)
+        if history[index].get("state") in {"delivered", "updated"}), None)
+    lifecycle = history[lifecycle_index] if lifecycle_index is not None else None
     if lifecycle is None:
         return None
     current = dict(lifecycle)
@@ -627,11 +632,24 @@ def _project_pending_history(history, observed):
     bound_history = [item for item in history
                      if str(item.get("mission_id") or "") == lifecycle_mission
                      and str(item.get("card_mission_id") or "") == lifecycle_card]
+    waiting_notice = next((item for index, item in reversed(list(enumerate(history)))
+        if index > lifecycle_index
+        and str(item.get("mission_id") or "") == lifecycle_mission
+        and str(item.get("card_mission_id") or "") == lifecycle_card
+        and item.get("state") == "notification_delivered"
+        and item.get("task_state") == "waiting_for_input"
+        and str(item.get("notification_message_id") or "")), None)
+    if waiting_notice is not None:
+        current["task_state"] = "waiting_for_input"
+        current["notification_message_id"] = str(waiting_notice["notification_message_id"])
     delivered = next((item for item in reversed(bound_history)
                       if str(item.get("delivery_provider_timestamp") or "")
                       ), {})
     current["delivery_provider_timestamp"] = delivered.get("delivery_provider_timestamp")
     current["telegram_message_id"] = current.get("telegram_message_id") or delivered.get("telegram_message_id")
+    current["reply_message_ids"] = sorted({str(value) for value in (
+        current.get("telegram_message_id"),
+        (waiting_notice or {}).get("notification_message_id")) if str(value or "")})
     def retained(key, fallback=""):
         return current.get(key) or next((item.get(key) for item in reversed(bound_history)
                                          if item.get(key)), fallback)
@@ -641,7 +659,8 @@ def _project_pending_history(history, observed):
     current["accepted_owner_confirmation_binding"] = retained("accepted_owner_confirmation_binding", {})
     current["text_sha256"] = retained("text_sha256")
     delivered_at = _time(current.get("delivery_provider_timestamp"))
-    if delivered_at is None or not 0 <= (observed - delivered_at).total_seconds() <= 6 * 60 * 60:
+    if (delivered_at is None or not 0 <= (observed - delivered_at).total_seconds()
+            <= ACTIVE_SPECIALIST_CONTEXT_MAX_AGE_SECONDS):
         return None
     return current
 

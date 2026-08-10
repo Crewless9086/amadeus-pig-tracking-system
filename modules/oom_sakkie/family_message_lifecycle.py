@@ -57,6 +57,9 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         and str(result.get("card_mission_id") or "") == card_mission_id)
     payload = _event(parsed, mission_id, card_mission_id, specialist,
                      str(result.get("status") or "working"), text_sha)
+    if int(result.get("question_count") or 0) == 1:
+        payload["clarification_question"] = str(
+            result.get("clarification_question") or text)[:240]
     for key in ("execution_id", "entity_id", "domain", "contextual_task_kind",
                 "confirmation_prompt_sha256"):
         if str(result.get(key) or "").strip():

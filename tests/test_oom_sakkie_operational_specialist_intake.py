@@ -407,6 +407,8 @@ def test_visible_notification_receipt_does_not_replace_active_waiting_lifecycle(
     projected=_project_pending_history(history,NOW)
     assert projected["state"]=="updated" and projected["task_state"]=="waiting_for_input"
     assert projected["telegram_message_id"]=="3480"
+    assert projected["notification_message_id"]=="3489"
+    assert projected["reply_message_ids"]==["3480","3489"]
     assert projected["delivery_provider_timestamp"]==(NOW-timedelta(minutes=1)).isoformat()
     assert projected["accepted_owner_confirmation_binding"]["facts"]=={
         "interlock_off":True,"no_enabled_scene":True}
@@ -426,7 +428,7 @@ def test_scheduler_notification_cannot_consume_contextual_owner_reply():
     assert projected["delivery_provider_timestamp"]==(NOW-timedelta(minutes=2)).isoformat()
 
 
-def test_fresh_other_mission_receipt_cannot_revive_stale_waiting_lifecycle():
+def test_other_mission_receipt_cannot_refresh_but_durable_active_lifecycle_survives_delay():
     history=[{"event_id":"MISSION-UPDATE-X-DELIVERED","state":"updated",
         "task_state":"waiting_for_input","mission_id":"MISSION","card_mission_id":"MISSION",
         "telegram_message_id":"3480","delivery_provider_timestamp":(NOW-timedelta(hours=7)).isoformat(),
@@ -434,7 +436,64 @@ def test_fresh_other_mission_receipt_cannot_revive_stale_waiting_lifecycle():
         {"event_id":"OOM-SCHEDULE-ROOTLINE-OTHER-DELIVERED","state":"notification_delivered",
          "mission_id":"OOM-SCHEDULE-ROOTLINE-OTHER","card_mission_id":"MISSION",
          "delivery_provider_timestamp":(NOW-timedelta(minutes=1)).isoformat()}]
-    assert _project_pending_history(history,NOW) is None
+    projected=_project_pending_history(history,NOW)
+    assert projected["mission_id"]=="MISSION"
+    assert projected["delivery_provider_timestamp"]==(NOW-timedelta(hours=7)).isoformat()
+
+
+def test_visible_wait_after_specialist_acceptance_restores_same_active_context_and_reply_identity():
+    history=[{"event_id":"MISSION-UPDATE-READY-DELIVERED","state":"updated",
+        "task_state":"specialist_accepted","mission_id":"MISSION","card_mission_id":"MISSION",
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+        "telegram_message_id":"3480","delivery_provider_timestamp":(NOW-timedelta(hours=8)).isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning","text_sha256":"a"*64,
+        "accepted_owner_confirmation_binding":{"prompt_sha256":"b"*64,
+            "facts":{"interlock_off":True,"no_enabled_scene":True}}},
+        {"event_id":"MISSION-VISIBLE-WAIT-FRESH-DELIVERED","state":"notification_delivered",
+         "task_state":"waiting_for_input","mission_id":"MISSION","card_mission_id":"MISSION",
+         "telegram_message_id":"3480","notification_message_id":"3497",
+         "delivery_provider_timestamp":(NOW-timedelta(minutes=1)).isoformat(),
+         "semantic_intent":"fertilizer_commissioning_presence"}]
+    projected=_project_pending_history(history,NOW)
+    assert projected["state"]=="updated" and projected["task_state"]=="waiting_for_input"
+    assert projected["contextual_task_kind"]=="fertilizer_commissioning"
+    assert projected["reply_message_ids"]==["3480","3497"]
+    item={**operational("Ek is nou by die kunsmiskleppe"),"reply_to_message_id":"3497",
+        "semantic":{"domain":"rootline","intent":"availability_confirmation",
+            "message_kind":"confirmation","continuation":True,"language":"af"}}
+    captured=[]
+    def followup(context,now=None):
+        captured.append(context); return {"success":True,
+            "contract_version":"rootline_fertilizer_commissioning_followup_v1",
+            "status":"specialist_accepted","answer":"Ready",
+            "ready_for_supervised_proof":True,"next_specialist_step":"supervised_fertilizer_mixer_proof",
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False},
+            "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=lambda _:[projected],
+        contextual_specialist_dispatcher=followup)
+    assert status==200 and value["status"]=="specialist_accepted"
+    assert captured[0]["parent_telegram_message_id"]=="3480"
+
+
+def test_old_waiting_notification_cannot_resurrect_later_completed_lifecycle():
+    history=[{"event_id":"MISSION-UPDATE-READY-DELIVERED","state":"updated",
+        "task_state":"specialist_accepted","mission_id":"MISSION","card_mission_id":"MISSION",
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+        "telegram_message_id":"3480","delivery_provider_timestamp":(NOW-timedelta(minutes=3)).isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning"},
+        {"event_id":"MISSION-VISIBLE-WAIT-DELIVERED","state":"notification_delivered",
+         "task_state":"waiting_for_input","mission_id":"MISSION","card_mission_id":"MISSION",
+         "notification_message_id":"3497","delivery_provider_timestamp":(NOW-timedelta(minutes=2)).isoformat()},
+        {"event_id":"MISSION-UPDATE-COMPLETED-DELIVERED","state":"updated",
+         "task_state":"completed","mission_id":"MISSION","card_mission_id":"MISSION",
+         "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+         "telegram_message_id":"3480","delivery_provider_timestamp":(NOW-timedelta(minutes=1)).isoformat(),
+         "contextual_task_kind":"fertilizer_commissioning"}]
+    projected=_project_pending_history(history,NOW)
+    assert projected["task_state"]=="completed"
+    assert "notification_message_id" not in projected
 
 
 def test_invalid_dispatch_result_is_terminal_and_replay_does_not_dispatch_again():
@@ -550,7 +609,7 @@ def test_provider_replay_ledger_failure_is_delivery_suppressed():
     assert recover_contextual_specialist_replay(item,replay_loader=unavailable) is None
 
 
-@pytest.mark.parametrize("parent_at", [None, NOW+timedelta(seconds=1), NOW-timedelta(hours=7)])
+@pytest.mark.parametrize("parent_at", [None, NOW+timedelta(seconds=1), NOW-timedelta(days=31)])
 def test_invalid_parent_provider_chronology_fails_closed(parent_at):
     item={**operational("Done; at fertilizer valves now"),"semantic":{
         "domain":"rootline","intent":"status_update","message_kind":"confirmation",
