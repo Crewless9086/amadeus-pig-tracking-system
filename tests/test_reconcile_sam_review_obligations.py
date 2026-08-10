@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from modules.sales.sam_review_resolution_checkpoint import ResolutionCheckpoint
-from scripts.reconcile_sam_review_obligations import capture
+from scripts.reconcile_sam_review_obligations import capture, canonical_message_type
 
 
 class FakeSource:
@@ -40,6 +40,13 @@ class FakeSource:
 
 
 class ReconcileSamReviewObligationsTests(unittest.TestCase):
+    def test_chatwoot_numeric_message_types_preserve_incoming_zero(self):
+        self.assertEqual(canonical_message_type(0), "incoming")
+        self.assertEqual(canonical_message_type("0"), "incoming")
+        self.assertEqual(canonical_message_type(1), "outgoing")
+        self.assertEqual(canonical_message_type("1"), "outgoing")
+        self.assertEqual(canonical_message_type(None), "")
+
     def test_capture_is_paginated_resumable_and_double_verified(self):
         source = FakeSource()
         with tempfile.TemporaryDirectory() as directory:

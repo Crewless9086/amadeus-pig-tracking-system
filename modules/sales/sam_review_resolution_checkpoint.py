@@ -24,12 +24,13 @@ def atomic_write_json(path: Path, value: Any) -> None:
 
 
 def checkpoint_identity(*, represented_pig_id: str, cutoff_at: str,
-                        review_ids: Iterable[str]) -> str:
+                        review_ids: Iterable[str], conversation_ids: Iterable[str]) -> str:
     material = {
         "version": CHECKPOINT_VERSION,
         "represented_pig_id": str(represented_pig_id),
         "cutoff_at": str(cutoff_at),
         "review_ids": sorted(str(value) for value in review_ids),
+        "conversation_ids": sorted(str(value) for value in conversation_ids),
     }
     return "SAM-REVIEW-SNAPSHOT-" + canonical_sha256(material)[:24].upper()
 
@@ -55,6 +56,7 @@ class ResolutionCheckpoint:
                 represented_pig_id=represented_pig_id,
                 cutoff_at=cutoff_at,
                 review_ids=review_ids,
+                conversation_ids=conversation_ids,
             ),
             "represented_pig_id": represented_pig_id,
             "cutoff_at": cutoff_at,
@@ -79,9 +81,15 @@ class ResolutionCheckpoint:
             represented_pig_id=value.get("represented_pig_id"),
             cutoff_at=value.get("cutoff_at"),
             review_ids=value.get("review_ids") or [],
+            conversation_ids=value.get("conversation_ids") or [],
         )
         if value.get("snapshot_id") != expected:
             raise ValueError("checkpoint_digest_mismatch")
+        if value.get("review_allowlist_sha256") != canonical_sha256(value.get("review_ids") or []):
+            raise ValueError("review_allowlist_digest_mismatch")
+        if value.get("conversation_allowlist_sha256") != canonical_sha256(
+                value.get("conversation_ids") or []):
+            raise ValueError("conversation_allowlist_digest_mismatch")
         return value
 
     def store_review(self, review: Mapping[str, Any], *, verification: bool = False) -> bool:
@@ -125,7 +133,8 @@ class ResolutionCheckpoint:
         return True
 
     def validate_complete(self, *, expected_review_count: int,
-                          expected_conversation_count: int) -> dict:
+                          expected_conversation_count: int,
+                          expected_latest_review_count: int | None = None) -> dict:
         metadata = self.load_metadata()
         if len(metadata["review_ids"]) != expected_review_count:
             raise ValueError("exact_review_population_required")
@@ -144,6 +153,13 @@ class ResolutionCheckpoint:
             if packet != verified_packet:
                 raise ValueError(f"review_changed_during_snapshot:{review_id}")
             review_packets.append(packet)
+        if expected_latest_review_count is not None:
+            latest_count = sum(
+                packet.get("is_latest_for_conversation") is True
+                for packet in review_packets
+            )
+            if latest_count != expected_latest_review_count:
+                raise ValueError(f"exact_latest_review_population_required:{latest_count}")
         conversation_packets = {}
         for conversation_id in metadata["conversation_ids"]:
             captured_path = self.conversations_path / f"{conversation_id}.json"

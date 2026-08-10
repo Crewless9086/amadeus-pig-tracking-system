@@ -110,6 +110,40 @@ def evidence(index=1, **overrides):
 
 
 class SamReviewObligationResolutionTests(unittest.TestCase):
+    def test_later_review_supersedes_history_without_manufacturing_successor_work(self):
+        proof = evidence(content_obligation={
+            "supported_obligation_answered": False,
+            "relied_on_superseded_identity": False,
+            "review_is_latest_for_conversation": False,
+        })
+        result = resolve_review_obligation(
+            review=review(), evidence=proof, represented_identity=represented()
+        )
+        self.assertEqual(result["customer_obligation_status"], "superseded_by_later_review")
+        self.assertEqual(result["resolution_action"], "historical")
+        self.assertIsNone(result["successor_work_item_id"])
+
+    def test_superseded_review_does_not_hide_protected_or_quarantined_state(self):
+        base = {
+            "supported_obligation_answered": False,
+            "relied_on_superseded_identity": False,
+            "review_is_latest_for_conversation": False,
+        }
+        protected = resolve_review_obligation(
+            review=review(), evidence=evidence(
+                content_obligation=base,
+                protected_decision={"active": True},
+            ), represented_identity=represented(),
+        )
+        self.assertEqual(protected["resolution_action"], "protected")
+        quarantined = resolve_review_obligation(
+            review=review(), evidence=evidence(
+                content_obligation=base,
+                quarantine={"active": True},
+            ), represented_identity=represented(),
+        )
+        self.assertEqual(quarantined["resolution_action"], "quarantined")
+
     def test_active_unanswered_is_replanned_without_alias(self):
         result = resolve_review_obligation(
             review=review(), evidence=evidence(), represented_identity=represented()
@@ -125,6 +159,36 @@ class SamReviewObligationResolutionTests(unittest.TestCase):
             "evidence_sha256": "d" * 64,
             "outgoing_message_id": "OUT-DELIVERY-EVIDENCE",
         })
+        result = resolve_review_obligation(
+            review=review(), evidence=proof, represented_identity=represented()
+        )
+        self.assertEqual(
+            result["customer_obligation_status"],
+            "delivered_attempt_requires_content_resolution",
+        )
+        self.assertEqual(result["resolution_action"], "indeterminate")
+
+    def test_exact_attributed_delivery_without_content_review_remains_unresolved(self):
+        proof = evidence(
+            delivery={
+                "status": "provider_delivered",
+                "outgoing_message_id": "OUT-BOUND",
+            },
+            content_obligation={
+                "supported_obligation_answered": False,
+                "relied_on_superseded_identity": False,
+            },
+            later_public_outgoing={
+                "message_id": "OUT-BOUND",
+                "bound_reply_to_inbound_id": "IN-001",
+                "content_sha256": "9" * 64,
+                "response_class_evidence_id": "CONTENT-REVIEW-REQUIRED",
+            },
+            public_chronology=[
+                {"message_id": "IN-001", "message_type": "incoming"},
+                {"message_id": "OUT-BOUND", "message_type": "outgoing"},
+            ],
+        )
         result = resolve_review_obligation(
             review=review(), evidence=proof, represented_identity=represented()
         )

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from modules.sales.sam_review_obligation_resolution import canonical_sha256
@@ -75,6 +76,28 @@ class ResolutionCheckpointTests(unittest.TestCase):
             self.checkpoint.initialize(
                 represented_pig_id="PIG-X", cutoff_at="2026-08-10T13:00:00+00:00",
                 review_ids=["R1", "R2"], conversation_ids=["C1", "C2"],
+            )
+
+    def test_metadata_allowlist_digest_tampering_fails_closed(self):
+        value = json.loads(self.checkpoint.metadata_path.read_text(encoding="utf-8"))
+        value["conversation_allowlist_sha256"] = "0" * 64
+        self.checkpoint.metadata_path.write_text(json.dumps(value), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "conversation_allowlist_digest_mismatch"):
+            self.checkpoint.load_metadata()
+
+    def test_exact_latest_review_population_is_enforced(self):
+        for review_id, latest in (("R1", True), ("R2", False)):
+            packet = {"review_event_id": review_id, "is_latest_for_conversation": latest}
+            self.checkpoint.store_review(packet)
+            self.checkpoint.store_review(packet, verification=True)
+        for conversation_id in ("C1", "C2"):
+            packet = self.conversation(conversation_id)
+            self.checkpoint.store_conversation(conversation_id, packet)
+            self.checkpoint.store_conversation(conversation_id, packet, verification=True)
+        with self.assertRaisesRegex(ValueError, "exact_latest_review_population_required:1"):
+            self.checkpoint.validate_complete(
+                expected_review_count=2, expected_conversation_count=2,
+                expected_latest_review_count=2,
             )
 
     def test_pagination_shape_may_change_when_cutoff_prefix_is_identical(self):
