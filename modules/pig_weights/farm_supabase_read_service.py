@@ -1185,6 +1185,25 @@ def _litter_rows_with_pigs(connect_factory=None):
         """,
         connect_factory=connect_factory,
     )
+    mating_rows = _fetch_all(
+        """
+        select mating_id, related_litter_id, mating_date, expected_farrowing_date
+        from public.mating_events
+        where related_litter_id is not null
+        order by mating_date desc nulls last, mating_id desc
+        """,
+        connect_factory=connect_factory,
+    )
+    latest_mating_by_litter = {}
+    for mating in mating_rows:
+        related_litter_id = _text(mating.get("related_litter_id"))
+        if related_litter_id and related_litter_id not in latest_mating_by_litter:
+            latest_mating_by_litter[related_litter_id] = mating
+    for litter in litters:
+        mating = latest_mating_by_litter.get(_text(litter.get("litter_id"))) or {}
+        litter["mating_id"] = _text(mating.get("mating_id"))
+        litter["mating_date"] = mating.get("mating_date")
+        litter["expected_farrowing_date"] = mating.get("expected_farrowing_date")
     pigs = _current_state_rows(connect_factory=connect_factory)
     pigs_by_litter = {}
     for pig in pigs:
@@ -1540,6 +1559,9 @@ def get_litter_detail(litter_id, connect_factory=None):
         "mother_tag_number": _text(litter.get("sow_tag_number")),
         "father_pig_id": _text(litter.get("boar_pig_id")),
         "father_tag_number": _text(litter.get("boar_tag_number")),
+        "mating_id": _text(litter.get("mating_id")),
+        "mating_date": _date_text(litter.get("mating_date")),
+        "expected_farrowing_date": _date_text(litter.get("expected_farrowing_date")),
         "litter_status": litter_status,
         "detail_state": detail_state,
         "count": len(piglets),

@@ -1670,8 +1670,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("buildPigletTable", js)
         self.assertIn("pigletStatusText", js)
         self.assertIn("Stillborn", js)
-        self.assertIn("Wean Date", js)
-        self.assertIn("Wean Weight", js)
+        self.assertIn("Speengewig", js)
+        self.assertIn("Huidige gewig", js)
         self.assertIn("wirePigletTableRows", js)
         self.assertIn("data-pig-profile", js)
         self.assertIn("pigProfileHref", js)
@@ -1683,6 +1683,14 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("litter.estimated_wean_date", js)
         self.assertIn("litter.wean_tag_attention_start_date", js)
         self.assertIn("litter-piglet-table", Path("static/css/main.css").read_text(encoding="utf-8"))
+        lifecycle_js = Path("static/js/litterLifecycleLayout.js").read_text(encoding="utf-8")
+        lifecycle_css = Path("static/css/litterLifecycle.css").read_text(encoding="utf-8")
+        self.assertIn("Paring en identiteit", lifecycle_js)
+        self.assertIn("Eerste behandeling", lifecycle_js)
+        self.assertIn("Speen en tweede behandeling", lifecycle_js)
+        self.assertIn("Vrektes en notas", lifecycle_js)
+        self.assertIn("Regstellings en geskiedenis", lifecycle_js)
+        self.assertIn("lifecycle-stage", lifecycle_css)
 
     def test_pig_dropdowns_pad_numeric_tags_for_display(self):
         paths = [

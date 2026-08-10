@@ -247,7 +247,7 @@ function productMatches(product, patterns) {
 
 function setSelectOptions(select, products, patterns, preferredName = "") {
   if (!select) return;
-  select.innerHTML = '<option value="">None</option>';
+  select.innerHTML = '<option value="">Geen</option>';
   const matches = products.filter((product) => productMatches(product, patterns));
   matches.forEach((product) => {
     const option = document.createElement("option");
@@ -298,7 +298,7 @@ async function loadPensForWeaningDay() {
     throw new Error("Could not load pens.");
   }
   const currentValue = weaningDayTargetPen.value;
-  weaningDayTargetPen.innerHTML = '<option value="">No pen move</option>';
+  weaningDayTargetPen.innerHTML = '<option value="">Geen kampverskuiwing</option>';
   (data.pens || []).forEach((pen) => {
     const option = document.createElement("option");
     option.value = pen.pen_id || pen.Pen_ID || "";
@@ -315,7 +315,8 @@ function renderAttention(litter) {
   const canMarkWeaned = attention.action_type === "mark_weaned";
   const attentionTextValue = `${attention.action_type || ""} ${attention.reason || ""} ${attention.recommended_action || ""}`.toLowerCase();
   const canRecordNewbornHealth =
-    attention.action_type === "record_litter_newborn_health"
+    (detailState(litter) === "active" && Number(litter.count || 0) > 0)
+    || attention.action_type === "record_litter_newborn_health"
     || attentionTextValue.includes("earmark")
     || attentionTextValue.includes("deworm")
     || attentionTextValue.includes("antiparasitic")
@@ -883,7 +884,7 @@ function setNewbornHealthSubmitting(isSubmitting, mode = "preview") {
 function renderPigletDeathPanel(litter) {
   const hasActivePiglets = manualActionAvailability(litter).canRecordPigletDeath;
   if (pigletDeathPanel) {
-    pigletDeathPanel.classList.toggle("hidden", !hasActivePiglets || !manualActionsExpanded);
+    pigletDeathPanel.classList.toggle("hidden", !hasActivePiglets);
   }
   if (pigletDeathDate && !pigletDeathDate.value) {
     pigletDeathDate.value = todayIsoDate();
@@ -1413,8 +1414,13 @@ function pigletWeightText(piglet) {
 
 function pigletStatusText(piglet) {
   const exitReason = String(piglet.exit_reason || "").toLowerCase().replace(/[-_]/g, " ");
-  if (exitReason === "stillborn") return "Stillborn";
-  return piglet.status || "-";
+  if (exitReason === "stillborn") return "Doodgebore";
+  const labels = { Active: "Aktief", Dead: "Dood", Sold: "Verkoop", Slaughtered: "Geslag", Removed: "Verwyder" };
+  return labels[piglet.status] || piglet.status || "-";
+}
+
+function pigletSexText(value) {
+  return ({ Male: "Beer", Female: "Sog" })[value] || value || "-";
 }
 
 function pigletWeanWeightText(piglet) {
@@ -1431,27 +1437,19 @@ function buildPigletTable(piglets) {
     const canEditTag = litterIsActive && piglet.status === "Active" && piglet.on_farm === "Yes" && !piglet.tag_number;
     const canEditWeanWeight = litterIsActive && piglet.status === "Active" && piglet.on_farm === "Yes";
     const tagCell = canEditTag
-      ? `<input class="piglet-tag-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="text" placeholder="Add tag" aria-label="Tag number for ${escapeHtml(piglet.pig_id || "piglet")}" />`
+      ? `<input class="piglet-tag-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="text" placeholder="Voeg tag by" aria-label="Tag nommer vir ${escapeHtml(piglet.pig_id || "varkie")}" />`
       : `<strong>${escapeHtml(piglet.tag_number || "-")}</strong>`;
     const weanWeightCell = canEditWeanWeight
       ? `<input class="piglet-wean-weight-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="number" min="0.1" step="0.1" placeholder="kg" aria-label="Wean weight for ${escapeHtml(piglet.pig_id || "piglet")}" />`
       : escapeHtml(pigletWeanWeightText(piglet));
     return `
       <tr class="litter-piglet-row" data-pig-profile="${profileHref}" tabindex="0">
-        <td>
-          <strong>${escapeHtml(piglet.pig_id || "-")}</strong>
-          <span class="table-subtext">${escapeHtml(piglet.calculated_stage || "-")}</span>
-        </td>
-        <td>${tagCell}</td>
-        <td>${escapeHtml(piglet.sex || "-")}</td>
+        <td>${tagCell}<span class="table-subtext">${escapeHtml(piglet.pig_id || "")}</span></td>
+        <td>${escapeHtml(pigletSexText(piglet.sex))}</td>
         <td>${escapeHtml(pigletWeightText(piglet))}</td>
-        <td>${escapeHtml(piglet.wean_date || "-")}</td>
         <td>${weanWeightCell}</td>
-        <td>${escapeHtml(pigletStatusText(piglet))}</td>
-        <td>${escapeHtml(piglet.on_farm || "-")}</td>
-        <td>${escapeHtml(piglet.age_days || "-")}</td>
-        <td>${escapeHtml(piglet.current_pen_id || "-")}</td>
-        <td><a class="small-action-button table-open-link" href="${profileHref}">Open</a></td>
+        <td><span>${escapeHtml(pigletStatusText(piglet))}</span><span class="table-subtext">${escapeHtml(piglet.current_pen_id || "Geen kamp")}</span></td>
+        <td><a class="small-action-button table-open-link" href="${profileHref}">Maak oop</a></td>
       </tr>
     `;
   }).join("");
@@ -1461,17 +1459,12 @@ function buildPigletTable(piglets) {
       <table class="simple-table">
         <thead>
           <tr>
-            <th>Pig ID</th>
-            <th>Tag Number</th>
-            <th>Sex</th>
-            <th>Weight</th>
-            <th>Wean Date</th>
-            <th>Wean Weight</th>
-            <th>Status</th>
-            <th>On Farm</th>
-            <th>Age</th>
-            <th>Pen</th>
-            <th>Profile</th>
+            <th>Tag</th>
+            <th>Geslag</th>
+            <th>Huidige gewig</th>
+            <th>Speengewig</th>
+            <th>Status / kamp</th>
+            <th>Profiel</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -1529,19 +1522,22 @@ async function loadLitterDetail(options = {}) {
     const litter = data.litter;
     window.currentLitterDetail = litter;
 
-    document.getElementById("litter_title").textContent = `Litter - ${litter.litter_id}`;
+    document.getElementById("litter_title").textContent = `Werpsel - ${litter.litter_id}`;
     const state = detailState(litter);
-    const stateLabel = state === "completed" ? "Completed litter" : state === "weaned" ? "Weaned litter" : "Active litter";
-    document.getElementById("litter_subtitle").textContent = `${stateLabel} - ${litter.count} piglet(s) linked to this litter`;
+    const stateLabel = state === "completed" ? "Voltooide werpsel" : state === "weaned" ? "Gespeende werpsel" : "Aktiewe werpsel";
+    document.getElementById("litter_subtitle").textContent = `${stateLabel} - ${litter.count} varkie(s) aan hierdie werpsel gekoppel`;
 
     setText("litter_id_value", litter.litter_id);
-    setText("litter_status_value", litter.litter_status || "Unknown");
+    const statusLabel = ({ Active: "Aktief", Weaned: "Gespeen", Completed: "Voltooi", Review: "Kontroleer" })[litter.litter_status] || litter.litter_status || "Onbekend";
+    setText("litter_status_value", statusLabel);
     setText("litter_count_value", litter.count);
     setText("litter_male_count_value", litter.male_count);
     setText("litter_female_count_value", litter.female_count);
     setText("litter_active_count_value", litter.active_count);
     setText("litter_average_weight_value", litter.average_weight_kg, litter.average_weight_kg !== null ? " kg" : "");
     setText("litter_birth_date_value", litter.birth_date);
+    setText("litter_mating_date_value", litter.mating_date);
+    setText("litter_expected_farrowing_date_value", litter.expected_farrowing_date);
     setText("litter_estimated_wean_date_value", litter.estimated_wean_date);
     setText("litter_wean_attention_start_value", litter.wean_tag_attention_start_date);
     setText(
@@ -1572,6 +1568,9 @@ async function loadLitterDetail(options = {}) {
     renderPigletDeathPanel(litter);
     renderSexCountPanel(litter);
     renderTagNumbersPanel(litter);
+    if (window.renderLitterLifecyclePresentation) {
+      window.renderLitterLifecyclePresentation(litter);
+    }
     litterPigletsList.innerHTML = "";
 
     if (!litter.piglets.length) {
