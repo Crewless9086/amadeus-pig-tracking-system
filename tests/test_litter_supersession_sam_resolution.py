@@ -40,10 +40,8 @@ class _Connection:
                 "REVIEW-1", json.dumps(decision, separators=(",", ":")),
                 True, False, False, False, False, False, False, False,
                 False, False, False, True, False, False, "owner_decision",
-                "SALE", "shadow_review", "{}",
+                "SALE", "shadow_review", "{}", *(self.resolution or (None,) * 9),
             )])
-        if "from public.current_sam_review_obligation_resolutions" in normalized:
-            return _Cursor(self.resolution)
         raise AssertionError(normalized)
 
 

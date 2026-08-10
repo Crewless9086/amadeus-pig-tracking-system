@@ -150,7 +150,14 @@ def _sam_review_history_references(connection, superseded_ids, column_names):
                review.creates_order,review.reserves_stock,review.changes_stock,review.writes_farm_data,
                review.safe_to_send,review.owner_send_required,review.no_reply_recommended,
                review.escalation_required,review.recommended_action,
-               review.conversation_mode_recommendation,review.event_source,review.review_json::text
+               review.conversation_mode_recommendation,review.event_source,review.review_json::text,
+               resolution.resolution_event_id,resolution.represented_pig_id,
+               resolution.represented_identity_status,
+               resolution.same_animal_mapping_prohibited,
+               resolution.canonical_same_animal_pig_id,
+               resolution.governed_disposition_operation_id,
+               resolution.customer_obligation_status,resolution.resolution_action,
+               resolution.event_payload_sha256
           from public.sam_live_stock_conversation_review_events review
           join public.current_sam_review_obligation_resolutions resolution
             on resolution.review_event_id=review.review_event_id
@@ -178,20 +185,7 @@ def _sam_review_history_references(connection, superseded_ids, column_names):
             raise RuntimeError("unsupported SAM review reference blocks correction")
         resolution = None
         if action_bearing:
-            resolution = connection.execute(
-                """
-                select resolution_event_id,represented_pig_id,
-                       represented_identity_status,
-                       same_animal_mapping_prohibited,
-                       canonical_same_animal_pig_id,
-                       governed_disposition_operation_id,
-                       customer_obligation_status,resolution_action,
-                       event_payload_sha256
-                  from public.current_sam_review_obligation_resolutions
-                 where review_event_id=%s
-                """,
-                (str(row[0]),),
-            ).fetchone()
+            resolution = row[20:29]
             if (
                 resolution is None
                 or resolution[1] not in superseded_ids
