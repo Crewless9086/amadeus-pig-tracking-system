@@ -45,42 +45,42 @@
         <a class="operating-card card-weather is-loading" id="weather_panel" href="/weather">
           <div class="card-top"><span class="card-symbol" id="weather_symbol" aria-hidden="true">◌</span><span class="freshness" id="weather_age">Loading</span></div>
           <div class="card-copy"><span class="farm-eyebrow">Weather</span><h2 id="weather_temperature">--</h2><p id="weather_headline">Reading the farm weather station…</p></div>
-          <div class="card-facts"><span><small>Rain today</small><strong id="weather_rain">--</strong></span><span><small>Next</small><strong id="weather_next">--</strong></span></div>
+          <div class="card-facts"><span><small>Rain today</small><strong id="weather_rain">--</strong></span><span><small>Humidity</small><strong id="weather_humidity">--</strong></span><span><small>Wind</small><strong id="weather_wind">--</strong></span><span><small>Tomorrow</small><strong id="weather_next">--</strong></span></div>
           <span class="card-open">Open weather <b>→</b></span>
         </a>
 
         <a class="operating-card card-power is-loading" id="power_panel" href="/power">
           <div class="card-top"><span class="card-symbol" aria-hidden="true">◒</span><span class="freshness" id="power_age">Loading</span></div>
           <div class="card-copy"><span class="farm-eyebrow">Power</span><h2 id="power_battery">--</h2><p id="power_headline">Reading Sunsynk…</p></div>
-          <div class="card-facts"><span><small>Solar</small><strong id="power_solar">--</strong></span><span><small>Load</small><strong id="power_load">--</strong></span></div>
+          <div class="card-facts"><span><small>Solar</small><strong id="power_solar">--</strong></span><span><small>Load</small><strong id="power_load">--</strong></span><span><small>Grid</small><strong id="power_grid">--</strong></span><span><small>Battery</small><strong id="power_state">--</strong></span></div>
           <span class="card-open">Open power <b>→</b></span>
         </a>
 
         <a class="operating-card card-water is-loading" id="irrigation_panel" href="/irrigation">
           <div class="card-top"><span class="card-symbol" aria-hidden="true">◉</span><span class="freshness" id="irrigation_source">Loading</span></div>
           <div class="card-copy"><span class="farm-eyebrow">Irrigation</span><h2 id="irrigation_status">--</h2><p id="irrigation_note">Reading the current water plan…</p></div>
-          <div class="card-facts"><span><small>Current</small><strong id="irrigation_current_zone">--</strong></span><span><small>Next</small><strong id="irrigation_next_zone">--</strong></span></div>
+          <div class="card-facts"><span><small>B Camp</small><strong id="irrigation_b_status">--</strong></span><span><small>C Camp</small><strong id="irrigation_c_status">--</strong></span><span><small>Done today</small><strong id="irrigation_done">--</strong></span><span><small>Skipped / held</small><strong id="irrigation_held">--</strong></span></div>
           <span class="card-open">Open irrigation <b>→</b></span>
         </a>
 
         <a class="operating-card card-herd is-loading" id="herd_panel" href="/pigs">
           <div class="card-top"><span class="card-symbol" aria-hidden="true">◆</span><span class="freshness">Canonical herd</span></div>
           <div class="card-copy"><span class="farm-eyebrow">Herd</span><h2 id="herd_total">--</h2><p>pigs currently on farm</p></div>
-          <div class="card-facts"><span><small>Sows</small><strong id="herd_sows">--</strong></span><span><small>Piglets</small><strong id="herd_piglets">--</strong></span></div>
+          <div class="card-facts"><span><small>Sows</small><strong id="herd_sows">--</strong></span><span><small>Piglets</small><strong id="herd_piglets">--</strong></span><span><small>Available for sale</small><strong id="herd_available">--</strong></span><span><small>Reserved pigs</small><strong id="herd_reserved">--</strong></span></div>
           <span class="card-open">Open herd <b>→</b></span>
         </a>
 
         <a class="operating-card card-breeding is-loading" id="breeding_panel" href="/matings">
           <div class="card-top"><span class="card-symbol" aria-hidden="true">◇</span><span class="freshness">HERDMASTER</span></div>
           <div class="card-copy"><span class="farm-eyebrow">Breeding</span><h2 id="breeding_attention">--</h2><p id="breeding_headline">Checking litter and breeding work…</p></div>
-          <div class="card-facts"><span><small>Boars</small><strong id="herd_boars">--</strong></span><span><small>Outcomes</small><strong id="herd_outcomes">--</strong></span></div>
+          <div class="card-facts"><span><small>Open matings</small><strong id="breeding_open">--</strong></span><span><small>Due in 14 days</small><strong id="breeding_due">--</strong></span><span><small>Overdue</small><strong id="breeding_overdue">--</strong></span><span><small>Boars / litter work</small><strong><span id="herd_boars">--</span> / <span id="breeding_litters">--</span></strong></span></div>
           <span class="card-open">Open breeding <b>→</b></span>
         </a>
 
         <a class="operating-card card-sales is-loading" id="orders_panel" href="/sales-dashboard">
           <div class="card-top"><span class="card-symbol" aria-hidden="true">R</span><span class="freshness">SAM</span></div>
           <div class="card-copy"><span class="farm-eyebrow">Sales &amp; Orders</span><h2 id="orders_attention">--</h2><p id="orders_headline">Checking customers and approvals…</p></div>
-          <div class="card-facts"><span><small>Pending</small><strong id="orders_pending">--</strong></span><span><small>Month</small><strong id="sales_recent_value">--</strong></span></div>
+          <div class="card-facts"><span><small>Pending</small><strong id="orders_pending">--</strong></span><span><small>Completed today</small><strong id="orders_completed">--</strong></span><span><small>Live-sale ready</small><strong id="sales_ready">--</strong></span><span><small>Month</small><strong id="sales_recent_value">--</strong></span></div>
           <span class="card-open">Open sales <b>→</b></span>
         </a>
       </section>
@@ -102,6 +102,6 @@
       </details>
     </main>
   </div>
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260810-v2"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260810-live-connections"></script>
 </body>
 </html>

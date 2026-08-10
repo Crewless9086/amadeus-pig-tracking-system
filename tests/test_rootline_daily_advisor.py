@@ -725,10 +725,11 @@ class RootlineDailyAdvisorRouteTests(unittest.TestCase):
     def test_existing_dashboard_has_one_panel_and_no_embedded_evidence(self):
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")
         javascript = Path("static/js/dashboard.js").read_text(encoding="utf-8")
-        self.assertEqual(template.count('id="rootline_panel"'), 1)
-        self.assertEqual(template.count('id="rootline_advisor_zones"'), 1)
+        self.assertEqual(template.count('id="irrigation_panel"'), 1)
+        self.assertEqual(template.count('id="irrigation_b_status"'), 1)
+        self.assertEqual(template.count('id="irrigation_c_status"'), 1)
         self.assertEqual(
-            javascript.count("/api/telemetry/rootline/daily-advisor?date="), 1
+            javascript.count("/api/telemetry/irrigation/status?date="), 1
         )
         self.assertNotIn(C12345_CANARY_SHA256, template)
         self.assertNotIn("irrigation_1_ch2_on", template)
