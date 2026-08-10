@@ -54,6 +54,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         payload["accepted_owner_confirmation_binding"] = dict(result["accepted_owner_confirmation_binding"])
     provider_replay = next((row for row in reversed(events)
         if row.get("state") in {"delivered", "updated", "provider_binding"}
+        and (row.get("state") == "provider_binding"
+             or (not str(row.get("recovery_provider_message_id") or "")
+                 and (not str(row.get("event_id") or "")
+                      or str(row.get("event_id") or "").endswith("-DELIVERED"))))
         and str(row.get("provider_message_id") or "") == inbound_binding["provider_message_id"]), None)
     if provider_replay and not provider_replay.get("inbound_text_sha256"):
         return {"success": False, "status": "family_message_provider_replay_binding_unavailable",

@@ -208,6 +208,25 @@ def test_updated_card_without_notification_claim_resumes_notification_only():
     assert len(memory.edited)==1 and len(memory.sent)==2
 
 
+def test_context_recovery_projection_is_not_mistaken_for_provider_delivery():
+    memory=Memory();mission="OOM-ROOTLINE-CONTEXT-RECOVERY"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    memory.store("record",mission+"-UPDATE-RECOVERY-DELIVERED",{
+        "event_id":mission+"-UPDATE-RECOVERY-DELIVERED","state":"updated","task_state":"waiting_for_input",
+        "mission_id":mission,"card_mission_id":mission,"telegram_message_id":"700",
+        "provider_message_id":"501","provider_timestamp":PARSED["provider_timestamp"],
+        "recovery_provider_message_id":"501",
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+        "inbound_text_sha256":"not-a-delivery-binding","text_sha256":"a"*64})
+    follow_parsed={**PARSED,"provider_message_id":"501"}
+    follow={**RESULT,"answer":"Are you still at the valves?","requires_visible_notification":True}
+    result=deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert result["status"]=="family_message_card_updated_and_notified"
+    assert result["telegram_edits"]==1 and result["telegram_sends"]==1
+
+
 def test_process_interruption_does_not_blindly_resend():
     memory=Memory();mission="OOM-HERD-INTERRUPTED"
     memory.store("record",mission+"-DELIVERY-ATTEMPT",{"card_mission_id":mission,
