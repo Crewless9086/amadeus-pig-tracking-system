@@ -419,8 +419,8 @@ class LitterAttentionSummaryTests(unittest.TestCase):
         self.assertEqual(result["count"], 1)
         self.assertEqual(result["items"][0]["action_type"], "")
         self.assertEqual(result["items"][0]["reason"], "Piglets need tag numbers")
-        self.assertEqual(result["items"][0]["estimated_wean_date"], "2026-06-05")
-        self.assertEqual(result["items"][0]["wean_tag_attention_start_date"], "2026-06-02")
+        self.assertEqual(result["items"][0]["estimated_wean_date"], "2026-05-31")
+        self.assertEqual(result["items"][0]["wean_tag_attention_start_date"], "2026-05-28")
 
     def test_weaned_litter_only_reviews_purpose_when_active_piglets_have_unknown_purpose(self):
         pig_rows = [

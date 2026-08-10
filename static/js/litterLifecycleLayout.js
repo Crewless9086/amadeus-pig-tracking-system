@@ -104,9 +104,9 @@ window.renderLitterLifecyclePresentation = function renderLitterLifecyclePresent
   status("lifecycle_birth", reconciliation.mismatch ? "Aandag nodig" : "Voltooi", reconciliation.mismatch ? "needs-attention" : "is-complete");
   const firstCareComplete = litter.first_treatment_complete === true;
   const firstCarePartial = litter.first_treatment_partial === true;
-  const firstCareSkipped = state !== "active" && !firstCareComplete;
+  const firstCareSkipped = litter.first_treatment_skipped === true || (state !== "active" && !firstCareComplete);
   status("lifecycle_first_care",
-    firstCareComplete ? "Voltooi" : firstCareSkipped ? "Oorgeslaan · gesluit" : firstCarePartial ? "Kontroleer" : "Opsioneel",
+    firstCareComplete ? "Voltooi" : firstCareSkipped ? "Oorgeslaan · gesluit" : firstCarePartial ? "Kontroleer" : litter.first_treatment_attention_due ? "Aandag nodig" : "Opsioneel",
     firstCareComplete || firstCareSkipped ? "is-complete" : firstCarePartial ? "needs-attention" : "is-current"
   );
   const firstCareSummary = document.getElementById("lifecycle_first_care_summary");
@@ -123,7 +123,7 @@ window.renderLitterLifecyclePresentation = function renderLitterLifecyclePresent
     } else if (firstCarePartial) {
       firstCareSummary.innerHTML = `<strong>Behandeling moet gekontroleer word</strong><span>Slegs gedeeltelike mediese bewyse is beskikbaar. Die gewone hele-werpselaksie is gesluit om duplisering te voorkom; gebruik die regstellingspad.</span>`;
     } else {
-      firstCareSummary.innerHTML = `<strong>Eerste behandeling oorgeslaan</strong><span>Speen is reeds voltooi. Hierdie vroeë behandelingstap is gesluit en kan nie nou per ongeluk herhaal word nie.</span>`;
+      firstCareSummary.innerHTML = `<strong>Eerste behandeling oorgeslaan</strong><span>Hierdie stap is uitdruklik gesluit en sal nie weer waarsku nie.</span>`;
     }
   }
   status("lifecycle_weaning", state === "active" ? "Besig" : "Voltooi", state === "active" ? "is-current" : "is-complete");
@@ -134,7 +134,7 @@ window.renderLitterLifecyclePresentation = function renderLitterLifecyclePresent
   if (reconciliation.mismatch) {
     nextAction = "Kontroleer die geboortetellings.";
     nextReason = attention.reason || reconciliation.recommended_action || "Die brontelling en gekoppelde varkies stem nie ooreen nie.";
-  } else if (state === "active" && attention.action_type === "mark_weaned") {
+  } else if (state === "active" && ["mark_weaned", "complete_weaning"].includes(attention.action_type)) {
     nextAction = "Voltooi Speen en tweede behandeling.";
     nextReason = attention.reason || attention.recommended_action || "Die werpsel is gereed vir die speenwerkvloei.";
   } else if (state === "active") {

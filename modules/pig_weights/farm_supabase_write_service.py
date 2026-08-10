@@ -109,6 +109,9 @@ _LITTER_UPDATE_FIELD_MAP = {
     "Wean_Date": "wean_date",
     "Litter_Status": "litter_status",
     "Litter_Notes": "litter_notes",
+    "First_Treatment_Skipped_At": "first_treatment_skipped_at",
+    "First_Treatment_Skipped_By": "first_treatment_skipped_by",
+    "First_Treatment_Skip_Reason": "first_treatment_skip_reason",
 }
 
 
@@ -121,6 +124,7 @@ _LITTER_UPDATE_CASTS = {
     "unknown_sex_count": _int_or_none,
     "weaned_count": _int_or_none,
     "wean_date": _date_or_none,
+    "first_treatment_skipped_at": lambda value: value,
 }
 
 

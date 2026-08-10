@@ -64,7 +64,7 @@ LITTER_PIGLET_DEATH_REASONS = {
 }
 STILLBORN_RECLASSIFY_CANDIDATE_REASONS = {"Died", "Died after birth", "Unknown", ""}
 LITTER_HEALTH_EARMARK_FIELDS = ("Earmarked", "Earmark_Date")
-DEFAULT_LITTER_WEAN_AGE_DAYS = 35
+DEFAULT_LITTER_WEAN_AGE_DAYS = 30
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
 POST_WEAN_PURPOSE_REVIEW_DAYS = 14
 LIVE_SALE_TARGET_KG = 60
@@ -683,6 +683,8 @@ def get_litter_attention_summary(limit: int = 5, today=None):
             pig_master_rows,
             medical_rows,
             newborn_products,
+            farrowing_date_value=summary_timing_row["Farrowing_Date"],
+            today=today,
         )
         if newborn_attention:
             reason = newborn_attention["reason"]
@@ -1832,8 +1834,16 @@ def _newborn_health_product_ids(products=None):
     return result
 
 
-def _litter_newborn_health_attention(litter_id, litter_status, wean_date_value, pig_master_rows, medical_rows, newborn_products):
+def _litter_newborn_health_attention(
+    litter_id, litter_status, wean_date_value, pig_master_rows, medical_rows, newborn_products,
+    farrowing_date_value=None, today=None,
+):
     if to_clean_string(litter_status) == "Weaned" or parse_sheet_date(wean_date_value):
+        return None
+
+    farrowing_date = parse_sheet_date(farrowing_date_value)
+    today = today or datetime.now().date()
+    if farrowing_date and today < farrowing_date + timedelta(days=4):
         return None
 
     active_piglets = [
@@ -1895,6 +1905,8 @@ def _build_litter_attention(row, pig_rows=None, pig_master_rows=None, medical_ro
             pig_master_rows,
             medical_rows,
             newborn_products or _newborn_health_product_ids(),
+            farrowing_date_value=row.get("Farrowing_Date", ""),
+            today=today,
         )
 
     if newborn_attention:
@@ -3645,6 +3657,44 @@ def record_litter_newborn_health(
             if dry_run
             else f"Litter {litter_id} newborn health action saved for {len(active_piglets)} piglet(s)."
         ),
+    }, 200
+
+
+def skip_litter_first_treatment(litter_id: str, changed_by: str = "web_app", reason: str = ""):
+    litter_id = to_clean_string(litter_id)
+    changed_by = to_clean_string(changed_by) or "web_app"
+    reason = to_clean_string(reason) or "Owner marked the optional first treatment as skipped."
+    if not litter_id:
+        return {"success": False, "errors": ["Litter ID is required."]}, 400
+
+    detail = _try_supabase_read(farm_supabase_read_service.get_litter_detail, litter_id)
+    if not isinstance(detail, dict):
+        return {"success": False, "errors": ["Litter was not found in canonical readback."]}, 404
+    if detail.get("first_treatment_complete") is True or detail.get("first_treatment_partial") is True:
+        return {
+            "success": False,
+            "status": "first_treatment_has_medical_evidence",
+            "errors": ["First treatment has canonical medical evidence and cannot be marked as skipped."],
+        }, 409
+    if detail.get("first_treatment_skipped") is True:
+        return {"success": True, "status": "already_skipped", "litter_id": litter_id}, 200
+    if not farm_supabase_write_service.farm_supabase_writes_available():
+        return {"success": False, "errors": ["Canonical litter writes are unavailable."]}, 503
+
+    skipped_at = datetime.now().astimezone()
+    updated = farm_supabase_write_service.update_litter_by_id(litter_id, {
+        "First_Treatment_Skipped_At": skipped_at,
+        "First_Treatment_Skipped_By": changed_by,
+        "First_Treatment_Skip_Reason": reason,
+    })
+    if updated != 1:
+        return {"success": False, "errors": ["The skip decision was not recorded."]}, 409
+    return {
+        "success": True,
+        "status": "first_treatment_skipped",
+        "litter_id": litter_id,
+        "first_treatment_skipped": True,
+        "message": "Eerste behandeling is as oorgeslaan gemerk en die stap is gesluit.",
     }, 200
 
 
