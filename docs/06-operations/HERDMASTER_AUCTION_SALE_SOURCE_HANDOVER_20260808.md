@@ -21,9 +21,9 @@ sale.
 
 The preview contains the exact eighteen tag/Pig-ID mappings, all Sold/off-farm
 effects, separate VAT and commission facts, settlement payable, Unknown receipt,
-and no manufactured line prices. Its single optional grouped question is:
-“Has the R4,470.51 EFT reached the bank account, and if known, which eight pigs
-were in V10?”
+and no manufactured line prices. It asks no grouped question: historical V10/V11
+tag membership is permanently unrecoverable and non-blocking, while payment
+receipt belongs to a later attributable bank-reconciliation operation.
 
 Management-only analysis uses the 2026-08-03 recorded weights: combined 154.6
 kg, average 8.59 kg, approximate gross including VAT per pig R267.06,

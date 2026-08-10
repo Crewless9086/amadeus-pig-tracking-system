@@ -114,7 +114,11 @@ def build_auction_sale_preview(report, evidence):
         "individual_proceeds": "Unknown", "v10_tags": v10_tags or "Unknown", "v11_tags": v11_tags or "Unknown",
         "invoice_evidence_identity": invoice_identity, "management_analysis": analytics,
         "missing_facts": [], "conflicts": conflicts, "ready_for_confirmation": not conflicts,
-        "grouped_question": None if payment_received is not None and v10_tags else "Has the R4,470.51 EFT reached the bank account, and if known, which eight pigs were in V10?",
+        # The owner cannot recover historical V10/V11 membership. It remains
+        # explicitly Unknown and must never be asked again or block this sale.
+        # Payment receipt is a later bank-reconciliation fact, not a sale-
+        # recording prerequisite or a question attached to this preview.
+        "grouped_question": None,
         "question_optional_for_sale": True,
         "proposed_effects": ["one completed Livestock/Auction sale and August receivable", "18 linked pig items with individual prices Unknown", "each pig Sold and off-farm with Auction Sale exit", "18 immutable exited-farm lifecycle events", "preserve all historical animal records", "report gross revenue, VAT, commission and net settlement separately", "do not claim cash receipt without later payment evidence"],
         "delivery_enabled": False, "write_enabled": False, "payment_reconciliation_enabled": False,
