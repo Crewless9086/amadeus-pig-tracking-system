@@ -22,6 +22,8 @@ const newbornHealthNotes = document.getElementById("newborn_health_notes");
 const newbornHealthPreview = document.getElementById("newborn_health_preview");
 const newbornHealthPreviewButton = document.getElementById("newborn_health_preview_button");
 const newbornHealthApplyButton = document.getElementById("newborn_health_apply_button");
+const newbornHealthSkip = document.getElementById("newborn_health_skip");
+const newbornHealthSkipButton = document.getElementById("newborn_health_skip_button");
 const pigletDeathPanel = document.getElementById("litter_piglet_death_panel");
 const pigletDeathForm = document.getElementById("piglet_death_form");
 const pigletDeathDate = document.getElementById("piglet_death_date");
@@ -1373,6 +1375,30 @@ async function submitNewbornHealth(event) {
   }
 }
 
+async function skipNewbornHealth() {
+  clearLitterMessage();
+  if (!newbornHealthSkip.checked) return;
+  if (!window.confirm("Slaan Eerste Behandeling oor en sluit hierdie stap?")) return;
+  newbornHealthSkipButton.disabled = true;
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/first-treatment/skip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ changed_by: newbornHealthGivenBy.value || "web_app" }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Kon nie die stap oorslaan nie."]).join(" "));
+    }
+    showLitterMessage(data.message || "Eerste Behandeling is oorgeslaan en gesluit.", "success");
+    await loadLitterDetail({ keepMessage: true });
+  } catch (error) {
+    showLitterMessage(error.message || "Kon nie die stap oorslaan nie.", "error");
+    newbornHealthSkipButton.disabled = !newbornHealthSkip.checked;
+  }
+}
+
 async function submitMarkWeaned(event) {
   event.preventDefault();
   clearLitterMessage();
@@ -1611,6 +1637,10 @@ async function loadLitterDetail(options = {}) {
 markWeanedForm.addEventListener("submit", submitMarkWeaned);
 newbornHealthPreviewButton.addEventListener("click", previewNewbornHealth);
 newbornHealthForm.addEventListener("submit", submitNewbornHealth);
+newbornHealthSkip.addEventListener("change", () => {
+  newbornHealthSkipButton.disabled = !newbornHealthSkip.checked;
+});
+newbornHealthSkipButton.addEventListener("click", skipNewbornHealth);
 pigletDeathPreviewButton.addEventListener("click", previewPigletDeath);
 pigletDeathForm.addEventListener("submit", submitPigletDeath);
 sexCountPreviewButton.addEventListener("click", previewSexCount);

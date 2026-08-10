@@ -4,8 +4,9 @@ from time import monotonic
 
 from services.database_service import DATABASE_URL_ENV
 
-DEFAULT_LITTER_WEAN_AGE_DAYS = 35
+DEFAULT_LITTER_WEAN_AGE_DAYS = 30
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
+FIRST_TREATMENT_ATTENTION_DAY = 4
 ALLOCATION_READ_STAGES = (
     "current_animal_state", "order_allocation", "medical_events",
     "weights", "litters", "pens",
@@ -1270,14 +1271,14 @@ def _derive_litter_status(litter, reconciliation, lifecycle_outcomes):
         return "Completed"
     if explicit_status and explicit_status.lower() != "unknown":
         if explicit_status.lower() == "active" and (_float_or_none(litter.get("weaned_count")) or 0) > 0:
-            return "Weaned"
+            return "Active" if active_count > 0 else "Weaned"
         return explicit_status
     if int(lifecycle_outcomes.get("total") or 0) <= 0:
         return "No piglets recorded"
-    if (_float_or_none(litter.get("weaned_count")) or 0) > 0:
-        return "Weaned"
     if int(lifecycle_outcomes.get("active") or 0) > 0:
         return "Active"
+    if (_float_or_none(litter.get("weaned_count")) or 0) > 0:
+        return "Weaned"
     if int(reconciliation.get("linked_pig_records") or 0) > 0:
         return "Review"
     return "Unknown"
@@ -1315,10 +1316,24 @@ def _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean
     status = _text(litter_status).lower()
     if status in {"weaned", "completed"}:
         return None
-    if _date_or_none(litter.get("wean_date")):
-        return None
     if int(lifecycle_outcomes.get("active") or 0) <= 0:
         return None
+    recorded_wean_date = _date_or_none(litter.get("wean_date"))
+    if recorded_wean_date:
+        return {
+            "action_type": "complete_weaning",
+            "reason": (
+                f"Weaning date {_date_text(recorded_wean_date)} is recorded, but "
+                f"{int(lifecycle_outcomes.get('active') or 0)} piglet(s) remain active and on-farm."
+            ),
+            "recommended_action": "Complete and verify the remaining weaning lifecycle before closing the litter.",
+            "wean_date": _date_text(recorded_wean_date),
+            "estimated_wean_date": wean_timing.get("estimated_wean_date", ""),
+            "wean_tag_attention_start_date": wean_timing.get("wean_tag_attention_start_date", ""),
+            "wean_planning_monday": wean_timing.get("wean_planning_monday", ""),
+            "days_until_estimated_wean": wean_timing.get("days_until_estimated_wean"),
+            "active_pig_count": int(lifecycle_outcomes.get("active") or 0),
+        }
     if not wean_timing.get("wean_tag_attention_due"):
         return None
 
@@ -1443,6 +1458,24 @@ def _litter_reconciliation(litter, pigs):
 
 def list_litter_overview(connect_factory=None):
     litters, pigs_by_litter = _litter_rows_with_pigs(connect_factory=connect_factory)
+    first_treatment_counts = {}
+    if connect_factory is not None or farm_supabase_reads_available():
+        treatment_rows = _fetch_all(
+            """
+            select p.litter_id,
+                   count(distinct m.pig_id) as treated_count
+            from public.pig_medical_events m
+            join public.current_canonical_pigs p on p.pig_id = m.pig_id
+            where m.medical_notes ilike %s or m.reason_for_treatment ilike %s
+            group by p.litter_id
+            """,
+            ("%litter % newborn health action%", "%litter newborn health action%"),
+            connect_factory=connect_factory,
+        )
+        first_treatment_counts = {
+            _text(row.get("litter_id")): int(row.get("treated_count") or 0)
+            for row in treatment_rows
+        }
     result_rows = []
     for litter in litters:
         litter_id = _text(litter.get("litter_id"))
@@ -1461,10 +1494,29 @@ def list_litter_overview(connect_factory=None):
         male_count = len([pig for pig in pigs if _text(pig.get("sex")) == "Male"])
         female_count = len([pig for pig in pigs if _text(pig.get("sex")) == "Female"])
         active_count = reconciliation["active_pig_records"]
-        needs_attention = "Yes" if reconciliation["mismatch"] or wean_attention else ""
-        attention_reason = reconciliation["recommended_action"] if reconciliation["mismatch"] else (wean_attention or {}).get("reason", "")
-        recommended_action = reconciliation["recommended_action"] if reconciliation["mismatch"] else (wean_attention or {}).get("recommended_action", "")
-        action_type = "review_litter_counts" if reconciliation["mismatch"] else (wean_attention or {}).get("action_type", "")
+        treated_count = first_treatment_counts.get(litter_id, 0)
+        first_treatment_timing = _first_treatment_timing(
+            litter,
+            pigs,
+            complete=bool(active_count and treated_count >= active_count),
+            partial=bool(treated_count and treated_count < active_count),
+        )
+        first_treatment_attention = None
+        if (
+            first_treatment_timing["first_treatment_attention_due"]
+            and active_count > 0
+            and not any(lifecycle_outcomes.get(key, 0) for key in ("sold", "removed", "weaned"))
+        ):
+            first_treatment_attention = {
+                "reason": "Eerste behandeling is gereed",
+                "recommended_action": "Teken Eerste Behandeling aan, of merk die stap uitdruklik as oorgeslaan.",
+                "action_type": "record_litter_newborn_health",
+            }
+        operational_attention = wean_attention or first_treatment_attention
+        needs_attention = "Yes" if reconciliation["mismatch"] or operational_attention else ""
+        attention_reason = reconciliation["recommended_action"] if reconciliation["mismatch"] else (operational_attention or {}).get("reason", "")
+        recommended_action = reconciliation["recommended_action"] if reconciliation["mismatch"] else (operational_attention or {}).get("recommended_action", "")
+        action_type = "review_litter_counts" if reconciliation["mismatch"] else (operational_attention or {}).get("action_type", "")
         result_rows.append({
             "litter_id": litter_id,
             "sow_pig_id": _text(litter.get("sow_pig_id")),
@@ -1494,6 +1546,7 @@ def list_litter_overview(connect_factory=None):
             "lifecycle_outcomes": lifecycle_outcomes,
             "reconciliation": reconciliation,
             **wean_timing,
+            **first_treatment_timing,
         })
 
     result_rows.sort(key=lambda item: (
@@ -1531,10 +1584,7 @@ def get_litter_detail(litter_id, connect_factory=None):
         if detail_state in {"weaned", "completed"}
         else _litter_wean_timing(litter, pigs)
     )
-    attention = (
-        _litter_attention_from_reconciliation(reconciliation)
-        or _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean_timing)
-    )
+    attention = _litter_attention_from_reconciliation(reconciliation)
     piglets = []
     current_weights = []
     wean_weights = []
@@ -1609,6 +1659,28 @@ def get_litter_detail(litter_id, connect_factory=None):
         _date_text(row.get("treatment_date")) for row in first_treatment_rows
         if _date_text(row.get("treatment_date"))
     ]
+    first_treatment_timing = _first_treatment_timing(
+        litter,
+        pigs,
+        complete=first_treatment_complete,
+        partial=first_treatment_partial,
+    )
+    wean_attention = _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean_timing)
+    if not attention and wean_attention:
+        attention = wean_attention
+    if (
+        not attention
+        and detail_state == "active"
+        and active_count > 0
+        and not any(lifecycle_outcomes.get(key, 0) for key in ("sold", "removed", "weaned"))
+        and first_treatment_timing["first_treatment_attention_due"]
+    ):
+        attention = {
+            "reason": "Eerste behandeling is gereed",
+            "recommended_action": "Teken Eerste Behandeling aan, of merk die stap uitdruklik as oorgeslaan.",
+            "action_type": "record_litter_newborn_health",
+            "attention_date": first_treatment_timing["first_treatment_attention_date"],
+        }
     return {
         "litter_id": _text(litter_id),
         "mother_pig_id": _text(litter.get("sow_pig_id")),
@@ -1633,6 +1705,7 @@ def get_litter_detail(litter_id, connect_factory=None):
         "first_treatment_record_count": len(first_treatment_rows),
         "first_treatment_pig_count": len(treated_pig_ids),
         "first_treatment_date": max(first_treatment_dates) if first_treatment_dates else "",
+        **first_treatment_timing,
         "active_count": active_count,
         "average_weight_kg": average_weight,
         "average_current_weight_kg": average_current_weight,
@@ -1646,6 +1719,23 @@ def get_litter_detail(litter_id, connect_factory=None):
         "wean_status": "Complete" if detail_state in {"weaned", "completed"} else "",
         "wean_date": wean_date,
         "source": "supabase_canonical",
+    }
+
+
+def _first_treatment_timing(litter, pigs, *, complete=False, partial=False, today=None):
+    today = today or date.today()
+    birth_date = _litter_birth_date(litter, pigs)
+    due_date = birth_date + timedelta(days=FIRST_TREATMENT_ATTENTION_DAY) if birth_date else None
+    skipped = litter.get("first_treatment_skipped_at") is not None
+    return {
+        "first_treatment_attention_date": _date_text(due_date),
+        "first_treatment_attention_due": bool(
+            due_date and today >= due_date and not complete and not partial and not skipped
+        ),
+        "first_treatment_skipped": skipped,
+        "first_treatment_skipped_at": _date_text(litter.get("first_treatment_skipped_at")),
+        "first_treatment_skipped_by": _text(litter.get("first_treatment_skipped_by")),
+        "first_treatment_skip_reason": _text(litter.get("first_treatment_skip_reason")),
     }
 
 

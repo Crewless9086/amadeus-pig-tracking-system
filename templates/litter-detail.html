@@ -81,22 +81,22 @@
               </div>
 
               <div id="litter_estimated_wean_card" class="detail-card">
-                <span class="detail-label">Est. Wean Date</span>
+                <span class="detail-label">Verwagte Speen Datum</span>
                 <span id="litter_estimated_wean_date_value" class="detail-value">-</span>
               </div>
 
               <div id="litter_wean_attention_card" class="detail-card">
-                <span class="detail-label">Attention Starts</span>
+                <span class="detail-label">Aandag Vanaf</span>
                 <span id="litter_wean_attention_start_value" class="detail-value">-</span>
               </div>
 
               <div id="litter_days_until_wean_card" class="detail-card">
-                <span class="detail-label">Days to Wean</span>
+                <span class="detail-label">Dae tot Speen</span>
                 <span id="litter_days_until_wean_value" class="detail-value">-</span>
               </div>
 
               <div id="litter_actual_wean_card" class="detail-card hidden">
-                <span class="detail-label">Wean Date</span>
+                <span class="detail-label">Speen Datum</span>
                 <span id="litter_actual_wean_date_value" class="detail-value">-</span>
               </div>
 
@@ -305,6 +305,13 @@
                 <span>Mark all active piglets as earmarked</span>
               </label>
               <div id="newborn_health_preview" class="bulk-review-panel hidden"></div>
+              <div class="litter-first-care-skip">
+                <label class="checkbox-row">
+                  <input type="checkbox" id="newborn_health_skip" />
+                  <span>Slaan Eerste Behandeling oor en sluit hierdie stap</span>
+                </label>
+                <button type="button" id="newborn_health_skip_button" class="button-link button-link-secondary" disabled>Bevestig oorslaan</button>
+              </div>
               <div class="form-actions">
                 <button type="button" id="newborn_health_preview_button" class="button-link button-link-secondary">Kontroleer behandeling</button>
                 <button type="submit" id="newborn_health_apply_button" disabled>Bevestig en stoor behandeling</button>

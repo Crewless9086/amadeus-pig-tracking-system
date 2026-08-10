@@ -715,11 +715,11 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(detail["female_count"], 1)
         self.assertEqual(detail["average_weight_kg"], 5.5)
         self.assertEqual(detail["birth_date"], "2026-06-01")
-        self.assertEqual(detail["estimated_wean_date"], "2026-07-06")
-        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-07-03")
-        self.assertEqual(detail["wean_planning_monday"], "2026-07-06")
-        self.assertEqual(detail["days_until_estimated_wean"], (date(2026, 7, 6) - date.today()).days)
-        self.assertEqual(detail["default_wean_age_days"], 35)
+        self.assertEqual(detail["estimated_wean_date"], "2026-07-01")
+        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-06-28")
+        self.assertEqual(detail["wean_planning_monday"], "2026-06-29")
+        self.assertEqual(detail["days_until_estimated_wean"], (date(2026, 7, 1) - date.today()).days)
+        self.assertEqual(detail["default_wean_age_days"], 30)
         self.assertEqual(detail["attention_window_days"], 3)
         self.assertEqual(detail["source"], "supabase_canonical")
 
@@ -780,8 +780,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(detail["expected_farrowing_date"], "2026-08-02")
 
     def test_active_litter_inside_wean_window_becomes_attention_item(self):
-        birth_date = date.today() - timedelta(days=32)
-        estimated_wean_date = birth_date + timedelta(days=35)
+        birth_date = date.today() - timedelta(days=27)
+        estimated_wean_date = birth_date + timedelta(days=30)
         litters = [{
             "litter_id": "LIT-WEAN-DUE",
             "farrowing_date": birth_date,
@@ -841,7 +841,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
 
     def test_active_litter_past_estimated_wean_date_becomes_attention_item(self):
         birth_date = date.today() - timedelta(days=40)
-        estimated_wean_date = birth_date + timedelta(days=35)
+        estimated_wean_date = birth_date + timedelta(days=30)
         litters = [{
             "litter_id": "LIT-WEAN-OVERDUE",
             "farrowing_date": birth_date,
@@ -875,11 +875,39 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             summary = farm_supabase_read_service.get_litter_attention_summary()
 
         self.assertEqual(detail["estimated_wean_date"], estimated_wean_date.isoformat())
-        self.assertEqual(detail["days_until_estimated_wean"], -5)
+        self.assertEqual(detail["days_until_estimated_wean"], -10)
         self.assertEqual(detail["attention"]["action_type"], "mark_weaned")
-        self.assertIn("5 day(s) past the estimated wean date", detail["attention"]["reason"])
+        self.assertIn("10 day(s) past the estimated wean date", detail["attention"]["reason"])
         self.assertEqual(summary["count"], 1)
-        self.assertEqual(summary["items"][0]["days_until_estimated_wean"], -5)
+        self.assertEqual(summary["items"][0]["days_until_estimated_wean"], -10)
+
+    def test_recorded_wean_date_does_not_hide_incomplete_active_lifecycle(self):
+        birth_date = date.today() - timedelta(days=39)
+        litters = [{
+            "litter_id": "LIT-INCOMPLETE-WEAN",
+            "farrowing_date": birth_date,
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "born_alive": 1,
+            "total_born": 1,
+            "litter_status": "Active",
+            "wean_date": date.today() - timedelta(days=4),
+            "weaned_count": 1,
+        }]
+        pigs_by_litter = {"LIT-INCOMPLETE-WEAN": [{
+            "pig_id": "PIG-1",
+            "status": "Active",
+            "on_farm": True,
+            "date_of_birth": birth_date,
+            "litter_id": "LIT-INCOMPLETE-WEAN",
+        }]}
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-INCOMPLETE-WEAN")
+
+        self.assertEqual(detail["attention"]["action_type"], "complete_weaning")
+        self.assertIn("1 piglet(s) remain active and on-farm", detail["attention"]["reason"])
+        self.assertEqual(detail["estimated_wean_date"], (birth_date + timedelta(days=30)).isoformat())
 
     def test_litter_detail_uses_piglet_birth_date_when_litter_farrowing_date_missing(self):
         litters = [{
@@ -928,8 +956,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             detail = farm_supabase_read_service.get_litter_detail("LIT-FALLBACK")
 
         self.assertEqual(detail["birth_date"], "2026-06-01")
-        self.assertEqual(detail["estimated_wean_date"], "2026-07-06")
-        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-07-03")
+        self.assertEqual(detail["estimated_wean_date"], "2026-07-01")
+        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-06-28")
         self.assertEqual(detail["average_weight_kg"], None)
 
     def test_litter_overview_derives_status_when_supabase_status_is_unknown(self):
@@ -1354,13 +1382,14 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             overview = farm_supabase_read_service.list_litter_overview()
 
         self.assertTrue(overview["success"])
-        self.assertEqual(overview["attention_count"], 0)
+        self.assertEqual(overview["attention_count"], 1)
         self.assertEqual(overview["mismatch_count"], 0)
         litter = overview["litters"][0]
         self.assertEqual(litter["litter_id"], "LIT-2026-1025")
         self.assertEqual(litter["linked_pig_records"], 9)
         self.assertEqual(litter["active_pig_records"], 7)
         self.assertEqual(litter["exited_pig_records"], 2)
+        self.assertEqual(litter["action_type"], "record_litter_newborn_health")
         reconciliation = litter["reconciliation"]
         self.assertFalse(reconciliation["mismatch"])
         self.assertEqual(reconciliation["live_linked_pig_records"], 7)

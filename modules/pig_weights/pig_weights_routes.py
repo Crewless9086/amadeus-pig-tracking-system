@@ -41,6 +41,7 @@ from modules.pig_weights.pig_weights_controller import (
     mark_litter_profile_weaned,
     process_litter_profile_weaning_day,
     record_litter_profile_newborn_health,
+    skip_litter_profile_first_treatment,
     mark_litter_profile_piglets_dead,
     record_litter_profile_piglet_sex_counts,
     assign_litter_profile_piglet_tag_numbers,
@@ -381,6 +382,13 @@ def litter_weaning_day_route(litter_id):
 def litter_newborn_health_route(litter_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = record_litter_profile_newborn_health(litter_id, payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/litter/<litter_id>/first-treatment/skip", methods=["POST"])
+def litter_first_treatment_skip_route(litter_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = skip_litter_profile_first_treatment(litter_id, payload)
     return jsonify(result), status_code
 
 

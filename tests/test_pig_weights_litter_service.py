@@ -1742,9 +1742,9 @@ class LifecycleDetailReadTests(unittest.TestCase):
         self.assertEqual(detail["lifecycle_outcomes"]["removed"], 0)
         self.assertEqual(detail["litter_status"], "Active")
         self.assertEqual(detail["birth_date"], "2026-05-01")
-        self.assertEqual(detail["estimated_wean_date"], "2026-06-05")
-        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-06-02")
-        self.assertEqual(detail["default_wean_age_days"], 35)
+        self.assertEqual(detail["estimated_wean_date"], "2026-05-31")
+        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-05-28")
+        self.assertEqual(detail["default_wean_age_days"], 30)
 
 
 class LitterNewbornHealthTests(unittest.TestCase):
@@ -2061,6 +2061,42 @@ class LitterNewbornHealthTests(unittest.TestCase):
         self.assertEqual(result["status"], "first_treatment_already_closed")
         self.assertTrue(result["first_treatment_complete"])
         append_row.assert_not_called()
+
+    def test_skip_first_treatment_records_one_durable_close_decision(self):
+        with patch.object(
+            pig_weights_service,
+            "_try_supabase_read",
+            return_value={"first_treatment_complete": False, "first_treatment_partial": False, "first_treatment_skipped": False},
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "farm_supabase_writes_available",
+            return_value=True,
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "update_litter_by_id",
+            return_value=1,
+        ) as update_litter:
+            result, status_code = pig_weights_service.skip_litter_first_treatment("LIT-1", "Charl")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["first_treatment_skipped"])
+        updates = update_litter.call_args.args[1]
+        self.assertEqual(updates["First_Treatment_Skipped_By"], "Charl")
+
+    def test_skip_first_treatment_rejects_existing_medical_evidence(self):
+        with patch.object(
+            pig_weights_service,
+            "_try_supabase_read",
+            return_value={"first_treatment_complete": True, "first_treatment_partial": False},
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "update_litter_by_id",
+        ) as update_litter:
+            result, status_code = pig_weights_service.skip_litter_first_treatment("LIT-1", "Charl")
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "first_treatment_has_medical_evidence")
+        update_litter.assert_not_called()
 
 
 if __name__ == "__main__":

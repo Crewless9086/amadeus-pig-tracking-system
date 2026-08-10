@@ -29,6 +29,7 @@ from modules.pig_weights.pig_weights_service import (
     mark_pig_death_or_removal,
     mark_litter_piglets_dead,
     record_litter_newborn_health,
+    skip_litter_first_treatment,
     record_litter_piglet_sex_counts,
     assign_litter_piglet_tag_numbers,
     get_pig_detail,
@@ -243,6 +244,15 @@ def record_litter_profile_newborn_health(litter_id: str, payload: dict):
         male_count=payload.get("male_count", None),
         female_count=payload.get("female_count", None),
         dry_run=payload.get("dry_run", True) is True,
+    )
+
+
+def skip_litter_profile_first_treatment(litter_id: str, payload: dict):
+    payload = payload or {}
+    return skip_litter_first_treatment(
+        litter_id=litter_id,
+        changed_by=payload.get("changed_by", "web_app"),
+        reason=payload.get("reason", "Owner marked the optional first treatment as skipped."),
     )
 
 

@@ -15,6 +15,9 @@
 #lifecycle_identity .detail-card:has(#litter_mating_date_value),
 #lifecycle_identity .detail-card:has(#litter_expected_farrowing_date_value),
 #lifecycle_identity .detail-card:has(#litter_birth_date_value),
+#lifecycle_identity .detail-card:has(#litter_estimated_wean_date_value),
+#lifecycle_identity .detail-card:has(#litter_wean_attention_start_value),
+#lifecycle_identity .detail-card:has(#litter_days_until_wean_value),
 #lifecycle_identity .detail-card:has(#litter_mother_value),
 #lifecycle_identity .detail-card:has(#litter_father_value) { display: block; }
 .lifecycle-birth-snapshot { display: grid; grid-template-columns: repeat(6,1fr); gap: 10px; }.lifecycle-birth-snapshot div { padding: 13px; border: 1px solid var(--border); border-radius: 10px; background: white; }.lifecycle-birth-snapshot span { display: block; color: var(--text-soft); font-size: 12px; }.lifecycle-birth-snapshot strong { display: block; margin-top: 4px; font-size: 22px; }
@@ -32,3 +35,14 @@
 .lifecycle-corrections { border: 1px solid var(--border); border-radius: 14px; background: #faf8f3; }.lifecycle-corrections summary { cursor: pointer; padding: 15px 18px; font-weight: 800; }.lifecycle-corrections summary span { margin-left: 8px; color: var(--text-soft); font-size: 12px; font-weight: 400; }.lifecycle-corrections-body { display: grid; gap: 14px; padding: 0 16px 16px; }.lifecycle-corrections-body > section { margin: 0; }
 @media(max-width:1000px){.lifecycle-birth-snapshot{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:760px){.lifecycle-stage-header{grid-template-columns:34px 1fr}.lifecycle-stage-status{grid-column:2}.lifecycle-birth-snapshot{grid-template-columns:repeat(2,1fr)}.lifecycle-next-action{grid-template-columns:1fr}.lifecycle-next-kicker{grid-row:auto;width:max-content}}
+.litter-first-care-skip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: .85rem 1rem;
+  border: 1px solid #d7d4ca;
+  border-radius: .65rem;
+  background: #f7f5ef;
+}
