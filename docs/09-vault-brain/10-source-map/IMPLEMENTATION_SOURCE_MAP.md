@@ -432,3 +432,14 @@ Current Stage 4 surface:
 - Governed ROOTLINE bridge: `modules/oom_sakkie/rootline_operational_adapter.py`
 - Atomic canonical observation rail: `modules/telemetry/rootline_water_energy_plan.py`
 - Human daily rendering: `modules/oom_sakkie/rootline_daily_presentation.py`
+# Oom Sakkie daily farm management
+
+- `modules/oom_sakkie/daily_farm_manager.py` — scheduler-owned whole-farm task
+  packet, constrained semantic prioritization, presentation and durable replay.
+- `modules/oom_sakkie/rootline_fertilizer_commissioning_runtime.py` — existing
+  fertilizer lifecycle continuation through ROOTLINE auxiliary execution rails.
+- `modules/oom_sakkie/telegram_gateway.py` — authenticated owner and existing
+  scheduler composition boundary.
+- `modules/telemetry/rootline_irrigation_coordinator.py` and
+  `modules/telemetry/rootline_irrigation_execution_store.py` — single-use
+  auxiliary start, shutdown recovery and physical-outcome evidence.

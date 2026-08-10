@@ -34,6 +34,7 @@ class SemanticInterpretation:
     observation: str = ""
     observation_facts: tuple[Mapping[str, Any], ...] = ()
     confirmation_facts: Mapping[str, bool] | None = None
+    commissioning_facts: Mapping[str, bool] | None = None
     requested_action: str = ""
     language: str = "unknown"
     confidence: float = 0.0
@@ -93,6 +94,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             return None
         facts = _observation_facts(value.get("observation_facts"))
         confirmation_facts = _confirmation_facts(value.get("confirmation_facts"))
+        commissioning_facts = _commissioning_facts(value.get("commissioning_facts"))
         return SemanticInterpretation(domain=domain,
             intent=str(value.get("intent") or domain).strip()[:100], entity_refs=refs,
             message_kind=message_kind,
@@ -100,6 +102,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             observation=str(value.get("observation") or "").strip()[:500],
             observation_facts=facts,
             confirmation_facts=confirmation_facts,
+            commissioning_facts=commissioning_facts,
             requested_action=str(value.get("requested_action") or "").strip()[:120],
             language=str(value.get("language") or "unknown").strip()[:20],
             confidence=max(0.0, min(1.0, float(value.get("confidence") or 0))),
@@ -182,7 +185,7 @@ def _payload(parsed, context, source):
         "for facts the owner affirmatively or negatively states; supported keys are interlock_off and no_enabled_scene with "
         "literal true/false values. Never turn presence alone into setting facts. Return JSON only with "
         "domain,intent,message_kind,entity_refs,continuation,"
-        "observation,observation_facts,confirmation_facts,requested_action,language,confidence,"
+        "observation,observation_facts,confirmation_facts,commissioning_facts,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
         " For physical water observations, observation_facts must contain zero, one, or two objects using only "
         "subject storage_tanks or reservoir and either state LOW/OK/FULL or an exact fraction numerator/denominator. "
@@ -191,6 +194,8 @@ def _payload(parsed, context, source):
         "never use stale context to satisfy a newer unrelated question. "
         "Treat natural readiness replies such as 'Done; at the valves now', 'Ek is nou by die kleppe', or mixed-language "
         "equivalents as a continuation of one unambiguous recent specialist setup question, not as a new physical tank observation."
+        " When the active question asks about a supervised mixer proof, return commissioning_facts only for facts explicitly "
+        "reported, using mixer_recirculating, pump_expected, and other_outputs_off with literal true/false values."
     )
     user = {"message": str(parsed.get("text") or "")[:2000],
             "provider_message_id": str(parsed.get("provider_message_id") or "")[:80], "context": context}
@@ -252,6 +257,16 @@ def _confirmation_facts(value):
     if value is None or not isinstance(value, Mapping):
         return None
     allowed = {"interlock_off", "no_enabled_scene"}
+    if not value or any(key not in allowed or type(item) is not bool
+                        for key, item in value.items()):
+        return None
+    return {key: value[key] for key in sorted(value)}
+
+
+def _commissioning_facts(value):
+    if value is None or not isinstance(value, Mapping):
+        return None
+    allowed = {"mixer_recirculating", "pump_expected", "other_outputs_off"}
     if not value or any(key not in allowed or type(item) is not bool
                         for key, item in value.items()):
         return None

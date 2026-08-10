@@ -20,7 +20,7 @@ EVENTS = {
 
 class RootlineIFTTTTransport:
     def __init__(self, *, token_store, environ=None, http_open=None,
-                 readback=None):
+                 readback=None, auxiliary_on_authorizer=None):
         self.environ = environ if environ is not None else os.environ
         self.token_store = token_store
         self.http_open = http_open or urllib_request.urlopen
@@ -28,6 +28,7 @@ class RootlineIFTTTTransport:
             from modules.telemetry.rootline_ewelink_readback import read_current_device
             readback = read_current_device
         self.readback = readback
+        self.auxiliary_on_authorizer = auxiliary_on_authorizer
 
     def read_safety_configuration(self, *, device_id, channel):
         contract = self._binding(device_id, channel)
@@ -69,7 +70,10 @@ class RootlineIFTTTTransport:
         contract = self._binding(device_id, channel)
         state = str(state or "").upper()
         if (state == "ON" and contract["collection"] == "irrigation_auxiliary_devices"
-                and str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"):
+                and str(self.environ.get(contract["authority_flag"]) or "").lower() != "true"
+                and not (callable(self.auxiliary_on_authorizer)
+                         and self.auxiliary_on_authorizer(device_id=device_id,
+                             channel=channel, idempotency_key=str(idempotency_key)))):
             return {"accepted_unambiguous": False, "status": "auxiliary_authority_disabled"}
         event = contract.get("on_event" if state == "ON" else "off_event" if state == "OFF" else "")
         secret = str(self.environ.get("ROOTLINE_IFTTT_MAKER_KEY") or "").strip()

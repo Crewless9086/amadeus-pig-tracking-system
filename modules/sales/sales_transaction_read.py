@@ -55,6 +55,7 @@ def list_sales_transactions(sale_stream="", limit=DEFAULT_LIMIT, database_url=No
                         st.sale_id,
                         st.sale_date,
                         st.sale_stream,
+                        st.sale_channel,
                         st.buyer_name,
                         st.destination,
                         st.linked_order_id,
@@ -62,6 +63,17 @@ def list_sales_transactions(sale_stream="", limit=DEFAULT_LIMIT, database_url=No
                         st.gross_total,
                         st.deductions_total,
                         st.net_total,
+                        st.lot_total,
+                        st.financial_interpretation,
+                        st.received_total,
+                        st.output_vat,
+                        st.gross_including_vat,
+                        st.commission_ex_vat,
+                        st.commission_input_vat,
+                        st.commission_including_vat,
+                        st.other_deductions,
+                        st.net_settlement_payable,
+                        st.external_reference,
                         st.currency,
                         st.payment_status,
                         st.payment_method,
@@ -137,6 +149,7 @@ def get_sales_transaction(sale_id, database_url=None):
                         sale_id,
                         sale_date,
                         sale_stream,
+                        sale_channel,
                         buyer_name,
                         buyer_phone_raw,
                         destination,
@@ -145,6 +158,17 @@ def get_sales_transaction(sale_id, database_url=None):
                         gross_total,
                         deductions_total,
                         net_total,
+                        lot_total,
+                        financial_interpretation,
+                        received_total,
+                        output_vat,
+                        gross_including_vat,
+                        commission_ex_vat,
+                        commission_input_vat,
+                        commission_including_vat,
+                        other_deductions,
+                        net_settlement_payable,
+                        external_reference,
                         currency,
                         payment_status,
                         payment_method,
@@ -262,8 +286,27 @@ def get_monthly_sales_transaction_summary(report_date=None, database_url=None):
                         st.sale_stream,
                         count(*)::int as transaction_count,
                         coalesce(sum(st.pig_count), 0)::int as pig_count,
-                        coalesce(sum(st.gross_total), 0)::numeric(12, 2) as gross_total,
-                        coalesce(sum(st.net_total), 0)::numeric(12, 2) as net_total,
+                        case when count(st.gross_total)=count(*) then sum(st.gross_total) end::numeric(12, 2) as gross_total,
+                        case when count(st.net_total)=count(*) then sum(st.net_total) end::numeric(12, 2) as net_total,
+                        coalesce(sum(st.lot_total), 0)::numeric(12, 2) as lot_total,
+                        case when count(st.received_total)=count(*) then sum(st.received_total) end::numeric(12, 2) as received_total,
+                        case when count(st.output_vat)=count(*) then sum(st.output_vat) end::numeric(12,2) as output_vat,
+                        case when count(st.gross_including_vat)=count(*) then sum(st.gross_including_vat) end::numeric(12,2) as gross_including_vat,
+                        case when count(st.commission_ex_vat)=count(*) then sum(st.commission_ex_vat) end::numeric(12,2) as commission_ex_vat,
+                        case when count(st.commission_input_vat)=count(*) then sum(st.commission_input_vat) end::numeric(12,2) as commission_input_vat,
+                        case when count(st.commission_including_vat)=count(*) then sum(st.commission_including_vat) end::numeric(12,2) as commission_including_vat,
+                        case when count(st.other_deductions)=count(*) then sum(st.other_deductions) end::numeric(12,2) as other_deductions,
+                        case when count(st.net_settlement_payable)=count(*) then sum(st.net_settlement_payable) end::numeric(12,2) as net_settlement_payable,
+                        (count(*)-count(st.output_vat))::int as output_vat_unknown_count,
+                        (count(*)-count(st.gross_including_vat))::int as gross_including_vat_unknown_count,
+                        (count(*)-count(st.commission_ex_vat))::int as commission_ex_vat_unknown_count,
+                        (count(*)-count(st.commission_input_vat))::int as commission_input_vat_unknown_count,
+                        (count(*)-count(st.commission_including_vat))::int as commission_including_vat_unknown_count,
+                        (count(*)-count(st.other_deductions))::int as other_deductions_unknown_count,
+                        (count(*)-count(st.net_settlement_payable))::int as net_settlement_payable_unknown_count,
+                        (count(*)-count(st.gross_total))::int as gross_unknown_count,
+                        (count(*)-count(st.net_total))::int as net_unknown_count,
+                        (count(*)-count(st.received_total))::int as received_unknown_count,
                         coalesce(sum(item_counts.item_count), 0)::int as item_count
                     from public.sales_transactions st
                     left join item_counts on item_counts.sale_id = st.sale_id
@@ -296,16 +339,36 @@ def get_monthly_sales_transaction_summary(report_date=None, database_url=None):
             "transaction_count": int(row.get("transaction_count") or 0),
             "pig_count": int(row.get("pig_count") or 0),
             "item_count": int(row.get("item_count") or 0),
-            "gross_total": _json_safe_value(row.get("gross_total")) or 0.0,
-            "net_total": _json_safe_value(row.get("net_total")) or 0.0,
+            "gross_total": _json_safe_value(row.get("gross_total")),
+            "net_total": _json_safe_value(row.get("net_total")),
+            "lot_total": _json_safe_value(row.get("lot_total")) or 0.0,
+            "received_total": _json_safe_value(row.get("received_total")),
+            "output_vat": _json_safe_value(row.get("output_vat")),
+            "gross_including_vat": _json_safe_value(row.get("gross_including_vat")),
+            "commission_ex_vat": _json_safe_value(row.get("commission_ex_vat")),
+            "commission_input_vat": _json_safe_value(row.get("commission_input_vat")),
+            "commission_including_vat": _json_safe_value(row.get("commission_including_vat")),
+            "other_deductions": _json_safe_value(row.get("other_deductions")),
+            "net_settlement_payable": _json_safe_value(row.get("net_settlement_payable")),
+            **{key: int(row.get(key) or 0) for key in _VAT_UNKNOWN_KEYS},
+            "gross_unknown_count": int(row.get("gross_unknown_count") or 0),
+            "net_unknown_count": int(row.get("net_unknown_count") or 0),
+            "received_unknown_count": int(row.get("received_unknown_count") or 0),
         }
 
     totals = {
         "transaction_count": sum(stream["transaction_count"] for stream in streams.values()),
         "pig_count": sum(stream["pig_count"] for stream in streams.values()),
         "item_count": sum(stream["item_count"] for stream in streams.values()),
-        "gross_total": round(sum(float(stream["gross_total"] or 0) for stream in streams.values()), 2),
-        "net_total": round(sum(float(stream["net_total"] or 0) for stream in streams.values()), 2),
+        "gross_total": _complete_total(streams,"gross_total","gross_unknown_count"),
+        "net_total": _complete_total(streams,"net_total","net_unknown_count"),
+        "lot_total": round(sum(float(stream["lot_total"] or 0) for stream in streams.values()), 2),
+        "received_total": _complete_total(streams,"received_total","received_unknown_count"),
+        **{field: _complete_total(streams,field,field+"_unknown_count") for field in _VAT_FIELDS},
+        **{key: sum(stream[key] for stream in streams.values()) for key in _VAT_UNKNOWN_KEYS},
+        "gross_unknown_count": sum(stream["gross_unknown_count"] for stream in streams.values()),
+        "net_unknown_count": sum(stream["net_unknown_count"] for stream in streams.values()),
+        "received_unknown_count": sum(stream["received_unknown_count"] for stream in streams.values()),
     }
 
     return {
@@ -375,6 +438,19 @@ def _empty_stream_values():
         "item_count": 0,
         "gross_total": 0.0,
         "net_total": 0.0,
+        "lot_total": 0.0,
+        "received_total": 0.0,
+        "output_vat": 0.0,
+        "gross_including_vat": 0.0,
+        "commission_ex_vat": 0.0,
+        "commission_input_vat": 0.0,
+        "commission_including_vat": 0.0,
+        "other_deductions": 0.0,
+        "net_settlement_payable": 0.0,
+        **{key: 0 for key in _VAT_UNKNOWN_KEYS},
+        "gross_unknown_count": 0,
+        "net_unknown_count": 0,
+        "received_unknown_count": 0,
     }
 
 
@@ -385,7 +461,31 @@ def _empty_totals():
         "item_count": 0,
         "gross_total": 0.0,
         "net_total": 0.0,
+        "lot_total": 0.0,
+        "received_total": 0.0,
+        "output_vat": 0.0,
+        "gross_including_vat": 0.0,
+        "commission_ex_vat": 0.0,
+        "commission_input_vat": 0.0,
+        "commission_including_vat": 0.0,
+        "other_deductions": 0.0,
+        "net_settlement_payable": 0.0,
+        **{key: 0 for key in _VAT_UNKNOWN_KEYS},
+        "gross_unknown_count": 0,
+        "net_unknown_count": 0,
+        "received_unknown_count": 0,
     }
+
+
+def _complete_total(streams, value_key, unknown_key):
+    active = [stream for stream in streams.values() if stream["transaction_count"]]
+    if any(stream[unknown_key] for stream in active):
+        return None
+    return round(sum(float(stream[value_key] or 0) for stream in active), 2)
+
+
+_VAT_FIELDS = ("output_vat","gross_including_vat","commission_ex_vat","commission_input_vat","commission_including_vat","other_deductions","net_settlement_payable")
+_VAT_UNKNOWN_KEYS = tuple(field+"_unknown_count" for field in _VAT_FIELDS)
 
 
 def _source_metadata():

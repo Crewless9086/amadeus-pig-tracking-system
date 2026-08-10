@@ -205,12 +205,19 @@ def _recover_auxiliary(active,store,transport,now):
         return _aux_result("auxiliary_shutdown_intervention_required",
             commands=recovery["commands"],state="Intervention",fertilizer_debt=True,
             auxiliary_contained=True)
+    physical = store("load_auxiliary_physical_outcome", active["execution_id"])
+    physical_verified = (isinstance(physical, dict)
+        and physical.get("mixer_recirculating") is True
+        and physical.get("pump_expected") is True
+        and physical.get("other_outputs_off") is True)
     completed={**active,"state":"Completed","shutdown_verified":True,
         "shutdown_evidence":shutdown,"completed_at":now.isoformat(),
         "maximum_runtime_seconds":active["maximum_duration_seconds"],
         "verified_runtime_seconds":None,"physical_outcome":"Unknown",
         "nutrient_dose":"Unknown","concentration":"Unknown",
-        "delivered_volume":"Unavailable"}
+        "delivered_volume":"Unavailable",
+        "physical_outcome_verified":physical_verified,
+        "physical_outcome_evidence":physical if physical_verified else None}
     recorded=store("record_auxiliary_completed",completed)
     if not isinstance(recorded,dict) or recorded.get("success") is not True:
         return _aux_result("auxiliary_completion_persistence_unproven",

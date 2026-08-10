@@ -617,3 +617,12 @@
 - Reconciled the reviewed family-access contract onto current ROOTLINE production without adding Mum or Dad.
 - Added one date-bound 07:00 SAST presentation lifecycle on the existing 15-minute scheduler and reassessment rail. It waits for fresh canonical evidence, presents only B/C decisions and genuine owner input, and suppresses volatile timestamp/format changes.
 - Kept unchanged reassessments silent and made Started, Completed and Intervention visible state-bound notifications. No new planner, command path, scheduler, Telegram path, database table or ROOTLINE authority was added.
+# 2026-08-10 — Daily farm-manager loop (source stage)
+
+- Added a typed continuation from authenticated fertilizer specialist
+  acceptance into ROOTLINE's existing single-use auxiliary coordinator.
+- Added scheduler-owned daily farm management with durable task identities,
+  stable material deduplication, semantic ranking constrained to canonical task
+  identities, overdue litter/data-quality watchers and governed sale readiness.
+- Integrated the reviewed HERDMASTER breeding and auction-sale source lineages;
+  deployment and business acceptance remain pending.
