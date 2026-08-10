@@ -108,6 +108,9 @@ create table if not exists public.sam_review_obligation_resolution_events (
   constraint sam_review_successor_binding check (
     customer_obligation_status <> 'superseded_by_later_inbound'
     or (successor_work_item_id is not null
+        and successor_contact_id is not null
+        and successor_conversation_id is not null
+        and successor_inbound_message_id is not null
         and successor_contact_id=contact_id
         and successor_conversation_id=conversation_id
         and successor_inbound_message_id<>inbound_message_id
@@ -115,11 +118,19 @@ create table if not exists public.sam_review_obligation_resolution_events (
         and successor_evidence_sha256 is not null)
   ),
   constraint sam_review_successor_deterministic_identity check (
-    successor_work_item_id is null or successor_work_item_id =
-      'SAM-WORK-' || upper(substr(encode(digest(convert_to(
+    (successor_work_item_id is null
+      and successor_contact_id is null and successor_conversation_id is null
+      and successor_inbound_message_id is null and successor_evidence_id is null
+      and successor_evidence_sha256 is null)
+    or
+    (successor_work_item_id is not null
+      and successor_contact_id is not null and successor_conversation_id is not null
+      and successor_inbound_message_id is not null and successor_evidence_id is not null
+      and successor_evidence_sha256 is not null
+      and successor_work_item_id = 'SAM-WORK-' || upper(substr(encode(digest(convert_to(
         account_id || '|' || inbox_id || '|' || successor_contact_id || '|' ||
         successor_conversation_id || '|' || successor_inbound_message_id,
-        'UTF8'), 'sha256'), 'hex'), 1, 24))
+        'UTF8'), 'sha256'), 'hex'), 1, 24)))
   ),
   constraint sam_review_resolution_deterministic_identity check (
     resolution_event_id = 'SAM-REVIEW-RESOLUTION-'

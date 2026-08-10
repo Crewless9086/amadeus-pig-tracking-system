@@ -154,6 +154,35 @@ class SamReviewObligationResolutionPostgresTests(unittest.TestCase):
         with self.assertRaisesRegex(psycopg.Error, "deterministic resolution identity"):
             self.record(changed_errors)
 
+    def test_direct_rpc_rejects_each_missing_successor_identity_component(self):
+        packet = self.packet()
+        successor_inbound = "SUCCESSOR-INBOUND"
+        packet.update(
+            successor_contact_id=packet["contact_id"],
+            successor_conversation_id=packet["conversation_id"],
+            successor_inbound_message_id=successor_inbound,
+            successor_evidence_id="SUCCESSOR-EVIDENCE",
+            successor_evidence_sha256="1" * 64,
+        )
+        packet["successor_work_item_id"] = successor_work_item_identity(
+            account_id=packet["account_id"], inbox_id=packet["inbox_id"],
+            contact_id=packet["successor_contact_id"],
+            conversation_id=packet["successor_conversation_id"],
+            inbound_message_id=packet["successor_inbound_message_id"],
+        )
+        from modules.sales.sam_review_obligation_resolution import resolution_payload_sha256, resolution_identity
+        for field in (
+            "successor_contact_id", "successor_conversation_id",
+            "successor_inbound_message_id", "successor_evidence_id",
+            "successor_evidence_sha256",
+        ):
+            malformed = copy.deepcopy(packet)
+            malformed[field] = None
+            malformed["event_payload_sha256"] = resolution_payload_sha256(malformed)
+            malformed["resolution_event_id"] = resolution_identity(malformed)
+            with self.subTest(field=field), self.assertRaises(psycopg.Error):
+                self.record(malformed)
+
     def test_consumer_projection_keeps_containment_and_surfaces_only_safe_work(self):
         with psycopg.connect(self.url) as connection:
             connection.execute(
