@@ -5,38 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bulk Weight Entry</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
 </head>
 <body>
-  <div class="page-shell">
-    <div class="page-card bulk-weight-page">
-      <div class="page-header page-header-with-link">
+  <div class="farm-app-shell bulk-weight-app-shell">
+    {% include '_farm_nav.html' %}
+    <main class="operations-page">
+    <div class="page-card bulk-weight-page farm-record-page">
+      <div class="page-header page-header-with-link farm-record-hero">
         <div>
-          <h1>Bulk Weight Entry</h1>
-          <p>Enter captured sheet weights in row order. For every weighed pig, confirm that it stayed in its current pen or select its new pen.</p>
+          <span class="farm-eyebrow">Plaasrekords · Weegwerk</span>
+          <h1>Grootmaat gewigte</h1>
+          <p>Vul net die nuwe gewigte in. ’n Vark bly outomaties in sy huidige kamp tensy jy “Skuif kamp” kies.</p>
         </div>
         <div class="header-link-group">
-          <a href="/print-sheets" class="secondary-link">Print Sheets</a>
-          <a href="/pig-weights" class="secondary-link">Single Weight</a>
+          <a href="/print-sheets" class="secondary-link">Druk Weeglys</a>
+          <a href="/pig-weights" class="secondary-link">Enkel Gewig</a>
         </div>
       </div>
 
       <div id="bulk_weights_message" class="message-box hidden"></div>
 
-      <form id="bulk_weight_filters" class="weight-form">
+      <form id="bulk_weight_filters" class="weight-form dashboard-filter-card">
+        <div class="dashboard-filter-heading">
+          <div><span class="farm-eyebrow">Stel die invoer saam</span><h2>Weegdatum en kampe</h2></div>
+          <p>Laat die kampe leeg om alle aktiewe varke te wys.</p>
+        </div>
         <div class="form-grid">
           <div class="form-group">
-            <label for="bulk_weight_date">Weighing Date</label>
+            <label for="bulk_weight_date">Weegdatum</label>
             <input type="date" id="bulk_weight_date" name="bulk_weight_date" required />
           </div>
           <div class="form-group">
-            <label for="bulk_pen_filter">Pens (Optional)</label>
+            <label for="bulk_pen_filter">Kampe (Opsioneel)</label>
             <select id="bulk_pen_filter" name="bulk_pen_filter" multiple size="5"></select>
-            <small class="field-help">Leave empty for all active pigs.</small>
+            <small class="field-help">Laat leeg vir alle aktiewe varke.</small>
           </div>
         </div>
 
         <div class="form-actions compact-actions">
-          <button type="button" id="bulk_clear_pens_button" class="button-link button-link-secondary">All Pens</button>
+          <button type="button" id="bulk_clear_pens_button" class="button-link button-link-secondary">Alle Kampe</button>
           <button type="button" id="bulk_save_draft_button" class="button-link button-link-secondary">Save Draft</button>
           <button type="button" id="bulk_download_draft_button" class="button-link button-link-secondary">Download Draft</button>
           <button type="button" id="bulk_import_draft_button" class="button-link button-link-secondary">Import Draft</button>
@@ -54,12 +62,20 @@
 
       <div class="bulk-weight-summary">
         <div>
-          <span class="info-title">Visible Rows</span>
+          <span class="info-title">Sigbare Rye</span>
           <span id="bulk_visible_count" class="info-value">0</span>
         </div>
         <div>
-          <span class="info-title">Entered Weights</span>
+          <span class="info-title">Gewigte Ingevul</span>
           <span id="bulk_entered_count" class="info-value">0</span>
+        </div>
+        <div>
+          <span class="info-title">Kampskuiwe</span>
+          <span id="bulk_movement_count" class="info-value">0</span>
+        </div>
+        <div>
+          <span class="info-title">Onaangeraak / Oorgeslaan</span>
+          <span id="bulk_untouched_count" class="info-value">0</span>
         </div>
         <div>
           <span class="info-title">Draft</span>
@@ -89,7 +105,7 @@
               <th>Previous Weight</th>
               <th>New Weight</th>
               <th>Current Pen</th>
-              <th>Pen Decision (Required With Weight)</th>
+              <th>Kampskuif</th>
               <th>Notes</th>
             </tr>
           </thead>
@@ -99,6 +115,7 @@
         </table>
       </div>
     </div>
+    </main>
   </div>
 
   <script src="{{ url_for('static', filename='js/bulkWeights.js') }}"></script>
