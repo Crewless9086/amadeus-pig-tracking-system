@@ -42,6 +42,19 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     inbound_binding = _inbound_binding(parsed, specialist)
     material_update = _material_update_authorized(parsed, result, specialist,
         mission_id, card_mission_id)
+    contextual_delivery_resume = (
+        result.get("delivery_recovery_required") is True
+        and result.get("response_contract_version") == "contextual_specialist_response_v2"
+        and result.get("replay_suppressed") is False
+        and result.get("suppress_owner_delivery") is False
+        and result.get("hardware_commands") == 0
+        and result.get("provider_control_calls") == 0
+        and result.get("writes_farm_data") is False
+        and result.get("authority") == {"configuration_write": False,
+            "hardware_control": False, "farm_write": False, "telegram_send": False}
+        and str(result.get("provider_message_id") or "") == inbound_binding["provider_message_id"]
+        and str(result.get("mission_id") or "") == mission_id
+        and str(result.get("card_mission_id") or "") == card_mission_id)
     payload = _event(parsed, mission_id, card_mission_id, specialist,
                      str(result.get("status") or "working"), text_sha)
     for key in ("execution_id", "entity_id", "domain", "contextual_task_kind",
@@ -86,7 +99,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 0}
         return _deliver_visible_notification(parsed, payload, text, mission_id,
             card_mission_id, card_id, text_sha, store, sender, prior_edits=0)
-    if provider_replay and not material_update:
+    if provider_replay and not material_update and not contextual_delivery_resume:
         return {"success": True, "status": "family_message_provider_replay_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
