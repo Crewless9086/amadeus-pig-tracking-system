@@ -473,6 +473,11 @@ def print_sheets_page():
     return render_template("print-sheets.html")
 
 
+@app.route("/paring-werpselrekord")
+def mating_litter_record_page():
+    return render_template("paring-werpselrekord.html")
+
+
 @app.route("/health")
 def health():
     return {"status": "ok"}, 200
