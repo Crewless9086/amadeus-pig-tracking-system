@@ -77,7 +77,9 @@ def test_negative_owner_confirmation_cannot_prove_unavailable_settings():
 def test_safe_but_stale_presence_asks_only_fresh_availability():
     value=assess_fertilizer_commissioning_reply(context(NOW-timedelta(minutes=6)),now=NOW,
         readback_loader=snapshot)
-    assert value["status"]=="waiting_for_input" and "still at the fertilizer valves" in value["answer"]
+    assert value["status"]=="waiting_for_input"
+    assert value["answer"].endswith(
+        "Are you back at the fertilizer valves and ready for the five-minute mixer test?")
     assert value["configuration_verified"] is True and value["hardware_commands"]==0
     assert value["question_count"]==1 and value["requires_visible_notification"] is True
     assert "five-minute mixer test" in value["answer"]

@@ -118,7 +118,7 @@ def assess_fertilizer_commissioning_reply(context: Mapping[str, Any], *, now=Non
                         "Is jy nog by die kunsmiskleppe en gereed vir die vyf-minuut-mengerproef?")
                        if af else
                        ("<b>FERTILIZER CHECK — READY WHEN YOU ARE</b>\n\n"
-                        "Are you still at the fertilizer valves and ready for the five-minute mixer test?")),
+                        "Are you back at the fertilizer valves and ready for the five-minute mixer test?")),
             "question_count": 1, "requires_visible_notification": True}
     return {**base, "status": "specialist_accepted", "ready_for_supervised_proof": True,
         "next_specialist_step": "supervised_fertilizer_mixer_proof",
