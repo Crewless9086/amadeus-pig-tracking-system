@@ -18,6 +18,7 @@ class ManifestBuilderTests(unittest.TestCase):
             ).hexdigest()
         return {
             "reviews": reviews,
+            "expected_review_count": len(reviews),
             "expected_review_event_ids": sorted(row["review_event_id"] for row in reviews),
             "review_export_sha256": canonical_sha256(
                 sorted(reviews, key=lambda row: row["review_event_id"])
@@ -42,12 +43,24 @@ class ManifestBuilderTests(unittest.TestCase):
     def test_partial_or_wrong_identity_export_is_rejected(self):
         source = self.source()
         source["reviews"].pop()
-        with self.assertRaisesRegex(ValueError, "complete_362"):
+        with self.assertRaisesRegex(ValueError, "complete_expected"):
             build(source)
         source = self.source()
-        source["represented_identity"]["represented_pig_id"] = "PIG-OTHER"
+        source["represented_identity"]["represented_pig_id"] = ""
         with self.assertRaisesRegex(ValueError, "exact_represented"):
             build(source)
+
+    def test_second_identity_cohort_uses_same_generic_contract(self):
+        source = self.source()
+        source["represented_identity"] = represented(
+            represented_pig_id="PIG-SECOND-IDENTITY",
+            same_animal_mapping_prohibited=False,
+            governed_disposition_operation_id="SECOND-DISPOSITION",
+        )
+        result = build(source)
+        self.assertEqual(result["represented_pig_id"], "PIG-SECOND-IDENTITY")
+        self.assertTrue(all(row["represented_pig_id"] == "PIG-SECOND-IDENTITY"
+                            for row in result["rows"]))
         source = self.source()
         source["expected_review_event_ids"][-1] = "FABRICATED-REVIEW"
         with self.assertRaisesRegex(ValueError, "identity_set"):

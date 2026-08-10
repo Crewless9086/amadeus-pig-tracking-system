@@ -19,8 +19,9 @@ from modules.sales.sam_review_obligation_resolution import (
 def build(source):
     source = dict(source or {})
     reviews = list(source.get("reviews") or [])
-    if len(reviews) != 362:
-        raise ValueError("complete_362_review_export_required")
+    expected_count = int(source.get("expected_review_count") or 0)
+    if expected_count <= 0 or len(reviews) != expected_count:
+        raise ValueError("complete_expected_review_export_required")
     review_ids = sorted(str(row.get("review_event_id") or "") for row in reviews)
     for row in reviews:
         decision_text = row.get("decision_json_text")
@@ -42,14 +43,15 @@ def build(source):
     if source.get("review_export_sha256") != export_digest:
         raise ValueError("authoritative_review_export_digest_mismatch")
     represented = dict(source.get("represented_identity") or {})
-    if represented.get("represented_pig_id") != "PIG-2026-1AC2":
+    represented_pig_id = str(represented.get("represented_pig_id") or "")
+    if not represented_pig_id:
         raise ValueError("exact_represented_identity_required")
     manifest = build_resolution_manifest(
         reviews=reviews,
         evidence_by_review=dict(source.get("evidence_by_review") or {}),
         represented_identity=represented,
     )
-    if any(row["represented_pig_id"] != "PIG-2026-1AC2" for row in manifest["rows"]):
+    if any(row["represented_pig_id"] != represented_pig_id for row in manifest["rows"]):
         raise ValueError("mixed_represented_identity_denied")
     manifest["authoritative_review_event_ids_sha256"] = canonical_sha256(expected_ids)
     manifest["authoritative_review_export_sha256"] = export_digest

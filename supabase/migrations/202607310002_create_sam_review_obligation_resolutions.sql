@@ -13,11 +13,12 @@ create table if not exists public.sam_review_obligation_resolution_events (
   conversation_id text not null check (conversation_id<>''),
   inbound_message_id text not null check (inbound_message_id<>''),
   review_decision_sha256 text not null check (review_decision_sha256 ~ '^[0-9a-f]{64}$'),
-  represented_pig_id text not null check (represented_pig_id='PIG-2026-1AC2'),
+  represented_pig_id text not null check (represented_pig_id<>''),
   governed_disposition_operation_id text not null check (governed_disposition_operation_id<>''),
   represented_identity_status text not null check (
     represented_identity_status in ('current','superseded','conflicting','unknown')
   ),
+  same_animal_mapping_prohibited boolean not null default false,
   canonical_same_animal_pig_id text,
   alias_evidence_id text,
   outgoing_message_id text,
@@ -62,7 +63,7 @@ create table if not exists public.sam_review_obligation_resolution_events (
   resolution_action text not null check (
     resolution_action in (
       'active','completed','quarantined','protected',
-      'corrective_replanning','indeterminate'
+      'corrective_replanning','indeterminate','historical'
     )
   ),
   chronology_cutoff_at timestamptz not null,
@@ -77,8 +78,8 @@ create table if not exists public.sam_review_obligation_resolution_events (
   constraint sam_review_same_animal_alias_evidence check (
     canonical_same_animal_pig_id is null or alias_evidence_id is not null
   ),
-  constraint sam_review_zigay_child_alias_prohibited check (
-    represented_pig_id <> 'PIG-2026-1AC2' or canonical_same_animal_pig_id is null
+  constraint sam_review_cohort_child_alias_prohibited check (
+    same_animal_mapping_prohibited = false or canonical_same_animal_pig_id is null
   ),
   constraint sam_review_outgoing_attribution_complete check (
     (outgoing_message_id is null and bound_reply_to_inbound_id is null
@@ -137,6 +138,7 @@ declare
   computed_hash text;
   existing_hash text;
   latest_cutoff timestamptz;
+  latest_chronology_sha text;
   stored_decision_sha text;
   stored_conversation_id text;
   stored_inbound_id text;
@@ -154,7 +156,9 @@ begin
     p_event->>'inbox_id',p_event->>'contact_id',p_event->>'conversation_id',
     p_event->>'inbound_message_id',p_event->>'review_decision_sha256',
     p_event->>'represented_pig_id',p_event->>'governed_disposition_operation_id',
-    p_event->>'represented_identity_status',nullif(p_event->>'canonical_same_animal_pig_id',''),
+    p_event->>'represented_identity_status',
+    coalesce((p_event->>'same_animal_mapping_prohibited')::boolean,false),
+    nullif(p_event->>'canonical_same_animal_pig_id',''),
     nullif(p_event->>'alias_evidence_id',''),nullif(p_event->>'outgoing_message_id',''),
     nullif(p_event->>'bound_reply_to_inbound_id',''),nullif(p_event->>'outgoing_content_sha256',''),
     nullif(p_event->>'response_class_evidence_id',''),p_event->>'communication_delivery_status',
@@ -198,9 +202,12 @@ begin
     end if;
     return false;
   end if;
-  select max(chronology_cutoff_at) into latest_cutoff
+  select chronology_cutoff_at,chronology_sha256
+    into latest_cutoff,latest_chronology_sha
     from public.sam_review_obligation_resolution_events
-   where review_event_id=p_event->>'review_event_id';
+   where review_event_id=p_event->>'review_event_id'
+   order by chronology_cutoff_at desc,created_at desc,resolution_event_id desc
+   limit 1;
   if latest_cutoff is not null
      and (p_event->>'chronology_cutoff_at')::timestamptz < latest_cutoff then
     raise exception 'stale chronology resolution rejected';
@@ -209,11 +216,17 @@ begin
      and (p_event->>'chronology_cutoff_at')::timestamptz = latest_cutoff then
     raise exception 'conflicting resolution at identical chronology cutoff rejected';
   end if;
+  if latest_cutoff is not null
+     and (p_event->>'chronology_cutoff_at')::timestamptz > latest_cutoff
+     and p_event->>'chronology_sha256' = latest_chronology_sha then
+    raise exception 'unchanged chronology with advanced cutoff rejected';
+  end if;
   insert into public.sam_review_obligation_resolution_events(
     resolution_event_id,contract_version,review_event_id,account_id,inbox_id,
     contact_id,conversation_id,inbound_message_id,review_decision_sha256,
     represented_pig_id,governed_disposition_operation_id,
-    represented_identity_status,canonical_same_animal_pig_id,alias_evidence_id,
+    represented_identity_status,same_animal_mapping_prohibited,
+    canonical_same_animal_pig_id,alias_evidence_id,
     outgoing_message_id,bound_reply_to_inbound_id,outgoing_content_sha256,
     response_class_evidence_id,communication_delivery_status,
     delivery_evidence_id,delivery_evidence_sha256,customer_obligation_status,
@@ -231,6 +244,7 @@ begin
     p_event->>'conversation_id',p_event->>'inbound_message_id',
     p_event->>'review_decision_sha256',p_event->>'represented_pig_id',
     p_event->>'governed_disposition_operation_id',p_event->>'represented_identity_status',
+    coalesce((p_event->>'same_animal_mapping_prohibited')::boolean,false),
     nullif(p_event->>'canonical_same_animal_pig_id',''),nullif(p_event->>'alias_evidence_id',''),
     nullif(p_event->>'outgoing_message_id',''),nullif(p_event->>'bound_reply_to_inbound_id',''),
     nullif(p_event->>'outgoing_content_sha256',''),nullif(p_event->>'response_class_evidence_id',''),
@@ -333,7 +347,7 @@ where (
   )
   or resolution.resolution_event_id is not null
 )
-and coalesce(resolution.resolution_action,'active') <> 'completed';
+and coalesce(resolution.resolution_action,'active') not in ('completed','historical');
 
 -- Refresh protection for every newly introduced table. This rail is the one
 -- governed exception: it must preserve the exact superseded historical ID,

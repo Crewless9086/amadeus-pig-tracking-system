@@ -57,7 +57,8 @@ class SamReviewObligationResolutionPostgresTests(unittest.TestCase):
         row["decision_json_text"] = decision_text
         proof = evidence(index + 1)
         proof["identity"].update(review_event_id=self.review_ids[index], conversation_id=row["chatwoot_conversation_id"], bound_inbound_message_id=row["chatwoot_message_id"], latest_inbound_message_id=row["chatwoot_message_id"])
-        proof["public_chronology"] = [{"message_id": row["chatwoot_message_id"], "message_type": "incoming"}]
+        proof["public_chronology"] = [{"message_id": row["chatwoot_message_id"], "message_type": "incoming",
+                                        "provider_observed_at": cutoff}]
         proof["chronology_sha256"] = canonical_sha256(proof["public_chronology"])
         proof["delivery"].update(
             conversation_id=row["chatwoot_conversation_id"],
@@ -114,6 +115,16 @@ class SamReviewObligationResolutionPostgresTests(unittest.TestCase):
         changed["resolution_event_id"] = resolution_identity(changed)
         with self.assertRaisesRegex(psycopg.Error, "identical chronology cutoff"):
             self.record(changed)
+        advanced_same_chronology = copy.deepcopy(packet)
+        advanced_same_chronology["chronology_cutoff_at"] = "2026-07-31T12:01:00+00:00"
+        advanced_same_chronology["event_payload_sha256"] = resolution_payload_sha256(
+            advanced_same_chronology
+        )
+        advanced_same_chronology["resolution_event_id"] = resolution_identity(
+            advanced_same_chronology
+        )
+        with self.assertRaisesRegex(psycopg.Error, "unchanged chronology"):
+            self.record(advanced_same_chronology)
 
     def test_unprivileged_write_and_same_animal_mapping_are_denied(self):
         packet = self.packet()

@@ -30,7 +30,7 @@ OBLIGATION_STATUSES = {
 }
 RESOLUTION_ACTIONS = {
     "active", "completed", "quarantined", "protected",
-    "corrective_replanning", "indeterminate",
+    "corrective_replanning", "indeterminate", "historical",
 }
 TERMINAL_DELIVERY = {"provider_delivered", "provider_read"}
 AMBIGUOUS_DELIVERY = {
@@ -69,6 +69,7 @@ def resolution_material(packet: Mapping[str, Any]) -> list:
             "contact_id", "conversation_id", "inbound_message_id",
             "review_decision_sha256", "represented_pig_id",
             "governed_disposition_operation_id", "represented_identity_status",
+            "same_animal_mapping_prohibited",
             "canonical_same_animal_pig_id", "alias_evidence_id",
             "outgoing_message_id", "bound_reply_to_inbound_id",
             "outgoing_content_sha256", "response_class_evidence_id",
@@ -115,6 +116,21 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
             errors.append(f"exact_{field}_mismatch")
     if not chronology or not all(isinstance(row, Mapping) for row in chronology):
         errors.append("canonical_public_chronology_missing")
+    chronology_order = []
+    for row in chronology:
+        if not isinstance(row, Mapping):
+            continue
+        observed = str(row.get("provider_observed_at") or "")
+        message_id = str(row.get("message_id") or "")
+        try:
+            observed_dt = datetime.fromisoformat(observed.replace("Z", "+00:00"))
+            if observed_dt.tzinfo is None:
+                raise ValueError
+            chronology_order.append((observed_dt.astimezone(timezone.utc), message_id))
+        except ValueError:
+            errors.append("chronology_provider_timestamp_invalid")
+    if chronology_order and chronology_order != sorted(chronology_order):
+        errors.append("canonical_public_chronology_order_invalid")
     chronology_ids = {str(row.get("message_id") or "") for row in chronology if isinstance(row, Mapping)}
     if exact["inbound_message_id"] not in chronology_ids:
         errors.append("review_inbound_absent_from_chronology")
@@ -126,6 +142,13 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
     cutoff = str(evidence.get("chronology_cutoff_at") or "")
     if not cutoff:
         errors.append("chronology_cutoff_missing")
+    elif chronology_order:
+        try:
+            cutoff_dt = datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
+            if cutoff_dt.tzinfo is None or cutoff_dt.astimezone(timezone.utc) != chronology_order[-1][0]:
+                errors.append("chronology_cutoff_tail_mismatch")
+        except ValueError:
+            errors.append("chronology_cutoff_invalid")
     decision_sha = str(review.get("decision_json_sha256") or "")
     decision_text = review.get("decision_json_text")
     if decision_sha and isinstance(decision_text, str):
@@ -140,7 +163,8 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
         errors.append("review_decision_text_required_for_supplied_digest")
     else:
         decision_sha = decision_payload_sha256(review.get("decision_json"))
-    if represented_identity.get("represented_pig_id") != "PIG-2026-1AC2":
+    represented_pig_id = str(represented_identity.get("represented_pig_id") or "")
+    if not represented_pig_id:
         errors.append("represented_pig_identity_mismatch")
     represented_status = str(represented_identity.get("status") or "unknown")
     if represented_status not in REPRESENTED_STATUSES:
@@ -151,8 +175,10 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
     alias_evidence = represented_identity.get("alias_evidence_id")
     if same_animal and not alias_evidence:
         errors.append("same_animal_alias_evidence_required")
-    if represented_identity.get("represented_pig_id") == "PIG-2026-1AC2" and same_animal:
-        errors.append("zigay_child_same_animal_mapping_prohibited")
+    same_animal_mapping_prohibited = represented_identity.get(
+        "same_animal_mapping_prohibited") is True
+    if same_animal_mapping_prohibited and same_animal:
+        errors.append("cohort_child_same_animal_mapping_prohibited")
 
     delivery_status = str(delivery.get("status") or "unknown")
     if delivery_status not in DELIVERY_STATUSES:
@@ -225,7 +251,7 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
         obligation, action = "quarantined_no_retry", "quarantined"
     elif later_inbound:
         if successor:
-            obligation, action = "superseded_by_later_inbound", "active"
+            obligation, action = "superseded_by_later_inbound", "historical"
         else:
             obligation, action = "unknown_fail_closed", "indeterminate"
             errors.append("later_inbound_successor_binding_missing")
@@ -255,10 +281,11 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
         "conversation_id": exact["conversation_id"],
         "inbound_message_id": exact["inbound_message_id"],
         "review_decision_sha256": decision_sha,
-        "represented_pig_id": "PIG-2026-1AC2",
+        "represented_pig_id": represented_pig_id,
         "governed_disposition_operation_id": str(represented_identity.get(
             "governed_disposition_operation_id") or "GOVERNED-DISPOSITION-UNKNOWN"),
         "represented_identity_status": represented_status,
+        "same_animal_mapping_prohibited": same_animal_mapping_prohibited,
         "canonical_same_animal_pig_id": same_animal or None,
         "alias_evidence_id": alias_evidence or None,
         "outgoing_message_id": outgoing_id or None,
@@ -309,7 +336,7 @@ def build_resolution_manifest(*, reviews, evidence_by_review, represented_identi
         ))
     manifest = {
         "contract_version": CONTRACT_VERSION,
-        "represented_pig_id": "PIG-2026-1AC2",
+        "represented_pig_id": str((represented_identity or {}).get("represented_pig_id") or ""),
         "row_count": len(rows),
         "resolution_event_ids": [row["resolution_event_id"] for row in rows],
         "rows": rows,

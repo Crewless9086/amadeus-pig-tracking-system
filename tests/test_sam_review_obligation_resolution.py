@@ -31,6 +31,7 @@ def represented(**overrides):
         "status": "superseded",
         "canonical_same_animal_pig_id": None,
         "alias_evidence_id": None,
+        "same_animal_mapping_prohibited": True,
         "governed_disposition_operation_id": "ZIGAY-SUPERSESSION-1",
     }
     packet.update(overrides)
@@ -48,7 +49,8 @@ def evidence(index=1, **overrides):
             "latest_inbound_message_id": f"IN-{index:03d}",
             "latest_public_message_type": "incoming",
         },
-        "public_chronology": [{"message_id": f"IN-{index:03d}", "message_type": "incoming"}],
+        "public_chronology": [{"message_id": f"IN-{index:03d}", "message_type": "incoming",
+                               "provider_observed_at": "2026-07-31T12:00:00+00:00"}],
         "chronology_cutoff_at": "2026-07-31T12:00:00+00:00",
         "chronology_sha256": "",
         "delivery": {
@@ -66,6 +68,15 @@ def evidence(index=1, **overrides):
         "source_generation": "fixture-362-v1",
     }
     packet.update(overrides)
+    for position, row in enumerate(packet["public_chronology"]):
+        row.setdefault(
+            "provider_observed_at",
+            f"2026-07-31T12:{position:02d}:00+00:00",
+        )
+    if packet["public_chronology"] and "chronology_cutoff_at" not in overrides:
+        packet["chronology_cutoff_at"] = packet["public_chronology"][-1][
+            "provider_observed_at"
+        ]
     packet["delivery"].setdefault("conversation_id", f"CONV-{index:03d}")
     packet["delivery"].setdefault("inbound_message_id", f"IN-{index:03d}")
     if packet.get("later_public_outgoing"):
@@ -264,7 +275,7 @@ class SamReviewObligationResolutionTests(unittest.TestCase):
                         {"message_id": "IN-NEW", "message_type": "incoming"},
                     ],
                 ),
-                "superseded_by_later_inbound", "active",
+                "superseded_by_later_inbound", "historical",
             ),
         )
         for proof, status, action in cases:
@@ -299,7 +310,15 @@ class SamReviewObligationResolutionTests(unittest.TestCase):
                 alias_evidence_id="FORGED-ALIAS",
             ),
         )
-        self.assertIn("zigay_child_same_animal_mapping_prohibited", result["resolution_errors"])
+        self.assertIn("cohort_child_same_animal_mapping_prohibited", result["resolution_errors"])
+
+    def test_chronology_cutoff_must_equal_authoritative_tail(self):
+        proof = evidence(chronology_cutoff_at="2026-07-31T12:05:00+00:00")
+        result = resolve_review_obligation(
+            review=review(), evidence=proof, represented_identity=represented()
+        )
+        self.assertIn("chronology_cutoff_tail_mismatch", result["resolution_errors"])
+        self.assertEqual(result["resolution_action"], "indeterminate")
         self.assertEqual(result["resolution_action"], "indeterminate")
 
     def test_conflicting_or_unknown_identity_is_indeterminate(self):
