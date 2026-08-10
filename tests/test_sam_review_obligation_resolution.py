@@ -2,6 +2,8 @@ import copy
 import hashlib
 import json
 import unittest
+from unittest import mock
+import sys
 
 from modules.sales.sam_review_obligation_resolution import (
     CONTRACT_VERSION,
@@ -9,6 +11,7 @@ from modules.sales.sam_review_obligation_resolution import (
     canonical_sha256,
     resolve_review_obligation,
     resolution_identity,
+    record_resolution_event,
     successor_work_item_identity,
 )
 
@@ -110,6 +113,34 @@ def evidence(index=1, **overrides):
 
 
 class SamReviewObligationResolutionTests(unittest.TestCase):
+    def test_recorder_enters_service_role_before_governed_rpc(self):
+        packet = resolve_review_obligation(
+            review=review(), evidence=evidence(), represented_identity=represented()
+        )
+        calls = []
+
+        class Cursor:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def execute(self, sql, params=None):
+                calls.append((sql, params))
+                return self
+            def fetchone(self): return [True]
+
+        class Connection:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def cursor(self): return Cursor()
+
+        fake_psycopg = mock.Mock()
+        fake_psycopg.connect.return_value = Connection()
+        with mock.patch.dict(sys.modules, {"psycopg": fake_psycopg}):
+            result, status = record_resolution_event(packet, database_url="postgres://fixture")
+        self.assertEqual(status, 201)
+        self.assertTrue(result["created"])
+        self.assertEqual(calls[0], ("set local role service_role", None))
+        self.assertIn("record_sam_review_obligation_resolution", calls[1][0])
+
     def test_later_review_supersedes_history_without_manufacturing_successor_work(self):
         proof = evidence(content_obligation={
             "supported_obligation_answered": False,
