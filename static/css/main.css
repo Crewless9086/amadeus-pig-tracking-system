@@ -2667,6 +2667,106 @@ button:disabled {
   max-width: 1180px;
 }
 
+.print-sheet-app-shell .farm-record-page {
+  max-width: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.print-sheet-app-shell .farm-record-hero {
+  align-items: flex-end;
+  margin-bottom: 20px;
+  padding: 0 2px;
+  border: 0;
+}
+
+.print-sheet-app-shell .farm-record-hero h1 {
+  margin: 4px 0;
+  color: var(--farm-ink);
+  font-family: Georgia, serif;
+  font-size: clamp(34px, 5vw, 56px);
+  letter-spacing: -.035em;
+}
+
+.print-sheet-app-shell .farm-record-hero p { margin: 0; color: var(--farm-muted); }
+.print-sheet-app-shell .farm-record-hero .secondary-link {
+  min-height: 42px;
+  padding: 11px 15px;
+  border: 1px solid var(--farm-line);
+  border-radius: 12px;
+  background: var(--farm-paper);
+  color: var(--farm-green);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.dashboard-filter-card {
+  margin: 0 0 22px;
+  padding: 22px;
+  border: 1px solid var(--farm-line);
+  border-radius: 18px;
+  background: var(--farm-paper);
+  box-shadow: 0 10px 30px rgba(38,58,45,.06);
+}
+
+.dashboard-filter-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 22px;
+  margin-bottom: 18px;
+}
+
+.dashboard-filter-heading h2 {
+  margin: 4px 0 0;
+  color: var(--farm-ink);
+  font-family: Georgia, serif;
+  font-size: 25px;
+}
+
+.dashboard-filter-heading p { max-width: 430px; margin: 0; color: var(--farm-muted); }
+.dashboard-filter-card label { color: var(--farm-ink); }
+.dashboard-filter-card input,
+.dashboard-filter-card select {
+  border-color: var(--farm-line);
+  border-radius: 11px;
+  background: white;
+}
+.dashboard-filter-card input:focus,
+.dashboard-filter-card select:focus {
+  border-color: var(--farm-green);
+  box-shadow: 0 0 0 3px var(--farm-green-soft);
+}
+.dashboard-filter-card .button-link,
+.dashboard-filter-card button {
+  border-color: var(--farm-green);
+  border-radius: 11px;
+  background: var(--farm-green);
+  color: white;
+  font-weight: 800;
+}
+.dashboard-filter-card .button-link-secondary {
+  border-color: var(--farm-line);
+  background: white;
+  color: var(--farm-green);
+}
+.print-sheet-app-shell .report-print-header {
+  padding: 20px 22px;
+  border-radius: 17px 17px 0 0;
+  background: #263f33;
+  color: white;
+}
+.print-sheet-app-shell .report-print-header h1 { margin: 0; color: white; font-family: Georgia, serif; }
+.print-sheet-app-shell .report-print-header p { margin: 5px 0 0; color: #cfdbd3; }
+.print-sheet-app-shell .printable-sheet-wrap { margin-top: 0; border-color: var(--farm-line); border-radius: 0 0 17px 17px; background: var(--farm-paper); }
+
+@media (max-width: 700px) {
+  .print-sheet-app-shell .farm-record-hero,
+  .dashboard-filter-heading { align-items: stretch; flex-direction: column; }
+}
+
 .printable-sheet-wrap {
   margin-top: 18px;
 }
@@ -2676,6 +2776,38 @@ button:disabled {
   border-bottom: 1px solid #ded7ca;
   padding: 11px 12px;
 }
+
+.print-pen-separator th {
+  padding: 8px 10px;
+  border-top: 3px solid #1f2d25;
+  border-bottom: 2px solid #1f2d25;
+  background: #dfe5df;
+  color: #1f2d25;
+  text-align: left;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.print-pen-separator span {
+  margin-right: 10px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.print-pen-separator strong {
+  font-size: 16px;
+}
+
+.print-pen-separator small {
+  float: right;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.print-pig-row { break-inside: avoid; page-break-inside: avoid; }
 
 .bulk-weight-page {
   max-width: 1380px;
@@ -3514,6 +3646,7 @@ button:disabled {
 
   .no-print,
   .page-header-with-link,
+  .farm-nav,
   .message-box {
     display: none !important;
   }

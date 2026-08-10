@@ -103,8 +103,20 @@ function renderSheet() {
     return;
   }
 
-  printSheetBody.innerHTML = rows.map((pig) => `
-    <tr>
+  const penTotals = rows.reduce((totals, pig) => {
+    const label = penLabelForPig(pig);
+    totals[label] = (totals[label] || 0) + 1;
+    return totals;
+  }, {});
+  let previousPen = null;
+  printSheetBody.innerHTML = rows.map((pig) => {
+    const penLabel = penLabelForPig(pig);
+    const separator = penLabel !== previousPen
+      ? `<tr class="print-pen-separator"><th colspan="7"><span>Kamp</span><strong>${escapeHtml(penLabel)}</strong><small>${penTotals[penLabel]} vark${penTotals[penLabel] === 1 ? "" : "e"}</small></th></tr>`
+      : "";
+    previousPen = penLabel;
+    return `${separator}
+    <tr class="print-pig-row">
       <td>${escapeHtml(formatTagNumber(pig.tag_number || pig.pig_id || "-"))}</td>
       <td>${escapeHtml(pig.last_weight_date || "-")}</td>
       <td>${escapeHtml(formatKg(pig.current_weight_kg))}</td>
@@ -113,7 +125,8 @@ function renderSheet() {
       <td class="blank-write-cell"></td>
       <td class="blank-notes-cell"></td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 }
 
 async function loadData() {
