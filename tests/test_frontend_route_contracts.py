@@ -1929,56 +1929,62 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("event.preventDefault()", js)
         self.assertIn("submitButtons.forEach", js)
 
-    def test_dashboard_uses_backend_sales_readiness_metrics(self):
+    def test_dashboard_v2_uses_compact_sales_and_order_metrics(self):
         js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")
 
-        self.assertIn("Sales Readiness", template)
-        self.assertIn("Sales Value This Month", template)
+        self.assertIn("Sales &amp; Orders", template)
+        self.assertIn('id="sales_recent_value"', template)
         self.assertIn("summary.sales_metrics", js)
-        self.assertIn("open_reserved_orders", js)
-        self.assertIn("slaughter_cull_ready", js)
-        self.assertNotIn("available_for_sale_pigs", js)
+        self.assertIn("recent_sales_value", js)
+        self.assertIn("orders_needing_attention", js)
 
-    def test_dashboard_uses_wide_operational_template_and_existing_read_apis(self):
+    def test_dashboard_v2_is_compact_resilient_and_uses_read_apis(self):
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")
         js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
-        css = Path("static/css/main.css").read_text(encoding="utf-8")
+        css = Path("static/css/farmDashboardV2.css").read_text(encoding="utf-8")
 
-        self.assertIn('class="ops-shell"', template)
-        self.assertIn('class="ops-dashboard"', template)
-        self.assertIn("Farm Operating Dashboard", template)
-        self.assertIn("width: min(100%, 1640px)", css)
+        self.assertIn('class="farm-live-bar"', template)
+        self.assertIn('class="operating-grid"', template)
+        self.assertIn("What needs attention", template)
+        self.assertIn("grid-template-columns: repeat(3, 1fr)", css)
         self.assertIn("/api/telemetry/weather/current", js)
-        self.assertIn("/api/telemetry/weather/today?date=", js)
         self.assertIn("/api/telemetry/weather/forecast?days=3", js)
         self.assertIn("/api/telemetry/power/current", js)
         self.assertIn("/api/telemetry/irrigation/status?date=", js)
-        self.assertIn("/api/telemetry/rollups/daily?date=", js)
         self.assertIn("/api/pig-weights/dashboard", js)
         self.assertIn("/api/reports/daily-summary?date=", js)
+        self.assertIn("AbortController", js)
+        self.assertNotIn("Promise.allSettled", js)
+        self.assertNotIn("/api/telemetry/rootline/daily-brief", js)
         self.assertNotIn('method: "POST"', js)
 
-    def test_dashboard_herd_breakdown_includes_all_counted_categories(self):
+    def test_dashboard_v2_detail_pages_are_read_only_and_consistently_navigable(self):
+        app_source = Path("app.py").read_text(encoding="utf-8")
+        nav = Path("templates/_farm_nav.html").read_text(encoding="utf-8")
+        script = Path("static/js/operationsDetail.js").read_text(encoding="utf-8")
+
+        for page in ("weather", "power", "irrigation"):
+            self.assertIn(f'@app.route("/{page}")', app_source)
+            template = Path(f"templates/{page}.html").read_text(encoding="utf-8")
+            self.assertIn("{% include '_farm_nav.html' %}", template)
+            self.assertIn("operationsDetail.js", template)
+            self.assertIn(f'href="/{page}"', nav)
+        self.assertNotIn('method: "POST"', script)
+        self.assertIn("AbortController", script)
+        self.assertIn("Technical ROOTLINE evidence", Path("templates/irrigation.html").read_text(encoding="utf-8"))
+
+    def test_dashboard_v2_keeps_the_essential_herd_and_breeding_counts(self):
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")
         js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
 
-        for field in [
-            "sows",
-            "boars",
-            "gilts",
-            "piglets",
-            "weaners",
-            "growers",
-            "finishers",
-        ]:
+        for field in ["sows", "boars", "piglets"]:
             self.assertIn(f'id="herd_{field}"', template)
             self.assertIn(f'summary.{field}', js)
-
-        for field in ["sold", "slaughtered", "dead", "removed"]:
-            self.assertIn(f'id="outcome_{field}"', template)
-            self.assertIn(f"lifecycle_{field}_this_month", js)
-        self.assertIn("ops-outcome-strip", template)
+        self.assertIn('id="breeding_attention"', template)
+        self.assertIn("litter_attention", js)
+        self.assertIn('href="/pigs"', template)
+        self.assertIn('href="/matings"', template)
 
     def test_slaughter_sale_form_uses_supabase_sales_transaction_endpoints(self):
         template = Path("templates/slaughter-sale.html").read_text(encoding="utf-8")
@@ -2096,7 +2102,8 @@ class FrontendRouteContractTests(unittest.TestCase):
             "Meat Window", "Slaughter/Cull Ready", "Sales Value This Month",
         ):
             self.assertIn(label, template)
-            self.assertIn(label, dashboard)
+        self.assertIn('href="/sales-dashboard"', dashboard)
+        self.assertIn("Sales &amp; Orders", dashboard)
         self.assertNotIn(">Available<", dashboard)
         self.assertNotIn(">Reserved<", dashboard)
         self.assertNotIn("<h2>Available Stock</h2>", template)

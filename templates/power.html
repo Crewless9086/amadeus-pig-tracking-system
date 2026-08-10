@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Farm Power</title><link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}"></head>
+<body data-operations-page="power"><div class="farm-app-shell">{% include '_farm_nav.html' %}<main class="operations-page">
+  <header class="operations-hero"><div><span class="farm-eyebrow">Farm operations</span><h1>Power</h1><p>Current battery, solar, farm load and grid position. Power governs electrical work, not the gravity-fed B and C irrigation valves.</p></div><a class="manager-link" href="/">← Dashboard</a></header>
+  <section class="detail-grid">
+    <article class="detail-card"><span class="farm-eyebrow">Battery</span><p class="detail-value" id="detail_power_soc">Loading</p><p class="detail-muted" id="detail_power_summary">Reading Sunsynk…</p></article>
+    <article class="detail-card"><span class="farm-eyebrow">Solar</span><p class="detail-value" id="detail_power_solar">--</p><p class="detail-muted">Current production</p></article>
+    <article class="detail-card"><span class="farm-eyebrow">Farm load</span><p class="detail-value" id="detail_power_load">--</p><p class="detail-muted">Current consumption</p></article>
+    <article class="detail-card detail-wide"><h2>Recent profile</h2><div class="detail-list" id="detail_power_recent"><p class="detail-muted">Loading recent profile…</p></div></article>
+    <article class="detail-card"><h2>Grid &amp; freshness</h2><p class="detail-value" id="detail_power_grid">--</p><p class="detail-muted" id="detail_power_age">--</p></article>
+  </section>
+</main></div><script src="{{ url_for('static', filename='js/operationsDetail.js') }}?v=20260810-v2"></script></body></html>
