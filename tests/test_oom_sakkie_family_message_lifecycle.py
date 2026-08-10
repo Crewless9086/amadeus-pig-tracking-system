@@ -301,6 +301,86 @@ def test_process_interruption_does_not_blindly_resend():
     assert memory.sent==[]
 
 
+def test_protected_completion_uses_verified_card_edit_without_second_message():
+    memory=Memory();mission="OOM-PROTECTED-COMPLETE"
+    deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    completed={"success":True,"status":"completed","answer":"Recorded once.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    inbound={**PARSED,"provider_message_id":"501"}
+    result=deliver_family_result(inbound,completed,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(inbound,completed,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert result["status"]=="family_message_completion_card_updated"
+    assert result["telegram_edits"]==1 and result["telegram_sends"]==0
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
+    assert len(memory.sent)==1 and len(memory.edited)==1
+
+
+def test_protected_completion_without_card_sends_one_message_only():
+    memory=Memory();mission="OOM-PROTECTED-NEW"
+    completed={"success":True,"status":"completed","answer":"Recorded once.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    result=deliver_family_result(PARSED,completed,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(PARSED,completed,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert result["telegram_sends"]==1 and result["telegram_edits"]==0
+    assert replay["telegram_sends"]==replay["telegram_edits"]==0
+
+
+def test_protected_completion_ambiguous_edit_never_falls_back_to_second_message():
+    memory=Memory();mission="OOM-PROTECTED-AMBIGUOUS"
+    deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    completed={"success":True,"status":"completed","answer":"Recorded once.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    inbound={**PARSED,"provider_message_id":"501"}
+    editor=lambda *args:{"success":False,"status":"provider_outcome_ambiguous"}
+    first=deliver_family_result(inbound,completed,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=editor)
+    delayed=deliver_family_result(inbound,completed,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=editor)
+    assert first["status"]=="family_message_update_contained"
+    assert delayed["status"]=="family_message_completion_delivery_ambiguous"
+    assert first["telegram_sends"]==delayed["telegram_sends"]==0
+    assert delayed["telegram_edits"]==0 and len(memory.sent)==1
+
+
+def test_protected_completion_requires_exact_provider_card_identity():
+    mission="OOM-PROTECTED-UNVERIFIED"
+    completed={"success":True,"status":"completed","answer":"Recorded once.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    inbound={**PARSED,"provider_message_id":"501"}
+    for response in ({"success":True},{"success":True,"telegram_message_id":"wrong"}):
+        memory=Memory()
+        deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+            card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+        result=deliver_family_result(inbound,completed,specialist="HERDMASTER",mission_id=mission,
+            card_mission_id=mission,event_store=memory.store,sender=memory.send,
+            editor=lambda *args,r=response:r)
+        assert result["status"]=="family_message_update_contained"
+        assert result["telegram_sends"]==result["telegram_edits"]==0
+        assert len(memory.sent)==1
+
+
+def test_concurrent_completion_claim_allows_only_one_external_effect():
+    memory=Memory();mission="OOM-PROTECTED-CONCURRENT"
+    deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    completed={"success":True,"status":"completed","answer":"Recorded once.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    inbound={**PARSED,"provider_message_id":"501"}
+    first=deliver_family_result(inbound,completed,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    second=deliver_family_result(inbound,completed,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert first["telegram_edits"]==1 and first["telegram_sends"]==0
+    assert second["telegram_edits"]==second["telegram_sends"]==0
+    assert len(memory.edited)==1
+
+
 def test_missing_specialist_adapter_is_truthful_visible_result():
     memory=Memory();result={"status":"contained","answer":"No deployed HERDMASTER adapter acknowledged this task."}
     delivered=deliver_family_result(PARSED,result,specialist="HERDMASTER",event_store=memory.store,sender=memory.send)

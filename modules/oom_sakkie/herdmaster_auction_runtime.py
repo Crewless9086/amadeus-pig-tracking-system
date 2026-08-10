@@ -116,14 +116,15 @@ def handle_auction_confirmation(parsed: Mapping[str, Any], gateway_authority, *,
         and row.get("task_state") == "completed"
         and row.get("state") in {"update_attempted", "contained"}), None)
     if ambiguous_completion:
-        return {"handled": True, "success": True, "status": "completed",
-            "answer": _completion_answer(), "mission_id": MISSION_ID,
+        return {"handled": True, "success": True,
+            "status": "auction_completion_delivery_ambiguous", "answer": "",
+            "mission_id": MISSION_ID,
             "card_mission_id": MISSION_ID, "operation_id": OPERATION_ID,
             "preview_hash": PREVIEW_HASH, "evidence_generation": EVIDENCE_GENERATION,
             "confirmation_provider_message_id": provider_message_id,
             "confirmation_provider_timestamp": provider_timestamp,
             "confirmation_text_sha256": text_digest,
-            "requires_visible_notification": True, "delivery_recovery_required": True,
+            "suppress_owner_delivery": True, "delivery_recovery_required": False,
             "writes_farm_data": False, "protected_actions_performed": False}, 200
     latest = next((row for row in reversed(events)
         if str(row.get("task_state") or "").strip()), None)
@@ -182,7 +183,8 @@ def handle_auction_confirmation(parsed: Mapping[str, Any], gateway_authority, *,
         "confirmation_provider_message_id": provider_message_id,
         "confirmation_provider_timestamp": provider_timestamp,
         "confirmation_text_sha256": text_digest,
-        "requires_visible_notification": True, "writes_farm_data": not result.get("replay"),
+        "owner_visible_completion_policy": "verified_edit_or_new_message",
+        "writes_farm_data": not result.get("replay"),
         "rows_created": int(result.get("rows_created") or 0),
         "recording_result": result, "protected_actions_performed": not result.get("replay")}, status
 

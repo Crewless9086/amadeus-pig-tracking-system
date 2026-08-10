@@ -51,7 +51,7 @@ def test_exact_authenticated_confirmation_records_once_and_completes_visibly():
     assert result["status"] == "completed"
     assert result["writes_farm_data"] is True
     assert result["rows_created"] == 37
-    assert result["requires_visible_notification"] is True
+    assert result["owner_visible_completion_policy"] == "verified_edit_or_new_message"
 
 
 def test_replay_is_silent_and_never_calls_writer():
@@ -107,7 +107,7 @@ def test_superseded_preview_and_ambiguous_completion_recovery_are_safe():
             CONFIRMATION_TOKEN.encode()).hexdigest()})
     result, status = handle_auction_confirmation(parsed(), authority,
         event_store=store(ambiguous), writer=lambda *a, **k: (_ for _ in ()).throw(AssertionError()))
-    assert status == 200 and result["delivery_recovery_required"] is True
+    assert status == 200 and result["suppress_owner_delivery"] is True
     assert result["writes_farm_data"] is False
 
 
@@ -136,9 +136,10 @@ def test_authorized_preview_presentation_confirmation_completion_and_replay_jour
     assert status == 201 and result["status"] == "completed"
     completed = deliver_family_result(parsed(), result, specialist="HERDMASTER",
         mission_id=MISSION_ID, card_mission_id=MISSION_ID,
-        event_store=lifecycle_store, editor=lambda *a: {"success": True}, sender=sender)
-    assert completed["telegram_sends"] == 1
+        event_store=lifecycle_store,
+        editor=lambda *a: {"success": True, "telegram_message_id": "8001"}, sender=sender)
+    assert completed["telegram_sends"] == 0 and completed["telegram_edits"] == 1
     replay, status = handle_auction_confirmation(parsed(), authority,
         event_store=lifecycle_store, writer=lambda *a, **k: (_ for _ in ()).throw(AssertionError()))
     assert status == 200 and replay["suppress_owner_delivery"] is True
-    assert len(sends) == 2
+    assert len(sends) == 1
