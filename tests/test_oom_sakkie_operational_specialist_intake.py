@@ -425,6 +425,26 @@ def test_exact_provider_replay_loads_terminal_before_routing():
     assert value["hardware_commands"]==0
 
 
+def test_one_exact_v2_terminal_supersedes_preserved_v1_history():
+    item=operational("Done; at fertilizer valves now")
+    text_sha=__import__("hashlib").sha256(item["text"].encode()).hexdigest()
+    context={"owner_user_id":"42","chat_id":"42",
+        "provider_message_id":item["provider_message_id"],
+        "provider_timestamp":item["provider_timestamp"],"text_sha256":text_sha}
+    zero={"hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False,
+        "authority":{"configuration_write":False,"hardware_control":False,
+                     "farm_write":False,"telegram_send":False}}
+    rows=[{"state":"contextual_followup_completed","context":context,
+           "outcome":{**zero,"status":"waiting_for_input"}},
+          {"state":"contextual_followup_completed","context":context,
+           "outcome":{**zero,"status":"waiting_for_input","answer":"Are you still there?",
+             "response_contract_version":"contextual_specialist_response_v2"}}]
+    value=recover_contextual_specialist_replay(item,replay_loader=lambda _:rows,
+        delivery_loader=lambda _:False)
+    assert value["delivery_recovery_required"] is True
+    assert value["answer"]=="Are you still there?"
+
+
 def test_exact_provider_outcome_without_delivery_resumes_delivery_not_specialist():
     item=operational("Done; at fertilizer valves now")
     text_sha=__import__("hashlib").sha256(item["text"].encode()).hexdigest()
