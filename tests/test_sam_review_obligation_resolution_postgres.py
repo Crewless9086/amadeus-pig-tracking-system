@@ -183,6 +183,49 @@ class SamReviewObligationResolutionPostgresTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(psycopg.Error):
                 self.record(malformed)
 
+    def test_resolver_missing_successor_records_indeterminate_audit(self):
+        base = self.packet(0)
+        with psycopg.connect(self.url) as connection:
+            decision_text = connection.execute(
+                "select decision_json::text from public.sam_live_stock_conversation_review_events where review_event_id=%s",
+                (self.review_ids[1],),
+            ).fetchone()[0]
+        reviewed = {
+            "review_event_id": self.review_ids[1],
+            "chatwoot_conversation_id": f"CONV-{self.suffix}-001",
+            "chatwoot_message_id": f"IN-{self.suffix}-001",
+            "decision_json": {"canonical_inventory_snapshot":{"selected_pig_ids":["PIG-2026-1AC2"]}},
+            "decision_json_text": decision_text,
+            "decision_json_sha256": hashlib.sha256(decision_text.encode()).hexdigest(),
+        }
+        proof = evidence(2,
+            identity={
+                "review_event_id": self.review_ids[1], "account_id": "147387", "inbox_id": "96568",
+                "contact_id": "CONTACT-002", "conversation_id": reviewed["chatwoot_conversation_id"],
+                "bound_inbound_message_id": reviewed["chatwoot_message_id"],
+                "latest_inbound_message_id": "LATER-INBOUND", "latest_public_message_type": "incoming",
+            },
+            later_inbound_message_id="LATER-INBOUND",
+            public_chronology=[
+                {"message_id": reviewed["chatwoot_message_id"], "message_type": "incoming"},
+                {"message_id": "LATER-INBOUND", "message_type": "incoming"},
+            ],
+        )
+        proof["delivery"].update(
+            conversation_id=reviewed["chatwoot_conversation_id"],
+            inbound_message_id=reviewed["chatwoot_message_id"],
+        )
+        proof["delivery"]["evidence_payload"] = {
+            key: value for key, value in proof["delivery"].items()
+            if key not in {"evidence_id", "evidence_sha256", "evidence_payload"}
+        }
+        proof["delivery"]["evidence_sha256"] = canonical_sha256(proof["delivery"]["evidence_payload"])
+        packet = resolve_review_obligation(review=reviewed, evidence=proof, represented_identity=represented())
+        self.assertEqual(packet["resolution_action"], "indeterminate")
+        self.assertIsNone(packet["successor_work_item_id"])
+        self.assertIsNone(packet["successor_evidence_id"])
+        self.assertTrue(self.record(packet))
+
     def test_consumer_projection_keeps_containment_and_surfaces_only_safe_work(self):
         with psycopg.connect(self.url) as connection:
             connection.execute(

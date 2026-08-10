@@ -253,29 +253,30 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
     successor_evidence_id = None
     successor_evidence_sha = None
     if later_inbound:
-        successor_evidence_id, successor_evidence_sha = evidence_binding(
-            successor_evidence, "successor_work_item"
-        )
         if not successor:
             errors.append("later_inbound_successor_binding_missing")
-        expected_successor = successor_work_item_identity(
-            account_id=identity.get("account_id"), inbox_id=identity.get("inbox_id"),
-            contact_id=successor_evidence.get("contact_id"),
-            conversation_id=successor_evidence.get("conversation_id"),
-            inbound_message_id=successor_evidence.get("inbound_message_id"),
-        )
-        if successor != expected_successor:
-            errors.append("successor_work_item_identity_mismatch")
-        if str(successor_evidence.get("contact_id") or "") != str(identity.get("contact_id") or ""):
-            errors.append("successor_contact_identity_mismatch")
-        if str(successor_evidence.get("conversation_id") or "") != exact["conversation_id"]:
-            errors.append("successor_conversation_identity_mismatch")
-        if str(successor_evidence.get("inbound_message_id") or "") != later_inbound:
-            errors.append("successor_inbound_identity_mismatch")
-        if successor_evidence.get("current_actionable") is not True:
-            errors.append("successor_current_actionable_evidence_required")
-        if str(successor_evidence.get("chronology_sha256") or "") != chronology_sha:
-            errors.append("successor_chronology_binding_mismatch")
+        else:
+            successor_evidence_id, successor_evidence_sha = evidence_binding(
+                successor_evidence, "successor_work_item"
+            )
+            expected_successor = successor_work_item_identity(
+                account_id=identity.get("account_id"), inbox_id=identity.get("inbox_id"),
+                contact_id=successor_evidence.get("contact_id"),
+                conversation_id=successor_evidence.get("conversation_id"),
+                inbound_message_id=successor_evidence.get("inbound_message_id"),
+            )
+            if successor != expected_successor:
+                errors.append("successor_work_item_identity_mismatch")
+            if str(successor_evidence.get("contact_id") or "") != str(identity.get("contact_id") or ""):
+                errors.append("successor_contact_identity_mismatch")
+            if str(successor_evidence.get("conversation_id") or "") != exact["conversation_id"]:
+                errors.append("successor_conversation_identity_mismatch")
+            if str(successor_evidence.get("inbound_message_id") or "") != later_inbound:
+                errors.append("successor_inbound_identity_mismatch")
+            if successor_evidence.get("current_actionable") is not True:
+                errors.append("successor_current_actionable_evidence_required")
+            if str(successor_evidence.get("chronology_sha256") or "") != chronology_sha:
+                errors.append("successor_chronology_binding_mismatch")
     if str(window.get("state") or "unknown") not in {"open", "closed", "unknown"}:
         errors.append("whatsapp_window_state_invalid")
     elif str(window.get("state") or "unknown") == "unknown":
@@ -345,9 +346,9 @@ def resolve_review_obligation(*, review, evidence, represented_identity) -> dict
         "chronology_cutoff_at": cutoff,
         "chronology_sha256": chronology_sha,
         "successor_work_item_id": successor or None,
-        "successor_contact_id": successor_evidence.get("contact_id") or None,
-        "successor_conversation_id": successor_evidence.get("conversation_id") or None,
-        "successor_inbound_message_id": successor_evidence.get("inbound_message_id") or None,
+        "successor_contact_id": successor_evidence.get("contact_id") if successor else None,
+        "successor_conversation_id": successor_evidence.get("conversation_id") if successor else None,
+        "successor_inbound_message_id": successor_evidence.get("inbound_message_id") if successor else None,
         "successor_evidence_id": successor_evidence_id,
         "successor_evidence_sha256": successor_evidence_sha,
         "content_relied_on_superseded_identity": relied_on_superseded,
