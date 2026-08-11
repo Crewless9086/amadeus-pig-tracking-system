@@ -607,6 +607,36 @@ def test_prince_trial_capacity_is_two_and_does_not_absorb_more_females():
     assert result["placement_cohorts"]["accounted_for_once"] is True
 
 
+def test_prince_receives_one_purposeful_trial_with_an_interpretable_maternal_history():
+    sows = [female(pig_id="SOW-STRONG", tag_number="Strong", mother_id="DAM-S", father_id="SIRE-S"),
+        female(pig_id="SOW-WEAK", tag_number="Weak", mother_id="DAM-W", father_id="SIRE-W")]
+    bola = male("BOAR-BOLA", "Bola", mother_id="DAM-B", father_id="SIRE-B")
+    prince = male("BOAR-PRINCE", "Prince", mother_id="DAM-P", father_id="SIRE-P")
+    attention_rows = [attention(pig_id=row["pig_id"], tag_number=row["tag_number"]) for row in sows]
+    litters = [
+        {"litter_id":"LIT-STRONG", "sow_pig_id":"SOW-STRONG", "boar_pig_id":"BOAR-BOLA",
+         "farrowing_date":"2026-06-01", "wean_date":"2026-07-20", "born_alive":11, "weaned_count":9},
+        {"litter_id":"LIT-WEAK", "sow_pig_id":"SOW-WEAK", "boar_pig_id":"BOAR-BOLA",
+         "farrowing_date":"2026-06-01", "wean_date":"2026-07-20", "born_alive":5, "weaned_count":2},
+    ]
+    trees = {"success":True, "by_pig":{row["pig_id"]:{"lineage_status":"complete",
+        "ancestor_ids":[row["mother_id"], row["father_id"]]} for row in [*sows, bola, prince]}}
+    result = build_breeding_operating_loop({"success":True, "animals":attention_rows},
+        readiness={"success":True, "pigs":[*sows, bola, prince]}, matings=[], litters=litters,
+        observations=[], family_trees=trees, today=TODAY)
+    prince_rows = [row for cohort in result["placement_cohorts"]["cohorts"]
+        if cohort["boar_name"] == "Prince" for row in cohort["females"]]
+    assert [row["name"] for row in prince_rows] == ["Strong"]
+    assert prince_rows[0]["evidence_class"] == "Controlled trial"
+    assert prince_rows[0]["genetic_primary_boar"] == "Bola"
+    assert prince_rows[0]["reserve_boar"] == "Bola"
+    assert "fertility" in prince_rows[0]["trial_purpose"]
+    strong_task = next(row for row in result["tasks"] if row["pig_id"] == "SOW-STRONG")
+    assert strong_task["male_recommendation"]["recommended"]["tag_number"] == "Bola"
+    assert strong_task["placement_assignment"] == "Controlled trial"
+    assert "Prince-bewys" in result["owner_summary_af"]
+
+
 def test_same_week_rebuild_keeps_schedule_and_dedup_identity_stable():
     tuesday = build_breeding_operating_loop({"success":True, "animals":[attention()]},
         readiness={"success":True, "pigs":[female(), male()]}, matings=[],

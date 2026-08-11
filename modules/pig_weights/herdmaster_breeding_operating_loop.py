@@ -273,6 +273,7 @@ def oom_sakkie_worklist_summary(loop):
 def _schedule_placement_cohorts(tasks, today):
     """Sequence ready females without changing their evidence-backed pairing."""
     grouped, held = {}, []
+    trial_task, trial_male = _select_controlled_trial(tasks)
     for task in tasks:
         recommendation = task.get("male_recommendation") or {}
         primary = recommendation.get("recommended") or {}
@@ -281,8 +282,15 @@ def _schedule_placement_cohorts(tasks, today):
                 "state": _owner_label(task.get("provisional_recommendation")),
                 "reason": _owner_label(task.get("why"), 160)})
             continue
-        grouped.setdefault(primary["pig_id"], {"boar_pig_id": primary["pig_id"],
-                "boar_name": _owner_label(primary["tag_number"]), "rows": []})["rows"].append(task)
+        assignment = trial_male if trial_task is task else primary
+        if trial_task is task:
+            task["placement_assignment"] = "Controlled trial"
+            task["placement_assignment_reason"] = (
+                "Purposeful Prince trial using attributable maternal litter evidence; "
+                "the genetic primary remains recorded separately."
+            )
+        grouped.setdefault(assignment["pig_id"], {"boar_pig_id": assignment["pig_id"],
+                "boar_name": _owner_label(assignment["tag_number"]), "rows": []})["rows"].append(task)
 
     cohorts, assigned = [], set()
     for group in sorted(grouped.values(), key=lambda row: (row["boar_name"].casefold(), row["boar_pig_id"])):
@@ -308,18 +316,23 @@ def _schedule_placement_cohorts(tasks, today):
                 if task["pig_id"] in assigned:
                     raise ValueError("female_assigned_to_multiple_placement_cohorts")
                 assigned.add(task["pig_id"])
-                evidence = task["male_recommendation"]["recommended"]
-                reserve = task["male_recommendation"].get("reserve")
+                genetic_primary = task["male_recommendation"]["recommended"]
+                assigned_male = _male_option(task["male_recommendation"], group["boar_pig_id"]) or genetic_primary
+                is_controlled_trial = assigned_male.get("evidence_class") == "Controlled trial"
+                reserve = genetic_primary if is_controlled_trial else task["male_recommendation"].get("reserve")
                 task.update({"placement_cohort": "immediate" if sequence == 0 else "next",
                     "placement_cohort_number": sequence + 1,
                     "proposed_placement_date": start.isoformat(), "exposure_start_date": start.isoformat(),
                     "exposure_end_date": end.isoformat(), "exposure_days": EXPOSURE_DAYS})
                 females.append({"pig_id": task["pig_id"], "name": _owner_label(task["tag_number"]),
                     "weaning_date": task.get("weaning_date"), "days_since_weaning": task.get("days_since_weaning"),
-                    "primary_boar": evidence["tag_number"], "reserve_boar": reserve.get("tag_number") if reserve else None,
-                    "evidence_class": evidence.get("evidence_class") or "Limited evidence",
-                    "pair_litters": evidence.get("pair_litters") or 0, "born_alive": evidence.get("born_alive") or 0,
-                    "surviving_or_weaned": evidence.get("surviving_or_weaned") or 0,
+                    "primary_boar": assigned_male["tag_number"], "reserve_boar": reserve.get("tag_number") if reserve else None,
+                    "genetic_primary_boar": genetic_primary.get("tag_number"),
+                    "evidence_class": assigned_male.get("evidence_class") or "Limited evidence",
+                    "pair_litters": assigned_male.get("pair_litters") or 0, "born_alive": assigned_male.get("born_alive") or 0,
+                    "surviving_or_weaned": assigned_male.get("surviving_or_weaned") or 0,
+                    "trial_purpose": ("establish Prince fertility, born-alive, survival, weaning and comparable growth evidence"
+                        if is_controlled_trial else None),
                     "proposed_placement_date": start.isoformat(), "exposure_start_date": start.isoformat(),
                     "exposure_end_date": end.isoformat(), "exposure_days": EXPOSURE_DAYS,
                     "heat_observation_required": False})
@@ -332,6 +345,37 @@ def _schedule_placement_cohorts(tasks, today):
         "accounted_for_once": len(assigned) + len(held) == len(tasks)
             and len(assigned) == sum(len(row["females"]) for row in cohorts),
         "mating_execution_enabled": False, "writes_performed": False}
+
+
+def _male_option(recommendation, pig_id):
+    options = [recommendation.get("recommended"), recommendation.get("reserve"), *(recommendation.get("alternatives") or [])]
+    return next((row for row in options if isinstance(row, dict) and row.get("pig_id") == pig_id), None)
+
+
+def _select_controlled_trial(tasks):
+    """Choose one interpretable sow for an eligible unproven boar trial."""
+    candidates = []
+    for task in tasks:
+        if task.get("provisional_recommendation") != "Ready for mating review":
+            continue
+        recommendation = task.get("male_recommendation") or {}
+        prince = next((row for row in [recommendation.get("recommended"), recommendation.get("reserve"),
+            *(recommendation.get("alternatives") or [])] if isinstance(row, dict)
+            and _owner_label(row.get("tag_number")).casefold() == "prince"
+            and row.get("evidence_class") == "Controlled trial"), None)
+        maternal = recommendation.get("recommended") or {}
+        if not prince or not (maternal.get("pair_litters") and maternal.get("born_alive")
+                and maternal.get("surviving_or_weaned")):
+            continue
+        born = int(maternal.get("born_alive") or 0)
+        survived = int(maternal.get("surviving_or_weaned") or 0)
+        candidates.append(((int(maternal.get("pair_litters") or 0), born,
+            survived, survived / born, int(task.get("days_since_weaning") or 0),
+            task.get("tag_number") or ""), task, prince))
+    if not candidates:
+        return None, None
+    _score, task, prince = max(candidates, key=lambda row: row[0])
+    return task, prince
 
 
 def _placement_priority(task):
@@ -372,11 +416,11 @@ def _afrikaans_placement_summary(schedule, today):
     lines = ["HERDMASTER — PRAKTIESE TEELPLAN", "", heading]
     for cohort in immediate:
         lines += ["", f"{_owner_label(cohort['boar_name'])} — {_af_date(cohort['start_date'])} tot {_af_date(cohort['end_date'])}"]
-        lines.extend(f"- {row['name']} — {_af_class(row['evidence_class'])}" for row in cohort["females"])
+        lines.extend(_af_pairing_line(row) for row in cohort["females"])
     lines += ["", "VOLGENDE GROEP"]
     for cohort in [row for row in schedule["cohorts"] if row["kind"] == "next"]:
         lines += ["", f"{_owner_label(cohort['boar_name'])} — {_af_date(cohort['start_date'])} tot {_af_date(cohort['end_date'])}"]
-        lines.extend(f"- {row['name']} — {_af_class(row['evidence_class'])}" for row in cohort["females"])
+        lines.extend(_af_pairing_line(row) for row in cohort["females"])
     lines += ["", "NIE TANS GESKIK NIE"]
     held = schedule.get("held") or []
     lines.append("- " + "; ".join(f"{_owner_label(row['name'])}: {_owner_label(_af_hold(row['state']))}" for row in held) if held else "- Geen huidige houvas nie.")
@@ -396,6 +440,13 @@ def _af_class(value):
     return {"Proven repeat": "Bewese herhaling", "Supported cross": "Ondersteunde kruising",
         "Corrective cross": "Korrigerende kruising", "Controlled trial": "Beheerde proef",
         "Limited evidence": "Beperkte bewyse"}.get(value, "Beperkte bewyse")
+
+
+def _af_pairing_line(row):
+    line = f"- {row['name']} — {_af_class(row['evidence_class'])}"
+    if row.get("trial_purpose"):
+        line += "; bou Prince-bewys oor vrugbaarheid, lewend gebore, oorlewing, speen en groei"
+    return line
 
 
 def _af_hold(value):
