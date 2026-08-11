@@ -73,6 +73,15 @@
 .breeding-observation-header h2 { margin: 4px 0; color: var(--farm-ink); font-family: Georgia, serif; font-size: 29px; }
 .breeding-observation-header p { margin: 0; color: var(--farm-muted); }
 .breeding-history { margin: 20px 22px 0; padding: 13px 15px; border-left: 4px solid var(--farm-water); border-radius: 0 11px 11px 0; background: #e7f0f2; color: #365661; }
+.breeding-history-title { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.breeding-history-title span { color: var(--farm-muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.breeding-history-item { display: grid; gap: 7px; padding: 13px 0; border-top: 1px solid rgba(54,86,97,.18); }
+.breeding-history-item > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.breeding-history-item p { margin: 0; color: var(--farm-ink); line-height: 1.45; }
+.breeding-history-item small { display: block; color: var(--farm-muted); line-height: 1.45; }
+.breeding-history-item code { overflow-wrap: anywhere; color: #587079; font-size: 10px; }
+.breeding-recorded-badge { padding: 4px 8px; border-radius: 999px; background: var(--farm-green); color: white; font-size: 10px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.breeding-history-error { border-left-color: #a64b3c; background: #f8eae6; color: #7a352b; }
 #observation_form { display: grid; gap: 0; padding: 4px 22px 0; }
 .breeding-form-section { padding: 20px 0; border-bottom: 1px solid var(--farm-line); }
 .breeding-form-heading { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 14px; }
@@ -96,6 +105,8 @@
 .breeding-form-actions .breeding-preview-button { border: 1px solid var(--farm-line); background: white; color: var(--farm-green); }
 .breeding-form-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .breeding-preview-box { margin: 0 22px 20px; padding: 15px; border: 1px solid #c8d7ca; border-radius: 13px; background: var(--farm-green-soft); color: var(--farm-ink); line-height: 1.5; }
+.breeding-save-success { border: 2px solid var(--farm-green); background: #e3f0e5; color: #173d2a; font-weight: 900; }
+.breeding-save-error { border: 2px solid #a64b3c; background: #f8eae6; color: #7a352b; font-weight: 900; }
 .breeding-observation-panel > .breeding-footnote { margin: 0; padding: 14px 22px 19px; border-top: 1px solid var(--farm-line); }
 
 @media (max-width: 900px) {
