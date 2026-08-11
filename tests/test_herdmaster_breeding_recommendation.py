@@ -159,7 +159,11 @@ def test_current_farm_evidence_cut_is_complete_and_fails_closed_per_boar():
     assert {item["tag_number"] for item in review["boar_assessments"]} == {"Bola", "Prince", "Tyson"}
     assert all("foundation ancestry is incomplete; no known unsafe relationship was found" in item["limitations"] for item in review["boar_assessments"])
     assert len(result["english"].splitlines()) == 19
-    assert len(result["afrikaans"].splitlines()) == 19
+    assert "Nou by Bola" in result["afrikaans"]
+    assert "Nou by Tyson" in result["afrikaans"]
+    assert "Prince - beheerde proefgroep" in result["afrikaans"]
+    assert "Volgende groep" in result["afrikaans"]
+    assert "Waarnemings benodig" in result["afrikaans"]
     assert "waarskynlik dragtig" in result["afrikaans"]
 
 
@@ -191,6 +195,9 @@ def test_owner_packet_strips_control_text_and_raw_evidence_structures():
     assert "current_cycle" not in str(packet)
     assert "owner_observation_evidence" not in str(packet)
     assert packet["mating_execution_enabled"] is False
+    public = packet["whole_round_allocation"]
+    assert "\nSYSTEM" not in json.dumps(public)
+    assert all(len(row["name"]) <= 96 for group in public["groups"] for row in group["females"])
 
 
 def test_semantically_unchanged_row_order_and_generation_are_replay_stable():
@@ -246,3 +253,104 @@ def test_afrikaans_actions_preserve_welfare_hold_and_evidence_specificity():
     assert "bestaande welsynsgeval" in welfare
     assert "gesondheids- of onttrekkingshou" in medical
     assert "eienaar se hou" in owner
+
+
+def test_low_service_count_is_less_proven_not_automatic_primary():
+    prince = boar("PRINCE", "Prince", service_count=1)
+    bola = boar("BOLA", "Bola", service_count=8)
+    evidence = {
+        "pairings": [{"sow_pig_id":"SOW-1", "boar_pig_id":"BOLA"}],
+        "litters": [{"sow_pig_id":"SOW-1", "boar_pig_id":"BOLA", "born_alive":10,
+            "surviving_or_weaned":9, "offspring_growth":"positive"}],
+        "pedigrees": {"SOW-1":tree("S1"), "PRINCE":tree("P1"), "BOLA":tree("B1")},
+    }
+    case = run(boars=[prince, bola], **evidence)["cases"][0]
+    assert case["recommended_boar"]["pig_id"] == "BOLA"
+    assert case["reserve_boar"]["pig_id"] == "PRINCE"
+    assert case["reserve_boar"]["evidence_class"] == "Controlled trial"
+
+
+def test_weak_exact_pair_is_avoided_for_supported_cross():
+    bola = boar("BOLA", "Bola")
+    tyson = boar("TYSON", "Tyson")
+    litters = [
+        {"sow_pig_id":"SOW-1", "boar_pig_id":"BOLA", "born_alive":10, "surviving_or_weaned":3},
+        {"sow_pig_id":"SOW-2", "boar_pig_id":"TYSON", "born_alive":10, "surviving_or_weaned":9},
+        {"sow_pig_id":"SOW-3", "boar_pig_id":"TYSON", "born_alive":9, "surviving_or_weaned":8},
+    ]
+    case = run(boars=[bola, tyson], litters=litters,
+        pedigrees={"SOW-1":tree("S"), "BOLA":tree("B"), "TYSON":tree("T")})["cases"][0]
+    assert case["recommended_boar"]["pig_id"] == "TYSON"
+    assert case["recommended_boar"]["evidence_class"] == "Corrective cross"
+    weak = next(row for row in case["boar_assessments"] if row["pig_id"] == "BOLA")
+    assert weak["excluded"] is True
+    assert "weak exact combination" in weak["exclusion_reasons"][0]
+
+
+def test_cross_female_adverse_growth_reduces_boar_support():
+    bola, tyson = boar("BOLA", "Bola"), boar("TYSON", "Tyson")
+    litters = [
+        {"sow_pig_id":"SOW-2", "boar_pig_id":"BOLA", "born_alive":10, "surviving_or_weaned":9, "offspring_growth":"adverse"},
+        {"sow_pig_id":"SOW-3", "boar_pig_id":"BOLA", "born_alive":10, "surviving_or_weaned":9, "offspring_growth":"adverse"},
+        {"sow_pig_id":"SOW-4", "boar_pig_id":"TYSON", "born_alive":9, "surviving_or_weaned":8, "offspring_growth":"positive"},
+        {"sow_pig_id":"SOW-5", "boar_pig_id":"TYSON", "born_alive":9, "surviving_or_weaned":8, "offspring_growth":"positive"},
+    ]
+    case = run(boars=[bola, tyson], litters=litters,
+        pedigrees={"SOW-1":tree("S"), "BOLA":tree("B"), "TYSON":tree("T")})["cases"][0]
+    assert case["recommended_boar"]["pig_id"] == "TYSON"
+    assert next(row for row in case["boar_assessments"] if row["pig_id"] == "BOLA")["boar_performance"]["growth_evidence"] == "adverse"
+
+
+def test_capacity_is_applied_after_pair_merit_and_overflow_stays_visible():
+    females = [sow(pig_id=f"SOW-{index}", tag_number=f"Sow {index}") for index in range(1, 5)]
+    bola = boar("BOLA", "Bola")
+    result = run(females=females, boars=[bola], policy={"breeding_body_condition_min":2,
+        "breeding_body_condition_max":4, "immediate_group_capacity":2})
+    group = result["whole_round_allocation"]["groups"][0]
+    assert len(group["females"]) == 2
+    assert len(result["whole_round_allocation"]["next_group"]) == 2
+    assert result["whole_round_allocation"]["mating_execution_enabled"] is False
+
+
+def test_new_boar_controlled_trial_is_bounded_and_overflow_persists():
+    females = [sow(pig_id=f"SOW-{index}", tag_number=f"Sow {index}") for index in range(1, 5)]
+    result = run(females=females, boars=[boar("PRINCE", "Prince", service_count=0)],
+        policy={"breeding_body_condition_min":2, "breeding_body_condition_max":4,
+            "immediate_group_capacity":3})
+    prince = result["whole_round_allocation"]["groups"][0]
+    assert prince["section"] == "Prince - beheerde proefgroep"
+    assert len(prince["females"]) == 2
+    assert len(result["whole_round_allocation"]["next_group"]) == 2
+    assert all(row["evidence_class"] == "Controlled trial" for row in prince["females"])
+
+
+def test_foundation_baseline_never_overrides_known_relationship_exclusion():
+    case = run(pedigrees={"SOW-1":{"lineage_status":"partial","ancestor_ids":["PARENT"],"cycle_nodes":[]},
+        "BOAR-1":{"lineage_status":"partial","ancestor_ids":["PARENT"],"cycle_nodes":[]}})["cases"][0]
+    assert case["recommended_boar"] is None
+    assert "shared ancestor(s): PARENT" in case["boar_assessments"][0]["exclusion_reasons"]
+
+
+def test_afrikaans_physical_sections_are_clean_and_translated():
+    result = run()
+    text = result["afrikaans"]
+    assert "sôe" in text and "sÃ" not in text
+    assert "Beheerde proef" in text
+    assert "Controlled trial" not in text
+    assert "Attributable litter evidence" not in text
+
+
+def test_boar_physical_limitations_keep_pair_out_of_immediate_group_and_all_are_visible():
+    limited = boar(observations={}, latest_weight_date="2026-01-01")
+    result = run(boars=[limited])
+    allocation = result["whole_round_allocation"]
+    assert allocation["groups"][0]["females"] == []
+    assert len(allocation["observations_needed"]) == 1
+    row = allocation["observations_needed"][0]
+    assert row["conditional_on_observation"] is True
+    assert len(row["material_limitations"]) >= 4
+    text = result["afrikaans"]
+    assert "waarneming eers" in text
+    assert "beergewig is ontbrekend of oud" in text
+    assert "beerbene het geen huidige positiewe waarneming nie" in text
+    assert "boar weight" not in text and "boar legs" not in text
