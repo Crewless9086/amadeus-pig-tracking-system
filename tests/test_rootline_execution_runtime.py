@@ -58,13 +58,18 @@ class Transport:
 
 def run(store,transport,rain=0,notify=None,clock=lambda:NOW):
     loader=lambda **_kwargs:(evidence(rain),"2026-08-08",NOW)
+    observations={}
+    def observation_store(action,identity,payload):
+        created=identity not in observations; observations.setdefault(identity,payload)
+        return {"success":True,"created":created}
     with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",
                     return_value=plan()):
         return run_rootline_execution_cycle(notify=notify or (lambda *_:{"success":True,
             "provider_delivery_confirmed":True,"provider_message_id":"MSG-1"}),
             environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=store,
             token_store=object(),transport=transport,evidence_loader=loader,
-            readback=lambda **_kwargs:controller(),clock=clock)
+            readback=lambda **_kwargs:controller(),clock=clock,
+            owner_user_id="42",chat_id="42",observation_store=observation_store)
 
 
 def test_scheduler_owner_binding_persists_hold_observation_without_notification_or_command():
@@ -120,6 +125,16 @@ def test_disabled_flag_is_zero_effect():
         environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"false"},now=NOW,
         store=store,token_store=object(),transport=transport)
     assert value["status"]=="autonomous_bc_disabled" and store.rows==[] and transport.calls==[]
+
+
+def test_new_execution_requires_exact_owner_chat_binding_before_claim_or_on():
+    for owner,chat in (("",""),("42","99")):
+        store=Store(); transport=Transport(); notices=[]
+        value=run_rootline_execution_cycle(notify=lambda *args:notices.append(args),
+            environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=store,
+            token_store=object(),transport=transport,owner_user_id=owner,chat_id=chat)
+        assert value["status"]=="canonical_observation_binding_invalid"
+        assert store.rows==[] and transport.calls==[] and notices==[]
 
 
 def test_expired_artifact_at_real_preclaim_time_creates_no_on():

@@ -39,16 +39,17 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
             decision_reader=lambda _identity: {}, commissioning_reader=lambda _identity: {},
             store=store, transport=transport, notify=notify,
             outcome_reader=outcome_reader, now=now, clock=clock)
+    if not owner_user_id or owner_user_id != chat_id:
+        return _safe("canonical_observation_binding_invalid")
     initial = _current(evidence_loader, readback, token_store, source, database_url, now)
     observation = _planning_observation(initial, owner_user_id, chat_id,
                                         next_reassessment_at)
-    if observation:
-        if observation_store is None:
-            from modules.oom_sakkie.rootline_reassessment_store import rootline_reassessment_state_store
-            observation_store = rootline_reassessment_state_store
-        recorded = observation_store("record_observation", observation["identity"], observation)
-        if not isinstance(recorded, dict) or recorded.get("success") is not True:
-            return {**_safe("canonical_observation_persistence_unproven"), "success": False}
+    if observation_store is None:
+        from modules.oom_sakkie.rootline_reassessment_store import rootline_reassessment_state_store
+        observation_store = rootline_reassessment_state_store
+    recorded = observation_store("record_observation", observation["identity"], observation)
+    if not isinstance(recorded, dict) or recorded.get("success") is not True:
+        return {**_safe("canonical_observation_persistence_unproven"), "success": False}
     artifact = initial["artifact"]
     if artifact.get("eligible") is not True:
         return {**_safe(artifact.get("status") or "not_eligible"),
