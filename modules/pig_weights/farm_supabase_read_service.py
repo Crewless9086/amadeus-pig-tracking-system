@@ -2455,8 +2455,10 @@ def _completed_batch_intelligence(batch_id, selected_pen_id="", connect_factory=
                   event.weight_event_id::text, event.event_count,
                   movement.location_event_id::text, movement.event_count as movement_event_count,
                   state.tag_number, state.status as lifecycle_state, state.litter_id,
-                  open_litter.litter_id as open_litter_id,
-                  open_litter.farrowing_date as open_litter_farrowing_date,
+                  batch_litter.litter_id as batch_litter_id,
+                  batch_litter.farrowing_date as batch_litter_farrowing_date,
+                  batch_litter.wean_date as batch_litter_wean_date,
+                  batch_litter.litter_status as batch_litter_status,
                   latest_mating.mating_id as latest_mating_id,
                   latest_mating.pregnancy_check_result, latest_mating.outcome
              from public.bulk_weight_batch_rows audit
@@ -2472,12 +2474,12 @@ def _completed_batch_intelligence(batch_id, selected_pen_id="", connect_factory=
         ) movement on true
         left join public.current_canonical_pig_state state on state.pig_id = audit.pig_id
         left join lateral (
-              select litter_id, farrowing_date from public.current_canonical_litters
+              select litter_id, farrowing_date, wean_date, litter_status
+                from public.current_canonical_litters
                where sow_pig_id = audit.pig_id
                  and farrowing_date <= %s
-                 and lower(coalesce(litter_status, '')) not in ('weaned', 'closed', 'completed')
                order by farrowing_date desc nulls last, litter_id desc limit 1
-        ) open_litter on true
+        ) batch_litter on true
         left join lateral (
               select mating_id, pregnancy_check_result, outcome
                 from public.mating_events
@@ -2549,9 +2551,15 @@ def _batch_integrity_error(batch, rows):
 
 
 def _batch_reproductive_state(row, batch_date):
-    farrowing_date = row.get("open_litter_farrowing_date")
-    if row.get("open_litter_id") and isinstance(farrowing_date, date) and farrowing_date <= batch_date:
-        return "Nursing"
+    farrowing_date = row.get("batch_litter_farrowing_date")
+    wean_date = row.get("batch_litter_wean_date")
+    litter_status = _text(row.get("batch_litter_status")).lower()
+    if row.get("batch_litter_id") and isinstance(farrowing_date, date) and farrowing_date <= batch_date:
+        if isinstance(wean_date, date):
+            if wean_date > batch_date:
+                return "Nursing"
+        elif litter_status not in {"weaned", "closed", "completed"}:
+            return "Nursing"
     outcome = _text(row.get("outcome"))
     if outcome:
         return outcome

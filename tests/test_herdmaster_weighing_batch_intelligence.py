@@ -79,9 +79,18 @@ def test_reproductive_state_prefers_terminal_outcome_and_ignores_post_batch_litt
     terminal = {"pregnancy_check_result": "Pregnant", "outcome": "Farrowed",
                 "latest_mating_id": "MAT-1"}
     assert farm_supabase_read_service._batch_reproductive_state(terminal, cutoff) == "Farrowed"
-    future_litter = {"open_litter_id": "LIT-FUTURE", "open_litter_farrowing_date": date(2026, 8, 12),
+    future_litter = {"batch_litter_id": "LIT-FUTURE", "batch_litter_farrowing_date": date(2026, 8, 12),
                      "pregnancy_check_result": "Inconclusive", "latest_mating_id": "MAT-2"}
     assert farm_supabase_read_service._batch_reproductive_state(future_litter, cutoff) == "Inconclusive"
+
+
+def test_reproductive_state_reconstructs_weaning_relative_to_batch_date():
+    cutoff = date(2026, 8, 11)
+    litter = {"batch_litter_id": "LIT-1", "batch_litter_farrowing_date": date(2026, 7, 1),
+              "batch_litter_status": "Weaned", "batch_litter_wean_date": date(2026, 8, 12)}
+    assert farm_supabase_read_service._batch_reproductive_state(litter, cutoff) == "Nursing"
+    assert farm_supabase_read_service._batch_reproductive_state(
+        {**litter, "batch_litter_wean_date": cutoff}, cutoff) == "Unknown"
 
 
 def test_exact_change_growth_coverage_and_missing_is_not_zero():
