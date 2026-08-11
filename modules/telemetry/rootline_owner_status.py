@@ -7,6 +7,7 @@ import os
 from zoneinfo import ZoneInfo
 
 from modules.telemetry.rootline_irrigation_history import read_canonical_irrigation_history
+from modules.telemetry.rootline_water_balance import read_latest_zone_water_balances
 
 ZONE_NAMES = {"B12345": "B Camp", "C12345": "C Camp"}
 
@@ -18,6 +19,7 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
         return _failure("database_not_configured"), 503
     try:
         evidence = _canonical_evidence(database_url, operating_date, now)
+        evidence["water_balance"] = read_latest_zone_water_balances(database_url, now=now)
         specialist = _specialist_projection(evidence, operating_date, now)
         history = read_canonical_irrigation_history(database_url, now=now)
         runtime, latest_outcome, notification = _runtime_and_notification(database_url)
@@ -29,18 +31,19 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
     for zone_id in ("B12345", "C12345"):
         recommendation = recommendations.get(zone_id, {})
         zone_history = (history.get("zones") or {}).get(zone_id, {})
-        balance = (evidence.get("water_balance") or {}).get(zone_id, {})
+        balance = ((evidence.get("water_balance") or {}).get("zones") or {}).get(zone_id, {})
         active = runtime if runtime.get("zone_id") == zone_id else {}
         zones.append({
             "zone_id": zone_id,
             "zone_name": ZONE_NAMES[zone_id],
             "decision": _decision(recommendation.get("status")),
-            "reason": recommendation.get("reason") or "Canonical decision evidence is unavailable.",
+            "reason": _zone_reason(recommendation, balance),
             "planned_minutes": recommendation.get("planned_duration_minutes"),
             "feasible_window": recommendation.get("preferred_window"),
             "effective_rainfall_mm": balance.get("effective_rainfall_mm"),
             "remaining_supported_water_need_mm": balance.get("remaining_water_need_mm"),
             "water_balance_complete_through": balance.get("complete_through"),
+            "water_balance_freshness": "fresh" if balance.get("ledger_current") is True else "stale",
             "eligibility_blocker": _blocker(recommendation),
             "execution_state": active.get("state") or "not_active",
             "provider_output_state": active.get("provider_output_state") or "Unavailable",
@@ -111,16 +114,6 @@ def _canonical_evidence(database_url, operating_date, now):
                 "temperature_c": float(row[3]) if row[3] is not None else None,
                 "wind_speed_kmh": float(row[4]) if row[4] is not None else None,
                 "retrieved_at": row[5].isoformat()} if row else {"status": "Unavailable"})
-            cursor.execute("""select zone_id,balance_json from public.irrigation_water_balance_events
-                where (zone_id,created_at) in (select zone_id,max(created_at)
-                    from public.irrigation_water_balance_events group by zone_id)""")
-            result["water_balance"] = {zone: value for zone, value in cursor.fetchall()}
-            for value in result["water_balance"].values():
-                complete = _timestamp(value.get("complete_through"))
-                age = ((now.astimezone(timezone.utc) - complete.astimezone(timezone.utc)).total_seconds() / 60
-                       if complete else None)
-                value["freshness"] = "fresh" if age is not None and 0 <= age <= 1440 else "stale"
-                value["age_minutes"] = round(age, 1) if age is not None else None
             cursor.execute("""select storage_state,reservoir_state,observed_at,
                                       storage_fraction_numerator,storage_fraction_denominator,
                                       reservoir_fraction_numerator,reservoir_fraction_denominator
@@ -187,35 +180,42 @@ def _runtime_and_notification(database_url):
                 order by created_at desc limit 200""")
             events = [(created, value if isinstance(value, dict) else json.loads(value))
                       for created, value in cursor.fetchall()]
-            by_execution = {}
-            for created, item in events:
-                execution = str(item.get("execution_id") or "")
-                if execution:
-                    by_execution.setdefault(execution, []).append((created, item))
-            terminal_actions = {"record_completed", "contain_zone", "record_ambiguous_shutdown",
-                                "record_claim_recovery"}
-            for execution, execution_events in by_execution.items():
-                actions = {str(item.get("action") or "") for _, item in execution_events}
-                newest_at, newest = execution_events[0]
-                terminal = next(((created, item) for created, item in execution_events
-                                 if item.get("action") in terminal_actions), None)
-                if terminal and not latest_outcome:
-                    latest_outcome = {**terminal[1], "observed_at": terminal[0].isoformat()}
-                if not runtime and "claim_before_on" in actions and not terminal:
-                    active = next(((created, item) for created, item in execution_events
-                                  if item.get("action") in {"mark_active", "claim_before_on"}),
-                                  (newest_at, newest))
-                    runtime = {**active[1], "observed_at": active[0].isoformat()}
-            for created, item in events:
-                if (runtime and item.get("action") == "record_notification_delivery"
-                        and item.get("execution_id") == runtime.get("execution_id")):
-                    notification = {"state": item.get("notification_state") or "unknown",
-                                    "provider_confirmed": item.get("delivery_confirmed") is True,
-                                    "provider_message_id": item.get("provider_message_id"),
-                                    "observed_at": created.isoformat()}
-                    break
-            if runtime and runtime.get("execution_id") not in terminal and runtime.get("state") != "Completed":
-                runtime["state"] = runtime.get("state") or "claimed"
+            runtime, latest_outcome, notification = _project_runtime(events)
+    return runtime, latest_outcome, notification
+
+
+def _project_runtime(events):
+    runtime, latest_outcome = {}, {}
+    notification = {"state": "not_sent", "provider_confirmed": False,
+                    "reason": "No current execution notification exists."}
+    by_execution = {}
+    for created, item in events:
+        execution = str(item.get("execution_id") or "")
+        if execution:
+            by_execution.setdefault(execution, []).append((created, item))
+    terminal_actions = {"record_completed", "contain_zone", "record_ambiguous_shutdown",
+                        "record_claim_recovery"}
+    for execution_events in by_execution.values():
+        actions = {str(item.get("action") or "") for _, item in execution_events}
+        newest_at, newest = execution_events[0]
+        terminal = next(((created, item) for created, item in execution_events
+                         if item.get("action") in terminal_actions), None)
+        if terminal and not latest_outcome:
+            latest_outcome = {**terminal[1], "observed_at": terminal[0].isoformat()}
+        if not runtime and "claim_before_on" in actions and not terminal:
+            active = next(((created, item) for created, item in execution_events
+                          if item.get("action") in {"mark_active", "claim_before_on"}),
+                          (newest_at, newest))
+            runtime = {**active[1], "observed_at": active[0].isoformat(),
+                       "state": active[1].get("state") or "claimed"}
+    for created, item in events:
+        if (runtime and item.get("action") == "record_notification_delivery"
+                and item.get("execution_id") == runtime.get("execution_id")):
+            notification = {"state": item.get("notification_state") or "unknown",
+                            "provider_confirmed": item.get("delivery_confirmed") is True,
+                            "provider_message_id": item.get("provider_message_id"),
+                            "observed_at": created.isoformat()}
+            break
     return runtime, latest_outcome, notification
 
 
@@ -229,6 +229,13 @@ def _blocker(recommendation):
         return None
     needs = recommendation.get("needs") or []
     return needs[0] if needs else recommendation.get("reason") or "canonical_evidence_unavailable"
+
+
+def _zone_reason(recommendation, balance):
+    reason = recommendation.get("reason") or "Canonical decision evidence is unavailable."
+    if balance.get("ledger_current") is not True:
+        reason += " Water-balance evidence is stale and is shown for audit, not current eligibility."
+    return reason
 
 
 def _current(runtime):

@@ -120,6 +120,14 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
     rows,state=store()
     first=reassess_rootline(owner_user_id="42",chat_id="42",trigger="declared_time",
         specialist_loader=lambda:rootline(),state_store=state)
+    assert rows[first["notification_identity"]]["zones"] == [
+        {"zone_id":"B12345","decision":"Hold",
+         "reason":"Reserve is below the governing target.",
+         "planned_duration_minutes":None,"feasible_window":None},
+        {"zone_id":"C12345","decision":"Hold",
+         "reason":"Fresh evidence supports this C Camp decision.",
+         "planned_duration_minutes":None,"feasible_window":None},
+    ]
     pending=reassess_rootline(owner_user_id="42",chat_id="42",trigger="declared_time",
         specialist_loader=lambda:rootline(),state_store=state)
     assert pending["notify_owner"] is True and pending["status"]=="rootline_reassessment_delivery_pending"
