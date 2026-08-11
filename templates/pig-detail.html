@@ -3,222 +3,120 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Amadeus Pig Detail</title>
+  <title>Amadeus Animal Profile</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pigProfileV2.css') }}">
 </head>
 <body>
-  <div class="page-shell pig-detail-shell">
-    <div class="page-card pig-detail-card">
-      <div class="page-header page-header-with-link">
-        <div>
-          <h1 id="pig_detail_title">Pig Profile</h1>
-          <p id="pig_detail_subtitle">Loading pig details...</p>
-        </div>
-        <a id="pig_detail_back_link" href="/pigs" class="secondary-link">← Back to Pig List</a>
-      </div>
+  <div class="farm-app-shell">
+    {% include '_farm_nav.html' %}
+    <main class="animal-profile" id="animal_profile">
+      <a id="pig_detail_back_link" href="/pigs" class="profile-back">← Back to Herd</a>
 
-      <div class="detail-actions">
-        <a id="record_weight_button" href="#" class="button-link">Record Weight</a>
-        <a id="view_weight_history_button" href="#" class="button-link button-link-secondary">View Weight History</a>
-        <a id="record_treatment_button" href="#" class="button-link">Record Treatment</a>
-        <a id="view_treatment_history_button" href="#" class="button-link button-link-secondary">View Treatment History</a>
-        <a id="record_movement_button" href="#" class="button-link">Record Movement</a>
-        <a id="view_movement_history_button" href="#" class="button-link button-link-secondary">View Movement History</a>
-        <a id="view_family_tree_button" href="#" class="button-link">Family Tree</a>
-        <a href="/sales-availability" class="button-link button-link-secondary">Sales View</a>
-      </div>
+      <header class="profile-identity">
+        <div class="profile-avatar" aria-hidden="true">◆</div>
+        <div class="profile-identity-copy">
+          <span class="farm-eyebrow">HERDMASTER · Animal life record</span>
+          <h1 id="pig_detail_title">Animal Profile</h1>
+          <p id="pig_detail_subtitle">Loading canonical animal evidence…</p>
+          <div class="profile-status-line"><span id="identity_type">—</span><span id="identity_status">—</span><span id="identity_farm">—</span><span id="identity_pen">—</span></div>
+        </div>
+        <div class="profile-primary-actions">
+          <a id="record_weight_button" href="#" class="profile-action profile-action-primary">Record weight</a>
+          <a id="record_treatment_button" href="#" class="profile-action">Treatment</a>
+          <a id="record_movement_button" href="#" class="profile-action">Movement</a>
+        </div>
+      </header>
 
       <div id="pig_detail_message" class="message-box hidden"></div>
+      <section id="profile_attention" class="profile-attention" aria-labelledby="profile_attention_title">
+        <div><span class="farm-eyebrow">Current attention</span><h2 id="profile_attention_title">Checking this animal</h2></div>
+        <div id="profile_attention_items" class="profile-attention-items"><p>Reconciling current evidence…</p></div>
+      </section>
 
-      <div class="detail-grid">
-        <div class="detail-card">
-          <span class="detail-label">Tag Number</span>
-          <span id="detail_tag_number" class="detail-value">—</span>
+      <section class="profile-snapshot" aria-label="Current animal snapshot">
+        <article><span>Latest weight</span><strong id="detail_weight">—</strong><small id="detail_last_weight_date">—</small></article>
+        <article><span>Current pen</span><strong id="detail_pen">—</strong><small>current location</small></article>
+        <article><span>Age</span><strong id="detail_age_days">—</strong><small id="detail_dob">—</small></article>
+        <article><span>Purpose</span><strong id="detail_purpose">—</strong><small id="detail_stage">—</small></article>
+        <article><span>Withdrawal</span><strong id="detail_withdrawal_clear">—</strong><small id="detail_withdrawal_end_date">—</small></article>
+        <article><span>Availability</span><strong id="detail_sale_ready">—</strong><small id="detail_reserved_status">—</small></article>
+      </section>
+
+      <div class="profile-layout">
+        <div class="profile-main-column">
+          <section class="profile-panel profile-panel-wide">
+            <div class="profile-panel-heading"><div><span class="farm-eyebrow">Chronology</span><h2>Life timeline</h2></div><span id="timeline_count" class="profile-count">Loading</span></div>
+            <div id="life_timeline" class="life-timeline"><div class="profile-empty">Loading the animal’s life record…</div></div>
+          </section>
+
+          <section class="profile-panel">
+            <div class="profile-panel-heading"><div><span class="farm-eyebrow">Performance</span><h2>Weight and growth</h2></div><a id="view_weight_history_button" href="#">Full history →</a></div>
+            <div id="weight_summary" class="profile-highlight"></div>
+            <div id="weight_history_preview" class="profile-record-list"></div>
+          </section>
+
+          <section class="profile-panel">
+            <div class="profile-panel-heading"><div><span class="farm-eyebrow">HERDMASTER</span><h2 id="breeding_section_title">Breeding and offspring</h2></div><a href="/matings">Breeding board →</a></div>
+            <div id="breeding_summary" class="profile-highlight"></div>
+            <div id="breeding_records" class="profile-record-list"></div>
+          </section>
+
+          <section class="profile-panel split-panel">
+            <div>
+              <div class="profile-panel-heading"><div><span class="farm-eyebrow">Health</span><h2>Treatments</h2></div><a id="view_treatment_history_button" href="#">History →</a></div>
+              <div id="treatment_records" class="profile-record-list"></div>
+            </div>
+            <div>
+              <div class="profile-panel-heading"><div><span class="farm-eyebrow">Housing</span><h2>Movements</h2></div><a id="view_movement_history_button" href="#">History →</a></div>
+              <div id="movement_records" class="profile-record-list"></div>
+            </div>
+          </section>
         </div>
 
-        <div class="detail-card">
-          <span class="detail-label">Pig ID</span>
-          <span id="detail_pig_id" class="detail-value">—</span>
-        </div>
+        <aside class="profile-side-column">
+          <section class="profile-panel">
+            <span class="farm-eyebrow">Identity</span><h2>Current record</h2>
+            <dl class="profile-fact-list">
+              <div><dt>Canonical ID</dt><dd id="detail_pig_id">—</dd></div><div><dt>Name / tag</dt><dd id="detail_tag_number">—</dd></div>
+              <div><dt>Animal type</dt><dd id="detail_animal_type">—</dd></div><div><dt>Sex</dt><dd id="detail_sex">—</dd></div>
+              <div><dt>Status</dt><dd id="detail_status">—</dd></div><div><dt>On farm</dt><dd id="detail_on_farm">—</dd></div>
+              <div><dt>Weight band</dt><dd id="detail_weight_band">—</dd></div><div><dt>Source</dt><dd id="detail_source">—</dd></div>
+            </dl>
+          </section>
 
-        <div class="detail-card">
-          <span class="detail-label">Status</span>
-          <span id="detail_status" class="detail-value">—</span>
-        </div>
+          <section class="profile-panel">
+            <div class="profile-panel-heading"><div><span class="farm-eyebrow">Pedigree</span><h2>Family</h2></div><a id="view_family_tree_button" href="#">Tree →</a></div>
+            <dl class="profile-fact-list"><div><dt>Mother</dt><dd id="detail_mother">—</dd></div><div><dt>Father</dt><dd id="detail_father">—</dd></div><div><dt>Birth litter</dt><dd id="detail_litter">—</dd></div><div><dt>Siblings</dt><dd id="detail_siblings">—</dd></div></dl>
+          </section>
 
-        <div class="detail-card">
-          <span class="detail-label">On Farm</span>
-          <span id="detail_on_farm" class="detail-value">—</span>
-        </div>
+          <section class="profile-panel">
+            <span class="farm-eyebrow">Lifecycle</span><h2>Outcome record</h2>
+            <dl class="profile-fact-list"><div><dt>Weaned</dt><dd id="detail_wean_date">—</dd></div><div><dt>Wean weight</dt><dd id="detail_wean_weight">—</dd></div><div><dt>Exit date</dt><dd id="detail_exit_date">—</dd></div><div><dt>Exit reason</dt><dd id="detail_exit_reason">—</dd></div><div><dt>Carcass weight</dt><dd id="detail_carcass_weight">—</dd></div><div><dt>Linked order</dt><dd id="detail_exit_order">—</dd></div></dl>
+          </section>
 
-        <div class="detail-card">
-          <span class="detail-label">Animal Type</span>
-          <span id="detail_animal_type" class="detail-value">—</span>
-        </div>
+          <section class="profile-panel"><span class="farm-eyebrow">Notes</span><h2>Known context</h2><p id="detail_notes" class="profile-notes">—</p></section>
 
-        <div class="detail-card">
-          <span class="detail-label">Sex</span>
-          <span id="detail_sex" class="detail-value">—</span>
-        </div>
+          <details class="profile-tools">
+            <summary><span><strong>Record tools</strong><small>All existing history and actions</small></span><b>Open</b></summary>
+            <div><a id="profile_weight_tool" href="#">Record weight</a><a id="profile_treatment_tool" href="#">Record treatment</a><a id="profile_movement_tool" href="#">Record movement</a><a href="/sales-availability">Sales view</a></div>
+          </details>
 
-        <div class="detail-card">
-          <span class="detail-label">Purpose</span>
-          <span id="detail_purpose" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Date of Birth</span>
-          <span id="detail_dob" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Age (Days)</span>
-          <span id="detail_age_days" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Current Pen</span>
-          <span id="detail_pen" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Current Weight</span>
-          <span id="detail_weight" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Last Weight Date</span>
-          <span id="detail_last_weight_date" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Calculated Stage</span>
-          <span id="detail_stage" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Weight Band</span>
-          <span id="detail_weight_band" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Sale Ready</span>
-          <span id="detail_sale_ready" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Reserved Status</span>
-          <span id="detail_reserved_status" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Last Treatment Date</span>
-          <span id="detail_last_treatment_date" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Last Product</span>
-          <span id="detail_last_product_name" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Withdrawal End Date</span>
-          <span id="detail_withdrawal_end_date" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Withdrawal Clear</span>
-          <span id="detail_withdrawal_clear" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Mother</span>
-          <span id="detail_mother" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card">
-          <span class="detail-label">Father</span>
-          <span id="detail_father" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card detail-card-wide">
-          <span class="detail-label">Litter</span>
-          <span id="detail_litter" class="detail-value">—</span>
-        </div>
-
-        <div class="detail-card detail-card-wide">
-          <span class="detail-label">General Notes</span>
-          <span id="detail_notes" class="detail-value">—</span>
-        </div>
+          <details id="lifecycle_action_panel" class="profile-danger hidden">
+            <summary><strong>Lifecycle action</strong><span>Protected death or removal recording</span></summary>
+            <form id="lifecycle_death_form" class="compact-form">
+              <label>Date<input id="lifecycle_event_date" type="date" required></label>
+              <label>Reason<select id="lifecycle_reason" required><option value="">Select reason</option><option value="Died">Died</option><option value="Culled">Culled</option><option value="Lost">Lost</option><option value="Removed">Removed</option><option value="Other">Other</option></select></label>
+              <label>Recorded by<input id="lifecycle_changed_by" type="text" value="web_app" required></label>
+              <label>Notes<textarea id="lifecycle_notes" rows="3"></textarea></label>
+              <button id="lifecycle_submit_button" type="submit" class="button-danger">Record Death / Removal</button>
+            </form>
+          </details>
+        </aside>
       </div>
-
-      <section class="lifecycle-action-panel">
-        <div class="section-subtitle">Lifecycle History</div>
-        <div class="detail-grid">
-          <div class="detail-card">
-            <span class="detail-label">Wean Date</span>
-            <span id="detail_wean_date" class="detail-value">-</span>
-          </div>
-          <div class="detail-card">
-            <span class="detail-label">Wean Weight</span>
-            <span id="detail_wean_weight" class="detail-value">-</span>
-          </div>
-          <div class="detail-card">
-            <span class="detail-label">Exit Date</span>
-            <span id="detail_exit_date" class="detail-value">-</span>
-          </div>
-          <div class="detail-card">
-            <span class="detail-label">Exit Reason</span>
-            <span id="detail_exit_reason" class="detail-value">-</span>
-          </div>
-          <div class="detail-card">
-            <span class="detail-label">Carcass Weight</span>
-            <span id="detail_carcass_weight" class="detail-value">-</span>
-          </div>
-          <div class="detail-card">
-            <span class="detail-label">Linked Exit Order</span>
-            <span id="detail_exit_order" class="detail-value">-</span>
-          </div>
-        </div>
-      </section>
-
-      <section id="lifecycle_action_panel" class="lifecycle-action-panel hidden">
-        <div class="section-subtitle">Lifecycle Outcome</div>
-        <form id="lifecycle_death_form" class="compact-form">
-          <div class="form-grid">
-            <div class="form-field">
-              <label for="lifecycle_event_date">Date</label>
-              <input id="lifecycle_event_date" type="date" required>
-            </div>
-            <div class="form-field">
-              <label for="lifecycle_reason">Reason</label>
-              <select id="lifecycle_reason" required>
-                <option value="">Select reason</option>
-                <option value="Died">Died</option>
-                <option value="Culled">Culled</option>
-                <option value="Lost">Lost</option>
-                <option value="Removed">Removed</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label for="lifecycle_changed_by">Recorded By</label>
-              <input id="lifecycle_changed_by" type="text" value="web_app" required>
-            </div>
-            <div class="form-field form-field-wide">
-              <label for="lifecycle_notes">Notes</label>
-              <textarea id="lifecycle_notes" rows="3"></textarea>
-            </div>
-          </div>
-          <p class="form-helper">This keeps the pig record and litter link for outcome history.</p>
-          <div class="form-actions">
-            <button id="lifecycle_submit_button" type="submit" class="button-danger">Record Death / Removal</button>
-          </div>
-        </form>
-      </section>
-    </div>
+    </main>
   </div>
-
-  <script src="{{ url_for('static', filename='js/pigDetail.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/pigDetail.js') }}?v=20260811-life-record-v1"></script>
 </body>
 </html>

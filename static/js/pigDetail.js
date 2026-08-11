@@ -9,217 +9,61 @@ const lifecycleSubmitButton = document.getElementById("lifecycle_submit_button")
 const pigDetailBackLink = document.getElementById("pig_detail_back_link");
 let currentPigId = "";
 
-function getPigIdFromUrl() {
-  const parts = window.location.pathname.split("/");
-  return decodeURIComponent(parts[parts.length - 1] || "");
+function getPigIdFromUrl(){const parts=window.location.pathname.split("/");return decodeURIComponent(parts[parts.length-1]||"")}
+function value(v,fallback="Unknown"){const text=String(v??"").trim();return text||fallback}
+function setText(id,v,suffix=""){const el=document.getElementById(id);if(el)el.textContent=v!==null&&v!==undefined&&v!==""?`${v}${suffix}`:"Unknown"}
+function setLinkedValue(id,label,href){const el=document.getElementById(id);if(!el)return;if(label&&href){const a=document.createElement("a");a.href=href;a.className="detail-link";a.textContent=label;el.replaceChildren(a)}else el.textContent="Unknown"}
+function showMessage(message,type="error"){messageBox.classList.remove("hidden","message-success","message-error");messageBox.classList.add(type==="success"?"message-success":"message-error");messageBox.textContent=message}
+function safeInternalReturnPath(v){const p=String(v||"").trim();return p.startsWith("/")&&!p.startsWith("//")?p:""}
+function updateBackLink(){const params=new URLSearchParams(window.location.search);const back=safeInternalReturnPath(params.get("return_to"));if(back){pigDetailBackLink.href=back;pigDetailBackLink.textContent=`← ${value(params.get("return_label"),"Back")}`}}
+function withPigReturnContext(path,pigId){const params=new URLSearchParams({return_to:`/pig/${pigId}`,return_label:"Back to Pig Profile"});return `${path}${path.includes("?")?"&":"?"}${params}`}
+function todayIsoDate(){return new Date().toISOString().slice(0,10)}
+async function getJson(url){try{const response=await fetch(url);const data=await response.json();if(!response.ok)return null;return data}catch{return null}}
+function formatKg(v){return v!==null&&v!==undefined&&v!==""?`${v} kg`:"Unknown"}
+function dateValue(v){return value(v,"Date unknown")}
+
+function setActionLinks(pigId){
+  const links={record_weight_button:`/pig-weights?pig_id=${encodeURIComponent(pigId)}`,view_weight_history_button:`/pig/${encodeURIComponent(pigId)}/weights`,record_treatment_button:`/pig/${encodeURIComponent(pigId)}/treatment`,view_treatment_history_button:`/pig/${encodeURIComponent(pigId)}/treatments`,record_movement_button:`/pig/${encodeURIComponent(pigId)}/movement`,view_movement_history_button:`/pig/${encodeURIComponent(pigId)}/movements`,view_family_tree_button:`/pig/${encodeURIComponent(pigId)}/family-tree`,profile_weight_tool:`/pig-weights?pig_id=${encodeURIComponent(pigId)}`,profile_treatment_tool:`/pig/${encodeURIComponent(pigId)}/treatment`,profile_movement_tool:`/pig/${encodeURIComponent(pigId)}/movement`};
+  Object.entries(links).forEach(([id,path])=>{const el=document.getElementById(id);if(el)el.href=withPigReturnContext(path,pigId)});
 }
 
-function showMessage(message, type = "error") {
-  messageBox.classList.remove("hidden", "message-success", "message-error");
-  messageBox.classList.add(type === "success" ? "message-success" : "message-error");
-  messageBox.textContent = message;
+function renderIdentity(pig){
+  const name=value(pig.pig_name||pig.tag_number,pig.pig_id);
+  document.getElementById("pig_detail_title").textContent=name;
+  document.getElementById("pig_detail_subtitle").textContent=pig.pig_name&&pig.tag_number&&pig.pig_name!==pig.tag_number?`${pig.tag_number} · ${pig.pig_id}`:pig.pig_id;
+  setText("identity_type",pig.animal_type||pig.calculated_stage);setText("identity_status",pig.status);setText("identity_farm",pig.on_farm==="Yes"?"On farm":"Off farm");setText("identity_pen",pig.current_pen_name||pig.current_pen_id);
+  setText("detail_pig_id",pig.pig_id);setText("detail_tag_number",pig.tag_number||pig.pig_name);setText("detail_status",pig.status);setText("detail_on_farm",pig.on_farm);setText("detail_animal_type",pig.animal_type);setText("detail_sex",pig.sex);setText("detail_purpose",pig.purpose);setText("detail_dob",pig.date_of_birth);setText("detail_age_days",pig.age_days,pig.age_days!==""?" days":"");setText("detail_pen",pig.current_pen_name||pig.current_pen_id);setText("detail_weight",pig.current_weight_kg,pig.current_weight_kg!==""?" kg":"");setText("detail_last_weight_date",pig.last_weight_date);setText("detail_stage",pig.calculated_stage);setText("detail_weight_band",pig.weight_band);setText("detail_sale_ready",pig.is_sale_ready,"" );setText("detail_reserved_status",pig.reserved_status);setText("detail_withdrawal_end_date",pig.current_withdrawal_end_date);setText("detail_withdrawal_clear",pig.withdrawal_clear);setText("detail_source",pig.source);setText("detail_notes",pig.general_notes);
+  setLinkedValue("detail_mother",pig.mother_tag_number||pig.mother_pig_id,pig.mother_pig_id?`/pig/${encodeURIComponent(pig.mother_pig_id)}`:"");setLinkedValue("detail_father",pig.father_tag_number||pig.father_pig_id,pig.father_pig_id?`/pig/${encodeURIComponent(pig.father_pig_id)}`:"");setLinkedValue("detail_litter",pig.litter_id,pig.litter_id?`/litter/${encodeURIComponent(pig.litter_id)}`:"");
+  const lc=pig.lifecycle||{};setText("detail_wean_date",lc.wean_date);setText("detail_wean_weight",lc.wean_weight_kg,lc.wean_weight_kg!==null&&lc.wean_weight_kg!==undefined?" kg":"");setText("detail_exit_date",lc.exit_date);setText("detail_exit_reason",lc.exit_reason);setText("detail_carcass_weight",lc.carcass_weight_kg,lc.carcass_weight_kg!==null&&lc.carcass_weight_kg!==undefined?" kg":"");setLinkedValue("detail_exit_order",lc.exit_order_id,lc.exit_order_id?`/orders/${encodeURIComponent(lc.exit_order_id)}`:"");
+  const active=pig.status==="Active"&&pig.on_farm==="Yes";lifecyclePanel.classList.toggle("hidden",!active);if(active&&!lifecycleEventDate.value)lifecycleEventDate.value=todayIsoDate();
 }
 
-function setText(id, value, suffix = "") {
-  const element = document.getElementById(id);
-  if (!element) return;
-  element.textContent = value !== null && value !== undefined && value !== ""
-    ? `${value}${suffix}`
-    : "—";
+function recordRow(left,middle,right=""){return `<div class="profile-record"><span>${left}</span><strong>${middle}</strong><small>${right}</small></div>`}
+function renderWeights(data){const rows=data?.history||[];const box=document.getElementById("weight_history_preview");if(!rows.length){document.getElementById("weight_summary").textContent="No weight history is recorded.";box.innerHTML='<div class="profile-empty">No weight records found.</div>';return}
+  const latest=rows[0];const change=latest.difference_kg;document.getElementById("weight_summary").innerHTML=`<strong>${formatKg(latest.weight_kg)}</strong> on ${dateValue(latest.weight_date_display)}${change===null||change===undefined?"":` · ${change>0?"+":""}${change} kg since the previous comparable weight`}.`;
+  box.innerHTML=rows.slice(0,5).map(row=>recordRow(dateValue(row.weight_date_display),formatKg(row.weight_kg),row.difference_kg===null||row.difference_kg===undefined?value(row.condition_notes,""): `${row.difference_kg>0?"+":""}${row.difference_kg} kg · ${value(row.condition_notes,"")}`)).join("");
 }
+function renderTreatments(data,pig){const rows=data?.history||[];const box=document.getElementById("treatment_records");box.innerHTML=rows.length?rows.slice(0,5).map(row=>recordRow(dateValue(row.treatment_date_display||row.treatment_date),value(row.product_name||row.product),value(row.withdrawal_end_date,""))).join(""):'<div class="profile-empty">No treatments recorded for this animal.</div>';if(!rows.length&&pig.last_treatment_date)box.innerHTML=recordRow(pig.last_treatment_date,value(pig.last_product_name),value(pig.current_withdrawal_end_date,""))}
+function renderMovements(data){const rows=data?.history||[];const box=document.getElementById("movement_records");box.innerHTML=rows.length?rows.slice(0,5).map(row=>recordRow(dateValue(row.move_date_display),`${value(row.from_pen_name||row.from_pen_id)} → ${value(row.to_pen_name||row.to_pen_id)}`,value(row.reason_for_move||row.move_notes,""))).join(""):'<div class="profile-empty">No movements recorded for this animal.</div>'}
+function renderFamily(data){const tree=data?.tree||{};setText("detail_siblings",tree.sibling_count,tree.sibling_count===1?" sibling":" siblings")}
+function matchingMatings(data,pigId){return (data?.records||[]).filter(row=>row.sow_pig_id===pigId||row.boar_pig_id===pigId)}
+function renderBreeding(matings,pig){const records=matchingMatings(matings,pig.pig_id);const box=document.getElementById("breeding_records");const isBoar=String(pig.animal_type||"").toLowerCase().includes("boar")||pig.sex==="Male"&&pig.purpose==="Breeding";document.getElementById("breeding_section_title").textContent=isBoar?"Services and offspring":"Breeding and offspring";
+  if(!records.length){document.getElementById("breeding_summary").textContent=pig.purpose==="Breeding"?"No attributable mating record is currently linked to this animal.":"No breeding record applies to this animal.";box.innerHTML='<div class="profile-empty">No linked mating or litter evidence.</div>';return records}
+  const farrowed=records.filter(r=>r.outcome==="Farrowed"||r.actual_farrowing_date).length;document.getElementById("breeding_summary").innerHTML=`<strong>${records.length} mating record${records.length===1?"":"s"}</strong> · ${farrowed} attributable farrowing outcome${farrowed===1?"":"s"}.`;
+  box.innerHTML=records.map(row=>{const partner=isBoar?row.sow_tag_number:row.boar_tag_number;const outcome=value(row.outcome||row.mating_status);const litter=row.linked_litter_id?` · ${row.linked_litter_id}`:"";return recordRow(dateValue(row.mating_date),`${value(partner)} · ${outcome}`,`${value(row.expected_farrowing_date,"")}${litter}`)}).join("");return records}
 
-function setLinkedValue(id, label, href) {
-  const element = document.getElementById(id);
-  if (!element) return;
-
-  if (label && href) {
-    element.innerHTML = `<a href="${href}" class="detail-link">${label}</a>`;
-  } else {
-    element.textContent = "—";
-  }
+function timelineEvent(date,title,note,type="record"){return{date:date||"",title,note,type}}
+function renderTimeline(pig,weights,treatments,movements,matings){const events=[];if(pig.date_of_birth)events.push(timelineEvent(pig.date_of_birth,"Born",pig.litter_id?`Linked to ${pig.litter_id}`:"Birth litter Unknown","birth"));const lc=pig.lifecycle||{};if(lc.wean_date)events.push(timelineEvent(lc.wean_date,"Weaned",lc.wean_weight_kg?`${lc.wean_weight_kg} kg`:"Weight Unknown","wean"));
+  (weights?.history||[]).forEach(r=>events.push(timelineEvent(r.weight_date_display,`Weight ${formatKg(r.weight_kg)}`,value(r.condition_notes,"Measured weight"),"weight")));(movements?.history||[]).forEach(r=>events.push(timelineEvent(r.move_date_display,`Moved to ${value(r.to_pen_name||r.to_pen_id)}`,value(r.reason_for_move||r.move_notes,"Movement recorded"),"movement")));(treatments?.history||[]).forEach(r=>events.push(timelineEvent(r.treatment_date_display||r.treatment_date,`Treatment: ${value(r.product_name||r.product)}`,value(r.notes,"Treatment recorded"),"health")));matchingMatings(matings,pig.pig_id).forEach(r=>{events.push(timelineEvent(r.mating_date,`Mated with ${pig.pig_id===r.sow_pig_id?value(r.boar_tag_number):value(r.sow_tag_number)}`,value(r.mating_method,"Mating recorded"),"breeding"));if(r.actual_farrowing_date)events.push(timelineEvent(r.actual_farrowing_date,"Farrowing recorded",r.linked_litter_id?`Linked litter ${r.linked_litter_id}`:"Litter identity Unknown","litter"))});if(lc.exit_date)events.push(timelineEvent(lc.exit_date,value(lc.exit_reason,"Exited farm"),value(lc.exit_order_id,"Terminal lifecycle outcome"),"exit"));
+  events.sort((a,b)=>String(b.date).localeCompare(String(a.date)));document.getElementById("timeline_count").textContent=`${events.length} events`;document.getElementById("life_timeline").innerHTML=events.length?events.map(e=>`<div class="timeline-row"><span class="timeline-dot"></span><span class="timeline-date">${dateValue(e.date)}</span><span class="timeline-copy"><strong>${e.title}</strong><small>${e.note}</small></span></div>`).join(""):'<div class="profile-empty">No dated lifecycle evidence found.</div>';
 }
+function renderAttention(pig,weights,matings){const items=[];const latest=weights?.history?.[0];if(latest&&Number(latest.difference_kg)<=-5)items.push(`${Math.abs(Number(latest.difference_kg)).toFixed(1)} kg decrease since the previous comparable weight. Review the measured history and condition notes; no cause is inferred.`);if(pig.current_withdrawal_end_date&&pig.withdrawal_clear!=="Yes")items.push(`Treatment withdrawal evidence runs to ${pig.current_withdrawal_end_date}.`);const open=matchingMatings(matings,pig.pig_id).filter(r=>r.is_open==="Yes"||r.mating_status==="Open");if(open.length)items.push(`${open.length} open reproductive cycle${open.length===1?"":"s"} linked to this animal.`);if(pig.status!=="Active"||pig.on_farm!=="Yes")items.push(`Historical profile: ${value(pig.status)} and ${pig.on_farm==="Yes"?"on farm":"off farm"}.`);
+  const box=document.getElementById("profile_attention_items");document.getElementById("profile_attention_title").textContent=items.length?`${items.length} item${items.length===1?"":"s"} to review`:"No immediate exception";box.innerHTML=(items.length?items:["Current canonical evidence contains no immediate exception for this profile."]).map(x=>`<p>${x}</p>`).join("")}
 
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
-}
+async function loadPigDetail(){const pigId=getPigIdFromUrl();if(!pigId){showMessage("No pig ID found in URL.");return}const detail=await getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}`);if(!detail?.success){showMessage(detail?.error||"Could not load pig detail.");return}const pig=detail.pig;currentPigId=pig.pig_id;renderIdentity(pig);setActionLinks(pig.pig_id);
+  const [weights,treatments,movements,family,matings]=await Promise.all([getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/weights`),getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/treatments`),getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/movements`),getJson(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/family-tree`),getJson("/api/pig-weights/matings")]);
+  renderWeights(weights);renderTreatments(treatments,pig);renderMovements(movements);renderFamily(family);renderBreeding(matings,pig);renderTimeline(pig,weights,treatments,movements,matings);renderAttention(pig,weights,matings)}
 
-function safeInternalReturnPath(value) {
-  const path = String(value || "").trim();
-  if (!path.startsWith("/") || path.startsWith("//")) {
-    return "";
-  }
-  return path;
-}
-
-function updateBackLink() {
-  if (!pigDetailBackLink) return;
-  const params = new URLSearchParams(window.location.search);
-  const returnTo = safeInternalReturnPath(params.get("return_to"));
-  const returnLabel = String(params.get("return_label") || "").trim();
-  if (!returnTo) return;
-
-  pigDetailBackLink.href = returnTo;
-  pigDetailBackLink.textContent = `← ${returnLabel || "Back"}`;
-}
-
-function withPigReturnContext(path, pigId) {
-  const params = new URLSearchParams({
-    return_to: `/pig/${pigId}`,
-    return_label: "Back to Pig Profile",
-  });
-  return `${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
-}
-
-function setLifecycleSubmitting(isSubmitting) {
-  if (!lifecycleSubmitButton) return;
-  lifecycleSubmitButton.disabled = isSubmitting;
-  lifecycleSubmitButton.textContent = isSubmitting ? "Saving..." : "Record Death / Removal";
-}
-
-function updateLifecyclePanel(pig) {
-  if (!lifecyclePanel) return;
-  const canRecordOutcome = pig.status === "Active" && pig.on_farm === "Yes";
-  lifecyclePanel.classList.toggle("hidden", !canRecordOutcome);
-  if (canRecordOutcome && lifecycleEventDate && !lifecycleEventDate.value) {
-    lifecycleEventDate.value = todayIsoDate();
-  }
-}
-
-function renderLifecycleHistory(pig) {
-  const lifecycle = pig.lifecycle || {};
-  setText("detail_wean_date", lifecycle.wean_date);
-  setText("detail_wean_weight", lifecycle.wean_weight_kg, lifecycle.wean_weight_kg !== null && lifecycle.wean_weight_kg !== undefined && lifecycle.wean_weight_kg !== "" ? " kg" : "");
-  setText("detail_exit_date", lifecycle.exit_date);
-  setText("detail_exit_reason", lifecycle.exit_reason);
-  setText("detail_carcass_weight", lifecycle.carcass_weight_kg, lifecycle.carcass_weight_kg !== null && lifecycle.carcass_weight_kg !== undefined && lifecycle.carcass_weight_kg !== "" ? " kg" : "");
-  setLinkedValue(
-    "detail_exit_order",
-    lifecycle.exit_order_id,
-    lifecycle.exit_order_id ? `/orders/${encodeURIComponent(lifecycle.exit_order_id)}` : ""
-  );
-}
-
-async function loadPigDetail() {
-  const pigId = getPigIdFromUrl();
-
-  if (!pigId) {
-    showMessage("No pig ID found in URL.", "error");
-    return;
-  }
-
-  try {
-    const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(pigId)}`);
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      showMessage(data.error || "Could not load pig detail.", "error");
-      return;
-    }
-
-    const pig = data.pig;
-    currentPigId = pig.pig_id;
-
-    document.getElementById("pig_detail_title").textContent = pig.tag_number || pig.pig_id;
-    document.getElementById("pig_detail_subtitle").textContent = `Pig Profile • ${pig.pig_id}`;
-    document.getElementById("record_weight_button").href = withPigReturnContext(`/pig-weights?pig_id=${encodeURIComponent(pig.pig_id)}`, pig.pig_id);
-    document.getElementById("view_weight_history_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/weights`, pig.pig_id);
-    document.getElementById("record_treatment_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/treatment`, pig.pig_id);
-    document.getElementById("view_treatment_history_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/treatments`, pig.pig_id);
-    document.getElementById("record_movement_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/movement`, pig.pig_id);
-    document.getElementById("view_movement_history_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/movements`, pig.pig_id);
-    document.getElementById("view_family_tree_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/family-tree`, pig.pig_id);
-
-    setText("detail_tag_number", pig.tag_number);
-    setText("detail_pig_id", pig.pig_id);
-    setText("detail_status", pig.status);
-    setText("detail_on_farm", pig.on_farm);
-    setText("detail_animal_type", pig.animal_type);
-    setText("detail_sex", pig.sex);
-    setText("detail_purpose", pig.purpose);
-    setText("detail_dob", pig.date_of_birth);
-    setText("detail_age_days", pig.age_days);
-    setText("detail_pen", pig.current_pen_id);
-    setText("detail_weight", pig.current_weight_kg, pig.current_weight_kg !== "" ? " kg" : "");
-    setText("detail_last_weight_date", pig.last_weight_date);
-    setText("detail_stage", pig.calculated_stage);
-    setText("detail_weight_band", pig.weight_band);
-    setText("detail_sale_ready", pig.is_sale_ready);
-    setText("detail_reserved_status", pig.reserved_status);
-    setText("detail_last_treatment_date", pig.last_treatment_date);
-    setText("detail_last_product_name", pig.last_product_name);
-    setText("detail_withdrawal_end_date", pig.current_withdrawal_end_date);
-    setText("detail_withdrawal_clear", pig.withdrawal_clear);
-
-    setLinkedValue(
-      "detail_mother",
-      pig.mother_tag_number || pig.mother_pig_id,
-      pig.mother_pig_id ? `/pig/${encodeURIComponent(pig.mother_pig_id)}` : ""
-    );
-
-    setLinkedValue(
-      "detail_father",
-      pig.father_tag_number || pig.father_pig_id,
-      pig.father_pig_id ? `/pig/${encodeURIComponent(pig.father_pig_id)}` : ""
-    );
-
-    setLinkedValue(
-      "detail_litter",
-      pig.litter_id,
-      pig.litter_id ? `/litter/${encodeURIComponent(pig.litter_id)}` : ""
-    );
-
-    setText("detail_notes", pig.general_notes);
-    renderLifecycleHistory(pig);
-    updateLifecyclePanel(pig);
-  } catch (error) {
-    showMessage("Something went wrong while loading pig detail.", "error");
-  }
-}
-
-async function submitLifecycleDeath(event) {
-  event.preventDefault();
-  if (!currentPigId) {
-    showMessage("Pig details have not loaded yet.", "error");
-    return;
-  }
-
-  if (!window.confirm("Record this lifecycle outcome? The pig row will be kept for history and reporting.")) {
-    return;
-  }
-
-  setLifecycleSubmitting(true);
-  try {
-    const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(currentPigId)}/lifecycle/death`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        event_date: lifecycleEventDate.value,
-        reason: lifecycleReason.value,
-        changed_by: lifecycleChangedBy.value,
-        notes: lifecycleNotes.value,
-      }),
-    });
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error((data.errors || []).join(" ") || "Could not record lifecycle outcome.");
-    }
-
-    showMessage(data.message || "Lifecycle outcome recorded.", "success");
-    lifecycleForm.reset();
-    lifecycleEventDate.value = todayIsoDate();
-    lifecycleChangedBy.value = "web_app";
-    await loadPigDetail();
-  } catch (error) {
-    showMessage(error.message || "Something went wrong while recording lifecycle outcome.", "error");
-  } finally {
-    setLifecycleSubmitting(false);
-  }
-}
-
-if (lifecycleForm) {
-  lifecycleForm.addEventListener("submit", submitLifecycleDeath);
-}
-
-updateBackLink();
-loadPigDetail();
+function setLifecycleSubmitting(s){lifecycleSubmitButton.disabled=s;lifecycleSubmitButton.textContent=s?"Saving...":"Record Death / Removal"}
+async function submitLifecycleDeath(event){event.preventDefault();if(!currentPigId){showMessage("Pig details have not loaded yet.");return}if(!window.confirm("Record this lifecycle outcome? The pig row will be kept for history and reporting."))return;setLifecycleSubmitting(true);try{const response=await fetch(`/api/pig-weights/pig/${encodeURIComponent(currentPigId)}/lifecycle/death`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_date:lifecycleEventDate.value,reason:lifecycleReason.value,changed_by:lifecycleChangedBy.value,notes:lifecycleNotes.value})});const data=await response.json();if(!response.ok||!data.success)throw new Error((data.errors||[]).join(" ")||"Could not record lifecycle outcome.");showMessage(data.message||"Lifecycle outcome recorded.","success");lifecycleForm.reset();lifecycleEventDate.value=todayIsoDate();lifecycleChangedBy.value="web_app";await loadPigDetail()}catch(error){showMessage(error.message||"Something went wrong while recording lifecycle outcome.")}finally{setLifecycleSubmitting(false)}}
+if(lifecycleForm)lifecycleForm.addEventListener("submit",submitLifecycleDeath);updateBackLink();loadPigDetail();
