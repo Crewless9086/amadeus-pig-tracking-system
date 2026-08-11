@@ -651,7 +651,12 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                             and bool(delivery.get("telegram_message_id")),
                         "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
                         "provider_message_id": str(delivery.get("telegram_message_id") or "")}
-                cycle_result = dict(cycle(notify=notify, environ=source, now=scheduler_now) or {})
+                cycle_result = dict(cycle(notify=notify, environ=source, now=scheduler_now,
+                    owner_user_id=str(manual_payload.get("owner_user_id") or ""),
+                    chat_id=str(manual_payload.get("chat_id") or ""),
+                    next_reassessment_at=str(manual_payload.get("next_due_at") or
+                                             manual_payload.get("due_at") or ""),
+                    observation_store=state_store) or {})
                 return {**cycle_result,
                     "fertilizer_commissioning_status": str(mixer_recovery.get("status") or ""),
                     "daily_presentation_status": str(daily.get("status") or ""),

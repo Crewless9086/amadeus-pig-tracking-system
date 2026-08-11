@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import os
 
 from modules.telemetry.rootline_execution_authority import build_execution_eligibility
@@ -21,7 +22,9 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
                                  token_store=None, transport=None,
                                  outcome_reader=lambda _identity: None,
                                  evidence_loader=read_current_water_energy_evidence,
-                                 readback=read_current_device, clock=None):
+                                 readback=read_current_device, clock=None,
+                                 owner_user_id="", chat_id="", next_reassessment_at="",
+                                 observation_store=None):
     source = environ if environ is not None else os.environ
     clock = clock or (lambda: datetime.now(timezone.utc))
     now = _aware(now or clock())
@@ -36,7 +39,17 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
             decision_reader=lambda _identity: {}, commissioning_reader=lambda _identity: {},
             store=store, transport=transport, notify=notify,
             outcome_reader=outcome_reader, now=now, clock=clock)
+    if not owner_user_id or owner_user_id != chat_id:
+        return _safe("canonical_observation_binding_invalid")
     initial = _current(evidence_loader, readback, token_store, source, database_url, now)
+    observation = _planning_observation(initial, owner_user_id, chat_id,
+                                        next_reassessment_at)
+    if observation_store is None:
+        from modules.oom_sakkie.rootline_reassessment_store import rootline_reassessment_state_store
+        observation_store = rootline_reassessment_state_store
+    recorded = observation_store("record_observation", observation["identity"], observation)
+    if not isinstance(recorded, dict) or recorded.get("success") is not True:
+        return {**_safe("canonical_observation_persistence_unproven"), "success": False}
     artifact = initial["artifact"]
     if artifact.get("eligible") is not True:
         return {**_safe(artifact.get("status") or "not_eligible"),
@@ -81,6 +94,7 @@ def _current(evidence_loader, readback, token_store, source, database_url, now):
     plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
     controller = readback(token_store=token_store, environ=source, now=now)
     return {"evidence": evidence, "plan": plan, "controller": controller,
+            "operating_date": str(operating_date), "generated_at": generated_at,
             "artifact": build_execution_eligibility(
                 plan=plan, evidence=evidence, controller=controller, now=now)}
 
@@ -89,6 +103,42 @@ def _safe(status):
     return {"success": True, "status": status, "hardware_commands": 0,
             "telegram_messages": 0, "writes_farm_data": False,
             "borehole_authority": False, "fertilizer_authority": False}
+
+
+def _planning_observation(initial, owner, chat, next_due):
+    if not owner or owner != chat:
+        return None
+    plan, evidence = initial["plan"], initial["evidence"]
+    operating_date = str(initial.get("operating_date") or evidence.get("operating_date")
+                         or plan.get("operating_date") or "")
+    generation = str(plan.get("evidence_generation") or "")
+    cutoff = str((evidence.get("weather") or {}).get("observed_at") or "")
+    tasks = {str(row.get("task_id") or "").removeprefix("irrigation_"): row
+             for row in plan.get("candidate_tasks") or [] if isinstance(row, dict)}
+    zones = []
+    for zone in ("B12345", "C12345"):
+        task = tasks.get(zone, {})
+        raw = str(task.get("zone_decision") or "Needs Data")
+        decision = raw if raw in {"Run now", "Run later", "Hold", "Needs Data", "Not Due"} else "Needs Data"
+        zones.append({"zone_id": zone, "decision": "Run" if decision == "Run now" else decision,
+            "reason": str(task.get("reason") or initial["artifact"].get("status") or
+                          "No canonical zone task is available."),
+            "planned_duration_minutes": task.get("planned_duration_minutes"),
+            "feasible_window": task.get("preferred_window"),
+            "eligibility_blocker": "" if initial["artifact"].get("eligible") is True
+                                  and initial["artifact"].get("zone_id") == zone
+                                  else str(initial["artifact"].get("status") or "")})
+    material = {"operating_date": operating_date, "generation": generation,
+                "evidence_cutoff": cutoff, "zones": zones}
+    digest = _digest(material)
+    identity_material = f"{owner}|{chat}|{operating_date}|{generation}|{cutoff}|{digest}"
+    identity = "OOM-ROOTLINE-OBS-" + hashlib.sha256(identity_material.encode()).hexdigest()[:24].upper()
+    return {"identity": identity, "owner_user_id": owner, "chat_id": chat,
+        "operating_date": operating_date, "material_digest": digest,
+        "result_id": str(plan.get("plan_identity") or generation),
+        "evidence_generation": generation, "evidence_cutoff": cutoff,
+        "next_reassessment_at": str(next_due or ""), "zones": zones,
+        "delivery_state": "observation_only"}
 
 
 def _aware(value):

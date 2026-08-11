@@ -183,6 +183,8 @@ def test_enabled_scheduler_uses_canonical_execution_cycle_not_readonly_packet_au
         specialist_loader=lambda:(_ for _ in ()).throw(AssertionError("read-only packet used")))
     assert status==200 and value["status"]=="segment_started"
     assert len(cycles)==len(deliveries)==1 and value["hardware_commands"]==1
+    assert cycles[0]["owner_user_id"]==cycles[0]["chat_id"]=="42"
+    assert cycles[0]["observation_store"] is not None
 
 
 def test_scheduler_denies_unknown_or_configured_family_before_load_delivery_or_execution():
