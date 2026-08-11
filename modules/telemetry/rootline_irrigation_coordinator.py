@@ -39,6 +39,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         return _result("not_eligible", commands=0, messages=0)
     contained = store("load_zone_containment", decision["zone_id"]) or {}
     if contained.get("contained") is True:
+        if _release_configuration_containment(contained, decision, store, transport):
+            return _result("zone_containment_released_reassess", commands=0, messages=0)
         return _result("zone_contained", commands=0, messages=0)
     safety = transport.read_safety_configuration(
         device_id="100204e9bc", channel=ZONES[decision["zone_id"]])
@@ -76,7 +78,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     if accepted.get("accepted_unambiguous") is not True:
         # Never issue another ON. OFF recovery is safe even after ambiguous ON.
         store("contain_zone", {**execution, "state": "ambiguous",
-              "shutdown_verified": False, "reason": "ambiguous_on"})
+              "shutdown_verified": False, "reason": "ambiguous_on",
+              "transport_status": accepted.get("status")})
         recovery = _bounded_off(execution, store, transport)
         try:
             shutdown = transport.read_output_state(device_id="100204e9bc", channel=execution["channel"])
@@ -425,6 +428,36 @@ def _safe_configuration(value, zone):
             and value.get("schedules_enabled") is False
             and value.get("interlock_enabled") is False
             and value.get("scenes_enabled") is False)
+
+
+def _release_configuration_containment(contained, decision, store, transport):
+    """Release only a proven non-command caused by missing transport config."""
+    evidence = contained.get("evidence") if isinstance(contained, dict) else None
+    evidence = evidence if isinstance(evidence, dict) else {}
+    if (evidence.get("transport_status") != "transport_not_configured"
+            or evidence.get("shutdown_verified") is not True):
+        return False
+    try:
+        readiness = transport.configuration_status(
+            device_id="100204e9bc", channel=ZONES[decision["zone_id"]])
+        safety = transport.read_safety_configuration(
+            device_id="100204e9bc", channel=ZONES[decision["zone_id"]])
+    except Exception:
+        return False
+    if (not isinstance(readiness, dict) or readiness.get("configured") is not True
+            or not _safe_configuration(safety, decision["zone_id"])
+            or safety.get("relevant_outputs_off") is not True):
+        return False
+    released = store("release_zone_containment", {
+        "execution_id": evidence.get("execution_id"),
+        "zone_id": decision["zone_id"],
+        "contained_execution_id": evidence.get("execution_id"),
+        "reason": "transport_configuration_restored",
+        "shutdown_verified": True,
+        "controller_safety_generation": safety.get("controller_safety_generation"),
+        "provider_evidence_id": safety.get("response_digest"),
+    })
+    return isinstance(released, dict) and released.get("success") is True
 
 
 def _result(status, *, commands, messages, **extra):

@@ -59,7 +59,18 @@ class RootlineIFTTTTransport:
             "commissioned": channel_commissioning,
             "response_digest": snapshot.get("response_digest"),
             "observed_at": snapshot.get("retrieved_at"),
+            "relevant_outputs_off": all(
+                self._channel(snapshot, relevant).get("output_state") == "OFF"
+                for relevant in (1, 2)),
         }
+
+    def configuration_status(self, *, device_id, channel):
+        """Return non-secret transport readiness without a provider call."""
+        contract = self._binding(device_id, channel)
+        return {"configured": bool(contract.get("on_event") and contract.get("off_event")
+                                    and str(self.environ.get(
+                                        "ROOTLINE_IFTTT_MAKER_KEY") or "").strip()),
+                "device_id": device_id, "channel": channel}
 
     def read_output_state(self, *, device_id, channel):
         snapshot = self._snapshot(device_id, channel)
