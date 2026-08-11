@@ -59,7 +59,8 @@ class ActiveContextLoadError(RuntimeError):
 
 
 def handle_authenticated_health_loss_message(
-    parsed: Mapping[str, Any], gateway_authority, *, connect_factory=None, context_store=None
+    parsed: Mapping[str, Any], gateway_authority, *, connect_factory=None, context_store=None,
+    claim_creator=None
 ):
     """Return one useful owner response, or ``handled=False`` for other intents."""
     parsed = parsed if isinstance(parsed, Mapping) else {}
@@ -240,6 +241,17 @@ def handle_authenticated_health_loss_message(
             return result, 200
 
     if confirmation:
+        if parsed.get("callback_confirmation") is True:
+            active_preview=active.get("preview") if isinstance(active.get("preview"),Mapping) else {}
+            binding=active_preview.get("confirmation_binding") if isinstance(
+                active_preview.get("confirmation_binding"),Mapping) else {}
+            evaluator=active_preview.get("evaluator") if isinstance(active_preview.get("evaluator"),Mapping) else {}
+            active_identity=evaluator.get("identity") if isinstance(evaluator.get("identity"),Mapping) else {}
+            if (str(parsed.get("protected_preview_sha256") or "")!=str(binding.get("preview_sha256") or "")
+                    or dict(parsed.get("protected_preview_identity") or {})!=dict(active_identity)):
+                return {"handled":True,"success":False,"status":"health_loss_protected_preview_binding_mismatch",
+                  "answer":"The protected preview no longer matches the active mortality case. Nothing was recorded.",
+                  "writes_farm_data":False,"protected_actions_performed":False},409
         recorded, recorded_status = confirm_health_loss_preview(
             active, text, actor_id=str(parsed.get("telegram_user_id") or ""),
             evidence_loader=lambda: load_canonical_health_loss_evidence(connect_factory=connect_factory),
@@ -395,6 +407,23 @@ def handle_authenticated_health_loss_message(
     stored = _record_lifecycle_event(lifecycle, context_store=context_store)
     if stored.get("success") is not True:
         return {"handled": True, "success": False, "status": "health_loss_lifecycle_persistence_failed"}, 503
+    protected={}
+    if lifecycle["status"]=="preview_ready" and lifecycle["operation_id"] and (claim_creator or os.getenv("DATABASE_URL")):
+        from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
+        creator=claim_creator or create_claim
+        try:
+            claim=creator(action_kind="mortality",owner_user_id=lifecycle["owner_user_id"],
+              private_chat_id=lifecycle["chat_id"],mission_id=mission_id,
+              provider_message_id=provider_message_id,evidence_generation=lifecycle["evidence_generation"],
+              preview_payload={"operation_id":lifecycle["operation_id"],
+                "preview_sha256":str((preview.get("confirmation_binding") or {}).get("preview_sha256") or ""),
+                "identity":(preview.get("evaluator") or {}).get("identity") or {}})
+            protected={"preview_digest":claim["preview_digest"],"callback_token":claim["callback_token"],
+                       "reply_markup":build_buttons(claim["callback_token"],grouped=False)}
+        except Exception:
+            return {"handled":True,"success":False,"status":"health_loss_protected_claim_unavailable",
+                    "answer":"The preview was retained, but its protected buttons could not be stored safely. Nothing was recorded.",
+                    "writes_farm_data":False},503
     return {
         "handled": True,
         "success": True,
@@ -412,6 +441,7 @@ def handle_authenticated_health_loss_message(
         "records_audit_trace": True,
         "writes_farm_data": False,
         "protected_actions_performed": False,
+        **protected,
     }, 200
 
 
