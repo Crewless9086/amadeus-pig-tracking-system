@@ -95,12 +95,51 @@ async function openObservation(pigId) {
   document.getElementById("observation_context").textContent = `${activeRow.current_state}; ontbreek: ${(activeRow.missing_facts || []).join(", ") || "niks"}.`;
   document.getElementById("obs_time").value = localNow();
   previewBox.classList.add("hidden");
+  await refreshObservationHistory(pigId);
+  panel.scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function observationFactSummary(item) {
+  const values = item.measurements || {};
+  const facts = [];
+  if (values.body_condition_score != null) facts.push(`Liggaamskondisie ${values.body_condition_score}`);
+  if (values.standing_heat === "observed") facts.push("Staande hitte waargeneem");
+  if (values.standing_heat === "not_observed") facts.push("Geen staande hitte waargeneem nie");
+  if (values.feet_legs_movement === "no_visible_concern") facts.push("Bene, pote en beweging sonder sigbare kommer");
+  if (values.feet_legs_movement === "concern") facts.push("Kommer oor bene, pote of beweging");
+  if (values.visible_injury === "none_observed") facts.push("Geen sigbare besering");
+  if (values.visible_injury === "concern") facts.push("Sigbare beseringskommer");
+  if (values.temperament === "calm") facts.push("Kalm temperament");
+  if (values.temperament === "watchful") facts.push("Waaksame temperament");
+  if (values.temperament === "difficult") facts.push("Moeilik om te hanteer");
+  if (values.suitability_concern === "none_observed") facts.push("Geen teelgeskiktheidskommer waargeneem nie");
+  if (values.suitability_concern === "concern") facts.push("Teelgeskiktheidskommer waargeneem");
+  return facts;
+}
+
+async function refreshObservationHistory(pigId) {
   const response = await fetch(`/api/pig-weights/breeding-attention/${encodeURIComponent(pigId)}/observations`);
   const data = await response.json();
-  history.textContent = response.ok && data.success
-    ? (data.history.length ? `${data.history.length} onveranderlike waarneming(s); nuutste ${data.history[0].observed_at}.` : "Geen teelwaarnemings is aangeteken nie.")
-    : "Waarnemingsgeskiedenis is nie beskikbaar nie — dit beteken nie nul nie.";
-  panel.scrollIntoView({behavior:"smooth", block:"start"});
+  if (!response.ok || !data.success) {
+    history.className = "breeding-history breeding-history-error";
+    history.textContent = "Waarnemingsgeskiedenis is nie beskikbaar nie — dit beteken nie nul nie.";
+    return;
+  }
+  const items = data.history || [];
+  history.className = "breeding-history";
+  history.innerHTML = items.length
+    ? `<div class="breeding-history-title"><strong>${items.length} aangetekende waarneming(s)</strong><span>Nuutste eerste</span></div>` + items.map(item => {
+        const facts = observationFactSummary(item);
+        const followUp = item.measurements?.follow_up;
+        return `<article class="breeding-history-item">
+          <div><strong>${escapeHtml(new Date(item.observed_at).toLocaleString("af-ZA"))}</strong><span class="breeding-recorded-badge">Aangeteken</span></div>
+          <p>${escapeHtml(item.factual_note)}</p>
+          ${facts.length ? `<small>${escapeHtml(facts.join(" · "))}</small>` : ""}
+          ${followUp ? `<small><strong>Opvolg:</strong> ${escapeHtml(followUp)}</small>` : ""}
+          <code>${escapeHtml(item.observation_event_id)}</code>
+        </article>`;
+      }).join("")
+    : "Geen teelwaarnemings is aangeteken nie.";
 }
 body.addEventListener("click", event => {
   const button = event.target.closest(".observation-review");
@@ -139,6 +178,14 @@ document.getElementById("observation_form").addEventListener("submit", async eve
   const data = await response.json();
   acceptedPreviewPayload = null; recordButton.disabled = true;
   previewBox.classList.remove("hidden");
-  previewBox.textContent = response.ok ? "Waarneming is een keer bygevoeg. Adviesbewyse word verfris." : (data.status || "Waarneming is nie aangeteken nie.");
-  if (response.ok) await load();
+  previewBox.classList.toggle("breeding-save-success", response.ok && data.success);
+  previewBox.classList.toggle("breeding-save-error", !response.ok || !data.success);
+  previewBox.textContent = response.ok && data.success
+    ? `AANGETEKEN — hierdie waarneming is veilig gestoor as ${data.observation_event_id}. Moenie dit weer invoer nie.`
+    : `NIE AANGETEKEN NIE — ${data.status || "die waarneming kon nie gestoor word nie"}.`;
+  if (response.ok && data.success) {
+    await load();
+    await refreshObservationHistory(activeRow.pig_id);
+    previewBox.scrollIntoView({behavior:"smooth", block:"center"});
+  }
 });
