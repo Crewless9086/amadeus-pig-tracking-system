@@ -50,7 +50,7 @@ class Transport:
         return {"accepted_unambiguous": self.on == "accepted" or kwargs["state"] == "OFF"}
     def read_output_state(self, **kwargs):
         return {"authoritative": self.readback is not None, "state": self.readback,
-                "evidence_id":"READBACK-1"}
+                "evidence_id":"READBACK-1","retrieved_at":NOW.isoformat()}
 
 
 def decision(**changes):
@@ -226,6 +226,64 @@ def test_verified_segment_can_carry_canonical_objective_satisfaction():
     assert result["execution"]["objective_satisfied"] is True
     assert notices[0][0]=="Completed"
     assert notices[0][1]["notification_identity"]=="EXEC-1:Completed"
+
+
+def test_provider_confirmed_bounded_segment_builds_canonical_control_outcome():
+    active={"execution_id":"EXEC-PROVIDER","zone_id":"B12345","channel":1,
+        "eligibility_id":"ELIG-P","evidence_generation":"GEN-P","state":"Active",
+        "on_attempts":1,"planned_runtime_minutes":60,"planned_runtime_seconds":3599,
+        "claimed_at":(NOW-timedelta(seconds=3599)).isoformat(),
+        "primary_stop_deadline":NOW.isoformat(),"native_fail_stop_deadline":NOW.isoformat(),
+        "start_evidence":{"authoritative":True,"state":"ON","evidence_id":"START-P",
+            "retrieved_at":(NOW-timedelta(seconds=3599)).isoformat()}}
+    store=Store(active); notices=[]
+    result=run(store,Transport(readback="OFF"),notices,now=NOW)
+    assert result["status"]=="segment_completed"
+    evidence=result["execution"]["objective_evidence"]
+    assert evidence["objective_satisfied"] is True
+    assert evidence["verified_runtime_minutes"]==3599/60
+    assert evidence["physical_flow_confirmation"]=="Unavailable"
+    assert evidence["delivered_volume"]=="Unavailable"
+    assert notices[0][0]=="Completed"
+
+
+def test_provider_off_before_deadline_never_satisfies_control_objective():
+    active={"execution_id":"EXEC-EARLY","zone_id":"B12345","channel":1,
+        "eligibility_id":"ELIG-E","evidence_generation":"GEN-E","state":"Active",
+        "on_attempts":1,"planned_runtime_minutes":60,"planned_runtime_seconds":3599,
+        "claimed_at":(NOW-timedelta(seconds=3600)).isoformat(),
+        "primary_stop_deadline":NOW.isoformat(),"native_fail_stop_deadline":NOW.isoformat(),
+        "start_evidence":{"authoritative":True,"state":"ON","evidence_id":"START-E",
+            "retrieved_at":(NOW-timedelta(seconds=3599)).isoformat()}}
+    transport=Transport(readback="OFF")
+    def early_readback(**kwargs):
+        return {"authoritative":True,"state":"OFF","evidence_id":"EARLY",
+                "retrieved_at":(NOW-timedelta(seconds=1)).isoformat()}
+    transport.read_output_state=early_readback
+    notices=[]; result=run(Store(active),transport,notices,now=NOW)
+    assert result["status"]=="segment_stopped_outcome_unconfirmed"
+    assert notices[0][0]=="Intervention"
+
+
+def test_equal_but_shifted_deadlines_never_satisfy_control_objective():
+    shifted=NOW+timedelta(seconds=1)
+    active={"execution_id":"EXEC-SHIFT","zone_id":"B12345","channel":1,
+        "eligibility_id":"ELIG-S","evidence_generation":"GEN-S","state":"Active",
+        "on_attempts":1,"planned_runtime_minutes":60,"planned_runtime_seconds":3599,
+        "claimed_at":(NOW-timedelta(seconds=3600)).isoformat(),
+        "primary_stop_deadline":shifted.isoformat(),
+        "native_fail_stop_deadline":shifted.isoformat(),
+        "start_evidence":{"authoritative":True,"state":"ON","evidence_id":"START-S",
+            "retrieved_at":(NOW-timedelta(seconds=3599)).isoformat()}}
+    transport=Transport(readback="OFF")
+    def late_readback(**kwargs):
+        return {"authoritative":True,"state":"OFF","evidence_id":"STOP-S",
+                "retrieved_at":(shifted+timedelta(seconds=1)).isoformat()}
+    transport.read_output_state=late_readback
+    notices=[]
+    result=run(Store(active),transport,notices,now=shifted+timedelta(seconds=1))
+    assert result["status"]=="segment_stopped_outcome_unconfirmed"
+    assert notices[0][0]=="Intervention"
 
 
 def test_pre_stop_objective_packet_cannot_discharge_completion():
