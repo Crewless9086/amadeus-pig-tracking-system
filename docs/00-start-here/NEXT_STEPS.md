@@ -2,11 +2,10 @@
 
 ## Oom Sakkie protected mortality and grouped weights
 
-- Integrate only after the exact candidate passes independent operations/CX and security/authority review plus exact-head CI.
-- Apply the append-only Pig 130 correction once, proving effective date 2026-08-06 while preserving Dead/off-farm state and the original event.
-- Preserve the existing four 11 August weights and D3 placements without replay.
-- After deployment, release broad runtime and let the deployed lifecycle wait for the next genuine owner-created mortality or grouped-weight journey; do not manufacture proof traffic.
-- Business completion requires the genuine preview/button/exact-write/readback/completion-edit journey, not deployment alone. See `docs/06-operations/OOM_SAKKIE_PROTECTED_ACTION_RECOVERY_HANDOVER_20260811.md`.
+- Deployed through PRs #820/#821; Pig 130 is canonically Dead/off-farm with effective date 2026-08-06, and the original event remains immutable.
+- Existing four 11 August weights and D3 placements were preserved without replay.
+- Broad runtime is released; the deployed lifecycle owns automatic acceptance of the next genuine owner-created mortality or grouped-weight journey. Do not manufacture proof traffic.
+- Remaining Business completion requires that genuine preview/button/exact-write/readback/completion-edit journey. See `docs/06-operations/OOM_SAKKIE_PROTECTED_ACTION_RECOVERY_HANDOVER_20260811.md`.
 
 ## ROOTLINE canonical status and owner access recovery
 
