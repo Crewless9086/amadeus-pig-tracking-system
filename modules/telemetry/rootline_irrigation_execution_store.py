@@ -90,7 +90,7 @@ def _load(action, payload):
                     identity = str(item.get("execution_id") or "")
                     if item.get("action") in terminal_actions:
                         terminal.add(identity)
-                    elif item.get("action") in {active_action, claim_action}:
+                    elif _is_active_candidate(item, active_action, claim_action):
                         candidates.setdefault(identity, item)
                 for identity, item in candidates.items():
                     if identity not in terminal:
@@ -165,6 +165,12 @@ def _load(action, payload):
                     evidence["shutdown_verified"] = detail.get("shutdown_verified") is True
                     evidence["shutdown_evidence"] = detail.get("shutdown_evidence")
             return {"contained": True, "evidence": evidence}
+
+
+def _is_active_candidate(item, active_action, claim_action):
+    action = item.get("action") if isinstance(item, dict) else None
+    return (action == claim_action
+            or (action == active_action and item.get("state") == "Active"))
 
 
 def _claim_single_controller(body):
