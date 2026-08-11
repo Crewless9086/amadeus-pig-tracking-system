@@ -83,6 +83,21 @@ def test_regenerated_unchanged_decision_keeps_one_durable_consumption_key():
     assert first["consumption_key"] == second["consumption_key"]
 
 
+def test_fresh_receipt_generation_is_equivalent_when_decision_and_all_gates_still_pass():
+    plan,evidence,controller=inputs()
+    first=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,now=NOW)
+    refreshed=deepcopy(plan); refreshed["evidence_generation"]="FRESH-REQUEST-GENERATION"
+    later_evidence=deepcopy(evidence)
+    later_evidence["weather"]["observed_at"]=(NOW+timedelta(minutes=1)).isoformat()
+    later_evidence["tanks"]["observed_at"]=(NOW+timedelta(minutes=1)).isoformat()
+    later=build_execution_eligibility(plan=refreshed,evidence=later_evidence,
+        controller={**controller,"trusted_receipt_at":(NOW+timedelta(minutes=1)).isoformat(),
+                    "response_digest":"READ-FRESH"},now=NOW+timedelta(minutes=1))
+    assert first["source_plan_generation"] != later["source_plan_generation"]
+    assert first["plan_evidence_digest"] != later["plan_evidence_digest"]
+    assert equivalent_fresh_eligibility(first,later,now=NOW+timedelta(minutes=1))
+
+
 def test_power_never_changes_eligibility_but_canonical_generation_remains_bound():
     plan,evidence,controller=inputs()
     first=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,now=NOW)
