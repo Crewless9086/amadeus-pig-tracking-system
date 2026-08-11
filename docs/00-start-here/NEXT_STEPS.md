@@ -1,5 +1,11 @@
 # Next Steps
 
+## HERDMASTER weighing batch intelligence
+
+- Owner-approved future mission: `docs/06-operations/HERDMASTER_WEIGHING_BATCH_INTELLIGENCE_PLAN_20260811.md`.
+- Convert one completed canonical bulk-weighing batch into one printable evidence report, one concise Oom Sakkie summary and at most one material grouped question.
+- Keep measured change, associated context, unknown cause and next action distinct; require a genuine completed-batch proof before closure.
+
 ## Active HERDMASTER genetic-selection outcome - 2026-08-11
 
 - Apply `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md` to the current breeding population.

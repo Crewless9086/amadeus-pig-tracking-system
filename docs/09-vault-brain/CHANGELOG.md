@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+## 2026-08-11 - HERDMASTER weighing batch intelligence planned
+
+- Defined the owner-approved journey from one completed bulk-weight upload to one printable report, one concise Telegram summary and at most one grouped question.
+- Required deterministic individual, cohort and pen analysis before contextual interpretation.
+- Required weather, feed, water, movement, medical and reproductive context to remain measured, associated or Unknown rather than inferred as cause.
+- Bound later owner answers to the originating batch and prohibited duplicate analysis or delivery on replay.
+- Restored the existing Weight Report shortcut to the dashboard Herd records tools.
+
 ## 2026-08-11 - HERDMASTER foundation-herd genetic selection
 
 - Recorded Charl's bounded declaration that the current foundation breeding population is operationally unrelated unless attributable evidence proves otherwise; this is not verified ancestry and does not extend automatically to descendants.

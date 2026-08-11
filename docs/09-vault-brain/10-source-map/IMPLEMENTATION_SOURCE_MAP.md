@@ -90,6 +90,13 @@
   new boars receive controlled trials. Recommendations have zero mating or
   movement authority.
 
+## HERDMASTER weighing batch intelligence
+
+- Owner-approved plan: `docs/06-operations/HERDMASTER_WEIGHING_BATCH_INTELLIGENCE_PLAN_20260811.md`.
+- Existing owner surfaces: `/bulk-weights`, `/weight-report`, `/api/pig-weights/weight-report` and the dashboard Herd records tool group.
+- Existing code to reconcile: `modules/pig_weights/pig_weights_service.py`, `modules/pig_weights/pig_weights_routes.py`, `templates/weight-report.html`, `static/js/weightReport.js`, the canonical bulk-batch write path, ROOTLINE read-only context adapters and Oom Sakkie family-message lifecycle.
+- Rule: analysis starts only from an accepted completed batch; partial uploads, retries and report refreshes do not notify. Measured, associated and Unknown evidence remain separate. Missing pigs are not zero. Reuse the existing report and observation rails rather than creating competing ledgers.
+
 ## Rootline owner daily brief
 
 - Doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`
