@@ -109,7 +109,7 @@ def store():
             values=[v for v in rows.values() if v.get("delivery_state")=="delivered" and f'{v["owner_user_id"]}|{v["chat_id"]}'==identity]
             return values[-1] if values else None
         if kind=="load_identity": return rows.get(identity)
-        if kind=="claim_pending":
+        if kind in {"claim_pending","record_observation"}:
             if identity in rows:return {"success":True,"created":False}
             rows[identity]=payload;return {"success":True,"created":True}
         if kind in {"mark_delivered","mark_ambiguous"}:
@@ -146,8 +146,10 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
         specialist_loader=lambda:rootline("Run later"),state_store=state)
     assert first["notify_owner"] is True
     assert unchanged["notify_owner"] is False and unchanged["telegram_sends"]==0
+    observations=[row for row in rows.values() if row.get("delivery_state")=="observation_only"]
+    assert len(observations)==2
     assert changed["notify_owner"] is True and "C Camp:</b> Run" in changed["answer"]
-    assert replay["notify_owner"] is False and len(rows)==2
+    assert replay["notify_owner"] is False and len(rows)==4
     assert all(item["hardware_commands"]==0 for item in (first,unchanged,changed,replay))
 
 
