@@ -186,6 +186,37 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
         self.assertEqual(self.counts(), (2, 2, 2))
         self.assertEqual(self.row_versions(), versions)
 
+    def test_active_zero_weaned_legacy_planned_date_is_replaced_by_actual_date(self):
+        with psycopg.connect(self.url) as connection:
+            connection.execute(
+                "update public.litters set wean_date='2026-07-01' where litter_id=%s",
+                (self.litter_id,),
+            )
+        result = apply_litter_weaning_day_packet(
+            self.packet(),
+            connect_factory=lambda _url: psycopg.connect(self.url),
+        )
+        self.assertEqual(result["status"], "weaning_day_committed")
+        with psycopg.connect(self.url) as connection:
+            row = connection.execute(
+                "select wean_date,weaned_count,litter_status from public.litters where litter_id=%s",
+                (self.litter_id,),
+            ).fetchone()
+        self.assertEqual(row, (date(2026, 7, 28), 2, "Weaned"))
+
+    def test_completed_litter_date_cannot_be_replaced(self):
+        apply_litter_weaning_day_packet(
+            self.packet(),
+            connect_factory=lambda _url: psycopg.connect(self.url),
+        )
+        changed = copy.deepcopy(self.packet())
+        changed["wean_date"] = date(2026, 7, 29)
+        with self.assertRaisesRegex(ValueError, "conflicting_litter_wean_date"):
+            apply_litter_weaning_day_packet(
+                changed,
+                connect_factory=lambda _url: psycopg.connect(self.url),
+            )
+
     def test_changed_withdrawal_or_follow_up_evidence_is_not_exact_replay(self):
         apply_litter_weaning_day_packet(
             self.packet(),

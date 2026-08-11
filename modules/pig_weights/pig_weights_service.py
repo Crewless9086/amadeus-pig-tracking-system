@@ -1,3 +1,4 @@
+import logging
 import math
 from datetime import datetime, timedelta
 
@@ -43,6 +44,7 @@ from modules.sales.riversdale_auction_list import (
 )
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
+LOGGER = logging.getLogger(__name__)
 LIFECYCLE_REMOVAL_REASONS = {
     "Died": "Dead",
     "Culled": "Dead",
@@ -2425,6 +2427,10 @@ def process_litter_weaning_day(
                 ),
             })
         except Exception as exc:
+            LOGGER.exception(
+                "Canonical Weaning Day transaction rejected for litter %s",
+                litter_id,
+            )
             return {
                 "success": False,
                 "status": "weaning_day_transaction_failed",

@@ -727,7 +727,15 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                 and litter[2] == len(piglets)
                 and litter[3] == "Weaned"
             )
-            if litter[1] not in (None, wean_date):
+            legacy_planned_wean_date = (
+                litter[3] == "Active"
+                and litter[2] in (None, 0)
+                and all(row[5] is None and row[6] is None for row in current_rows)
+            )
+            if (
+                litter[1] not in (None, wean_date)
+                and not legacy_planned_wean_date
+            ):
                 raise ValueError("conflicting_litter_wean_date")
             if litter[2] not in (None, 0, len(piglets)):
                 raise ValueError("conflicting_litter_weaned_count")
