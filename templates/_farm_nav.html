@@ -5,4 +5,10 @@
     <details><summary>Operations</summary><div><a href="/weather">Weather</a><a href="/power">Power</a><a href="/irrigation">Irrigation</a><a href="/print-sheets">Print</a></div></details>
   </div>
   <a class="farm-nav-manager" href="/oom-sakkie">Oom Sakkie</a>
+  {% if owner_session_valid %}
+  <a class="farm-nav-owner" href="/owner/status">Owner access · {{ owner_session_role|title }}</a>
+  <form method="post" action="/owner/logout" class="farm-nav-logout"><button type="submit">Log out</button></form>
+  {% else %}
+  <a class="farm-nav-owner" href="/owner/login?next={{ request.path|urlencode }}">Log in</a>
+  {% endif %}
 </nav>

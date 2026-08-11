@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+## 2026-08-11 - ROOTLINE status and owner-access defect documented
+
+- Confirmed the owner dashboard actively falls back from empty Supabase irrigation plan tables to legacy `Amadeus_Irrigation_Logs` rows.
+- Distinguished legacy read-only planned rows from canonical scheduler ownership and provider-confirmed execution.
+- Defined one Supabase status reconciliation across dashboard, irrigation detail, Telegram and hardware history.
+- Required a visible owner login/session control and return-to-irrigation handling for protected endpoint `403` responses.
+- Kept fertilizer mixer, injection and later borehole commissioning as separately proven physical outcomes.
+
 ## 2026-08-11 - HERDMASTER foundation-herd genetic selection
 
 - Recorded Charl's bounded declaration that the current foundation breeding population is operationally unrelated unless attributable evidence proves otherwise; this is not verified ancestry and does not extend automatically to descendants.
