@@ -67,6 +67,25 @@ def run(store,transport,rain=0,notify=None,clock=lambda:NOW):
             readback=lambda **_kwargs:controller(),clock=clock)
 
 
+def test_scheduler_owner_binding_persists_hold_observation_without_notification_or_command():
+    execution_store=Store(); transport=Transport(); observations={}; notices=[]
+    def observation_store(action,identity,payload):
+        created=identity not in observations; observations.setdefault(identity,payload)
+        return {"success":True,"created":created}
+    loader=lambda **_kwargs:(evidence(.25),"2026-08-08",NOW)
+    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",
+                    return_value=plan()):
+        value=run_rootline_execution_cycle(notify=lambda *args:notices.append(args),
+            environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=execution_store,
+            token_store=object(),transport=transport,evidence_loader=loader,
+            readback=lambda **_kwargs:controller(),owner_user_id="42",chat_id="42",
+            next_reassessment_at="2026-08-08T20:15:00+02:00",
+            observation_store=observation_store)
+    assert value["status"]=="observed_weather_not_fresh_and_dry"
+    assert len(observations)==1 and next(iter(observations.values()))["delivery_state"]=="observation_only"
+    assert notices==[] and transport.calls==[]
+
+
 def test_rain_hold_creates_no_artifact_command_or_notification():
     store=Store(); transport=Transport(); notices=[]
     value=run(store,transport,rain=.25,notify=lambda *args:notices.append(args))
