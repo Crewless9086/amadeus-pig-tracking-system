@@ -85,6 +85,14 @@ def test_superseded_litter_and_children_never_double_count_current_evidence():
     assert packet["pair_profiles"][0]["born_alive"] == 4
 
 
+def test_conflicting_explicit_mating_link_cannot_establish_supported_conception():
+    evidence = snapshot()
+    evidence["litters"][0]["boar_pig_id"] = "B2"
+    cohort = build_lifetime_outcome_packet(evidence, cutoff=CUTOFF)["cohorts"][0]
+    assert cohort["mating_id"] is None
+    assert cohort["conception_outcome"] == "Unknown"
+
+
 def test_mixed_lot_value_is_not_attributed_to_one_litter_or_divided_per_pig():
     evidence = snapshot()
     evidence["pigs"].append({"pig_id": "OTHER", "status": "Sold"})

@@ -58,7 +58,12 @@ def build_lifetime_outcome_packet(evidence, *, cutoff):
         mating = mating_by_id.get(mating_id, {})
         if not sow_id or not boar_id:
             gaps.append(_gap("litter_parent_attribution", litter_id, "exact sow and boar identity"))
-        if not mating_id:
+        if mating_id and (not mating or _text(mating.get("sow_pig_id")) != sow_id
+                          or _text(mating.get("boar_pig_id")) != boar_id
+                          or not _supports_farrowing(mating, farrowing)):
+            gaps.append(_gap("mating_litter_link", litter_id, "non-conflicting exact mating, sow, boar and chronology"))
+            mating_id, mating = "", {}
+        elif not mating_id:
             candidates = [row for row in matings.values() if _text(row.get("sow_pig_id")) == sow_id
                           and _text(row.get("boar_pig_id")) == boar_id and _supports_farrowing(row, farrowing)]
             if len(candidates) == 1:
