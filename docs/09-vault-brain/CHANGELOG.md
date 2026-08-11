@@ -1,13 +1,15 @@
 # Vault Brain Changelog
 
-## 2026-08-11 - Protected mortality and grouped-weight recovery prepared
+## 2026-08-11 - Protected mortality and grouped-weight recovery deployed
 
 - Reconciled provider chronology separately from canonical readback for Pig 130 and the four-row grouped-weight defect.
 - Bound mortality and grouped-weight previews to opaque owner/private-chat/provider-card claims with Afrikaans controls, expiry, concurrency and replay safety.
 - Enforced exact preview-to-transaction equality for grouped rows, date and pen movements, with canonical pen evidence and atomic rollback.
 - Prevented protected replies from falling into generic manager presentation and made completion one verified card edit with controls removed.
 - Added the sealed append-only Pig 130 effective-date correction from 11 August to the owner-reported 6 August while preserving the original event and Unknown clinical facts.
-- Kept production untouched pending final review, exact CI, integration and bounded operational proof.
+- Deployed reviewed lineage, applied the additive rail, and corrected Pig 130's effective date to 6 August through one append-only supersession.
+- Proved the original event remains immutable, replay changes zero rows, and all four existing 11 August weights/D3 placements remain unchanged.
+- Released broad runtime; the next genuine protected journey remains the outstanding Business-completion proof.
 
 ## 2026-08-11 - ROOTLINE status and owner-access defect documented
 
