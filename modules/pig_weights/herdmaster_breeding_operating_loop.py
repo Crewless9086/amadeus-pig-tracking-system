@@ -335,6 +335,9 @@ def _classify(
         else None
     )
     wean_date = _date(latest_litter.get("wean_date"))
+    litter_closes_latest_mating = _litter_closes_mating(
+        latest_mating, latest_litter, litters, mating_date
+    )
     days_since_weaning = (
         (today - wean_date).days if wean_date and today >= wean_date else None
     )
@@ -349,6 +352,12 @@ def _classify(
             "review medical or withdrawal hold", 5,
         )
         reason = "A current medical, withdrawal or availability hold is evidenced."
+    elif litter_closes_latest_mating and pregnancy["state"] != "conflicting" and not wean_date:
+        state, action, priority = "Nursing", "continue nursing until governed weaning", 20
+        reason = "An attributable current litter closes the prior mating cycle and remains unweaned."
+    elif litter_closes_latest_mating and pregnancy["state"] != "conflicting" and wean_date:
+        state, action, priority = "Ready for mating review", "schedule boar placement", 28
+        reason = f"The attributable litter closes the prior mating cycle; governed weaning was {days_since_weaning} days ago."
     elif pregnancy["state"] == "pregnant":
         state, action, priority = (
             pregnancy["derived_status"],
@@ -364,7 +373,7 @@ def _classify(
             pregnancy_recommendation(pregnancy), 8,
         )
         reason = "Canonical pregnancy evidence conflicts for the latest mating."
-    elif pregnancy["state"] in {"historical", "unattributed"}:
+    elif pregnancy["state"] in {"historical", "unattributed"} and not litter_closes_latest_mating:
         state, action, priority = (
             pregnancy["derived_status"],
             pregnancy_recommendation(pregnancy), 18,
@@ -435,6 +444,7 @@ def _classify(
     else:
         readiness_status = "Needs Data"
         readiness_reason = reason
+    placement_supported = state == "Ready for mating review" and wean_date is not None
     return {
         "state": state,
         "readiness": readiness_status,
@@ -459,10 +469,10 @@ def _classify(
         "days_since_litter": days_since_litter,
         "weaning_date": _date_text(wean_date),
         "days_since_weaning": days_since_weaning,
-        "proposed_placement_date": _date_text(max(today, wean_date)) if wean_date else None,
-        "exposure_start_date": _date_text(max(today, wean_date)) if wean_date else None,
-        "exposure_end_date": _date_text(max(today, wean_date) + timedelta(days=16)) if wean_date else None,
-        "exposure_days": 17 if wean_date else None,
+        "proposed_placement_date": _date_text(max(today, wean_date)) if placement_supported else None,
+        "exposure_start_date": _date_text(max(today, wean_date)) if placement_supported else None,
+        "exposure_end_date": _date_text(max(today, wean_date) + timedelta(days=16)) if placement_supported else None,
+        "exposure_days": 17 if placement_supported else None,
         "heat_observation_required": False,
         "unsuccessful_service_count": len(unsuccessful),
         "current_heat": latest_heat or "unknown",
@@ -474,6 +484,33 @@ def _classify(
         "confidence": attention.get("confidence") or "Limited",
         "projected_observation": projected_observation,
     }
+
+
+def _litter_closes_mating(mating, latest_litter, litters, mating_date):
+    """Close a cycle only through one unambiguous compatible sow litter."""
+    if not mating_date:
+        return False
+    mating_boar = _text(mating.get("boar_pig_id"))
+    candidates = []
+    for litter in litters:
+        litter_date = _date(litter.get("farrowing_date") or litter.get("birth_date"))
+        if not litter_date or not 100 <= (litter_date - mating_date).days <= 130:
+            continue
+        litter_boar = _text(litter.get("boar_pig_id"))
+        if mating_boar and litter_boar and mating_boar != litter_boar:
+            continue
+        candidates.append(litter)
+    related = _text(mating.get("related_litter_id"))
+    if related:
+        candidates = [
+            litter for litter in candidates
+            if _text(litter.get("litter_id")) == related
+        ]
+    if len(candidates) != 1:
+        return False
+    return _text(candidates[0].get("litter_id")) == _text(
+        latest_litter.get("litter_id")
+    )
 
 
 def _task(
