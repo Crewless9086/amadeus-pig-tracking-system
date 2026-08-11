@@ -286,6 +286,25 @@ def test_equal_but_shifted_deadlines_never_satisfy_control_objective():
     assert notices[0][0]=="Intervention"
 
 
+def test_provider_receipt_after_fixed_scheduler_timestamp_is_not_future_evidence():
+    fixed=NOW; receipt=NOW+timedelta(seconds=5)
+    claimed=NOW-timedelta(seconds=3599)
+    active={"execution_id":"EXEC-CLOCK","zone_id":"B12345","channel":1,
+        "eligibility_id":"ELIG-C","evidence_generation":"GEN-C","state":"Active",
+        "on_attempts":1,"planned_runtime_minutes":60,"planned_runtime_seconds":3599,
+        "claimed_at":claimed.isoformat(),"primary_stop_deadline":NOW.isoformat(),
+        "native_fail_stop_deadline":NOW.isoformat(),
+        "start_evidence":{"authoritative":True,"state":"ON","evidence_id":"START-C",
+            "retrieved_at":(claimed+timedelta(seconds=2)).isoformat()}}
+    transport=Transport(readback="OFF")
+    transport.read_output_state=lambda **kwargs:{"authoritative":True,"state":"OFF",
+        "evidence_id":"STOP-C","retrieved_at":receipt.isoformat()}
+    notices=[]; result=run(Store(active),transport,notices,now=fixed)
+    assert result["status"]=="segment_completed"
+    assert result["execution"]["completed_at"]==receipt.isoformat()
+    assert notices[0][0]=="Completed"
+
+
 def test_pre_stop_objective_packet_cannot_discharge_completion():
     active={"execution_id":"EXEC-1","zone_id":"B12345","channel":1,
             "eligibility_id":"ELIG-1","evidence_generation":"GEN-1",

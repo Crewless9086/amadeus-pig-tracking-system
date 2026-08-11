@@ -7,7 +7,7 @@ import json
 import pytest
 
 from modules.telemetry.rootline_irrigation_execution_store import (
-    _claim_single_auxiliary, _claim_single_controller, _event_id,
+    _claim_single_auxiliary, _claim_single_controller, _event_id, _stored_event_body,
 )
 
 
@@ -24,6 +24,13 @@ def test_off_attempt_claims_are_unique_per_execution_and_attempt():
                   for n in (1, 2, 3)}
     assert len(identities) == 3
     assert _event_id("claim_off_attempt", {"execution_id": "EXEC-1", "attempt": 1}) in identities
+
+
+def test_store_action_cannot_be_shadowed_by_loaded_active_payload():
+    value=_stored_event_body("record_completed",{
+        "execution_id":"EXEC-1","action":"mark_active","state":"Completed"},"EVENT-1")
+    assert value["action"]=="record_completed"
+    assert value["event_id"]=="EVENT-1"
 
 
 def test_auxiliary_claim_and_off_identities_are_stable_and_separate():
