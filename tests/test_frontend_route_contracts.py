@@ -1917,6 +1917,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("duplicate-marker", js)
         self.assertIn("duplicate_same_day", js)
         self.assertIn("setDateColumnVisibility", js)
+        self.assertIn('id="herdmaster_intelligence"', template)
+        self.assertIn("renderBatchIntelligence", js)
+        self.assertIn('get("batch_id")', js)
 
     def test_weight_form_confirms_before_saving_duplicate_weight(self):
         js = Path("static/js/pigWeights.form.js").read_text(encoding="utf-8")

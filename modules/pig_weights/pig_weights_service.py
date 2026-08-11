@@ -6516,7 +6516,7 @@ def _is_active_on_farm_pig(pig_meta):
     )
 
 
-def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
+def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = "", batch_id: str = ""):
     parsed_from = parse_sheet_date(date_from) if date_from else datetime.now().date()
     parsed_to = parse_sheet_date(date_to) if date_to else parsed_from
 
@@ -6532,6 +6532,8 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
         parsed_from,
         parsed_to,
         selected_pen_id,
+        None,
+        to_clean_string(batch_id),
     )
     if supabase_result is not None:
         return supabase_result

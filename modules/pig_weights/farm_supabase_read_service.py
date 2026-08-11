@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from time import monotonic
 
 from services.database_service import DATABASE_URL_ENV
+from modules.pig_weights.herdmaster_weighing_batch_intelligence import build_weighing_batch_intelligence
 
 DEFAULT_LITTER_WEAN_AGE_DAYS = 30
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
@@ -2252,7 +2253,7 @@ def get_weight_entries_by_date(weight_date, connect_factory=None):
     return {"weight_date": _date_text(weight_date), "count": len(history), "history": history}
 
 
-def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
+def get_weight_report(date_from, date_to, pen_id="", connect_factory=None, batch_id=""):
     rows = _fetch_all(
         """
         select
@@ -2398,7 +2399,7 @@ def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
         if entry["difference_kg"] is not None and entry["difference_kg"] < 0
     ]
 
-    return {
+    result = {
         "success": True,
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
@@ -2429,3 +2430,142 @@ def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
         "entries": entries,
         "source": "supabase_canonical",
     }
+    if _text(batch_id):
+        result["herdmaster_intelligence"] = _completed_batch_intelligence(
+            _text(batch_id), selected_pen_id, connect_factory=connect_factory)
+    return result
+
+
+def _completed_batch_intelligence(batch_id, selected_pen_id="", connect_factory=None):
+    """Load one completed canonical batch and pass it to the pure evaluator."""
+    batch = _fetch_one(
+        """select batch_id::text, weight_date, status, visible_row_count,
+                  actionable_row_count, weight_row_count, movement_row_count,
+                  skipped_row_count, success_count, failed_count, duplicate_count,
+                  source, completed_at
+             from public.bulk_weight_batches where batch_id = %s::uuid""",
+        (batch_id,), connect_factory=connect_factory,
+    )
+    if not batch or _text(batch.get("status")).lower() != "complete":
+        return build_weighing_batch_intelligence(batch=batch or {}, batch_rows=[], weight_history=[])
+    rows = _fetch_all(
+        """select audit.row_id::text, audit.row_index, audit.pig_id, audit.pig_name,
+                  audit.weight_kg, audit.from_pen_id, audit.to_pen_id, audit.status,
+                  audit.status_reason, audit.result_json, audit.original_row_json,
+                  event.weight_event_id::text, event.event_count,
+                  movement.location_event_id::text, movement.event_count as movement_event_count,
+                  state.tag_number, state.status as lifecycle_state, state.litter_id,
+                  batch_litter.litter_id as batch_litter_id,
+                  batch_litter.farrowing_date as batch_litter_farrowing_date,
+                  batch_litter.wean_date as batch_litter_wean_date,
+                  batch_litter.litter_status as batch_litter_status,
+                  latest_mating.mating_id as latest_mating_id,
+                  latest_mating.pregnancy_check_result, latest_mating.outcome
+             from public.bulk_weight_batch_rows audit
+        left join lateral (
+              select min(weight_event_id) as weight_event_id, count(*) as event_count
+                from public.pig_weight_events
+               where bulk_batch_id = audit.batch_id and bulk_row_id = audit.row_id
+        ) event on true
+        left join lateral (
+              select min(location_event_id) as location_event_id, count(*) as event_count
+                from public.pig_location_events
+               where bulk_batch_id = audit.batch_id and bulk_row_id = audit.row_id
+        ) movement on true
+        left join public.current_canonical_pig_state state on state.pig_id = audit.pig_id
+        left join lateral (
+              select litter_id, farrowing_date, wean_date, litter_status
+                from public.current_canonical_litters
+               where sow_pig_id = audit.pig_id
+                 and farrowing_date <= %s
+               order by farrowing_date desc nulls last, litter_id desc limit 1
+        ) batch_litter on true
+        left join lateral (
+              select mating_id, pregnancy_check_result, outcome
+                from public.mating_events
+               where sow_pig_id = audit.pig_id and mating_date <= %s
+               order by mating_date desc, created_at desc, mating_id desc limit 1
+        ) latest_mating on true
+            where audit.batch_id = %s::uuid
+         order by audit.row_index""",
+        (batch["weight_date"], batch["weight_date"], batch_id), connect_factory=connect_factory,
+    )
+    for row in rows:
+        row["reproductive_state"] = _batch_reproductive_state(row, batch["weight_date"])
+    integrity_error = _batch_integrity_error(batch, rows)
+    if integrity_error:
+        return {"success": False, "contract_version": "herdmaster_weighing_batch_intelligence_v1",
+                "reason": integrity_error, "writes_performed": False,
+                "telegram_delivery_enabled": False, "protected_actions_performed": False}
+    pig_ids = sorted({_text(row.get("pig_id")) for row in rows if _text(row.get("pig_id"))})
+    history = []
+    expected = [{"pig_id": _text(row.get("pig_id")),
+                 "name": _text(row.get("pig_name")) or _text(row.get("tag_number")),
+                 "tag_number": _text(row.get("tag_number")),
+                 "pen_id": _text(row.get("from_pen_id")), "pen_name": _text(row.get("from_pen_id")),
+                 "expected_for_batch": True}
+                for row in rows if _text(row.get("pig_id"))]
+    if pig_ids:
+        history = _fetch_all(
+            """select weight_event_id::text, pig_id, weight_date, weight_kg, created_at
+                 from public.pig_weight_events
+                where pig_id = any(%s) and weight_date <= %s
+             order by pig_id, weight_date, created_at, weight_event_id""",
+            (pig_ids, batch["weight_date"]), connect_factory=connect_factory,
+        )
+    return build_weighing_batch_intelligence(
+        batch=batch, batch_rows=rows, weight_history=history, expected_animals=expected,
+        contexts=(), correction_lineage={"batch_id": batch_id, "completed_at": batch.get("completed_at")},
+    )
+
+
+def _batch_integrity_error(batch, rows):
+    row_ids = [_text(row.get("row_id")) for row in rows]
+    if len(rows) != int(batch.get("visible_row_count") or 0) or len(row_ids) != len(set(row_ids)):
+        return "completed_batch_row_manifest_mismatch"
+    allowed_statuses = {"success", "failed", "duplicate", "skipped", "blocked"}
+    statuses = [_text(row.get("status")).lower() for row in rows]
+    if any(status not in allowed_statuses for status in statuses):
+        return "completed_batch_status_manifest_mismatch"
+    for status, field in (("success", "success_count"), ("failed", "failed_count"),
+                          ("duplicate", "duplicate_count"), ("skipped", "skipped_row_count")):
+        count = sum(_text(row.get("status")).lower() == status for row in rows)
+        if count != int(batch.get(field) or 0):
+            return f"completed_batch_{status}_count_mismatch"
+    actionable = sum(status not in {"skipped", "duplicate"} for status in statuses)
+    if actionable != int(batch.get("actionable_row_count") or 0):
+        return "completed_batch_actionable_count_mismatch"
+    weight_rows = [row for row in rows if bool((row.get("result_json") or {}).get("has_weight"))]
+    if len(weight_rows) != int(batch.get("weight_row_count") or 0):
+        return "completed_batch_weight_count_mismatch"
+    if any(_text(row.get("status")).lower() == "success" and int(row.get("event_count") or 0) != 1
+           for row in weight_rows):
+        return "completed_batch_weight_event_binding_mismatch"
+    movement_rows = [row for row in rows if bool((row.get("result_json") or {}).get("has_pen_change"))]
+    if len(movement_rows) != int(batch.get("movement_row_count") or 0):
+        return "completed_batch_movement_count_mismatch"
+    if any(_text(row.get("status")).lower() == "success" and int(row.get("movement_event_count") or 0) != 1
+           for row in movement_rows):
+        return "completed_batch_movement_event_binding_mismatch"
+    return None
+
+
+def _batch_reproductive_state(row, batch_date):
+    farrowing_date = row.get("batch_litter_farrowing_date")
+    wean_date = row.get("batch_litter_wean_date")
+    litter_status = _text(row.get("batch_litter_status")).lower()
+    if row.get("batch_litter_id") and isinstance(farrowing_date, date) and farrowing_date <= batch_date:
+        if isinstance(wean_date, date):
+            if wean_date > batch_date:
+                return "Nursing"
+        elif litter_status not in {"weaned", "closed", "completed"}:
+            return "Nursing"
+    outcome = _text(row.get("outcome"))
+    if outcome:
+        return outcome
+    check = _text(row.get("pregnancy_check_result"))
+    if check:
+        return check
+    if row.get("latest_mating_id"):
+        return "Active mating cycle"
+    return "Unknown"
