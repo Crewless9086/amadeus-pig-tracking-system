@@ -203,7 +203,7 @@ def test_blocked_notification_outcome_store_failure_is_unproven_and_not_retried(
             store=store,token_store=object(),transport=transport,evidence_loader=loader,
             readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",observation_store=obs)
         first=run_rootline_execution_cycle(**args); replay=run_rootline_execution_cycle(**args)
-    assert first["status"]=="blocked_notification_persistence_unproven"
+    assert first["status"]=="blocked_notification_persistence_unproven" and first["success"] is False
     assert replay["telegram_messages"]==0 and len(calls)==1 and transport.calls==[]
 
 

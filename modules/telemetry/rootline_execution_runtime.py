@@ -178,7 +178,7 @@ def _technical_block_alert(initial, artifact, store, notify, next_due):
         "provider_message_id": str(delivery.get("provider_message_id") or "")})
     if not isinstance(persisted, dict) or persisted.get("success") is not True:
         return {"telegram_messages": 0, "blocked_notification_identity": identity,
-                "blocked_notification_confirmed": False,
+                "success": False, "blocked_notification_confirmed": False,
                 "blocked_notification_outcome": "persistence_unproven",
                 "status": "blocked_notification_persistence_unproven"}
     return {"telegram_messages": int(confirmed), "blocked_notification_identity": identity,
