@@ -1,5 +1,14 @@
 # Implementation Source Map
 
+## ROOTLINE canonical irrigation status and owner access
+
+- Mission: `docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md`.
+- Legacy hybrid status: `modules/telemetry/irrigation_service.py`, `/api/telemetry/irrigation/status`; `auto` falls back to `Amadeus_Irrigation_Logs` when no Supabase daily plan rows exist.
+- Canonical ROOTLINE endpoints: daily advisor, daily brief, daily irrigation plan, water-energy plan and operating policy in `modules/telemetry/telemetry_routes.py` and their services.
+- Owner access: `modules/auth/owner_access.py`, `/owner/login`, `/owner/logout`, `/owner/status`, `templates/owner-login.html` and shared `templates/_farm_nav.html`.
+- UI: `static/js/dashboard.js`, `static/js/operationsDetail.js`, `templates/dashboard.html`, `templates/irrigation.html`.
+- Rule: current operational status must not silently fall back to Sheets. Protected evidence remains protected; the UI must direct an unauthenticated owner through the existing session rail and return to the requested page.
+
 ## Oom Sakkie owner-request lifecycle
 
 ### HERDMASTER mortality intelligence consumption
