@@ -636,6 +636,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     zone = str(execution.get("zone_id") or "irrigation")
                     answer = ({"Started": f"<b>💧 IRRIGATION STARTED</b>\n\n{zone} is running for no more than 59 minutes 59 seconds.",
                                "Completed": f"<b>✅ IRRIGATION COMPLETED</b>\n\n{zone} is stopped and the supported segment is complete.",
+                               "Blocked": (f"<b>IRRIGATION WAITING</b>\n\n{zone} is ready for water but cannot start: "
+                                           f"{execution.get('blocker')}. No owner action is currently required. "
+                                           f"ROOTLINE will reassess at {execution.get('next_reassessment_at') or 'the next automatic check'}."),
                                "Intervention": (f"<b>🚨 IRRIGATION INTERVENTION</b>\n\n{zone} is stopped, but its outcome needs confirmation."
                                                 if execution.get("shutdown_verified") is True
                                                 else f"<b>🚨 IRRIGATION INTERVENTION</b>\n\n{zone} shutdown is uncertain. Automatic reuse is contained and owner attention is required.")}

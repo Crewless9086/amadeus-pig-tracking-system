@@ -7,9 +7,10 @@ and device identity always remain provider-read facts.
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import os
 
 
 _MATERIAL = {
@@ -53,14 +54,20 @@ _FERTILIZER_MATERIAL = {
     "configuration_readback_observed_at": "2026-08-10T09:29:59.974024+00:00",
     "evidence_source": "durable_owner_acceptance_and_authenticated_provider_readback",
 }
-BASELINE_VALIDITY = timedelta(days=7)
+INVALIDATION_TRIGGERS = (
+    "explicit_owner_revocation", "provider_account_change", "device_identity_change",
+    "firmware_change", "channel_mapping_change", "timer_change", "inching_change",
+    "power_restoration_change", "unexpected_output_state", "failed_shutdown",
+    "conflicting_configuration_evidence",
+)
 
 
 def commissioned_controller_baseline():
     material = deepcopy(_MATERIAL)
     digest = sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    revoked = str(os.getenv("ROOTLINE_BC_COMMISSIONED_BASELINE_REVOKED") or "").lower() == "true"
     return {**material, "baseline_id": "ROOTLINE-EWELINK-BASELINE-" + digest[:24].upper(),
-            "baseline_sha256": digest, "revoked": False}
+            "baseline_sha256": digest, "revoked": revoked}
 
 
 def commissioned_registered_device_baseline(device_id):
@@ -71,8 +78,10 @@ def commissioned_registered_device_baseline(device_id):
         return None
     value = deepcopy(material)
     digest = sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    revoked = (str(os.getenv("ROOTLINE_BC_COMMISSIONED_BASELINE_REVOKED") or "").lower() == "true"
+               if str(device_id) == _MATERIAL["device_id"] else False)
     return {**value, "baseline_id": "ROOTLINE-EWELINK-BASELINE-" + digest[:24].upper(),
-            "baseline_sha256": digest, "revoked": False}
+            "baseline_sha256": digest, "revoked": revoked}
 
 
 def validate_commissioned_baseline(value, *, device_id, firmware, observed_at):
@@ -94,8 +103,10 @@ def validate_commissioned_baseline(value, *, device_id, firmware, observed_at):
         observed = observed.astimezone(timezone.utc)
     except (AttributeError, TypeError, ValueError):
         return None
-    if observed < commissioned_at or observed > commissioned_at + BASELINE_VALIDITY:
+    if observed < commissioned_at:
         return None
     return {**deepcopy(value),
-            "valid_until": (commissioned_at + BASELINE_VALIDITY).isoformat(),
+            "valid_until": None,
+            "validity_model": "durable_until_material_invalidation",
+            "invalidation_triggers": list(INVALIDATION_TRIGGERS),
             "baseline_fresh": True}

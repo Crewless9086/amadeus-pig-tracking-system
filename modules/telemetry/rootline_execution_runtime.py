@@ -52,8 +52,10 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
         return {**_safe("canonical_observation_persistence_unproven"), "success": False}
     artifact = initial["artifact"]
     if artifact.get("eligible") is not True:
+        blocked = _technical_block_alert(initial, artifact, store, notify,
+                                         next_reassessment_at)
         return {**_safe(artifact.get("status") or "not_eligible"),
-                "execution_eligibility": artifact}
+                "execution_eligibility": artifact, **blocked}
     stored = store("record_eligibility", artifact)
     if not isinstance(stored, dict) or stored.get("success") is not True:
         return {**_safe("eligibility_persistence_unproven"), "success": False}
@@ -143,3 +145,28 @@ def _planning_observation(initial, owner, chat, next_due):
 
 def _aware(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def _technical_block_alert(initial, artifact, store, notify, next_due):
+    blocker = str(artifact.get("status") or "")
+    technical = {"controller_safety_not_dispatchable", "eligibility_persistence_unproven"}
+    candidates = [row for row in initial["plan"].get("candidate_tasks") or []
+                  if isinstance(row, dict) and row.get("zone_decision") == "Run now"]
+    if blocker not in technical or not candidates:
+        return {"telegram_messages": 0}
+    task = min(candidates, key=lambda row: (int(row.get("rank") or 999), str(row.get("task_id") or "")))
+    zone = str(task.get("task_id") or "").removeprefix("irrigation_")
+    identity = "ROOTLINE-BLOCKED-" + _digest({"zone": zone, "blocker": blocker,
+        "generation": initial["plan"].get("evidence_generation")})[:24].upper()
+    payload = {"execution_id": identity, "zone_id": zone,
+        "notification_state": "Blocked", "blocker": blocker,
+        "owner_action_required": False, "next_reassessment_at": str(next_due or "")}
+    claim = store("claim_notification", payload)
+    if not isinstance(claim, dict) or claim.get("success") is not True or claim.get("created") is False:
+        return {"telegram_messages": 0, "blocked_notification_identity": identity}
+    delivery = notify("Blocked", payload) or {}
+    confirmed = delivery.get("provider_delivery_confirmed") is True
+    store("record_notification_delivery", {**payload, "delivery_confirmed": confirmed,
+        "provider_message_id": str(delivery.get("provider_message_id") or "")})
+    return {"telegram_messages": int(confirmed), "blocked_notification_identity": identity,
+            "blocked_notification_confirmed": confirmed}
