@@ -167,14 +167,20 @@ def _technical_block_alert(initial, artifact, store, notify, next_due):
     try:
         delivery = notify("Blocked", payload)
         delivery = delivery if isinstance(delivery, dict) else {}
-        confirmed = delivery.get("provider_delivery_confirmed") is True
+        provider_id = str(delivery.get("provider_message_id") or "")
+        confirmed = delivery.get("provider_delivery_confirmed") is True and bool(provider_id)
         ambiguous = delivery.get("provider_delivery_ambiguous") is True
         outcome = "confirmed" if confirmed else "ambiguous" if ambiguous else "failed"
     except Exception:
         delivery = {}; confirmed = False; ambiguous = False; outcome = "failed"
-    store("record_notification_delivery", {**payload, "delivery_confirmed": confirmed,
+    persisted = store("record_notification_delivery", {**payload, "delivery_confirmed": confirmed,
         "delivery_ambiguous": ambiguous, "delivery_outcome": outcome,
         "provider_message_id": str(delivery.get("provider_message_id") or "")})
+    if not isinstance(persisted, dict) or persisted.get("success") is not True:
+        return {"telegram_messages": 0, "blocked_notification_identity": identity,
+                "blocked_notification_confirmed": False,
+                "blocked_notification_outcome": "persistence_unproven",
+                "status": "blocked_notification_persistence_unproven"}
     return {"telegram_messages": int(confirmed), "blocked_notification_identity": identity,
             "blocked_notification_confirmed": confirmed,
             "blocked_notification_outcome": outcome}
