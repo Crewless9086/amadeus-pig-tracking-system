@@ -65,6 +65,31 @@
   buttonless. Resolution edits the original card and callback replay is a
   no-op. This module adds no I/O or authority.
 
+## HERDMASTER genetic selection and breeding observations
+
+- Owner decision: `docs/09-vault-brain/00-governance/OWNER_DECISIONS.md`
+- Binding genetic-selection rule:
+  `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md`
+- Practical owner journey:
+  `docs/06-operations/HERDMASTER_PRACTICAL_MATING_SELECTION_PLAN.md`
+- Workflow:
+  `docs/09-vault-brain/04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md`
+- Evidence reconciliation and pair recommendation:
+  `modules/pig_weights/herdmaster_breeding_evidence.py`,
+  `modules/pig_weights/herdmaster_breeding_recommendation.py`
+- Breeding observation rail:
+  `modules/pig_weights/herdmaster_breeding_observation_service.py`,
+  `modules/pig_weights/mating_routes.py`
+- Owner surfaces:
+  existing authenticated Oom Sakkie specialist consumption and the Breeding
+  Attention/mating-board view.
+- Rule: current foundation animals use the bounded owner-declared unrelated
+  baseline unless attributable evidence proves a relationship. Pair quality is
+  determined from exact production and lineage evidence before physical group
+  capacity. A low service count means less proven, not genetically superior;
+  new boars receive controlled trials. Recommendations have zero mating or
+  movement authority.
+
 ## Rootline owner daily brief
 
 - Doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`

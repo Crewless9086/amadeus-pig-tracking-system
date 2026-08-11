@@ -74,6 +74,7 @@
 - `04-workflows/BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md`
 - `04-workflows/BEACON_CAMPAIGN_WORKFLOW.md`
 - `04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md`
+- `04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md`
 - `04-workflows/SUPABASE_MIGRATION_WORKFLOW.md`
 - `05-playbooks/*.md`
 
@@ -85,6 +86,7 @@
 - `07-standards/AGENT_AUTHORITY_MATRIX.md`
 - `07-standards/AGENTIC_ARCHITECTURE_STANDARD.md`
 - `08-business-rules/*.md`
+- `08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md`
 - `09-examples/*.md`
 - `10-source-map/*.md`
 - `10-source-map/REPO_CLEANUP_STATUS.md`

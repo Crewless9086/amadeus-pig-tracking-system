@@ -1,5 +1,14 @@
 # Vault Brain Changelog
 
+## 2026-08-11 - HERDMASTER foundation-herd genetic selection
+
+- Recorded Charl's bounded declaration that the current foundation breeding population is operationally unrelated unless attributable evidence proves otherwise; this is not verified ancestry and does not extend automatically to descendants.
+- Required exact sow and boar identity for all future attributable litters and offspring so later relatedness exclusions become real.
+- Replaced service-count-led preference with an evidence hierarchy centred on survival, comparable growth, maternal recovery/performance, exact pair history, known relationships and useful line diversity.
+- Classified Prince and future new boars as controlled trials until attributable results support wider use.
+- Required genetic/production pairing quality before whole-round physical capacity, with normally two or three females per immediate boar group and a persistent sequenced backlog.
+- Bound the worklist to the existing breeding-observation rail and Oom Sakkie/Breeding Attention owner journey.
+
 ## 2026-08-10 - Governance availability and outcome-bound proof
 
 - Added a mandatory governance preflight in both the Control Tower workspace and the target terminal's own `HEAD`.

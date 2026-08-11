@@ -1,5 +1,12 @@
 # Next Steps
 
+## Active HERDMASTER genetic-selection outcome - 2026-08-11
+
+- Apply `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md` to the current breeding population.
+- Rebuild the mating worklist from exact sow-boar litter, survival, comparable growth, recovery/mothering, relationship and observation evidence; do not prefer Prince merely because he has one service.
+- Produce one capacity-aware Afrikaans Oom Sakkie worklist with primary/reserve evidence classes, a bounded Prince trial group, immediate boar groups, sequenced overflow and genuine observation gaps.
+- Reuse the current append-only breeding-observation rail and persist future exact parentage. No recommendation is a recorded mating.
+
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
 
 ## 2026-08-10 P0 - Outcome-Bound Terminal Operation

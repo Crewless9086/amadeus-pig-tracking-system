@@ -86,6 +86,10 @@ Herdmaster may rank evidence-qualified pairings using:
 
 Each recommendation must name supporting evidence, exclusions, uncertainty, and the owner decision required. Herdmaster must not infer heat, pregnancy, fertility, soundness, genetics, or physical suitability from missing evidence.
 
+The current foundation breeding population follows Charl's bounded unrelated-owner baseline in `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md`. Rank exact combination merit before applying physical capacity. Do not equate low service workload with genetic superiority. Classify each choice as Proven repeat, Supported cross, Corrective cross, Controlled trial, or Limited evidence. Prince and every future new boar must receive a purposeful bounded trial rather than automatic preference or blanket exclusion.
+
+After individual pair assessment, create one whole-round allocation grouped by boar. The normal initial physical limit is two or three females per immediate boar group, but equal distribution is not required and capacity may not override known relationship or production evidence. Females outside the immediate group remain sequenced and visible until an attributable mating or genuine hold is recorded.
+
 ## Agentic operating loop — primary owner workflow
 
 OOM SAKKIE is the primary owner interface for ordinary breeding work.
@@ -112,6 +116,12 @@ facts but does not yet append them. A mating may be created only after one
 exact owner approval bound to the female, male, evidence generation and mating
 date. CORE may later provide scheduling and delivery, but is not the owner of
 breeding reasoning and is not a prerequisite for the HERDMASTER workflow.
+
+The ordinary Oom Sakkie journey must reuse the append-only observation rail for
+grouped natural reports while binding every fact to its exact female and
+observation time. The Breeding Attention/mating board remains the owner recovery
+surface. Do not create a second observation store or require Charl to repeat a
+fact already captured through either governed entry point.
 
 ## Authority and safety
 
