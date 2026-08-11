@@ -1996,6 +1996,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("litter_attention", js)
         self.assertIn('href="/pigs"', template)
         self.assertIn('href="/matings"', template)
+        self.assertIn('href="/api/pig-weights/breeding-attention/view"', template)
 
     def test_slaughter_sale_form_uses_supabase_sales_transaction_endpoints(self):
         template = Path("templates/slaughter-sale.html").read_text(encoding="utf-8")

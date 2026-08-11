@@ -128,7 +128,7 @@ class MatingRoutesTests(unittest.TestCase):
     def test_breeding_attention_owner_view_is_guarded(self, _guard):
         response = self.client.get("/api/pig-weights/breeding-attention/view")
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Breeding Attention", response.data)
+        self.assertIn(b"Teel-aandag", response.data)
 
     @patch("modules.pig_weights.mating_routes.require_owner_read_access", return_value=None)
     @patch("modules.pig_weights.mating_routes.list_observations")
