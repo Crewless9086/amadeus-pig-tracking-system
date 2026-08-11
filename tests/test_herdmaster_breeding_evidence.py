@@ -136,6 +136,45 @@ def test_overdue_positive_mating_remains_unresolved_expected_farrow_hold():
     assert assessment["whole_round_allocation"]["not_currently_eligible"][0]["name"] == "Sally"
 
 
+def test_unlinked_farrowed_mating_fails_closed_despite_old_pregnant_check():
+    data = snapshot(mating_events=[{
+        "mating_id":"MAT-DONE", "sow_pig_id":"SOW", "boar_pig_id":"BOAR",
+        "mating_date":"2026-01-12", "pregnancy_check_date":"2026-05-02",
+        "pregnancy_check_result":"Pregnant", "outcome":"Farrowed",
+        "farrowing_date":None, "related_litter_id":None,
+    }])
+    reconciled = reconcile_breeding_evidence(data, today=TODAY)
+    assert reconciled["females"][0]["current_cycle"]["state"] == "missing_evidence"
+    case = evaluate_breeding_attention(reconciled, today=TODAY)["cases"][0]
+    assert case["pairing_assessment"] == "not_eligible"
+    assert case["recommended_boar"] is None
+
+
+def test_farrowed_mating_with_one_attributable_weaned_litter_stays_closed():
+    mating = {
+        "mating_id":"MAT-DONE", "sow_pig_id":"SOW", "boar_pig_id":"BOAR",
+        "mating_date":"2026-01-12", "pregnancy_check_date":"2026-05-02",
+        "pregnancy_check_result":"Pregnant", "outcome":"Farrowed",
+        "farrowing_date":None, "related_litter_id":None,
+    }
+    litter = {"litter_id":"LIT-DONE", "sow_pig_id":"SOW", "boar_pig_id":"BOAR",
+        "farrowing_date":"2026-05-18", "born_alive":9, "wean_date":"2026-06-22", "weaned_count":8}
+    reconciled = reconcile_breeding_evidence(snapshot(mating_events=[mating], litters=[litter]), today=TODAY)
+    assert reconciled["females"][0]["current_cycle"]["state"] == "no_active_cycle"
+    assert evaluate_breeding_attention(reconciled, today=TODAY)["cases"][0]["pairing_assessment"] == "recommended"
+
+
+def test_weaned_litter_without_explicit_readiness_stays_in_recovery():
+    data = snapshot(litters=[{"litter_id":"LIT-WEANED", "sow_pig_id":"SOW", "boar_pig_id":"BOAR",
+        "farrowing_date":"2026-06-01", "born_alive":8, "wean_date":"2026-07-01", "weaned_count":7}])
+    data["pigs"][0]["current_cycle"] = {"state":"missing_evidence"}
+    reconciled = reconcile_breeding_evidence(data, today=TODAY)
+    assert reconciled["females"][0]["current_cycle"]["state"] == "post_weaning_recovery"
+    case = evaluate_breeding_attention(reconciled, today=TODAY)["cases"][0]
+    assert case["state"] == "recovering"
+    assert case["recommended_boar"] is None
+
+
 def test_unchanged_replay_and_input_row_reordering_are_deterministic():
     data=snapshot();first=reconcile_breeding_evidence(data,today=TODAY)
     reordered=deepcopy(data);reordered["pigs"].reverse();reordered["location_events"].reverse()

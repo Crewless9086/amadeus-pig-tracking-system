@@ -192,12 +192,14 @@ def _cycles(snapshot, breeders, pairings, litters, conflict_sows, today):
         ordered=sorted(matings[pid],key=lambda row:(_date(row.get("mating_date")) or date.min,_text(row.get("mating_id"))))
         unresolved=[row for row in ordered if 0 <= (today-_date(row.get("mating_date"))).days <= 125 and not row.get("farrowing_date") and not row.get("related_litter_id") and _norm(row.get("outcome")) not in terminal]
         latest_mating=unresolved[-1] if unresolved else None
-        overdue_positive=[row for row in ordered if _date(row.get("mating_date")) and (today-_date(row.get("mating_date"))).days > 125 and not row.get("farrowing_date") and not row.get("related_litter_id") and (_norm(row.get("pregnancy_check_result")) in {"pregnant","positive"} or _norm(row.get("outcome")) in {"pregnant","positive"})]
-        latest_overdue=overdue_positive[-1] if overdue_positive else None
         recent_litters=sorted((row for row in litter_rows[pid] if _date(row.get("farrowing_date")) and _date(row.get("farrowing_date"))<=today),key=lambda row:(_date(row.get("farrowing_date")),row["litter_id"]))
         latest_litter=recent_litters[-1] if recent_litters else None
+        unresolved_farrowed=[row for row in ordered if _norm(row.get("outcome"))=="farrowed" and not _farrowing_is_attributable(row,recent_litters)]
+        overdue_positive=[row for row in ordered if _date(row.get("mating_date")) and (today-_date(row.get("mating_date"))).days > 125 and not row.get("farrowing_date") and not row.get("related_litter_id") and _norm(row.get("outcome")) not in terminal and (_norm(row.get("pregnancy_check_result")) in {"pregnant","positive"} or _norm(row.get("outcome")) in {"pregnant","positive"})]
+        latest_overdue=overdue_positive[-1] if overdue_positive else None
         conflicts=[]; recovered=False
         if pid in conflict_sows: conflicts.append("mating or litter identity has conflicting canonical rows")
+        if unresolved_farrowed: conflicts.append("farrowed outcome lacks one attributable litter or farrowing record")
         state=_norm(supplied.get("state") or "missing_evidence")
         if conflicts:
             supplied={"state":"missing_evidence","conflicts":sorted(conflicts)}
@@ -206,6 +208,9 @@ def _cycles(snapshot, breeders, pairings, litters, conflict_sows, today):
             supplied={"state":"nursing","last_litter_id":latest_litter["litter_id"],"farrowing_date":latest_litter["farrowing_date"]}
         elif latest_overdue:
             supplied={"state":"unresolved_expected_farrow","mating_id":latest_overdue.get("mating_id"),"mating_date":latest_overdue.get("mating_date"),"pregnancy_check_date":latest_overdue.get("pregnancy_check_date"),"pregnancy_check_result":latest_overdue.get("pregnancy_check_result") or latest_overdue.get("outcome"),"reason":"positive pregnancy lifecycle remains unresolved beyond the current-farrowing applicability boundary"}
+            recovered=True
+        elif latest_litter and latest_litter.get("wean_date") and latest_mating is None and state not in {"no_active_cycle","eligible_for_mating_review"}:
+            supplied={"state":"post_weaning_recovery","last_litter_id":latest_litter["litter_id"],"farrowing_date":latest_litter["farrowing_date"],"wean_date":latest_litter["wean_date"],"weaned_count":latest_litter.get("weaned_count")}
             recovered=True
         elif state in active_states:
             if not latest_mating:
@@ -224,6 +229,25 @@ def _cycles(snapshot, breeders, pairings, litters, conflict_sows, today):
         result[pid]={"status":"conflicting" if conflicts else "recovered" if recovered else "confirmed_projection","cycle":supplied,"conflicts":sorted(conflicts)}
     result["__current_matings__"]=dict(sorted(current.items()))
     return result
+
+
+def _farrowing_is_attributable(mating, litters):
+    if _date(mating.get("farrowing_date")) or _text(mating.get("related_litter_id")):
+        return True
+    mating_date=_date(mating.get("mating_date"))
+    if mating_date is None:
+        return False
+    boar_id=_text(mating.get("boar_pig_id"))
+    candidates=[]
+    for litter in litters:
+        farrowing_date=_date(litter.get("farrowing_date"))
+        litter_boar=_text(litter.get("boar_pig_id"))
+        if farrowing_date is None or not 100 <= (farrowing_date-mating_date).days <= 130:
+            continue
+        if boar_id and litter_boar and boar_id != litter_boar:
+            continue
+        candidates.append(litter)
+    return len(candidates)==1
 
 
 def _reservations(snapshot, pig_ids, today):
