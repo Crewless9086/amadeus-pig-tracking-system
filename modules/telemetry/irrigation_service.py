@@ -19,9 +19,7 @@ def get_irrigation_status(today=None, spreadsheet_name=None):
         else os.getenv(IRRIGATION_SHEET_NAME_ENV, DEFAULT_IRRIGATION_SHEET_NAME)
     ).strip()
     today = str(today or _today_za()).strip()
-    default_source = "google_sheets" if spreadsheet_name is not None else "supabase"
-    source_preference = (default_source if spreadsheet_name is not None else
-                         os.getenv(IRRIGATION_STATUS_SOURCE_ENV, default_source).strip().lower())
+    source_preference = "google_sheets" if spreadsheet_name is not None else "supabase"
 
     if source_preference != "google_sheets":
         from modules.telemetry.rootline_owner_status import get_rootline_owner_status

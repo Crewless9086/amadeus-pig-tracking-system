@@ -33,7 +33,7 @@ def specialist(_evidence, *_args, **_kwargs):
 
 
 @patch("modules.telemetry.rootline_owner_status._runtime_and_notification",
-       return_value=({}, {"state": "not_sent", "provider_confirmed": False}))
+       return_value=({}, {}, {"state": "not_sent", "provider_confirmed": False}))
 @patch("modules.telemetry.rootline_owner_status.read_canonical_irrigation_history",
        return_value={"zones": {"B12345": {"verified_completed_days": [], "complete_through": NOW.isoformat()},
                                "C12345": {"verified_completed_days": [], "complete_through": NOW.isoformat()}}})

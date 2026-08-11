@@ -168,6 +168,9 @@ def telemetry_weather_current():
 
 @telemetry_bp.route("/telemetry/irrigation/status", methods=["GET"])
 def telemetry_irrigation_status():
+    guard = require_strict_owner_read_access()
+    if guard:
+        return guard
     result, status_code = get_irrigation_status(request.args.get("date"))
     return jsonify(result), status_code
 
@@ -178,7 +181,7 @@ def telemetry_irrigation_status_legacy_audit():
     if guard:
         return guard
     result, status_code = get_irrigation_status(
-        request.args.get("date"), spreadsheet_name=request.args.get("spreadsheet") or "Amadeus_Irrigation_Logs")
+        request.args.get("date"), spreadsheet_name="Amadeus_Irrigation_Logs")
     result.setdefault("source", {})["operational_truth"] = False
     result["source"]["classification"] = "legacy_read_only_audit"
     return jsonify(result), status_code

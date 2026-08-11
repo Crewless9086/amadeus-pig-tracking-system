@@ -20,7 +20,7 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
         evidence = _canonical_evidence(database_url, operating_date, now)
         specialist = _specialist_projection(evidence, operating_date, now)
         history = read_canonical_irrigation_history(database_url, now=now)
-        runtime, notification = _runtime_and_notification(database_url)
+        runtime, latest_outcome, notification = _runtime_and_notification(database_url)
     except Exception as exc:
         return _failure("canonical_status_read_failed", exc), 503
     recommendations = {item.get("subject"): item for item in
@@ -76,6 +76,14 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
                       "next_reassessment": specialist.get("next_reassessment", {})},
         "notification": notification,
         "execution": runtime,
+        "latest_execution_outcome": latest_outcome,
+        "fertilizer": {"classification": "irrigation_auxiliary_only",
+            "mixing_enabled": str(os.getenv("ROOTLINE_FERTILIZER_MIXING_ENABLED") or "").lower() == "true",
+            "injection_enabled": str(os.getenv("ROOTLINE_FERTILIZER_INJECTION_ENABLED") or "").lower() == "true",
+            "mixer_native_auto_off_seconds": 300,
+            "injection_native_auto_off_seconds": 120,
+            "mixing_commissioned": False, "injection_commissioned": False,
+            "reason": "Physical commissioning evidence is not present on the canonical auxiliary rail."},
         "operator_summary": {"headline": specialist.get("overall_status") or "Needs Data",
                              "notes": [specialist.get("owner_brief", {}).get("why", ["Canonical status available."])[0]]},
         "safety": {"read_only": True, "can_control": False,
@@ -94,7 +102,10 @@ def _canonical_evidence(database_url, operating_date, now):
                                       temperature_c,wind_speed_kmh,updated_at
                 from public.weather_latest_state order by reading_at desc limit 1""")
             row = cursor.fetchone()
-            result["weather"] = ({"status": "fresh", "observed_at": row[0].isoformat(),
+            age_minutes = ((now.astimezone(timezone.utc) - row[0].astimezone(timezone.utc)).total_seconds() / 60
+                           if row else None)
+            result["weather"] = ({"status": "fresh" if 0 <= age_minutes <= 15 else "stale",
+                "age_minutes": round(age_minutes, 1), "observed_at": row[0].isoformat(),
                 "rain_rate_mm_h": float(row[1]) if row[1] is not None else None,
                 "rain_today_mm": float(row[2]) if row[2] is not None else None,
                 "temperature_c": float(row[3]) if row[3] is not None else None,
@@ -104,6 +115,12 @@ def _canonical_evidence(database_url, operating_date, now):
                 where (zone_id,created_at) in (select zone_id,max(created_at)
                     from public.irrigation_water_balance_events group by zone_id)""")
             result["water_balance"] = {zone: value for zone, value in cursor.fetchall()}
+            for value in result["water_balance"].values():
+                complete = _timestamp(value.get("complete_through"))
+                age = ((now.astimezone(timezone.utc) - complete.astimezone(timezone.utc)).total_seconds() / 60
+                       if complete else None)
+                value["freshness"] = "fresh" if age is not None and 0 <= age <= 1440 else "stale"
+                value["age_minutes"] = round(age, 1) if age is not None else None
             cursor.execute("""select storage_state,reservoir_state,observed_at,
                                       storage_fraction_numerator,storage_fraction_denominator,
                                       reservoir_fraction_numerator,reservoir_fraction_denominator
@@ -129,23 +146,26 @@ def _specialist_projection(evidence, operating_date, now):
     selected = str(operating_date or evidence.get("operating_date"))[:10]
     weather = evidence.get("weather") or {}
     reassessment = evidence.get("reassessment")
-    rain = weather.get("rain_rate_mm_h")
-    if rain is not None and rain > 0.2:
-        state, reason = "Hold", "Fresh observed rain is above the live-rain threshold."
-    elif reassessment is None:
-        state, reason = "Needs Data", "The scheduler has not persisted a current operating-date decision."
-    else:
-        answer = str(reassessment.get("answer") or "")
-        state = "Hold" if "Hold" in answer else "Needs Data"
-        reason = "Current scheduler decision is available." if answer else "Current scheduler decision payload is incomplete."
-    recommendations = [{"subject": zone, "status": state, "reason": reason,
-        "planned_duration_minutes": 60 if state in {"Hold", "Needs Data"} else None,
-        "preferred_window": "next scheduler-owned eligible window", "needs": []}
-        for zone in ("B12345", "C12345")]
+    typed = reassessment.get("zones") if isinstance(reassessment, dict) else None
+    typed = {str(row.get("zone_id")): row for row in typed
+             if isinstance(row, dict) and row.get("zone_id") in ZONE_NAMES} if isinstance(typed, list) else {}
+    recommendations = []
+    for zone in ("B12345", "C12345"):
+        row = typed.get(zone, {})
+        state = str(row.get("decision") or row.get("status") or "")
+        state = state if state in {"Run", "Hold", "Needs Data", "Not Due"} else "Needs Data"
+        reason = (str(row.get("reason") or row.get("eligibility_blocker") or "").strip()
+                  or "The scheduler has not persisted a typed current operating-date decision.")
+        recommendations.append({"subject": zone,
+            "status": {"Run": "Recommend", "Not Due": "Do Not Run"}.get(state, state),
+            "reason": reason, "planned_duration_minutes": row.get("planned_duration_minutes"),
+            "preferred_window": row.get("feasible_window"), "needs": []})
+    overall = next((item["status"] for item in recommendations if item["status"] != "Needs Data"),
+                   "Needs Data")
     return {"result_id": reassessment.get("result_id") if reassessment else None,
         "generation": reassessment.get("evidence_generation") if reassessment else None,
         "operating_date": selected, "evidence_cutoff": weather.get("observed_at"),
-        "overall_status": state, "current_local_weather": weather,
+        "overall_status": overall, "current_local_weather": weather,
         "forecast": {"status": "kept_separate"}, "water_observations": evidence.get("water", {}),
         "next_reassessment": {"trigger": "scheduler_due_or_material_evidence_change",
             "at": reassessment.get("next_reassessment_at") if reassessment else None},
@@ -155,6 +175,7 @@ def _specialist_projection(evidence, operating_date, now):
 def _runtime_and_notification(database_url):
     import psycopg
     runtime = {}
+    latest_outcome = {}
     notification = {"state": "not_sent", "provider_confirmed": False,
                     "reason": "No current execution notification exists."}
     with psycopg.connect(database_url, connect_timeout=10) as connection:
@@ -166,18 +187,28 @@ def _runtime_and_notification(database_url):
                 order by created_at desc limit 200""")
             events = [(created, value if isinstance(value, dict) else json.loads(value))
                       for created, value in cursor.fetchall()]
-            terminal = set()
+            by_execution = {}
             for created, item in events:
                 execution = str(item.get("execution_id") or "")
-                action = str(item.get("action") or "")
-                if action in {"record_completed", "contain_zone", "record_ambiguous_shutdown",
-                              "record_claim_recovery"}:
-                    terminal.add(execution)
-                if not runtime and action in {"claim_before_on", "mark_active", "record_completed",
-                                               "contain_zone", "record_ambiguous_shutdown"}:
-                    runtime = {**item, "observed_at": created.isoformat()}
+                if execution:
+                    by_execution.setdefault(execution, []).append((created, item))
+            terminal_actions = {"record_completed", "contain_zone", "record_ambiguous_shutdown",
+                                "record_claim_recovery"}
+            for execution, execution_events in by_execution.items():
+                actions = {str(item.get("action") or "") for _, item in execution_events}
+                newest_at, newest = execution_events[0]
+                terminal = next(((created, item) for created, item in execution_events
+                                 if item.get("action") in terminal_actions), None)
+                if terminal and not latest_outcome:
+                    latest_outcome = {**terminal[1], "observed_at": terminal[0].isoformat()}
+                if not runtime and "claim_before_on" in actions and not terminal:
+                    active = next(((created, item) for created, item in execution_events
+                                  if item.get("action") in {"mark_active", "claim_before_on"}),
+                                  (newest_at, newest))
+                    runtime = {**active[1], "observed_at": active[0].isoformat()}
             for created, item in events:
-                if item.get("action") == "record_notification_delivery":
+                if (runtime and item.get("action") == "record_notification_delivery"
+                        and item.get("execution_id") == runtime.get("execution_id")):
                     notification = {"state": item.get("notification_state") or "unknown",
                                     "provider_confirmed": item.get("delivery_confirmed") is True,
                                     "provider_message_id": item.get("provider_message_id"),
@@ -185,7 +216,7 @@ def _runtime_and_notification(database_url):
                     break
             if runtime and runtime.get("execution_id") not in terminal and runtime.get("state") != "Completed":
                 runtime["state"] = runtime.get("state") or "claimed"
-    return runtime, notification
+    return runtime, latest_outcome, notification
 
 
 def _decision(value):
@@ -223,6 +254,14 @@ def _completed_minutes(runtime):
         return float((runtime.get("objective_evidence") or {}).get("verified_runtime_minutes") or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _timestamp(value):
+    try:
+        result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return result if result.tzinfo is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _failure(status, exc=None):
