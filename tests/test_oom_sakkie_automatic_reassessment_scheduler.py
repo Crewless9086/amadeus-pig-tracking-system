@@ -136,6 +136,10 @@ def test_gateway_scheduled_unchanged_records_receipt_and_zero_io():
     from modules.oom_sakkie.rootline_reassessment_lifecycle import _material_digest
     digest = _material_digest(material)
     def state(action, identity, payload):
+        if action == "record_observation":
+            created = identity not in state_rows
+            state_rows.setdefault(identity, payload)
+            return {"success": True, "created": created}
         if action == "load_delivered":
             return {"owner_user_id": "42", "chat_id": "42", "material_digest": digest,
                     "delivery_state": "delivered", "provider_message_id": "3240"}
@@ -210,6 +214,10 @@ def test_scheduler_denies_unknown_or_configured_family_before_load_delivery_or_e
 def test_scheduled_ambiguous_delivery_is_contained_and_never_claimed_complete():
     rows, schedules = memory_store(); state_rows = {}
     def state(action, identity, payload):
+        if action == "record_observation":
+            created = identity not in state_rows
+            state_rows.setdefault(identity, payload)
+            return {"success": True, "created": created}
         if action == "load_delivered": return None
         if action == "load_identity": return state_rows.get(identity)
         if action == "claim_pending":
@@ -265,6 +273,10 @@ def test_material_change_notifies_once_then_next_bucket_is_silent():
                                      "at": "2026-08-05T10:30:00+02:00"},
                "owner_brief": {"family_fact_needed": "Current storage level?"}}
     def state(action, identity, payload):
+        if action == "record_observation":
+            created = identity not in events
+            events.setdefault(identity, payload)
+            return {"success": True, "created": created}
         if action == "load_delivered": return delivered[-1] if delivered else None
         if action == "load_identity": return events.get(identity)
         if action == "claim_pending":
@@ -297,3 +309,8 @@ def test_material_change_notifies_once_then_next_bucket_is_silent():
     assert first["telegram_sends"] == 1 and replay["status"] == "scheduled_reassessment_replayed_noop"
     assert unchanged["status"] == "rootline_reassessment_unchanged" and unchanged["telegram_sends"] == 0
     assert len(sends) == 1
+    observations = [row for row in events.values()
+                    if row.get("delivery_state") == "observation_only"]
+    assert len(observations) == 2
+    assert {row["evidence_cutoff"] for row in observations} == {
+        "2026-08-05T10:14:00+02:00", "2026-08-05T10:29:00+02:00"}

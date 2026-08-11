@@ -14,6 +14,9 @@ def current(status="Hold"):
 def memory_store():
     rows={}
     def store(action,identity,payload):
+        if action=="record_observation":
+            if identity in rows:return {"success":True,"created":False}
+            rows[identity]=payload;return {"success":True,"created":True}
         if action=="load_delivered":
             found=[v for v in rows.values() if v.get("delivery_state")=="delivered" and f'{v["owner_user_id"]}|{v["chat_id"]}'==identity]
             return found[-1] if found else None
