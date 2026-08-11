@@ -8,6 +8,11 @@ const worklistTasks = document.getElementById("breeding_worklist_tasks");
 let rows = [];
 let activeRow = null;
 let acceptedPreviewPayload = null;
+const observationCache = new Map();
+const placementByPig = new Map();
+const heldByPig = new Map();
+const localPreview = new URLSearchParams(window.location.search).get("preview") === "animal-evidence-v2";
+function apiUrl(path) { return localPreview ? `/preview/api${path}` : `/api/pig-weights${path}`; }
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -22,20 +27,97 @@ function afEvidenceClass(value) {
     "Limited evidence": "Beperkte bewyse",
   })[value] || "Beperkte bewyse";
 }
+function afState(value) {
+  return ({
+    "Post-litter recovery": "Herstel ná werpsel",
+    "Pregnancy evidence": "Dragtigheidsbewys",
+    "Needs Data": "Benodig duidelikheid",
+    "Expected to farrow — overdue evidence review": "Verwagte jong-uitkoms nog nie afgesluit nie",
+    "Historical pregnancy result; current status Unknown": "Vorige dragtigheidsuitslag; huidige toestand onbekend",
+    "Assumed Pregnant": "Waarskynlik dragtig",
+    "Inconclusive": "Onbeslis",
+    "Ready for review": "Gereed vir hersiening",
+  })[value] || value || "Onbekend";
+}
+function afHoldReason(value) {
+  const text = String(value || "");
+  if (text.includes("canonical mating was") && text.includes("days ago")) {
+    const days = text.match(/was (\d+) days ago/)?.[1];
+    return `Die huidige paring is ${days || "verskeie"} dae gelede; die siklusuitkoms moet eers afgesluit word.`;
+  }
+  if (text.includes("pregnancy result does not establish current pregnancy status")) return "Die vorige dragtigheidsuitslag bewys nie die huidige toestand nie.";
+  if (text.includes("current litter closes the prior mating cycle") || text.includes("remains unweaned")) return "’n Huidige werpsel is nog aktief of ongespeen.";
+  if (text.includes("Assumed Pregnant")) return "Waarskynlik dragtig volgens huidige waarneming; nie klinies bevestig nie.";
+  if (text.includes("Inconclusive")) return "Die huidige voortplantingsiklus bly onbeslis.";
+  return text || "Huidige lewensiklus blokkeer plasing.";
+}
+function practicalAttention(row) {
+  const held = heldByPig.get(row.pig_id);
+  if (held) return afHoldReason(held.reason || held.state);
+  const assignment = placementByPig.get(row.pig_id);
+  if (assignment) return "Geen huidige blokker; kontroleer die gekose beer voor plasing.";
+  const conflicts = row.conflicting_facts || [];
+  if (conflicts.length) return `Teenstrydig: ${conflicts.join("; ")}`;
+  if ((row.current_state || "").includes("overdue")) return "Die verwagte jong-/dragtigheidsiklus moet eers afgesluit word.";
+  if (row.current_state === "Post-litter recovery") return "Bevestig die werklike speenuitkoms en hersteltoestand.";
+  return "Geen dringende menslike aksie uit die huidige plan nie.";
+}
+function planCell(row) {
+  const assignment = placementByPig.get(row.pig_id);
+  if (assignment) return `<div class="breeding-plan-cell"><span class="breeding-plan-badge ${assignment.kind === "immediate" ? "is-now" : "is-next"}">${assignment.kind === "immediate" ? "Plaas nou" : "Volgende groep"}</span><strong>${escapeHtml(assignment.boar_name)}</strong><small>${escapeHtml(assignment.start_date)} tot ${escapeHtml(assignment.end_date)}</small><small>${escapeHtml(afEvidenceClass(assignment.evidence_class))}</small></div>`;
+  const held = heldByPig.get(row.pig_id);
+  if (held) return `<div class="breeding-plan-cell"><span class="breeding-plan-badge is-held">Hou terug</span><small>${escapeHtml(afHoldReason(held.reason || held.state))}</small></div>`;
+  return `<span class="breeding-plan-none">Nog nie in die huidige plasingsplan nie.</span>`;
+}
 function render() {
   const selected = filter.value;
   const visible = selected ? rows.filter(row => row.filter_state === selected) : rows;
   body.innerHTML = visible.length ? visible.map(row => {
-    const dates = row.evidence_dates || {};
-    const facts = [...(row.missing_facts || []), ...(row.conflicting_facts || [])];
-    return `<tr><td data-label="Dier"><a class="detail-link" href="${escapeHtml(row.animal_href)}">${escapeHtml(row.tag_number || row.pig_id)}</a></td>
-      <td data-label="Huidige toestand">${escapeHtml(row.current_state)}</td><td data-label="Bewysdatums">Paring: ${escapeHtml(dates.latest_mating || "Onbekend")}<br>Werpsel: ${escapeHtml(dates.latest_litter || "Onbekend")}</td>
-      <td data-label="Varsheid">${escapeHtml(row.freshness || "Onbekend")}</td><td data-label="Sekerheid">${escapeHtml(row.confidence || "Onbekend")}</td>
-      <td data-label="Ontbrekend / teenstrydig">${escapeHtml(facts.join("; ") || "Geen bewysde gaping")}</td><td data-label="Volgende stap">${escapeHtml(row.recommended_human_action)}</td>
+    return `<tr><td data-label="Dier"><a class="detail-link" href="${escapeHtml(row.animal_href)}">${escapeHtml(row.tag_number || row.pig_id)}</a><span class="breeding-animal-id">${escapeHtml(row.pig_id)}</span></td>
+      <td data-label="Jongste waarneming">${observationSummaryCell(row)}</td>
+      <td data-label="Teelplan">${planCell(row)}</td>
+      <td data-label="Huidige toestand"><strong>${escapeHtml(afState(row.current_state))}</strong><span class="breeding-confidence">Bewyssekerheid: ${escapeHtml(row.confidence || "Onbekend")}</span></td>
+      <td data-label="Werklike aandag">${escapeHtml(practicalAttention(row))}</td><td data-label="Volgende stap">${escapeHtml(placementByPig.has(row.pig_id) ? "Volg die plasingsplan en teken die werklike diens later aan." : heldByPig.has(row.pig_id) ? "Sluit die genoemde lewensiklus of houvas met werklike bewyse af." : "Hersien net wanneer nuwe feite beskikbaar is.")}</td>
       <td class="breeding-row-action"><button type="button" class="secondary-button observation-review" data-pig-id="${escapeHtml(row.pig_id)}">Besonderhede / Neem waar</button></td></tr>`;
-  }).join("") : `<tr><td colspan="8" class="table-empty">Geen diere in hierdie aandagstatus nie.</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="table-empty">Geen diere in hierdie aandagstatus nie.</td></tr>`;
+  hydrateVisibleObservations(visible);
+}
+
+function observationSummaryCell(row) {
+  const cached = observationCache.get(row.pig_id);
+  if (!cached) return `<span class="breeding-observation-loading">Laai dier se waarneming…</span>`;
+  if (cached.status === "error") return `<span class="breeding-observation-unavailable">Waarneming nie beskikbaar nie — dit beteken nie geen rekord nie.</span>`;
+  const item = cached.latest;
+  if (!item) return `<span class="breeding-observation-empty">Nog geen teelwaarneming aangeteken nie.</span>`;
+  const facts = observationFactSummary(item);
+  const when = new Date(item.observed_at).toLocaleString("af-ZA", {dateStyle:"medium", timeStyle:"short"});
+  return `<div class="breeding-latest-observation">
+    <div><span class="breeding-recorded-badge">Aangeteken</span><time>${escapeHtml(when)}</time></div>
+    <p>${escapeHtml(item.factual_note || "Feitelike nota nie beskikbaar nie.")}</p>
+    ${facts.length ? `<ul>${facts.slice(0, 4).map(fact => `<li>${escapeHtml(fact)}</li>`).join("")}</ul>` : ""}
+    ${item.measurements?.follow_up ? `<small><strong>Opvolg:</strong> ${escapeHtml(item.measurements.follow_up)}</small>` : ""}
+  </div>`;
+}
+
+async function hydrateVisibleObservations(visible) {
+  const pending = visible.filter(row => !observationCache.has(row.pig_id));
+  if (!pending.length) return;
+  pending.forEach(row => observationCache.set(row.pig_id, {status:"loading"}));
+  await Promise.all(pending.map(async row => {
+    try {
+      const response = await fetch(apiUrl(`/breeding-attention/${encodeURIComponent(row.pig_id)}/observations`));
+      const data = await response.json();
+      observationCache.set(row.pig_id, response.ok && data.success
+        ? {status:"ready", latest:(data.history || [])[0] || null}
+        : {status:"error"});
+    } catch (_) {
+      observationCache.set(row.pig_id, {status:"error"});
+    }
+  }));
+  render();
 }
 function renderWorklist(loop) {
+  placementByPig.clear(); heldByPig.clear();
   if (!loop || loop.success !== true) {
     worklistStatus.textContent = "Werklys is nie beskikbaar nie — dit beteken nie nul nie.";
     worklistTasks.innerHTML = "";
@@ -44,10 +126,12 @@ function renderWorklist(loop) {
   worklistStatus.textContent = `${loop.task_count} huidige taak/take; week van ${loop.week_start}. Waarneming, paring en herinnering-uitvoering is afgeskakel.`;
   const schedule = loop.placement_cohorts;
   if (schedule && Array.isArray(schedule.cohorts)) {
-    worklistTasks.innerHTML = schedule.cohorts.map(cohort => `<section class="breeding-cohort" data-cohort-kind="${escapeHtml(cohort.kind)}">
-      <h3>${cohort.kind === "immediate" ? "Plaas môre / huidige groep" : "Volgende groep"}: ${escapeHtml(cohort.boar_name)} — ${escapeHtml(cohort.start_date)} tot ${escapeHtml(cohort.end_date)}</h3>
-      ${cohort.females.map(row => `<article class="breeding-task"><strong><a class="detail-link" href="/pig/${encodeURIComponent(row.pig_id)}">${escapeHtml(row.name)}</a></strong><span>${escapeHtml(afEvidenceClass(row.evidence_class))}; reserwe ${escapeHtml(row.reserve_boar || "Geen")}</span></article>`).join("")}
-    </section>`).join("") + (schedule.held?.length ? `<section class="breeding-cohort held"><h3>Later / werklike houvas</h3>${schedule.held.map(row => `<p><strong>${escapeHtml(row.name)}</strong>: ${escapeHtml(row.state)}</p>`).join("")}</section>` : "");
+    schedule.cohorts.forEach(cohort => cohort.females.forEach(row => placementByPig.set(row.pig_id, {...row, kind:cohort.kind, boar_name:cohort.boar_name, start_date:cohort.start_date, end_date:cohort.end_date})));
+    (schedule.held || []).forEach(row => heldByPig.set(row.pig_id, row));
+    const immediate = schedule.cohorts.filter(row => row.kind === "immediate");
+    const next = schedule.cohorts.filter(row => row.kind !== "immediate");
+    const cohortSection = (title, items, css) => `<section class="breeding-cohort ${css}"><div class="breeding-cohort-heading"><span>${title}</span><strong>${items.reduce((total, item) => total + item.females.length, 0)} sôe</strong></div>${items.map(cohort => `<article class="breeding-boar-group"><header><strong>${escapeHtml(cohort.boar_name)}</strong><span>${escapeHtml(cohort.start_date)} tot ${escapeHtml(cohort.end_date)}</span></header>${cohort.females.map(row => `<button type="button" class="breeding-female-chip worklist-observe" data-pig-id="${escapeHtml(row.pig_id)}"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(afEvidenceClass(row.evidence_class))}</small></button>`).join("")}</article>`).join("") || `<p>Geen groep nie.</p>`}</section>`;
+    worklistTasks.innerHTML = cohortSection("Plaas nou", immediate, "is-immediate") + cohortSection("Volgende groep", next, "is-next") + (schedule.held?.length ? `<section class="breeding-cohort held"><div class="breeding-cohort-heading"><span>Hou terug</span><strong>${schedule.held.length} sôe</strong></div>${schedule.held.map(row => `<button type="button" class="breeding-held-row worklist-observe" data-pig-id="${escapeHtml(row.pig_id)}"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(afHoldReason(row.reason || row.state))}</small></button>`).join("")}</section>` : "");
     return;
   }
   worklistTasks.innerHTML = (loop.tasks || []).length
@@ -67,21 +151,23 @@ function renderWorklist(loop) {
 }
 async function load() {
   try {
-    const response = await fetch("/api/pig-weights/breeding-attention");
+    const response = await fetch(apiUrl("/breeding-attention"));
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.limitations?.[0] || "Teelbewyse is nie beskikbaar nie.");
     rows = data.animals || [];
+    observationCache.clear();
     filter.innerHTML = `<option value="">Alle huidige sôe en jong sôe</option>` +
       (data.filters || []).map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
-    counts.innerHTML = (data.filters || []).map(name => `<div><span class="info-title">${escapeHtml(name)}: </span><span class="info-value">${escapeHtml(data.counts?.[name] ?? "Unknown")}</span></div>`).join("");
     freshness.textContent = `Bewyse: ${data.source_status}; waargeneem ${data.observation_timestamp || "Onbekend"}.`;
     renderWorklist(data.operating_loop);
+    const observed = rows.filter(row => (data.operating_loop?.cases || []).find(item => item.pig_id === row.pig_id)?.observation_history?.length).length;
+    counts.innerHTML = `<div><span class="info-title">Plaas nou</span><span class="info-value">${[...placementByPig.values()].filter(row => row.kind === "immediate").length}</span><small>Volgens die huidige praktiese plan</small></div><div><span class="info-title">Volgende groep</span><span class="info-value">${[...placementByPig.values()].filter(row => row.kind !== "immediate").length}</span><small>Reeds in ’n latere venster</small></div><div><span class="info-title">Werklike houvas</span><span class="info-value">${heldByPig.size}</span><small>Nie tans geskik vir plasing nie</small></div><div><span class="info-title">Met waarnemings</span><span class="info-value">${observed}</span><small>Feitelike dierbewyse beskikbaar</small></div>`;
     render();
   } catch (error) {
     rows = []; counts.innerHTML = ""; renderWorklist(null);
     freshness.textContent = "Bewyse is nie beskikbaar nie — tellings is nie noodwendig nul nie.";
     message.classList.remove("hidden"); message.textContent = error.message;
-    body.innerHTML = `<tr><td colspan="8" class="table-empty">Benodig data — kanonieke bewyse is nie beskikbaar nie.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="table-empty">Benodig data — kanonieke bewyse is nie beskikbaar nie.</td></tr>`;
   }
 }
 filter.addEventListener("change", render);
@@ -116,7 +202,7 @@ async function openObservation(pigId) {
   acceptedPreviewPayload = null; recordButton.disabled = true;
   panel.classList.remove("hidden");
   document.getElementById("observation_heading").textContent = `Feitelike waarneming — ${activeRow.tag_number || activeRow.pig_id}`;
-  document.getElementById("observation_context").textContent = `${activeRow.current_state}; ontbreek: ${(activeRow.missing_facts || []).join(", ") || "niks"}.`;
+  document.getElementById("observation_context").textContent = `${afState(activeRow.current_state)}. ${practicalAttention(activeRow)}`;
   document.getElementById("obs_time").value = localNow();
   previewBox.classList.add("hidden");
   await refreshObservationHistory(pigId);
@@ -142,7 +228,7 @@ function observationFactSummary(item) {
 }
 
 async function refreshObservationHistory(pigId) {
-  const response = await fetch(`/api/pig-weights/breeding-attention/${encodeURIComponent(pigId)}/observations`);
+  const response = await fetch(apiUrl(`/breeding-attention/${encodeURIComponent(pigId)}/observations`));
   const data = await response.json();
   if (!response.ok || !data.success) {
     history.className = "breeding-history breeding-history-error";
@@ -177,7 +263,7 @@ document.getElementById("observation_close").addEventListener("click", () => pan
 document.getElementById("obs_preview").addEventListener("click", async () => {
   if (!activeRow) return;
   const payload = observationPayload(crypto.randomUUID());
-  const response = await fetch(`/api/pig-weights/breeding-attention/${encodeURIComponent(activeRow.pig_id)}/observations/preview`, {
+  const response = await fetch(apiUrl(`/breeding-attention/${encodeURIComponent(activeRow.pig_id)}/observations/preview`), {
     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
   });
   const data = await response.json();
@@ -196,7 +282,7 @@ document.getElementById("observation_form").addEventListener("submit", async eve
   event.preventDefault();
   if (!activeRow || !acceptedPreviewPayload) return;
   const payload = {...acceptedPreviewPayload};
-  const response = await fetch(`/api/pig-weights/breeding-attention/${encodeURIComponent(activeRow.pig_id)}/observations`, {
+  const response = await fetch(apiUrl(`/breeding-attention/${encodeURIComponent(activeRow.pig_id)}/observations`), {
     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
   });
   const data = await response.json();

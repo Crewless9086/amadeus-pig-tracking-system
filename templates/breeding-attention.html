@@ -65,8 +65,8 @@
         </div>
         <div class="breeding-table-wrap">
           <table class="breeding-attention-table">
-            <thead><tr><th>Dier</th><th>Huidige toestand</th><th>Bewysdatums</th><th>Varsheid</th><th>Sekerheid</th><th>Ontbrekend / teenstrydig</th><th>Volgende menslike stap</th><th></th></tr></thead>
-            <tbody id="attention_body"><tr><td colspan="8" class="table-empty">Laai teel-aandag…</td></tr></tbody>
+            <thead><tr><th>Dier</th><th>Jongste waarneming</th><th>Teelplan</th><th>Huidige toestand</th><th>Werklike aandag</th><th>Volgende stap</th><th></th></tr></thead>
+            <tbody id="attention_body"><tr><td colspan="7" class="table-empty">Laai teel-aandag…</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -94,11 +94,11 @@
           </div>
 
           <div class="breeding-form-section">
-            <div class="breeding-form-heading"><span>2</span><div><h3>Beweging, besering en hitte</h3><p>“Nie waargeneem nie” beteken jy het gekyk en dit nie gesien nie.</p></div></div>
+            <div class="breeding-form-heading"><span>2</span><div><h3>Beweging, besering en temperament</h3><p>“Nie waargeneem nie” beteken jy het gekyk en dit nie gesien nie. Hittewaarneming is nie ’n vereiste vir plasing nie.</p></div></div>
             <div class="breeding-form-grid">
               <label>Bene, pote en beweging<select id="obs_legs"><option value="not_recorded">Nie aangeteken nie</option><option value="no_visible_concern">Geen sigbare kommer nie</option><option value="concern">Kommer waargeneem</option></select></label>
               <label>Sigbare besering<select id="obs_injury"><option value="not_recorded">Nie aangeteken nie</option><option value="none_observed">Geen waargeneem nie</option><option value="concern">Kommer waargeneem</option></select></label>
-              <label>Staande hitte<select id="obs_heat"><option value="not_recorded">Nie aangeteken nie</option><option value="observed">Direk waargeneem</option><option value="not_observed">Nie by inspeksie waargeneem nie</option></select></label>
+              <input id="obs_heat" type="hidden" value="not_recorded">
               <label>Temperament / hantering<select id="obs_temperament"><option value="not_recorded">Nie aangeteken nie</option><option value="calm">Kalm</option><option value="watchful">Waaksaam</option><option value="difficult">Moeilik om te hanteer</option><option value="concern">Kommer waargeneem</option></select></label>
               <label>Teelgeskiktheidskommer<select id="obs_suitability"><option value="not_recorded">Nie aangeteken nie</option><option value="none_observed">Geen waargeneem nie</option><option value="concern">Kommer waargeneem</option></select></label>
             </div>
@@ -120,6 +120,6 @@
       </section>
     </main>
   </div>
-  <script src="{{ url_for('static', filename='js/breedingAttention.js') }}?v=20260811-facelift"></script>
+  <script src="{{ url_for('static', filename='js/breedingAttention.js') }}?v=20260811-practical-plan"></script>
 </body>
 </html>
