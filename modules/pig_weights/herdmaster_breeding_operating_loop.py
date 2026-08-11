@@ -20,9 +20,11 @@ from modules.pig_weights.pregnancy_evidence import (
 )
 
 
-CONTRACT_VERSION = "herdmaster_breeding_operating_loop_v2"
+CONTRACT_VERSION = "herdmaster_breeding_operating_loop_v3"
 REPEAT_SERVICE_REVIEW_COUNT = 2
 WEIGHT_FRESH_DAYS = 30
+IMMEDIATE_BOAR_GROUP_CAPACITY = 3
+EXPOSURE_DAYS = 17
 
 
 def build_breeding_operating_loop(
@@ -81,7 +83,7 @@ def build_breeding_operating_loop(
             projected_observations.get(pig_id, {}),
         )
         male_recommendation = _rank_males(
-            readiness_row, male_rows, matings, classification, family_trees
+            readiness_row, male_rows, matings, litters, classification, family_trees
         )
         task = _task(
             attention_row, readiness_row, classification,
@@ -118,6 +120,11 @@ def build_breeding_operating_loop(
         item["priority"], item["task_group"], item["tag_number"],
         item["pig_id"],
     ))
+    # The published plan is built for the next physical work day, not the
+    # assessment timestamp.  Anchoring it to the worklist week also prevents
+    # same-week rebuilds from sliding every cohort forward.
+    cohorts = _schedule_placement_cohorts(tasks, week_start + timedelta(days=2))
+    _reconcile_controlled_trial_backlog(tasks, cases)
     cases.sort(key=lambda item: (
         next((
             task["priority"] for task in tasks
@@ -135,11 +142,14 @@ def build_breeding_operating_loop(
         "worklist_id": _stable_id(
             "HERD-WEEK", week_start.isoformat(),
             sorted(task["task_id"] for task in tasks),
+            cohorts,
         ),
         "worklist_status": "Available",
         "task_count": len(tasks),
         "task_counts": dict(sorted(counts.items())),
         "tasks": tasks,
+        "placement_cohorts": cohorts,
+        "owner_summary_af": _afrikaans_placement_summary(cohorts, today),
         "cases": cases,
         "reminder_plan": reminders,
         "notification_delivery_operational": False,
@@ -239,6 +249,8 @@ def oom_sakkie_worklist_summary(loop):
     """Return Telegram-safe ordinary-farm-language worklist copy."""
     if not isinstance(loop, dict) or loop.get("success") is not True:
         return "Monday breeding worklist is unavailable; do not treat this as zero."
+    if loop.get("owner_summary_af"):
+        return loop["owner_summary_af"]
     tasks = loop.get("tasks", [])
     if not tasks:
         return "No breeding animals require owner attention in the current evidence cut."
@@ -256,6 +268,196 @@ def oom_sakkie_worklist_summary(loop):
     if len(tasks) > 8:
         lines.append(f"{len(tasks) - 8} more task(s) remain on the owner board.")
     return "\n".join(lines)
+
+
+def _schedule_placement_cohorts(tasks, today):
+    """Sequence ready females without changing their evidence-backed pairing."""
+    grouped, held = {}, []
+    trial_task, trial_male = _select_controlled_trial(tasks)
+    for task in tasks:
+        recommendation = task.get("male_recommendation") or {}
+        primary = recommendation.get("recommended") or {}
+        if task.get("provisional_recommendation") != "Ready for mating review" or not primary.get("pig_id"):
+            held.append({"pig_id": task.get("pig_id"), "name": _owner_label(task.get("tag_number")),
+                "state": _owner_label(task.get("provisional_recommendation")),
+                "reason": _owner_label(task.get("why"), 160)})
+            continue
+        assignment = trial_male if trial_task is task else primary
+        if trial_task is task:
+            task["placement_assignment"] = "Controlled trial"
+            task["placement_assignment_reason"] = (
+                "Purposeful Prince trial using attributable maternal litter evidence; "
+                "the genetic primary remains recorded separately."
+            )
+        grouped.setdefault(assignment["pig_id"], {"boar_pig_id": assignment["pig_id"],
+                "boar_name": _owner_label(assignment["tag_number"]), "rows": []})["rows"].append(task)
+
+    cohorts, assigned = [], set()
+    for group in sorted(grouped.values(), key=lambda row: (row["boar_name"].casefold(), row["boar_pig_id"])):
+        rows = sorted(group["rows"], key=_placement_priority)
+        is_prince_trial = group["boar_name"].casefold() == "prince"
+        capacity = min(2, IMMEDIATE_BOAR_GROUP_CAPACITY) if is_prince_trial else IMMEDIATE_BOAR_GROUP_CAPACITY
+        if is_prince_trial and len(rows) > capacity:
+            for task in rows[capacity:]:
+                task.update({"provisional_recommendation": "Controlled trial backlog",
+                    "placement_cohort": "backlog", "placement_cohort_number": None,
+                    "proposed_placement_date": None, "exposure_start_date": None,
+                    "exposure_end_date": None, "exposure_days": None})
+                held.append({"pig_id": task.get("pig_id"), "name": _owner_label(task.get("tag_number")),
+                    "state": "Controlled trial backlog",
+                    "reason": "Await the bounded Prince trial outcome before scheduling another Prince cohort."})
+            rows = rows[:capacity]
+        for offset in range(0, len(rows), capacity):
+            sequence = offset // capacity
+            start = today + timedelta(days=sequence * EXPOSURE_DAYS)
+            end = start + timedelta(days=EXPOSURE_DAYS - 1)
+            females = []
+            for task in rows[offset:offset + capacity]:
+                if task["pig_id"] in assigned:
+                    raise ValueError("female_assigned_to_multiple_placement_cohorts")
+                assigned.add(task["pig_id"])
+                genetic_primary = task["male_recommendation"]["recommended"]
+                assigned_male = _male_option(task["male_recommendation"], group["boar_pig_id"]) or genetic_primary
+                is_controlled_trial = assigned_male.get("evidence_class") == "Controlled trial"
+                reserve = genetic_primary if is_controlled_trial else task["male_recommendation"].get("reserve")
+                task.update({"placement_cohort": "immediate" if sequence == 0 else "next",
+                    "placement_cohort_number": sequence + 1,
+                    "proposed_placement_date": start.isoformat(), "exposure_start_date": start.isoformat(),
+                    "exposure_end_date": end.isoformat(), "exposure_days": EXPOSURE_DAYS})
+                females.append({"pig_id": task["pig_id"], "name": _owner_label(task["tag_number"]),
+                    "weaning_date": task.get("weaning_date"), "days_since_weaning": task.get("days_since_weaning"),
+                    "primary_boar": assigned_male["tag_number"], "reserve_boar": reserve.get("tag_number") if reserve else None,
+                    "genetic_primary_boar": genetic_primary.get("tag_number"),
+                    "evidence_class": assigned_male.get("evidence_class") or "Limited evidence",
+                    "pair_litters": assigned_male.get("pair_litters") or 0, "born_alive": assigned_male.get("born_alive") or 0,
+                    "surviving_or_weaned": assigned_male.get("surviving_or_weaned") or 0,
+                    "trial_purpose": ("establish Prince fertility, born-alive, survival, weaning and comparable growth evidence"
+                        if is_controlled_trial else None),
+                    "proposed_placement_date": start.isoformat(), "exposure_start_date": start.isoformat(),
+                    "exposure_end_date": end.isoformat(), "exposure_days": EXPOSURE_DAYS,
+                    "heat_observation_required": False})
+            cohorts.append({"kind": "immediate" if sequence == 0 else "next", "cohort_number": sequence + 1,
+                "boar_pig_id": group["boar_pig_id"], "boar_name": group["boar_name"],
+                "start_date": start.isoformat(), "end_date": end.isoformat(), "capacity": capacity,
+                "females": females})
+    return {"capacity_per_boar": IMMEDIATE_BOAR_GROUP_CAPACITY, "exposure_days": EXPOSURE_DAYS,
+        "cohorts": cohorts, "held": held, "actionable_count": len(assigned),
+        "accounted_for_once": len(assigned) + len(held) == len(tasks)
+            and len(assigned) == sum(len(row["females"]) for row in cohorts),
+        "mating_execution_enabled": False, "writes_performed": False}
+
+
+def _male_option(recommendation, pig_id):
+    options = [recommendation.get("recommended"), recommendation.get("reserve"), *(recommendation.get("alternatives") or [])]
+    return next((row for row in options if isinstance(row, dict) and row.get("pig_id") == pig_id), None)
+
+
+def _select_controlled_trial(tasks):
+    """Choose one interpretable sow for an eligible unproven boar trial."""
+    candidates = []
+    for task in tasks:
+        if task.get("provisional_recommendation") != "Ready for mating review":
+            continue
+        recommendation = task.get("male_recommendation") or {}
+        prince = next((row for row in [recommendation.get("recommended"), recommendation.get("reserve"),
+            *(recommendation.get("alternatives") or [])] if isinstance(row, dict)
+            and _owner_label(row.get("tag_number")).casefold() == "prince"
+            and row.get("evidence_class") == "Controlled trial"), None)
+        maternal = recommendation.get("recommended") or {}
+        if not prince or not (maternal.get("pair_litters") and maternal.get("born_alive")
+                and maternal.get("surviving_or_weaned")):
+            continue
+        born = int(maternal.get("born_alive") or 0)
+        survived = int(maternal.get("surviving_or_weaned") or 0)
+        candidates.append(((int(maternal.get("pair_litters") or 0), born,
+            survived, survived / born, int(task.get("days_since_weaning") or 0),
+            task.get("tag_number") or ""), task, prince))
+    if not candidates:
+        return None, None
+    _score, task, prince = max(candidates, key=lambda row: row[0])
+    return task, prince
+
+
+def _placement_priority(task):
+    recommendation = (task.get("male_recommendation") or {}).get("recommended") or {}
+    evidence_rank = {"Proven repeat": 0, "Supported cross": 1, "Corrective cross": 2,
+        "Controlled trial": 3, "Limited evidence": 4}.get(recommendation.get("evidence_class"), 5)
+    days = task.get("days_since_weaning")
+    return (-(days if isinstance(days, int) else -1), evidence_rank, task["tag_number"].casefold(), task["pig_id"])
+
+
+def _reconcile_controlled_trial_backlog(tasks, cases):
+    """Keep every externally visible surface aligned with the bounded trial."""
+    backlog = {row["pig_id"] for row in tasks if row.get("provisional_recommendation") == "Controlled trial backlog"}
+    for task in tasks:
+        if task.get("pig_id") not in backlog:
+            continue
+        task["why"] = "Await the bounded Prince trial outcome before scheduling another Prince cohort."
+        task["required_checks"] = ["Review the attributable Prince trial outcome."]
+        task["male_recommendation"] = dict(task["male_recommendation"], status="Future pairing retained")
+        task["notification"]["send_required"] = False
+    for case in cases:
+        if case.get("pig_id") not in backlog:
+            continue
+        classification = case["classification"]
+        classification.update({"state": "Controlled trial backlog", "readiness": "Held",
+            "reason": "Await the bounded Prince trial outcome before scheduling another Prince cohort.",
+            "proposed_placement_date": None, "exposure_start_date": None,
+            "exposure_end_date": None, "exposure_days": None})
+        case["male_recommendation"] = dict(case["male_recommendation"], status="Future pairing retained")
+        case["approval_packet"] = {"status": "Not ready", "approval_required": True,
+            "execution_enabled": False}
+
+
+def _afrikaans_placement_summary(schedule, today):
+    immediate = [row for row in schedule["cohorts"] if row["kind"] == "immediate"]
+    immediate_date = _date(immediate[0].get("start_date")) if immediate else None
+    heading = "PLAAS MÔRE" if immediate_date == today + timedelta(days=1) else "HUIDIGE GROEP"
+    lines = ["HERDMASTER — PRAKTIESE TEELPLAN", "", heading]
+    for cohort in immediate:
+        lines += ["", f"{_owner_label(cohort['boar_name'])} — {_af_date(cohort['start_date'])} tot {_af_date(cohort['end_date'])}"]
+        lines.extend(_af_pairing_line(row) for row in cohort["females"])
+    lines += ["", "VOLGENDE GROEP"]
+    for cohort in [row for row in schedule["cohorts"] if row["kind"] == "next"]:
+        lines += ["", f"{_owner_label(cohort['boar_name'])} — {_af_date(cohort['start_date'])} tot {_af_date(cohort['end_date'])}"]
+        lines.extend(_af_pairing_line(row) for row in cohort["females"])
+    lines += ["", "NIE TANS GESKIK NIE"]
+    held = schedule.get("held") or []
+    lines.append("- " + "; ".join(f"{_owner_label(row['name'])}: {_owner_label(_af_hold(row['state']))}" for row in held) if held else "- Geen huidige houvas nie.")
+    lines += ["", "EEN KONTROLE VOOR PLASING",
+        "- Kontroleer die gekose bere se bene, voete, beweging, bou en sigbare welsyn.", "",
+        "Geen hittewaarneming is nodig nie. Dit is ’n plan, nie ’n paring nie; die 17 dae bewys geen presiese diensdatum nie."]
+    return "\n".join(lines)
+
+
+def _af_date(value):
+    parsed = _date(value)
+    months = ("Januarie", "Februarie", "Maart", "April", "Mei", "Junie", "Julie", "Augustus", "September", "Oktober", "November", "Desember")
+    return f"{parsed.day} {months[parsed.month - 1]}" if parsed else "Onbekend"
+
+
+def _af_class(value):
+    return {"Proven repeat": "Bewese herhaling", "Supported cross": "Ondersteunde kruising",
+        "Corrective cross": "Korrigerende kruising", "Controlled trial": "Beheerde proef",
+        "Limited evidence": "Beperkte bewyse"}.get(value, "Beperkte bewyse")
+
+
+def _af_pairing_line(row):
+    line = f"- {row['name']} — {_af_class(row['evidence_class'])}"
+    if row.get("trial_purpose"):
+        line += "; bou Prince-bewys oor vrugbaarheid, lewend gebore, oorlewing, speen en groei"
+    return line
+
+
+def _af_hold(value):
+    return {"Pregnancy evidence pending": "onopgeloste siklus",
+        "Historical pregnancy result; current status Unknown": "onopgeloste verwagte-kraam/dragtigheidsiklus",
+        "Nursing": "soog tans", "Assumed Pregnant": "Waarskynlik Dragtig",
+        "Inconclusive": "Onbeslis", "Controlled trial backlog": "wag vir Prince-proefuitslag"}.get(value, value or "werklike houvas")
+
+
+def _owner_label(value, limit=64):
+    return " ".join(_text(value).split())[:limit] or "Onbekend"
 
 
 def _owner_words(value):
@@ -320,19 +522,13 @@ def _classify(
     )
     withdrawal = _norm(readiness.get("withdrawal_evidence_state"))
     available = _norm(readiness.get("available_for_breeding"))
-    family_complete = bool(
-        _text(readiness.get("mother_id"))
-        and _text(readiness.get("father_id"))
-    )
     hold_reasons = []
-    if medical not in {"clear", "eligible"}:
-        hold_reasons.append("medical evidence")
-    if withdrawal not in {"cleared", "not_applicable"}:
-        hold_reasons.append("withdrawal evidence")
-    if available not in {"available", "yes", "true"}:
-        hold_reasons.append("breeding availability")
-    if not family_complete:
-        hold_reasons.append("family-tree evidence")
+    if medical in {"hold", "medical_hold", "restricted", "unfit", "active"}:
+        hold_reasons.append("medical hold")
+    if withdrawal in {"hold", "active", "restricted", "conflicting"}:
+        hold_reasons.append("withdrawal hold")
+    if available in {"hold", "unavailable", "reserved", "no", "false"}:
+        hold_reasons.append("breeding availability hold")
     litter_date = _date(
         latest_litter.get("farrowing_date") or latest_litter.get("birth_date")
     )
@@ -340,19 +536,30 @@ def _classify(
         (today - litter_date).days if litter_date and today >= litter_date
         else None
     )
+    wean_date = _date(latest_litter.get("wean_date"))
+    litter_closes_latest_mating = _litter_closes_mating(
+        latest_mating, latest_litter, litters, mating_date
+    )
+    days_since_weaning = (
+        (today - wean_date).days if wean_date and today >= wean_date else None
+    )
     weight_age = readiness.get("days_since_weight")
     state = "Needs Data"
     action = "inspect for breeding readiness"
     priority = 60
     reason = "Required breeding evidence is incomplete."
-    if any(value in {"hold", "medical_hold", "active"} for value in (
-        medical, withdrawal, available,
-    )):
+    if hold_reasons:
         state, action, priority = (
             "Hold for medical/withdrawal evidence",
             "review medical or withdrawal hold", 5,
         )
         reason = "A current medical, withdrawal or availability hold is evidenced."
+    elif litter_closes_latest_mating and pregnancy["state"] != "conflicting" and not wean_date:
+        state, action, priority = "Nursing", "continue nursing until governed weaning", 20
+        reason = "An attributable current litter closes the prior mating cycle and remains unweaned."
+    elif litter_closes_latest_mating and pregnancy["state"] != "conflicting" and wean_date:
+        state, action, priority = "Ready for mating review", "schedule boar placement", 28
+        reason = f"The attributable litter closes the prior mating cycle; governed weaning was {days_since_weaning} days ago."
     elif pregnancy["state"] == "pregnant":
         state, action, priority = (
             pregnancy["derived_status"],
@@ -368,7 +575,7 @@ def _classify(
             pregnancy_recommendation(pregnancy), 8,
         )
         reason = "Canonical pregnancy evidence conflicts for the latest mating."
-    elif pregnancy["state"] in {"historical", "unattributed"}:
+    elif pregnancy["state"] in {"historical", "unattributed"} and not litter_closes_latest_mating:
         state, action, priority = (
             pregnancy["derived_status"],
             pregnancy_recommendation(pregnancy), 18,
@@ -405,40 +612,21 @@ def _classify(
             "Pregnancy evidence pending", "monitor next milestone", 40
         )
         reason = "A canonical mating exists and pregnancy is not yet confirmed."
-    elif (
-        days_since_litter is not None
-        and days_since_litter <= 56
-        and not all(observed_checks.values())
-    ):
+    elif latest_litter and not wean_date:
         state, action, priority = (
-            "Recovery incomplete", "post-litter recovery check", 20
+            "Nursing", "continue nursing until governed weaning", 20
         )
-        reason = f"The latest litter was {days_since_litter} days ago."
-    elif weight_age is None or weight_age > WEIGHT_FRESH_DAYS:
+        reason = "The latest attributable litter is not yet governed as weaned."
+    elif wean_date:
         state, action, priority = (
-            "Weigh or inspect again", "weigh before breeding decision", 25
+            "Ready for mating review", "schedule boar placement", 28
         )
-        reason = "Current weight evidence is missing or stale."
-    elif latest_bcs is None:
-        state, action, priority = (
-            "Weigh or inspect again", "inspect for breeding readiness", 30
-        )
-        reason = "Current body-condition evidence is missing."
-    elif hold_reasons:
-        state, action, priority = (
-            "Needs Data", "resolve evidence before mating review", 22
-        )
-        reason = "Missing: " + ", ".join(hold_reasons) + "."
-    elif latest_heat in {"observed", "standing"}:
-        state, action, priority = (
-            "Ready for mating review", "prepare for mating", 28
-        )
-        reason = "Fresh standing heat and baseline readiness evidence are present."
+        reason = f"Governed weaning was {days_since_weaning} days ago; heat observation is optional."
     else:
         state, action, priority = (
-            "Observe for heat", "observe for standing heat", 32
+            "Needs Data", "resolve reproductive chronology", 32
         )
-        reason = "No fresh affirmative standing-heat observation is present."
+        reason = "No active cycle or governed weaning chronology establishes the next placement clock."
     lifecycle = _norm(readiness.get("status"))
     on_farm = _norm(readiness.get("on_farm"))
     purpose = _norm(readiness.get("purpose"))
@@ -458,6 +646,7 @@ def _classify(
     else:
         readiness_status = "Needs Data"
         readiness_reason = reason
+    placement_supported = state == "Ready for mating review" and wean_date is not None
     return {
         "state": state,
         "readiness": readiness_status,
@@ -480,6 +669,13 @@ def _classify(
         "pregnancy_evidence": pregnancy,
         "latest_litter_date": _date_text(litter_date),
         "days_since_litter": days_since_litter,
+        "weaning_date": _date_text(wean_date),
+        "days_since_weaning": days_since_weaning,
+        "proposed_placement_date": _date_text(max(today, wean_date)) if placement_supported else None,
+        "exposure_start_date": _date_text(max(today, wean_date)) if placement_supported else None,
+        "exposure_end_date": _date_text(max(today, wean_date) + timedelta(days=16)) if placement_supported else None,
+        "exposure_days": 17 if placement_supported else None,
+        "heat_observation_required": False,
         "unsuccessful_service_count": len(unsuccessful),
         "current_heat": latest_heat or "unknown",
         "body_condition": latest_bcs,
@@ -490,6 +686,33 @@ def _classify(
         "confidence": attention.get("confidence") or "Limited",
         "projected_observation": projected_observation,
     }
+
+
+def _litter_closes_mating(mating, latest_litter, litters, mating_date):
+    """Close a cycle only through one unambiguous compatible sow litter."""
+    if not mating_date:
+        return False
+    mating_boar = _text(mating.get("boar_pig_id"))
+    candidates = []
+    for litter in litters:
+        litter_date = _date(litter.get("farrowing_date") or litter.get("birth_date"))
+        if not litter_date or not 100 <= (litter_date - mating_date).days <= 130:
+            continue
+        litter_boar = _text(litter.get("boar_pig_id"))
+        if mating_boar and litter_boar and mating_boar != litter_boar:
+            continue
+        candidates.append(litter)
+    related = _text(mating.get("related_litter_id"))
+    if related:
+        candidates = [
+            litter for litter in candidates
+            if _text(litter.get("litter_id")) == related
+        ]
+    if len(candidates) != 1:
+        return False
+    return _text(candidates[0].get("litter_id")) == _text(
+        latest_litter.get("litter_id")
+    )
 
 
 def _task(
@@ -529,6 +752,13 @@ def _task(
         "latest_litter_date": classification["latest_litter_date"],
         "male_recommendation_state": male_recommendation["status"],
         "male_recommendation": male_recommendation,
+        "weaning_date": classification.get("weaning_date"),
+        "days_since_weaning": classification.get("days_since_weaning"),
+        "proposed_placement_date": classification.get("proposed_placement_date"),
+        "exposure_start_date": classification.get("exposure_start_date"),
+        "exposure_end_date": classification.get("exposure_end_date"),
+        "exposure_days": classification.get("exposure_days"),
+        "heat_observation_required": False,
         "observations": [{
             "event_id": row.get("observation_event_id"),
             "observed_at": row.get("observed_at"),
@@ -551,6 +781,13 @@ def _task(
         "known_evidence": _known_evidence(classification, readiness),
         "required_checks": required,
         "provisional_recommendation": classification["state"],
+        "weaning_date": classification.get("weaning_date"),
+        "days_since_weaning": classification.get("days_since_weaning"),
+        "proposed_placement_date": classification.get("proposed_placement_date"),
+        "exposure_start_date": classification.get("exposure_start_date"),
+        "exposure_end_date": classification.get("exposure_end_date"),
+        "exposure_days": classification.get("exposure_days"),
+        "heat_observation_required": False,
         "delay_consequence": _delay_consequence(classification["task_group"]),
         "male_recommendation": male_recommendation,
         "evidence_generation": generated_at,
@@ -568,7 +805,7 @@ def _task(
 
 
 def _rank_males(
-    female, males, all_matings, classification, family_trees
+    female, males, all_matings, all_litters, classification, family_trees
 ):
     if classification["state"] != "Ready for mating review":
         return {
@@ -585,27 +822,18 @@ def _rank_males(
         male_tree = family_trees.get(_text(male.get("pig_id")), {})
         if _norm(male.get("purpose")) != "breeding":
             blockers.append("purpose is not affirmatively Breeding")
-        if _norm(male.get("medical_status") or male.get("health_status")) not in {
-            "clear", "eligible",
-        }:
-            blockers.append("medical evidence is not clear")
-        if _norm(male.get("withdrawal_evidence_state")) not in {
-            "cleared", "not_applicable",
-        }:
-            blockers.append("withdrawal evidence is incomplete")
-        if _norm(male.get("available_for_breeding")) not in {
-            "available", "yes", "true",
-        }:
-            blockers.append("breeding availability is not affirmative")
+        if _norm(male.get("medical_status") or male.get("health_status")) in {"hold", "medical_hold", "restricted", "unfit", "active"}:
+            blockers.append("recorded medical hold")
+        if _norm(male.get("withdrawal_evidence_state")) in {"hold", "active", "restricted", "conflicting"}:
+            blockers.append("recorded withdrawal hold")
+        if _norm(male.get("available_for_breeding")) in {"unavailable", "held", "reserved", "allocated", "no", "false"}:
+            blockers.append("recorded availability hold")
+        if _norm(male.get("reservation_status")) in {"reserved", "allocated", "sold"}:
+            blockers.append("recorded reservation or allocation")
         male_ancestors = set(male_tree.get("ancestor_ids") or [])
+        if female_tree.get("cycle_nodes") or male_tree.get("cycle_nodes"):
+            blockers.append("cyclic family relationship evidence")
         if (
-            female_tree.get("lineage_status") != "complete"
-            or male_tree.get("lineage_status") != "complete"
-            or not female_ancestors
-            or not male_ancestors
-        ):
-            blockers.append("family-tree comparison is incomplete")
-        elif (
             _text(male.get("pig_id")) in female_ancestors
             or _text(female.get("pig_id")) in male_ancestors
             or female_ancestors & male_ancestors
@@ -616,17 +844,30 @@ def _rank_males(
             if _text(row.get("sow_pig_id")) == _text(female.get("pig_id"))
             and _text(row.get("boar_pig_id")) == _text(male.get("pig_id"))
         )
+        pair_litters = [row for row in all_litters
+            if _text(row.get("sow_pig_id")) == _text(female.get("pig_id"))
+            and _text(row.get("boar_pig_id")) == _text(male.get("pig_id"))]
+        born_alive = sum(int(row.get("born_alive") or 0) for row in pair_litters)
+        survived = sum(int(row.get("weaned_count") if row.get("weaned_count") is not None else row.get("surviving_or_weaned") or 0) for row in pair_litters)
+        survival = (survived / born_alive) if born_alive else None
         if not blockers:
+            is_prince = (_text(male.get("tag_number")) or "").casefold() == "prince"
+            score = len(pair_litters) * 30 + min(born_alive, 20) + (round(survival * 20) if survival is not None else 0)
+            if not pair_litters: score = 5 if is_prince else 10
             ranked.append({
                 "pig_id": _text(male.get("pig_id")),
                 "tag_number": _text(male.get("tag_number"))
                 or _text(male.get("pig_id")),
-                "score": 100 - min(prior_pairings * 10, 30),
+                "score": score,
+                "evidence_class": "Proven repeat" if pair_litters else ("Controlled trial" if is_prince else "Limited evidence"),
+                "pair_litters": len(pair_litters), "born_alive": born_alive,
+                "surviving_or_weaned": survived,
                 "reasoning": [
                     "Active breeding-purpose male.",
-                    "Medical and withdrawal evidence are affirmative.",
-                    "No bounded ancestor or shared-ancestor conflict is present.",
+                    "No attributable active medical, withdrawal or availability hold is present.",
+                    "No known bounded ancestor or shared-ancestor conflict is present; unknown foundation ancestry remains a limitation.",
                     f"Previous pairing count: {prior_pairings}.",
+                    f"Attributable pair outcomes: {len(pair_litters)} litter(s), {born_alive} born alive, {survived} surviving/weaned.",
                 ],
             })
     ranked.sort(key=lambda row: (
@@ -641,15 +882,12 @@ def _rank_males(
                 "No male has complete affirmative compatibility evidence."
             ],
         }
-    tied = len(ranked) > 1 and ranked[0]["score"] == ranked[1]["score"]
     return {
-        "status": "Owner choice required" if tied else "Available",
-        "recommended": None if tied else ranked[0],
-        "alternatives": ranked[:3],
-        "blockers": (
-            ["Evidence cannot distinguish the top compatible males."]
-            if tied else []
-        ),
+        "status": "Available",
+        "recommended": ranked[0],
+        "reserve": ranked[1] if len(ranked) > 1 else None,
+        "alternatives": ranked[1:3],
+        "blockers": [],
     }
 
 
@@ -672,8 +910,11 @@ def _approval_packet(
         "female_tag": _text(female.get("tag_number")),
         "male_pig_id": male["pig_id"],
         "male_tag": male["tag_number"],
-        "proposed_mating_date": today.isoformat(),
-        "mating_method": "Natural",
+        "proposed_placement_date": classification.get("proposed_placement_date"),
+        "exposure_start_date": classification.get("exposure_start_date"),
+        "exposure_end_date": classification.get("exposure_end_date"),
+        "exposure_days": classification.get("exposure_days"),
+        "exact_service_date": None,
         "evidence_digest": _digest(evidence),
         "recommendation_state": classification["state"],
     }
@@ -682,7 +923,7 @@ def _approval_packet(
         "approval_packet_id": _stable_id("HERD-MATING-PLAN", proposed),
         "evidence_generation": generated_at,
         "proposed_record": proposed,
-        "existing_governed_writer": "save_new_mating",
+        "existing_governed_writer": None,
         "known_fields_autofilled": True,
         "stale_approval_rejected": True,
         "exact_replay_withheld": True,
@@ -764,6 +1005,7 @@ def _required_checks(classification):
             classification.get("hold_reasons") or ["missing evidence"]
         ),
         "prepare for mating": [],
+        "schedule boar placement": [],
     }
     required = list(checks.get(group, ["owner review"]))
     observed_checks = classification.get("observed_checks") or {}

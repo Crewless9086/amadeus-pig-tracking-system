@@ -75,11 +75,11 @@ def test_unresolved_cycle_retains_future_ranking_but_is_not_a_candidate():
     assert case["mating_action_prohibited"] is True
 
 
-def test_unknown_administrative_coverage_is_a_limitation_but_active_hold_excludes():
+def test_unknown_administrative_coverage_does_not_block_but_active_hold_excludes():
     result = run(boars=[boar(available_for_breeding=None), boar("BOAR-2", "Carl", medical_status="Hold")], pedigrees={"SOW-1": tree("SD", "SS"), "BOAR-1": tree("BD", "BS"), "BOAR-2": tree("CD", "CS")})
     case = result["cases"][0]
     assert case["recommended_boar"]["pig_id"] == "BOAR-1"
-    assert "boar breeding availability negative coverage is incomplete" in case["boar_assessments"][0]["limitations"]
+    assert "boar breeding availability negative coverage is incomplete" not in case["boar_assessments"][0]["limitations"]
     assert "boar has an active health restriction" in case["boar_assessments"][1]["exclusion_reasons"]
 
 
@@ -97,11 +97,12 @@ def test_active_mating_and_assumed_pregnancy_never_rank_actionable_boar():
         assert case["state"] != "eligible_for_mating_review"
 
 
-def test_post_weaning_recovery_requires_clearance_then_can_be_reviewed():
-    held = run(females=[sow(current_cycle={"state": "post_weaning_recovery"}, recovery_cleared=False)])["cases"][0]
-    ready = run(females=[sow(current_cycle={"state": "post_weaning_recovery"}, recovery_cleared=True)])["cases"][0]
-    assert held["state"] == "recovering" and held["recommended_boar"] is None
-    assert ready["state"] == "eligible_for_mating_review" and ready["recommended_boar"]
+def test_governed_weaning_starts_allocation_without_recovery_clearance():
+    case = run(females=[sow(current_cycle={"state": "post_weaning_recovery", "wean_date":"2026-08-01"}, recovery_cleared=False)])["cases"][0]
+    assert case["state"] == "eligible_for_mating_review" and case["recommended_boar"]
+    row = run(females=[sow(current_cycle={"state": "post_weaning_recovery", "wean_date":"2026-08-01"})])["whole_round_allocation"]["groups"][0]["females"][0]
+    assert row["heat_observation_required"] is False
+    assert row["exposure_days"] == 17
 
 
 def test_repeat_service_is_visible_in_ranking_without_inferring_fertility():
@@ -125,11 +126,11 @@ def test_stale_weight_is_disclosed_while_active_health_hold_excludes():
     assert "boar has an active health restriction" in held["exclusion_reasons"]
 
 
-def test_grouped_owner_observations_ask_only_missing_physical_facts():
+def test_missing_optional_heat_does_not_create_owner_question():
     female = sow(observations={"observed_at": "2026-08-05", "body_condition": 3, "legs_sound": True, "visible_concern": "none"})
     case = run(females=[female])["cases"][0]
-    assert case["smallest_physical_question"] == "For Sally, please report heat observed or not observed from one current inspection."
-    assert "withdrawal" not in case["smallest_physical_question"].lower()
+    assert case["smallest_physical_question"] is None
+    assert case["recommended_boar"] is not None
 
 
 def test_changed_evidence_refreshes_identity_and_unchanged_replay_does_not():
@@ -177,9 +178,9 @@ def test_adverse_female_physical_evidence_fails_closed():
     female = sow(observations={"observed_at":"2026-08-05", "body_condition":1.5, "legs_sound":False, "visible_concern":"open wound", "heat":"observed"})
     case = run(females=[female])["cases"][0]
     assert case["recommended_boar"] is None
-    assert "legs and movement are not affirmatively sound" in case["unknowns"]
-    assert "a visible concern is present or not safely classified" in case["unknowns"]
-    assert "body condition is outside or lacks governed breeding bounds" in case["unknowns"]
+    assert "recorded legs or movement concern makes placement unsafe" in case["unknowns"]
+    assert "a recorded visible concern makes placement unsafe" in case["unknowns"]
+    assert "recorded body condition is outside governed breeding bounds" in case["unknowns"]
 
 
 def test_weight_freshness_is_disclosed_without_becoming_reproductive_state():
@@ -242,13 +243,12 @@ def test_assumed_pregnancy_rejects_forged_future_stale_and_mismatched_evidence()
     assert all(run(females=[sow(current_cycle=item)], current_mating_by_female=current)["cases"][0]["state"] == "missing_evidence" for item in variants)
 
 
-def test_future_physical_observations_fail_closed_for_both_sexes():
+def test_future_optional_female_observation_does_not_gate_but_boar_physical_evidence_fails_closed():
     female = sow(observations={"observed_at":"2026-08-06", "body_condition":3, "legs_sound":True, "visible_concern":"none", "heat":"observed"})
     female_case = run(females=[female])["cases"][0]
     male = boar(observations={"observed_at":"2026-08-06", "legs_sound":True, "feet_sound":True, "build_acceptable":True, "visible_concern":"none"})
     male_case = run(boars=[male])["cases"][0]["boar_assessments"][0]
-    assert female_case["recommended_boar"] is None
-    assert "current heat observation is stale" in female_case["unknowns"]
+    assert female_case["recommended_boar"] is not None
     assert "boar structural-soundness evidence is stale or absent" in male_case["limitations"]
 
 
@@ -346,15 +346,16 @@ def test_afrikaans_physical_sections_are_clean_and_translated():
     assert "Attributable litter evidence" not in text
 
 
-def test_boar_physical_limitations_keep_pair_out_of_immediate_group_and_all_are_visible():
+def test_boar_physical_limitations_preserve_candidate_and_require_one_boar_check():
     limited = boar(observations={}, latest_weight_date="2026-01-01")
     result = run(boars=[limited])
     allocation = result["whole_round_allocation"]
-    assert allocation["groups"][0]["females"] == []
-    assert len(allocation["observations_needed"]) == 1
-    row = allocation["observations_needed"][0]
+    assert len(allocation["groups"][0]["females"]) == 1
+    assert allocation["observations_needed"] == []
+    row = allocation["groups"][0]["females"][0]
     assert row["conditional_on_observation"] is True
     assert len(row["material_limitations"]) >= 4
+    assert allocation["boar_observations_needed"][0]["boar_name"] == "Bert"
     text = result["afrikaans"]
     assert "waarneming eers" in text
     assert "beergewig is ontbrekend of oud" in text
@@ -383,8 +384,8 @@ def test_only_no_active_cycle_with_missing_physical_evidence_is_a_session_candid
     pedigrees = {row["pig_id"]:tree(row["pig_id"]+"-A") for row in held+[ready]}
     pedigrees["BOAR-1"] = tree("B1")
     result = run(females=held+[ready], pedigrees=pedigrees)
-    observations = result["whole_round_allocation"]["observations_needed"]
-    assert [row["name"] for row in observations] == ["Ready"]
+    assert result["whole_round_allocation"]["observations_needed"] == []
+    assert any(row["name"] == "Ready" for group in result["whole_round_allocation"]["groups"] for row in group["females"])
     assert {row["name"] for row in result["whole_round_allocation"]["not_currently_eligible"]} == set(states)
     held_packets = [row for row in result["oom_sakkie_packet"]["cases"] if row["tag_number"] != "Ready"]
     assert all("future_primary_boar" not in row and "future_reserve_boar" not in row for row in held_packets)

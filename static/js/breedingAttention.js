@@ -16,6 +16,15 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
+function afEvidenceClass(value) {
+  return ({
+    "Proven repeat": "Bewese herhaling",
+    "Supported cross": "Ondersteunde kruising",
+    "Corrective cross": "Korrigerende kruising",
+    "Controlled trial": "Beheerde proef",
+    "Limited evidence": "Beperkte bewyse",
+  })[value] || "Beperkte bewyse";
+}
 function render() {
   const selected = filter.value;
   const visible = selected ? rows.filter(row => row.filter_state === selected) : rows;
@@ -71,12 +80,27 @@ function renderWorklist(loop) {
     return;
   }
   worklistStatus.textContent = `${loop.task_count} huidige taak/take; week van ${loop.week_start}. Waarneming, paring en herinnering-uitvoering is afgeskakel.`;
+  const schedule = loop.placement_cohorts;
+  if (schedule && Array.isArray(schedule.cohorts)) {
+    worklistTasks.innerHTML = schedule.cohorts.map(cohort => `<section class="breeding-cohort" data-cohort-kind="${escapeHtml(cohort.kind)}">
+      <h3>${cohort.kind === "immediate" ? "Plaas môre / huidige groep" : "Volgende groep"}: ${escapeHtml(cohort.boar_name)} — ${escapeHtml(cohort.start_date)} tot ${escapeHtml(cohort.end_date)}</h3>
+      ${cohort.females.map(row => `<article class="breeding-task"><strong><a class="detail-link" href="/pig/${encodeURIComponent(row.pig_id)}">${escapeHtml(row.name)}</a></strong><span>${escapeHtml(afEvidenceClass(row.evidence_class))}; reserwe ${escapeHtml(row.reserve_boar || "Geen")}</span></article>`).join("")}
+    </section>`).join("") + (schedule.held?.length ? `<section class="breeding-cohort held"><h3>Later / werklike houvas</h3>${schedule.held.map(row => `<p><strong>${escapeHtml(row.name)}</strong>: ${escapeHtml(row.state)}</p>`).join("")}</section>` : "");
+    return;
+  }
   worklistTasks.innerHTML = (loop.tasks || []).length
-    ? loop.tasks.map(task => `<article class="breeding-task" data-task-id="${escapeHtml(task.task_id)}">
+    ? loop.tasks.map(task => {
+        const pairing = task.male_recommendation || {};
+        const primary = pairing.recommended?.tag_number || "Nog geen veilige keuse";
+        const reserve = pairing.reserve?.tag_number || pairing.alternatives?.[0]?.tag_number || "Geen";
+        const schedule = task.exposure_start_date && task.exposure_end_date
+          ? `Plaas: ${escapeHtml(task.exposure_start_date)} tot ${escapeHtml(task.exposure_end_date)} (${escapeHtml(task.exposure_days)} dae). Geen presiese diensdatum word afgelei nie.`
+          : "Geen blootstellingsvenster totdat die huidige lewensiklus dit ondersteun nie.";
+        return `<article class="breeding-task" data-task-id="${escapeHtml(task.task_id)}">
         <div><strong><a class="detail-link" href="${escapeHtml(task.animal_href)}">${escapeHtml(task.tag_number)}</a></strong><span class="task-state">${escapeHtml(task.task_group)}</span></div>
-        <div><span>${escapeHtml(task.why)}</span><span class="task-checks">Kontroleer: ${escapeHtml((task.required_checks || []).join(", ") || "eienaarbesluit")}. Gevolg van uitstel: ${escapeHtml(task.delay_consequence)}</span></div>
+        <div><span>${escapeHtml(task.why)}</span><span class="task-checks">Speen: ${escapeHtml(task.weaning_date || "Onbekend")} (${escapeHtml(task.days_since_weaning ?? "Onbekend")} dae). Primêr: ${escapeHtml(primary)}; reserwe: ${escapeHtml(reserve)}. ${schedule} Opsionele ontbrekende waarnemings blokkeer nie plasing nie.</span></div>
         <button type="button" class="secondary-button worklist-observe" data-pig-id="${escapeHtml(task.pig_id)}">Hersien bewyse</button>
-      </article>`).join("")
+      </article>`; }).join("")
     : `<p class="table-empty">Geen dier verg aandag volgens die huidige bewyse nie.</p>`;
 }
 async function load() {
