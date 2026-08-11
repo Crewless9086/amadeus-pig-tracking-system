@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from modules.telemetry.rootline_irrigation_history import read_canonical_irrigation_history
 from modules.telemetry.rootline_water_balance import read_latest_zone_water_balances
+from modules.telemetry.rootline_water_energy_plan import _read_latest_tank_observation
 
 ZONE_NAMES = {"B12345": "B Camp", "C12345": "C Camp"}
 
@@ -98,6 +99,14 @@ def _canonical_evidence(database_url, operating_date, now):
     import psycopg
     selected = str(operating_date or now.astimezone(ZoneInfo("Africa/Johannesburg")).date().isoformat())[:10]
     result = {"operating_date": selected, "water_balance": {}}
+    tank = _read_latest_tank_observation(database_url)
+    result["water"] = ({"status": "available", "storage_state": tank.get("storage_state"),
+        "reservoir_state": tank.get("reservoir_state"), "observed_at": tank.get("observed_at"),
+        "storage_observed_at": tank.get("storage_observed_at"),
+        "reservoir_observed_at": tank.get("reservoir_observed_at"),
+        "storage_fraction": tank.get("storage_fraction"),
+        "reservoir_fraction": tank.get("reservoir_fraction")}
+        if tank else {"status": "Unavailable"})
     with psycopg.connect(database_url, connect_timeout=10) as connection:
         connection.read_only = True
         with connection.cursor() as cursor:
@@ -114,16 +123,6 @@ def _canonical_evidence(database_url, operating_date, now):
                 "temperature_c": float(row[3]) if row[3] is not None else None,
                 "wind_speed_kmh": float(row[4]) if row[4] is not None else None,
                 "retrieved_at": row[5].isoformat()} if row else {"status": "Unavailable"})
-            cursor.execute("""select storage_state,reservoir_state,observed_at,
-                                      storage_fraction_numerator,storage_fraction_denominator,
-                                      reservoir_fraction_numerator,reservoir_fraction_denominator
-                from public.rootline_tank_observations order by observed_at desc,recorded_at desc limit 1""")
-            row = cursor.fetchone()
-            result["water"] = ({"status": "available", "storage_state": row[0],
-                "reservoir_state": row[1], "observed_at": row[2].isoformat(),
-                "storage_fraction": list(row[3:5]) if row[3] is not None else None,
-                "reservoir_fraction": list(row[5:7]) if row[5] is not None else None}
-                if row else {"status": "Unavailable"})
             cursor.execute("""select review_json->'rootline_reassessment',created_at
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_rootline_reassessment'
