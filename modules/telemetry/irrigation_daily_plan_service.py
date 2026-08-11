@@ -106,7 +106,21 @@ def get_current_daily_plan(value=None, *, ledger=None):
         ))
     except DailyPlanValidationError as exc:
         return _failure(str(exc), 400)
-    except (DailyPlanUnavailableError, Exception):
+    except DailyPlanUnavailableError:
+        return _failure("daily_irrigation_plan_unavailable", 503)
+    except Exception as exc:
+        if "irrigation_daily_plan_identities" in str(exc):
+            return {
+                "success": True, "status": "no_current_canonical_artifact",
+                "operating_date": day.isoformat(),
+                "operating_timezone": OPERATING_TIMEZONE,
+                "daily_plan": None, "superseded_history": [],
+                "owner_message": (
+                    "No separate daily-plan ledger is active; current ROOTLINE truth is "
+                    "projected from the scheduler, evidence and execution rails."
+                ),
+                **NO_AUTHORITY,
+            }, 200
         return _failure("daily_irrigation_plan_unavailable", 503)
     if current is None:
         return {

@@ -9,6 +9,7 @@ from modules.auth.owner_access import (
     owner_logout_post,
     owner_admin_principal,
     owner_status,
+    owner_status_payload,
     require_owner_admin_access,
     require_owner_page_access,
     require_owner_read_access,
@@ -65,6 +66,13 @@ app.register_blueprint(sales_bp, url_prefix="/api")
 app.register_blueprint(telemetry_bp, url_prefix="/api")
 app.register_blueprint(oom_sakkie_bp, url_prefix="/api")
 app.register_blueprint(charlie_bp, url_prefix="/api")
+
+
+@app.context_processor
+def owner_access_navigation():
+    status = owner_status_payload()
+    return {"owner_session_valid": status["session_valid"],
+            "owner_session_role": status["session_role"]}
 
 
 @app.route("/")
