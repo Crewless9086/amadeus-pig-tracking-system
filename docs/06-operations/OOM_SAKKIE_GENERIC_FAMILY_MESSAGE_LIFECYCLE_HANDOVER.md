@@ -49,6 +49,12 @@ or resent. Production continuation must:
 
 ## Required proof
 
+Protected mortality and grouped-weight previews additionally bind a short
+opaque callback token to the authenticated owner, private chat, exact provider
+card, preview digest, evidence generation and expiry. A completion replaces the
+same card exactly once and removes its buttons. The current source/resumption
+contract is `OOM_SAKKIE_PROTECTED_ACTION_RECOVERY_HANDOVER_20260811.md`.
+
 - exact source/merge/deployment lineage;
 - authenticated private-owner message produces one provider-confirmed visible
   lifecycle result;

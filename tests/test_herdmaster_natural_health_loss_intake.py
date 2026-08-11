@@ -465,3 +465,19 @@ def test_latest_appetite_state_does_not_emit_contradictory_current_fact(history,
     ), evidence(pig))
     facts = {row["fact"] for row in result["observed_facts"]}
     assert ("not_eating" in facts) is has_not_eating
+
+
+def test_explicit_owner_reported_mortality_date_outranks_intake_date():
+    pig = animal("PIG-2026-6DD4", "", "130")
+    owner_report = report(
+        "Pig 130 was found dead in the pen on 2026-08-06. Pig 130 was removed and buried "
+        "on 2026-08-06. No other pigs show visible signs and the pens were cleaned."
+    )
+    owner_report["provider_timestamp"] = "2026-08-11T14:30:00+02:00"
+    canonical = evidence(pig)
+    canonical["as_of_timestamp"] = "2026-08-11T14:31:00+02:00"
+    result = evaluate_health_loss_intake(owner_report, canonical)
+    assert result["preview"]["event_date"] == "2026-08-06"
+    observed = {row["fact"]: row["value"] for row in result["observed_facts"]}
+    assert observed["no_visible_signs_in_other_pigs_reported"] is True
+    assert observed["pen_cleaning_reported"] is True

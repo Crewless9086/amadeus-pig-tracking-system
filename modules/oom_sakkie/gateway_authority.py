@@ -13,6 +13,7 @@ MAX_AUTHORITY_AGE_SECONDS = 120
 _AUTHORITY_SEAL = object()
 _OBSERVATION_WRITE_SEAL = object()
 _OPERATIONAL_OUTCOME_SEAL = object()
+_MORTALITY_CORRECTION_SEAL = object()
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,17 @@ class OwnerOperationalOutcomeAuthority:
     provider_message_id: str
     provider_timestamp: str
     content_sha256: str
+    issued_monotonic: float
+    _seal: object
+
+
+@dataclass(frozen=True)
+class MortalityCorrectionAuthority:
+    owner_user_id: str
+    private_chat_id: str
+    operation_id: str
+    evidence_generation: str
+    preview_digest: str
     issued_monotonic: float
     _seal: object
 
@@ -131,6 +143,29 @@ def validates_owner_operational_outcome_authority(authority):
             and authority._seal is _OPERATIONAL_OUTCOME_SEAL
             and 0 <= time.monotonic() - authority.issued_monotonic <= MAX_AUTHORITY_AGE_SECONDS
             and authority.owner_user_id == authority.private_chat_id)
+
+
+def issue_mortality_correction_authority(authority, *, operation_id,
+                                         evidence_generation, preview_digest):
+    if not _valid_base_authority(authority) or authority.tool_name:
+        return None
+    values=(operation_id,evidence_generation,preview_digest)
+    if not all(str(value or "").strip() for value in values):
+        return None
+    return MortalityCorrectionAuthority(authority.owner_user_id,authority.private_chat_id,
+        str(operation_id),str(evidence_generation),str(preview_digest),
+        authority.issued_monotonic,_MORTALITY_CORRECTION_SEAL)
+
+
+def validates_mortality_correction_authority(authority, *, operation_id,
+                                              evidence_generation, preview_digest):
+    return (isinstance(authority,MortalityCorrectionAuthority)
+      and authority._seal is _MORTALITY_CORRECTION_SEAL
+      and authority.owner_user_id==authority.private_chat_id
+      and authority.operation_id==str(operation_id)
+      and authority.evidence_generation==str(evidence_generation)
+      and authority.preview_digest==str(preview_digest)
+      and 0<=time.monotonic()-authority.issued_monotonic<=MAX_AUTHORITY_AGE_SECONDS)
 
 
 def _valid_base_authority(authority):

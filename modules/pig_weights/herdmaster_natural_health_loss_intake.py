@@ -315,8 +315,9 @@ def _parse_report(text, provider_time):
     if sick:
         families.append("sick")
     family = families[0] if len(set(families)) == 1 else "compound_event" if families else "unknown"
-    event_date = provider_time.date()
-    if "yesterday" in lower:
+    explicit_dates = sorted(set(re.findall(r"\b20\d{2}-\d{2}-\d{2}\b", lower)))
+    event_date = datetime.fromisoformat(explicit_dates[0]).date() if len(explicit_dates) == 1 else provider_time.date()
+    if not explicit_dates and "yesterday" in lower:
         event_date -= timedelta(days=1)
     observed = []
     if dead:
@@ -432,6 +433,12 @@ def _parse_report(text, provider_time):
                          "classification": "unverified_owner_wording_not_canonical_effect"})
     if removal_supplied:
         observed.append({"fact": "removal_or_disposal_context_reported", "value": True})
+    if re.search(r"\bno other pigs?\b.{0,80}\b(?:signs?|showing|symptoms?)\b", lower):
+        observed.append({"fact": "no_visible_signs_in_other_pigs_reported", "value": True,
+                         "attribution": "owner_reported_visual_observation"})
+    if re.search(r"\bpens?\s+(?:was|were|has been|have been)?\s*cleaned\b", lower):
+        observed.append({"fact": "pen_cleaning_reported", "value": True,
+                         "attribution": "owner_reported"})
     observed.append({"fact": "event_date", "value": event_date.isoformat()})
     suspected = []
     suspect = re.search(r"(?:believe|think|suspect)(?:\s+that)?\s+(?:she|he|it)?\s*(?:had|has|was)?\s+([^.!?]+)", lower)
