@@ -1,5 +1,12 @@
 # Next Steps
 
+## ROOTLINE canonical status and owner access recovery
+
+- Owner-approved mission: `docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md`.
+- Replace silent current-status fallback to `Amadeus_Irrigation_Logs` with one authoritative Supabase scheduler/execution projection.
+- Add visible owner login/session navigation and a return-to-irrigation flow for protected detail APIs.
+- Prove dashboard, detail page, Telegram and provider-confirmed B/C execution agree before closure; then finish fertilizer commissioning separately.
+
 ## Active HERDMASTER genetic-selection outcome - 2026-08-11
 
 - Apply `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md` to the current breeding population.
