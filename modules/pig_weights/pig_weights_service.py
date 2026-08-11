@@ -2336,6 +2336,7 @@ def process_litter_weaning_day(
             batch_lot_number=medicine.get("batch_lot_number", ""),
             notes=notes or medicine.get("notes", "Weaning day treatment."),
             dry_run=True,
+            treatment_context="weaning_day",
         )
         if health_status != 200 or not health_preview.get("success"):
             validation_errors.extend(health_preview.get("errors", ["Could not preview medicine."]))
@@ -2517,6 +2518,7 @@ def process_litter_weaning_day(
             batch_lot_number=medicine.get("batch_lot_number", ""),
             notes=notes or medicine.get("notes", "Weaning day treatment."),
             dry_run=False,
+            treatment_context="weaning_day",
         )
         if health_status != 200 or not applied["medicine"].get("success"):
             return {"success": False, "errors": applied["medicine"].get("errors", ["Could not save medicine."])}, health_status
@@ -3428,6 +3430,7 @@ def record_litter_newborn_health(
     male_count=None,
     female_count=None,
     dry_run: bool = True,
+    treatment_context: str = "first_treatment",
 ):
     litter_id = to_clean_string(litter_id)
     action_date = parse_sheet_date(action_date_value)
@@ -3440,8 +3443,11 @@ def record_litter_newborn_health(
     notes = to_clean_string(notes)
     dose_value = to_float(dose)
     dry_run = dry_run is True
+    treatment_context = to_clean_string(treatment_context) or "first_treatment"
 
     errors = []
+    if treatment_context not in {"first_treatment", "weaning_day"}:
+        errors.append("Unsupported litter treatment context.")
     if not litter_id:
         errors.append("Litter ID is required.")
     if not action_date:
@@ -3493,7 +3499,7 @@ def record_litter_newborn_health(
         }, 409
 
     existing_detail = _try_supabase_read(farm_supabase_read_service.get_litter_detail, litter_id)
-    if isinstance(existing_detail, dict) and (
+    if treatment_context == "first_treatment" and isinstance(existing_detail, dict) and (
         existing_detail.get("first_treatment_complete") is True
         or existing_detail.get("first_treatment_partial") is True
     ):
@@ -3571,6 +3577,7 @@ def record_litter_newborn_health(
                 given_by=changed_by,
                 notes=notes,
                 litter_id=litter_id,
+                treatment_context=treatment_context,
             ))
         if deworming_product_id:
             deworming_product = products[deworming_product_id]
@@ -3585,6 +3592,7 @@ def record_litter_newborn_health(
                 given_by=changed_by,
                 notes=notes,
                 litter_id=litter_id,
+                treatment_context=treatment_context,
             ))
         if vaccination_product_id:
             treatment_rows.append(_build_litter_health_treatment_row(
@@ -3598,6 +3606,7 @@ def record_litter_newborn_health(
                 given_by=changed_by,
                 notes=notes,
                 litter_id=litter_id,
+                treatment_context=treatment_context,
             ))
 
     pig_rows_updated = 0
@@ -3630,7 +3639,12 @@ def record_litter_newborn_health(
 
     return {
         "success": True,
-        "action": "record_litter_newborn_health",
+        "action": (
+            "record_litter_weaning_treatment"
+            if treatment_context == "weaning_day"
+            else "record_litter_newborn_health"
+        ),
+        "treatment_context": treatment_context,
         "dry_run": dry_run,
         "litter_id": litter_id,
         "piglet_count": len(active_piglets),
@@ -3653,7 +3667,11 @@ def record_litter_newborn_health(
             "writes_to_supabase": writes_to_supabase,
         },
         "message": (
-            f"Litter {litter_id} newborn health action previewed for {len(active_piglets)} piglet(s)."
+            f"Litter {litter_id} weaning-day treatment previewed for {len(active_piglets)} piglet(s)."
+            if dry_run and treatment_context == "weaning_day"
+            else f"Litter {litter_id} weaning-day treatment saved for {len(active_piglets)} piglet(s)."
+            if treatment_context == "weaning_day"
+            else f"Litter {litter_id} newborn health action previewed for {len(active_piglets)} piglet(s)."
             if dry_run
             else f"Litter {litter_id} newborn health action saved for {len(active_piglets)} piglet(s)."
         ),
@@ -3709,6 +3727,7 @@ def _build_litter_health_treatment_row(
     given_by,
     notes,
     litter_id,
+    treatment_context="first_treatment",
 ):
     withdrawal_days = product.get("default_withdrawal_days")
     withdrawal_days_int = int(withdrawal_days) if withdrawal_days not in (None, "") else ""
@@ -3717,7 +3736,12 @@ def _build_litter_health_treatment_row(
         withdrawal_end_date = action_date.fromordinal(action_date.toordinal() + withdrawal_days_int)
 
     dose = dose_value if dose_value is not None else product.get("default_dose")
-    medical_notes = f"Litter {litter_id} newborn health action."
+    action_label = (
+        "weaning day treatment"
+        if treatment_context == "weaning_day"
+        else "newborn health action"
+    )
+    medical_notes = f"Litter {litter_id} {action_label}."
     if notes:
         medical_notes = f"{medical_notes} Notes: {notes}"
 
@@ -3731,7 +3755,7 @@ def _build_litter_health_treatment_row(
         dose if dose is not None else "",
         product.get("dose_unit", ""),
         route,
-        f"{treatment_type} during litter newborn health action",
+        f"{treatment_type} during litter {action_label}",
         batch_lot_number,
         withdrawal_days_int,
         format_date_for_sheet(withdrawal_end_date),

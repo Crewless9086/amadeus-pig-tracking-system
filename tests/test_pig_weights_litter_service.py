@@ -199,6 +199,10 @@ class LitterWeaningDayWorkflowTests(unittest.TestCase):
         self.assertEqual(result["wean_weights_captured"], 2)
         assign_tags.assert_called_once()
         record_health.assert_called_once()
+        self.assertEqual(
+            record_health.call_args.kwargs["treatment_context"],
+            "weaning_day",
+        )
         save_movement.assert_not_called()
         mark_weaned.assert_not_called()
 
@@ -2061,6 +2065,43 @@ class LitterNewbornHealthTests(unittest.TestCase):
         self.assertEqual(result["status"], "first_treatment_already_closed")
         self.assertTrue(result["first_treatment_complete"])
         append_row.assert_not_called()
+
+    def test_weaning_day_treatment_remains_available_after_first_treatment_closed(self):
+        product_rows = [{
+            "product_id": "PRD-DEWORM",
+            "product_name": "Piglet Dewormer",
+            "product_category": "Dewormer",
+            "default_dose": 2.5,
+            "dose_unit": "ml",
+            "default_withdrawal_days": 7,
+        }]
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-2", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        with patch.object(pig_weights_service, "_get_pig_master_rows", return_value=pig_rows), \
+             patch.object(pig_weights_service, "get_products", return_value=product_rows), \
+             patch.object(pig_weights_service, "_try_supabase_read", return_value={
+                 "first_treatment_complete": True,
+                 "first_treatment_partial": False,
+             }):
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                litter_id="LIT-1",
+                action_date_value="2026-08-10",
+                deworming_product_id="PRD-DEWORM",
+                dry_run=True,
+                treatment_context="weaning_day",
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["action"], "record_litter_weaning_treatment")
+        self.assertEqual(result["treatment_context"], "weaning_day")
+        self.assertEqual(result["treatment_rows_planned"], 2)
+        for row in result["planned_treatment_rows"]:
+            self.assertIn("weaning day treatment", row[9])
+            self.assertIn("weaning day treatment", row[16])
 
     def test_skip_first_treatment_records_one_durable_close_decision(self):
         with patch.object(
