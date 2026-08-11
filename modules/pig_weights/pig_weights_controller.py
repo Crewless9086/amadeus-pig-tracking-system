@@ -407,9 +407,9 @@ def get_weights_by_date(weight_date: str):
     }, 200
 
 
-def get_weight_report_data(date_from: str = "", date_to: str = "", pen_id: str = ""):
+def get_weight_report_data(date_from: str = "", date_to: str = "", pen_id: str = "", batch_id: str = ""):
     try:
-        return get_weight_report(date_from=date_from, date_to=date_to, pen_id=pen_id), 200
+        return get_weight_report(date_from=date_from, date_to=date_to, pen_id=pen_id, batch_id=batch_id), 200
     except ValueError as exc:
         return {
             "success": False,

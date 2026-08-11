@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from time import monotonic
 
 from services.database_service import DATABASE_URL_ENV
+from modules.pig_weights.herdmaster_weighing_batch_intelligence import build_weighing_batch_intelligence
 
 DEFAULT_LITTER_WEAN_AGE_DAYS = 30
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
@@ -2252,7 +2253,7 @@ def get_weight_entries_by_date(weight_date, connect_factory=None):
     return {"weight_date": _date_text(weight_date), "count": len(history), "history": history}
 
 
-def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
+def get_weight_report(date_from, date_to, pen_id="", connect_factory=None, batch_id=""):
     rows = _fetch_all(
         """
         select
@@ -2398,7 +2399,7 @@ def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
         if entry["difference_kg"] is not None and entry["difference_kg"] < 0
     ]
 
-    return {
+    result = {
         "success": True,
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
@@ -2429,3 +2430,63 @@ def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
         "entries": entries,
         "source": "supabase_canonical",
     }
+    if _text(batch_id):
+        result["herdmaster_intelligence"] = _completed_batch_intelligence(
+            _text(batch_id), selected_pen_id, connect_factory=connect_factory)
+    return result
+
+
+def _completed_batch_intelligence(batch_id, selected_pen_id="", connect_factory=None):
+    """Load one completed canonical batch and pass it to the pure evaluator."""
+    batch = _fetch_one(
+        """select batch_id::text, weight_date, status, visible_row_count,
+                  actionable_row_count, weight_row_count, movement_row_count,
+                  skipped_row_count, success_count, failed_count, duplicate_count,
+                  source, completed_at
+             from public.bulk_weight_batches where batch_id = %s::uuid""",
+        (batch_id,), connect_factory=connect_factory,
+    )
+    if not batch or _text(batch.get("status")).lower() != "complete":
+        return build_weighing_batch_intelligence(batch=batch or {}, batch_rows=[], weight_history=[])
+    rows = _fetch_all(
+        """select audit.row_id::text, audit.pig_id, audit.pig_name, audit.weight_kg,
+                  audit.from_pen_id, audit.to_pen_id, audit.status, audit.status_reason,
+                  event.weight_event_id::text, state.tag_number,
+                  state.status as lifecycle_state, state.current_pen_id, state.current_pen_name
+             from public.bulk_weight_batch_rows audit
+        left join public.pig_weight_events event
+               on event.bulk_batch_id = audit.batch_id and event.bulk_row_id = audit.row_id
+        left join public.current_canonical_pig_state state on state.pig_id = audit.pig_id
+            where audit.batch_id = %s::uuid
+         order by audit.row_index, event.created_at, event.weight_event_id""",
+        (batch_id,), connect_factory=connect_factory,
+    )
+    pig_ids = sorted({_text(row.get("pig_id")) for row in rows if _text(row.get("pig_id"))})
+    history = []
+    expected = []
+    if pig_ids:
+        history = _fetch_all(
+            """select weight_event_id::text, pig_id, weight_date, weight_kg, created_at
+                 from public.pig_weight_events
+                where pig_id = any(%s) and weight_date <= %s
+             order by pig_id, weight_date, created_at, weight_event_id""",
+            (pig_ids, batch["weight_date"]), connect_factory=connect_factory,
+        )
+        covered_pens = sorted({_text(row.get("current_pen_id") or row.get("from_pen_id")) for row in rows
+                               if _text(row.get("current_pen_id") or row.get("from_pen_id"))})
+        if selected_pen_id:
+            covered_pens = [selected_pen_id]
+        if covered_pens:
+            expected = _fetch_all(
+                """select pig_id, tag_number, current_pen_id, current_pen_name
+                     from public.current_canonical_pig_state
+                    where lower(coalesce(status, '')) = 'active'
+                      and lower(coalesce(on_farm::text, '')) in ('yes', 'true')
+                      and current_pen_id = any(%s)
+                 order by current_pen_id, tag_number, pig_id""",
+                (covered_pens,), connect_factory=connect_factory,
+            )
+    return build_weighing_batch_intelligence(
+        batch=batch, batch_rows=rows, weight_history=history, expected_animals=expected,
+        contexts=(), correction_lineage={"batch_id": batch_id, "completed_at": batch.get("completed_at")},
+    )

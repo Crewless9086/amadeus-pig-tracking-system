@@ -314,6 +314,7 @@ def weight_report():
         date_from=request.args.get("date_from", ""),
         date_to=request.args.get("date_to", ""),
         pen_id=request.args.get("pen_id", ""),
+        batch_id=request.args.get("batch_id", ""),
     )
     return jsonify(result), status_code
 
