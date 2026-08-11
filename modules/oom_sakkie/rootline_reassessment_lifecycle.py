@@ -26,6 +26,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     packet = {"identity": identity, "owner_user_id": owner_user_id, "chat_id": chat_id,
               "trigger": trigger, "material_digest": material,
               "result_id": str(current.get("result_id") or ""),
+              "operating_date": str(current.get("operating_date") or ""),
               "evidence_generation": str(current.get("generation") or current.get("evidence_cutoff") or ""),
               "evidence_cutoff": str(current.get("evidence_cutoff") or ""),
               "next_reassessment_at": _declared_next_due(current),
@@ -36,7 +37,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
         return _contained("rootline_reassessment_persistence_unproven")
     existing = state_store("load_identity", identity, None) or packet
     if any(str(existing.get(key) or "") != str(packet.get(key) or "")
-           for key in ("owner_user_id", "chat_id", "material_digest")):
+           for key in ("owner_user_id", "chat_id", "material_digest", "operating_date")):
         return _contained("rootline_reassessment_binding_conflict")
     delivery_state = str(existing.get("delivery_state") or "pending")
     if delivery_state == "delivered":

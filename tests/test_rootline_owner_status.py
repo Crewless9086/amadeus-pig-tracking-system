@@ -79,3 +79,11 @@ def test_active_runtime_is_selected_without_terminal_and_notification_is_correla
     assert active["execution_id"] == "ACTIVE" and active["state"] == "claimed"
     assert outcome["execution_id"] == "OLD"
     assert notification["state"] == "Started" and notification["provider_confirmed"] is True
+
+
+def test_consumer_query_requires_exact_persisted_operating_date():
+    import inspect
+    from modules.telemetry.rootline_owner_status import _canonical_evidence
+    from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline
+    assert "->>'operating_date'=%s" in inspect.getsource(_canonical_evidence)
+    assert '"operating_date": str(current.get("operating_date")' in inspect.getsource(reassess_rootline)

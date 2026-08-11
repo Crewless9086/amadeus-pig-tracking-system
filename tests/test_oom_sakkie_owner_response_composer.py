@@ -10,7 +10,7 @@ from modules.oom_sakkie.herdmaster_weight_preview import preview_grouped_herd_we
 NOW=datetime(2026,8,4,6,0,tzinfo=timezone.utc)
 
 def rootline(c="Hold"):
-    return {"success":True,"overall_status":"Plan ready",
+    return {"success":True,"overall_status":"Plan ready","operating_date":"2026-08-04",
         "current_power":{"battery_soc_pct":41,"solar_power_w":0,"load_power_w":776,"grid_power_w":0},
         "battery_policy":{"governing_reserve_soc_pct":63},
         "recommendations":[
@@ -128,6 +128,7 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
          "reason":"Fresh evidence supports this C Camp decision.",
          "planned_duration_minutes":None,"feasible_window":None},
     ]
+    assert rows[first["notification_identity"]]["operating_date"] == "2026-08-04"
     pending=reassess_rootline(owner_user_id="42",chat_id="42",trigger="declared_time",
         specialist_loader=lambda:rootline(),state_store=state)
     assert pending["notify_owner"] is True and pending["status"]=="rootline_reassessment_delivery_pending"
