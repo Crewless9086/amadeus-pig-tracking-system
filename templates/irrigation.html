@@ -3,11 +3,13 @@
 <body data-operations-page="irrigation"><div class="farm-app-shell">{% include '_farm_nav.html' %}<main class="operations-page">
   <header class="operations-hero"><div><span class="farm-eyebrow">ROOTLINE operations</span><h1>Irrigation</h1><p>The useful operating view: what is running, what is next, why a zone is held, and when ROOTLINE will reassess.</p></div><a class="manager-link" href="/">← Dashboard</a></header>
   <section class="detail-grid">
+    <article class="detail-card detail-wide" id="detail_irrigation_access" hidden></article>
     <article class="detail-card"><span class="farm-eyebrow">Current state</span><p class="detail-value" id="detail_irrigation_status">Loading</p><p class="detail-muted" id="detail_irrigation_note">Reading canonical irrigation status…</p></article>
     <article class="detail-card"><span class="farm-eyebrow">Current zone</span><p class="detail-value" id="detail_irrigation_current">--</p><p class="detail-muted">Only one zone may run at a time</p></article>
     <article class="detail-card"><span class="farm-eyebrow">Next</span><p class="detail-value" id="detail_irrigation_next">--</p><p class="detail-muted" id="detail_irrigation_next_note">Awaiting current plan</p></article>
     <article class="detail-card detail-wide"><h2>B &amp; C plan</h2><div class="detail-list" id="detail_irrigation_plan"><p class="detail-muted">Loading today’s plan…</p></div></article>
     <article class="detail-card"><h2>Owner action</h2><p class="detail-muted" id="detail_irrigation_owner">No owner action is currently supported.</p></article>
+    <article class="detail-card detail-wide"><h2>Rain, water and execution evidence</h2><div class="detail-list" id="detail_irrigation_evidence"><p class="detail-muted">Loading canonical evidence…</p></div></article>
   </section>
   <details class="technical-evidence"><summary><strong>Technical ROOTLINE evidence</strong> · open only when diagnosing or commissioning</summary><div class="detail-list" id="detail_irrigation_technical"><p class="detail-muted">Loading evidence independently…</p></div></details>
 </main></div><script src="{{ url_for('static', filename='js/operationsDetail.js') }}?v=20260810-v2"></script></body></html>
