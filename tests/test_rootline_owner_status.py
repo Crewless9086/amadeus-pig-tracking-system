@@ -87,3 +87,19 @@ def test_consumer_query_requires_exact_persisted_operating_date():
     from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline
     assert "->>'operating_date'=%s" in inspect.getsource(_canonical_evidence)
     assert '"operating_date": str(current.get("operating_date")' in inspect.getsource(reassess_rootline)
+
+
+def test_run_with_persisted_technical_blocker_projects_run_blocked():
+    from modules.telemetry.rootline_owner_status import (
+        _blocker, _operational_state, _specialist_projection,
+    )
+    projected = _specialist_projection({"operating_date":"2026-08-11","weather":{},
+        "reassessment":{"result_id":"R1","zones":[{"zone_id":"B12345",
+            "decision":"Run","reason":"Water is due.",
+            "eligibility_blocker":"controller_safety_not_dispatchable"}]}},
+        "2026-08-11", NOW)
+    b = next(row for row in projected["recommendations"] if row["subject"] == "B12345")
+    blocker = _blocker(b)
+    assert b["status"] == "Recommend"
+    assert blocker == "controller_safety_not_dispatchable"
+    assert _operational_state("Run", blocker, {}) == "Run — blocked"

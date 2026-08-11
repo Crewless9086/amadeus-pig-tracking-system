@@ -149,7 +149,7 @@ def _aware(value):
 
 def _technical_block_alert(initial, artifact, store, notify, next_due):
     blocker = str(artifact.get("status") or "")
-    technical = {"controller_safety_not_dispatchable", "eligibility_persistence_unproven"}
+    technical = {"controller_safety_not_dispatchable"}
     candidates = [row for row in initial["plan"].get("candidate_tasks") or []
                   if isinstance(row, dict) and row.get("zone_decision") == "Run now"]
     if blocker not in technical or not candidates:
@@ -164,9 +164,17 @@ def _technical_block_alert(initial, artifact, store, notify, next_due):
     claim = store("claim_notification", payload)
     if not isinstance(claim, dict) or claim.get("success") is not True or claim.get("created") is False:
         return {"telegram_messages": 0, "blocked_notification_identity": identity}
-    delivery = notify("Blocked", payload) or {}
-    confirmed = delivery.get("provider_delivery_confirmed") is True
+    try:
+        delivery = notify("Blocked", payload)
+        delivery = delivery if isinstance(delivery, dict) else {}
+        confirmed = delivery.get("provider_delivery_confirmed") is True
+        ambiguous = delivery.get("provider_delivery_ambiguous") is True
+        outcome = "confirmed" if confirmed else "ambiguous" if ambiguous else "failed"
+    except Exception:
+        delivery = {}; confirmed = False; ambiguous = False; outcome = "failed"
     store("record_notification_delivery", {**payload, "delivery_confirmed": confirmed,
+        "delivery_ambiguous": ambiguous, "delivery_outcome": outcome,
         "provider_message_id": str(delivery.get("provider_message_id") or "")})
     return {"telegram_messages": int(confirmed), "blocked_notification_identity": identity,
-            "blocked_notification_confirmed": confirmed}
+            "blocked_notification_confirmed": confirmed,
+            "blocked_notification_outcome": outcome}

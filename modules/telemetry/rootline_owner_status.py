@@ -154,7 +154,8 @@ def _specialist_projection(evidence, operating_date, now):
         recommendations.append({"subject": zone,
             "status": {"Run": "Recommend", "Not Due": "Do Not Run"}.get(state, state),
             "reason": reason, "planned_duration_minutes": row.get("planned_duration_minutes"),
-            "preferred_window": row.get("feasible_window"), "needs": []})
+            "preferred_window": row.get("feasible_window"),
+            "eligibility_blocker": row.get("eligibility_blocker"), "needs": []})
     overall = next((item["status"] for item in recommendations if item["status"] != "Needs Data"),
                    "Needs Data")
     return {"result_id": reassessment.get("result_id") if reassessment else None,
@@ -227,6 +228,9 @@ def _decision(value):
 
 
 def _blocker(recommendation):
+    technical = str(recommendation.get("eligibility_blocker") or "").strip()
+    if technical:
+        return technical
     if _decision(recommendation.get("status")) == "Run":
         return None
     needs = recommendation.get("needs") or []

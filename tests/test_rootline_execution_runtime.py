@@ -163,6 +163,29 @@ def test_run_to_technical_block_notifies_once_and_replay_is_silent():
     assert transport.calls==[] and first["telegram_messages"]==1 and replay["telegram_messages"]==0
 
 
+def test_blocked_notification_failure_is_durable_and_never_retried():
+    for response in (RuntimeError("delivery failed"), None,
+                     {"provider_delivery_ambiguous":True}, {"success":False}):
+        store=Store(); transport=Transport(); calls=[]; observations={}
+        unsafe={**controller(),"actuation_configuration_safe":False}
+        def obs(action,identity,payload):
+            created=identity not in observations; observations.setdefault(identity,payload)
+            return {"success":True,"created":created}
+        def notify(*args):
+            calls.append(1)
+            if isinstance(response,Exception): raise response
+            return response
+        loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
+        with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+            args=dict(notify=notify,environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,
+                store=store,token_store=object(),transport=transport,evidence_loader=loader,
+                readback=lambda **_kwargs:unsafe,owner_user_id="42",chat_id="42",observation_store=obs)
+            first=run_rootline_execution_cycle(**args); replay=run_rootline_execution_cycle(**args)
+        assert len(calls)==1 and first["telegram_messages"]==replay["telegram_messages"]==0
+        outcomes=[row for name,row in store.rows if name=="record_notification_delivery"]
+        assert len(outcomes)==1 and outcomes[0]["delivery_outcome"] in {"failed","ambiguous"}
+
+
 def test_expired_artifact_at_real_preclaim_time_creates_no_on():
     store=Store(); transport=Transport()
     later=NOW+timedelta(minutes=16)
