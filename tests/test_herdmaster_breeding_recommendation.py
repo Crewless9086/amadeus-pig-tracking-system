@@ -53,7 +53,7 @@ def test_multiple_acceptable_boars_are_ranked_by_attributable_performance():
     assert case["reserve_boar"]["pig_id"] == "BOAR-1"
 
 
-def test_unresolved_cycle_gets_conditional_not_actionable_primary_and_reserve():
+def test_unresolved_cycle_retains_future_ranking_but_is_not_a_candidate():
     second = boar("BOAR-2", "Carl")
     case = run(
         females=[sow(current_cycle={"state": "missing_evidence"})],
@@ -62,8 +62,16 @@ def test_unresolved_cycle_gets_conditional_not_actionable_primary_and_reserve():
     )["cases"][0]
     assert case["recommended_boar"] is None
     assert case["reserve_boar"] is None
-    assert case["conditional_primary_boar"]["pig_id"] == "BOAR-1"
-    assert case["conditional_reserve_boar"]["pig_id"] == "BOAR-2"
+    assert case["conditional_primary_boar"] is None
+    assert case["conditional_reserve_boar"] is None
+    assert case["future_primary_boar"]["pig_id"] == "BOAR-1"
+    assert case["future_reserve_boar"]["pig_id"] == "BOAR-2"
+    assert case["state"] == "reproductive_conflict"
+    assert not run(
+        females=[sow(current_cycle={"state": "missing_evidence"})],
+        boars=[boar(), second],
+        pedigrees={"SOW-1": tree("SD", "SS"), "BOAR-1": tree("BD", "BS"), "BOAR-2": tree("CD", "CS")},
+    )["whole_round_allocation"]["observations_needed"]
     assert case["mating_action_prohibited"] is True
 
 
@@ -159,11 +167,9 @@ def test_current_farm_evidence_cut_is_complete_and_fails_closed_per_boar():
     assert {item["tag_number"] for item in review["boar_assessments"]} == {"Bola", "Prince", "Tyson"}
     assert all("foundation ancestry is incomplete; no known unsafe relationship was found" in item["limitations"] for item in review["boar_assessments"])
     assert len(result["english"].splitlines()) == 19
-    assert "Nou by Bola" in result["afrikaans"]
-    assert "Nou by Tyson" in result["afrikaans"]
-    assert "Prince - beheerde proefgroep" in result["afrikaans"]
-    assert "Volgende groep" in result["afrikaans"]
-    assert "Waarnemings benodig" in result["afrikaans"]
+    assert "Moontlik geskik vir die volgende paringsessie" in result["afrikaans"]
+    assert "Kleinste gereedheidswaarnemings" in result["afrikaans"]
+    assert "Nie tans geskik nie" in result["afrikaans"]
     assert "waarskynlik dragtig" in result["afrikaans"]
 
 
@@ -354,3 +360,32 @@ def test_boar_physical_limitations_keep_pair_out_of_immediate_group_and_all_are_
     assert "beergewig is ontbrekend of oud" in text
     assert "beerbene het geen huidige positiewe waarneming nie" in text
     assert "boar weight" not in text and "boar legs" not in text
+
+
+def test_clovy_and_molly_unresolved_expected_farrow_cycles_are_excluded_from_candidates():
+    females = [
+        sow(pig_id="CLOVY", tag_number="Clovy", current_cycle={"state":"unresolved_expected_farrow", "mating_id":"MAT-C", "mating_date":"2026-03-30"}),
+        sow(pig_id="MOLLY", tag_number="Molly", current_cycle={"state":"unresolved_expected_farrow", "mating_id":"MAT-M", "mating_date":"2026-03-20"}),
+    ]
+    result = run(females=females, pedigrees={"CLOVY":tree("C1"), "MOLLY":tree("M1"), "BOAR-1":tree("B1")})
+    assert result["whole_round_allocation"]["next_group"] == []
+    assert result["whole_round_allocation"]["observations_needed"] == []
+    assert {row["name"] for row in result["whole_round_allocation"]["not_currently_eligible"]} == {"Clovy", "Molly"}
+    assert all(case["future_primary_boar"] for case in result["cases"])
+    assert "Clovy: onopgeloste verwagte-kraam/dragtigheidsiklus" in result["afrikaans"]
+    assert "Molly: onopgeloste verwagte-kraam/dragtigheidsiklus" in result["afrikaans"]
+
+
+def test_only_no_active_cycle_with_missing_physical_evidence_is_a_session_candidate():
+    states = ("assumed_pregnant", "expected_to_farrow", "nursing", "post_weaning_recovery", "inconclusive")
+    held = [sow(pig_id=f"SOW-{index}", tag_number=state, current_cycle={"state":state}) for index, state in enumerate(states)]
+    ready = sow(pig_id="READY", tag_number="Ready", current_cycle={"state":"no_active_cycle"}, observations={})
+    pedigrees = {row["pig_id"]:tree(row["pig_id"]+"-A") for row in held+[ready]}
+    pedigrees["BOAR-1"] = tree("B1")
+    result = run(females=held+[ready], pedigrees=pedigrees)
+    observations = result["whole_round_allocation"]["observations_needed"]
+    assert [row["name"] for row in observations] == ["Ready"]
+    assert {row["name"] for row in result["whole_round_allocation"]["not_currently_eligible"]} == set(states)
+    held_packets = [row for row in result["oom_sakkie_packet"]["cases"] if row["tag_number"] != "Ready"]
+    assert all("future_primary_boar" not in row and "future_reserve_boar" not in row for row in held_packets)
+    assert all(row["recommended_boar"] is None and row["conditional_primary_boar"] is None for row in held_packets)

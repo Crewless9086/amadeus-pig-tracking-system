@@ -11,10 +11,11 @@ import json
 from datetime import date
 
 
-CONTRACT_VERSION = "herdmaster_breeding_recommendation_v2"
+CONTRACT_VERSION = "herdmaster_breeding_recommendation_v3"
 ACTIVE_CYCLES = {
     "recently_mated", "post_mating_monitoring", "assumed_pregnant",
-    "confirmed_pregnant", "expected_to_farrow", "inconclusive",
+    "confirmed_pregnant", "expected_to_farrow", "unresolved_expected_farrow",
+    "inconclusive",
 }
 WEIGHT_FRESH_DAYS = 30
 
@@ -80,20 +81,25 @@ def _female_case(female, boars, evidence, today):
     if state == "eligible_for_mating_review":
         blockers.extend(_female_eligibility_blockers(female, evidence, today))
         if blockers:
-            state, action, priority = "missing_evidence", _next_action(blockers), 45
+            if all(_physical_blocker(item) for item in blockers):
+                state, action, priority = "readiness_observation_needed", _next_action(blockers), 45
+            else:
+                state, action, priority = "held", "Resolve the listed governed restriction before mating review.", 10
     rankings = [_pairing(female, boar, evidence, today) for boar in boars]
     rankings.sort(key=lambda row: (row["excluded"], -row["score"], row["tag_number"].lower(), row["pig_id"]))
     qualified = [row for row in rankings if not row["excluded"]]
     recommendation = qualified[0] if state == "eligible_for_mating_review" and qualified else None
     reserve = qualified[1] if state == "eligible_for_mating_review" and len(qualified) > 1 else None
-    conditional_primary = qualified[0] if state in {"missing_evidence", "recovering"} and qualified else None
-    conditional_reserve = qualified[1] if state in {"missing_evidence", "recovering"} and len(qualified) > 1 else None
+    conditional_primary = qualified[0] if state == "readiness_observation_needed" and qualified else None
+    conditional_reserve = qualified[1] if state == "readiness_observation_needed" and len(qualified) > 1 else None
+    future_primary = qualified[0] if state not in {"eligible_for_mating_review", "readiness_observation_needed"} and qualified else None
+    future_reserve = qualified[1] if state not in {"eligible_for_mating_review", "readiness_observation_needed"} and len(qualified) > 1 else None
     if state == "eligible_for_mating_review" and not qualified:
         action = "Resolve the listed pair-specific evidence; no boar is currently evidence-qualified."
     physical_only = bool(blockers) and all(_physical_blocker(item) for item in blockers)
     pairing_assessment = (
         "recommended" if recommendation
-        else "possible_but_needs_one_observation" if state == "missing_evidence" and physical_only and qualified
+        else "possible_but_needs_one_observation" if state == "readiness_observation_needed" and physical_only and qualified
         else "not_eligible"
     )
     question = _smallest_physical_question(female, state) if pairing_assessment == "possible_but_needs_one_observation" else None
@@ -115,6 +121,8 @@ def _female_case(female, boars, evidence, today):
         "reserve_boar": reserve,
         "conditional_primary_boar": conditional_primary,
         "conditional_reserve_boar": conditional_reserve,
+        "future_primary_boar": future_primary,
+        "future_reserve_boar": future_reserve,
         "owner_choice_required": False,
         "boar_assessments": rankings,
         "mating_action_prohibited": True,
@@ -133,7 +141,9 @@ def _state_action(female, cycle_state, welfare_active):
     if cycle_state in ACTIVE_CYCLES:
         labels = {
             "assumed_pregnant": "assumed_pregnant", "confirmed_pregnant": "expected_to_farrow",
-            "expected_to_farrow": "expected_to_farrow", "inconclusive": "inconclusive",
+            "expected_to_farrow": "expected_to_farrow",
+            "unresolved_expected_farrow": "unresolved_expected_farrow",
+            "inconclusive": "inconclusive",
         }
         return labels.get(cycle_state, "already_mated"), _cycle_action(cycle_state), 15
     if cycle_state == "nursing":
@@ -144,7 +154,7 @@ def _state_action(female, cycle_state, welfare_active):
         return "recovering", "Complete the smallest post-weaning body-condition and soundness inspection.", 22
     if cycle_state in {"no_active_cycle", "eligible_for_mating_review"}:
         return "eligible_for_mating_review", "Review current heat and evidence-qualified boars; mating still requires separate approval.", 35
-    return "missing_evidence", "Establish the current reproductive cycle before considering another mating.", 30
+    return "reproductive_conflict", "Resolve the current reproductive lifecycle before considering another mating.", 30
 
 
 def _cycle_action(state):
@@ -154,6 +164,7 @@ def _cycle_action(state):
         "assumed_pregnant": "Continue proportional farrowing preparation; this is not clinical confirmation.",
         "confirmed_pregnant": "Continue pregnancy and farrowing monitoring using the governed result.",
         "expected_to_farrow": "Continue farrowing preparation and monitoring.",
+        "unresolved_expected_farrow": "Resolve the overdue expected-farrow or pregnancy lifecycle; do not recommend another mating.",
         "inconclusive": "Preserve the unresolved cycle and perform the scheduled reproductive-status reassessment.",
     }[state]
 
@@ -332,13 +343,16 @@ def _allocate_round(cases, boars, evidence):
     capacity = max(1, min(capacity, 10))
     names = {_text(row.get("pig_id")): _text(row.get("tag_number")) for row in boars}
     groups = {pig_id: [] for pig_id in names}
-    next_group, observations = [], []
+    next_group, observations, excluded_now = [], [], []
     # Allocate only after every female already has her genetic/production primary.
     for case in cases:
         primary = case.get("recommended_boar")
         if not primary:
             if case.get("conditional_primary_boar"):
                 observations.append(_allocation_row(case, case["conditional_primary_boar"], conditional=True))
+            else:
+                excluded_now.append({"pig_id": case["pig_id"], "name": case["tag_number"],
+                    "state": case["state"], "reason": case["next_action"]})
             continue
         boar_id = primary["pig_id"]
         row = _allocation_row(case, primary)
@@ -361,6 +375,7 @@ def _allocate_round(cases, boars, evidence):
             "section": "Prince - beheerde proefgroep" if names[pig_id].casefold() == "prince" else f"Nou by {names[pig_id]}",
             "females": groups.get(pig_id, [])} for pig_id in sorted(names, key=lambda key: names[key].casefold())],
         "next_group": next_group, "observations_needed": observations,
+        "not_currently_eligible": excluded_now,
         "mating_execution_enabled": False, "writes_performed": False}
 
 
@@ -422,7 +437,7 @@ def _valid_assumed_pregnancy(row, cycle, evidence, today):
 
 
 def _smallest_physical_question(row, state):
-    if state in {"already_mated", "assumed_pregnant", "expected_to_farrow", "inconclusive", "nursing", "held", "unsuitable"}: return None
+    if state in {"already_mated", "assumed_pregnant", "expected_to_farrow", "unresolved_expected_farrow", "inconclusive", "nursing", "recovering", "held", "unsuitable", "reproductive_conflict"}: return None
     observations = row.get("observations") if isinstance(row.get("observations"), dict) else {}
     gaps = [label for key, label in (("body_condition", "body condition"), ("legs_sound", "legs and normal movement"), ("visible_concern", "any visible concern"), ("heat", "heat observed or not observed")) if observations.get(key) in {None, "", "Unknown", "unknown"}]
     return None if not gaps else f"For {row.get('tag_number') or row.get('pig_id')}, please report " + ", ".join(gaps) + " from one current inspection."
@@ -446,17 +461,19 @@ def _render(cases, language, allocation=None):
     attention = [r for r in cases if r not in actionable]
     if language == "af" and allocation:
         lines = [f"Teelwerklys: {len(cases)} sôe/gelte nagegaan. Geen paring word geskep nie."]
+        lines.append("\nMoontlik geskik vir die volgende paringsessie")
         for group in allocation["groups"]:
-            lines.append("\n" + group["section"])
             lines.extend(_af_allocation_bullet(row) for row in group["females"])
-        lines.append("\nVolgende groep")
         lines.extend(_af_allocation_bullet(row) for row in allocation["next_group"])
-        lines.append("\nWaarnemings benodig")
+        if not any(group["females"] for group in allocation["groups"]) and not allocation["next_group"]:
+            lines.append("- Niemand is reeds fisies gereed bevestig nie.")
+        lines.append("\nKleinste gereedheidswaarnemings")
         lines.extend(_af_allocation_bullet(row) for row in allocation["observations_needed"])
-        listed = {row["pig_id"] for row in allocation["observations_needed"]}
-        for row in attention:
-            if row["pig_id"] not in listed and not row.get("recommended_boar"):
-                lines.append(f"- {_safe_text(row['tag_number'])}: {_af_state(row['state'])}; {_af_action(row)}")
+        if not allocation["observations_needed"]:
+            lines.append("- Geen verdere gereedheidswaarneming vir die kortlys nie.")
+        lines.append("\nNie tans geskik nie")
+        for item in allocation["not_currently_eligible"]:
+            lines.append(f"- {_safe_text(item['name'])}: {_af_state(item['state'])}; {_af_action({'state': item['state'], 'next_action': item['reason']})}")
     elif language == "af":
         lines = [f"Teelaandag: {len(cases)} sôe/gelte nagegaan. Geen paring word geskep nie."]
         for row in actionable + attention:
@@ -549,11 +566,14 @@ def _sanitized_allocation(allocation):
             for group in allocation.get("groups", []) if isinstance(group, dict)],
         "next_group": [public_row(row) for row in allocation.get("next_group", []) if isinstance(row, dict)],
         "observations_needed": [public_row(row) for row in allocation.get("observations_needed", []) if isinstance(row, dict)],
+        "not_currently_eligible": [{"pig_id": _safe_text(row.get("pig_id"), 128),
+            "name": _safe_text(row.get("name"), 96), "state": _safe_text(row.get("state"), 48),
+            "reason": _safe_text(row.get("reason"), 240)} for row in allocation.get("not_currently_eligible", []) if isinstance(row, dict)],
         "mating_execution_enabled": False, "writes_performed": False}
 
 
 def _af_state(state):
-    return {"eligible_for_mating_review":"gereed vir teeloorsig", "held":"op hou", "unsuitable":"nie tans geskik nie", "already_mated":"reeds gepaar", "assumed_pregnant":"waarskynlik dragtig volgens visuele waarneming, nie klinies bevestig nie", "expected_to_farrow":"verwag om te kraam", "inconclusive":"onbeslis", "nursing":"soog tans", "recovering":"herstel ná speen", "missing_evidence":"bewyse ontbreek"}.get(state, "status onbekend")
+    return {"eligible_for_mating_review":"gereed vir teeloorsig", "readiness_observation_needed":"moontlik geskik ná huidige gereedheidswaarneming", "held":"op hou", "unsuitable":"nie tans geskik nie", "already_mated":"reeds gepaar", "assumed_pregnant":"waarskynlik dragtig volgens visuele waarneming, nie klinies bevestig nie", "expected_to_farrow":"verwag om te kraam", "unresolved_expected_farrow":"onopgeloste verwagte-kraam/dragtigheidsiklus", "reproductive_conflict":"onopgeloste voortplantingsiklus", "inconclusive":"onbeslis", "nursing":"soog tans", "recovering":"herstel ná speen", "missing_evidence":"bewyse ontbreek"}.get(state, "status onbekend")
 
 
 def _af_action(row):
@@ -562,8 +582,8 @@ def _af_action(row):
     if state == "held" and "owner hold" in action: return "Handhaaf die eienaar se hou en heroorweeg eers ná uitdruklike vrystelling."
     if state == "held": return "Los die beheerde gesondheids- of onttrekkingshou op voor teeloorsig."
     if state == "missing_evidence" and "Bind the visual" in action: return "Bind die visuele waarneming aan hierdie sog en presiese paring voor dragtigheidsbeplanning."
-    if state == "missing_evidence" and "Record one current inspection" in action: return "Teken een huidige, gegroepeerde fisiese inspeksie aan."
-    return {"unsuitable":"Geen teelaksie nie.", "already_mated":"Hou die bestaande siklus dop; moenie nog 'n paring aanbeveel nie.", "assumed_pregnant":"Gaan voort met proporsionele kraamvoorbereiding; dit is nie kliniese bevestiging nie.", "expected_to_farrow":"Gaan voort met dragtigheids- en kraammonitering.", "inconclusive":"Behou die onopgeloste siklus en doen die beplande herbeoordeling.", "nursing":"Beskerm die soogwerk en heroorweeg ná bevestigde speen.", "recovering":"Voltooi die kleinste liggaamskondisie- en loopinspeksie.", "eligible_for_mating_review":"Hersien huidige hitte en slegs bewys-gekwalifiseerde bere; paring vereis aparte goedkeuring.", "missing_evidence":"Los die gelyste beheerde bewyse op voordat paring oorweeg word."}.get(state, _safe_text(action, 240))
+    if state == "readiness_observation_needed": return "Teken een huidige, gegroepeerde gereedheidsinspeksie aan."
+    return {"unsuitable":"Geen teelaksie nie.", "already_mated":"Hou die bestaande siklus dop; moenie nog 'n paring aanbeveel nie.", "assumed_pregnant":"Gaan voort met proporsionele kraamvoorbereiding; dit is nie kliniese bevestiging nie.", "expected_to_farrow":"Gaan voort met dragtigheids- en kraammonitering.", "unresolved_expected_farrow":"Los die agterstallige verwagte-kraam of dragtigheidsiklus op; moenie nog 'n paring aanbeveel nie.", "reproductive_conflict":"Los die huidige voortplantingsiklus op voordat nog 'n paring oorweeg word.", "inconclusive":"Behou die onopgeloste siklus en doen die beplande herbeoordeling.", "nursing":"Beskerm die soogwerk en heroorweeg ná bevestigde speen.", "recovering":"Voltooi die kleinste liggaamskondisie- en loopinspeksie.", "eligible_for_mating_review":"Hersien huidige hitte en slegs bewys-gekwalifiseerde bere; paring vereis aparte goedkeuring.", "missing_evidence":"Los die gelyste beheerde bewyse op voordat paring oorweeg word."}.get(state, _safe_text(action, 240))
 
 
 def _safe_text(value, limit=96):
