@@ -60,9 +60,11 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None):
     source_plan_generation = str(plan.get("evidence_generation") or "")
     if not source_plan_generation:
         return _none("plan_generation_unavailable")
+    governed_obligation = {key: value for key, value in obligation.items()
+                           if key != "ledger_complete_through"}
     irrigation_plan_material = {"zone_id": zone, "zone_decision": task.get("zone_decision"),
         "rank": task.get("rank"), "planned_duration_minutes": task.get("planned_duration_minutes"),
-        "weekly_obligation": obligation, "reason": task.get("reason")}
+        "weekly_obligation": governed_obligation, "reason": task.get("reason")}
     plan_generation = "ROOTLINE-BC-PLAN-" + _digest(irrigation_plan_material)[:24].upper()
     consumption_key = "ROOTLINE-BC-CONSUMPTION-" + _digest({
         "source_plan_generation": source_plan_generation,
@@ -151,9 +153,16 @@ def equivalent_fresh_eligibility(original, fresh, *, now=None):
     # and evidence digest. Equivalence binds the governed decision material while
     # the freshly rebuilt artifact independently re-proves weather, water and controller safety.
     keys = ("plan_generation", "zone_id", "channel",
-            "maximum_duration_seconds", "weekly_debt", "command_mapping",
+            "maximum_duration_seconds", "command_mapping",
             "controller_safety_generation")
-    return all(original.get(key) == fresh.get(key) for key in keys)
+    return (all(original.get(key) == fresh.get(key) for key in keys)
+            and _governed_debt(original.get("weekly_debt")) ==
+                _governed_debt(fresh.get("weekly_debt")))
+
+
+def _governed_debt(value):
+    return ({key: item for key, item in value.items() if key != "ledger_complete_through"}
+            if isinstance(value, dict) else value)
 
 
 def _controller(value, zone, now):
