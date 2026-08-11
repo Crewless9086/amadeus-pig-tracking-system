@@ -408,6 +408,56 @@ def test_recorded_boar_reservation_excludes_while_unknown_negative_coverage_does
     assert all(row["tag_number"] != "Reserved" for row in recommendation["alternatives"])
 
 
+def test_later_attributable_farrowing_and_weaning_close_historical_cycle_for_placement():
+    result = build(
+        matings=[{"mating_id":"MAT-1", "sow_pig_id":"PIG-MS", "boar_pig_id":"BOAR-1", "mating_date":"2026-03-20", "pregnancy_check_result":"Pregnant"}],
+        litters=[{"litter_id":"LIT-1", "sow_pig_id":"PIG-MS", "boar_pig_id":"BOAR-1", "farrowing_date":"2026-07-10", "wean_date":"2026-07-27"}],
+    )
+    classification = result["cases"][0]["classification"]
+    assert classification["state"] == "Ready for mating review"
+    assert classification["exposure_start_date"] == "2026-07-28"
+    assert result["cases"][0]["male_recommendation"]["recommended"] is not None
+
+
+def test_unresolved_positive_cycle_cannot_inherit_old_weaning_schedule():
+    result = build(
+        matings=[{"mating_id":"MAT-NEW", "sow_pig_id":"PIG-MS", "boar_pig_id":"BOAR-1", "mating_date":"2026-07-20", "pregnancy_check_result":"Pregnant"}],
+        litters=[{"litter_id":"LIT-OLD", "sow_pig_id":"PIG-MS", "boar_pig_id":"BOAR-1", "farrowing_date":"2026-06-01", "wean_date":"2026-07-01"}],
+    )
+    classification = result["cases"][0]["classification"]
+    assert classification["state"] != "Ready for mating review"
+    assert classification["proposed_placement_date"] is None
+    assert result["cases"][0]["male_recommendation"]["recommended"] is None
+
+
+def test_two_compatible_litters_do_not_ambiguously_close_mating_cycle():
+    result = build(
+        matings=[{
+            "mating_id":"MAT-1", "sow_pig_id":"PIG-MS",
+            "boar_pig_id":"BOAR-1", "mating_date":"2026-03-20",
+            "pregnancy_check_result":"Pregnant",
+        }],
+        litters=[
+            {
+                "litter_id":"LIT-1", "sow_pig_id":"PIG-MS",
+                "boar_pig_id":"BOAR-1", "farrowing_date":"2026-07-10",
+                "wean_date":"2026-07-27",
+            },
+            {
+                "litter_id":"LIT-2", "sow_pig_id":"PIG-MS",
+                "boar_pig_id":"BOAR-1", "farrowing_date":"2026-07-12",
+                "wean_date":"2026-07-29",
+            },
+        ],
+    )
+    classification = result["cases"][0]["classification"]
+    assert classification["state"] != "Ready for mating review"
+    assert classification["proposed_placement_date"] is None
+    assert classification["exposure_start_date"] is None
+    assert classification["exposure_end_date"] is None
+    assert result["cases"][0]["male_recommendation"]["recommended"] is None
+
+
 def test_equal_male_evidence_produces_deterministic_primary_and_reserve():
     result = build(
         observations=[obs(body_condition_score=3, standing_heat="observed")],
