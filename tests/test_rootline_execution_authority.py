@@ -98,6 +98,20 @@ def test_fresh_receipt_generation_is_equivalent_when_decision_and_all_gates_stil
     assert equivalent_fresh_eligibility(first,later,now=NOW+timedelta(minutes=1))
 
 
+def test_weekly_ledger_cutoff_refresh_is_provenance_not_decision_drift():
+    plan,evidence,controller=inputs()
+    plan["candidate_tasks"][0]["weekly_obligation"]["ledger_complete_through"]=NOW.isoformat()
+    first=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,now=NOW)
+    fresh=deepcopy(plan)
+    fresh["candidate_tasks"][0]["weekly_obligation"]["ledger_complete_through"]=(NOW+timedelta(minutes=1)).isoformat()
+    later=build_execution_eligibility(plan=fresh,evidence=evidence,
+        controller={**controller,"trusted_receipt_at":(NOW+timedelta(minutes=1)).isoformat(),
+                    "response_digest":"READ-LATER"},now=NOW+timedelta(minutes=1))
+    assert first["weekly_debt"]["ledger_complete_through"] != later["weekly_debt"]["ledger_complete_through"]
+    assert first["plan_generation"] == later["plan_generation"]
+    assert equivalent_fresh_eligibility(first,later,now=NOW+timedelta(minutes=1))
+
+
 def test_power_never_changes_eligibility_but_canonical_generation_remains_bound():
     plan,evidence,controller=inputs()
     first=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,now=NOW)
