@@ -152,11 +152,15 @@ def _load_active_lifecycles(owner_user_id):
                   and h.review_json->'herdmaster_health_loss'->>'owner_user_id'=%s
                 order by h.created_at,h.review_event_id""", (str(owner_user_id),))
             rows = [(row[0], str(row[1] or "")) for row in cursor.fetchall() if isinstance(row[0], dict)]
+    terminal_pigs = _load_terminal_pig_ids()
     active = {}
     for row, card_message_id in rows:
         identity = ((row.get("preview") or {}).get("evaluator") or {}).get("identity") or {}
         pig_id = str(identity.get("pig_id") or "")
         if not pig_id:
+            continue
+        if pig_id in terminal_pigs:
+            active.pop(pig_id, None)
             continue
         lifecycle_id = str(row.get("mission_id") or "")
         if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
@@ -176,6 +180,16 @@ def _load_active_lifecycles(owner_user_id):
             # supersedes stale earlier active projections for that animal.
             active.pop(pig_id, None)
     return list(active.values())
+
+
+def _load_terminal_pig_ids():
+    """Canonical terminal state retires stale open specialist projections."""
+    with _connect() as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            cursor.execute("""select pig_id from public.current_canonical_pig_state
+                where lower(status) in ('dead','sold') or on_farm is false""")
+            return {str(row[0]) for row in cursor.fetchall() if row and row[0]}
 
 
 def _retain_active_mortality_context(previous, current):

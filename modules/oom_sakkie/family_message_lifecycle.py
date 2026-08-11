@@ -202,8 +202,11 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 if sender else _send_telegram(str(parsed.get("telegram_chat_id") or ""),text,reply_markup))
     message_id = str(response.get("telegram_message_id") or "")
     if not response.get("success") or not message_id:
+        reason = ("telegram_delivery_definitely_not_sent"
+                  if response.get("delivery_definitely_not_sent") is True
+                  else "telegram_delivery_unconfirmed")
         store("record", attempt_id + "-CONTAINED", {**payload, "event_id": attempt_id + "-CONTAINED",
-            "state": "contained", "reason": "telegram_delivery_unconfirmed"})
+            "state": "contained", "reason": reason})
         return {"success": False, "status": "family_message_delivery_contained",
                 "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0,
                 "delivery_definitely_not_sent": response.get("delivery_definitely_not_sent") is True}

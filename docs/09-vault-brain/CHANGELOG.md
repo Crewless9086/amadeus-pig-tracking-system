@@ -663,3 +663,17 @@
   identities, overdue litter/data-quality watchers and governed sale readiness.
 - Integrated the reviewed HERDMASTER breeding and auction-sale source lineages;
   deployment and business acceptance remain pending.
+## 2026-08-11 - Oom Sakkie specific HERDMASTER request boundary prepared
+
+- Reconciled authenticated Telegram 3527 and relay execution 63796: a specific
+  updated breeding-plan request was incorrectly consumed by the broad farm
+  manager and delivered as Telegram 3528.
+- Added one provider-bound HERDMASTER request lifecycle that consumes the
+  current canonical breeding worklist, renders concise English/Afrikaans plans,
+  preserves protected mating authority and suppresses exact replay.
+- Restricted the consolidated farm-manager handler to semantic
+  `manager_round` requests and made canonical Dead/Sold/off-farm state retire
+  stale active mortality projections.
+- Authoritative readback proves Pig 127 is Dead and off-farm effective
+  2026-08-03; no protected mortality decision remains. Pig 130's corrected
+  2026-08-06 death and the four 11 August weight records remain unchanged.

@@ -11,6 +11,19 @@
 
 ## Oom Sakkie owner-request lifecycle
 
+### Specific HERDMASTER management requests
+
+- Semantic meaning and bounded owner context: `modules/oom_sakkie/semantic_front_door.py`.
+- Provider-bound HERDMASTER request, canonical breeding worklist consumption,
+  concise bilingual plan and replay claim: `modules/oom_sakkie/herdmaster_request_runtime.py`.
+- Gateway precedence and provider delivery: `modules/oom_sakkie/telegram_gateway.py`.
+- Broad `manager_round` requests remain owned by
+  `modules/oom_sakkie/farm_manager_runtime.py`; a confident
+  `herd_management` request is not a consolidated daily brief.
+- Canonical Dead/Sold/off-farm state retires stale health-loss projections in
+  `modules/oom_sakkie/herdmaster_management_runtime.py` before HERDMASTER or
+  Daily Farm Manager composition.
+
 ### HERDMASTER mortality intelligence consumption
 
 - Pure evaluator and packet: `modules/pig_weights/herdmaster_mortality_intelligence.py`.

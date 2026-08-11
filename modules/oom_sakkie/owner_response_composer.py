@@ -183,13 +183,22 @@ def _safe(value):
 
 def _clip(value, limit):
     text = " ".join(str(value or "").split())
-    escaped, used = [], 0
+    if len(html.escape(text, quote=False)) <= limit:
+        return html.escape(text, quote=False)
+    characters=[]; used=0
     for character in text:
-        entity = html.escape(character, quote=False)
-        if used + len(entity) > limit:
-            return "".join(escaped).rstrip() + "…"
-        escaped.append(entity); used += len(entity)
-    return "".join(escaped)
+        entity=html.escape(character,quote=False)
+        if used+len(entity)>limit:
+            break
+        characters.append(character); used+=len(entity)
+    candidate = "".join(characters).rstrip()
+    sentence_end = max(candidate.rfind(". "), candidate.rfind("; "))
+    if sentence_end >= max(40, limit // 3):
+        return html.escape(candidate[:sentence_end + 1].rstrip(), quote=False)
+    word_end = candidate.rfind(" ")
+    candidate = candidate[:word_end if word_end > 0 else limit].rstrip(" ,;:-")
+    candidate += ("." if candidate and candidate[-1] not in ".!?" else "")
+    return html.escape(candidate, quote=False)
 
 
 def _value(value, suffix="", *, af=False):
