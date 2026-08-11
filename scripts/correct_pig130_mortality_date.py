@@ -1,5 +1,7 @@
 """Governed one-time Pig 130 effective-date correction (idempotent on replay)."""
-import argparse,json
+import argparse,json,sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from modules.oom_sakkie.gateway_authority import (
     issue_gateway_owner_authority,issue_mortality_correction_authority)
 from modules.pig_weights.mortality_date_correction import (

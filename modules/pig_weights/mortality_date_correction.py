@@ -69,7 +69,9 @@ def correct_mortality_effective_date(packet, authority=None, *, connect_factory=
              "corrected_date":packet["corrected_date"],"resulting_status":"Dead","resulting_on_farm":False,
              "owner_evidence":evidence},sort_keys=True),packet["operation_id"],prior[0]))
         note=f"{packet['corrected_date']} governed mortality-date correction {correction_id}; original {prior[0]} preserved."
-        cur.execute("update public.pigs set exit_date=%s::date,notes=concat_ws(E'\\n',nullif(notes,''),%s),updated_at=now() where pig_id=%s",(packet["corrected_date"],note,packet["pig_id"]))
+        cur.execute("""update public.pigs set exit_date=%s::date,
+          notes=concat_ws(E'\\n',nullif(notes,''),%s::text),updated_at=now()
+          where pig_id=%s""",(packet["corrected_date"],note,packet["pig_id"]))
     return {"success":True,"status":"mortality_effective_date_corrected","correction_id":correction_id,
       "lifecycle_event_id":lifecycle_id,"pig_id":packet["pig_id"],"corrected_date":packet["corrected_date"],
       "lifecycle_status":"Dead","on_farm":False,"rows_changed":3,"writes_farm_data":True},201
