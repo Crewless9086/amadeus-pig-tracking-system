@@ -442,6 +442,7 @@ def _provider_bounded_outcome(execution, shutdown, now):
             or not start.get("evidence_id") or not shutdown.get("evidence_id")
             or None in {claimed, started, stopped, primary, native}
             or not 0 < runtime_seconds <= 3599 or primary != native
+            or primary != claimed + timedelta(seconds=runtime_seconds)
             or not claimed <= started < primary <= stopped <= now):
         return {}
     packet = {
