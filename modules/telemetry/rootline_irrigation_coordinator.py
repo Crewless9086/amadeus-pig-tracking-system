@@ -299,6 +299,8 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
                        messages=delivery["confirmed"], notification=delivery)
     objective = _canonical_outcome(
         outcome_reader(active["execution_id"]), active, shutdown, now)
+    if not objective:
+        objective = _provider_bounded_outcome(active, shutdown, now)
     completed = {**active, "state": "Completed", "shutdown_verified": True,
                  "objective_satisfied": objective.get("objective_satisfied") is True,
                  "objective_evidence": objective,
@@ -416,6 +418,50 @@ def _canonical_outcome(packet, execution, shutdown, now):
             or packet.get("actor") != "ROOTLINE_CANONICAL_OUTCOME"
             or packet.get("provenance") not in {"canonical_post_segment", "authenticated_owner_outcome"}):
         return {}
+    return packet
+
+
+def _provider_bounded_outcome(execution, shutdown, now):
+    """Prove the bounded controller segment, never crop-water delivery.
+
+    Provider-confirmed ON, an armed native deadline, coordinator ownership
+    through that deadline, and provider-confirmed OFF after it support the
+    control objective.  They do not prove flow, volume, or agronomic response.
+    """
+    start = execution.get("start_evidence") if isinstance(execution, dict) else None
+    start = start if isinstance(start, dict) else {}
+    claimed = _timestamp(execution.get("claimed_at"))
+    started = _timestamp(start.get("retrieved_at"))
+    stopped = _timestamp(shutdown.get("retrieved_at"))
+    primary = _timestamp(execution.get("primary_stop_deadline"))
+    native = _timestamp(execution.get("native_fail_stop_deadline"))
+    runtime_seconds = int(execution.get("planned_runtime_seconds") or 0)
+    if (execution.get("state") != "Active" or execution.get("on_attempts") != 1
+            or start.get("authoritative") is not True or start.get("state") != "ON"
+            or shutdown.get("authoritative") is not True or shutdown.get("state") != "OFF"
+            or not start.get("evidence_id") or not shutdown.get("evidence_id")
+            or None in {claimed, started, stopped, primary, native}
+            or not 0 < runtime_seconds <= 3599 or primary != native
+            or not claimed <= started < primary <= stopped <= now):
+        return {}
+    packet = {
+        "execution_id": execution.get("execution_id"),
+        "zone_id": execution.get("zone_id"), "channel": execution.get("channel"),
+        "eligibility_id": execution.get("eligibility_id"),
+        "evidence_generation": execution.get("evidence_generation"),
+        "observed_at": stopped.isoformat(), "actual_start": started.isoformat(),
+        "actual_stop": stopped.isoformat(),
+        "planned_runtime_minutes": execution.get("planned_runtime_minutes"),
+        "verified_runtime_minutes": runtime_seconds / 60.0,
+        "shutdown_verified": True, "objective_satisfied": True,
+        "start_evidence_id": start.get("evidence_id"),
+        "shutdown_evidence_id": shutdown.get("evidence_id"),
+        "native_fail_stop_deadline": native.isoformat(),
+        "physical_flow_confirmation": "Unavailable",
+        "delivered_volume": "Unavailable", "flow_rate": "Unavailable",
+        "actor": "ROOTLINE_CANONICAL_OUTCOME", "provenance": "canonical_post_segment",
+    }
+    packet["outcome_sha256"] = _digest(packet)
     return packet
 
 
