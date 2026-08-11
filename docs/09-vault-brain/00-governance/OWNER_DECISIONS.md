@@ -1,5 +1,11 @@
 # Owner Decisions
 
+## 2026-08-11: Foundation herd and genetic-selection objective
+
+Charl declared the current foundation breeding population operationally unrelated unless attributable evidence proves otherwise. This is a bounded starting assumption because earlier parentage is unavailable, not a scientific assertion that may be extended to later animals. From this point forward every attributable service, litter and offspring must retain exact sow and boar identity so HERDMASTER can prevent parent-offspring, sibling and half-sibling mating and avoid excessive concentration of one foundation line.
+
+HERDMASTER must select matings to improve litter survival, healthy comparable-age growth, structural/welfare quality, maternal performance and useful genetic diversity. A low service count means a boar is less proven, not genetically superior. Prince and future new boars receive bounded controlled trials and earn wider use only through attributable results. Individual pairing quality is determined before the normally two-or-three-female physical group limit is applied. Binding detail: `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md`.
+
 ## 2026-08-10: HERDMASTER practical mating selection
 
 Charl clarified that physical pen location is not reproductive status: D3 currently contains several idle females but is not a universal mating or resting pen. HERDMASTER must determine eligibility from active litter, mating/pregnancy cycle, breeding purpose, lifecycle, and genuine health/welfare/owner holds. For foundation breeders, missing dam/sire ancestry must be disclosed but must not universally block evidence-backed recommendations. Known relationships remain hard exclusions. Pair ranking must use attributable service, litter, survival, growth, repeat-pair, workload, health, and known relationship evidence. Full operating detail: `docs/06-operations/HERDMASTER_PRACTICAL_MATING_SELECTION_PLAN.md`.

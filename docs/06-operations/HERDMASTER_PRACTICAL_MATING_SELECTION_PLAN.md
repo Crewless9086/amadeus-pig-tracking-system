@@ -1,6 +1,11 @@
 # HERDMASTER Practical Mating Selection Plan
 
-Status: Owner-approved operating clarification, 10 August 2026.
+Status: Owner-approved operating clarification, updated 11 August 2026.
+
+The binding genetic-selection and foundation-herd policy is
+`docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md`.
+This plan controls the immediate owner journey; the business-rule document
+controls how HERDMASTER determines genetic and production merit.
 
 ## Owner-visible outcome
 
@@ -8,9 +13,9 @@ HERDMASTER must produce a practical sow-to-boar worklist that Charl can hand to 
 
 ## Clarified farm meaning
 
-For this mission, "best pedigree mix" means the best evidence-backed mating combination using the farm's recorded breeding and production evidence: prior sow-boar services, attributable litter results, born-alive and weaned survival, offspring growth, repeated-pair history, boar workload, health, and every known biological relationship.
+For this mission, "best pedigree mix" means the best evidence-backed complementary mating using the farm's recorded breeding and production evidence: prior sow-boar services, attributable litter results, born-alive and weaned survival, comparable offspring growth, repeated-pair history, sow recovery and mothering evidence, health, and every known biological relationship. Service workload is supporting context only and cannot establish genetic superiority.
 
-Exact biological dam and sire links remain valuable ancestry evidence. Missing parentage for foundation animals must be disclosed, but it is not a universal exclusion. Known direct ancestry, a known shared parent or ancestor, conflicting identity, and a proven unsafe relationship remain hard exclusions. HERDMASTER must not invent ancestry.
+Charl declares the current foundation breeding animals operationally unrelated unless attributable evidence proves otherwise. This is a bounded owner baseline, not verified ancestry. Exact biological dam and sire links remain valuable evidence. Known direct ancestry, a known shared parent or ancestor, conflicting identity, and a proven unsafe relationship remain hard exclusions. HERDMASTER must not invent ancestry. Every new attributable litter and offspring must retain the exact sow and boar so future descendants can be protected from parent-offspring, sibling and half-sibling mating.
 
 ## Pen clarification
 
@@ -44,7 +49,22 @@ For every eligible female, compare Bola, Prince, and Tyson using, where attribut
 - current lifecycle, health, and genuine availability;
 - all known relationship evidence.
 
-Return one primary and one reserve boar. Unknown foundation ancestry is a visible limitation, not a zero-score result. Do not infer individual parentage or offspring attribution.
+Return one primary and one reserve boar with an evidence class: Proven repeat,
+Supported cross, Corrective cross, Controlled trial, or Limited evidence.
+Unknown foundation ancestry is a visible limitation, not a zero-score result.
+Do not infer individual parentage or offspring attribution.
+
+Prince's single service makes him less proven, not superior. He must not become
+the automatic primary because he has the lowest service workload. Allocate him
+a small purposeful controlled-trial group whose maternal histories make the
+result interpretable, then expand or reduce his future use from attributable
+offspring outcomes. Apply the same rule to every future new boar.
+
+After individual comparison, build one whole-round allocation. Pairing quality
+comes first; physical capacity is applied afterward. The initial owner operating
+limit is normally two or three females with one boar in the immediate group,
+without requiring equal groups. Keep overflow females in a sequenced next group
+and visible until an actual mating or genuine hold is recorded.
 
 ## Farm lifecycle after selection
 
@@ -69,6 +89,10 @@ The current worklist must be delivered once in concise Afrikaans through the aut
 - explicit exclusions and active-cycle holds;
 - disclosed ancestry limitation;
 - the next actual recording step.
+
+The message must group females under the physical boar groups, distinguish
+Prince's controlled trial, show a sequenced next group, and list only genuinely
+missing observations. Animal names are primary; IDs are supporting audit detail.
 
 CI, deployment, deterministic replay, a handover, or generating an internal packet is not completion. Completion requires the useful provider-delivered worklist and a corrected application-visible Zigay state.
 
