@@ -46,7 +46,23 @@
 .breeding-worklist-card .breeding-section-heading p,
 .breeding-worklist-card .breeding-footnote { color: #cad7ce; }
 .breeding-read-only-badge { padding: 7px 11px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; color: #dce7df; font-size: 11px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
-.breeding-task-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 11px; margin-top: 16px; }
+.breeding-task-list { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin-top: 16px; }
+.breeding-cohort { overflow: hidden; border: 1px solid rgba(255,255,255,.16); border-radius: 16px; background: rgba(255,255,255,.07); }
+.breeding-cohort-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 15px; border-bottom:1px solid rgba(255,255,255,.13); }
+.breeding-cohort-heading span { font-size:12px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+.breeding-cohort-heading strong { color:#cfe1d3; font-size:12px; }
+.breeding-boar-group { padding:14px 15px; border-top:1px solid rgba(255,255,255,.1); }
+.breeding-boar-group:first-of-type { border-top:0; }
+.breeding-boar-group header { display:flex; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.breeding-boar-group header strong { color:white; font-family:Georgia,serif; font-size:20px; }
+.breeding-boar-group header span { color:#c7d6cb; font-size:11px; font-weight:800; }
+.breeding-female-chip,.breeding-held-row { display:flex; width:100%; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px; border:0; border-top:1px solid rgba(255,255,255,.09); background:transparent; color:white; text-align:left; cursor:pointer; }
+.breeding-female-chip:first-of-type { border-top:0; }
+.breeding-female-chip:hover,.breeding-held-row:hover { background:rgba(255,255,255,.09); }
+.breeding-female-chip small,.breeding-held-row small { color:#c8d8cd; text-align:right; }
+.breeding-cohort.is-immediate { border-color:#9fc3a6; background:rgba(130,176,139,.15); }
+.breeding-cohort.is-next { border-color:#bea96f; }
+.breeding-cohort.held { border-color:#a68c84; background:rgba(90,66,58,.18); }
 .breeding-task { display: grid; grid-template-columns: minmax(110px,.7fr) minmax(0,2fr); gap: 13px; padding: 15px; border: 1px solid rgba(255,255,255,.13); border-radius: 14px; background: rgba(255,255,255,.08); }
 .breeding-task > button { grid-column: 1 / -1; justify-self: start; border-color: rgba(255,255,255,.28); background: white; color: var(--farm-green); }
 .breeding-task strong,.breeding-task span { display: block; }
@@ -56,7 +72,7 @@
 .breeding-footnote { margin: 14px 0 0; color: var(--farm-muted); font-size: 12px; line-height: 1.45; }
 
 .breeding-table-wrap { margin-top: 16px; overflow-x: auto; border: 1px solid var(--farm-line); border-radius: 15px; }
-.breeding-attention-table { width: 100%; min-width: 1280px; border-collapse: collapse; }
+.breeding-attention-table { width: 100%; min-width: 1340px; border-collapse: collapse; }
 .breeding-attention-table th { padding: 12px 13px; background: #e7ece5; color: #405448; font-size: 10px; letter-spacing: .08em; text-align: left; text-transform: uppercase; }
 .breeding-attention-table td { padding: 14px 13px; border-top: 1px solid var(--farm-line); color: var(--farm-ink); vertical-align: top; line-height: 1.4; }
 .breeding-attention-table th:first-child,
@@ -68,6 +84,13 @@
 .breeding-attention-table .detail-link { color: var(--farm-green); font-size: 16px; font-weight: 900; text-decoration: none; }
 .breeding-animal-id { display: block; margin-top: 5px; color: var(--farm-muted); font-size: 9px; overflow-wrap: anywhere; }
 .breeding-confidence { display: block; margin-top: 6px; color: var(--farm-muted); font-size: 10px; font-weight: 700; }
+.breeding-plan-cell { display:grid; gap:5px; min-width:145px; }
+.breeding-plan-cell strong { color:var(--farm-green); font-size:16px; }
+.breeding-plan-cell small,.breeding-plan-none { color:var(--farm-muted); font-size:10px; line-height:1.35; }
+.breeding-plan-badge { justify-self:start; padding:4px 8px; border-radius:999px; font-size:9px; font-weight:900; letter-spacing:.05em; text-transform:uppercase; }
+.breeding-plan-badge.is-now { background:#dcebdc; color:#225a35; }
+.breeding-plan-badge.is-next { background:#f2e8cc; color:#6e5419; }
+.breeding-plan-badge.is-held { background:#f2dddd; color:#7e3737; }
 .breeding-latest-observation { display: grid; gap: 7px; min-width: 265px; }
 .breeding-latest-observation > div { display: flex; align-items: center; gap: 8px; }
 .breeding-latest-observation time { color: var(--farm-muted); font-size: 10px; font-weight: 800; }
