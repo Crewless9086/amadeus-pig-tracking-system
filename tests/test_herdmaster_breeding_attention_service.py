@@ -43,11 +43,11 @@ def test_missing_envelope_is_unavailable_not_zero():
     assert result["source_status"] == "Unavailable"
 
 
-def test_missing_heat_and_unknown_body_condition_need_observation():
+def test_missing_heat_and_body_condition_are_optional_for_current_review():
     result = packet(female(), observations={"PIG-SOW-1": {}})
-    assert result["animals"][0]["current_state"] == "Needs observation"
-    assert "current heat observation" in result["animals"][0]["missing_facts"]
-    assert "body condition" in result["animals"][0]["missing_facts"]
+    assert result["animals"][0]["current_state"] == "Ready for review"
+    assert "current heat observation" not in result["animals"][0]["missing_facts"]
+    assert "body condition" not in result["animals"][0]["missing_facts"]
 
 
 def test_stale_mating_does_not_assert_recently_mated():

@@ -108,13 +108,13 @@ def test_incomplete_reservation_negative_coverage_is_disclosed_not_global_block(
     assert case["smallest_physical_question"] is None
 
 
-def test_only_physical_gaps_allow_one_shortlisted_inspection():
+def test_missing_optional_physical_facts_do_not_block_shortlist():
     data=snapshot()
     data["observations"][0]["measurements_json"]={}
     result=reconcile_breeding_evidence(data,today=TODAY)
     case=evaluate_breeding_attention(result,today=TODAY)["cases"][0]
-    assert case["pairing_assessment"]=="possible_but_needs_one_observation"
-    assert case["smallest_physical_question"].startswith("For Sally")
+    assert case["pairing_assessment"]=="recommended"
+    assert case["smallest_physical_question"] is None
 
 
 def test_overdue_positive_mating_remains_unresolved_expected_farrow_hold():
@@ -164,15 +164,15 @@ def test_farrowed_mating_with_one_attributable_weaned_litter_stays_closed():
     assert evaluate_breeding_attention(reconciled, today=TODAY)["cases"][0]["pairing_assessment"] == "recommended"
 
 
-def test_weaned_litter_without_explicit_readiness_stays_in_recovery():
+def test_weaned_litter_without_explicit_readiness_starts_allocation():
     data = snapshot(litters=[{"litter_id":"LIT-WEANED", "sow_pig_id":"SOW", "boar_pig_id":"BOAR",
         "farrowing_date":"2026-06-01", "born_alive":8, "wean_date":"2026-07-01", "weaned_count":7}])
     data["pigs"][0]["current_cycle"] = {"state":"missing_evidence"}
     reconciled = reconcile_breeding_evidence(data, today=TODAY)
     assert reconciled["females"][0]["current_cycle"]["state"] == "post_weaning_recovery"
     case = evaluate_breeding_attention(reconciled, today=TODAY)["cases"][0]
-    assert case["state"] == "recovering"
-    assert case["recommended_boar"] is None
+    assert case["state"] == "eligible_for_mating_review"
+    assert case["recommended_boar"] is not None
 
 
 def test_unchanged_replay_and_input_row_reordering_are_deterministic():

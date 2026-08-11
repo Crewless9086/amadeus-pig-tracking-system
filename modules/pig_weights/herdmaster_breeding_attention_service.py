@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import date, datetime, timezone
 from time import monotonic
 
-CONTRACT_VERSION = "herdmaster_breeding_attention_v1"
+CONTRACT_VERSION = "herdmaster_breeding_attention_v2"
 FILTERS = (
     "Ready for review",
     "Needs observation",
@@ -239,16 +239,12 @@ def _attention_row(row, mating, litter, metric, tree, observation, today, observ
     heat = _norm(observation.get("heat_state"))
     pregnancy = _norm((mating or {}).get("pregnancy_check_result") or (mating or {}).get("mating_status"))
     body_condition = observation.get("body_condition_score")
-    if medical not in {"clear", "eligible"}:
-        (missing if not medical or medical in {"unknown", "unavailable"} else conflicts).append("medical status")
-    if withdrawal not in {"cleared", "not_applicable"}:
-        (missing if withdrawal in {"", "unknown", "unavailable"} else conflicts).append("withdrawal evidence")
-    if availability not in {"available", "yes", "true"}:
-        (missing if availability in {"", "unknown", "unavailable"} else conflicts).append("availability")
-    if heat not in {"observed", "standing"}:
-        missing.append("current heat observation")
-    if body_condition in (None, ""):
-        missing.append("body condition")
+    if medical in {"hold", "medical_hold", "restricted", "unfit", "active"}:
+        conflicts.append("medical hold")
+    if withdrawal in {"hold", "active", "restricted", "conflicting"}:
+        conflicts.append("withdrawal hold")
+    if availability in {"hold", "unavailable", "reserved", "no", "false"}:
+        conflicts.append("availability hold")
     if not isinstance(tree, dict) or not tree.get("mother") or not tree.get("father"):
         missing.append("family-tree constraints")
     elif tree.get("lineage_status") not in (None, "complete"):
@@ -261,7 +257,7 @@ def _attention_row(row, mating, litter, metric, tree, observation, today, observ
         conflicts.append("pregnancy evidence has no mating chronology")
 
     state, action, rank = "Needs Data", "verify mating history", 70
-    if medical in {"hold", "medical_hold"} or withdrawal == "hold" or availability in {"hold", "unavailable"}:
+    if medical in {"hold", "medical_hold", "restricted", "unfit", "active"} or withdrawal in {"hold", "active", "restricted", "conflicting"} or availability in {"hold", "unavailable", "reserved", "no", "false"}:
         state, action, rank = "Hold", "veterinary/medical review required", 10
     elif conflicts:
         state, action, rank = "Needs Data", "owner decision required", 15
@@ -273,17 +269,19 @@ def _attention_row(row, mating, litter, metric, tree, observation, today, observ
         state, action, rank = "Pregnancy evidence", "no action currently required", 30
     elif mating_date and (today - mating_date).days <= 35:
         state, action, rank = "Recently mated", "verify mating history", 35
-    elif litter_date and (today - litter_date).days <= 56:
-        state, action, rank = "Post-litter recovery", "review post-litter recovery", 40
+    elif litter_date and not (litter or {}).get("wean_date"):
+        state, action, rank = "Post-litter recovery", "continue nursing until governed weaning", 40
+    elif (litter or {}).get("wean_date"):
+        state, action, rank = "Ready for review", "schedule boar placement from governed weaning", 45
     elif missing:
-        state, action, rank = "Needs observation", "observe for standing heat", 50
+        state, action, rank = "Needs Data", "resolve only the attributable governed evidence", 50
         if any(item in missing for item in (
             "medical status", "withdrawal evidence", "availability",
             "family-tree constraints", "incomplete family-tree expansion",
         )):
             state, action, rank = "Needs Data", "owner decision required", 20
     else:
-        state, action, rank = "Ready for review", "confirm body condition manually", 60
+        state, action, rank = "Ready for review", "schedule evidence-qualified boar placement", 60
     return {
         "pig_id": str(row.get("pig_id") or ""),
         "tag_number": str(row.get("tag_number") or ""),
@@ -297,6 +295,14 @@ def _attention_row(row, mating, litter, metric, tree, observation, today, observ
             "latest_mating": mating_date.isoformat() if mating_date else None,
             "latest_litter": litter_date.isoformat() if litter_date else None,
         },
+        "latest_individual_evidence": {
+            "observed_at": observation.get("observed_at") or observed_at,
+            "heat": heat or "Unknown",
+            "body_condition": body_condition if body_condition not in (None, "") else "Unknown",
+            "legs_movement": observation.get("legs_movement") or observation.get("feet_legs_movement") or "Unknown",
+            "visible_concern": observation.get("visible_concern") or observation.get("visible_injury") or "Unknown",
+        },
+        "weaning_date": str((litter or {}).get("wean_date") or "") or None,
         "freshness": _freshness(observed_at, today),
         "confidence": "High" if not missing and not conflicts else ("Low" if conflicts else "Limited"),
         "missing_facts": sorted(set(missing)),

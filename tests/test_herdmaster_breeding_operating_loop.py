@@ -122,7 +122,7 @@ def build(
             "pigs": [female_row, *male_rows],
         },
         matings=matings or [],
-        litters=litters or [],
+        litters=([{"litter_id":"LIT-DEFAULT", "sow_pig_id":"PIG-MS", "farrowing_date":"2026-06-01", "wean_date":"2026-07-20", "litter_status":"Weaned"}] if litters is None else litters),
         observations=observation_rows,
         projected_observations=projected_observations,
         family_trees=family_trees,
@@ -141,17 +141,17 @@ def test_ms_piggy_real_observation_closes_physical_recovery_check():
         litters=[{
             "litter_id": "LIT-MS", "sow_pig_id": "PIG-MS",
             "farrowing_date": "2026-07-01", "born_alive": 10,
-            "weaned_count": 9, "litter_status": "Weaned",
+            "weaned_count": 9, "wean_date":"2026-07-20", "litter_status": "Weaned",
         }],
     )
-    assert result["task_count"] == 0
+    assert result["task_count"] == 1
     case = result["cases"][0]
-    assert case["classification"]["state"] == "Observe for heat"
+    assert case["classification"]["state"] == "Ready for mating review"
     assert case["classification"]["current_heat"] == "not_observed"
     assert result["writes_performed"] is False
 
 
-def test_ms_piggy_immutable_observation_asks_only_unresolved_nonphysical_facts():
+def test_ms_piggy_unknown_negative_ledgers_do_not_create_blanket_holds():
     observation = obs(
         body_condition_score=3,
         visible_build="even",
@@ -173,13 +173,9 @@ def test_ms_piggy_immutable_observation_asks_only_unresolved_nonphysical_facts()
     )
     task = result["tasks"][0]
     case = result["cases"][0]
-    assert case["classification"]["readiness"] == "Needs Data"
+    assert case["classification"]["readiness"] == "Ready"
     assert case["classification"]["current_heat"] == "not_observed"
-    assert set(task["required_checks"]) == {
-        "withdrawal evidence",
-        "breeding availability",
-        "family-tree evidence",
-    }
+    assert task["required_checks"] == []
     assert not {
         "body condition", "movement", "visible concerns", "heat signs",
     }.intersection(task["required_checks"])
@@ -202,13 +198,13 @@ def test_post_litter_natural_reply_previews_direct_facts_and_can_close_task():
     assert preview["success"] is True
     assert preview["facts"]["body_condition_score"] == 3
     assert preview["facts"]["standing_heat"] == "not_observed"
-    assert preview["task_would_close"] is True
+    assert preview["task_would_close"] is False
     assert preview["recording_contract"]["recording_enabled"] is False
 
 
-def test_missing_or_stale_weight_requests_weighing():
+def test_missing_or_stale_weight_does_not_block_governed_weaning_allocation():
     result = build(female(days_since_weight=45))
-    assert result["tasks"][0]["task_group"] == "weigh before breeding decision"
+    assert result["tasks"][0]["task_group"] == "schedule boar placement"
 
 
 def test_observed_heat_with_complete_evidence_ranks_compatible_male():
@@ -226,15 +222,15 @@ def test_observed_heat_with_complete_evidence_ranks_compatible_male():
     assert packet["exact_replay_withheld"] is True
 
 
-def test_not_observed_heat_never_becomes_ready():
+def test_not_observed_heat_does_not_block_governed_weaning_allocation():
     result = build(observations=[obs(
         body_condition_score=3, standing_heat="not_observed"
     )])
-    assert result["cases"][0]["classification"]["state"] == "Observe for heat"
-    assert result["task_count"] == 0
+    assert result["cases"][0]["classification"]["state"] == "Ready for mating review"
+    assert result["task_count"] == 1
 
 
-def test_stale_heat_and_body_condition_never_suppress_current_checks():
+def test_stale_optional_observations_remain_visible_without_blocking_allocation():
     stale = obs(
         when="2026-05-01T10:00:00+00:00",
         body_condition_score=3,
@@ -246,11 +242,10 @@ def test_stale_heat_and_body_condition_never_suppress_current_checks():
         projected_observations={},
     )
     case = result["cases"][0]
-    assert case["classification"]["readiness"] == "Needs Data"
+    assert case["classification"]["readiness"] == "Ready"
     assert case["classification"]["current_heat"] == "unknown"
-    assert result["tasks"][0]["task_group"] == "inspect for breeding readiness"
-    assert "body condition" in result["tasks"][0]["required_checks"]
-    assert "movement" in result["tasks"][0]["required_checks"]
+    assert result["tasks"][0]["task_group"] == "schedule boar placement"
+    assert result["tasks"][0]["required_checks"] == []
 
 
 def test_reported_male_exposure_is_not_a_canonical_mating():
@@ -396,14 +391,32 @@ def test_father_daughter_and_incomplete_lineage_fail_closed():
     assert partial["tasks"][0]["male_recommendation"]["status"] == "Unavailable"
 
 
-def test_equal_male_evidence_requires_owner_choice():
+def test_partial_lineage_known_shared_ancestor_still_excludes_pair():
+    trees = {"success":True, "by_pig":{
+        "PIG-MS":{"lineage_status":"partial", "ancestor_ids":["KNOWN"]},
+        "BOAR-1":{"lineage_status":"partial", "ancestor_ids":["KNOWN"]},
+    }}
+    result = build(males=[male()], family_trees=trees)
+    assert result["tasks"][0]["male_recommendation"]["status"] == "Unavailable"
+
+
+def test_recorded_boar_reservation_excludes_while_unknown_negative_coverage_does_not():
+    result = build(males=[male("BOAR-1", "Reserved", reservation_status="reserved"),
+        male("BOAR-2", "Unknown", reservation_status=None)])
+    recommendation = result["tasks"][0]["male_recommendation"]
+    assert recommendation["recommended"]["tag_number"] == "Unknown"
+    assert all(row["tag_number"] != "Reserved" for row in recommendation["alternatives"])
+
+
+def test_equal_male_evidence_produces_deterministic_primary_and_reserve():
     result = build(
         observations=[obs(body_condition_score=3, standing_heat="observed")],
         males=[male(), male("BOAR-2", "Duke")],
     )
     recommendation = result["tasks"][0]["male_recommendation"]
-    assert recommendation["status"] == "Owner choice required"
-    assert recommendation["recommended"] is None
+    assert recommendation["status"] == "Available"
+    assert recommendation["recommended"]["tag_number"] == "Duke"
+    assert recommendation["reserve"]["tag_number"] == "Prince"
 
 
 def test_monday_worklist_is_deterministic_and_idempotent():

@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
+from datetime import date, timedelta
 
 
-CONTRACT_VERSION = "herdmaster_breeding_recommendation_v3"
+CONTRACT_VERSION = "herdmaster_breeding_recommendation_v4"
 ACTIVE_CYCLES = {
     "recently_mated", "post_mating_monitoring", "assumed_pregnant",
     "confirmed_pregnant", "expected_to_farrow", "unresolved_expected_farrow",
@@ -110,6 +110,7 @@ def _female_case(female, boars, evidence, today):
         "priority": priority,
         "next_action": action,
         "current_cycle": cycle,
+        "assessment_date": today.isoformat(),
         "confirmed_evidence": confirmed,
         "owner_observations": observed,
         "calculated_facts": calculated,
@@ -136,7 +137,7 @@ def _state_action(female, cycle_state, welfare_active):
         return "unsuitable", "No breeding action; lifecycle, presence, or purpose excludes review.", 5
     if _norm(female.get("owner_hold")) in {"yes", "true", "hold", "active"}:
         return "held", "Respect the owner hold and reassess only when it is explicitly released.", 8
-    if _norm(female.get("medical_status")) not in {"clear", "eligible"} or _norm(female.get("withdrawal_evidence_state")) == "hold":
+    if _norm(female.get("medical_status")) in {"hold", "medical_hold", "restricted", "unfit", "active"} or _norm(female.get("withdrawal_evidence_state")) in {"hold", "active", "restricted", "conflicting"}:
         return "held", "Resolve the governed health or withdrawal hold before breeding review.", 10
     if cycle_state in ACTIVE_CYCLES:
         labels = {
@@ -149,11 +150,11 @@ def _state_action(female, cycle_state, welfare_active):
     if cycle_state == "nursing":
         return "nursing", "Protect nursing work and reassess after governed weaning.", 20
     if cycle_state in {"post_weaning_recovery", "recovering"}:
-        if _truth(female.get("recovery_cleared")):
-            return "eligible_for_mating_review", "Review current heat and evidence-qualified boars; mating still requires separate approval.", 35
-        return "recovering", "Complete the smallest post-weaning body-condition and soundness inspection.", 22
+        if not _text((female.get("current_cycle") or {}).get("wean_date")):
+            return "reproductive_conflict", "Resolve the missing governed weaning date before scheduling boar placement.", 22
+        return "eligible_for_mating_review", "Schedule evidence-qualified boar placement from governed weaning; heat observation is optional and no mating is created.", 35
     if cycle_state in {"no_active_cycle", "eligible_for_mating_review"}:
-        return "eligible_for_mating_review", "Review current heat and evidence-qualified boars; mating still requires separate approval.", 35
+        return "eligible_for_mating_review", "Schedule an evidence-qualified boar placement; heat observation is optional and no mating is created.", 35
     return "reproductive_conflict", "Resolve the current reproductive lifecycle before considering another mating.", 30
 
 
@@ -176,23 +177,16 @@ def _female_eligibility_blockers(row, evidence, today):
     if _norm(row.get("available_for_breeding")) in {"unavailable", "reserved", "held", "no", "false"}:
         blockers.append("female has an affirmative availability restriction")
     observations = row.get("observations") if isinstance(row.get("observations"), dict) else {}
-    observed_age = _date_age(observations.get("observed_at"), today)
-    for key, label in (("body_condition", "current body condition"), ("legs_sound", "current legs and movement"), ("visible_concern", "current visible concern check"), ("heat", "current heat observation")):
-        if observations.get(key) in {None, "", "Unknown", "unknown"}:
-            blockers.append(f"{label} is Unknown")
-        elif observed_age is None or not 0 <= observed_age <= (2 if key == "heat" else 30):
-            blockers.append(f"{label} is stale")
-    if _norm(observations.get("heat")) not in {"observed", "standing", "standing_heat"} and observations.get("heat") not in {None, "", "Unknown", "unknown"}:
-        blockers.append("standing heat is not currently observed")
     policy = evidence.get("policy") if isinstance(evidence.get("policy"), dict) else {}
     bcs = observations.get("body_condition")
     low, high = policy.get("breeding_body_condition_min"), policy.get("breeding_body_condition_max")
-    if not isinstance(bcs, (int, float)) or not isinstance(low, (int, float)) or not isinstance(high, (int, float)) or not low <= bcs <= high:
-        blockers.append("body condition is outside or lacks governed breeding bounds")
-    if observations.get("legs_sound") is not True:
-        blockers.append("legs and movement are not affirmatively sound")
-    if _norm(observations.get("visible_concern")) not in {"none", "none_observed", "no_visible_concern"}:
-        blockers.append("a visible concern is present or not safely classified")
+    if isinstance(bcs, (int, float)) and isinstance(low, (int, float)) and isinstance(high, (int, float)) and not low <= bcs <= high:
+        blockers.append("recorded body condition is outside governed breeding bounds")
+    if observations.get("legs_sound") is False:
+        blockers.append("recorded legs or movement concern makes placement unsafe")
+    concern = _norm(observations.get("visible_concern"))
+    if concern not in {"", "unknown", "none", "none_observed", "no_visible_concern"}:
+        blockers.append("a recorded visible concern makes placement unsafe")
     return blockers
 
 
@@ -203,14 +197,10 @@ def _pairing(female, boar, evidence, today):
         exclusions.append("boar is not active and on farm")
     if _norm(boar.get("purpose")) != "breeding": exclusions.append("boar purpose is not Breeding")
     if _norm(boar.get("available_for_breeding")) in {"unavailable", "held", "no", "false"}: exclusions.append("boar has an affirmative availability restriction")
-    elif _norm(boar.get("available_for_breeding")) not in {"available", "yes", "true"}: limitations.append("boar breeding availability negative coverage is incomplete")
     if _norm(boar.get("reservation_status")) in {"reserved", "allocated", "sold"}: exclusions.append("boar is reserved or allocated elsewhere")
-    elif _norm(boar.get("reservation_status")) not in {"not_reserved", "unreserved", "available", "none"}: limitations.append("boar reservation negative coverage is incomplete")
     if boar.get("age_days") is None: limitations.append("boar age is Unknown")
     if "hold" in _norm(boar.get("medical_status")) or _norm(boar.get("medical_status")) in {"restricted", "unfit"}: exclusions.append("boar has an active health restriction")
-    elif _norm(boar.get("medical_status")) not in {"clear", "eligible"}: limitations.append("boar health clearance coverage is incomplete")
     if _norm(boar.get("withdrawal_evidence_state")) in {"hold", "active", "restricted", "conflicting"}: exclusions.append("boar has an active or conflicting withdrawal restriction")
-    elif _norm(boar.get("withdrawal_evidence_state")) not in {"cleared", "not_applicable"}: limitations.append("boar withdrawal negative coverage is incomplete")
     age = _weight_age(boar, today)
     if age is None or not 0 <= age <= WEIGHT_FRESH_DAYS: limitations.append("boar weight is missing, future-dated or stale")
     observations = boar.get("observations") if isinstance(boar.get("observations"), dict) else {}
@@ -343,7 +333,7 @@ def _allocate_round(cases, boars, evidence):
     capacity = max(1, min(capacity, 10))
     names = {_text(row.get("pig_id")): _text(row.get("tag_number")) for row in boars}
     groups = {pig_id: [] for pig_id in names}
-    next_group, observations, excluded_now = [], [], []
+    next_group, observations, excluded_now, boar_observations = [], [], [], {}
     # Allocate only after every female already has her genetic/production primary.
     for case in cases:
         primary = case.get("recommended_boar")
@@ -358,8 +348,11 @@ def _allocate_round(cases, boars, evidence):
         row = _allocation_row(case, primary)
         if any(_boar_readiness_limitation(item) for item in primary.get("limitations", [])):
             row["conditional_on_observation"] = True
-            observations.append(row)
-            continue
+            boar_observations[boar_id] = {
+                "boar_pig_id": boar_id, "boar_name": primary["tag_number"],
+                "missing_physical_evidence": [item for item in primary.get("limitations", []) if _boar_readiness_limitation(item)],
+                "effect": "Blocks physical placement with this boar only; genetic ranking and the female's placement candidacy remain visible.",
+            }
         if len(groups.setdefault(boar_id, [])) < capacity:
             groups[boar_id].append(row)
         else:
@@ -375,12 +368,18 @@ def _allocate_round(cases, boars, evidence):
             "section": "Prince - beheerde proefgroep" if names[pig_id].casefold() == "prince" else f"Nou by {names[pig_id]}",
             "females": groups.get(pig_id, [])} for pig_id in sorted(names, key=lambda key: names[key].casefold())],
         "next_group": next_group, "observations_needed": observations,
+        "boar_observations_needed": [boar_observations[key] for key in sorted(boar_observations, key=lambda key: names.get(key, key).casefold())],
         "not_currently_eligible": excluded_now,
         "mating_execution_enabled": False, "writes_performed": False}
 
 
 def _allocation_row(case, primary, conditional=False):
     reserve = case.get("reserve_boar") or case.get("conditional_reserve_boar")
+    cycle = case.get("current_cycle") if isinstance(case.get("current_cycle"), dict) else {}
+    wean_date = _date_value(cycle.get("wean_date"))
+    today = _date_value(case.get("assessment_date"))
+    placement = max(wean_date, today) if wean_date and today else (today or wean_date)
+    exposure_end = placement + timedelta(days=16) if placement else None
     return {"pig_id": case["pig_id"], "name": case["tag_number"],
         "primary_boar": primary["tag_number"],
         "reserve_boar": reserve["tag_number"] if reserve else None,
@@ -390,13 +389,20 @@ def _allocation_row(case, primary, conditional=False):
         "surviving_or_weaned": int((primary.get("service_history") or {}).get("surviving_piglets") or 0),
         "reason": next((reason for reason in primary.get("reasoning", []) if "Attributable litter" in reason),
             "Production evidence is limited; use as a bounded learning choice."),
+        "wean_date": wean_date.isoformat() if wean_date else None,
+        "days_since_weaning": (today - wean_date).days if wean_date and today else None,
+        "proposed_placement_date": placement.isoformat() if placement else None,
+        "exposure_start_date": placement.isoformat() if placement else None,
+        "exposure_end_date": exposure_end.isoformat() if exposure_end else None,
+        "exposure_days": 17,
+        "heat_observation_required": False,
         "material_limitations": list(primary.get("limitations") or []),
         "conditional_on_observation": conditional}
 
 
 def _boar_readiness_limitation(value):
     text = _text(value).casefold()
-    return any(term in text for term in ("boar age", "boar health", "boar weight", "boar legs",
+    return any(term in text for term in ("boar legs",
         "boar feet", "boar build", "structural-soundness", "visible concern"))
 
 
@@ -444,12 +450,12 @@ def _smallest_physical_question(row, state):
 
 
 def _physical_blocker(value):
-    return any(word in value for word in ("body condition", "legs", "visible concern", "heat"))
+    return any(word in value for word in ("recorded body condition", "recorded legs", "recorded visible concern"))
 
 
 def _next_action(blockers):
-    physical = [b for b in blockers if any(word in b for word in ("body condition", "legs", "visible concern", "heat"))]
-    return "Record one current inspection: " + ", ".join(physical) + "." if physical else "Resolve the listed governed evidence before mating review."
+    physical = [b for b in blockers if _physical_blocker(b)]
+    return "Resolve the attributable physical concern: " + ", ".join(physical) + "." if physical else "Resolve the listed governed evidence before mating review."
 
 
 def _boar_inventory(row, today):
@@ -469,7 +475,9 @@ def _render(cases, language, allocation=None):
             lines.append("- Niemand is reeds fisies gereed bevestig nie.")
         lines.append("\nKleinste gereedheidswaarnemings")
         lines.extend(_af_allocation_bullet(row) for row in allocation["observations_needed"])
-        if not allocation["observations_needed"]:
+        for item in allocation.get("boar_observations_needed", []):
+            lines.append(f"- {_safe_text(item['boar_name'])}: bevestig bene, voete, beweging, bou en enige sigbare bekommernis voor fisiese plasing; die genetiese ranglys bly geldig.")
+        if not allocation["observations_needed"] and not allocation.get("boar_observations_needed"):
             lines.append("- Geen verdere gereedheidswaarneming vir die kortlys nie.")
         lines.append("\nNie tans geskik nie")
         for item in allocation["not_currently_eligible"]:
@@ -498,8 +506,10 @@ def _af_allocation_bullet(row):
     reason = (f"{int(row.get('pair_litters') or 0)} toeskryfbare werpsel(s), "
         f"{int(row.get('born_alive') or 0)} lewend gebore en "
         f"{int(row.get('surviving_or_weaned') or 0)} oorlewend/gespeen")
+    schedule = (f"; plaas {row.get('proposed_placement_date')} tot {row.get('exposure_end_date')} (17 dae)"
+        if row.get("proposed_placement_date") and row.get("exposure_end_date") else "")
     return (f"- {_safe_text(row['name'])}: {prefix}{_safe_text(row['primary_boar'])} - "
-        f"{_af_evidence_class(row['evidence_class'])}; {reason}{reserve}{limit}.")
+        f"{_af_evidence_class(row['evidence_class'])}; {reason}{reserve}{schedule}{limit}.")
 
 
 def _af_evidence_class(value):
@@ -557,6 +567,13 @@ def _sanitized_allocation(allocation):
             "surviving_or_weaned": int(row.get("surviving_or_weaned") or 0),
             "reason": _safe_text(row.get("reason"), 200),
             "material_limitations": [_safe_text(value, 200) for value in row.get("material_limitations", [])],
+            "wean_date": _safe_text(row.get("wean_date"), 10) or None,
+            "days_since_weaning": row.get("days_since_weaning"),
+            "proposed_placement_date": _safe_text(row.get("proposed_placement_date"), 10) or None,
+            "exposure_start_date": _safe_text(row.get("exposure_start_date"), 10) or None,
+            "exposure_end_date": _safe_text(row.get("exposure_end_date"), 10) or None,
+            "exposure_days": int(row.get("exposure_days") or 0),
+            "heat_observation_required": False,
             "conditional_on_observation": row.get("conditional_on_observation") is True}
     return {"capacity_per_boar": int(allocation.get("capacity_per_boar") or 0),
         "groups": [{"boar_pig_id": _safe_text(group.get("boar_pig_id"), 128),
@@ -566,6 +583,9 @@ def _sanitized_allocation(allocation):
             for group in allocation.get("groups", []) if isinstance(group, dict)],
         "next_group": [public_row(row) for row in allocation.get("next_group", []) if isinstance(row, dict)],
         "observations_needed": [public_row(row) for row in allocation.get("observations_needed", []) if isinstance(row, dict)],
+        "boar_observations_needed": [{"boar_name": _safe_text(row.get("boar_name"), 96),
+            "missing_physical_evidence": [_safe_text(value, 200) for value in row.get("missing_physical_evidence", [])],
+            "effect": _safe_text(row.get("effect"), 240)} for row in allocation.get("boar_observations_needed", []) if isinstance(row, dict)],
         "not_currently_eligible": [{"pig_id": _safe_text(row.get("pig_id"), 128),
             "name": _safe_text(row.get("name"), 96), "state": _safe_text(row.get("state"), 48),
             "reason": _safe_text(row.get("reason"), 240)} for row in allocation.get("not_currently_eligible", []) if isinstance(row, dict)],
@@ -597,6 +617,11 @@ def _weight_age(row, today):
 
 def _date_age(value, today):
     try: return (today - date.fromisoformat(str(value)[:10])).days
+    except (TypeError, ValueError): return None
+
+
+def _date_value(value):
+    try: return value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
     except (TypeError, ValueError): return None
 
 
