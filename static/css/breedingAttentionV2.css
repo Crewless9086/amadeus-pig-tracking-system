@@ -1,0 +1,146 @@
+.breeding-attention-app { min-height: 100vh; background: #f2f0e8; }
+.breeding-attention-page { display: grid; gap: 18px; }
+.breeding-attention-hero { margin-bottom: 2px; }
+.breeding-attention-hero h1 { color: var(--farm-ink); }
+.breeding-hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.breeding-secondary-link,
+.breeding-close-button {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 43px;
+  padding: 10px 15px; border: 1px solid var(--farm-line); border-radius: 12px;
+  background: var(--farm-paper); color: var(--farm-green); font-weight: 800;
+  text-decoration: none; cursor: pointer;
+}
+.breeding-secondary-link:hover,
+.breeding-close-button:hover { border-color: #aabdad; background: var(--farm-green-soft); }
+
+.breeding-purpose-card,
+.breeding-overview,
+.breeding-worklist-card,
+.breeding-animal-card,
+.breeding-observation-panel {
+  border: 1px solid var(--farm-line); border-radius: 20px; background: var(--farm-paper);
+  box-shadow: 0 10px 30px rgba(38,58,45,.06);
+}
+.breeding-purpose-card { display: flex; align-items: center; gap: 17px; padding: 18px 20px; background: var(--farm-green-soft); border-color: #c5d5c8; }
+.breeding-purpose-icon { display: grid; place-items: center; flex: 0 0 48px; width: 48px; height: 48px; border-radius: 15px; background: var(--farm-green); color: white; font-size: 25px; font-weight: 900; }
+.breeding-purpose-card h2 { margin: 3px 0 4px; font-family: Georgia, serif; font-size: 21px; }
+.breeding-purpose-card p { margin: 0; color: var(--farm-muted); line-height: 1.45; }
+
+.breeding-overview,
+.breeding-worklist-card,
+.breeding-animal-card { padding: 21px; }
+.breeding-section-heading { align-items: center; }
+.breeding-section-heading h2 { color: var(--farm-ink); }
+.breeding-section-heading p { margin: 4px 0 0; color: var(--farm-muted); }
+.breeding-filter { display: flex; align-items: center; gap: 9px; color: var(--farm-muted); font-size: 13px; font-weight: 800; }
+.breeding-filter select { min-width: 230px; border-color: var(--farm-line); border-radius: 11px; background: white; }
+
+.breeding-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 11px; margin-top: 17px; }
+.breeding-summary-grid > div { display: grid; gap: 5px; min-height: 76px; padding: 14px 15px; border: 1px solid var(--farm-line); border-radius: 14px; background: #f7f8f3; }
+.breeding-summary-grid .info-title { color: var(--farm-muted); font-size: 11px; font-weight: 800; letter-spacing: .04em; }
+.breeding-summary-grid .info-value { color: var(--farm-green); font-family: Georgia, serif; font-size: 25px; font-weight: 800; }
+
+.breeding-worklist-card { background: #263f33; color: white; border-color: #263f33; }
+.breeding-worklist-card .farm-eyebrow { color: #bcd3c1; }
+.breeding-worklist-card .breeding-section-heading h2 { color: white; }
+.breeding-worklist-card .breeding-section-heading p,
+.breeding-worklist-card .breeding-footnote { color: #cad7ce; }
+.breeding-read-only-badge { padding: 7px 11px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; color: #dce7df; font-size: 11px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.breeding-task-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 11px; margin-top: 16px; }
+.breeding-task { display: grid; grid-template-columns: minmax(110px,.7fr) minmax(0,2fr); gap: 13px; padding: 15px; border: 1px solid rgba(255,255,255,.13); border-radius: 14px; background: rgba(255,255,255,.08); }
+.breeding-task > button { grid-column: 1 / -1; justify-self: start; border-color: rgba(255,255,255,.28); background: white; color: var(--farm-green); }
+.breeding-task strong,.breeding-task span { display: block; }
+.breeding-task a { color: white; font-size: 18px; text-decoration: none; }
+.breeding-task .task-state { margin-top: 4px; color: #bfd3c4; font-size: 12px; font-weight: 800; }
+.breeding-task .task-checks { margin-top: 6px; color: #cad7ce; font-size: 12px; line-height: 1.45; }
+.breeding-footnote { margin: 14px 0 0; color: var(--farm-muted); font-size: 12px; line-height: 1.45; }
+
+.breeding-table-wrap { margin-top: 16px; overflow-x: auto; border: 1px solid var(--farm-line); border-radius: 15px; }
+.breeding-attention-table { width: 100%; min-width: 1080px; border-collapse: collapse; }
+.breeding-attention-table th { padding: 12px 13px; background: #e7ece5; color: #405448; font-size: 10px; letter-spacing: .08em; text-align: left; text-transform: uppercase; }
+.breeding-attention-table td { padding: 14px 13px; border-top: 1px solid var(--farm-line); color: var(--farm-ink); vertical-align: top; line-height: 1.4; }
+.breeding-attention-table th:first-child,
+.breeding-attention-table td:first-child { width: 11%; min-width: 112px; }
+.breeding-attention-table th:last-child,
+.breeding-attention-table td:last-child { width: 12%; }
+.breeding-attention-table tbody tr:nth-child(even) { background: #faf9f4; }
+.breeding-attention-table tbody tr:hover { background: var(--farm-green-soft); }
+.breeding-attention-table .detail-link { color: var(--farm-green); font-size: 16px; font-weight: 900; text-decoration: none; }
+.breeding-attention-table button { white-space: nowrap; border-color: var(--farm-green); border-radius: 10px; background: var(--farm-green); color: white; font-weight: 800; }
+
+.breeding-observation-panel { overflow: hidden; }
+.breeding-observation-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 21px 23px; background: var(--farm-green-soft); border-bottom: 1px solid #cbd9cd; }
+.breeding-observation-header h2 { margin: 4px 0; color: var(--farm-ink); font-family: Georgia, serif; font-size: 29px; }
+.breeding-observation-header p { margin: 0; color: var(--farm-muted); }
+.breeding-history { margin: 20px 22px 0; padding: 13px 15px; border-left: 4px solid var(--farm-water); border-radius: 0 11px 11px 0; background: #e7f0f2; color: #365661; }
+#observation_form { display: grid; gap: 0; padding: 4px 22px 0; }
+.breeding-form-section { padding: 20px 0; border-bottom: 1px solid var(--farm-line); }
+.breeding-form-heading { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 14px; }
+.breeding-form-heading > span { display: grid; place-items: center; flex: 0 0 29px; width: 29px; height: 29px; border-radius: 50%; background: var(--farm-green); color: white; font-size: 12px; font-weight: 900; }
+.breeding-form-heading h3 { margin: 1px 0 3px; color: var(--farm-ink); font-family: Georgia, serif; font-size: 19px; }
+.breeding-form-heading p { margin: 0; color: var(--farm-muted); font-size: 12px; }
+.breeding-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; }
+.breeding-form-grid-three { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.breeding-form-grid label,
+.breeding-wide-field { display: grid; gap: 6px; color: var(--farm-ink); font-size: 12px; font-weight: 800; }
+.breeding-form-grid input,
+.breeding-form-grid select,
+.breeding-wide-field textarea { width: 100%; border: 1px solid var(--farm-line); border-radius: 11px; background: white; }
+.breeding-form-grid input:focus,
+.breeding-form-grid select:focus,
+.breeding-wide-field textarea:focus { border-color: var(--farm-green); box-shadow: 0 0 0 3px var(--farm-green-soft); outline: none; }
+.breeding-wide-field { margin-top: 12px; }
+.breeding-wide-field textarea { min-height: 82px; resize: vertical; }
+.breeding-form-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 0; }
+.breeding-form-actions button { min-height: 43px; padding: 10px 16px; border-radius: 11px; background: var(--farm-green); color: white; font-weight: 900; }
+.breeding-form-actions .breeding-preview-button { border: 1px solid var(--farm-line); background: white; color: var(--farm-green); }
+.breeding-form-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.breeding-preview-box { margin: 0 22px 20px; padding: 15px; border: 1px solid #c8d7ca; border-radius: 13px; background: var(--farm-green-soft); color: var(--farm-ink); line-height: 1.5; }
+.breeding-observation-panel > .breeding-footnote { margin: 0; padding: 14px 22px 19px; border-top: 1px solid var(--farm-line); }
+
+@media (max-width: 900px) {
+  .breeding-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .breeding-task-list { grid-template-columns: 1fr; }
+  .breeding-form-grid-three { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 650px) {
+  .breeding-attention-hero,
+  .breeding-section-heading,
+  .breeding-observation-header { align-items: stretch; flex-direction: column; }
+  .breeding-hero-actions { width: 100%; }
+  .breeding-secondary-link { flex: 1; }
+  .breeding-purpose-card { align-items: flex-start; }
+  .breeding-filter { align-items: stretch; flex-direction: column; }
+  .breeding-filter select { min-width: 0; width: 100%; }
+  .breeding-summary-grid,
+  .breeding-form-grid,
+  .breeding-form-grid-three { grid-template-columns: 1fr; }
+  .breeding-task { grid-template-columns: 1fr; }
+  .breeding-form-actions { align-items: stretch; flex-direction: column; }
+  .breeding-table-wrap { overflow: visible; border: 0; border-radius: 0; }
+  .breeding-attention-table { min-width: 0; }
+  .breeding-attention-table thead { display: none; }
+  .breeding-attention-table,
+  .breeding-attention-table tbody,
+  .breeding-attention-table tr,
+  .breeding-attention-table td { display: block; width: 100%; }
+  .breeding-attention-table tbody { display: grid; gap: 12px; }
+  .breeding-attention-table tbody tr {
+    overflow: hidden; border: 1px solid var(--farm-line); border-radius: 14px;
+    background: #fff; box-shadow: 0 5px 14px rgba(38,58,45,.05);
+  }
+  .breeding-attention-table td {
+    display: grid; grid-template-columns: minmax(112px,.8fr) minmax(0,1.4fr); gap: 11px;
+    padding: 10px 12px; border-top: 1px solid var(--farm-line);
+  }
+  .breeding-attention-table td:first-child,
+  .breeding-attention-table td:last-child { width: 100%; min-width: 0; }
+  .breeding-attention-table td:first-child { border-top: 0; background: var(--farm-green-soft); }
+  .breeding-attention-table td::before {
+    content: attr(data-label); color: var(--farm-muted); font-size: 10px; font-weight: 900;
+    letter-spacing: .06em; text-transform: uppercase;
+  }
+  .breeding-attention-table .breeding-row-action { display: block; padding: 12px; background: #f7f8f3; }
+  .breeding-attention-table .breeding-row-action::before { display: none; }
+  .breeding-attention-table .breeding-row-action button { width: 100%; white-space: normal; }
+}
