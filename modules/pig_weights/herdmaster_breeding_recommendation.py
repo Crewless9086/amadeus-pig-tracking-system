@@ -11,7 +11,7 @@ import json
 from datetime import date
 
 
-CONTRACT_VERSION = "herdmaster_breeding_recommendation_v1"
+CONTRACT_VERSION = "herdmaster_breeding_recommendation_v2"
 ACTIVE_CYCLES = {
     "recently_mated", "post_mating_monitoring", "assumed_pregnant",
     "confirmed_pregnant", "expected_to_farrow", "inconclusive",
@@ -38,14 +38,16 @@ def evaluate_breeding_attention(evidence, *, today=None):
     cases = [_female_case(row, boars, evidence, today) for row in females]
     cases.sort(key=lambda row: (row["priority"], row["tag_number"].lower(), row["pig_id"]))
     boar_inventory = sorted((_boar_inventory(row, today) for row in boars), key=lambda row: (row["tag_number"].lower(), row["pig_id"]))
+    allocation = _allocate_round(cases, boars, evidence)
     material = {
         "contract_version": CONTRACT_VERSION,
         "reconciliation_digest": evidence.get("evidence_digest"),
         "cases": cases,
         "boar_inventory": boar_inventory,
+        "whole_round_allocation": allocation,
     }
     digest = _digest(material)
-    oom_packet = _oom_packet(cases, digest)
+    oom_packet = _oom_packet(cases, digest, allocation)
     return {
         "success": True,
         **material,
@@ -55,7 +57,7 @@ def evaluate_breeding_attention(evidence, *, today=None):
         "female_count": len(cases),
         "boar_count": len(boars),
         "english": _render(cases, "en"),
-        "afrikaans": _render(cases, "af"),
+        "afrikaans": _render(cases, "af", allocation=allocation),
         "oom_sakkie_packet": oom_packet,
         "delivery_enabled": False,
         "mating_execution_enabled": False,
@@ -215,13 +217,32 @@ def _pairing(female, boar, evidence, today):
     elif relation["status"] != "clear": limitations.append(relation["reason"])
     else: reasons.append("No attributable ancestor/descendant or shared-ancestor conflict was found in the complete bounded pedigree.")
     service = _service_performance(female, boar, evidence)
-    score = 100
-    score -= min(service["prior_pairings"] * 8, 24)
-    score -= min(int(boar.get("service_count") or 0) * 2, 20)
-    score += min(service["surviving_piglets"], 12)
-    if service["mean_survival_percent"] is not None: score += round(service["mean_survival_percent"] / 20)
-    if service["growth_evidence"] == "positive": score += 5
-    elif service["growth_evidence"] == "adverse": score -= 5
+    if service["attributable_litters"] and service["mean_survival_percent"] is not None and service["mean_survival_percent"] < 50:
+        exclusions.append("weak exact combination requires an attributable corrective rationale before reuse")
+    across = _boar_performance(boar, evidence)
+    avoids_weak_pair = _avoids_weak_exact_pair(female, boar, evidence)
+    evidence_class = _pair_evidence_class(service, across, avoids_weak_pair)
+    # Genetic/production merit comes first. Workload is deliberately absent:
+    # it is applied only by whole-round physical allocation after ranking.
+    score = 50
+    score += min(service["surviving_piglets"] * 2, 24)
+    if service["mean_survival_percent"] is not None:
+        score += round(service["mean_survival_percent"] / 5)
+    if service["growth_evidence"] == "positive": score += 12
+    elif service["growth_evidence"] == "adverse": score -= 18
+    score += min(across["different_females_with_litters"] * 3, 12)
+    score += min(across["surviving_piglets"], 12)
+    if across["mean_survival_percent"] is not None:
+        score += round(across["mean_survival_percent"] / 10)
+    if across["growth_evidence"] == "positive": score += 8
+    elif across["growth_evidence"] == "adverse": score -= 16
+    elif across["growth_evidence"] == "mixed": score -= 4
+    if service["attributable_litters"] and service["mean_survival_percent"] is not None and service["mean_survival_percent"] < 50:
+        score -= 30
+        reasons.append("This exact combination has a weak attributable survival result and should not be repeated without a corrective reason.")
+    reasons.append(f"Evidence class: {evidence_class}.")
+    reasons.append(f"Across-female boar evidence: {across['different_females_with_litters']} female(s), {across['surviving_piglets']} surviving/weaned.")
+    reasons.append(f"Across-female comparable-age growth evidence: {across['growth_evidence']}.")
     reasons.extend(service["reasons"])
     return {
         "pig_id": boar_id, "tag_number": _text(boar.get("tag_number")) or boar_id,
@@ -229,6 +250,8 @@ def _pairing(female, boar, evidence, today):
         "limitations": limitations,
         "score": score if not exclusions else 0, "reasoning": reasons,
         "service_history": service,
+        "boar_performance": across,
+        "evidence_class": evidence_class,
     }
 
 
@@ -258,6 +281,108 @@ def _service_performance(female, boar, evidence):
     growth = [r.get("offspring_growth") for r in litters if r.get("offspring_growth")]
     growth_state = "unknown" if not growth else "adverse" if "adverse" in growth else "positive" if "positive" in growth else "mixed"
     return {"prior_pairings": len(pairings), "attributable_litters": len(litters), "born_alive": born, "surviving_piglets": surviving, "mean_survival_percent": survival, "growth_evidence": growth_state, "reasons": [f"Previous pairing count: {len(pairings)}.", f"Attributable litter evidence: {len(litters)} litter(s), {born} born alive, {surviving} surviving/weaned.", f"Attributable offspring growth evidence: {growth_state}."]}
+
+
+def _boar_performance(boar, evidence):
+    boar_id = _text(boar.get("pig_id"))
+    litters = [row for row in evidence.get("litters", []) if _text(row.get("boar_pig_id")) == boar_id]
+    females = {_text(row.get("sow_pig_id")) for row in litters if _text(row.get("sow_pig_id"))}
+    born = sum(int(row.get("born_alive") or 0) for row in litters)
+    surviving = sum(int(row["surviving_or_weaned"] if row.get("surviving_or_weaned") is not None
+        else row["weaned_count"] if row.get("weaned_count") is not None else 0) for row in litters)
+    growth = [_norm(row.get("offspring_growth")) for row in litters if _norm(row.get("offspring_growth"))]
+    growth_state = ("unknown" if not growth else "adverse" if all(item == "adverse" for item in growth)
+        else "positive" if all(item == "positive" for item in growth) else "mixed")
+    return {"different_females_with_litters": len(females), "litter_count": len(litters),
+        "born_alive": born, "surviving_piglets": surviving,
+        "mean_survival_percent": round(100 * surviving / born, 1) if born else None,
+        "growth_evidence": growth_state}
+
+
+def _pair_evidence_class(pair, across, avoids_weak_pair=False):
+    if pair["attributable_litters"] and (pair["mean_survival_percent"] or 0) >= 70:
+        return "Proven repeat"
+    if avoids_weak_pair and not pair["attributable_litters"]:
+        return "Corrective cross"
+    if pair["attributable_litters"] and (pair["mean_survival_percent"] or 0) < 50:
+        return "Limited evidence"
+    if across["different_females_with_litters"] >= 2:
+        return "Supported cross"
+    if across["different_females_with_litters"] <= 1:
+        return "Controlled trial"
+    return "Limited evidence"
+
+
+def _avoids_weak_exact_pair(female, candidate_boar, evidence):
+    female_id, candidate_id = _text(female.get("pig_id")), _text(candidate_boar.get("pig_id"))
+    for row in evidence.get("litters", []):
+        if (_text(row.get("sow_pig_id")) != female_id
+                or _text(row.get("boar_pig_id")) == candidate_id):
+            continue
+        born = int(row.get("born_alive") or 0)
+        surviving = int(row["surviving_or_weaned"] if row.get("surviving_or_weaned") is not None
+            else row["weaned_count"] if row.get("weaned_count") is not None else 0)
+        if born and surviving / born < .5:
+            return True
+    return False
+
+
+def _allocate_round(cases, boars, evidence):
+    capacity = int((evidence.get("policy") or {}).get("immediate_group_capacity") or 3)
+    capacity = max(1, min(capacity, 10))
+    names = {_text(row.get("pig_id")): _text(row.get("tag_number")) for row in boars}
+    groups = {pig_id: [] for pig_id in names}
+    next_group, observations = [], []
+    # Allocate only after every female already has her genetic/production primary.
+    for case in cases:
+        primary = case.get("recommended_boar")
+        if not primary:
+            if case.get("conditional_primary_boar"):
+                observations.append(_allocation_row(case, case["conditional_primary_boar"], conditional=True))
+            continue
+        boar_id = primary["pig_id"]
+        row = _allocation_row(case, primary)
+        if any(_boar_readiness_limitation(item) for item in primary.get("limitations", [])):
+            row["conditional_on_observation"] = True
+            observations.append(row)
+            continue
+        if len(groups.setdefault(boar_id, [])) < capacity:
+            groups[boar_id].append(row)
+        else:
+            next_group.append(row)
+    prince_id = next((pig_id for pig_id, name in names.items() if name.casefold() == "prince"), None)
+    # A new/less-proven boar is a bounded learning group, never an automatic winner.
+    if prince_id and len(groups.get(prince_id, [])) > min(2, capacity):
+        overflow = groups[prince_id][min(2, capacity):]
+        groups[prince_id] = groups[prince_id][:min(2, capacity)]
+        next_group.extend(overflow)
+    return {"capacity_per_boar": capacity,
+        "groups": [{"boar_pig_id": pig_id, "boar_name": names[pig_id],
+            "section": "Prince - beheerde proefgroep" if names[pig_id].casefold() == "prince" else f"Nou by {names[pig_id]}",
+            "females": groups.get(pig_id, [])} for pig_id in sorted(names, key=lambda key: names[key].casefold())],
+        "next_group": next_group, "observations_needed": observations,
+        "mating_execution_enabled": False, "writes_performed": False}
+
+
+def _allocation_row(case, primary, conditional=False):
+    reserve = case.get("reserve_boar") or case.get("conditional_reserve_boar")
+    return {"pig_id": case["pig_id"], "name": case["tag_number"],
+        "primary_boar": primary["tag_number"],
+        "reserve_boar": reserve["tag_number"] if reserve else None,
+        "evidence_class": primary.get("evidence_class") or "Limited evidence",
+        "pair_litters": int((primary.get("service_history") or {}).get("attributable_litters") or 0),
+        "born_alive": int((primary.get("service_history") or {}).get("born_alive") or 0),
+        "surviving_or_weaned": int((primary.get("service_history") or {}).get("surviving_piglets") or 0),
+        "reason": next((reason for reason in primary.get("reasoning", []) if "Attributable litter" in reason),
+            "Production evidence is limited; use as a bounded learning choice."),
+        "material_limitations": list(primary.get("limitations") or []),
+        "conditional_on_observation": conditional}
+
+
+def _boar_readiness_limitation(value):
+    text = _text(value).casefold()
+    return any(term in text for term in ("boar age", "boar health", "boar weight", "boar legs",
+        "boar feet", "boar build", "structural-soundness", "visible concern"))
 
 
 def _evidence_buckets(row, cycle, today):
@@ -316,10 +441,23 @@ def _boar_inventory(row, today):
     return {"pig_id": _text(row.get("pig_id")), "tag_number": _text(row.get("tag_number")) or _text(row.get("pig_id")), "status": row.get("status") or "Unknown", "on_farm": row.get("on_farm") if row.get("on_farm") is not None else "Unknown", "purpose": row.get("purpose") or "Unknown", "pen": row.get("current_pen_name") or "Unknown", "age_days": row.get("age_days") if row.get("age_days") is not None else "Unknown", "weight_kg": row.get("latest_weight_kg") if row.get("latest_weight_kg") is not None else "Unknown", "weight_date": row.get("latest_weight_date") or "Unknown", "weight_age_days": _weight_age(row, today) if _weight_age(row, today) is not None else "Unknown", "medical": row.get("medical_status") or "Unknown", "withdrawal": row.get("withdrawal_evidence_state") or "Unknown", "availability": row.get("available_for_breeding") or "Unknown", "reservation": row.get("reservation_status") or "Unknown", "service_count": row.get("service_count") if row.get("service_count") is not None else "Unknown"}
 
 
-def _render(cases, language):
+def _render(cases, language, allocation=None):
     actionable = [r for r in cases if r["state"] == "eligible_for_mating_review" and r["recommended_boar"]]
     attention = [r for r in cases if r not in actionable]
-    if language == "af":
+    if language == "af" and allocation:
+        lines = [f"Teelwerklys: {len(cases)} sôe/gelte nagegaan. Geen paring word geskep nie."]
+        for group in allocation["groups"]:
+            lines.append("\n" + group["section"])
+            lines.extend(_af_allocation_bullet(row) for row in group["females"])
+        lines.append("\nVolgende groep")
+        lines.extend(_af_allocation_bullet(row) for row in allocation["next_group"])
+        lines.append("\nWaarnemings benodig")
+        lines.extend(_af_allocation_bullet(row) for row in allocation["observations_needed"])
+        listed = {row["pig_id"] for row in allocation["observations_needed"]}
+        for row in attention:
+            if row["pig_id"] not in listed and not row.get("recommended_boar"):
+                lines.append(f"- {_safe_text(row['tag_number'])}: {_af_state(row['state'])}; {_af_action(row)}")
+    elif language == "af":
         lines = [f"Teelaandag: {len(cases)} sôe/gelte nagegaan. Geen paring word geskep nie."]
         for row in actionable + attention:
             primary = row.get("recommended_boar") or row.get("conditional_primary_boar")
@@ -335,7 +473,42 @@ def _render(cases, language):
     return "\n".join(lines)
 
 
-def _oom_packet(cases, digest):
+def _af_allocation_bullet(row):
+    reserve = f"; reserwe {_safe_text(row.get('reserve_boar'))}" if row.get("reserve_boar") else ""
+    limitations = [_af_limitation(value) for value in row.get("material_limitations", [])]
+    limit = "; beperkings: " + ", ".join(limitations) if limitations else ""
+    prefix = "waarneming eers; " if row.get("conditional_on_observation") else ""
+    reason = (f"{int(row.get('pair_litters') or 0)} toeskryfbare werpsel(s), "
+        f"{int(row.get('born_alive') or 0)} lewend gebore en "
+        f"{int(row.get('surviving_or_weaned') or 0)} oorlewend/gespeen")
+    return (f"- {_safe_text(row['name'])}: {prefix}{_safe_text(row['primary_boar'])} - "
+        f"{_af_evidence_class(row['evidence_class'])}; {reason}{reserve}{limit}.")
+
+
+def _af_evidence_class(value):
+    return {"Proven repeat":"Bewese herhaling", "Supported cross":"Ondersteunde kruising",
+        "Corrective cross":"Korrigerende kruising", "Controlled trial":"Beheerde proef",
+        "Limited evidence":"Beperkte bewyse"}.get(_text(value), "Beperkte bewyse")
+
+
+def _af_limitation(value):
+    text = _text(value)
+    if "foundation ancestry" in text: return "stigter-afkoms is onvolledig"
+    if "availability" in text: return "beskikbaarheidsdekking is onvolledig"
+    if "reservation" in text: return "besprekingsdekking is onvolledig"
+    if "withdrawal" in text: return "onttrekkingsdekking is onvolledig"
+    if "age" in text: return "beerouderdom is onbekend"
+    if "health" in text: return "beergesondheidsdekking is onvolledig"
+    if "weight" in text: return "beergewig is ontbrekend of oud"
+    if "legs" in text: return "beerbene het geen huidige positiewe waarneming nie"
+    if "feet" in text: return "beervoete het geen huidige positiewe waarneming nie"
+    if "build" in text: return "beerbou is onbekend"
+    if "structural-soundness" in text: return "beer se strukturele waarneming is oud of ontbreek"
+    if "visible concern" in text: return "sigbare bekommernis vereis hersiening"
+    return "ander beheerde bewys ontbreek"
+
+
+def _oom_packet(cases, digest, allocation=None):
     rows = []
     for row in cases:
         rows.append({
@@ -348,7 +521,35 @@ def _oom_packet(cases, digest):
             "conditional_reserve_boar": ({"pig_id": _safe_text(row["conditional_reserve_boar"]["pig_id"]), "tag_number": _safe_text(row["conditional_reserve_boar"]["tag_number"]), "limitations": [_safe_text(item, 200) for item in row["conditional_reserve_boar"]["limitations"]]} if row.get("conditional_reserve_boar") else None),
             "boar_exclusions": [{"pig_id": _safe_text(item["pig_id"]), "tag_number": _safe_text(item["tag_number"]), "reasons": [_safe_text(reason, 200) for reason in item["exclusion_reasons"]]} for item in row["boar_assessments"] if item["excluded"]],
         })
-    return {"contract_version": CONTRACT_VERSION, "assessment_id": f"HERD-BREED-{digest[:32].upper()}", "cases": rows, "writes_performed": False, "mating_execution_enabled": False}
+    return {"contract_version": CONTRACT_VERSION, "assessment_id": f"HERD-BREED-{digest[:32].upper()}",
+        "cases": rows, "whole_round_allocation": _sanitized_allocation(allocation),
+        "writes_performed": False, "mating_execution_enabled": False}
+
+
+def _sanitized_allocation(allocation):
+    if not isinstance(allocation, dict):
+        return None
+    def public_row(row):
+        return {"pig_id": _safe_text(row.get("pig_id"), 128),
+            "name": _safe_text(row.get("name"), 96),
+            "primary_boar": _safe_text(row.get("primary_boar"), 96),
+            "reserve_boar": _safe_text(row.get("reserve_boar"), 96) or None,
+            "evidence_class": _safe_text(row.get("evidence_class"), 32),
+            "pair_litters": int(row.get("pair_litters") or 0),
+            "born_alive": int(row.get("born_alive") or 0),
+            "surviving_or_weaned": int(row.get("surviving_or_weaned") or 0),
+            "reason": _safe_text(row.get("reason"), 200),
+            "material_limitations": [_safe_text(value, 200) for value in row.get("material_limitations", [])],
+            "conditional_on_observation": row.get("conditional_on_observation") is True}
+    return {"capacity_per_boar": int(allocation.get("capacity_per_boar") or 0),
+        "groups": [{"boar_pig_id": _safe_text(group.get("boar_pig_id"), 128),
+            "boar_name": _safe_text(group.get("boar_name"), 96),
+            "section": _safe_text(group.get("section"), 120),
+            "females": [public_row(row) for row in group.get("females", []) if isinstance(row, dict)]}
+            for group in allocation.get("groups", []) if isinstance(group, dict)],
+        "next_group": [public_row(row) for row in allocation.get("next_group", []) if isinstance(row, dict)],
+        "observations_needed": [public_row(row) for row in allocation.get("observations_needed", []) if isinstance(row, dict)],
+        "mating_execution_enabled": False, "writes_performed": False}
 
 
 def _af_state(state):

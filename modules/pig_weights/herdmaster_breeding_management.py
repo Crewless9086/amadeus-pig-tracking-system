@@ -53,6 +53,8 @@ def build_breeding_management_packet(reconciled, assessment, *, today=None):
         "cases": assessment.get("cases"),
         "boar_inventory": assessment.get("boar_inventory"),
     }
+    if "whole_round_allocation" in assessment:
+        assessment_material["whole_round_allocation"] = assessment.get("whole_round_allocation")
     assessment_digest = _digest(assessment_material)
     if assessment.get("material_evidence_digest") != assessment_digest or assessment.get("assessment_id") != f"HERD-BREED-{assessment_digest[:32].upper()}":
         return _unavailable("breeding assessment material digest is invalid")
