@@ -117,6 +117,25 @@ def test_only_physical_gaps_allow_one_shortlisted_inspection():
     assert case["smallest_physical_question"].startswith("For Sally")
 
 
+def test_overdue_positive_mating_remains_unresolved_expected_farrow_hold():
+    data = snapshot(mating_events=[{
+        "mating_id":"MAT-OLD", "sow_pig_id":"SOW", "boar_pig_id":"BOAR",
+        "mating_date":"2026-03-20", "pregnancy_check_date":"2026-06-29",
+        "pregnancy_check_result":"Pregnant", "outcome":"Pregnant",
+        "farrowing_date":None, "related_litter_id":None,
+    }])
+    reconciled = reconcile_breeding_evidence(data, today=TODAY)
+    sow_row = reconciled["females"][0]
+    assert sow_row["current_cycle"]["state"] == "unresolved_expected_farrow"
+    assessment = evaluate_breeding_attention(reconciled, today=TODAY)
+    case = assessment["cases"][0]
+    assert case["state"] == "unresolved_expected_farrow"
+    assert case["recommended_boar"] is None
+    assert case["future_primary_boar"]["pig_id"] == "BOAR"
+    assert assessment["whole_round_allocation"]["observations_needed"] == []
+    assert assessment["whole_round_allocation"]["not_currently_eligible"][0]["name"] == "Sally"
+
+
 def test_unchanged_replay_and_input_row_reordering_are_deterministic():
     data=snapshot();first=reconcile_breeding_evidence(data,today=TODAY)
     reordered=deepcopy(data);reordered["pigs"].reverse();reordered["location_events"].reverse()

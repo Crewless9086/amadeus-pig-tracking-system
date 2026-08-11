@@ -192,6 +192,8 @@ def _cycles(snapshot, breeders, pairings, litters, conflict_sows, today):
         ordered=sorted(matings[pid],key=lambda row:(_date(row.get("mating_date")) or date.min,_text(row.get("mating_id"))))
         unresolved=[row for row in ordered if 0 <= (today-_date(row.get("mating_date"))).days <= 125 and not row.get("farrowing_date") and not row.get("related_litter_id") and _norm(row.get("outcome")) not in terminal]
         latest_mating=unresolved[-1] if unresolved else None
+        overdue_positive=[row for row in ordered if _date(row.get("mating_date")) and (today-_date(row.get("mating_date"))).days > 125 and not row.get("farrowing_date") and not row.get("related_litter_id") and (_norm(row.get("pregnancy_check_result")) in {"pregnant","positive"} or _norm(row.get("outcome")) in {"pregnant","positive"})]
+        latest_overdue=overdue_positive[-1] if overdue_positive else None
         recent_litters=sorted((row for row in litter_rows[pid] if _date(row.get("farrowing_date")) and _date(row.get("farrowing_date"))<=today),key=lambda row:(_date(row.get("farrowing_date")),row["litter_id"]))
         latest_litter=recent_litters[-1] if recent_litters else None
         conflicts=[]; recovered=False
@@ -202,6 +204,9 @@ def _cycles(snapshot, breeders, pairings, litters, conflict_sows, today):
         elif latest_litter and not latest_litter.get("wean_date"):
             if state not in {"nursing","expected_to_farrow"}: recovered=True
             supplied={"state":"nursing","last_litter_id":latest_litter["litter_id"],"farrowing_date":latest_litter["farrowing_date"]}
+        elif latest_overdue:
+            supplied={"state":"unresolved_expected_farrow","mating_id":latest_overdue.get("mating_id"),"mating_date":latest_overdue.get("mating_date"),"pregnancy_check_date":latest_overdue.get("pregnancy_check_date"),"pregnancy_check_result":latest_overdue.get("pregnancy_check_result") or latest_overdue.get("outcome"),"reason":"positive pregnancy lifecycle remains unresolved beyond the current-farrowing applicability boundary"}
+            recovered=True
         elif state in active_states:
             if not latest_mating:
                 conflicts.append("active cycle has no applicable unresolved mating")
