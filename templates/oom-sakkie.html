@@ -5,22 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Oom Sakkie</title>
   <link rel="stylesheet" href="/static/css/main.css">
+  <link rel="stylesheet" href="/static/css/farmDashboardV2.css">
+  <link rel="stylesheet" href="/static/css/oomSakkieV2.css">
 </head>
 <body class="oom-sakkie-body oom-farm-command-body">
-  <main class="oom-shell oom-sakkie-page" data-specialist-mode="home">
+  <div class="farm-app-shell oom-command-app">
+    {% include '_farm_nav.html' %}
+  <main class="oom-shell oom-sakkie-page oom-command-v2" data-specialist-mode="home">
     <header class="oom-header oom-farm-header">
       <div class="oom-farm-brand">
-        <span class="oom-farm-brand-mark" aria-hidden="true">A</span>
+        <span class="oom-farm-brand-mark" aria-hidden="true">OS</span>
         <div>
-          <p class="oom-kicker">Farm Command Center</p>
-          <h1>Amadeus Farm</h1>
+          <p class="oom-kicker">Amadeus Farm Command Center</p>
+          <h1>Oom Sakkie Command Room</h1>
         </div>
       </div>
-      <div class="oom-top-farm-bar" aria-label="Farm status bar">
-        <span><strong>18°C</strong> Partly cloudy</span>
-        <span><strong>Today</strong> 15 Jun 2026</span>
-        <span><strong>Irrigation</strong> Ready</span>
-        <span><strong>Gatekeeper</strong> All clear</span>
+      <div class="oom-top-farm-bar" aria-label="Command room capabilities">
+        <span><strong>Farm brief</strong> Current evidence</span>
+        <span><strong>Specialists</strong> Eight workspaces</span>
+        <span><strong>Decisions</strong> Owner gated</span>
+        <span><strong>Evidence</strong> Source labelled</span>
       </div>
       <div class="oom-farm-header-actions">
         <button type="button" id="oom_open_audit_workbench">Audit Workbench</button>
@@ -32,24 +36,38 @@
     </header>
 
     <section class="oom-workspace oom-farm-main" aria-live="polite">
+      <section class="oom-ambient-status" aria-label="Live farm status">
+        <a href="/weather" class="oom-live-chip is-weather">
+          <span class="oom-live-symbol" aria-hidden="true">☁</span>
+          <span><small>Weather</small><strong id="oom_live_weather">Loading…</strong><em id="oom_live_weather_detail">Farm station</em></span>
+        </a>
+        <a href="/power" class="oom-live-chip is-power">
+          <span class="oom-live-symbol" aria-hidden="true">◒</span>
+          <span><small>Power</small><strong id="oom_live_power">Loading…</strong><em id="oom_live_power_detail">Sunsynk</em></span>
+        </a>
+        <a href="/irrigation" class="oom-live-chip is-water">
+          <span class="oom-live-symbol" aria-hidden="true">◉</span>
+          <span><small>Irrigation</small><strong id="oom_live_irrigation">Loading…</strong><em id="oom_live_irrigation_detail">ROOTLINE</em></span>
+        </a>
+        <a href="/litters" class="oom-live-chip is-herd">
+          <span class="oom-live-symbol" aria-hidden="true">◆</span>
+          <span><small>Farm attention</small><strong id="oom_live_attention">Loading…</strong><em id="oom_live_attention_detail">Herd and litters</em></span>
+        </a>
+      </section>
       <aside class="oom-at-glance-panel" aria-label="At a glance">
-        <p class="oom-panel-title">At A Glance</p>
-        <article class="oom-glance-card is-urgent">
-          <span aria-hidden="true">!</span>
-          <div><strong>7</strong><p>Needs your attention</p><small>3 high priority</small></div>
-        </article>
-        <article class="oom-glance-card is-amber">
-          <span aria-hidden="true">A</span>
-          <div><strong>5</strong><p>Approvals waiting</p><small>Review and decide</small></div>
-        </article>
-        <article class="oom-glance-card is-green">
-          <span aria-hidden="true">✓</span>
-          <div><strong>12</strong><p>Tasks prepared</p><small>Ready when you are</small></div>
-        </article>
-        <article class="oom-glance-card is-blue">
-          <span aria-hidden="true">i</span>
-          <div><strong>3</strong><p>Information updates</p><small>New today</small></div>
-        </article>
+        <div class="oom-panel-heading"><div><p class="oom-kicker">At A Glance</p><h2>Farm overview</h2></div><span>Read-only</span></div>
+        <button type="button" data-quick-ask="Give me the daily command brief." class="oom-glance-card is-green">
+          <span aria-hidden="true">01</span><div><strong>Today&rsquo;s brief</strong><p>What needs doing now</p><small>Farm-wide priorities</small></div>
+        </button>
+        <button type="button" data-quick-ask="What needs my approval?" class="oom-glance-card is-amber">
+          <span aria-hidden="true">02</span><div><strong>Owner decisions</strong><p>Confirmations and approvals</p><small>Protected actions only</small></div>
+        </button>
+        <button type="button" data-quick-ask="Show me the agent command center." class="oom-glance-card is-blue">
+          <span aria-hidden="true">03</span><div><strong>Agent work</strong><p>Who is doing what</p><small>Current specialist lanes</small></div>
+        </button>
+        <button type="button" data-quick-ask="Show me the safety gates." class="oom-glance-card is-urgent">
+          <span aria-hidden="true">04</span><div><strong>Blocked work</strong><p>What cannot progress</p><small>Exact blocker and owner need</small></div>
+        </button>
       </aside>
 
       <section class="oom-center-stage" aria-label="Oom Sakkie command presence">
@@ -63,10 +81,11 @@
           </div>
           <div class="oom-presence-copy">
             <p class="oom-label">Oom Sakkie</p>
-            <p id="oom_presence_line">Standing by for a read-only farm check.</p>
+            <p id="oom_presence_line">Standing by in the farm room. Say his name or press Speak when you need him.</p>
           </div>
           <div class="oom-brief-bubble">
-            <p id="oom_answer" class="oom-answer">Morning. Here's what needs your attention today.</p>
+            <span class="oom-bubble-label">Current answer</span>
+            <p id="oom_answer" class="oom-answer">The farm room is live. Current weather, power, irrigation and herd attention remain visible while Oom Sakkie waits.</p>
           </div>
           <div class="oom-listening-pill" aria-hidden="true">
             <span>Listening...</span>
@@ -83,22 +102,12 @@
       </section>
 
       <aside class="oom-priority-panel" aria-label="Priority today">
-        <p class="oom-panel-title">Priority Today</p>
-        <button type="button" data-quick-ask="What needs attention today?" class="oom-priority-card is-urgent">
-          <span>Wean date due</span><small>2 litters need action</small>
-        </button>
-        <button type="button" data-quick-ask="What needs my approval?" class="oom-priority-card is-amber">
-          <span>3 approvals</span><small>Awaiting your decision</small>
-        </button>
-        <button type="button" data-quick-ask="Show sales leads" class="oom-priority-card is-green">
-          <span>New order received</span><small>Deposit follow-up pending</small>
-        </button>
-        <button type="button" data-quick-ask="What is the irrigation status?" class="oom-priority-card is-blue">
-          <span>Irrigation window</span><small>Review today's plan</small>
-        </button>
-        <button type="button" data-quick-ask="Give me the daily command brief." class="oom-priority-card is-purple">
-          <span>Expenses to capture</span><small>Quartermaster planning</small>
-        </button>
+        <div class="oom-panel-heading"><div><p class="oom-kicker">Priority Today</p><h2>Open a focus</h2></div><span>Live request</span></div>
+        <button type="button" data-quick-ask="Give me the current herd and breeding priorities." class="oom-priority-card is-urgent"><span>Herd &amp; breeding</span><small>Litters, matings, growth and welfare</small></button>
+        <button type="button" data-quick-ask="What is the current irrigation, weather and power execution state?" class="oom-priority-card is-blue"><span>Water &amp; power</span><small>Irrigation, weather and execution</small></button>
+        <button type="button" data-quick-ask="Show me the current customer, order and sales priorities." class="oom-priority-card is-green"><span>Customers &amp; orders</span><small>Sales journeys and protected decisions</small></button>
+        <button type="button" data-quick-ask="Show me the current sales, settlement and farm value summary." class="oom-priority-card is-purple"><span>Money &amp; performance</span><small>Sales, settlement and farm value</small></button>
+        <button type="button" data-quick-ask="What needs my approval and what is technically blocked?" class="oom-priority-card is-amber"><span>Approvals &amp; safety</span><small>Exact gates without technical clutter</small></button>
       </aside>
 
       <section class="oom-agent-stage" aria-label="Agent activity stage">
@@ -163,8 +172,8 @@
 
       <form id="oom_form" class="oom-input-bar">
         <label class="sr-only" for="oom_text">Ask Oom Sakkie</label>
-        <span aria-hidden="true">You can say or type a command</span>
-        <input id="oom_text" name="text" type="text" autocomplete="off" placeholder="Ask: What needs attention today?">
+        <span aria-hidden="true">Ask naturally</span>
+        <input id="oom_text" name="text" type="text" autocomplete="off" placeholder="Ask Oom Sakkie what must happen next&hellip;">
         <button type="button" data-oom-voice-button class="is-primary">Speak</button>
         <button type="button" id="oom_type_button">Type</button>
         <button type="button" data-oom-voice-ask-button>Ask anything</button>
@@ -178,6 +187,7 @@
       </section>
 
       <section class="oom-agent-dock-section" aria-label="Agent dock">
+        <div class="oom-dock-heading"><div><p class="oom-kicker">Farm team</p><h2>Specialist workspaces</h2></div><span>Select an agent to open its operational view</span></div>
         <div class="oom-agent-dock" id="oom_agent_dock">
           <button type="button" data-open-agent="ledger"><span>LD</span><strong>Ledger</strong><small>Sales & Money</small></button>
           <button type="button" data-open-agent="herdmaster"><span>HM</span><strong>Herdmaster</strong><small>Pigs & Herd</small></button>
@@ -724,6 +734,8 @@
     </div>
     <p class="oom-voice-hint">Voice loop stop words: "stop conversation", "cancel", or "never mind".</p>
   </main>
+  </div>
   <script src="/static/js/oomSakkie.js"></script>
+  <script src="/static/js/oomSakkieAmbient.js"></script>
 </body>
 </html>
