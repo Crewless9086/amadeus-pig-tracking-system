@@ -23,6 +23,8 @@ from modules.pig_weights.pregnancy_evidence import (
 CONTRACT_VERSION = "herdmaster_breeding_operating_loop_v3"
 REPEAT_SERVICE_REVIEW_COUNT = 2
 WEIGHT_FRESH_DAYS = 30
+IMMEDIATE_BOAR_GROUP_CAPACITY = 3
+EXPOSURE_DAYS = 17
 
 
 def build_breeding_operating_loop(
@@ -118,6 +120,11 @@ def build_breeding_operating_loop(
         item["priority"], item["task_group"], item["tag_number"],
         item["pig_id"],
     ))
+    # The published plan is built for the next physical work day, not the
+    # assessment timestamp.  Anchoring it to the worklist week also prevents
+    # same-week rebuilds from sliding every cohort forward.
+    cohorts = _schedule_placement_cohorts(tasks, week_start + timedelta(days=2))
+    _reconcile_controlled_trial_backlog(tasks, cases)
     cases.sort(key=lambda item: (
         next((
             task["priority"] for task in tasks
@@ -135,11 +142,14 @@ def build_breeding_operating_loop(
         "worklist_id": _stable_id(
             "HERD-WEEK", week_start.isoformat(),
             sorted(task["task_id"] for task in tasks),
+            cohorts,
         ),
         "worklist_status": "Available",
         "task_count": len(tasks),
         "task_counts": dict(sorted(counts.items())),
         "tasks": tasks,
+        "placement_cohorts": cohorts,
+        "owner_summary_af": _afrikaans_placement_summary(cohorts, today),
         "cases": cases,
         "reminder_plan": reminders,
         "notification_delivery_operational": False,
@@ -239,6 +249,8 @@ def oom_sakkie_worklist_summary(loop):
     """Return Telegram-safe ordinary-farm-language worklist copy."""
     if not isinstance(loop, dict) or loop.get("success") is not True:
         return "Monday breeding worklist is unavailable; do not treat this as zero."
+    if loop.get("owner_summary_af"):
+        return loop["owner_summary_af"]
     tasks = loop.get("tasks", [])
     if not tasks:
         return "No breeding animals require owner attention in the current evidence cut."
@@ -256,6 +268,145 @@ def oom_sakkie_worklist_summary(loop):
     if len(tasks) > 8:
         lines.append(f"{len(tasks) - 8} more task(s) remain on the owner board.")
     return "\n".join(lines)
+
+
+def _schedule_placement_cohorts(tasks, today):
+    """Sequence ready females without changing their evidence-backed pairing."""
+    grouped, held = {}, []
+    for task in tasks:
+        recommendation = task.get("male_recommendation") or {}
+        primary = recommendation.get("recommended") or {}
+        if task.get("provisional_recommendation") != "Ready for mating review" or not primary.get("pig_id"):
+            held.append({"pig_id": task.get("pig_id"), "name": _owner_label(task.get("tag_number")),
+                "state": _owner_label(task.get("provisional_recommendation")),
+                "reason": _owner_label(task.get("why"), 160)})
+            continue
+        grouped.setdefault(primary["pig_id"], {"boar_pig_id": primary["pig_id"],
+                "boar_name": _owner_label(primary["tag_number"]), "rows": []})["rows"].append(task)
+
+    cohorts, assigned = [], set()
+    for group in sorted(grouped.values(), key=lambda row: (row["boar_name"].casefold(), row["boar_pig_id"])):
+        rows = sorted(group["rows"], key=_placement_priority)
+        is_prince_trial = group["boar_name"].casefold() == "prince"
+        capacity = min(2, IMMEDIATE_BOAR_GROUP_CAPACITY) if is_prince_trial else IMMEDIATE_BOAR_GROUP_CAPACITY
+        if is_prince_trial and len(rows) > capacity:
+            for task in rows[capacity:]:
+                task.update({"provisional_recommendation": "Controlled trial backlog",
+                    "placement_cohort": "backlog", "placement_cohort_number": None,
+                    "proposed_placement_date": None, "exposure_start_date": None,
+                    "exposure_end_date": None, "exposure_days": None})
+                held.append({"pig_id": task.get("pig_id"), "name": _owner_label(task.get("tag_number")),
+                    "state": "Controlled trial backlog",
+                    "reason": "Await the bounded Prince trial outcome before scheduling another Prince cohort."})
+            rows = rows[:capacity]
+        for offset in range(0, len(rows), capacity):
+            sequence = offset // capacity
+            start = today + timedelta(days=sequence * EXPOSURE_DAYS)
+            end = start + timedelta(days=EXPOSURE_DAYS - 1)
+            females = []
+            for task in rows[offset:offset + capacity]:
+                if task["pig_id"] in assigned:
+                    raise ValueError("female_assigned_to_multiple_placement_cohorts")
+                assigned.add(task["pig_id"])
+                evidence = task["male_recommendation"]["recommended"]
+                reserve = task["male_recommendation"].get("reserve")
+                task.update({"placement_cohort": "immediate" if sequence == 0 else "next",
+                    "placement_cohort_number": sequence + 1,
+                    "proposed_placement_date": start.isoformat(), "exposure_start_date": start.isoformat(),
+                    "exposure_end_date": end.isoformat(), "exposure_days": EXPOSURE_DAYS})
+                females.append({"pig_id": task["pig_id"], "name": _owner_label(task["tag_number"]),
+                    "weaning_date": task.get("weaning_date"), "days_since_weaning": task.get("days_since_weaning"),
+                    "primary_boar": evidence["tag_number"], "reserve_boar": reserve.get("tag_number") if reserve else None,
+                    "evidence_class": evidence.get("evidence_class") or "Limited evidence",
+                    "pair_litters": evidence.get("pair_litters") or 0, "born_alive": evidence.get("born_alive") or 0,
+                    "surviving_or_weaned": evidence.get("surviving_or_weaned") or 0,
+                    "proposed_placement_date": start.isoformat(), "exposure_start_date": start.isoformat(),
+                    "exposure_end_date": end.isoformat(), "exposure_days": EXPOSURE_DAYS,
+                    "heat_observation_required": False})
+            cohorts.append({"kind": "immediate" if sequence == 0 else "next", "cohort_number": sequence + 1,
+                "boar_pig_id": group["boar_pig_id"], "boar_name": group["boar_name"],
+                "start_date": start.isoformat(), "end_date": end.isoformat(), "capacity": capacity,
+                "females": females})
+    return {"capacity_per_boar": IMMEDIATE_BOAR_GROUP_CAPACITY, "exposure_days": EXPOSURE_DAYS,
+        "cohorts": cohorts, "held": held, "actionable_count": len(assigned),
+        "accounted_for_once": len(assigned) + len(held) == len(tasks)
+            and len(assigned) == sum(len(row["females"]) for row in cohorts),
+        "mating_execution_enabled": False, "writes_performed": False}
+
+
+def _placement_priority(task):
+    recommendation = (task.get("male_recommendation") or {}).get("recommended") or {}
+    evidence_rank = {"Proven repeat": 0, "Supported cross": 1, "Corrective cross": 2,
+        "Controlled trial": 3, "Limited evidence": 4}.get(recommendation.get("evidence_class"), 5)
+    days = task.get("days_since_weaning")
+    return (-(days if isinstance(days, int) else -1), evidence_rank, task["tag_number"].casefold(), task["pig_id"])
+
+
+def _reconcile_controlled_trial_backlog(tasks, cases):
+    """Keep every externally visible surface aligned with the bounded trial."""
+    backlog = {row["pig_id"] for row in tasks if row.get("provisional_recommendation") == "Controlled trial backlog"}
+    for task in tasks:
+        if task.get("pig_id") not in backlog:
+            continue
+        task["why"] = "Await the bounded Prince trial outcome before scheduling another Prince cohort."
+        task["required_checks"] = ["Review the attributable Prince trial outcome."]
+        task["male_recommendation"] = dict(task["male_recommendation"], status="Future pairing retained")
+        task["notification"]["send_required"] = False
+    for case in cases:
+        if case.get("pig_id") not in backlog:
+            continue
+        classification = case["classification"]
+        classification.update({"state": "Controlled trial backlog", "readiness": "Held",
+            "reason": "Await the bounded Prince trial outcome before scheduling another Prince cohort.",
+            "proposed_placement_date": None, "exposure_start_date": None,
+            "exposure_end_date": None, "exposure_days": None})
+        case["male_recommendation"] = dict(case["male_recommendation"], status="Future pairing retained")
+        case["approval_packet"] = {"status": "Not ready", "approval_required": True,
+            "execution_enabled": False}
+
+
+def _afrikaans_placement_summary(schedule, today):
+    immediate = [row for row in schedule["cohorts"] if row["kind"] == "immediate"]
+    immediate_date = _date(immediate[0].get("start_date")) if immediate else None
+    heading = "PLAAS MÔRE" if immediate_date == today + timedelta(days=1) else "HUIDIGE GROEP"
+    lines = ["HERDMASTER — PRAKTIESE TEELPLAN", "", heading]
+    for cohort in immediate:
+        lines += ["", f"{_owner_label(cohort['boar_name'])} — {_af_date(cohort['start_date'])} tot {_af_date(cohort['end_date'])}"]
+        lines.extend(f"- {row['name']} — {_af_class(row['evidence_class'])}" for row in cohort["females"])
+    lines += ["", "VOLGENDE GROEP"]
+    for cohort in [row for row in schedule["cohorts"] if row["kind"] == "next"]:
+        lines += ["", f"{_owner_label(cohort['boar_name'])} — {_af_date(cohort['start_date'])} tot {_af_date(cohort['end_date'])}"]
+        lines.extend(f"- {row['name']} — {_af_class(row['evidence_class'])}" for row in cohort["females"])
+    lines += ["", "NIE TANS GESKIK NIE"]
+    held = schedule.get("held") or []
+    lines.append("- " + "; ".join(f"{_owner_label(row['name'])}: {_owner_label(_af_hold(row['state']))}" for row in held) if held else "- Geen huidige houvas nie.")
+    lines += ["", "EEN KONTROLE VOOR PLASING",
+        "- Kontroleer die gekose bere se bene, voete, beweging, bou en sigbare welsyn.", "",
+        "Geen hittewaarneming is nodig nie. Dit is ’n plan, nie ’n paring nie; die 17 dae bewys geen presiese diensdatum nie."]
+    return "\n".join(lines)
+
+
+def _af_date(value):
+    parsed = _date(value)
+    months = ("Januarie", "Februarie", "Maart", "April", "Mei", "Junie", "Julie", "Augustus", "September", "Oktober", "November", "Desember")
+    return f"{parsed.day} {months[parsed.month - 1]}" if parsed else "Onbekend"
+
+
+def _af_class(value):
+    return {"Proven repeat": "Bewese herhaling", "Supported cross": "Ondersteunde kruising",
+        "Corrective cross": "Korrigerende kruising", "Controlled trial": "Beheerde proef",
+        "Limited evidence": "Beperkte bewyse"}.get(value, "Beperkte bewyse")
+
+
+def _af_hold(value):
+    return {"Pregnancy evidence pending": "onopgeloste siklus",
+        "Historical pregnancy result; current status Unknown": "onopgeloste verwagte-kraam/dragtigheidsiklus",
+        "Nursing": "soog tans", "Assumed Pregnant": "Waarskynlik Dragtig",
+        "Inconclusive": "Onbeslis", "Controlled trial backlog": "wag vir Prince-proefuitslag"}.get(value, value or "werklike houvas")
+
+
+def _owner_label(value, limit=64):
+    return " ".join(_text(value).split())[:limit] or "Onbekend"
 
 
 def _owner_words(value):
@@ -579,6 +730,13 @@ def _task(
         "known_evidence": _known_evidence(classification, readiness),
         "required_checks": required,
         "provisional_recommendation": classification["state"],
+        "weaning_date": classification.get("weaning_date"),
+        "days_since_weaning": classification.get("days_since_weaning"),
+        "proposed_placement_date": classification.get("proposed_placement_date"),
+        "exposure_start_date": classification.get("exposure_start_date"),
+        "exposure_end_date": classification.get("exposure_end_date"),
+        "exposure_days": classification.get("exposure_days"),
+        "heat_observation_required": False,
         "delay_consequence": _delay_consequence(classification["task_group"]),
         "male_recommendation": male_recommendation,
         "evidence_generation": generated_at,

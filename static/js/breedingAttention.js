@@ -13,6 +13,15 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
+function afEvidenceClass(value) {
+  return ({
+    "Proven repeat": "Bewese herhaling",
+    "Supported cross": "Ondersteunde kruising",
+    "Corrective cross": "Korrigerende kruising",
+    "Controlled trial": "Beheerde proef",
+    "Limited evidence": "Beperkte bewyse",
+  })[value] || "Beperkte bewyse";
+}
 function render() {
   const selected = filter.value;
   const visible = selected ? rows.filter(row => row.filter_state === selected) : rows;
@@ -33,6 +42,14 @@ function renderWorklist(loop) {
     return;
   }
   worklistStatus.textContent = `${loop.task_count} huidige taak/take; week van ${loop.week_start}. Waarneming, paring en herinnering-uitvoering is afgeskakel.`;
+  const schedule = loop.placement_cohorts;
+  if (schedule && Array.isArray(schedule.cohorts)) {
+    worklistTasks.innerHTML = schedule.cohorts.map(cohort => `<section class="breeding-cohort" data-cohort-kind="${escapeHtml(cohort.kind)}">
+      <h3>${cohort.kind === "immediate" ? "Plaas môre / huidige groep" : "Volgende groep"}: ${escapeHtml(cohort.boar_name)} — ${escapeHtml(cohort.start_date)} tot ${escapeHtml(cohort.end_date)}</h3>
+      ${cohort.females.map(row => `<article class="breeding-task"><strong><a class="detail-link" href="/pig/${encodeURIComponent(row.pig_id)}">${escapeHtml(row.name)}</a></strong><span>${escapeHtml(afEvidenceClass(row.evidence_class))}; reserwe ${escapeHtml(row.reserve_boar || "Geen")}</span></article>`).join("")}
+    </section>`).join("") + (schedule.held?.length ? `<section class="breeding-cohort held"><h3>Later / werklike houvas</h3>${schedule.held.map(row => `<p><strong>${escapeHtml(row.name)}</strong>: ${escapeHtml(row.state)}</p>`).join("")}</section>` : "");
+    return;
+  }
   worklistTasks.innerHTML = (loop.tasks || []).length
     ? loop.tasks.map(task => {
         const pairing = task.male_recommendation || {};
