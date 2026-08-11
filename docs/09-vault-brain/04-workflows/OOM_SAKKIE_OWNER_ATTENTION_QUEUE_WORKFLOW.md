@@ -73,3 +73,15 @@ and review-event evidence table. Authenticated `sam_live_owner_decision:`
 callbacks remain inside the existing governed SAM callback namespace and
 the existing Oom Sakkie webhook, record one receipt through that rail,
 and edit the same card without applying a customer or protected action.
+Specific authenticated requests retain their specialist meaning. A natural
+breeding or mating-plan request is consumed by HERDMASTER from the current
+canonical breeding worklist and receives a HERDMASTER response; it is not
+recast as a broad daily farm brief. English, Afrikaans and mixed language use
+the same semantic domain contract. Only genuinely broad priorities/whole-farm
+requests enter the consolidated manager round.
+
+Before presenting active welfare or mortality work, the queue reconciles the
+specialist lifecycle against canonical animal state. Dead, Sold or off-farm
+animals retire stale active projections. Historical lifecycle and provider
+chronology remain immutable audit evidence, but no completed/superseded task
+may reappear as current owner work.

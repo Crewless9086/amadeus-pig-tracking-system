@@ -19,6 +19,8 @@ from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline
 from modules.oom_sakkie.family_access import FamilyRole, family_access_policy, resolve_family_principal
 from modules.oom_sakkie.herdmaster_auction_runtime import handle_auction_confirmation
 from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
+from modules.oom_sakkie.herdmaster_request_runtime import (
+    delivery_retry_authority_for, handle_herdmaster_request)
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -450,6 +452,29 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
         })
         return body, health_status if delivery.get("success") else 202
+
+    herd_request, herd_request_status = handle_herdmaster_request(parsed, gateway_authority)
+    if herd_request.get("handled"):
+        if not str(herd_request.get("answer") or "").strip() and not herd_request.get("suppress_owner_delivery"):
+            herd_request = {**herd_request,
+                "answer": ("<b>HERDMASTER — BREEDING PLAN WAITING</b>\n\n"
+                           "I could not refresh the current canonical breeding evidence. "
+                           "No mating or farm record was changed. Oom Sakkie will reassess "
+                           "when current herd evidence is available.")}
+        delivery = deliver_family_result(parsed, herd_request, specialist="HERDMASTER",
+            mission_id=str(herd_request.get("mission_id") or ""),
+            card_mission_id=str(herd_request.get("card_mission_id") or ""),
+            delivery_retry_authority=delivery_retry_authority_for(herd_request))
+        body, _ = _gateway_result(bool(herd_request.get("success")),
+            str(herd_request.get("status") or "herdmaster_request_contained"),
+            policy, herd_request_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": herd_request.get("answer", ""), "message": herd_request,
+            "delivery": delivery, "records_audit_trace": True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        return body, herd_request_status if delivery.get("success") else 202
 
     manager_result, manager_status = handle_farm_manager_round(parsed, gateway_authority)
     if manager_result.get("handled"):

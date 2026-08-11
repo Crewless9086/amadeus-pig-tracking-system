@@ -410,3 +410,19 @@ the scheduler-owned Daily Farm Manager Loop. See
 `docs/06-operations/OOM_SAKKIE_DAILY_FARM_MANAGER_LOOP_HANDOVER.md`. Do not
 expand unrelated specialist features until the exact deployed business proof is
 complete.
+## Oom Sakkie breeding-request routing and mortality retirement — 2026-08-11
+
+- Production incident Telegram 3527 asked for the updated practical breeding
+  plan using all weanings recorded that day; relay execution 63796 incorrectly
+  delivered generic farm brief 3528.
+- The reusable correction gives semantic `herd_management` requests a
+  provider-bound HERDMASTER lifecycle and reserves `manager_round` for broad
+  whole-farm requests. The response consumes the current canonical breeding
+  worklist, includes all same-day weanings, uses names, and performs no mating.
+- Canonical readback proves Pig 127 / PIG-2026-D13C is Dead, off-farm, effective
+  2026-08-03. Its stale mortality follow-up is retired from current manager
+  projections; no further owner confirmation is required.
+- Technical integration/deployment may proceed after exact-head reviews and CI.
+  Business completion remains waiting automatically for the next genuine
+  authenticated breeding-plan request after deployment. Do not manufacture or
+  replay owner traffic; release broad runtime while waiting.
