@@ -381,6 +381,25 @@ def test_concurrent_completion_claim_allows_only_one_external_effect():
     assert len(memory.edited)==1
 
 
+def test_protected_completion_verified_edit_removes_preview_buttons():
+    memory=Memory();mission="OOM-PROTECTED-CLEAR-BUTTONS"
+    preview={**RESULT,"status":"preview_ready","reply_markup":{"inline_keyboard":[[
+      {"text":"Bevestig alles","callback_data":"oompa:opaque:confirm"}]]}}
+    deliver_family_result(PARSED,preview,specialist="HERDMASTER",mission_id=mission,
+      card_mission_id=mission,event_store=memory.store,sender=memory.send)
+    captured={}
+    def edit(chat,message,text,reply_markup=None):
+        captured["reply_markup"]=reply_markup
+        return {"success":True,"telegram_message_id":message}
+    completed={"success":True,"status":"grouped_weights_completed","answer":"4 weights recorded exactly as previewed.",
+      "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    with patch("modules.oom_sakkie.family_message_lifecycle._edit_telegram",side_effect=edit):
+        result=deliver_family_result({**PARSED,"provider_message_id":"501"},completed,
+          specialist="HERDMASTER",mission_id=mission,card_mission_id=mission,event_store=memory.store)
+    assert result["telegram_edits"]==1 and result["telegram_sends"]==0
+    assert captured["reply_markup"]=={"inline_keyboard":[]}
+
+
 def test_missing_specialist_adapter_is_truthful_visible_result():
     memory=Memory();result={"status":"contained","answer":"No deployed HERDMASTER adapter acknowledged this task."}
     delivered=deliver_family_result(PARSED,result,specialist="HERDMASTER",event_store=memory.store,sender=memory.send)

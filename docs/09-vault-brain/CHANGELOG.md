@@ -1,5 +1,14 @@
 # Vault Brain Changelog
 
+## 2026-08-11 - Protected mortality and grouped-weight recovery prepared
+
+- Reconciled provider chronology separately from canonical readback for Pig 130 and the four-row grouped-weight defect.
+- Bound mortality and grouped-weight previews to opaque owner/private-chat/provider-card claims with Afrikaans controls, expiry, concurrency and replay safety.
+- Enforced exact preview-to-transaction equality for grouped rows, date and pen movements, with canonical pen evidence and atomic rollback.
+- Prevented protected replies from falling into generic manager presentation and made completion one verified card edit with controls removed.
+- Added the sealed append-only Pig 130 effective-date correction from 11 August to the owner-reported 6 August while preserving the original event and Unknown clinical facts.
+- Kept production untouched pending final review, exact CI, integration and bounded operational proof.
+
 ## 2026-08-11 - ROOTLINE status and owner-access defect documented
 
 - Confirmed the owner dashboard actively falls back from empty Supabase irrigation plan tables to legacy `Amadeus_Irrigation_Logs` rows.

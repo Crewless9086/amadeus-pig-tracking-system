@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime, timezone
 from urllib import request as urllib_request
 from urllib import error as urllib_error
 
@@ -9,6 +10,11 @@ from modules.oom_sakkie.ledger_agent import ledger_agent_policy
 from modules.oom_sakkie.sales_campaign_store import approve_first_waiting_sales_campaign
 from modules.sales.sam_live_stock_launch_control import process_sam_live_stock_owner_callback
 from modules.oom_sakkie.owner_attention_adapter import process_owner_attention_callback
+from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie.protected_action_claims import CALLBACK_PREFIX
+from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
+from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+from modules.oom_sakkie.family_access import FamilyRole, resolve_family_principal
 from modules.oom_sakkie.telegram_gateway import (
     ALLOWED_USER_IDS_ENV,
     MAX_TELEGRAM_TEXT_CHARS,
@@ -170,6 +176,31 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         return _direct_result(False, "telegram_direct_auth_denied", policy, 403)
 
     callback = _parse_telegram_callback_payload(payload)
+    if callback["callback_data"].startswith(CALLBACK_PREFIX):
+        allowed_ids=_allowed_user_ids(environ if environ is not None else os.environ)
+        if callback["telegram_user_id"] not in allowed_ids or callback["telegram_user_id"]!=callback["telegram_chat_id"]:
+            return _direct_result(False,"telegram_user_not_allowed",policy,403)
+        source=environ if environ is not None else os.environ
+        principal=resolve_family_principal({"telegram_user_id":callback["telegram_user_id"],
+          "telegram_chat_id":callback["telegram_chat_id"],"telegram_chat_type":"private"},source)
+        if principal.role is not FamilyRole.OWNER:
+            return _direct_result(False,"telegram_protected_action_owner_required",policy,403)
+        parsed={"telegram_user_id":callback["telegram_user_id"],"telegram_chat_id":callback["telegram_chat_id"],
+          "telegram_chat_type":"private","provider_message_id":callback["callback_query_id"],
+          "provider_timestamp":datetime.now(timezone.utc).isoformat(),"reply_to_message_id":callback["telegram_message_id"],
+          "callback_query_id":callback["callback_query_id"],"callback_data":callback["callback_data"],"text":""}
+        authority=issue_gateway_owner_authority(callback["telegram_user_id"],callback["telegram_chat_id"])
+        action_result,action_status=handle_protected_action_input(parsed,authority,callback_data=callback["callback_data"])
+        delivery=({"success":True,"telegram_sends":0,"telegram_edits":0}
+          if action_result.get("suppress_owner_delivery") or not action_result.get("answer") else
+          deliver_family_result(parsed,action_result,specialist="HERDMASTER",
+            mission_id=str(action_result.get("mission_id") or ""),card_mission_id=str(action_result.get("mission_id") or "")))
+        ack_result,ack_status=acknowledge_telegram_callback(callback["callback_query_id"],environ=environ)
+        body,_=_direct_result(action_result.get("success") is True and delivery.get("success") is True and ack_status<400,
+          str(action_result.get("status") or "protected_callback_contained"),policy,action_status)
+        body.update({"protected_action":action_result,"delivery":delivery,"callback_acknowledgement":ack_result,
+          "sends_telegram":int(delivery.get("telegram_sends") or 0)>0,"writes":action_result.get("writes_farm_data") is True})
+        return body,ack_status if ack_status>=400 else action_status
     if callback["callback_data"].startswith("sam_live_"):
         allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
         if callback["telegram_user_id"] not in allowed_ids:

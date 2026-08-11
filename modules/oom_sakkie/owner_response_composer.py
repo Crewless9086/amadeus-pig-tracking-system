@@ -135,7 +135,8 @@ def compose_manager_brief(brief, *, language="en") -> str:
         language=language))
 
 
-def compose_weight_preview(rows: Iterable[Mapping[str, Any]], *, language="en") -> str:
+def compose_weight_preview(rows: Iterable[Mapping[str, Any]], *, language="en", weight_date="",
+                           movement_pen_label="") -> str:
     lines = []
     for row in rows:
         label = str(row.get("label") or row.get("tag_number") or "").strip()
@@ -149,7 +150,12 @@ def compose_weight_preview(rows: Iterable[Mapping[str, Any]], *, language="en") 
     title = "HERDMASTER — WEIGHT PREVIEW" if language != "af" else "HERDMASTER — GEWIG VOORSKOU"
     action = ("Confirm this grouped preview before any weight is recorded."
               if language != "af" else "Bevestig hierdie gegroepeerde voorskou voordat enige gewig aangeteken word.")
-    return _render(OwnerResponse(title, (("Weights" if language != "af" else "Gewigte", tuple(lines)),),
+    sections=[("Weights" if language != "af" else "Gewigte",tuple(lines))]
+    shared=[]
+    if weight_date:shared.append(("Datum" if language=="af" else "Date")+f": {weight_date}")
+    if movement_pen_label:shared.append(("Skuif almal na" if language=="af" else "Move all to")+f": {movement_pen_label}")
+    if shared:sections.append(("Shared details" if language!="af" else "Gedeelde besonderhede",tuple(shared)))
+    return _render(OwnerResponse(title, tuple(sections),
                                  owner_action=action, language=language))
 
 

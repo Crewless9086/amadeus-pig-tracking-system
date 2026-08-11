@@ -36,10 +36,15 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         return {"success": False, "status": "family_message_visible_text_required",
                 "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
     text_sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    reply_markup = result.get("reply_markup") if isinstance(result.get("reply_markup"), Mapping) else None
     exclusive_completion = (
         result.get("owner_visible_completion_policy") == "verified_edit_or_new_message"
-        and str(result.get("status") or "") == "completed"
+        and str(result.get("status") or "") in {
+            "completed", "grouped_weights_completed", "mortality_lifecycle_recorded"
+        }
     )
+    if exclusive_completion and reply_markup is None:
+        reply_markup={"inline_keyboard":[]}
     delivered = next((row for row in events if row.get("state") == "delivered"), None)
     latest = next((row for row in reversed(events) if row.get("state") in {"delivered", "updated"}), delivered)
     card_id = str((latest or {}).get("telegram_message_id") or "")
@@ -160,7 +165,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         if claimed.get("created") is False:
             return {"success": False, "status": "family_message_update_delivery_ambiguous",
                     "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
-        response = (editor or _edit_telegram)(str(parsed.get("telegram_chat_id") or ""), card_id, text)
+        response = ((editor)(str(parsed.get("telegram_chat_id") or ""), card_id, text)
+                    if editor else _edit_telegram(str(parsed.get("telegram_chat_id") or ""),card_id,text,reply_markup))
         edit_verified = bool(response.get("success") and (
             not exclusive_completion
             or str(response.get("telegram_message_id") or "") == card_id
@@ -192,7 +198,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     if claimed.get("created") is False:
         return {"success": False, "status": "family_message_delivery_ambiguous",
                 "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0}
-    response = (sender or _send_telegram)(str(parsed.get("telegram_chat_id") or ""), text)
+    response = ((sender)(str(parsed.get("telegram_chat_id") or ""), text)
+                if sender else _send_telegram(str(parsed.get("telegram_chat_id") or ""),text,reply_markup))
     message_id = str(response.get("telegram_message_id") or "")
     if not response.get("success") or not message_id:
         store("record", attempt_id + "-CONTAINED", {**payload, "event_id": attempt_id + "-CONTAINED",
@@ -441,20 +448,31 @@ def load_family_lifecycle(card_mission_id: str, *, event_store=None):
     return list((event_store or _event_store)("load", str(card_mission_id or ""), None) or [])
 
 
-def _send_telegram(chat_id, text):
-    from modules.oom_sakkie.telegram_gateway import _send_owner_task_telegram
-    return _send_owner_task_telegram(chat_id, text, os.environ)
-
-
-def _edit_telegram(chat_id, message_id, text):
+def _send_telegram(chat_id, text, reply_markup=None):
     from modules.sales.sam_live_stock_launch_control import _telegram_api
-    token = str(os.environ.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or "").strip()
+    token=str(os.environ.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or os.environ.get("OOM_SAKKIE_TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:return {"success":False,"status":"telegram_token_not_configured","delivery_definitely_not_sent":True}
+    body={"chat_id":str(chat_id),"text":str(text),"parse_mode":"HTML","disable_web_page_preview":True}
+    if reply_markup:body["reply_markup"]=reply_markup
+    try:response=_telegram_api(token,"sendMessage",body)
+    except Exception:return {"success":False,"status":"telegram_delivery_ambiguous"}
+    result=response.get("result") if isinstance(response,dict) else {}
+    return {"success":response.get("ok") is True and bool((result or {}).get("message_id")),
+            "telegram_message_id":str((result or {}).get("message_id") or "")}
+
+
+def _edit_telegram(chat_id, message_id, text, reply_markup=None):
+    from modules.sales.sam_live_stock_launch_control import _telegram_api
+    token = str(os.environ.get("SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN") or
+                os.environ.get("OOM_SAKKIE_TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:
         return {"success": False, "status": "telegram_token_not_configured"}
     try:
-        response = _telegram_api(token, "editMessageText", {"chat_id": str(chat_id),
+        body={"chat_id": str(chat_id),
             "message_id": str(message_id), "text": str(text), "parse_mode": "HTML",
-            "disable_web_page_preview": True})
+            "disable_web_page_preview": True}
+        if reply_markup:body["reply_markup"]=reply_markup
+        response = _telegram_api(token, "editMessageText", body)
     except Exception:
         return {"success": False, "status": "telegram_edit_ambiguous"}
     return {"success": response.get("ok") is True,
