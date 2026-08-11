@@ -1,9 +1,9 @@
 # HERDMASTER Lifetime Genetic Merit Mission Plan
 
-Date: 2026-08-11  
-Owner: Charl Nieuwendyk  
-Status: Approved mission plan; implementation not started  
-Execution owner: HERDMASTER specialist terminal  
+Date: 2026-08-11
+Owner: Charl Nieuwendyk
+Status: Approved mission plan; stages 1–3 prepared source-only
+Execution owner: HERDMASTER specialist terminal
 
 ## 1. Owner-visible outcome
 
