@@ -99,7 +99,8 @@ async function loadIrrigation() {
     const b = plan.find(item => item.zone_id === "B12345"); const c = plan.find(item => item.zone_id === "C12345");
     setText("irrigation_status", status);
     setText("irrigation_source", label(data.source?.source, "Canonical"));
-    setText("irrigation_b_status", planState(b)); setText("irrigation_c_status", planState(c));
+    const bz=(data.zones||[]).find(item=>item.zone_id==="B12345"); const cz=(data.zones||[]).find(item=>item.zone_id==="C12345");
+    setText("irrigation_b_status", bz?.operational_state||planState(b)); setText("irrigation_c_status", cz?.operational_state||planState(c));
     setText("irrigation_done", `${number(day.done_count || 0)} · ${number(day.completed_minutes || 0, " min")}`);
     setText("irrigation_held", number((day.skipped_count || 0) + (day.paused_count || 0)));
     const sharedReason = b?.reason && b.reason === c?.reason ? b.reason : [b?.reason, c?.reason].filter(Boolean).join(" · ");

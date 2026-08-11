@@ -34,10 +34,13 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
         zone_history = (history.get("zones") or {}).get(zone_id, {})
         balance = ((evidence.get("water_balance") or {}).get("zones") or {}).get(zone_id, {})
         active = runtime if runtime.get("zone_id") == zone_id else {}
+        decision = _decision(recommendation.get("status"))
+        blocker = _blocker(recommendation)
         zones.append({
             "zone_id": zone_id,
             "zone_name": ZONE_NAMES[zone_id],
-            "decision": _decision(recommendation.get("status")),
+            "decision": decision,
+            "operational_state": _operational_state(decision, blocker, active),
             "reason": _zone_reason(recommendation, balance),
             "planned_minutes": recommendation.get("planned_duration_minutes"),
             "feasible_window": recommendation.get("preferred_window"),
@@ -45,7 +48,7 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
             "remaining_supported_water_need_mm": balance.get("remaining_water_need_mm"),
             "water_balance_complete_through": balance.get("complete_through"),
             "water_balance_freshness": "fresh" if balance.get("ledger_current") is True else "stale",
-            "eligibility_blocker": _blocker(recommendation),
+            "eligibility_blocker": blocker,
             "execution_state": active.get("state") or "not_active",
             "provider_output_state": active.get("provider_output_state") or "Unavailable",
             "shutdown_verified": active.get("shutdown_verified"),
@@ -151,7 +154,8 @@ def _specialist_projection(evidence, operating_date, now):
         recommendations.append({"subject": zone,
             "status": {"Run": "Recommend", "Not Due": "Do Not Run"}.get(state, state),
             "reason": reason, "planned_duration_minutes": row.get("planned_duration_minutes"),
-            "preferred_window": row.get("feasible_window"), "needs": []})
+            "preferred_window": row.get("feasible_window"),
+            "eligibility_blocker": row.get("eligibility_blocker"), "needs": []})
     overall = next((item["status"] for item in recommendations if item["status"] != "Needs Data"),
                    "Needs Data")
     return {"result_id": reassessment.get("result_id") if reassessment else None,
@@ -224,10 +228,23 @@ def _decision(value):
 
 
 def _blocker(recommendation):
+    technical = str(recommendation.get("eligibility_blocker") or "").strip()
+    if technical:
+        return technical
     if _decision(recommendation.get("status")) == "Run":
         return None
     needs = recommendation.get("needs") or []
     return needs[0] if needs else recommendation.get("reason") or "canonical_evidence_unavailable"
+
+
+def _operational_state(decision, blocker, active):
+    state = str(active.get("state") or "").lower()
+    if state in {"running", "active", "segment_started"}: return "Running"
+    if "shutdown" in state: return "Shutdown verification"
+    if state in {"completed", "stopped"}: return "Completed"
+    if decision == "Run" and blocker: return "Run — blocked"
+    if decision == "Run": return "Run — waiting"
+    return decision
 
 
 def _zone_reason(recommendation, balance):

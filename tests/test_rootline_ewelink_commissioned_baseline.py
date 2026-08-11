@@ -117,11 +117,21 @@ def test_fertilizer_configuration_baseline_is_exact_and_device_bound():
     assert commissioned_registered_device_baseline("unknown") is None
 
 
-def test_expired_commissioned_baseline_blocks_only_unobservable_control_paths():
+def test_unchanged_commissioned_baseline_remains_durable_after_seven_days():
     expired_at = datetime(2026, 8, 10, 16, 15, 14, tzinfo=timezone.utc)
     result = normalize_device_readback(device=packet(), status={"params": {}},
         retrieved_at=expired_at, commissioned_baseline=commissioned_controller_baseline())
     assert result["current_outputs_authoritative"] is True
-    assert result["commissioned_baseline_fresh"] is False
-    assert result["actuation_safety_complete"] is False
-    assert "conflicting_control_paths" in result["safety_readback_missing"]
+    assert result["commissioned_baseline_fresh"] is True
+    assert result["actuation_safety_complete"] is True
+    assert result["actuation_configuration_safe"] is True
+    assert result["commissioned_baseline_valid_until"] is None
+
+
+def test_explicit_owner_revocation_invalidates_durable_baseline(monkeypatch):
+    monkeypatch.setenv("ROOTLINE_BC_COMMISSIONED_BASELINE_REVOKED", "true")
+    baseline = commissioned_controller_baseline()
+    assert baseline["revoked"] is True
+    assert validate_commissioned_baseline(
+        baseline, device_id="100204e9bc", firmware="3.8.2",
+        observed_at=datetime(2026, 8, 11, tzinfo=timezone.utc)) is None
