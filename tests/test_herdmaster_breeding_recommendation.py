@@ -50,19 +50,36 @@ def test_multiple_acceptable_boars_are_ranked_by_attributable_performance():
     case = result["cases"][0]
     assert [r["pig_id"] for r in case["boar_assessments"]] == ["BOAR-2", "BOAR-1"]
     assert case["recommended_boar"]["pig_id"] == "BOAR-2"
+    assert case["reserve_boar"]["pig_id"] == "BOAR-1"
 
 
-def test_no_acceptable_boar_returns_each_exact_gap_not_generic_needs_data():
+def test_unresolved_cycle_gets_conditional_not_actionable_primary_and_reserve():
+    second = boar("BOAR-2", "Carl")
+    case = run(
+        females=[sow(current_cycle={"state": "missing_evidence"})],
+        boars=[boar(), second],
+        pedigrees={"SOW-1": tree("SD", "SS"), "BOAR-1": tree("BD", "BS"), "BOAR-2": tree("CD", "CS")},
+    )["cases"][0]
+    assert case["recommended_boar"] is None
+    assert case["reserve_boar"] is None
+    assert case["conditional_primary_boar"]["pig_id"] == "BOAR-1"
+    assert case["conditional_reserve_boar"]["pig_id"] == "BOAR-2"
+    assert case["mating_action_prohibited"] is True
+
+
+def test_unknown_administrative_coverage_is_a_limitation_but_active_hold_excludes():
     result = run(boars=[boar(available_for_breeding=None), boar("BOAR-2", "Carl", medical_status="Hold")], pedigrees={"SOW-1": tree("SD", "SS"), "BOAR-1": tree("BD", "BS"), "BOAR-2": tree("CD", "CS")})
     case = result["cases"][0]
-    assert case["recommended_boar"] is None
-    assert "boar breeding availability is Unknown" in case["boar_assessments"][0]["exclusion_reasons"]
-    assert "boar health evidence is not clear" in case["boar_assessments"][1]["exclusion_reasons"]
+    assert case["recommended_boar"]["pig_id"] == "BOAR-1"
+    assert "boar breeding availability negative coverage is incomplete" in case["boar_assessments"][0]["limitations"]
+    assert "boar has an active health restriction" in case["boar_assessments"][1]["exclusion_reasons"]
 
 
-def test_missing_family_tree_fails_closed_per_pair():
+def test_missing_foundation_family_tree_is_disclosed_not_invented_or_globally_blocked():
     result = run(pedigrees={"SOW-1": tree("SD", "SS"), "BOAR-1": {"lineage_status": "partial", "ancestor_ids": []}})
-    assert result["cases"][0]["boar_assessments"][0]["exclusion_reasons"] == ["pair-specific family-tree evidence is incomplete"]
+    candidate = result["cases"][0]["boar_assessments"][0]
+    assert candidate["excluded"] is False
+    assert candidate["limitations"] == ["foundation ancestry is incomplete; no known unsafe relationship was found"]
 
 
 def test_active_mating_and_assumed_pregnancy_never_rank_actionable_boar():
@@ -93,11 +110,11 @@ def test_owner_hold_and_active_welfare_case_outrank_matching():
     assert welfare["state"] == "held" and "welfare" in welfare["next_action"]
 
 
-def test_stale_weight_or_health_evidence_excludes_candidate():
+def test_stale_weight_is_disclosed_while_active_health_hold_excludes():
     stale = run(boars=[boar(latest_weight_date="2026-05-01")])["cases"][0]["boar_assessments"][0]
     held = run(boars=[boar(medical_status="Follow-up hold")])["cases"][0]["boar_assessments"][0]
-    assert "boar weight is missing, future-dated or stale" in stale["exclusion_reasons"]
-    assert "boar health evidence is not clear" in held["exclusion_reasons"]
+    assert "boar weight is missing, future-dated or stale" in stale["limitations"]
+    assert "boar has an active health restriction" in held["exclusion_reasons"]
 
 
 def test_grouped_owner_observations_ask_only_missing_physical_facts():
@@ -133,7 +150,6 @@ def test_current_farm_evidence_cut_is_complete_and_fails_closed_per_boar():
     result = evaluate_breeding_attention(fixture, today=TODAY)
     assert result["female_count"] == 18
     assert result["boar_count"] == 3
-    assert not any(case["recommended_boar"] for case in result["cases"])
     mysikind = next(case for case in result["cases"] if case["pig_id"] == "PIG-2026-21BE")
     mona = next(case for case in result["cases"] if case["pig_id"] == "PIG-2026-D050")
     baby = next(case for case in result["cases"] if case["pig_id"] == "PIG-2026-7DAA")
@@ -141,7 +157,7 @@ def test_current_farm_evidence_cut_is_complete_and_fails_closed_per_boar():
     assert baby["state"] == "inconclusive"
     review = next(case for case in result["cases"] if case["pig_id"] == "PIG-2026-34BF")
     assert {item["tag_number"] for item in review["boar_assessments"]} == {"Bola", "Prince", "Tyson"}
-    assert all("pair-specific family-tree evidence is incomplete" in item["exclusion_reasons"] for item in review["boar_assessments"])
+    assert all("foundation ancestry is incomplete; no known unsafe relationship was found" in item["limitations"] for item in review["boar_assessments"])
     assert len(result["english"].splitlines()) == 19
     assert len(result["afrikaans"].splitlines()) == 19
     assert "waarskynlik dragtig" in result["afrikaans"]
@@ -156,11 +172,11 @@ def test_adverse_female_physical_evidence_fails_closed():
     assert "body condition is outside or lacks governed breeding bounds" in case["unknowns"]
 
 
-def test_future_and_malformed_weights_fail_closed_for_female_and_boar():
+def test_weight_freshness_is_disclosed_without_becoming_reproductive_state():
     future_female = run(females=[sow(latest_weight_date="2026-08-06")])["cases"][0]
     malformed_boar = run(boars=[boar(latest_weight_date="not-a-date")])["cases"][0]["boar_assessments"][0]
-    assert "female weight is missing or stale" in future_female["unknowns"]
-    assert "boar weight is missing, future-dated or stale" in malformed_boar["exclusion_reasons"]
+    assert future_female["recommended_boar"] is not None
+    assert "boar weight is missing, future-dated or stale" in malformed_boar["limitations"]
 
 
 def test_inventory_role_conflict_and_cross_list_identity_collision_fail_closed():
@@ -185,11 +201,10 @@ def test_semantically_unchanged_row_order_and_generation_are_replay_stable():
     assert first["assessment_id"] == reordered["assessment_id"]
 
 
-def test_all_boar_structural_components_are_required_separately():
+def test_missing_boar_structural_components_are_separate_limitations():
     candidate = run(boars=[boar(observations={"observed_at":"2026-08-05", "legs_sound":True})])["cases"][0]["boar_assessments"][0]
-    assert "boar feet are not affirmatively sound" in candidate["exclusion_reasons"]
-    assert "boar build suitability is Unknown" in candidate["exclusion_reasons"]
-    assert "boar visible-concern check is adverse or Unknown" in candidate["exclusion_reasons"]
+    assert "boar feet have no current affirmative observation" in candidate["limitations"]
+    assert "boar build suitability is Unknown" in candidate["limitations"]
 
 
 def test_assumed_pregnancy_requires_cycle_bound_attributable_observation():
@@ -221,7 +236,7 @@ def test_future_physical_observations_fail_closed_for_both_sexes():
     male_case = run(boars=[male])["cases"][0]["boar_assessments"][0]
     assert female_case["recommended_boar"] is None
     assert "current heat observation is stale" in female_case["unknowns"]
-    assert "boar structural-soundness evidence is future-dated, malformed or stale" in male_case["exclusion_reasons"]
+    assert "boar structural-soundness evidence is stale or absent" in male_case["limitations"]
 
 
 def test_afrikaans_actions_preserve_welfare_hold_and_evidence_specificity():

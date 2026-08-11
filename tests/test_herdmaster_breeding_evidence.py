@@ -100,11 +100,11 @@ def test_recovered_evidence_can_produce_one_valid_recommendation():
     assert recommendation["writes_performed"] is False
 
 
-def test_system_evidence_gap_suppresses_irrelevant_physical_question():
+def test_incomplete_reservation_negative_coverage_is_disclosed_not_global_block():
     data=snapshot(reservation_coverage={"complete":False,"pig_ids":[]})
     result=reconcile_breeding_evidence(data,today=TODAY)
     case=evaluate_breeding_attention(result,today=TODAY)["cases"][0]
-    assert case["pairing_assessment"]=="not_eligible"
+    assert case["pairing_assessment"]=="recommended"
     assert case["smallest_physical_question"] is None
 
 

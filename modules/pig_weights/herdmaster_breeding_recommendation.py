@@ -82,8 +82,10 @@ def _female_case(female, boars, evidence, today):
     rankings = [_pairing(female, boar, evidence, today) for boar in boars]
     rankings.sort(key=lambda row: (row["excluded"], -row["score"], row["tag_number"].lower(), row["pig_id"]))
     qualified = [row for row in rankings if not row["excluded"]]
-    top_tied = len(qualified) > 1 and qualified[0]["score"] == qualified[1]["score"]
-    recommendation = qualified[0] if state == "eligible_for_mating_review" and qualified and not top_tied else None
+    recommendation = qualified[0] if state == "eligible_for_mating_review" and qualified else None
+    reserve = qualified[1] if state == "eligible_for_mating_review" and len(qualified) > 1 else None
+    conditional_primary = qualified[0] if state in {"missing_evidence", "recovering"} and qualified else None
+    conditional_reserve = qualified[1] if state in {"missing_evidence", "recovering"} and len(qualified) > 1 else None
     if state == "eligible_for_mating_review" and not qualified:
         action = "Resolve the listed pair-specific evidence; no boar is currently evidence-qualified."
     physical_only = bool(blockers) and all(_physical_blocker(item) for item in blockers)
@@ -108,7 +110,10 @@ def _female_case(female, boars, evidence, today):
         "smallest_physical_question": question,
         "pairing_assessment": pairing_assessment,
         "recommended_boar": recommendation,
-        "owner_choice_required": state == "eligible_for_mating_review" and top_tied,
+        "reserve_boar": reserve,
+        "conditional_primary_boar": conditional_primary,
+        "conditional_reserve_boar": conditional_reserve,
+        "owner_choice_required": False,
         "boar_assessments": rankings,
         "mating_action_prohibited": True,
     }
@@ -153,14 +158,10 @@ def _cycle_action(state):
 
 def _female_eligibility_blockers(row, evidence, today):
     blockers = []
-    if _norm(row.get("withdrawal_evidence_state")) not in {"cleared", "not_applicable"}:
-        blockers.append("female withdrawal clearance is Unknown")
-    if _norm(row.get("available_for_breeding")) not in {"available", "yes", "true"}:
-        blockers.append("female breeding availability is Unknown")
-    if not _text(row.get("current_pen_name")):
-        blockers.append("female current pen is Unknown")
-    if _weight_age(row, today) is None or not 0 <= _weight_age(row, today) <= WEIGHT_FRESH_DAYS:
-        blockers.append("female weight is missing or stale")
+    if _norm(row.get("withdrawal_evidence_state")) in {"hold", "active", "restricted"}:
+        blockers.append("female has an active withdrawal restriction")
+    if _norm(row.get("available_for_breeding")) in {"unavailable", "reserved", "held", "no", "false"}:
+        blockers.append("female has an affirmative availability restriction")
     observations = row.get("observations") if isinstance(row.get("observations"), dict) else {}
     observed_age = _date_age(observations.get("observed_at"), today)
     for key, label in (("body_condition", "current body condition"), ("legs_sound", "current legs and movement"), ("visible_concern", "current visible concern check"), ("heat", "current heat observation")):
@@ -183,33 +184,40 @@ def _female_eligibility_blockers(row, evidence, today):
 
 
 def _pairing(female, boar, evidence, today):
-    reasons, exclusions = [], []
+    reasons, exclusions, limitations = [], [], []
     boar_id = _text(boar.get("pig_id"))
     if _norm(boar.get("status")) != "active" or not _truth(boar.get("on_farm")):
         exclusions.append("boar is not active and on farm")
     if _norm(boar.get("purpose")) != "breeding": exclusions.append("boar purpose is not Breeding")
-    if _norm(boar.get("available_for_breeding")) not in {"available", "yes", "true"}: exclusions.append("boar breeding availability is Unknown")
-    if _norm(boar.get("reservation_status")) not in {"not_reserved", "unreserved", "available", "none"}: exclusions.append("boar reservation status is Unknown or restricted")
-    if not _text(boar.get("current_pen_name")): exclusions.append("boar current pen is Unknown")
-    if boar.get("age_days") is None: exclusions.append("boar age is Unknown")
-    if _norm(boar.get("medical_status")) not in {"clear", "eligible"}: exclusions.append("boar health evidence is not clear")
-    if _norm(boar.get("withdrawal_evidence_state")) not in {"cleared", "not_applicable"}: exclusions.append("boar withdrawal clearance is Unknown")
+    if _norm(boar.get("available_for_breeding")) in {"unavailable", "held", "no", "false"}: exclusions.append("boar has an affirmative availability restriction")
+    elif _norm(boar.get("available_for_breeding")) not in {"available", "yes", "true"}: limitations.append("boar breeding availability negative coverage is incomplete")
+    if _norm(boar.get("reservation_status")) in {"reserved", "allocated", "sold"}: exclusions.append("boar is reserved or allocated elsewhere")
+    elif _norm(boar.get("reservation_status")) not in {"not_reserved", "unreserved", "available", "none"}: limitations.append("boar reservation negative coverage is incomplete")
+    if boar.get("age_days") is None: limitations.append("boar age is Unknown")
+    if "hold" in _norm(boar.get("medical_status")) or _norm(boar.get("medical_status")) in {"restricted", "unfit"}: exclusions.append("boar has an active health restriction")
+    elif _norm(boar.get("medical_status")) not in {"clear", "eligible"}: limitations.append("boar health clearance coverage is incomplete")
+    if _norm(boar.get("withdrawal_evidence_state")) in {"hold", "active", "restricted", "conflicting"}: exclusions.append("boar has an active or conflicting withdrawal restriction")
+    elif _norm(boar.get("withdrawal_evidence_state")) not in {"cleared", "not_applicable"}: limitations.append("boar withdrawal negative coverage is incomplete")
     age = _weight_age(boar, today)
-    if age is None or not 0 <= age <= WEIGHT_FRESH_DAYS: exclusions.append("boar weight is missing, future-dated or stale")
+    if age is None or not 0 <= age <= WEIGHT_FRESH_DAYS: limitations.append("boar weight is missing, future-dated or stale")
     observations = boar.get("observations") if isinstance(boar.get("observations"), dict) else {}
     structure_age = _date_age(observations.get("observed_at"), today)
-    if observations.get("legs_sound") is not True: exclusions.append("boar legs are not affirmatively sound")
-    if observations.get("feet_sound") is not True: exclusions.append("boar feet are not affirmatively sound")
-    if observations.get("build_acceptable") is not True: exclusions.append("boar build suitability is Unknown")
-    if _norm(observations.get("visible_concern")) not in {"none", "none_observed", "no_visible_concern"}: exclusions.append("boar visible-concern check is adverse or Unknown")
-    elif structure_age is None or not 0 <= structure_age <= 30: exclusions.append("boar structural-soundness evidence is future-dated, malformed or stale")
+    if observations.get("legs_sound") is False: exclusions.append("boar legs are recorded unsound")
+    elif observations.get("legs_sound") is not True: limitations.append("boar legs have no current affirmative observation")
+    if observations.get("feet_sound") is False: exclusions.append("boar feet are recorded unsound")
+    elif observations.get("feet_sound") is not True: limitations.append("boar feet have no current affirmative observation")
+    if observations.get("build_acceptable") is False: exclusions.append("boar build is recorded unsuitable")
+    elif observations.get("build_acceptable") is not True: limitations.append("boar build suitability is Unknown")
+    if _norm(observations.get("visible_concern")) not in {"", "unknown", "none", "none_observed", "no_visible_concern"}: exclusions.append("boar has a recorded visible concern")
+    elif structure_age is None or not 0 <= structure_age <= 30: limitations.append("boar structural-soundness evidence is stale or absent")
     relation = _relatedness(female, boar, evidence.get("pedigrees") or {})
     if relation["status"] == "conflict": exclusions.append(relation["reason"])
-    elif relation["status"] != "clear": exclusions.append(relation["reason"])
+    elif relation["status"] != "clear": limitations.append(relation["reason"])
     else: reasons.append("No attributable ancestor/descendant or shared-ancestor conflict was found in the complete bounded pedigree.")
     service = _service_performance(female, boar, evidence)
     score = 100
     score -= min(service["prior_pairings"] * 8, 24)
+    score -= min(int(boar.get("service_count") or 0) * 2, 20)
     score += min(service["surviving_piglets"], 12)
     if service["mean_survival_percent"] is not None: score += round(service["mean_survival_percent"] / 20)
     if service["growth_evidence"] == "positive": score += 5
@@ -218,6 +226,7 @@ def _pairing(female, boar, evidence, today):
     return {
         "pig_id": boar_id, "tag_number": _text(boar.get("tag_number")) or boar_id,
         "excluded": bool(exclusions), "exclusion_reasons": exclusions,
+        "limitations": limitations,
         "score": score if not exclusions else 0, "reasoning": reasons,
         "service_history": service,
     }
@@ -229,13 +238,13 @@ def _relatedness(female, boar, pedigrees):
     if ft.get("cycle_nodes") or bt.get("cycle_nodes"):
         return {"status": "conflict", "reason": "pedigree contains a cycle or identity conflict"}
     fa, ba = set(ft.get("ancestor_ids") or []), set(bt.get("ancestor_ids") or [])
-    if ft.get("lineage_status") != "complete" or bt.get("lineage_status") != "complete" or not fa or not ba:
-        return {"status": "unknown", "reason": "pair-specific family-tree evidence is incomplete"}
     if boar_id in fa or female_id in ba:
         return {"status": "conflict", "reason": "ancestor/descendant pairing is excluded"}
     shared = sorted(fa & ba)
     if shared:
         return {"status": "conflict", "reason": "shared ancestor(s): " + ", ".join(shared)}
+    if ft.get("lineage_status") != "complete" or bt.get("lineage_status") != "complete" or not fa or not ba:
+        return {"status": "limited", "reason": "foundation ancestry is incomplete; no known unsafe relationship was found"}
     return {"status": "clear", "reason": "complete bounded pedigrees are disjoint"}
 
 
@@ -312,7 +321,14 @@ def _render(cases, language):
     attention = [r for r in cases if r not in actionable]
     if language == "af":
         lines = [f"Teelaandag: {len(cases)} sôe/gelte nagegaan. Geen paring word geskep nie."]
-        for row in actionable + attention: lines.append(f"{_safe_text(row['tag_number'])}: {_af_state(row['state'])}. Volgende: {_af_action(row)}")
+        for row in actionable + attention:
+            primary = row.get("recommended_boar") or row.get("conditional_primary_boar")
+            reserve = row.get("reserve_boar") or row.get("conditional_reserve_boar")
+            pairing = (f" Voorlopige bere: {_safe_text(primary['tag_number'])} eerste, {_safe_text(reserve['tag_number'])} reserwe; eers nadat huidige gereedheid bevestig is."
+                       if primary and reserve and not row.get("recommended_boar") else
+                       f" Bere: {_safe_text(primary['tag_number'])} eerste, {_safe_text(reserve['tag_number'])} reserwe."
+                       if primary and reserve else "")
+            lines.append(f"{_safe_text(row['tag_number'])}: {_af_state(row['state'])}. Volgende: {_af_action(row)}{pairing}")
     else:
         lines = [f"Breeding round: {len(cases)} sow(s)/gilt(s) assessed. No mating is created."]
         for row in actionable + attention: lines.append(f"{_safe_text(row['tag_number'])}: {_safe_text(row['state'].replace('_', ' '))}. Next: {_safe_text(row['next_action'], 240)}")
@@ -327,6 +343,9 @@ def _oom_packet(cases, digest):
             "state": row["state"], "pairing_assessment": row["pairing_assessment"], "next_action": _safe_text(row["next_action"], 240),
             "smallest_physical_question": _safe_text(row.get("smallest_physical_question"), 240) or None,
             "recommended_boar": ({"pig_id": _safe_text(row["recommended_boar"]["pig_id"]), "tag_number": _safe_text(row["recommended_boar"]["tag_number"]), "reasoning": [_safe_text(item, 200) for item in row["recommended_boar"]["reasoning"]]} if row.get("recommended_boar") else None),
+            "reserve_boar": ({"pig_id": _safe_text(row["reserve_boar"]["pig_id"]), "tag_number": _safe_text(row["reserve_boar"]["tag_number"]), "reasoning": [_safe_text(item, 200) for item in row["reserve_boar"]["reasoning"]]} if row.get("reserve_boar") else None),
+            "conditional_primary_boar": ({"pig_id": _safe_text(row["conditional_primary_boar"]["pig_id"]), "tag_number": _safe_text(row["conditional_primary_boar"]["tag_number"]), "limitations": [_safe_text(item, 200) for item in row["conditional_primary_boar"]["limitations"]]} if row.get("conditional_primary_boar") else None),
+            "conditional_reserve_boar": ({"pig_id": _safe_text(row["conditional_reserve_boar"]["pig_id"]), "tag_number": _safe_text(row["conditional_reserve_boar"]["tag_number"]), "limitations": [_safe_text(item, 200) for item in row["conditional_reserve_boar"]["limitations"]]} if row.get("conditional_reserve_boar") else None),
             "boar_exclusions": [{"pig_id": _safe_text(item["pig_id"]), "tag_number": _safe_text(item["tag_number"]), "reasons": [_safe_text(reason, 200) for reason in item["exclusion_reasons"]]} for item in row["boar_assessments"] if item["excluded"]],
         })
     return {"contract_version": CONTRACT_VERSION, "assessment_id": f"HERD-BREED-{digest[:32].upper()}", "cases": rows, "writes_performed": False, "mating_execution_enabled": False}
