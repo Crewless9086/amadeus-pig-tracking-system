@@ -9,7 +9,8 @@ Prepared (20%) only. This source adds no migration, writer, route ownership, Tel
 - The requested batch must have `status = complete`; otherwise analysis fails closed.
 - Successful batch rows and linked weight events are the measured evidence.
 - Previous comparisons use only an attributable weight strictly earlier than the batch date.
-- Expected coverage is derived from active, on-farm animals in covered pens. Missing measurements remain `null`/Unknown, never zero.
+- Expected coverage is bound to the immutable pig identities and batch-time `from_pen_id` values in the completed batch manifest. Later movement/current-location changes cannot rewrite the denominator, pen grouping, digest, or replay identity. Missing measurements remain `null`/Unknown, never zero.
+- Completed counters, unique audit rows, weight-bearing rows, and their exact canonical event bindings must reconcile before analysis; any truncation or duplicate binding fails closed.
 - Attributable contextual evidence retains source identity and observation time and is labelled Associated, never causal.
 - Optional growth thresholds must be supplied as evidence; the evaluator invents no universal threshold.
 

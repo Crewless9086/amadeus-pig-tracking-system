@@ -56,8 +56,8 @@ def build_weighing_batch_intelligence(*, batch, batch_rows, weight_history,
         repeated_decline = change is not None and change < 0 and bool(prior_changes) and prior_changes[-1] < 0
         analysed.append({
             "pig_id": pig_id, "name": row.get("pig_name") or row.get("tag_number") or pig_id,
-            "tag_number": row.get("tag_number") or "", "pen_id": row.get("pen_id") or row.get("current_pen_id") or row.get("from_pen_id") or "",
-            "pen_name": row.get("pen_name") or row.get("current_pen_name") or row.get("pen_id") or row.get("from_pen_id") or "Unknown",
+            "tag_number": row.get("tag_number") or "", "pen_id": row.get("pen_id") or row.get("from_pen_id") or "",
+            "pen_name": row.get("pen_name") or row.get("from_pen_name") or row.get("from_pen_id") or "Unknown",
             "cohort_id": row.get("cohort_id") or row.get("litter_id") or "",
             "lifecycle_state": row.get("lifecycle_state") or row.get("status") or "Unknown",
             "reproductive_state": row.get("reproductive_state") or "Unknown",
@@ -88,8 +88,9 @@ def build_weighing_batch_intelligence(*, batch, batch_rows, weight_history,
     context_rows = _contexts(contexts, interval_start, batch_date)
     findings = _findings(analysed, pen_patterns, missing)
     question = _grouped_question(findings, context_rows)
-    evidence = {"batch": batch, "rows": accepted, "history": weight_history or [],
-        "expected": expected_animals or [], "contexts": context_rows,
+    evidence = {"batch": batch, "rows": _canonical_rows(accepted),
+        "history": _canonical_rows(weight_history or []),
+        "expected": _canonical_rows(expected_animals or []), "contexts": _canonical_rows(context_rows),
         "correction_lineage": correction_lineage or {}}
     digest = hashlib.sha256(json.dumps(evidence, sort_keys=True, default=str,
         separators=(",", ":")).encode()).hexdigest()
@@ -198,6 +199,12 @@ def _summary_af(metrics, findings, contexts, question):
 
 def _count(rows, value):
     return sum(row["classification"] == value for row in rows)
+
+
+def _canonical_rows(rows):
+    normalized = [dict(row) for row in rows]
+    return sorted(normalized, key=lambda row: json.dumps(
+        row, sort_keys=True, default=str, separators=(",", ":")))
 
 
 def _average(values):

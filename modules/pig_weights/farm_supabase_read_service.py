@@ -2449,21 +2449,54 @@ def _completed_batch_intelligence(batch_id, selected_pen_id="", connect_factory=
     if not batch or _text(batch.get("status")).lower() != "complete":
         return build_weighing_batch_intelligence(batch=batch or {}, batch_rows=[], weight_history=[])
     rows = _fetch_all(
-        """select audit.row_id::text, audit.pig_id, audit.pig_name, audit.weight_kg,
-                  audit.from_pen_id, audit.to_pen_id, audit.status, audit.status_reason,
-                  event.weight_event_id::text, state.tag_number,
-                  state.status as lifecycle_state, state.current_pen_id, state.current_pen_name
+        """select audit.row_id::text, audit.row_index, audit.pig_id, audit.pig_name,
+                  audit.weight_kg, audit.from_pen_id, audit.to_pen_id, audit.status,
+                  audit.status_reason, audit.result_json, audit.original_row_json,
+                  event.weight_event_id::text, event.event_count,
+                  state.tag_number, state.status as lifecycle_state, state.litter_id,
+                  case
+                    when open_litter.litter_id is not null then 'Nursing'
+                    when latest_mating.pregnancy_check_result is not null then latest_mating.pregnancy_check_result
+                    when latest_mating.outcome is not null then latest_mating.outcome
+                    when latest_mating.mating_id is not null then 'Active mating cycle'
+                    else 'Unknown'
+                  end as reproductive_state
              from public.bulk_weight_batch_rows audit
-        left join public.pig_weight_events event
-               on event.bulk_batch_id = audit.batch_id and event.bulk_row_id = audit.row_id
+        left join lateral (
+              select min(weight_event_id) as weight_event_id, count(*) as event_count
+                from public.pig_weight_events
+               where bulk_batch_id = audit.batch_id and bulk_row_id = audit.row_id
+        ) event on true
         left join public.current_canonical_pig_state state on state.pig_id = audit.pig_id
+        left join lateral (
+              select litter_id from public.current_canonical_litters
+               where sow_pig_id = audit.pig_id
+                 and lower(coalesce(litter_status, '')) not in ('weaned', 'closed', 'completed')
+               order by farrowing_date desc nulls last, litter_id desc limit 1
+        ) open_litter on true
+        left join lateral (
+              select mating_id, pregnancy_check_result, outcome
+                from public.mating_events
+               where sow_pig_id = audit.pig_id and mating_date <= %s
+               order by mating_date desc, created_at desc, mating_id desc limit 1
+        ) latest_mating on true
             where audit.batch_id = %s::uuid
-         order by audit.row_index, event.created_at, event.weight_event_id""",
-        (batch_id,), connect_factory=connect_factory,
+         order by audit.row_index""",
+        (batch["weight_date"], batch_id), connect_factory=connect_factory,
     )
+    integrity_error = _batch_integrity_error(batch, rows)
+    if integrity_error:
+        return {"success": False, "contract_version": "herdmaster_weighing_batch_intelligence_v1",
+                "reason": integrity_error, "writes_performed": False,
+                "telegram_delivery_enabled": False, "protected_actions_performed": False}
     pig_ids = sorted({_text(row.get("pig_id")) for row in rows if _text(row.get("pig_id"))})
     history = []
-    expected = []
+    expected = [{"pig_id": _text(row.get("pig_id")),
+                 "name": _text(row.get("pig_name")) or _text(row.get("tag_number")),
+                 "tag_number": _text(row.get("tag_number")),
+                 "pen_id": _text(row.get("from_pen_id")), "pen_name": _text(row.get("from_pen_id")),
+                 "expected_for_batch": True}
+                for row in rows if _text(row.get("pig_id"))]
     if pig_ids:
         history = _fetch_all(
             """select weight_event_id::text, pig_id, weight_date, weight_kg, created_at
@@ -2472,21 +2505,25 @@ def _completed_batch_intelligence(batch_id, selected_pen_id="", connect_factory=
              order by pig_id, weight_date, created_at, weight_event_id""",
             (pig_ids, batch["weight_date"]), connect_factory=connect_factory,
         )
-        covered_pens = sorted({_text(row.get("current_pen_id") or row.get("from_pen_id")) for row in rows
-                               if _text(row.get("current_pen_id") or row.get("from_pen_id"))})
-        if selected_pen_id:
-            covered_pens = [selected_pen_id]
-        if covered_pens:
-            expected = _fetch_all(
-                """select pig_id, tag_number, current_pen_id, current_pen_name
-                     from public.current_canonical_pig_state
-                    where lower(coalesce(status, '')) = 'active'
-                      and lower(coalesce(on_farm::text, '')) in ('yes', 'true')
-                      and current_pen_id = any(%s)
-                 order by current_pen_id, tag_number, pig_id""",
-                (covered_pens,), connect_factory=connect_factory,
-            )
     return build_weighing_batch_intelligence(
         batch=batch, batch_rows=rows, weight_history=history, expected_animals=expected,
         contexts=(), correction_lineage={"batch_id": batch_id, "completed_at": batch.get("completed_at")},
     )
+
+
+def _batch_integrity_error(batch, rows):
+    row_ids = [_text(row.get("row_id")) for row in rows]
+    if len(rows) != int(batch.get("visible_row_count") or 0) or len(row_ids) != len(set(row_ids)):
+        return "completed_batch_row_manifest_mismatch"
+    for status, field in (("success", "success_count"), ("failed", "failed_count"),
+                          ("duplicate", "duplicate_count"), ("skipped", "skipped_row_count")):
+        count = sum(_text(row.get("status")).lower() == status for row in rows)
+        if count != int(batch.get(field) or 0):
+            return f"completed_batch_{status}_count_mismatch"
+    weight_rows = [row for row in rows if bool((row.get("result_json") or {}).get("has_weight"))]
+    if len(weight_rows) != int(batch.get("weight_row_count") or 0):
+        return "completed_batch_weight_count_mismatch"
+    if any(_text(row.get("status")).lower() == "success" and int(row.get("event_count") or 0) != 1
+           for row in weight_rows):
+        return "completed_batch_weight_event_binding_mismatch"
+    return None

@@ -26,22 +26,39 @@ def test_requires_one_completed_canonical_batch():
 
 def test_read_adapter_binds_complete_batch_and_keeps_missing_weight_unknown():
     batch = {"batch_id": "11111111-1111-1111-1111-111111111111", "weight_date": date(2026, 8, 11),
-             "status": "complete", "completed_at": datetime(2026, 8, 11, 10, 0)}
+             "status": "complete", "completed_at": datetime(2026, 8, 11, 10, 0),
+             "visible_row_count": 2, "success_count": 1, "failed_count": 0,
+             "duplicate_count": 0, "skipped_row_count": 1, "weight_row_count": 1}
     rows = [{"row_id": "ROW-1", "pig_id": "PIG-1", "pig_name": "Bonnie", "weight_kg": 64.4,
-             "from_pen_id": "D3", "current_pen_id": "D3", "current_pen_name": "D3",
-             "status": "success", "weight_event_id": "WGT-NEW"}]
+             "from_pen_id": "D3", "litter_id": "LIT-1", "reproductive_state": "Weaned",
+             "status": "success", "weight_event_id": "WGT-NEW", "event_count": 1,
+             "result_json": {"has_weight": True}},
+            {"row_id": "ROW-2", "pig_id": "PIG-2", "pig_name": "Waki", "weight_kg": None,
+             "from_pen_id": "D3", "status": "skipped", "event_count": 0,
+             "result_json": {"has_weight": False}}]
     history = [{"weight_event_id": "WGT-OLD", "pig_id": "PIG-1", "weight_date": date(2026, 7, 28),
                 "weight_kg": 62.0}, {"weight_event_id": "WGT-NEW", "pig_id": "PIG-1",
                 "weight_date": date(2026, 8, 11), "weight_kg": 64.4}]
-    expected = [{"pig_id": "PIG-1", "tag_number": "1", "current_pen_id": "D3", "current_pen_name": "D3"},
-                {"pig_id": "PIG-2", "tag_number": "2", "current_pen_id": "D3", "current_pen_name": "D3"}]
     with patch.object(farm_supabase_read_service, "_fetch_one", return_value=batch), \
-         patch.object(farm_supabase_read_service, "_fetch_all", side_effect=[rows, history, expected]):
+         patch.object(farm_supabase_read_service, "_fetch_all", side_effect=[rows, history]):
         packet = farm_supabase_read_service._completed_batch_intelligence(batch["batch_id"])
     assert packet["success"] is True
     assert packet["metrics"]["coverage_pct"] == 50.0
     assert packet["missing_expected_animals"][0]["weight_kg"] is None
+    assert packet["animals"][0]["pen_id"] == "D3"
+    assert packet["animals"][0]["cohort_id"] == "LIT-1"
+    assert packet["animals"][0]["reproductive_state"] == "Weaned"
     assert packet["writes_performed"] is False
+
+
+def test_completed_batch_manifest_or_event_mismatch_fails_closed():
+    batch = {"batch_id": "B1", "visible_row_count": 1, "success_count": 1, "failed_count": 0,
+             "duplicate_count": 0, "skipped_row_count": 0, "weight_row_count": 1}
+    row = {"row_id": "R1", "status": "success", "event_count": 0,
+           "result_json": {"has_weight": True}}
+    assert farm_supabase_read_service._batch_integrity_error(batch, []) == "completed_batch_row_manifest_mismatch"
+    assert farm_supabase_read_service._batch_integrity_error(batch, [row]) == "completed_batch_weight_event_binding_mismatch"
+    assert farm_supabase_read_service._batch_integrity_error({**batch, "visible_row_count": 2}, [row, row]) == "completed_batch_row_manifest_mismatch"
 
 
 def test_exact_change_growth_coverage_and_missing_is_not_zero():
@@ -124,6 +141,18 @@ def test_identity_lineage_and_replay_are_deterministic_and_zero_authority():
     assert first["replay_identity"] == second["replay_identity"]
     assert first["correction_lineage"] == {"supersedes_batch_id":"B0"}
     assert first["writes_performed"] is first["telegram_delivery_enabled"] is first["protected_actions_performed"] is False
+
+
+def test_replay_identity_is_independent_of_equivalent_evidence_order():
+    rows = [{"row_id": "R1", "status": "success", "pig_id": "P1", "weight_kg": 64},
+            {"row_id": "R2", "status": "success", "pig_id": "P2", "weight_kg": 70}]
+    history = [{"pig_id": "P1", "weight_date": "2026-07-28", "weight_kg": 62},
+               {"pig_id": "P2", "weight_date": "2026-07-28", "weight_kg": 69}]
+    expected = [{"pig_id": "P1"}, {"pig_id": "P2"}]
+    first = build(rows=rows, history=history, expected=expected)
+    second = build(rows=list(reversed(rows)), history=list(reversed(history)), expected=list(reversed(expected)))
+    assert first["evidence_digest"] == second["evidence_digest"]
+    assert first["delivery_deduplication_key"] == second["delivery_deduplication_key"]
 
 
 def test_owner_supplied_d3_weights_are_reconciliation_evidence_not_completion():
