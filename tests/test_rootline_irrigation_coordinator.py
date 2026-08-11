@@ -9,12 +9,14 @@ NOW = datetime(2026, 8, 5, 8, 0, tzinfo=timezone.utc)
 
 
 class Store:
-    def __init__(self, active=None): self.active=active; self.rows=[]; self.contained=set()
+    def __init__(self, active=None): self.active=active; self.rows=[]; self.contained={}
     def __call__(self, action, payload):
         if action == "load_active": return self.active
         if action == "load_off_attempts":
             return [value for name,value in self.rows if name=="record_off_outcome"]
-        if action == "load_zone_containment": return {"contained":payload in self.contained}
+        if action == "load_zone_containment":
+            return ({"contained":True,"evidence":self.contained[payload]}
+                    if payload in self.contained else {"contained":False})
         if action == "claim_before_on":
             if self.active: return {"created": False}
             self.active = payload; self.rows.append((action,payload)); return {"created": True}
@@ -24,7 +26,8 @@ class Store:
             self.rows.append((action,payload)); return {"created":True}
         self.rows.append((action,payload))
         if action == "mark_active": self.active=payload
-        if action == "contain_zone": self.contained.add(payload["zone_id"])
+        if action == "contain_zone": self.contained[payload["zone_id"]]=payload
+        if action == "release_zone_containment": self.contained.pop(payload["zone_id"],None)
         if action in {"record_completed","contain_zone"}: self.active=None
         return {"created": True, "success": True}
 
@@ -37,7 +40,11 @@ class Transport:
         return {"authoritative": True, "zone_id": "B12345", "channel": 1,
                 "native_inching_enabled": True, "native_inching_seconds": 3600,
                 "power_restoration_state": "OFF", "schedules_enabled": False,
-                "interlock_enabled": False, "scenes_enabled": False}
+                "interlock_enabled": False, "scenes_enabled": False,
+                "relevant_outputs_off": True, "controller_safety_generation":"BASELINE-1",
+                "response_digest":"READBACK-1"}
+    def configuration_status(self, **kwargs):
+        return {"configured":True,**kwargs}
     def set_state(self, **kwargs):
         self.calls.append(kwargs)
         return {"accepted_unambiguous": self.on == "accepted" or kwargs["state"] == "OFF"}
@@ -123,6 +130,31 @@ def test_ambiguous_on_is_never_retried_and_uses_safe_off():
     assert result["status"]=="ambiguous_on_shutdown_unverified" and notices==[("Intervention",notices[0][1])]
     assert "B12345" in store.contained
     assert result["telegram_messages"]==1
+
+
+def test_proven_missing_transport_containment_releases_without_on_then_reassesses():
+    store=Store(); chosen=decision(); execution_id="EXEC-NONCONFIG"
+    store.contained["B12345"]={"execution_id":execution_id,"zone_id":"B12345",
+        "transport_status":"transport_not_configured","shutdown_verified":True}
+    transport=Transport(); notices=[]
+    first=run(store,transport,notices,chosen)
+    assert first["status"]=="zone_containment_released_reassess"
+    assert first["hardware_commands"]==0 and transport.calls==[] and notices==[]
+    assert "B12345" not in store.contained
+    assert any(name=="release_zone_containment" for name,_ in store.rows)
+    second=run(store,transport,notices,chosen)
+    assert second["status"]=="segment_started"
+    assert [call["state"] for call in transport.calls]==["ON"]
+
+
+def test_provider_ambiguity_containment_never_auto_releases():
+    store=Store(); store.contained["B12345"]={"execution_id":"EXEC-AMB",
+        "zone_id":"B12345","transport_status":"provider_outcome_ambiguous",
+        "shutdown_verified":True}
+    transport=Transport(); notices=[]
+    result=run(store,transport,notices)
+    assert result["status"]=="zone_contained"
+    assert transport.calls==[] and notices==[]
 
 
 def test_accepted_on_without_authoritative_on_state_never_becomes_active():

@@ -138,10 +138,29 @@ def _load(action, payload):
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s
                   and review_json->'rootline_execution'->>'zone_id'=%s
-                  and review_json->'rootline_execution'->>'action'='contain_zone'
+                  and review_json->'rootline_execution'->>'action'
+                      in ('contain_zone','release_zone_containment')
                 order by created_at desc limit 1""", (EVENT_SOURCE, str(payload or "")))
             row = cursor.fetchone()
-            return {"contained": True, "evidence": row[0]} if row else {"contained": False}
+            if not row or row[0].get("action") == "release_zone_containment":
+                return {"contained": False}
+            evidence = row[0]
+            execution_id = str(evidence.get("execution_id") or "")
+            cursor.execute("""select review_json->'rootline_execution'
+                from public.sam_live_stock_conversation_review_events
+                where event_source=%s
+                  and review_json->'rootline_execution'->>'execution_id'=%s
+                  and review_json->'rootline_execution'->>'action'
+                      in ('record_on_outcome','record_ambiguous_shutdown')
+                order by created_at""", (EVENT_SOURCE, execution_id))
+            for detail_row in cursor.fetchall():
+                detail = detail_row[0]
+                if detail.get("action") == "record_on_outcome":
+                    evidence["transport_status"] = (detail.get("on_outcome") or {}).get("status")
+                elif detail.get("action") == "record_ambiguous_shutdown":
+                    evidence["shutdown_verified"] = detail.get("shutdown_verified") is True
+                    evidence["shutdown_evidence"] = detail.get("shutdown_evidence")
+            return {"contained": True, "evidence": evidence}
 
 
 def _claim_single_controller(body):

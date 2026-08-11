@@ -66,6 +66,9 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         self.assertEqual(safety["physical_commissioning_generation"],"BASELINE-1")
         self.assertTrue(safety["commissioned"])
         self.assertEqual(safety["native_inching_seconds"], 3599)
+        self.assertTrue(safety["relevant_outputs_off"])
+        self.assertTrue(transport.configuration_status(
+            device_id="100204e9bc",channel=2)["configured"])
         self.assertEqual(state["state"], "OFF")
 
     def test_stale_or_incomplete_readback_fails_closed(self):
