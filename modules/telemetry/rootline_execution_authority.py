@@ -147,7 +147,10 @@ def equivalent_fresh_eligibility(original, fresh, *, now=None):
     fresh = validate_execution_eligibility(fresh, now=now)
     if not original or not fresh:
         return False
-    keys = ("source_plan_generation", "plan_generation", "plan_evidence_digest", "zone_id", "channel",
+    # Fresh request/receipt timestamps necessarily produce a new source generation
+    # and evidence digest. Equivalence binds the governed decision material while
+    # the freshly rebuilt artifact independently re-proves weather, water and controller safety.
+    keys = ("plan_generation", "zone_id", "channel",
             "maximum_duration_seconds", "weekly_debt", "command_mapping",
             "controller_safety_generation")
     return all(original.get(key) == fresh.get(key) for key in keys)
