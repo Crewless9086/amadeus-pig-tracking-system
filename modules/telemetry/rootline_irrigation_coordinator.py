@@ -297,14 +297,16 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
             "reason": "shutdown_unverified"})
         return _result("shutdown_unverified", commands=recovery["commands"],
                        messages=delivery["confirmed"], notification=delivery)
+    shutdown_at = _timestamp(shutdown.get("retrieved_at"))
+    completion_now = max(now, shutdown_at) if shutdown_at is not None else now
     objective = _canonical_outcome(
-        outcome_reader(active["execution_id"]), active, shutdown, now)
+        outcome_reader(active["execution_id"]), active, shutdown, completion_now)
     if not objective:
-        objective = _provider_bounded_outcome(active, shutdown, now)
+        objective = _provider_bounded_outcome(active, shutdown, completion_now)
     completed = {**active, "state": "Completed", "shutdown_verified": True,
                  "objective_satisfied": objective.get("objective_satisfied") is True,
                  "objective_evidence": objective,
-                 "shutdown_evidence": shutdown, "completed_at": now.isoformat()}
+                 "shutdown_evidence": shutdown, "completed_at": completion_now.isoformat()}
     recorded = store("record_completed", completed)
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
         delivery = _notify(notify, store, "Intervention", {**completed,

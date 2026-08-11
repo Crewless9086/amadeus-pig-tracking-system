@@ -38,8 +38,7 @@ def rootline_irrigation_execution_store(action, payload):
         event_source=EVENT_SOURCE)
     event.update({"review_event_id": event_id,
         "chatwoot_conversation_id": execution_id,
-        "review_json": {"rootline_execution": {
-            "action": action, "event_id": event_id, **body}},
+        "review_json": {"rootline_execution": _stored_event_body(action, body, event_id)},
         "decision_json": {}, "facts_json": {},
         "customer_message_excerpt": "", "sam_reply_excerpt": ""})
     result, status = record_sam_live_stock_review_event(event)
@@ -49,6 +48,11 @@ def rootline_irrigation_execution_store(action, payload):
     return {**result, "success": success,
             "created": result.get("created", status < 300),
             "history_event_created": history_created}
+
+
+def _stored_event_body(action, body, event_id):
+    """Canonical action is store-owned and cannot be shadowed by loaded state."""
+    return {**dict(body or {}), "action": action, "event_id": event_id}
 
 
 def _event_id(action, body):
