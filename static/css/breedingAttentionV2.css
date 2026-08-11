@@ -56,7 +56,7 @@
 .breeding-footnote { margin: 14px 0 0; color: var(--farm-muted); font-size: 12px; line-height: 1.45; }
 
 .breeding-table-wrap { margin-top: 16px; overflow-x: auto; border: 1px solid var(--farm-line); border-radius: 15px; }
-.breeding-attention-table { width: 100%; min-width: 1080px; border-collapse: collapse; }
+.breeding-attention-table { width: 100%; min-width: 1280px; border-collapse: collapse; }
 .breeding-attention-table th { padding: 12px 13px; background: #e7ece5; color: #405448; font-size: 10px; letter-spacing: .08em; text-align: left; text-transform: uppercase; }
 .breeding-attention-table td { padding: 14px 13px; border-top: 1px solid var(--farm-line); color: var(--farm-ink); vertical-align: top; line-height: 1.4; }
 .breeding-attention-table th:first-child,
@@ -66,6 +66,17 @@
 .breeding-attention-table tbody tr:nth-child(even) { background: #faf9f4; }
 .breeding-attention-table tbody tr:hover { background: var(--farm-green-soft); }
 .breeding-attention-table .detail-link { color: var(--farm-green); font-size: 16px; font-weight: 900; text-decoration: none; }
+.breeding-animal-id { display: block; margin-top: 5px; color: var(--farm-muted); font-size: 9px; overflow-wrap: anywhere; }
+.breeding-confidence { display: block; margin-top: 6px; color: var(--farm-muted); font-size: 10px; font-weight: 700; }
+.breeding-latest-observation { display: grid; gap: 7px; min-width: 265px; }
+.breeding-latest-observation > div { display: flex; align-items: center; gap: 8px; }
+.breeding-latest-observation time { color: var(--farm-muted); font-size: 10px; font-weight: 800; }
+.breeding-latest-observation p { margin: 0; color: var(--farm-ink); font-weight: 700; line-height: 1.4; }
+.breeding-latest-observation ul { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.breeding-latest-observation li { padding: 4px 7px; border-radius: 999px; background: var(--farm-green-soft); color: var(--farm-green); font-size: 9px; font-weight: 800; }
+.breeding-latest-observation small { color: var(--farm-muted); line-height: 1.4; }
+.breeding-observation-loading,.breeding-observation-empty,.breeding-observation-unavailable { display: block; min-width: 230px; color: var(--farm-muted); font-size: 11px; font-weight: 700; }
+.breeding-observation-unavailable { color: #8b4c35; }
 .breeding-attention-table button { white-space: nowrap; border-color: var(--farm-green); border-radius: 10px; background: var(--farm-green); color: white; font-weight: 800; }
 
 .breeding-observation-panel { overflow: hidden; }

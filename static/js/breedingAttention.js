@@ -8,6 +8,9 @@ const worklistTasks = document.getElementById("breeding_worklist_tasks");
 let rows = [];
 let activeRow = null;
 let acceptedPreviewPayload = null;
+const observationCache = new Map();
+const localPreview = new URLSearchParams(window.location.search).get("preview") === "animal-evidence-v2";
+function apiUrl(path) { return localPreview ? `/preview/api${path}` : `/api/pig-weights${path}`; }
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -19,12 +22,47 @@ function render() {
   body.innerHTML = visible.length ? visible.map(row => {
     const dates = row.evidence_dates || {};
     const facts = [...(row.missing_facts || []), ...(row.conflicting_facts || [])];
-    return `<tr><td data-label="Dier"><a class="detail-link" href="${escapeHtml(row.animal_href)}">${escapeHtml(row.tag_number || row.pig_id)}</a></td>
-      <td data-label="Huidige toestand">${escapeHtml(row.current_state)}</td><td data-label="Bewysdatums">Paring: ${escapeHtml(dates.latest_mating || "Onbekend")}<br>Werpsel: ${escapeHtml(dates.latest_litter || "Onbekend")}</td>
-      <td data-label="Varsheid">${escapeHtml(row.freshness || "Onbekend")}</td><td data-label="Sekerheid">${escapeHtml(row.confidence || "Onbekend")}</td>
+    return `<tr><td data-label="Dier"><a class="detail-link" href="${escapeHtml(row.animal_href)}">${escapeHtml(row.tag_number || row.pig_id)}</a><span class="breeding-animal-id">${escapeHtml(row.pig_id)}</span></td>
+      <td data-label="Jongste waarneming">${observationSummaryCell(row)}</td>
+      <td data-label="Huidige toestand"><strong>${escapeHtml(row.current_state)}</strong><span class="breeding-confidence">Sekerheid: ${escapeHtml(row.confidence || "Onbekend")}</span></td><td data-label="Bewysdatums">Paring: ${escapeHtml(dates.latest_mating || "Onbekend")}<br>Werpsel: ${escapeHtml(dates.latest_litter || "Onbekend")}</td>
       <td data-label="Ontbrekend / teenstrydig">${escapeHtml(facts.join("; ") || "Geen bewysde gaping")}</td><td data-label="Volgende stap">${escapeHtml(row.recommended_human_action)}</td>
       <td class="breeding-row-action"><button type="button" class="secondary-button observation-review" data-pig-id="${escapeHtml(row.pig_id)}">Besonderhede / Neem waar</button></td></tr>`;
-  }).join("") : `<tr><td colspan="8" class="table-empty">Geen diere in hierdie aandagstatus nie.</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="table-empty">Geen diere in hierdie aandagstatus nie.</td></tr>`;
+  hydrateVisibleObservations(visible);
+}
+
+function observationSummaryCell(row) {
+  const cached = observationCache.get(row.pig_id);
+  if (!cached) return `<span class="breeding-observation-loading">Laai dier se waarneming…</span>`;
+  if (cached.status === "error") return `<span class="breeding-observation-unavailable">Waarneming nie beskikbaar nie — dit beteken nie geen rekord nie.</span>`;
+  const item = cached.latest;
+  if (!item) return `<span class="breeding-observation-empty">Nog geen teelwaarneming aangeteken nie.</span>`;
+  const facts = observationFactSummary(item);
+  const when = new Date(item.observed_at).toLocaleString("af-ZA", {dateStyle:"medium", timeStyle:"short"});
+  return `<div class="breeding-latest-observation">
+    <div><span class="breeding-recorded-badge">Aangeteken</span><time>${escapeHtml(when)}</time></div>
+    <p>${escapeHtml(item.factual_note || "Feitelike nota nie beskikbaar nie.")}</p>
+    ${facts.length ? `<ul>${facts.slice(0, 4).map(fact => `<li>${escapeHtml(fact)}</li>`).join("")}</ul>` : ""}
+    ${item.measurements?.follow_up ? `<small><strong>Opvolg:</strong> ${escapeHtml(item.measurements.follow_up)}</small>` : ""}
+  </div>`;
+}
+
+async function hydrateVisibleObservations(visible) {
+  const pending = visible.filter(row => !observationCache.has(row.pig_id));
+  if (!pending.length) return;
+  pending.forEach(row => observationCache.set(row.pig_id, {status:"loading"}));
+  await Promise.all(pending.map(async row => {
+    try {
+      const response = await fetch(apiUrl(`/breeding-attention/${encodeURIComponent(row.pig_id)}/observations`));
+      const data = await response.json();
+      observationCache.set(row.pig_id, response.ok && data.success
+        ? {status:"ready", latest:(data.history || [])[0] || null}
+        : {status:"error"});
+    } catch (_) {
+      observationCache.set(row.pig_id, {status:"error"});
+    }
+  }));
+  render();
 }
 function renderWorklist(loop) {
   if (!loop || loop.success !== true) {
@@ -43,10 +81,11 @@ function renderWorklist(loop) {
 }
 async function load() {
   try {
-    const response = await fetch("/api/pig-weights/breeding-attention");
+    const response = await fetch(apiUrl("/breeding-attention"));
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.limitations?.[0] || "Teelbewyse is nie beskikbaar nie.");
     rows = data.animals || [];
+    observationCache.clear();
     filter.innerHTML = `<option value="">Alle huidige sôe en jong sôe</option>` +
       (data.filters || []).map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
     counts.innerHTML = (data.filters || []).map(name => `<div><span class="info-title">${escapeHtml(name)}: </span><span class="info-value">${escapeHtml(data.counts?.[name] ?? "Unknown")}</span></div>`).join("");
@@ -57,7 +96,7 @@ async function load() {
     rows = []; counts.innerHTML = ""; renderWorklist(null);
     freshness.textContent = "Bewyse is nie beskikbaar nie — tellings is nie noodwendig nul nie.";
     message.classList.remove("hidden"); message.textContent = error.message;
-    body.innerHTML = `<tr><td colspan="8" class="table-empty">Benodig data — kanonieke bewyse is nie beskikbaar nie.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="table-empty">Benodig data — kanonieke bewyse is nie beskikbaar nie.</td></tr>`;
   }
 }
 filter.addEventListener("change", render);
@@ -118,7 +157,7 @@ function observationFactSummary(item) {
 }
 
 async function refreshObservationHistory(pigId) {
-  const response = await fetch(`/api/pig-weights/breeding-attention/${encodeURIComponent(pigId)}/observations`);
+  const response = await fetch(apiUrl(`/breeding-attention/${encodeURIComponent(pigId)}/observations`));
   const data = await response.json();
   if (!response.ok || !data.success) {
     history.className = "breeding-history breeding-history-error";
@@ -153,7 +192,7 @@ document.getElementById("observation_close").addEventListener("click", () => pan
 document.getElementById("obs_preview").addEventListener("click", async () => {
   if (!activeRow) return;
   const payload = observationPayload(crypto.randomUUID());
-  const response = await fetch(`/api/pig-weights/breeding-attention/${encodeURIComponent(activeRow.pig_id)}/observations/preview`, {
+  const response = await fetch(apiUrl(`/breeding-attention/${encodeURIComponent(activeRow.pig_id)}/observations/preview`), {
     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
   });
   const data = await response.json();
@@ -172,7 +211,7 @@ document.getElementById("observation_form").addEventListener("submit", async eve
   event.preventDefault();
   if (!activeRow || !acceptedPreviewPayload) return;
   const payload = {...acceptedPreviewPayload};
-  const response = await fetch(`/api/pig-weights/breeding-attention/${encodeURIComponent(activeRow.pig_id)}/observations`, {
+  const response = await fetch(apiUrl(`/breeding-attention/${encodeURIComponent(activeRow.pig_id)}/observations`), {
     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
   });
   const data = await response.json();
