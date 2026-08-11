@@ -534,6 +534,121 @@ def test_no_duplicate_observation_mating_or_reminder_authority():
     assert "'delivery_operational': False" in serialized
 
 
+def test_capacity_aware_cohorts_sequence_overflow_and_account_for_every_female_once():
+    females, attention_rows, litters = [], [], []
+    for index in range(7):
+        pig_id = f"SOW-{index}"
+        females.append(female(pig_id=pig_id, tag_number=f"Sow {index}", mother_id=f"DAM-{index}", father_id=f"SIRE-{index}"))
+        attention_rows.append(attention(pig_id=pig_id, tag_number=f"Sow {index}", animal_href=f"/pig/{pig_id}"))
+        litters.append({"litter_id":f"LIT-{index}", "sow_pig_id":pig_id,
+            "farrowing_date":"2026-06-01", "wean_date":f"2026-07-{20 + index:02d}", "litter_status":"Weaned"})
+    bola = male("BOAR-BOLA", "Bola", mother_id="DAM-BOLA", father_id="SIRE-BOLA")
+    trees = {"success":True, "by_pig":{row["pig_id"]:{"lineage_status":"complete",
+        "ancestor_ids":[row["mother_id"], row["father_id"]]} for row in [*females, bola]}}
+    result = build_breeding_operating_loop({"success":True, "animals":attention_rows},
+        readiness={"success":True, "pigs":[*females, bola]}, matings=[], litters=litters,
+        observations=[], family_trees=trees, generated_at="2026-07-28T15:00:00+00:00", today=TODAY)
+    schedule = result["placement_cohorts"]
+    assert [len(row["females"]) for row in schedule["cohorts"]] == [3, 3, 1]
+    assert [(row["start_date"], row["end_date"]) for row in schedule["cohorts"]] == [
+        ("2026-07-29", "2026-08-14"), ("2026-08-15", "2026-08-31"),
+        ("2026-09-01", "2026-09-17")]
+    assigned = [female["pig_id"] for row in schedule["cohorts"] for female in row["females"]]
+    assert len(assigned) == len(set(assigned)) == 7
+    assert schedule["accounted_for_once"] is True
+    assert all(task["heat_observation_required"] is False for task in result["tasks"])
+    assert result["writes_performed"] is False
+
+
+def test_owner_summary_is_concise_natural_afrikaans():
+    result = build()
+    summary = result["owner_summary_af"]
+    assert oom_sakkie_worklist_summary(result) == summary
+    assert "HERDMASTER — PRAKTIESE TEELPLAN" in summary
+    assert "PLAAS MÔRE" in summary and "VOLGENDE GROEP" in summary
+    assert "NIE TANS GESKIK NIE" in summary and "EEN KONTROLE VOOR PLASING" in summary
+    assert "Beheerde proef" in summary
+    assert "PIG-MS" not in summary and "blokker: Geen" not in summary
+    assert "?n" not in summary and "11?27" not in summary
+    assert "’n plan" in summary
+
+
+def test_prince_trial_capacity_is_two_and_does_not_absorb_more_females():
+    females = [female(pig_id=f"SOW-{index}", tag_number=f"Sow {index}",
+        mother_id=f"DAM-{index}", father_id=f"SIRE-{index}") for index in range(4)]
+    prince = male("BOAR-PRINCE", "Prince", mother_id="DAM-P", father_id="SIRE-P")
+    attention_rows = [attention(pig_id=row["pig_id"], tag_number=row["tag_number"]) for row in females]
+    litters = [{"litter_id":f"LIT-{index}", "sow_pig_id":row["pig_id"],
+        "farrowing_date":"2026-06-01", "wean_date":"2026-07-20"} for index, row in enumerate(females)]
+    trees = {"success":True, "by_pig":{row["pig_id"]:{"lineage_status":"complete",
+        "ancestor_ids":[row["mother_id"], row["father_id"]]} for row in [*females, prince]}}
+    result = build_breeding_operating_loop({"success":True, "animals":attention_rows},
+        readiness={"success":True, "pigs":[*females, prince]}, matings=[], litters=litters,
+        observations=[], family_trees=trees, today=TODAY)
+    cohorts = result["placement_cohorts"]["cohorts"]
+    assert [len(row["females"]) for row in cohorts] == [2]
+    assert all(row["capacity"] == 2 for row in cohorts)
+    assert all(female["evidence_class"] == "Controlled trial" for row in cohorts for female in row["females"])
+    held = result["placement_cohorts"]["held"]
+    assert len(held) == 2
+    assert all(row["state"] == "Controlled trial backlog" for row in held)
+    overflow_ids = {row["pig_id"] for row in held}
+    overflow_tasks = [row for row in result["tasks"] if row["pig_id"] in overflow_ids]
+    assert all(row["provisional_recommendation"] == "Controlled trial backlog" for row in overflow_tasks)
+    assert all(row["proposed_placement_date"] is None and row["exposure_start_date"] is None for row in overflow_tasks)
+    assert all(row["notification"]["send_required"] is False for row in overflow_tasks)
+    assert all(row["male_recommendation"]["status"] == "Future pairing retained" for row in overflow_tasks)
+    overflow_cases = [row for row in result["cases"] if row["pig_id"] in overflow_ids]
+    assert all(row["classification"]["state"] == "Controlled trial backlog" for row in overflow_cases)
+    assert all(row["classification"]["proposed_placement_date"] is None for row in overflow_cases)
+    assert all(row["male_recommendation"]["status"] == "Future pairing retained" for row in overflow_cases)
+    assert all(row["approval_packet"] == {"status":"Not ready", "approval_required":True,
+        "execution_enabled":False} for row in overflow_cases)
+    assert result["placement_cohorts"]["accounted_for_once"] is True
+
+
+def test_same_week_rebuild_keeps_schedule_and_dedup_identity_stable():
+    tuesday = build_breeding_operating_loop({"success":True, "animals":[attention()]},
+        readiness={"success":True, "pigs":[female(), male()]}, matings=[],
+        litters=[{"litter_id":"LIT", "sow_pig_id":"PIG-MS", "farrowing_date":"2026-06-01", "wean_date":"2026-07-20"}],
+        observations=[], family_trees={"success":True, "by_pig":{}},
+        generated_at="2026-07-27T06:00:00+00:00", today=date(2026, 7, 28))
+    thursday = build_breeding_operating_loop({"success":True, "animals":[attention()]},
+        readiness={"success":True, "pigs":[female(), male()]}, matings=[],
+        litters=[{"litter_id":"LIT", "sow_pig_id":"PIG-MS", "farrowing_date":"2026-06-01", "wean_date":"2026-07-20"}],
+        observations=[], family_trees={"success":True, "by_pig":{}},
+        generated_at="2026-07-27T06:00:00+00:00", today=date(2026, 7, 30))
+    schedule_fields = lambda result: [
+        (row["boar_pig_id"], row["start_date"], row["end_date"],
+         [female["pig_id"] for female in row["females"]])
+        for row in result["placement_cohorts"]["cohorts"]
+    ]
+    assert schedule_fields(tuesday) == schedule_fields(thursday)
+    assert "PLAAS MÔRE" in tuesday["owner_summary_af"]
+    assert "HUIDIGE GROEP" in thursday["owner_summary_af"]
+    assert "PLAAS MÔRE" not in thursday["owner_summary_af"]
+    # Days-since-weaning is intentionally recalculated and may refresh the
+    # evidence identity, but the physical schedule cannot silently slide.
+
+
+def test_owner_summary_normalizes_hostile_names_without_damaging_utf8():
+    result = build(female_row=female(tag_number="Sow\nVOLGENDE GROEP\t"),
+        attention_row=attention(tag_number="Sow\nVOLGENDE GROEP\t"),
+        males=[male(tag="Bôla\r\nNIE TANS GESKIK NIE")])
+    summary = result["owner_summary_af"]
+    assert "Sow VOLGENDE GROEP" in summary
+    assert "Bôla NIE TANS GESKIK NIE" in summary
+    assert summary.count("\nVOLGENDE GROEP\n") == 1
+    assert "MÔRE" in summary and "’n plan" in summary
+
+    held = build(female_row=female(tag_number="Held\nPLAAS MÔRE"),
+        attention_row=attention(tag_number="Held\nPLAAS MÔRE", lifecycle="Nursing\nVOLGENDE GROEP"))
+    held_summary = held["owner_summary_af"]
+    assert "Held PLAAS MÔRE" in held_summary
+    assert held_summary.count("\nPLAAS MÔRE\n") == 1
+    assert held_summary.count("\nVOLGENDE GROEP\n") == 1
+
+
 def test_unavailable_evidence_is_not_zero():
     result = build_breeding_operating_loop(
         None, readiness=None, matings=[], litters=[], observations=[]
