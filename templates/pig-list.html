@@ -3,77 +3,95 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Amadeus Pig List</title>
+  <title>Amadeus Herd Register</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pigListV2.css') }}">
 </head>
 <body>
-  <div class="page-shell pigs-dashboard-shell">
-    <div class="page-card pigs-dashboard-page">
-      <div class="page-header page-header-with-link">
+  <div class="farm-app-shell">
+    {% include '_farm_nav.html' %}
+
+    <main class="herd-register" id="herd_register">
+      <header class="herd-hero">
         <div>
-          <h1>Amadeus Pig List</h1>
-          <p>Scan the active herd by pen, weight status, and profile detail.</p>
+          <span class="farm-eyebrow">HERDMASTER · Canonical herd</span>
+          <h1>Herd Register</h1>
+          <p>Find an animal quickly, understand its current farm position, and open the right record.</p>
         </div>
-        <div class="detail-actions compact-actions">
-          <a href="/" class="button-link button-link-secondary">Dashboard</a>
-          <a href="/sales-availability" class="button-link button-link-secondary">Sales Availability</a>
-          <a href="/pig-weights" class="button-link">Open Weight Form</a>
+        <div class="herd-hero-actions">
+          <a href="/bulk-weights" class="herd-action herd-action-secondary">Bulk Weights</a>
+          <a href="/pig-weights" class="herd-action herd-action-secondary">Record weight</a>
+          <a href="/master/add-pig" class="herd-action herd-action-primary">Add pig</a>
         </div>
-      </div>
+      </header>
 
-      <div class="pig-list-summary" aria-label="Pig list totals">
-        <div class="pig-list-summary-card">
-          <span>Total Active</span>
+      <section class="herd-summary" aria-label="Current herd summary">
+        <article class="herd-summary-card herd-summary-primary">
+          <span>On farm</span>
           <strong id="pig_total_count">0</strong>
-        </div>
-        <div class="pig-list-summary-card">
-          <span>With Weight</span>
+          <small>active animals</small>
+        </article>
+        <article class="herd-summary-card">
+          <span>Current weight</span>
           <strong id="pig_weighed_count">0</strong>
-        </div>
-        <div class="pig-list-summary-card">
-          <span>No Weight</span>
+          <small>with a weight record</small>
+        </article>
+        <article class="herd-summary-card herd-summary-alert">
+          <span>Needs weight</span>
           <strong id="pig_no_weight_count">0</strong>
-        </div>
-        <div class="pig-list-summary-card">
-          <span>Pens</span>
+          <small>without a weight record</small>
+        </article>
+        <article class="herd-summary-card">
+          <span>Occupied pens</span>
           <strong id="pig_pen_count">0</strong>
-        </div>
-        <div class="pig-list-summary-card pig-list-summary-card-accent">
-          <span>Showing</span>
+          <small>current locations</small>
+        </article>
+        <article class="herd-summary-card herd-summary-visible">
+          <span>Showing now</span>
           <strong id="pig_visible_count">0</strong>
+          <small>matching this view</small>
+        </article>
+      </section>
+
+      <section class="herd-workspace">
+        <div class="herd-workspace-heading">
+          <div><span class="farm-eyebrow">Find and review</span><h2>Current animals</h2></div>
+          <div class="herd-quick-views" aria-label="Quick herd views">
+            <button type="button" class="is-active" data-herd-view="all">All animals</button>
+            <button type="button" data-herd-view="missing">Needs weight</button>
+            <button type="button" data-herd-view="breeding">Breeding animals</button>
+            <button type="button" data-herd-view="sale">For sale</button>
+          </div>
         </div>
-      </div>
 
-      <div class="list-toolbar pig-list-toolbar">
-        <label class="field-label" for="pig_search">Search</label>
-        <input
-          type="text"
-          id="pig_search"
-          class="list-search"
-          placeholder="Tag number, pig ID, pen, stage, or purpose"
-        />
-        <label class="field-label" for="pig_pen_filter">Pen</label>
-        <select id="pig_pen_filter" class="list-filter-select">
-          <option value="">All pens</option>
-        </select>
-        <label class="field-label" for="pig_weight_filter">Weight</label>
-        <select id="pig_weight_filter" class="list-filter-select">
-          <option value="">All weight records</option>
-          <option value="weighed">With latest weight</option>
-          <option value="missing">No weight recorded</option>
-        </select>
-        <label class="field-label" for="pig_stage_filter">Stage</label>
-        <select id="pig_stage_filter" class="list-filter-select">
-          <option value="">All stages</option>
-        </select>
-      </div>
+        <div class="herd-filter-bar">
+          <label class="herd-search-field" for="pig_search">
+            <span>Search the herd</span>
+            <input type="search" id="pig_search" placeholder="Name, tag, pig ID or litter" autocomplete="off" />
+          </label>
+          <label for="pig_pen_filter"><span>Pen</span><select id="pig_pen_filter"><option value="">All pens</option></select></label>
+          <label for="pig_stage_filter"><span>Stage</span><select id="pig_stage_filter"><option value="">All stages</option></select></label>
+          <label for="pig_weight_filter"><span>Weight</span><select id="pig_weight_filter"><option value="">All records</option><option value="weighed">With weight</option><option value="missing">Needs weight</option></select></label>
+          <button type="button" class="herd-clear-filters" id="pig_clear_filters">Clear</button>
+        </div>
 
-      <div id="pig_list_message" class="message-box hidden"></div>
+        <div id="pig_list_message" class="message-box hidden"></div>
+        <div id="pig_list" class="herd-animal-grid" aria-live="polite"></div>
+      </section>
 
-      <div id="pig_list" class="pig-list-grid"></div>
-    </div>
+      <details class="workflow-drawer herd-tools-drawer">
+        <summary><span><strong>Herd tools</strong><small>Records, movements, sales and printing</small></span><b>Open tools</b></summary>
+        <div class="workflow-groups">
+          <div><h3>Animal records</h3><a href="/master/add-pig">Add pig</a><a href="/purpose-review">Purpose review</a><a href="/family-tree">Family tree</a></div>
+          <div><h3>Weights</h3><a href="/pig-weights">Record one weight</a><a href="/bulk-weights">Bulk weighing</a><a href="/weight-report">Weight report</a></div>
+          <div><h3>Breeding</h3><a href="/matings">Breeding board</a><a href="/api/pig-weights/breeding-attention/view">Breeding attention</a><a href="/litters">Litter operations</a></div>
+          <div><h3>Sales</h3><a href="/sales-availability">Sales availability</a><a href="/pig-allocation">Pig allocation</a><a href="/sales-dashboard">Sales dashboard</a></div>
+        </div>
+      </details>
+    </main>
   </div>
 
-  <script src="{{ url_for('static', filename='js/pigList.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/pigList.js') }}?v=20260811-herd-register-v2"></script>
 </body>
 </html>
