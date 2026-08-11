@@ -18,6 +18,10 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     material = _material_digest(current)
     binding = hashlib.sha256(f"{owner_user_id}|{chat_id}|{material}".encode()).hexdigest()
     identity = "OOM-ROOTLINE-REASSESS-" + binding[:24].upper()
+    observation = _typed_observation(current, owner_user_id, chat_id, material)
+    observed = state_store("record_observation", observation["identity"], observation)
+    if not isinstance(observed, Mapping) or observed.get("success") is not True:
+        return _contained("rootline_reassessment_observation_unproven")
     delivered = state_store("load_delivered", f"{owner_user_id}|{chat_id}", None) or {}
     if delivered.get("material_digest") == material:
         return {**_result("rootline_reassessment_unchanged", material, notify=False),
@@ -98,6 +102,19 @@ def _typed_zone_projection(result):
             "planned_duration_minutes": item.get("planned_duration_minutes"),
             "feasible_window": item.get("preferred_window")})
     return sorted(rows, key=lambda row: row["zone_id"])
+
+
+def _typed_observation(current, owner_user_id, chat_id, material):
+    operating_date = str(current.get("operating_date") or "")
+    identity_material = f"{owner_user_id}|{chat_id}|{operating_date}|{material}"
+    identity = "OOM-ROOTLINE-OBS-" + hashlib.sha256(identity_material.encode()).hexdigest()[:24].upper()
+    return {"identity": identity, "owner_user_id": owner_user_id, "chat_id": chat_id,
+        "operating_date": operating_date, "material_digest": material,
+        "result_id": str(current.get("result_id") or ""),
+        "evidence_generation": str(current.get("generation") or current.get("evidence_cutoff") or ""),
+        "evidence_cutoff": str(current.get("evidence_cutoff") or ""),
+        "next_reassessment_at": _declared_next_due(current),
+        "zones": _typed_zone_projection(current), "delivery_state": "observation_only"}
 
 
 def _contained(status):
