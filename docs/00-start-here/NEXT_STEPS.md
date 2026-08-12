@@ -37,6 +37,19 @@
 
 ## ROOTLINE canonical status and owner access recovery
 
+- Durable ROOTLINE device doctrine is tracked in
+  `docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md` and
+  `docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md`.
+- Every ROOTLINE continuation must load those files plus the channel-invariant
+  canonical action standard before planning or implementation.
+- Preserve commissioned B/C as one-zone/3,599-second bounded execution with
+  provider-confirmed OFF/native shutdown, atomic same-zone daily consumption
+  and fail-closed source defaults. This documentation audit did not establish
+  the deployed autonomy flag value and authorizes no enabling; production
+  configuration must be verified only in a separately assigned window.
+- Fertilizer mixing, fertilizer injection and Borehole 1 are separate device
+  authority domains; no capability inherits another's commissioning or
+  activation.
 - Owner-approved mission: `docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md`.
 - Replace silent current-status fallback to `Amadeus_Irrigation_Logs` with one authoritative Supabase scheduler/execution projection.
 - Add visible owner login/session navigation and a return-to-irrigation flow for protected detail APIs.

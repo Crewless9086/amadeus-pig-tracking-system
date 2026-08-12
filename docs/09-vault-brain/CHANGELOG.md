@@ -12,6 +12,24 @@
 - Corrected disposable-PostgreSQL migration ordering so the observation
   rollback gate runs against a genuinely absent observation rail.
 
+## 2026-08-12 - ROOTLINE durable doctrine restored and reconciled
+
+- Restored the missing agentic device-management plan and water/energy
+  business rules from preserved Git history, treating them as recovery
+  candidates rather than automatically authoritative truth.
+- Reconciled B/C authority to the commissioned one-zone/3,599-second boundary,
+  fail-closed source defaults, provider-confirmed OFF/native shutdown and
+  atomic same-zone daily dispatch guard. The documentation audit did not read
+  or claim the current deployed autonomy-flag value and authorized no enabling.
+- Preserved fertilizer mixing and injection as separate auxiliary capabilities
+  that never inherit B/C authority, and Borehole 1 SmartLife/IFTTT as a
+  separately commissioned device with its own authority and outcome proof.
+- Applied the channel-invariant canonical action standard across application,
+  typed Oom Sakkie, Telegram and voice without adding any action path.
+- Updated NEXT_STEPS and the implementation source map so future ROOTLINE
+  terminals discover the restored doctrine. This reconciliation made no
+  production, provider, Telegram, database or hardware change.
+
 ## 2026-08-12 - Channel-invariant canonical actions approved
 
 - Established application clicks, typed Oom Sakkie, Telegram and voice as

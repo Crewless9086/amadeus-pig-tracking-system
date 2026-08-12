@@ -1,5 +1,30 @@
 # Implementation Source Map
 
+## ROOTLINE durable device doctrine and canonical action boundary
+
+- Agent doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`.
+- Device-management plan:
+  `docs/06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md`.
+- Water, energy, irrigation, fertilizer and Borehole 1 rules:
+  `docs/09-vault-brain/08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md`.
+- Control architecture:
+  `docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md`.
+- Cross-channel authority standard:
+  `docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
+- Typed device registry: `modules/telemetry/rootline_device_registry.py`.
+- B/C eligibility and disabled-by-default runtime authority:
+  `modules/telemetry/rootline_execution_authority.py` and
+  `modules/telemetry/rootline_execution_runtime.py`.
+- Execution, provider OFF/native shutdown and same-zone daily consumption:
+  `modules/telemetry/rootline_irrigation_coordinator.py` and
+  `modules/telemetry/rootline_irrigation_execution_store.py`.
+- Fertilizer auxiliary planning/execution:
+  `modules/telemetry/rootline_auxiliary_management.py` and
+  `modules/oom_sakkie/rootline_fertilizer_commissioning_runtime.py`.
+- Rule: application, typed Oom Sakkie, Telegram and voice are adapters to one
+  canonical ROOTLINE action. No adapter grants hardware authority or owns a
+  separate mutation path.
+
 ## ROOTLINE canonical irrigation status and owner access
 
 - Mission: `docs/06-operations/ROOTLINE_CANONICAL_STATUS_AND_OWNER_ACCESS_RECOVERY_20260811.md`.
