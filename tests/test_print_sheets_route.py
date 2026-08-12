@@ -24,6 +24,14 @@ class PrintSheetsRouteTests(unittest.TestCase):
         self.assertIn("Parings- en Werpselrekord".encode("utf-8"), response.data)
         self.assertIn("Eerste behandeling".encode("utf-8"), response.data)
         self.assertIn("Vrektes en notas".encode("utf-8"), response.data)
+        self.assertIn("Klaar".encode("utf-8"), response.data)
+        self.assertIn("Hok".encode("utf-8"), response.data)
+        self.assertIn("Verwagte Speendatum".encode("utf-8"), response.data)
+        self.assertIn("Soggies".encode("utf-8"), response.data)
+        self.assertIn(b'pwr_exposure_in', response.data)
+        self.assertIn(b'pwr_exposure_out', response.data)
+        self.assertIn(b'pwr_expected_from', response.data)
+        self.assertIn(b'pwr_expected_to', response.data)
         self.assertIn(b"paringWerpselrekord.js", response.data)
 
     def test_expected_farrowing_dates_print_route_loads_in_afrikaans(self):
