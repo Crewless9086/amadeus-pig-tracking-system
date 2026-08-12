@@ -16,6 +16,15 @@ OBSERVATION_VERSION = "herdmaster_breeding_observation_v1"
 ALLOWED_ACTIONS = {"exposure", "exposure_removal", "recovery_hold", "recovery_clearance", "near_farrowing"}
 
 
+def planned_exposure_removal_on(started_on, days=17):
+    """Return the inclusive final exposure day shared by every channel."""
+    started = date.fromisoformat(str(started_on or ""))
+    duration = int(days)
+    if not 1 <= duration <= 60:
+        raise ValueError("exact exposure duration")
+    return (started + timedelta(days=duration - 1)).isoformat()
+
+
 def _date(value):
     try:
         return date.fromisoformat(str(value or ""))

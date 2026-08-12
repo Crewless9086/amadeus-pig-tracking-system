@@ -491,6 +491,18 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("$vars.OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET", json.dumps(relay))
         self.assertNotIn("callback_data.replace", normalize)
 
+    def test_gatekeeper_relays_protected_action_callbacks_to_authoritative_backend(self):
+        workflow = load_workflow(GATEKEEPER_WORKFLOW)
+        nodes = {node.get("name"): node for node in workflow.get("nodes", [])}
+        normalize = nodes["Code - Normalize Telegram Callback"]["parameters"]["jsCode"]
+        outputs = workflow["connections"]["Switch - Route Telegram Callback Type"]["main"]
+
+        self.assertIn('data.startsWith("sam_live_") || data.startsWith("oompa:")', normalize)
+        self.assertIn('action = "route_sam_live_callback"', normalize)
+        self.assertIn("raw_update: $json.raw_update", normalize)
+        self.assertEqual([target["node"] for target in outputs[3]], ["Relay SAM Callback to Backend"])
+        self.assertNotIn("Acknowledge Unsupported Callback", [target["node"] for target in outputs[3]])
+
     def test_gatekeeper_resolve_card_family_stays_backend_only_and_out_of_legacy_orders(self):
         workflow = load_workflow(GATEKEEPER_WORKFLOW)
         nodes = {node.get("name"): node for node in workflow.get("nodes", [])}

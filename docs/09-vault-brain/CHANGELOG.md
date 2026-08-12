@@ -1,5 +1,17 @@
 # Vault Brain Changelog
 
+## 2026-08-12 - Inclusive breeding exposure date reconciled
+
+- Made the farm's 17-day natural-exposure rule unambiguous: placement day is
+  day 1, so placement on 12 August has planned removal on 28 August.
+- Bound application and Oom Sakkie adapters to the same HERDMASTER date
+  calculation and kept exposure separate from service, conception, pregnancy
+  and movement.
+- Retained the complete semantic packet ahead of narrower deterministic
+  recovery parsing so sow-first owner reports cannot be inverted.
+- Corrected disposable-PostgreSQL migration ordering so the observation
+  rollback gate runs against a genuinely absent observation rail.
+
 ## 2026-08-12 - Channel-invariant canonical actions approved
 
 - Established application clicks, typed Oom Sakkie, Telegram and voice as

@@ -6,7 +6,7 @@ and delegates confirmed execution to the HERDMASTER grouped contract.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 import hashlib
 import html
 import json
@@ -17,6 +17,7 @@ from modules.oom_sakkie.protected_action_claims import build_buttons, create_cla
 from modules.pig_weights.herdmaster_breeding_exposure_recovery import (
     build_grouped_preview,
     execute_grouped_preview,
+    planned_exposure_removal_on,
 )
 
 
@@ -29,7 +30,11 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
     parsed_rows = parse_grouped_exposure_reply(
         str(parsed.get("text") or ""), provider_timestamp=str(parsed.get("provider_timestamp") or "")
     )
-    raw_rows = parsed_rows or semantic.get("breeding_actions")
+    semantic_rows = semantic.get("breeding_actions")
+    # Deterministic parsing repairs a demonstrably incomplete semantic packet;
+    # it must not replace a complete compound packet or reinterpret sow-first
+    # lines as the boar-first recovery format.
+    raw_rows = (parsed_rows if len(parsed_rows) > len(semantic_rows or ()) else semantic_rows)
     if semantic.get("domain") != "herd_management" or not isinstance(raw_rows, (list, tuple)) or not raw_rows:
         return {"handled": False}, 200
     owner = str(parsed.get("telegram_user_id") or "")
@@ -153,16 +158,11 @@ def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
         planned_days = row.pop("planned_days", None)
         if planned_days is not None:
             try:
-                started = date.fromisoformat(str(row.get("exposure_started_on") or ""))
                 days = int(planned_days)
+                calculated = planned_exposure_removal_on(row.get("exposure_started_on"), days)
             except (TypeError, ValueError):
                 errors.append(f"{labels.get(sow, sow)}: exact exposure duration")
                 continue
-            if not 1 <= days <= 60:
-                errors.append(f"{labels.get(sow, sow)}: exact exposure duration")
-                continue
-            # A 17-day inclusive exposure beginning on day one ends on day 17.
-            calculated = (started + timedelta(days=days - 1)).isoformat()
             if row.get("planned_removal_on") and str(row["planned_removal_on"]) != calculated:
                 errors.append(f"{labels.get(sow, sow)}: exposure duration conflicts with removal date")
                 continue

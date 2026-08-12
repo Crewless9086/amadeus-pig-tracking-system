@@ -105,6 +105,9 @@
 - Grouped exposure/recovery contract:
   `modules/pig_weights/herdmaster_breeding_exposure_recovery.py`,
   `supabase/migrations/202608120001_create_breeding_exposure_events.sql`.
+  The shared contract owns the inclusive planned-removal calculation (start
+  is day 1; a 17-day window ends at start plus 16 calendar days). Channel
+  adapters must not calculate a different date.
   The application preview/execute endpoints reuse `mating_routes.py` owner
   authentication and the existing observation/litter projections. Exposure
   start/removal events never create `mating_events`, service dates,
