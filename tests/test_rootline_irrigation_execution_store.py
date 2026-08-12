@@ -43,6 +43,11 @@ def test_completed_shaped_mark_active_is_not_an_active_candidate():
         {"action":"claim_before_on","state":"claimed"},"mark_active","claim_before_on")
 
 
+def test_typed_history_append_call_casts_numeric_runtime_arguments():
+    source=Path("modules/telemetry/rootline_irrigation_execution_store.py").read_text(encoding="utf-8")
+    assert "%s::numeric,%s::numeric,%s::jsonb" in source
+
+
 def test_auxiliary_claim_and_off_identities_are_stable_and_separate():
     claim=_event_id("claim_auxiliary_before_on",{"execution_id":"AUX-1"})
     assert claim==_event_id("claim_auxiliary_before_on",{
