@@ -44,6 +44,16 @@ Oom Sakkie must not:
 
 Oom Sakkie may have oversight of farm sales context, but SAM remains the Farm Sales CEO for client interaction.
 
+## Channel-Invariant Capability Rule
+
+Browser typing, browser voice and Telegram are interfaces to the same Oom
+Sakkie and specialist capabilities. Equivalent owner intent must normalize into
+the specialist-owned canonical action contract used by the application. Oom
+Sakkie must not create Telegram-only, voice-only or browser-only farm meaning or
+mutation paths. Channel changes preserve context, preview identity, authority
+and canonical readback under
+`../07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
+
 ## Future Capability Direction
 
 Oom Sakkie should eventually understand and help operate everything the farm application can safely expose:

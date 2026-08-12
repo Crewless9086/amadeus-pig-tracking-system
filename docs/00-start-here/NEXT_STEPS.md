@@ -1,5 +1,19 @@
 # Next Steps
 
+## Channel-invariant canonical actions
+
+- Apply
+  `docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`
+  to every new or materially changed owner capability.
+- Speak it, type it or click it: one specialist meaning, one canonical preview,
+  one authority rail and one canonical result.
+- Migrate existing paths incrementally when their domain is changed; do not
+  launch a broad rewrite or add new channel-specific mutation paths.
+- First full implementation:
+  `docs/06-operations/HERDMASTER_UNIFIED_BREEDING_CAPTURE_PLAN_20260812.md`.
+  Reconcile application mating capture with typed/Telegram/voice natural
+  exposure, optional movement and group evidence.
+
 ## HERDMASTER piglet weaning observations
 
 - Owner-approved mission:
