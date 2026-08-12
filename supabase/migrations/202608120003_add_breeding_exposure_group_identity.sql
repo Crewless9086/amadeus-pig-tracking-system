@@ -6,7 +6,7 @@ alter table public.pig_breeding_exposure_events
 alter table public.pig_breeding_exposure_events
     add constraint pig_breeding_exposure_started_group_required check (
         event_kind <> 'started' or btrim(coalesce(exposure_group_identity, '')) <> ''
-    );
+    ) not valid;
 
 create index if not exists pig_breeding_exposure_group_chronology_idx
     on public.pig_breeding_exposure_events(exposure_group_identity, occurred_on, exposure_event_id)

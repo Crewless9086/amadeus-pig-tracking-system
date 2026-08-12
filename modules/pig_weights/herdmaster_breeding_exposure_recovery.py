@@ -163,6 +163,7 @@ def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_i
                 prior_count += int(cur.fetchone() is not None)
             if prior_count == len(preview["rows"]):
                 return {"success": True, "status": "grouped_operation_replayed_noop", "operation_id": operation_id,
+                        "exposure_group_identity": preview.get("exposure_group_identity"),
                         "rows_changed": 0}, 200
             if prior_count:
                 raise ValueError("partial_group_replay_conflict")
