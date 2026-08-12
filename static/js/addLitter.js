@@ -3,7 +3,25 @@ document.addEventListener("DOMContentLoaded", function () {
     loadPenOptions();
     loadMatingOptions();
     setupLitterFormSubmit();
+    setupLitterCaptureSummary();
 });
+
+function refreshLitterCaptureSummary() {
+    const mating = document.getElementById("mating_id");
+    const mother = document.getElementById("mother_pig_id");
+    const sourceEl = document.getElementById("capture_source");
+    const sowEl = document.getElementById("capture_sow");
+    const dateEl = document.getElementById("capture_date");
+    if (sourceEl) sourceEl.textContent = mating?.value ? "Gekoppelde paring" : "Handmatige opname";
+    const motherOption = mother?.selectedOptions?.[0];
+    if (sowEl) sowEl.textContent = motherOption?.value ? String(motherOption.textContent || "").split(" - ")[0].split(" (")[0].trim() : "Nog nie gekies nie";
+    if (dateEl) dateEl.textContent = document.getElementById("farrowing_date")?.value || "Nog nie ingevul nie";
+}
+
+function setupLitterCaptureSummary() {
+    ["mating_id", "mother_pig_id", "farrowing_date"].forEach(id => document.getElementById(id)?.addEventListener("change", refreshLitterCaptureSummary));
+    refreshLitterCaptureSummary();
+}
 
 async function loadMatingOptions() {
     try {
@@ -65,6 +83,7 @@ function handleMatingSelect(e) {
 
     if (fatherSelect) fatherSelect.value = selected.dataset.boar || "";
     if (farrowingDate) farrowingDate.value = selected.dataset.farrow || "";
+    refreshLitterCaptureSummary();
 }
 
 function buildAnimalOptionLabel(item) {
@@ -174,6 +193,12 @@ function setupLitterFormSubmit() {
     form.addEventListener("submit", async function (e) {
         e.preventDefault();
 
+        const submitButton = document.getElementById("save_litter_button");
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.textContent = "Stoor tans…";
+        }
+
         const formData = new FormData(form);
 
         const payload = {
@@ -238,6 +263,12 @@ function setupLitterFormSubmit() {
             messageBox.classList.remove("hidden", "message-success", "message-error");
             messageBox.classList.add("message-error");
             messageBox.textContent = "Failed to save litter.";
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = "Stoor Werpsel";
+            }
+            refreshLitterCaptureSummary();
         }
     });
 }
