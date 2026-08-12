@@ -4,6 +4,7 @@ from unittest.mock import ANY, patch
 
 from app import app
 from modules.pig_weights.mating_routes import _deadline_read, _project_breeding_observations
+from modules.pig_weights.herdmaster_breeding_exposure_recovery import build_grouped_preview
 
 
 class MatingRoutesTests(unittest.TestCase):
@@ -165,6 +166,28 @@ class MatingRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
 
     @patch("modules.pig_weights.mating_routes.require_strict_owner_admin_access", return_value=None)
+    def test_grouped_breeding_preview_is_owner_admin_and_zero_write(self, _guard):
+        response = self.client.post("/api/pig-weights/breeding-attention/grouped-actions/preview", json={
+            "evidence_generation":"GEN-1", "rows":[{"pig_id":"SOW-1","action":"recovery_hold",
+            "body_condition_score":2,"observed_at":"2026-08-12T08:00:00+02:00","factual_note":"BCS 2."}]})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["writes_performed"])
+
+    @patch("modules.pig_weights.mating_routes.execute_grouped_preview")
+    @patch("modules.pig_weights.mating_routes.strict_owner_admin_principal", return_value="owner-admin:stable")
+    @patch("modules.pig_weights.mating_routes.require_strict_owner_admin_access", return_value=None)
+    def test_grouped_execute_binds_server_actor_and_exact_preview(self, _guard, _principal, execute):
+        execute.return_value=({"success":True,"status":"grouped_operation_completed"},201)
+        body={"evidence_generation":"GEN-1","rows":[{"pig_id":"SOW-1","action":"near_farrowing",
+              "observed_at":"2026-08-12T08:00:00+02:00","factual_note":"Near farrowing."}]}
+        preview=build_grouped_preview(body,evidence_generation="GEN-1")
+        body["confirmed_preview_sha256"]=preview["preview_sha256"]
+        response=self.client.post("/api/pig-weights/breeding-attention/grouped-actions/execute",json=body)
+        self.assertEqual(response.status_code,201)
+        self.assertEqual(execute.call_args.kwargs["actor_id"],"owner-admin:stable")
+        self.assertEqual(execute.call_args.kwargs["confirmed_preview_sha256"],preview["preview_sha256"])
+
+    @patch("modules.pig_weights.mating_routes.require_strict_owner_admin_access", return_value=None)
     @patch("modules.pig_weights.mating_routes._build_breeding_attention_packets")
     @patch("modules.pig_weights.mating_routes.preview_observation")
     def test_observation_preview_is_strict_admin_and_ignores_browser_context(
@@ -256,6 +279,23 @@ class MatingRoutesTests(unittest.TestCase):
                 ("PIG-1", now, "body_condition", {"body_condition_score": score}, "OBS-1"),
             ], now=now)
             self.assertNotIn("body_condition_score", projected["PIG-1"])
+
+    def test_projection_preserves_latest_explicit_recovery_hold_and_near_farrowing(self):
+        now = datetime(2026, 8, 12, 10, tzinfo=timezone.utc)
+        projected = _project_breeding_observations([
+            ("PIG-1", now, "body_condition", {
+                "contract_version": "herdmaster_breeding_observation_v1",
+                "body_condition_score": 2,
+                "recovery_hold_action": "active",
+                "near_farrowing": "observed",
+            }, "OBS-1"),
+            ("PIG-1", now - timedelta(days=1), "body_condition", {
+                "contract_version": "herdmaster_breeding_observation_v1",
+                "recovery_hold_action": "cleared",
+            }, "OBS-OLD"),
+        ], now=now)
+        self.assertEqual(projected["PIG-1"]["recovery_hold"], "active")
+        self.assertEqual(projected["PIG-1"]["near_farrowing"], "observed")
 
     def test_versioned_breeding_observation_updates_only_supported_fresh_facts(self):
         now = datetime(2026, 7, 27, 10, tzinfo=timezone.utc)

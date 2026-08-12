@@ -89,7 +89,7 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
     # Broad manager context must never consume it merely because it is conversational.
     if semantic is not None and (getattr(semantic, "protected_preview_required", False)
             or getattr(semantic, "recording_prohibited", False)
-            or bool(getattr(semantic, "breeding_facts", ()) )):
+            or bool(getattr(semantic, "breeding_actions", ()) )):
         return {"handled": False, **ZERO}, 200
     reply_to = str(parsed.get("reply_to_message_id") or "").strip()
     exact_reply = bool(reply_to and reply_to == str(active.get("telegram_message_id") or ""))

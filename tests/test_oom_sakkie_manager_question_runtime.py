@@ -89,8 +89,8 @@ def test_unrelated_direct_request_replying_to_plan_card_is_not_stolen():
 def test_protected_grouped_breeding_update_outranks_active_herd_question():
     direct = SemanticInterpretation(domain="herd_management", intent="breeding_update",
         message_kind="observation", continuation=True,
-        breeding_facts=({"kind":"exposure","sow":"Sophie","boar":"Bola",
-                         "exposure_started_on":"2026-08-12","planned_days":17},),
+        breeding_actions=({"action":"exposure","animal_ref":"Sophie","boar_ref":"Bola",
+                           "exposure_started_on":"2026-08-12","planned_days":17},),
         protected_preview_required=True, recording_prohibited=True,
         language="en", confidence=.99)
     value, status = handle_manager_question_reply(

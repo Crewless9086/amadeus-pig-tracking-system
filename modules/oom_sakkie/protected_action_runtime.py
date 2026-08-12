@@ -42,6 +42,17 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         return {"handled":True,**result,"answer":answer,"mission_id":claimed["mission_id"],
           "card_mission_id":claimed["mission_id"],"reply_markup":{"inline_keyboard":[]},
           "owner_visible_completion_policy":"verified_edit_or_new_message"},201
+    if claimed["action_kind"]=="herdmaster_breeding_grouped":
+        from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import execute_claimed_group
+        result,result_status=execute_claimed_group(claimed,actor_id=owner,connect_factory=connect_factory)
+        if result.get("success") is True:
+            complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            result={**result,"answer":f"Recorded the confirmed facts for {len(result.get('rows') or [])} animals exactly once.",
+              "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"],
+              "reply_markup":{"inline_keyboard":[]},"owner_visible_completion_policy":"verified_edit_or_new_message"}
+        else:
+            contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        return {"handled":True,**result},result_status
     operation=str((claimed.get("preview_payload") or {}).get("operation_id") or "")
     if not operation:return {"handled":True,"success":False,"status":"mortality_claim_operation_missing","writes_farm_data":False},409
     if health_handler is None:

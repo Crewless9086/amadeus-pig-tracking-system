@@ -102,6 +102,15 @@
 - Breeding observation rail:
   `modules/pig_weights/herdmaster_breeding_observation_service.py`,
   `modules/pig_weights/mating_routes.py`
+- Grouped exposure/recovery contract:
+  `modules/pig_weights/herdmaster_breeding_exposure_recovery.py`,
+  `supabase/migrations/202608120001_create_breeding_exposure_events.sql`.
+  The application preview/execute endpoints reuse `mating_routes.py` owner
+  authentication and the existing observation/litter projections. Exposure
+  start/removal events never create `mating_events`, service dates,
+  conception, pregnancy, movement, or litter rows. Recovery hold/clearance and
+  near-farrowing evidence reuse `pig_observation_events`; no second
+  observation or recommendation ledger exists.
 - Owner surfaces:
   existing authenticated Oom Sakkie specialist consumption and the Breeding
   Attention/mating-board view.

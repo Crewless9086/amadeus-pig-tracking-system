@@ -35,6 +35,7 @@ def build_breeding_operating_loop(
     litters,
     observations,
     projected_observations=None,
+    exposures=None,
     family_trees=None,
     generated_at=None,
     today=None,
@@ -48,6 +49,7 @@ def build_breeding_operating_loop(
     mating_by_female = _group(matings, "sow_pig_id", "mating_date")
     litter_by_female = _group(litters, "sow_pig_id", "farrowing_date")
     observations_by_pig = _group_observations(observations)
+    exposure_by_female = _group_exposures(exposures or [])
     projected_observations = (
         projected_observations
         if isinstance(projected_observations, dict) else {}
@@ -81,6 +83,7 @@ def build_breeding_operating_loop(
             attention_row, readiness_row, female_matings, female_litters,
             female_observations, today,
             projected_observations.get(pig_id, {}),
+            exposure_by_female.get(pig_id, []),
         )
         male_recommendation = _rank_males(
             readiness_row, male_rows, matings, litters, classification, family_trees
@@ -480,7 +483,7 @@ def _owner_words(value):
 
 def _classify(
     attention, readiness, matings, litters, observations, today,
-    projected_observation,
+    projected_observation, exposures,
 ):
     latest_mating = matings[0] if matings else {}
     latest_litter = litters[0] if litters else {}
@@ -506,6 +509,8 @@ def _classify(
     )
     latest_heat = projected_observation.get("heat_state")
     latest_bcs = projected_observation.get("body_condition_score")
+    recovery_hold = projected_observation.get("recovery_hold")
+    near_farrowing = projected_observation.get("near_farrowing")
     physical = projected_observation.get("fresh_physical_facts") or {}
     observed_checks = {
         "body condition": latest_bcs is not None,
@@ -523,6 +528,7 @@ def _classify(
     withdrawal = _norm(readiness.get("withdrawal_evidence_state"))
     available = _norm(readiness.get("available_for_breeding"))
     hold_reasons = []
+    active_exposure = _active_exposure(exposures)
     if medical in {"hold", "medical_hold", "restricted", "unfit", "active"}:
         hold_reasons.append("medical hold")
     if withdrawal in {"hold", "active", "restricted", "conflicting"}:
@@ -548,7 +554,28 @@ def _classify(
     action = "inspect for breeding readiness"
     priority = 60
     reason = "Required breeding evidence is incomplete."
-    if hold_reasons:
+    if active_exposure:
+        state, action, priority = (
+            "Boar exposure active", "monitor current boar exposure", 12,
+        )
+        reason = (
+            "An actual boar exposure is active; this records placement only "
+            "and does not assert a service, conception, or pregnancy date."
+        )
+        hold_reasons.append("active boar exposure")
+    elif recovery_hold == "active":
+        state, action, priority = (
+            "Recovery hold", "record fresh condition evidence and explicitly clear recovery hold", 4,
+        )
+        reason = "An explicit current recovery hold is active; time alone cannot clear it."
+        hold_reasons.append("recovery hold")
+    elif near_farrowing == "observed":
+        state, action, priority = (
+            "Near farrowing observation", "prepare and monitor for farrowing", 6,
+        )
+        reason = "An attributable owner observation reports that this sow appears close to farrowing; father and historical mating date remain Unknown."
+        hold_reasons.append("near farrowing")
+    elif hold_reasons:
         state, action, priority = (
             "Hold for medical/withdrawal evidence",
             "review medical or withdrawal hold", 5,
@@ -640,7 +667,7 @@ def _classify(
     elif state == "Ready for mating review":
         readiness_status = "Ready"
         readiness_reason = reason
-    elif state == "Hold for medical/withdrawal evidence":
+    elif state in {"Hold for medical/withdrawal evidence", "Recovery hold", "Near farrowing observation", "Boar exposure active"}:
         readiness_status = "Hold"
         readiness_reason = reason
     else:
@@ -679,6 +706,9 @@ def _classify(
         "unsuccessful_service_count": len(unsuccessful),
         "current_heat": latest_heat or "unknown",
         "body_condition": latest_bcs,
+        "recovery_hold": recovery_hold or "unknown",
+        "near_farrowing": near_farrowing or "unknown",
+        "active_exposure": active_exposure,
         "observed_checks": observed_checks,
         "hold_reasons": hold_reasons,
         "missing": list(attention.get("missing_facts") or []),
@@ -1216,6 +1246,45 @@ def _group_observations(rows):
             reverse=True,
         )
     return result
+
+
+def _group_exposures(rows):
+    result = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        pig_id = _text(row.get("sow_pig_id"))
+        if pig_id:
+            result.setdefault(pig_id, []).append(row)
+    for values in result.values():
+        values.sort(key=lambda row: (
+            _date(row.get("occurred_on")) or date.min,
+            _text(row.get("exposure_event_id")),
+        ))
+    return result
+
+
+def _active_exposure(rows):
+    by_identity = {}
+    for row in rows:
+        identity = _text(row.get("exposure_identity"))
+        if identity:
+            by_identity.setdefault(identity, {})[_norm(row.get("event_kind"))] = row
+    active = [events["started"] for events in by_identity.values()
+              if "started" in events and "removed" not in events]
+    if not active:
+        return None
+    latest = max(active, key=lambda row: (
+        _date(row.get("occurred_on")) or date.min,
+        _text(row.get("exposure_event_id")),
+    ))
+    return {
+        "exposure_identity": _text(latest.get("exposure_identity")),
+        "boar_pig_id": _text(latest.get("boar_pig_id")),
+        "started_on": _date_text(latest.get("occurred_on")),
+        "planned_removal_on": _date_text(latest.get("planned_removal_on")),
+        "asserts_service_date": False,
+    }
 
 
 def _latest_measurement(rows, key):

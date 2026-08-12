@@ -14,6 +14,7 @@ from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 from modules.oom_sakkie.owner_conversation_front_door import build_owner_clarification
 from modules.oom_sakkie.owner_operational_continuation import handle_owner_operational_continuation
 from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_message
+from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import handle_grouped_breeding_message
 from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
 from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline, record_reassessment_delivery
 from modules.oom_sakkie.family_access import FamilyRole, family_access_policy, resolve_family_principal
@@ -331,6 +332,22 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         semantic = interpret_owner_message(parsed, environ=source) if gateway_authority is not None else None
     if semantic is not None:
         parsed = {**parsed, "semantic": semantic.as_hint()}
+
+    breeding_result, breeding_status = handle_grouped_breeding_message(parsed, gateway_authority)
+    if breeding_result.get("handled"):
+        delivery = (deliver_family_result(parsed, breeding_result, specialist="HERDMASTER",
+            mission_id=str(breeding_result.get("mission_id") or ""),
+            card_mission_id=str(breeding_result.get("card_mission_id") or ""))
+            if breeding_result.get("answer") else {"success": False, "telegram_sends": 0, "telegram_edits": 0})
+        delivery = _bind_protected_preview_card(breeding_result, delivery)
+        body, _ = _gateway_result(delivery.get("success") is True,
+            str(breeding_result.get("status") or "contained"), policy, breeding_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"], "telegram_chat_id": parsed["telegram_chat_id"],
+            "text": parsed["text"], "answer": breeding_result.get("answer", ""), "message": breeding_result,
+            "delivery": delivery, "records_audit_trace": True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        return body, breeding_status if delivery.get("success") else 202
 
     manager_reply, manager_reply_status = handle_manager_question_reply(
         parsed, gateway_authority, semantic, question=active_manager_question)
