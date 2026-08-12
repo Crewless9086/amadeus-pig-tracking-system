@@ -107,6 +107,17 @@ def test_typed_digest_binds_instant_across_database_timezone_normalization():
     assert result["verified_completed_day_count"] == 1
 
 
+def test_typed_digest_binds_numeric_columns_after_database_scale_normalization():
+    event = completed(verified_runtime_minutes=3599 / 60)
+    event["actual_minutes"] = 3599 / 60
+    event["details"]["event_sha256"] = _event_digest(event)
+    database_row = dict(event)
+    database_row["actual_minutes"] = 59.98
+    result = project_canonical_irrigation_history(
+        [epoch("B12345"), database_row], snapshot_cutoff=NOW)["zones"]["B12345"]
+    assert result["verified_completed_day_count"] == 1
+
+
 def test_missing_shutdown_start_or_cutoff_never_qualifies():
     rows = [epoch("B12345"),
             completed(execution="NO-START", start_evidence_id=""),

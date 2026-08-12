@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 SAST = ZoneInfo("Africa/Johannesburg")
@@ -148,9 +149,21 @@ def _event_digest(row):
         # Bind the instant, not the caller/connection's equivalent offset string.
         "event_at": _digest_timestamp(row.get("event_at")),
         "event_type": row.get("event_type"), "zone_id": row.get("zone_id"),
-        "planned_minutes": _number(row.get("planned_minutes")),
-        "actual_minutes": _number(row.get("actual_minutes")),
+        # These columns are numeric(8,2). Bind the value PostgreSQL persists,
+        # otherwise sub-minute runtime precision makes a valid typed row fail
+        # its read-time integrity check after database normalization.
+        "planned_minutes": _stored_minutes(row.get("planned_minutes")),
+        "actual_minutes": _stored_minutes(row.get("actual_minutes")),
         "details": {key:details.get(key) for key in sorted(details) if key!="event_sha256"}})
+
+
+def _stored_minutes(value):
+    if value is None:
+        return None
+    try:
+        return float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, TypeError, ValueError):
+        return _number(value)
 
 
 def _digest_timestamp(value):
