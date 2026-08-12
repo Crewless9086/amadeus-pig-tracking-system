@@ -67,11 +67,12 @@ def obs(pig_id="PIG-MS", when="2026-07-28T14:19:00+00:00", **facts):
 def build(
     female_row=None, *, attention_row=None, males=None, matings=None,
     litters=None, observations=None, projected_observations=None,
-    family_trees=None,
+    family_trees=None, exposures=None, today=TODAY,
 ):
     female_row = female_row or female()
     male_rows = males or [male()]
     observation_rows = observations or []
+    derive_projection = projected_observations is None
     if projected_observations is None:
         projected_observations = {}
         for row in observation_rows:
@@ -98,6 +99,8 @@ def build(
                         "observed_at": row["observed_at"].isoformat(),
                         "observation_event_id": row["observation_event_id"],
                     }
+        if derive_projection and not observation_rows:
+            projected_observations = {female_row["pig_id"]:{"body_condition_score":3}}
     if family_trees is None:
         rows = [female_row, *male_rows]
         family_trees = {
@@ -125,9 +128,10 @@ def build(
         litters=([{"litter_id":"LIT-DEFAULT", "sow_pig_id":"PIG-MS", "farrowing_date":"2026-06-01", "wean_date":"2026-07-20", "litter_status":"Weaned"}] if litters is None else litters),
         observations=observation_rows,
         projected_observations=projected_observations,
+        exposures=exposures or [],
         family_trees=family_trees,
         generated_at="2026-07-28T15:00:00+00:00",
-        today=TODAY,
+        today=today,
     )
 
 
@@ -230,7 +234,7 @@ def test_not_observed_heat_does_not_block_governed_weaning_allocation():
     assert result["task_count"] == 1
 
 
-def test_stale_optional_observations_remain_visible_without_blocking_allocation():
+def test_stale_condition_requires_current_condition_without_reviving_heat_gate():
     stale = obs(
         when="2026-05-01T10:00:00+00:00",
         body_condition_score=3,
@@ -242,10 +246,11 @@ def test_stale_optional_observations_remain_visible_without_blocking_allocation(
         projected_observations={},
     )
     case = result["cases"][0]
-    assert case["classification"]["readiness"] == "Ready"
+    assert case["classification"]["readiness"] == "Needs Data"
+    assert case["classification"]["state"] == "Needs current condition"
     assert case["classification"]["current_heat"] == "unknown"
-    assert result["tasks"][0]["task_group"] == "schedule boar placement"
-    assert result["tasks"][0]["required_checks"] == []
+    assert result["tasks"][0]["task_group"] == "record current body condition"
+    assert "heat" not in result["tasks"][0]["task_group"].lower()
 
 
 def test_reported_male_exposure_is_not_a_canonical_mating():
@@ -412,11 +417,82 @@ def test_later_attributable_farrowing_and_weaning_close_historical_cycle_for_pla
     result = build(
         matings=[{"mating_id":"MAT-1", "sow_pig_id":"PIG-MS", "boar_pig_id":"BOAR-1", "mating_date":"2026-03-20", "pregnancy_check_result":"Pregnant"}],
         litters=[{"litter_id":"LIT-1", "sow_pig_id":"PIG-MS", "boar_pig_id":"BOAR-1", "farrowing_date":"2026-07-10", "wean_date":"2026-07-27"}],
+        projected_observations={"PIG-MS":{"body_condition_score":3}},
     )
     classification = result["cases"][0]["classification"]
     assert classification["state"] == "Ready for mating review"
     assert classification["exposure_start_date"] == "2026-07-28"
     assert result["cases"][0]["male_recommendation"]["recommended"] is not None
+
+
+def test_future_planned_wean_date_is_nursing_not_completed_weaning():
+    result = build(
+        matings=[{"mating_id":"MAT-1","sow_pig_id":"PIG-MS","boar_pig_id":"BOAR-1",
+                  "mating_date":"2026-04-19","pregnancy_check_result":"Pregnant"}],
+        litters=[{"litter_id":"LIT-2026-5C36","sow_pig_id":"PIG-MS","boar_pig_id":"BOAR-1",
+                  "farrowing_date":"2026-07-28","wean_date":"2026-08-28"}],
+        projected_observations={"PIG-MS":{"body_condition_score":3}},
+    )
+    classification=result["cases"][0]["classification"]
+    assert classification["state"] == "Nursing"
+    assert classification["weaning_date"] is None
+    assert classification["proposed_placement_date"] is None
+
+
+def test_molly_and_bella_like_current_litters_supersede_historical_pregnancy():
+    for litter in (
+        {"litter_id":"LIT-2026-5C36","sow_pig_id":"PIG-MS","boar_pig_id":"BOAR-1",
+         "farrowing_date":"2026-08-11","wean_date":"2026-09-11"},
+        {"litter_id":"LIT-2026-C9D3","sow_pig_id":"PIG-MS","boar_pig_id":"BOAR-1",
+         "farrowing_date":"2026-07-30","wean_date":None},
+    ):
+        result=build(
+            matings=[{"mating_id":"MAT-OLD","sow_pig_id":"PIG-MS","boar_pig_id":"BOAR-1",
+                      "mating_date":"2026-04-19","pregnancy_check_result":"Pregnant"}],
+            litters=[litter], projected_observations={"PIG-MS":{"body_condition_score":3}},
+            today=date(2026,8,12),
+        )
+        assert result["cases"][0]["classification"]["state"] == "Nursing"
+        assert result["cases"][0]["classification"]["proposed_placement_date"] is None
+
+
+def test_active_exposure_always_excludes_current_and_next_placement():
+    exposure={"exposure_identity":"EXP-1","exposure_event_id":"START-1","event_kind":"started",
+              "sow_pig_id":"PIG-MS","boar_pig_id":"BOAR-1","occurred_on":"2026-07-28",
+              "planned_removal_on":"2026-08-13"}
+    result=build(projected_observations={"PIG-MS":{"body_condition_score":3}},exposures=[exposure])
+    classification=result["cases"][0]["classification"]
+    assert classification["state"] == "Boar exposure active"
+    assert classification["proposed_placement_date"] is None
+    assert result["cases"][0]["male_recommendation"]["recommended"] is None
+
+
+def test_fresh_low_condition_holds_only_affected_sow_and_in_range_does_not_clear_explicit_hold():
+    for score in (1,2):
+        result=build(projected_observations={"PIG-MS":{"body_condition_score":score}})
+        assert result["cases"][0]["classification"]["state"] == "Body condition recovery"
+        assert result["cases"][0]["classification"]["proposed_placement_date"] is None
+    held=build(projected_observations={"PIG-MS":{"body_condition_score":3,"recovery_hold":"active"}})
+    assert held["cases"][0]["classification"]["state"] == "Recovery hold"
+
+
+def test_current_named_condition_evidence_holds_only_the_three_below_threshold_cases():
+    current={"Bonnie":3,"Waki":1,"Zigay":2,"Teena":1}
+    states={name:build(
+        female_row=female(pig_id=f"PIG-{name}",tag_number=name),
+        attention_row=attention(pig_id=f"PIG-{name}",tag_number=name),
+        projected_observations={f"PIG-{name}":{"body_condition_score":score}},
+    )["cases"][0]["classification"]["state"] for name,score in current.items()}
+    assert states["Bonnie"] != "Body condition recovery"
+    assert {name for name,state in states.items() if state == "Body condition recovery"} == {
+        "Waki","Zigay","Teena",
+    }
+
+
+def test_missing_current_condition_is_not_automatically_ready():
+    result=build(projected_observations={})
+    assert result["cases"][0]["classification"]["state"] == "Needs current condition"
+    assert result["cases"][0]["classification"]["proposed_placement_date"] is None
 
 
 def test_unresolved_positive_cycle_cannot_inherit_old_weaning_schedule():
@@ -547,7 +623,8 @@ def test_capacity_aware_cohorts_sequence_overflow_and_account_for_every_female_o
         "ancestor_ids":[row["mother_id"], row["father_id"]]} for row in [*females, bola]}}
     result = build_breeding_operating_loop({"success":True, "animals":attention_rows},
         readiness={"success":True, "pigs":[*females, bola]}, matings=[], litters=litters,
-        observations=[], family_trees=trees, generated_at="2026-07-28T15:00:00+00:00", today=TODAY)
+        observations=[], projected_observations={row["pig_id"]:{"body_condition_score":3} for row in females},
+        family_trees=trees, generated_at="2026-07-28T15:00:00+00:00", today=TODAY)
     schedule = result["placement_cohorts"]
     assert [len(row["females"]) for row in schedule["cohorts"]] == [3, 3, 1]
     assert [(row["start_date"], row["end_date"]) for row in schedule["cohorts"]] == [
@@ -584,7 +661,8 @@ def test_prince_trial_capacity_is_two_and_does_not_absorb_more_females():
         "ancestor_ids":[row["mother_id"], row["father_id"]]} for row in [*females, prince]}}
     result = build_breeding_operating_loop({"success":True, "animals":attention_rows},
         readiness={"success":True, "pigs":[*females, prince]}, matings=[], litters=litters,
-        observations=[], family_trees=trees, today=TODAY)
+        observations=[], projected_observations={row["pig_id"]:{"body_condition_score":3} for row in females},
+        family_trees=trees, today=TODAY)
     cohorts = result["placement_cohorts"]["cohorts"]
     assert [len(row["females"]) for row in cohorts] == [2]
     assert all(row["capacity"] == 2 for row in cohorts)
@@ -623,7 +701,8 @@ def test_prince_receives_one_purposeful_trial_with_an_interpretable_maternal_his
         "ancestor_ids":[row["mother_id"], row["father_id"]]} for row in [*sows, bola, prince]}}
     result = build_breeding_operating_loop({"success":True, "animals":attention_rows},
         readiness={"success":True, "pigs":[*sows, bola, prince]}, matings=[], litters=litters,
-        observations=[], family_trees=trees, today=TODAY)
+        observations=[], projected_observations={row["pig_id"]:{"body_condition_score":3} for row in sows},
+        family_trees=trees, today=TODAY)
     prince_rows = [row for cohort in result["placement_cohorts"]["cohorts"]
         if cohort["boar_name"] == "Prince" for row in cohort["females"]]
     assert [row["name"] for row in prince_rows] == ["Strong"]
@@ -641,12 +720,12 @@ def test_same_week_rebuild_keeps_schedule_and_dedup_identity_stable():
     tuesday = build_breeding_operating_loop({"success":True, "animals":[attention()]},
         readiness={"success":True, "pigs":[female(), male()]}, matings=[],
         litters=[{"litter_id":"LIT", "sow_pig_id":"PIG-MS", "farrowing_date":"2026-06-01", "wean_date":"2026-07-20"}],
-        observations=[], family_trees={"success":True, "by_pig":{}},
+        observations=[], projected_observations={"PIG-MS":{"body_condition_score":3}}, family_trees={"success":True, "by_pig":{}},
         generated_at="2026-07-27T06:00:00+00:00", today=date(2026, 7, 28))
     thursday = build_breeding_operating_loop({"success":True, "animals":[attention()]},
         readiness={"success":True, "pigs":[female(), male()]}, matings=[],
         litters=[{"litter_id":"LIT", "sow_pig_id":"PIG-MS", "farrowing_date":"2026-06-01", "wean_date":"2026-07-20"}],
-        observations=[], family_trees={"success":True, "by_pig":{}},
+        observations=[], projected_observations={"PIG-MS":{"body_condition_score":3}}, family_trees={"success":True, "by_pig":{}},
         generated_at="2026-07-27T06:00:00+00:00", today=date(2026, 7, 30))
     schedule_fields = lambda result: [
         (row["boar_pig_id"], row["start_date"], row["end_date"],

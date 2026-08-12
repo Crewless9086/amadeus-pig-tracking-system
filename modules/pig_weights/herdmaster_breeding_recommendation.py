@@ -9,6 +9,10 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import date, timedelta
+from modules.pig_weights.herdmaster_breeding_policy import (
+    BREEDING_BODY_CONDITION_MAX,
+    BREEDING_BODY_CONDITION_MIN,
+)
 
 
 CONTRACT_VERSION = "herdmaster_breeding_recommendation_v4"
@@ -177,9 +181,8 @@ def _female_eligibility_blockers(row, evidence, today):
     if _norm(row.get("available_for_breeding")) in {"unavailable", "reserved", "held", "no", "false"}:
         blockers.append("female has an affirmative availability restriction")
     observations = row.get("observations") if isinstance(row.get("observations"), dict) else {}
-    policy = evidence.get("policy") if isinstance(evidence.get("policy"), dict) else {}
     bcs = observations.get("body_condition")
-    low, high = policy.get("breeding_body_condition_min"), policy.get("breeding_body_condition_max")
+    low, high = BREEDING_BODY_CONDITION_MIN, BREEDING_BODY_CONDITION_MAX
     if isinstance(bcs, (int, float)) and isinstance(low, (int, float)) and isinstance(high, (int, float)) and not low <= bcs <= high:
         blockers.append("recorded body condition is outside governed breeding bounds")
     if observations.get("legs_sound") is False:
@@ -450,7 +453,7 @@ def _smallest_physical_question(row, state):
 
 
 def _physical_blocker(value):
-    return any(word in value for word in ("recorded body condition", "recorded legs", "recorded visible concern"))
+    return any(word in value for word in ("recorded legs", "recorded visible concern"))
 
 
 def _next_action(blockers):

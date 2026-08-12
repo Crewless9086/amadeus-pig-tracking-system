@@ -1801,6 +1801,18 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Ongeklassifiseerde historiese blootstelling", js)
         self.assertNotIn('record.breeding_cycle_state || "Exposure Active"', js)
 
+    def test_mating_board_consumes_canonical_names_and_separates_active_exposure(self):
+        js = Path("static/js/matings.js").read_text(encoding="utf-8")
+        self.assertIn('fetch("/api/pig-weights/matings")', js)
+        self.assertIn('record.sow_name || record.sow_tag_number', js)
+        self.assertIn('record.boar_name || record.boar_tag_number', js)
+        self.assertIn('record.breeding_cycle_state === "Exposure Active"', js)
+        self.assertIn('title: "Tans by beer"', js)
+        self.assertGreaterEqual(js.count('record.breeding_cycle_state === "Exposure Active"'), 4)
+        attention_js = Path("static/js/breedingAttention.js").read_text(encoding="utf-8")
+        self.assertIn('current_state:current.state', attention_js)
+        self.assertIn('held.state === "Boar exposure active" ? "Tans by beer"', attention_js)
+
     def test_add_litter_can_prefill_from_mating_query_param(self):
         js = Path("static/js/addLitter.js").read_text(encoding="utf-8")
 

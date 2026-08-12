@@ -66,7 +66,7 @@ function planCell(row) {
   const assignment = placementByPig.get(row.pig_id);
   if (assignment) return `<div class="breeding-plan-cell"><span class="breeding-plan-badge ${assignment.kind === "immediate" ? "is-now" : "is-next"}">${assignment.kind === "immediate" ? "Plaas nou" : "Volgende groep"}</span><strong>${escapeHtml(assignment.boar_name)}</strong><small>${escapeHtml(assignment.start_date)} tot ${escapeHtml(assignment.end_date)}</small><small>${escapeHtml(afEvidenceClass(assignment.evidence_class))}</small></div>`;
   const held = heldByPig.get(row.pig_id);
-  if (held) return `<div class="breeding-plan-cell"><span class="breeding-plan-badge is-held">Hou terug</span><small>${escapeHtml(afHoldReason(held.reason || held.state))}</small></div>`;
+  if (held) return `<div class="breeding-plan-cell"><span class="breeding-plan-badge is-held">${held.state === "Boar exposure active" ? "Tans by beer" : "Hou terug"}</span><small>${escapeHtml(afHoldReason(held.reason || held.state))}</small></div>`;
   return `<span class="breeding-plan-none">Nog nie in die huidige plasingsplan nie.</span>`;
 }
 function render() {
@@ -154,7 +154,11 @@ async function load() {
     const response = await fetch(apiUrl("/breeding-attention"));
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.limitations?.[0] || "Teelbewyse is nie beskikbaar nie.");
-    rows = data.animals || [];
+    const currentCases = new Map((data.operating_loop?.cases || []).map(item => [item.pig_id, item]));
+    rows = (data.animals || []).map(row => {
+      const current = currentCases.get(row.pig_id)?.classification;
+      return current ? {...row, current_state:current.state, current_state_reason:current.reason} : row;
+    });
     observationCache.clear();
     filter.innerHTML = `<option value="">Alle huidige sôe en jong sôe</option>` +
       (data.filters || []).map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");

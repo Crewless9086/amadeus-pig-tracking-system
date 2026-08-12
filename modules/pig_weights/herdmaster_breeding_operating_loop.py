@@ -18,6 +18,10 @@ from modules.pig_weights.pregnancy_evidence import (
     pregnancy_recommendation,
     resolve_pregnancy_evidence,
 )
+from modules.pig_weights.herdmaster_breeding_policy import (
+    BREEDING_BODY_CONDITION_MAX,
+    BREEDING_BODY_CONDITION_MIN,
+)
 
 
 CONTRACT_VERSION = "herdmaster_breeding_operating_loop_v3"
@@ -542,7 +546,8 @@ def _classify(
         (today - litter_date).days if litter_date and today >= litter_date
         else None
     )
-    wean_date = _date(latest_litter.get("wean_date"))
+    recorded_wean_date = _date(latest_litter.get("wean_date"))
+    wean_date = recorded_wean_date if recorded_wean_date and recorded_wean_date <= today else None
     litter_closes_latest_mating = _litter_closes_mating(
         latest_mating, latest_litter, litters, mating_date
     )
@@ -569,6 +574,17 @@ def _classify(
         )
         reason = "An explicit current recovery hold is active; time alone cannot clear it."
         hold_reasons.append("recovery hold")
+    elif latest_bcs is not None and not (
+        BREEDING_BODY_CONDITION_MIN <= latest_bcs <= BREEDING_BODY_CONDITION_MAX
+    ):
+        state, action, priority = (
+            "Body condition recovery", "support recovery and record fresh in-range condition before governed clearance", 4,
+        )
+        reason = (
+            f"Fresh body condition {latest_bcs:g} is outside the governed "
+            f"{BREEDING_BODY_CONDITION_MIN:g}–{BREEDING_BODY_CONDITION_MAX:g} breeding range."
+        )
+        hold_reasons.append("body condition outside governed range")
     elif near_farrowing == "observed":
         state, action, priority = (
             "Near farrowing observation", "prepare and monitor for farrowing", 6,
@@ -662,12 +678,19 @@ def _classify(
         or on_farm in {"no", "false", "0"}
         or purpose in {"retired", "sale", "meat", "not_for_breeding"}
     ):
+        state, action, priority = "Do Not Breed", "No breeding action", 1
+        reason = "Lifecycle, location or purpose excludes breeding."
         readiness_status = "Do Not Breed"
         readiness_reason = "Lifecycle, location or purpose excludes breeding."
+    elif state == "Ready for mating review" and latest_bcs is None:
+        readiness_status = "Needs Data"
+        readiness_reason = "A current body-condition observation is required before placement review."
+        state, action, priority = "Needs current condition", "record current body condition", 24
+        reason = readiness_reason
     elif state == "Ready for mating review":
         readiness_status = "Ready"
         readiness_reason = reason
-    elif state in {"Hold for medical/withdrawal evidence", "Recovery hold", "Near farrowing observation", "Boar exposure active"}:
+    elif state in {"Hold for medical/withdrawal evidence", "Recovery hold", "Body condition recovery", "Near farrowing observation", "Boar exposure active"}:
         readiness_status = "Hold"
         readiness_reason = reason
     else:

@@ -85,6 +85,11 @@ async function confirmExposureRemoval() {
 
 const SECTION_DEFINITIONS = [
     {
+        id: "current_exposure",
+        title: "Tans by beer",
+        description: "Diere wat reeds saam geplaas is vir die huidige natuurlike blootstellingsvenster."
+    },
+    {
         id: "needs_action",
         title: "Aandag Nodig",
         description: "Agterstallige kontroles, verwagte jong datums of rekords wat 'n besluit nodig het."
@@ -483,10 +488,11 @@ function renderMatingCard(record) {
     const isExpanded = expandedMatingIds.has(record.mating_id);
     const isAssumeFormOpen = activeAssumePregnantId === record.mating_id;
     const isMarkNotPregnantFormOpen = activeMarkNotPregnantId === record.mating_id;
-    const sowLabel = escapeHtml(record.sow_tag_number || record.sow_pig_id || "Sog onbekend");
-    const boarLabel = escapeHtml(record.boar_tag_number || record.boar_pig_id || "Beer onbekend");
+    const sowLabel = escapeHtml(record.sow_name || record.sow_tag_number || record.sow_pig_id || "Sog onbekend");
+    const boarLabel = escapeHtml(record.boar_name || record.boar_tag_number || record.boar_pig_id || "Beer onbekend");
     const sowPen = formatPen(record.sow_current_pen_name, record.sow_current_pen_id);
     const boarPen = formatPen(record.boar_current_pen_name, record.boar_current_pen_id);
+    const isActiveExposure = record.breeding_cycle_state === "Exposure Active";
     const litterLink = record.linked_litter_id
         ? `<a class="detail-link" href="${withReturnContext(`/litter/${encodeURIComponent(record.linked_litter_id)}`, "/matings", "Back to Breeding Board")}">${escapeHtml(record.linked_litter_id)}</a>`
         : "-";
@@ -525,8 +531,8 @@ function renderMatingCard(record) {
 
           <div class="history-item-grid mating-card-compact">
             <div>
-              <div class="history-label">Parings / Plasings Datum</div>
-              <div class="history-value">${escapeHtml(record.mating_date || "-")}</div>
+              <div class="history-label">${isActiveExposure ? "IN" : "Parings / Plasings Datum"}</div>
+              <div class="history-value">${escapeHtml(isActiveExposure ? (record.service_window_start || "-") : (record.mating_date || "-"))}</div>
               <div class="pig-list-meta">Hok: ${escapeHtml(sowPen)}</div>
             </div>
             <div>
@@ -543,7 +549,7 @@ function renderMatingCard(record) {
             <div class="history-item-grid">
               <div>
                 <div class="history-label">Boar</div>
-                <div class="history-value">${renderPigLink(record.boar_pig_id, record.boar_tag_number) || "-"}</div>
+                <div class="history-value">${renderPigLink(record.boar_pig_id, record.boar_name || record.boar_tag_number) || "-"}</div>
                 <div class="pig-list-meta">Pen: ${escapeHtml(boarPen)}</div>
               </div>
               <div>
@@ -687,6 +693,7 @@ function renderAssumePregnantForm(matingId) {
 }
 
 function isEligibleForAssumePregnant(record) {
+    if (record.breeding_cycle_state === "Exposure Active") return false;
     const blocked = new Set(["Farrowed", "Cancelled", "Closed"]);
     return record.is_open === "Yes"
         && !blocked.has(record.mating_status)
@@ -695,12 +702,14 @@ function isEligibleForAssumePregnant(record) {
 }
 
 function isEligibleForMarkNotPregnant(record) {
+    if (record.breeding_cycle_state === "Exposure Active") return false;
     return record.mating_status === "Confirmed_Pregnant"
         && !record.linked_litter_id
         && !record.actual_farrowing_date;
 }
 
 function isEligibleForAddLitter(record) {
+    if (record.breeding_cycle_state === "Exposure Active") return false;
     return record.is_open === "Yes"
         && record.mating_id
         && !record.linked_litter_id
@@ -709,6 +718,15 @@ function isEligibleForAddLitter(record) {
 }
 
 function classifyMating(record) {
+    if (record.breeding_cycle_state === "Exposure Active") {
+        return {
+            section: "current_exposure",
+            actionText: record.owner_facing_cycle_meaning || "By beer",
+            actionClass: "good-text",
+            actionPriority: 0,
+            sortDate: parseDate(record.service_window_start)
+        };
+    }
     const isClosed = record.is_open === "No" || Boolean(record.linked_litter_id);
     const expectedFarrowing = parseDate(record.expected_farrowing_date || record.expected_farrowing_window_end);
     const expectedFarrowingStart = parseDate(record.expected_farrowing_date || record.expected_farrowing_window_start);
