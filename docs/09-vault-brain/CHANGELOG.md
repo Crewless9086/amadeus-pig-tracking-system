@@ -1,5 +1,22 @@
 # Vault Brain Changelog
 
+## 2026-08-12 - Actionable Oom Sakkie manager candidate prepared
+
+- Integrated Charl's approved actionable daily-manager mission document and
+  established the tracked Telegram presentation standard it references.
+- Limited the morning plan to three do-today and three watch items, with names
+  and business meaning before raw identities.
+- Bound an authenticated natural reply to the exact active manager question
+  before generic semantic intake, retaining partial grouped evidence and exact
+  replay safety.
+- Preserved direct HERDMASTER and ROOTLINE routing and added semantic direct
+  sales status to the existing sales capability.
+- Reconciled the four current money-due sales read-only and prepared one
+  owner-governed canonical payment-state route that preserves BKB invoice/VAT/
+  commission/settlement accounting and never infers receipt.
+- Source, tests and documentation are prepared only. No Telegram, payment,
+  farm, customer or hardware effect has occurred; production proof remains due.
+
 ## 2026-08-11 - Protected mortality and grouped-weight recovery deployed
 
 - Reconciled provider chronology separately from canonical readback for Pig 130 and the four-row grouped-weight defect.

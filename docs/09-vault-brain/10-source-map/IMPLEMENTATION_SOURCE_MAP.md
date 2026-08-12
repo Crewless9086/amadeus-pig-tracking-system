@@ -410,8 +410,8 @@ Current built gated surface:
 
 Current built Supabase-backed surface:
 
-- routes: `/orders`, `/orders/new`, `/sales-dashboard`, `/sales-availability`, `/api/orders`, `/api/sales-transactions`, `/api/pig-weights/sales-dashboard`;
-- code: `modules/orders/*`, `modules/sales/sales_transaction_*`, `modules/pig_weights/pig_weights_service.py`;
+- routes: `/orders`, `/orders/new`, `/sales-dashboard`, `/sales-availability`, `/api/orders`, `/api/sales-transactions`, `/api/sales-transactions/<sale_id>/payment-state`, `/api/pig-weights/sales-dashboard`;
+- code: `modules/orders/*`, `modules/sales/sales_transaction_*`, `modules/sales/sales_payment_receipt.py`, `modules/pig_weights/pig_weights_service.py`;
 - UI: `templates/orders.html`, `templates/order-detail.html`, `templates/add-order.html`, `templates/sales-dashboard.html`, `templates/sales-availability.html`;
 - tests: `tests/test_order_routes.py`, `tests/test_order_service_*.py`, `tests/test_sales_transaction_*.py`;
 - migrations: `supabase/migrations/202605210002_create_order_sales_tables.sql`, `202605210003_create_sales_transaction_tables.sql`, `202605210004_add_sales_transaction_payment_date.sql`;
@@ -487,6 +487,12 @@ Current Stage 4 surface:
   fertilizer lifecycle continuation through ROOTLINE auxiliary execution rails.
 - `modules/oom_sakkie/telegram_gateway.py` — authenticated owner and existing
   scheduler composition boundary.
+- `modules/oom_sakkie/manager_question_runtime.py` — provider/card-bound
+  grouped-question continuation and exact replay-safe evidence receipt before
+  generic semantic intake; zero farm/customer/payment/hardware authority.
+- `modules/sales/sales_payment_receipt.py` and
+  `/sales/slaughter?update_sale=<sale_id>&payment_only=1` — one governed
+  canonical payment-state action that preserves invoice accounting.
 - `modules/telemetry/rootline_irrigation_coordinator.py` and
   `modules/telemetry/rootline_irrigation_execution_store.py` — single-use
   auxiliary start, shutdown recovery and physical-outcome evidence.

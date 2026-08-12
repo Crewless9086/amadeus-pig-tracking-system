@@ -378,6 +378,31 @@ def test_authenticated_owner_semantics_bypass_legacy_irrigation_classifier(
        side_effect=AssertionError("legacy classifier must not run"))
 @patch("modules.oom_sakkie.service.route_with_llm",
        side_effect=AssertionError("second router must not reinterpret owner meaning"))
+@patch("modules.oom_sakkie.service.get_tool")
+@patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
+@patch("modules.oom_sakkie.service._write_tool_trace",
+       return_value={"stored": False, "status": "test"})
+def test_authenticated_direct_sales_question_uses_sales_capability(
+        _trace, _compose, get_tool, _second_router, _legacy):
+    tool = get_tool.return_value
+    tool.name = "sales_dashboard"
+    tool.risk_level = 0
+    tool.handler.return_value = {"success": True, "summary": "Current sales status"}
+    result, status = handle_message({
+        "text": "Which sale payments still need attention?",
+        "channel": "telegram_read_only",
+        "semantic_authoritative": True,
+        "semantic": _semantic("sam", "sales_payment_status"),
+    })
+    assert status == 200
+    assert result["tool_used"] == "sales_dashboard"
+    assert result["intent"]["reason"] == "semantic:sales_read_status"
+
+
+@patch("modules.oom_sakkie.service.classify_intent",
+       side_effect=AssertionError("legacy classifier must not run"))
+@patch("modules.oom_sakkie.service.route_with_llm",
+       side_effect=AssertionError("second router must not reinterpret owner meaning"))
 def test_authenticated_owner_clarification_never_falls_back_to_keyword_code(
         _second_router, _legacy):
     semantic = _semantic("general", "unclear_followup")

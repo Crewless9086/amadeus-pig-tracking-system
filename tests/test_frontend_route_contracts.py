@@ -2049,6 +2049,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("openUpdatePanel", js)
         self.assertIn("submitUpdatePayment", js)
         self.assertIn("/payment", js)
+        self.assertIn("transaction.net_settlement_payable ?? transaction.net_total", js)
         self.assertIn("payment_date", js)
         self.assertIn("Payment date is required when payment status is Paid.", js)
         self.assertNotIn("Final batch amount for", js)

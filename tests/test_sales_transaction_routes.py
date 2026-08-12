@@ -21,7 +21,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
 
     def test_inbox_operator_admits_only_provider_current_backlog_path(self):
         history = {"success": True, "messages": [{"id": "INBOUND"}]}
-        with patch.object(
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
             sales_transaction_routes,
             "handle_sam_live_stock_chatwoot_inbound",
             return_value=({"processed": False}, 200),
@@ -725,6 +725,20 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
         update_transaction.assert_called_once()
+
+    def test_sales_transaction_payment_state_route_is_owner_governed(self):
+        service_result = {"success": True, "status": "payment_state_recorded"}
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "owner_admin_principal", return_value="owner:charl"), patch.object(
+            sales_transaction_routes, "record_sale_payment_state",
+            return_value=(service_result, 200)) as service:
+            response = self.client.patch(
+                "/api/sales-transactions/SALE-1/payment-state",
+                json={"updated_by": "Charl", "payment_status": "Paid"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        service.assert_called_once_with("SALE-1", {
+            "updated_by": "Charl", "payment_status": "Paid"}, actor_id="owner:charl")
 
     def test_sales_transaction_confirm_pig_exits_route_calls_lifecycle_service(self):
         service_result = {
