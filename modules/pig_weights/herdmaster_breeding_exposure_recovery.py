@@ -129,14 +129,16 @@ def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_i
             if prior_count:
                 raise ValueError("partial_group_replay_conflict")
             for row in preview["rows"]:
-                cur.execute("select sex,status,on_farm from public.current_canonical_pig_state where pig_id=%s for share", (row["pig_id"],))
+                cur.execute("select 1 from public.pigs where pig_id=%s for share", (row["pig_id"],))
+                cur.execute("select sex,status,on_farm from public.current_canonical_pig_state where pig_id=%s", (row["pig_id"],))
                 current = cur.fetchone()
                 if not current or str(current[0]).lower() != "female" or str(current[1]).lower() != "active" or current[2] is not True:
                     raise ValueError("current_sow_identity_changed")
                 action = row["action"]
                 key = operation_id + ":" + row["pig_id"]
                 if action in {"exposure", "exposure_removal"}:
-                    cur.execute("select sex,status,on_farm from public.current_canonical_pig_state where pig_id=%s for share", (row["boar_pig_id"],))
+                    cur.execute("select 1 from public.pigs where pig_id=%s for share", (row["boar_pig_id"],))
+                    cur.execute("select sex,status,on_farm from public.current_canonical_pig_state where pig_id=%s", (row["boar_pig_id"],))
                     boar = cur.fetchone()
                     if not boar or str(boar[0]).lower() != "male" or str(boar[1]).lower() != "active" or boar[2] is not True:
                         raise ValueError("current_boar_identity_changed")
