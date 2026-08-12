@@ -83,11 +83,12 @@ class BreedingExposurePostgresTests(unittest.TestCase):
         self.assertEqual(replay["rows_changed"], 0)
         with self.connect() as db, db.cursor() as cur:
             cur.execute(
-                "select count(*), count(distinct sow_pig_id) "
+                "select count(*), count(distinct sow_pig_id), count(distinct exposure_identity), "
+                "count(distinct exposure_group_identity) "
                 "from public.pig_breeding_exposure_events "
                 "where sow_pig_id = any(%s)", (self.sows,),
             )
-            self.assertEqual(cur.fetchone(), (5, 5))
+            self.assertEqual(cur.fetchone(), (5, 5, 5, 1))
             cur.execute("select count(*) from public.mating_events where sow_pig_id = any(%s)", (self.sows,))
             self.assertEqual(cur.fetchone()[0], 0)
             cur.execute("select count(*) from public.pig_location_events where pig_id = any(%s)", (self.sows,))

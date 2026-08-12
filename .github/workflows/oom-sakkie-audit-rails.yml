@@ -148,6 +148,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202608110001_create_oom_protected_action_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608120001_create_breeding_exposure_events.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608120002_allow_breeding_protected_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608120003_add_breeding_exposure_group_identity.sql
 
       - name: Run Beacon weekly owner-decision permission gates
         env:
@@ -183,7 +184,7 @@ jobs:
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_lifecycle_event_postgres
 
       - name: Run HERDMASTER grouped breeding exposure transaction gates
-        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_herdmaster_breeding_exposure_postgres
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_herdmaster_breeding_exposure_postgres tests.test_breeding_exposure_group_migration_postgres
 
       - name: Run ROOTLINE plan-only ledger disposable-Postgres tests
         run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_irrigation_command_ledger_postgres tests.test_irrigation_daily_plan_postgres
