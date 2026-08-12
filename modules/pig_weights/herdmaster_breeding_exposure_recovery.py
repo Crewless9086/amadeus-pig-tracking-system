@@ -1,8 +1,10 @@
 """Governed grouped breeding exposure and recovery decisions.
 
 This module reuses pig_observation_events for factual/hold evidence and writes
-only actual exposure facts to the dedicated append-only exposure rail. It
-never creates a mating, service date, pregnancy, movement, or litter.
+actual exposure facts to the dedicated append-only exposure rail. When an
+authenticated placement includes an exact pen it also writes the deduplicated
+physical movements in the same transaction. It never infers a service date,
+conception, pregnancy, or litter.
 """
 from __future__ import annotations
 
@@ -89,6 +91,11 @@ def build_grouped_preview(payload, *, evidence_generation):
                 errors.append(f"row_{index + 1}_exact_exposure_required")
             item.update(boar_pig_id=boar, exposure_started_on=str(start) if start else None,
                         planned_removal_on=str(end) if end else None)
+            if row.get("placement_pen_id"):
+                item.update(placement_pen_id=str(row.get("placement_pen_id") or "").strip(),
+                            placement_pen_name=str(row.get("placement_pen_name") or row.get("placement_pen_id") or "").strip(),
+                            sow_current_pen_id=str(row.get("sow_current_pen_id") or "").strip(),
+                            boar_current_pen_id=str(row.get("boar_current_pen_id") or "").strip())
         elif action == "exposure_removal":
             removed = _date(row.get("actual_removed_on"))
             started = _date(row.get("exposure_started_on"))
@@ -144,15 +151,29 @@ def build_grouped_preview(payload, *, evidence_generation):
     for row in cleaned:
         if row.get("action") == "exposure":
             row["exposure_group_identity"] = group_identity
+    movement_map = {}
+    for row in cleaned:
+        if row.get("action") != "exposure" or not row.get("placement_pen_id"):
+            continue
+        for pig_id, from_pen in ((row["pig_id"], row.get("sow_current_pen_id")),
+                                 (row["boar_pig_id"], row.get("boar_current_pen_id"))):
+            candidate={"pig_id":pig_id,"from_pen_id":from_pen,"to_pen_id":row["placement_pen_id"],
+                       "to_pen_name":row.get("placement_pen_name"),"move_date":row["exposure_started_on"]}
+            if not from_pen:
+                errors.append(f"movement_{pig_id}_current_pen_required")
+            if pig_id in movement_map and movement_map[pig_id] != candidate:
+                errors.append(f"movement_{pig_id}_one_destination_required")
+            movement_map[pig_id]=candidate
+    movements=sorted(movement_map.values(),key=lambda value:value["pig_id"])
     canonical = {"contract_version": CONTRACT_VERSION, "evidence_generation": str(evidence_generation),
                  "rows": cleaned, "row_count": len(cleaned),
-                 "exposure_group_identity": group_identity}
+                 "exposure_group_identity": group_identity,"movements":movements}
     digest = hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {"success": not errors, "status": "grouped_preview_ready" if not errors else "grouped_preview_invalid",
             "errors": errors, "preview": canonical, "preview_sha256": digest,
             "operation_id": _stable("HERD-BREED-GROUP-", digest), "creates_mating": False,
             "asserts_service_date": False, "asserts_conception": False, "asserts_pregnancy": False,
-            "creates_movement": False,
+            "creates_movement": bool(movements),
             "creates_breeding_cycle": any(row.get("action") == "exposure_removal" for row in cleaned),
             "writes_performed": False}
 
@@ -198,11 +219,22 @@ def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_i
                     cycle_exists = cur.fetchone() is not None
                     if cycle_exists != event_exists:
                         raise ValueError("partial_exposure_cycle_transition_conflict")
-            if prior_count == len(preview["rows"]):
+            movement_prior = 0
+            for movement in preview.get("movements") or ():
+                movement_id = _stable("HERD-PLACEMENT-MOVE-", operation_id, movement["pig_id"])
+                cur.execute("select pig_id,move_date,from_pen_id,to_pen_id from public.pig_location_events where location_event_id=%s",
+                            (movement_id,))
+                prior = cur.fetchone()
+                if prior:
+                    expected=(movement["pig_id"],_date(movement["move_date"]),movement.get("from_pen_id") or None,movement["to_pen_id"])
+                    if tuple(prior) != expected:
+                        raise ValueError("placement_movement_replay_conflict")
+                    movement_prior += 1
+            if prior_count == len(preview["rows"]) and movement_prior == len(preview.get("movements") or ()):
                 return {"success": True, "status": "grouped_operation_replayed_noop", "operation_id": operation_id,
                         "exposure_group_identity": preview.get("exposure_group_identity"),
                         "rows_changed": 0}, 200
-            if prior_count:
+            if prior_count or movement_prior:
                 raise ValueError("partial_group_replay_conflict")
             for row in preview["rows"]:
                 cur.execute("select 1 from public.pigs where pig_id=%s for share", (row["pig_id"],))
@@ -290,8 +322,31 @@ def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_i
                         raise ValueError("exposure_cycle_already_exists_or_conflicts")
                     inserted_row.update(mating_id=mating_id, **window)
                 inserted.append(inserted_row)
+            movement_rows=[]
+            for movement in preview.get("movements") or ():
+                cur.execute("select current_pen_id from public.current_canonical_pig_state where pig_id=%s",
+                            (movement["pig_id"],))
+                current=cur.fetchone()
+                if not current or str(current[0] or "") != str(movement.get("from_pen_id") or ""):
+                    raise ValueError("stale_placement_source_pen")
+                cur.execute("select 1 from public.pens where pen_id=%s and is_active is true for share",
+                            (movement["to_pen_id"],))
+                if cur.fetchone() is None:
+                    raise ValueError("active_placement_pen_required")
+                movement_id=_stable("HERD-PLACEMENT-MOVE-",operation_id,movement["pig_id"])
+                cur.execute("""insert into public.pig_location_events(
+                    location_event_id,pig_id,move_date,from_pen_id,to_pen_id,reason_for_move,
+                    moved_by,group_batch_id,move_notes,source,created_at)
+                    values(%s,%s,%s::date,%s,%s,'Breeding exposure placement',%s,%s,%s,
+                           'herdmaster_breeding_placement',now())""",
+                    (movement_id,movement["pig_id"],movement["move_date"],movement.get("from_pen_id") or None,
+                     movement["to_pen_id"],actor_id,preview.get("exposure_group_identity"),
+                     "Physical placement only; no exact service, conception or pregnancy asserted."))
+                movement_rows.append({"pig_id":movement["pig_id"],"event_id":movement_id,
+                                      "to_pen_id":movement["to_pen_id"]})
     return {"success": True, "status": "grouped_operation_completed", "operation_id": operation_id,
             "rows_changed": len(inserted), "rows": inserted,
             "exposure_group_identity": preview.get("exposure_group_identity"), "creates_mating": False,
-            "asserts_service_date": False, "creates_movement": False,
+            "asserts_service_date": False, "creates_movement": bool(movement_rows),
+            "movement_count":len(movement_rows),"movement_rows":movement_rows,
             "creates_breeding_cycle": any(row["action"] == "exposure_removal" for row in inserted)}, 201

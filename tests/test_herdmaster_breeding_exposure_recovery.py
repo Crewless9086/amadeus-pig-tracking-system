@@ -63,6 +63,23 @@ def test_grouped_preview_separates_exposure_hold_and_near_farrowing():
     assert linda["historical_mating_date"] is None
 
 
+def test_grouped_placement_deduplicates_shared_boar_movement():
+    result=build_grouped_preview({"rows":[
+        {"pig_id":"SOW-1","label":"Olive","action":"exposure","boar_pig_id":"BOAR-1",
+         "exposure_started_on":"2026-08-12","planned_removal_on":"2026-08-28",
+         "placement_pen_id":"PEN-4","placement_pen_name":"Kraam Saal 04",
+         "sow_current_pen_id":"D3","boar_current_pen_id":"D4"},
+        {"pig_id":"SOW-2","label":"Lucy","action":"exposure","boar_pig_id":"BOAR-1",
+         "exposure_started_on":"2026-08-12","planned_removal_on":"2026-08-28",
+         "placement_pen_id":"PEN-4","placement_pen_name":"Kraam Saal 04",
+         "sow_current_pen_id":"D3","boar_current_pen_id":"D4"}]},evidence_generation="GEN-MOVE")
+    assert result["success"] is True
+    assert result["creates_movement"] is True
+    assert len(result["preview"]["movements"]) == 3
+    assert [row["pig_id"] for row in result["preview"]["movements"]].count("BOAR-1") == 1
+    assert result["asserts_service_date"] is False
+
+
 def test_group_is_all_or_nothing_and_clearance_requires_fresh_bcs_three():
     partial = build_grouped_preview({"rows": [
         {"pig_id": "SOW-1", "action": "exposure", "boar_pig_id": "",

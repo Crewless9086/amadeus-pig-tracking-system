@@ -203,7 +203,7 @@ def _payload(parsed, context, source):
         " For an owner report of actual boar placements, removals, a body-condition recovery hold or clearance, or a sow appearing close to farrowing, "
         "return breeding_actions with one object per supplied sow. Use animal_ref and, for exposure, boar_ref; supported action values are exposure, "
         "exposure_removal, recovery_hold, recovery_clearance, and near_farrowing. Preserve only explicitly supplied exposure_started_on, "
-        "planned_days, planned_removal_on, actual_removed_on, exposure_identity, body_condition_score, observed_at, "
+        "planned_days, planned_removal_on, actual_removed_on, exposure_identity, placement_pen_ref, body_condition_score, observed_at, "
         "prior_mating_known, father_known, and factual_note. Never infer a service, "
         "conception, pregnancy, father, mating date, animal identity, or omitted group member."
         " For physical water observations, observation_facts must contain zero, one, or two objects using only "
@@ -284,7 +284,7 @@ def _breeding_actions(value):
     if not isinstance(value, list) or not 1 <= len(value) <= 24:
         return ()
     allowed = {"exposure", "exposure_removal", "recovery_hold", "recovery_clearance", "near_farrowing"}
-    keys = {"animal_ref", "boar_ref", "action", "exposure_started_on", "planned_days", "planned_removal_on",
+    keys = {"animal_ref", "boar_ref", "action", "exposure_started_on", "planned_days", "planned_removal_on", "placement_pen_ref",
             "actual_removed_on", "exposure_identity", "exposure_group_identity", "body_condition_score", "observed_at", "factual_note",
             "prior_mating_known", "father_known"}
     result, seen = [], set()
