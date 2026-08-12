@@ -59,6 +59,54 @@ class ProtectedBreedingClaimPostgresTests(unittest.TestCase):
         self.assertEqual(replay["telegram_sends"], 0)
         self.assertEqual(replay["telegram_edits"], 0)
 
+    def test_exact_executing_receipt_can_be_recovered_but_other_identity_cannot(self):
+        mission = "MISSION-" + self.suffix
+        provider = "MSG-" + self.suffix
+        payload = {"success": True, "preview_sha256": "HERD-" + self.suffix,
+                   "preview": {"row_count": 1, "rows": [{"pig_id": "PIG-1",
+                       "action": "near_farrowing", "observed_at": "2026-08-12T11:41:25Z",
+                       "factual_note": "Owner observation."}]}}
+        claim = create_claim(action_kind="herdmaster_breeding_grouped",
+            owner_user_id="5721652188", private_chat_id="5721652188",
+            mission_id=mission, provider_message_id=provider,
+            evidence_generation="GEN-" + self.suffix, preview_payload=payload,
+            connect_factory=self.connect)
+        self.assertTrue(bind_claim_card(claim["callback_token"], "3566", connect_factory=self.connect))
+        callback = f"oompa:{claim['callback_token']}:confirm"
+        confirmed_at = datetime.now(timezone.utc).isoformat()
+        first, status = claim_callback(callback, owner_user_id="5721652188",
+            private_chat_id="5721652188", provider_message_id="CALLBACK-" + self.suffix,
+            provider_timestamp=confirmed_at, source_card_message_id="3566",
+            connect_factory=self.connect)
+        self.assertEqual(status, 200)
+        recovered, recovery_status = claim_callback(callback, owner_user_id="5721652188",
+            private_chat_id="5721652188", provider_message_id="CALLBACK-" + self.suffix,
+            provider_timestamp=confirmed_at, source_card_message_id="3566",
+            connect_factory=self.connect)
+        self.assertEqual(recovery_status, 200)
+        self.assertEqual(recovered["status"], "protected_callback_recovered")
+        rejected, rejected_status = claim_callback(callback, owner_user_id="5721652188",
+            private_chat_id="5721652188", provider_message_id="OTHER-CALLBACK",
+            provider_timestamp=confirmed_at, source_card_message_id="3566",
+            connect_factory=self.connect)
+        self.assertEqual(rejected_status, 409)
+        self.assertEqual(rejected["status"], "protected_callback_stale")
+        wrong_action, wrong_action_status = claim_callback(
+            f"oompa:{claim['callback_token']}:cancel",
+            owner_user_id="5721652188", private_chat_id="5721652188",
+            provider_message_id="CALLBACK-" + self.suffix,
+            provider_timestamp=confirmed_at, source_card_message_id="3566",
+            connect_factory=self.connect)
+        self.assertEqual(wrong_action_status, 409)
+        self.assertEqual(wrong_action["status"], "protected_callback_stale")
+        missing_card, missing_card_status = claim_callback(callback,
+            owner_user_id="5721652188", private_chat_id="5721652188",
+            provider_message_id="CALLBACK-" + self.suffix,
+            provider_timestamp=confirmed_at, source_card_message_id="",
+            connect_factory=self.connect)
+        self.assertEqual(missing_card_status, 409)
+        self.assertEqual(missing_card["status"], "protected_callback_card_mismatch")
+
 
 if __name__ == "__main__":
     unittest.main()

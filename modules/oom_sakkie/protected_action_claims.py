@@ -92,9 +92,26 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         row=cur.fetchone()
         if not row:return {"success":False,"status":"protected_callback_unknown"},404
         if str(row[1])!=str(owner_user_id) or str(row[2])!=str(private_chat_id):return {"success":False,"status":"protected_callback_unauthorized"},403
-        if source_card_message_id and str(row[10] or "")!=str(source_card_message_id):
+        if row[10] and str(row[10])!=str(source_card_message_id or ""):
             return {"success":False,"status":"protected_callback_card_mismatch"},409
         if row[7]=="completed":return {"success":True,"status":"protected_callback_replayed_noop","result":row[9],"telegram_sends":0,"telegram_edits":0},200
+        if row[7]=="executing":
+            if action!="confirm":
+                return {"success":False,"status":"protected_callback_stale"},409
+            cur.execute("""select confirmation_provider_message_id,
+              confirmation_provider_timestamp from app_private.oom_protected_action_claims
+              where callback_token=%s""",(token,))
+            confirmation=cur.fetchone()
+            exact_confirmation=(confirmation and
+              str(confirmation[0] or "")==str(provider_message_id) and
+              confirmation[1] is not None and
+              confirmation[1].astimezone(timezone.utc)==provider_time.astimezone(timezone.utc))
+            if not exact_confirmation:
+                return {"success":False,"status":"protected_callback_stale"},409
+            return {"success":True,"status":"protected_callback_recovered",
+              "callback_token":token,"action_kind":row[0],"mission_id":row[3],
+              "preview_digest":row[4],"evidence_generation":row[5],
+              "preview_payload":row[6],"recovered_executing_receipt":True},200
         if row[7]!="active":return {"success":False,"status":"protected_callback_stale"},409
         if row[8]<=datetime.now(timezone.utc):
             cur.execute("update app_private.oom_protected_action_claims set status='expired' where callback_token=%s",(token,))
@@ -108,8 +125,16 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
 def complete_claim(token, result, *, connect_factory=None):
     with (connect_factory() if connect_factory else _connect()) as db:
       with db.cursor() as cur:
+        cur.execute("""select status,result_payload from app_private.oom_protected_action_claims
+          where callback_token=%s for update""",(token,))
+        prior=cur.fetchone()
+        if not prior:raise RuntimeError("protected claim missing")
+        if prior[0]=="completed":
+            return {"completed":False,"replayed":True,"result":prior[1]}
+        if prior[0]!="executing":raise RuntimeError("protected claim not executing")
         cur.execute("update app_private.oom_protected_action_claims set status='completed',result_payload=%s::jsonb,completed_at=now() where callback_token=%s and status='executing'",(json.dumps(result,sort_keys=True,default=str),token))
         if cur.rowcount!=1:raise RuntimeError("protected claim not executing")
+        return {"completed":True,"replayed":False,"result":result}
 
 def contain_claim(token, result, *, connect_factory=None):
     """Retain a claimed confirmation and its exact failure for governed recovery."""

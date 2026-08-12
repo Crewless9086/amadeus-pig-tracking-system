@@ -26,7 +26,7 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
       provider_message_id=str(parsed.get("provider_message_id") or parsed.get("callback_query_id") or ""),
       provider_timestamp=str(parsed.get("provider_timestamp") or ""),
       source_card_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory)
-    if status>=400 or claimed.get("status")!="protected_callback_claimed":
+    if status>=400 or claimed.get("status") not in {"protected_callback_claimed","protected_callback_recovered"}:
         if claimed.get("status") in {"protected_preview_change_requested","protected_preview_cancelled"}:
             claimed["answer"]=("Send the corrected facts when ready; nothing was recorded."
                 if claimed["status"]=="protected_preview_change_requested" else
@@ -44,10 +44,20 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "owner_visible_completion_policy":"verified_edit_or_new_message"},201
     if claimed["action_kind"]=="herdmaster_breeding_grouped":
         from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import execute_claimed_group
-        result,result_status=execute_claimed_group(claimed,actor_id=owner,connect_factory=connect_factory)
+        try:
+            result,result_status=execute_claimed_group(claimed,actor_id=owner,connect_factory=connect_factory)
+        except Exception as exc:
+            return {"handled":True,"success":False,
+              "status":"protected_execution_recovery_pending",
+              "answer":"I retained your confirmation, but could not complete the recording yet. I will recover it safely; please do not confirm again.",
+              "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"],
+              "writes_farm_data":False,"recovery_required":True,
+              "error_type":type(exc).__name__},503
         if result.get("success") is True:
-            complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
-            result={**result,"answer":f"Recorded the confirmed facts for {len(result.get('rows') or [])} animals exactly once.",
+            completion=complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            canonical_result=completion.get("result") if isinstance(completion.get("result"),dict) else result
+            row_count=int(((claimed.get("preview_payload") or {}).get("preview") or {}).get("row_count") or 0)
+            result={**canonical_result,"answer":f"Recorded the confirmed facts for {row_count} animals exactly once.",
               "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"],
               "reply_markup":{"inline_keyboard":[]},"owner_visible_completion_policy":"verified_edit_or_new_message"}
         else:

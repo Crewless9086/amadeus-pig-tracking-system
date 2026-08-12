@@ -96,10 +96,20 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
 
 
 def execute_claimed_group(claimed, *, actor_id, connect_factory):
+    if connect_factory is None:
+        connect_factory = _production_connect
     preview = claimed.get("preview_payload") or {}
     return execute_grouped_preview(preview,
         confirmed_preview_sha256=str(preview.get("preview_sha256") or ""),
         actor_id=actor_id, connect_factory=connect_factory)
+
+
+def _production_connect():
+    """Open the governed production store when the live callback supplies no test factory."""
+    import os
+    import psycopg
+
+    return psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10)
 
 
 def _summary(rows):

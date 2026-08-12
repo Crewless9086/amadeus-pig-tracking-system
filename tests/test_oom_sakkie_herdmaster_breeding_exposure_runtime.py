@@ -1,6 +1,7 @@
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import (
     ACTION_KIND,
+    execute_claimed_group,
     handle_grouped_breeding_message,
     parse_grouped_exposure_reply,
 )
@@ -80,6 +81,29 @@ def test_non_owner_is_fail_closed():
         parsed, issue_gateway_owner_authority("42", "99"))
     assert status == 403
     assert result["writes_farm_data"] is False
+
+
+def test_live_claim_execution_uses_governed_default_connection_factory(monkeypatch):
+    captured = {}
+
+    def fake_execute(preview, **kwargs):
+        captured.update(kwargs)
+        return {"success": True, "status": "grouped_operation_completed"}, 201
+
+    monkeypatch.setattr(
+        "modules.oom_sakkie.herdmaster_breeding_exposure_runtime.execute_grouped_preview",
+        fake_execute,
+    )
+    result, status = execute_claimed_group(
+        {"preview_payload": {"preview_sha256": "DIGEST"}},
+        actor_id="5721652188",
+        connect_factory=None,
+    )
+
+    assert status == 201 and result["success"] is True
+    assert captured["confirmed_preview_sha256"] == "DIGEST"
+    assert captured["actor_id"] == "5721652188"
+    assert callable(captured["connect_factory"])
 
 
 def test_provider_identity_and_timezone_aware_chronology_are_required_before_claim():
