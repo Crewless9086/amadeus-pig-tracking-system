@@ -305,7 +305,9 @@ def _append_history(action, body):
         import psycopg
         with psycopg.connect(os.environ["DATABASE_URL"],connect_timeout=10) as connection:
             with connection.cursor() as cursor:
-                cursor.execute("select public.rootline_append_typed_irrigation_event(%s,%s,%s,%s,%s,%s,%s::jsonb)",
+                cursor.execute("""select public.rootline_append_typed_irrigation_event(
+                    %s::text,%s::timestamptz,%s::text,%s::text,
+                    %s::numeric,%s::numeric,%s::jsonb)""",
                     (event["irrigation_event_id"],event["event_at"],event["event_type"],event["zone_id"],
                      event["planned_minutes"],event["actual_minutes"],json.dumps(event["details"],
                      sort_keys=True,separators=(",",":"),default=str)))
