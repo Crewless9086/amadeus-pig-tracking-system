@@ -63,7 +63,12 @@ def build_grouped_preview(payload, *, evidence_generation):
             start = _date(row.get("exposure_started_on"))
             end = _date(row.get("planned_removal_on"))
             boar = str(row.get("boar_pig_id") or "").strip()
-            if not start or not end or end < start or not boar:
+            expected_end = None
+            try:
+                expected_end = _date(planned_exposure_removal_on(start, 17))
+            except (TypeError, ValueError):
+                pass
+            if not start or not end or end != expected_end or not boar:
                 errors.append(f"row_{index + 1}_exact_exposure_required")
             item.update(boar_pig_id=boar, exposure_started_on=str(start) if start else None,
                         planned_removal_on=str(end) if end else None)
@@ -116,10 +121,25 @@ def build_grouped_preview(payload, *, evidence_generation):
 def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_id, connect_factory):
     if not isinstance(preview_result, dict) or preview_result.get("success") is not True:
         return {"success": False, "status": "valid_preview_required", "rows_changed": 0}, 400
-    if str(confirmed_preview_sha256) != preview_result["preview_sha256"] or not str(actor_id).strip():
+    preview = preview_result.get("preview") if isinstance(preview_result.get("preview"), dict) else {}
+    recalculated_digest = hashlib.sha256(json.dumps(
+        preview, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    expected_operation = _stable("HERD-BREED-GROUP-", recalculated_digest)
+    if (str(confirmed_preview_sha256) != str(preview_result.get("preview_sha256") or "")
+            or recalculated_digest != str(preview_result.get("preview_sha256") or "")
+            or expected_operation != str(preview_result.get("operation_id") or "")
+            or not str(actor_id).strip()):
         return {"success": False, "status": "exact_owner_confirmation_required", "rows_changed": 0}, 409
-    preview = preview_result["preview"]
-    operation_id = preview_result["operation_id"]
+    for row in preview.get("rows") or ():
+        if row.get("action") == "exposure":
+            try:
+                expected_removal = planned_exposure_removal_on(row.get("exposure_started_on"), 17)
+            except (TypeError, ValueError):
+                expected_removal = ""
+            if str(row.get("planned_removal_on") or "") != expected_removal:
+                return {"success": False, "status": "corrected_exposure_preview_required",
+                        "rows_changed": 0}, 409
+    operation_id = expected_operation
     inserted = []
     with connect_factory() as db:
         with db.cursor() as cur:

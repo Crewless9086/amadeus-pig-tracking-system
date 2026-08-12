@@ -1,5 +1,6 @@
 """Disposable-PostgreSQL proof for atomic grouped breeding exposures."""
 import os
+import copy
 import unittest
 import uuid
 
@@ -95,17 +96,46 @@ class BreedingExposurePostgresTests(unittest.TestCase):
     def test_one_invalid_identity_rolls_back_the_whole_group(self):
         preview = self.preview()
         preview["preview"]["rows"][4]["pig_id"] = "SOW-NOT-CANONICAL"
-        with self.assertRaisesRegex(ValueError, "current_sow_identity_changed"):
-            execute_grouped_preview(
-                preview, confirmed_preview_sha256=preview["preview_sha256"],
-                actor_id="owner-test", connect_factory=self.connect,
-            )
+        result,status = execute_grouped_preview(
+            preview, confirmed_preview_sha256=preview["preview_sha256"],
+            actor_id="owner-test", connect_factory=self.connect,
+        )
+        self.assertEqual(status,409)
+        self.assertEqual(result["status"],"exact_owner_confirmation_required")
         with self.connect() as db, db.cursor() as cur:
             cur.execute(
                 "select count(*) from public.pig_breeding_exposure_events "
                 "where sow_pig_id = any(%s)", (self.sows,),
             )
             self.assertEqual(cur.fetchone()[0], 0)
+
+    def test_valid_identity_tamper_and_stale_august_29_preview_both_write_zero(self):
+        for mutate in ("identity", "date"):
+            preview=self.preview()
+            if mutate == "identity":
+                preview["preview"]["rows"][0]["pig_id"] = self.sows[1]
+            else:
+                preview["preview"]["rows"][0]["planned_removal_on"] = "2026-08-29"
+            result,status=execute_grouped_preview(preview,
+                confirmed_preview_sha256=preview["preview_sha256"],actor_id="owner-test",
+                connect_factory=self.connect)
+            self.assertEqual(status,409)
+            self.assertEqual(result["status"],"exact_owner_confirmation_required")
+        stale=copy.deepcopy(self.preview())
+        stale["preview"]["rows"][0]["planned_removal_on"]="2026-08-29"
+        raw=stale["preview"]
+        import hashlib,json
+        digest=hashlib.sha256(json.dumps(raw,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        stale["preview_sha256"]=digest
+        from modules.pig_weights.herdmaster_breeding_exposure_recovery import _stable
+        stale["operation_id"]=_stable("HERD-BREED-GROUP-",digest)
+        result,status=execute_grouped_preview(stale,confirmed_preview_sha256=digest,
+            actor_id="owner-test",connect_factory=self.connect)
+        self.assertEqual((status,result["status"],result["rows_changed"]),
+            (409,"corrected_exposure_preview_required",0))
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute("select count(*) from public.pig_breeding_exposure_events where sow_pig_id=any(%s)",(self.sows,))
+            self.assertEqual(cur.fetchone()[0],0)
 
 
 if __name__ == "__main__":

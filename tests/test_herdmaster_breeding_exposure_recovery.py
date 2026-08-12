@@ -13,6 +13,15 @@ def test_shared_channel_invariant_inclusive_removal_date():
     assert planned_exposure_removal_on("2026-08-12", 17) == "2026-08-28"
 
 
+def test_preview_rejects_noncanonical_seventeen_day_removal():
+    result = build_grouped_preview({"rows": [{
+        "pig_id":"SOW-1","label":"Sow One","action":"exposure","boar_pig_id":"BOAR-1",
+        "exposure_started_on":"2026-08-12","planned_removal_on":"2026-08-29",
+    }]}, evidence_generation="GEN-OLD")
+    assert result["success"] is False
+    assert result["errors"] == ["row_1_exact_exposure_required"]
+
+
 def test_grouped_preview_separates_exposure_hold_and_near_farrowing():
     result = build_grouped_preview({"rows": [
         {"pig_id": "SOW-1", "label": "Sow One", "action": "exposure", "boar_pig_id": "BOAR-1",
