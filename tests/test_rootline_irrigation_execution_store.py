@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import uuid
@@ -7,7 +8,8 @@ import json
 import pytest
 
 from modules.telemetry.rootline_irrigation_execution_store import (
-    _claim_single_auxiliary, _claim_single_controller, _event_id, _stored_event_body,
+    _claim_single_auxiliary, _claim_single_controller, _daily_dispatch_blocker,
+    _event_id, _stored_event_body,
     _is_active_candidate,
 )
 
@@ -48,6 +50,46 @@ def test_typed_history_append_call_casts_numeric_runtime_arguments():
     assert "%s::numeric,%s::numeric,%s::jsonb" in source
 
 
+class DailyCursor:
+    def __init__(self, answers, rows=()): self.answers=iter(answers); self.rows=rows; self.sql=[]
+    def execute(self, statement, params=None): self.sql.append((statement,params))
+    def fetchone(self): return next(self.answers)
+    def fetchall(self): return self.rows
+
+
+def test_daily_guard_requires_persisted_exact_eligibility_before_completion_checks():
+    cursor=DailyCursor([None])
+    status=_daily_dispatch_blocker(cursor,execution_id="EXEC-1",eligibility_id="ELIG-1",
+        eligibility_sha256="a"*64,zone_id="B12345",operating_date="2026-08-12")
+    assert status=="canonical_eligibility_unproven" and len(cursor.sql)==1
+
+
+def test_daily_guard_rejects_existing_verified_completion_before_provider_on(monkeypatch):
+    monkeypatch.setattr("modules.telemetry.rootline_irrigation_history.project_canonical_irrigation_history",
+        lambda rows,snapshot_cutoff:{"zones":{"B12345":{"verified_completed_days":["2026-08-12"]}}})
+    cursor=DailyCursor([(1,),(datetime(2026,8,12,tzinfo=timezone.utc),)])
+    status=_daily_dispatch_blocker(cursor,execution_id="EXEC-2",eligibility_id="ELIG-2",
+        eligibility_sha256="b"*64,zone_id="B12345",operating_date="2026-08-12")
+    assert status=="zone_daily_completion_already_credited" and len(cursor.sql)==3
+
+
+def test_daily_guard_rejects_prior_accepted_on_during_delayed_completion_window(monkeypatch):
+    monkeypatch.setattr("modules.telemetry.rootline_irrigation_history.project_canonical_irrigation_history",
+        lambda rows,snapshot_cutoff:{"zones":{"B12345":{"verified_completed_days":[]}}})
+    cursor=DailyCursor([(1,),(datetime(2026,8,12,tzinfo=timezone.utc),),(1,)])
+    status=_daily_dispatch_blocker(cursor,execution_id="EXEC-2",eligibility_id="ELIG-2",
+        eligibility_sha256="b"*64,zone_id="B12345",operating_date="2026-08-12")
+    assert status=="zone_daily_on_already_accepted" and len(cursor.sql)==4
+
+
+def test_daily_guard_allows_other_zone_or_day_when_all_atomic_checks_are_clear(monkeypatch):
+    monkeypatch.setattr("modules.telemetry.rootline_irrigation_history.project_canonical_irrigation_history",
+        lambda rows,snapshot_cutoff:{"zones":{"C12345":{"verified_completed_days":[]}}})
+    cursor=DailyCursor([(1,),(datetime(2026,8,12,tzinfo=timezone.utc),),None])
+    assert _daily_dispatch_blocker(cursor,execution_id="EXEC-C",eligibility_id="ELIG-C",
+        eligibility_sha256="c"*64,zone_id="C12345",operating_date="2026-08-13") is None
+
+
 def test_auxiliary_claim_and_off_identities_are_stable_and_separate():
     claim=_event_id("claim_auxiliary_before_on",{"execution_id":"AUX-1"})
     assert claim==_event_id("claim_auxiliary_before_on",{
@@ -82,12 +124,25 @@ def test_consumption_key_is_atomically_single_use_across_regenerated_executions(
     monkeypatch.setenv("DATABASE_URL",url)
     migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
     with psycopg.connect(url) as connection:
+        connection.execute(Path("supabase/migrations/202605230001_create_irrigation_tables.sql").read_text(encoding="utf-8"))
         connection.execute(migration.read_text(encoding="utf-8"))
     suffix=uuid.uuid4().hex
     key=f"ROOTLINE-BC-CONSUMPTION-{suffix}"
     def claim(index):
-        return _claim_single_controller({"execution_id":f"ROOTLINE-EXEC-{suffix}-{index}",
-            "consumption_key":key,"zone_id":"B12345"})
+        execution=f"ROOTLINE-EXEC-{suffix}-{index}"
+        eligibility=f"ROOTLINE-ELIG-{suffix}-{index}"
+        digest=(str(index)*64)[:64]
+        with psycopg.connect(url) as connection:
+            connection.execute("""insert into public.sam_live_stock_conversation_review_events
+                (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
+                values (%s,%s,'rootline_irrigation_execution','record_eligibility',%s::jsonb)""",
+                (f"ROOTLINE-TEST-ELIG-{suffix}-{index}",execution,json.dumps({
+                    "rootline_execution":{"action":"record_eligibility","execution_id":execution,
+                    "eligibility_id":eligibility,"eligibility_sha256":digest,
+                    "operating_date":"2026-08-12","zone_id":"B12345"}})))
+        return _claim_single_controller({"execution_id":execution,
+            "eligibility_id":eligibility,"eligibility_sha256":digest,
+            "consumption_key":key,"zone_id":"B12345","operating_date":"2026-08-12"})
     with ThreadPoolExecutor(max_workers=2) as pool:
         results=list(pool.map(claim,(1,2)))
     assert sum(item.get("created") is True for item in results)==1

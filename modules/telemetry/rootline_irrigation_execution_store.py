@@ -174,13 +174,19 @@ def _is_active_candidate(item, active_action, claim_action):
 
 
 def _claim_single_controller(body):
-    """Atomically serialize B/C claims with one transaction advisory lock."""
+    """Atomically serialize B/C and consume one zone/operating-day authority."""
     import psycopg
     execution_id = str(body["execution_id"])
     consumption_key = str(body.get("consumption_key") or "").strip()
-    if not consumption_key:
+    zone_id = str(body.get("zone_id") or "").strip()
+    operating_date = str(body.get("operating_date") or "").strip()
+    eligibility_id = str(body.get("eligibility_id") or "").strip()
+    eligibility_sha256 = str(body.get("eligibility_sha256") or "").strip()
+    if (not consumption_key or zone_id not in {"B12345", "C12345"}
+            or not _valid_iso_date(operating_date) or not eligibility_id
+            or len(eligibility_sha256) != 64):
         return {"success": False, "created": False,
-                "status": "consumption_key_missing"}
+                "status": "daily_dispatch_identity_incomplete"}
     event_id = _event_id("claim_before_on", body)
     with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
         with connection.cursor() as cursor:
@@ -198,6 +204,11 @@ def _claim_single_controller(body):
             if cursor.fetchone():
                 return {"success": True, "created": False,
                         "status": "eligibility_already_consumed"}
+            blocked = _daily_dispatch_blocker(cursor, execution_id=execution_id,
+                eligibility_id=eligibility_id, eligibility_sha256=eligibility_sha256,
+                zone_id=zone_id, operating_date=operating_date)
+            if blocked:
+                return {"success": True, "created": False, "status": blocked}
             cursor.execute("""select 1
                 from public.sam_live_stock_conversation_review_events claim
                 where claim.event_source=%s
@@ -225,6 +236,65 @@ def _claim_single_controller(body):
                     sort_keys=True, separators=(",", ":"), default=str)))
             return {"success": True, "created": cursor.rowcount == 1,
                     "status": "claimed" if cursor.rowcount == 1 else "execution_replay"}
+
+
+def _daily_dispatch_blocker(cursor, *, execution_id, eligibility_id,
+                            eligibility_sha256, zone_id, operating_date):
+    """Evaluate signed authority, completion and accepted-ON under caller's lock."""
+    cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
+        where event_source=%s
+          and review_json->'rootline_execution'->>'action'='record_eligibility'
+          and review_json->'rootline_execution'->>'execution_id'=%s
+          and review_json->'rootline_execution'->>'eligibility_id'=%s
+          and review_json->'rootline_execution'->>'eligibility_sha256'=%s
+          and review_json->'rootline_execution'->>'operating_date'=%s
+          and review_json->'rootline_execution'->>'zone_id'=%s limit 1""",
+        (EVENT_SOURCE, execution_id, eligibility_id, eligibility_sha256,
+         operating_date, zone_id))
+    if not cursor.fetchone():
+        return "canonical_eligibility_unproven"
+    # Reuse the canonical typed-history verifier rather than approximating its
+    # digest, evidence, cutoff, runtime and replay rules in SQL. These rows and
+    # the database clock are read inside the same advisory-locked transaction.
+    cursor.execute("select clock_timestamp()")
+    snapshot_cutoff = cursor.fetchone()[0]
+    cursor.execute("""select irrigation_event_id,event_at,event_type,zone_id,
+        planned_minutes,actual_minutes,details,source_id,actor,created_at
+        from public.irrigation_events
+        where zone_id=%s or event_type='PLANNING_EPOCH_STARTED'
+        order by event_at,irrigation_event_id""", (zone_id,))
+    from modules.telemetry.rootline_irrigation_history import project_canonical_irrigation_history
+    history = project_canonical_irrigation_history(
+        cursor.fetchall(), snapshot_cutoff=snapshot_cutoff)
+    completed_days = history["zones"][zone_id]["verified_completed_days"]
+    if operating_date in completed_days:
+        return "zone_daily_completion_already_credited"
+    cursor.execute("""select 1
+        from public.sam_live_stock_conversation_review_events claim
+        where claim.event_source=%s
+          and claim.review_json->'rootline_execution'->>'action'='claim_before_on'
+          and claim.review_json->'rootline_execution'->>'zone_id'=%s
+          and claim.review_json->'rootline_execution'->>'operating_date'=%s
+          and exists (select 1
+            from public.sam_live_stock_conversation_review_events outcome
+            where outcome.event_source=%s
+              and outcome.review_json->'rootline_execution'->>'action'='record_on_outcome'
+              and outcome.review_json->'rootline_execution'->>'execution_id'=
+                  claim.review_json->'rootline_execution'->>'execution_id'
+              and outcome.review_json->'rootline_execution'->'on_outcome'->>
+                  'accepted_unambiguous'='true') limit 1""",
+        (EVENT_SOURCE, zone_id, operating_date, EVENT_SOURCE))
+    if cursor.fetchone():
+        return "zone_daily_on_already_accepted"
+    return None
+
+
+def _valid_iso_date(value):
+    from datetime import date
+    try:
+        return date.fromisoformat(str(value)).isoformat() == str(value)
+    except (TypeError, ValueError):
+        return False
 
 
 def _claim_single_auxiliary(body):

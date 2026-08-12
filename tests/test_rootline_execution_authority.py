@@ -15,7 +15,8 @@ def inputs(*, rain=0, zone="B12345", debt=2, controller_changes=None,
           "recommendation":"Recommend","planned_duration_minutes":60,"rank":1,
           "weekly_obligation":{"status":"available","delivery_debt_days":debt,
                                "remaining_weekly_obligation_days":4}}
-    plan={"evidence_generation":"PLAN-GEN-1","candidate_tasks":[task]}
+    plan={"evidence_generation":"PLAN-GEN-1","operating_date":"2026-08-08",
+          "candidate_tasks":[task]}
     evidence={"weather":{"observed_at":weather_at.isoformat(),"rain_rate_mm_h":rain,
                          "rain_today_mm":rain},
               "tanks":{"observed_at":water_at.isoformat(),"reservoir_state":"FULL",
@@ -36,6 +37,7 @@ def test_fresh_dry_debt_creates_one_typed_single_use_artifact():
                                       controller=inputs()[2],now=NOW)
     assert value["eligible"] is True and value["zone_id"]=="B12345"
     assert value["channel"]==1 and value["maximum_duration_seconds"]==3599
+    assert value["operating_date"]=="2026-08-08"
     assert value["command_mapping"]=={"channel":1,"on":"irrigation_1_ch1_on",
                                        "off":"irrigation_1_ch1_off"}
     assert validate_execution_eligibility(value,now=NOW)==value
