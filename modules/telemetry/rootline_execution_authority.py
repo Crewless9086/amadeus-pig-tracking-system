@@ -60,6 +60,9 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None):
     source_plan_generation = str(plan.get("evidence_generation") or "")
     if not source_plan_generation:
         return _none("plan_generation_unavailable")
+    operating_date = str(plan.get("operating_date") or "")[:10]
+    if not _valid_operating_date(operating_date):
+        return _none("operating_date_unavailable")
     governed_obligation = {key: value for key, value in obligation.items()
                            if key != "ledger_complete_through"}
     irrigation_plan_material = {"zone_id": zone, "zone_decision": task.get("zone_decision"),
@@ -68,6 +71,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None):
     plan_generation = "ROOTLINE-BC-PLAN-" + _digest(irrigation_plan_material)[:24].upper()
     consumption_key = "ROOTLINE-BC-CONSUMPTION-" + _digest({
         "source_plan_generation": source_plan_generation,
+        "operating_date": operating_date,
         "irrigation_plan_generation": plan_generation,
         "zone_id": zone,
     })[:24].upper()
@@ -79,6 +83,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None):
         "contract_version": CONTRACT_VERSION,
         "authority_source": STANDING_AUTHORITY,
         "source_plan_generation": source_plan_generation,
+        "operating_date": operating_date,
         "plan_generation": plan_generation,
         "plan_evidence_digest": _digest({"plan_generation": plan_generation,
             "irrigation_plan": irrigation_plan_material, "weather": weather, "tanks": tanks}),
@@ -130,6 +135,7 @@ def validate_execution_eligibility(value, *, now=None):
             or value.get("channel") != ZONE[value["zone_id"]]["channel"]
             or value.get("command_mapping") != ZONE[value["zone_id"]]
             or not str(value.get("source_plan_generation") or "")
+            or not _valid_operating_date(value.get("operating_date"))
             or not str(value.get("consumption_key") or "").startswith(
                 "ROOTLINE-BC-CONSUMPTION-")
             or value.get("single_use") is not True or value.get("simultaneous_bc") is not False
@@ -152,7 +158,7 @@ def equivalent_fresh_eligibility(original, fresh, *, now=None):
     # Fresh request/receipt timestamps necessarily produce a new source generation
     # and evidence digest. Equivalence binds the governed decision material while
     # the freshly rebuilt artifact independently re-proves weather, water and controller safety.
-    keys = ("plan_generation", "zone_id", "channel",
+    keys = ("plan_generation", "operating_date", "zone_id", "channel",
             "maximum_duration_seconds", "command_mapping",
             "controller_safety_generation")
     return (all(original.get(key) == fresh.get(key) for key in keys)
@@ -163,6 +169,14 @@ def equivalent_fresh_eligibility(original, fresh, *, now=None):
 def _governed_debt(value):
     return ({key: item for key, item in value.items() if key != "ledger_complete_through"}
             if isinstance(value, dict) else value)
+
+
+def _valid_operating_date(value):
+    text = str(value or "")
+    try:
+        return datetime.fromisoformat(text).date().isoformat() == text
+    except (TypeError, ValueError):
+        return False
 
 
 def _controller(value, zone, now):

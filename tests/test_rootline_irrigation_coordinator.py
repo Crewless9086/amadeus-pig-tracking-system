@@ -55,7 +55,8 @@ class Transport:
 
 def decision(**changes):
     commissioned=commissioning(); proof=validate_commissioning("B12345",commissioned["evidence"],now=NOW)
-    plan={"evidence_generation":"GEN-1","candidate_tasks":[{"task_id":"irrigation_B12345",
+    plan={"evidence_generation":"GEN-1","operating_date":"2026-08-05",
+          "candidate_tasks":[{"task_id":"irrigation_B12345",
         "zone_decision":"Run now","recommendation":"Recommend","planned_duration_minutes":60,
         "rank":1,"weekly_obligation":{"status":"available","delivery_debt_days":2,
                                         "remaining_weekly_obligation_days":4}}]}

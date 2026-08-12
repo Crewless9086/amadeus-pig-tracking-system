@@ -58,7 +58,9 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         return _result("execution_eligibility_changed", commands=0, messages=0)
     execution = {
         "execution_id": decision["execution_id"], "eligibility_id": decision["eligibility_id"],
+        "eligibility_sha256": decision["execution_eligibility"]["eligibility_sha256"],
         "consumption_key": decision["execution_eligibility"]["consumption_key"],
+        "operating_date": decision["execution_eligibility"]["operating_date"],
         "evidence_generation": decision["evidence_generation"], "zone_id": decision["zone_id"],
         "channel": ZONES[decision["zone_id"]], "planned_runtime_minutes": decision["runtime_minutes"],
         "planned_runtime_seconds": decision["runtime_seconds"],
