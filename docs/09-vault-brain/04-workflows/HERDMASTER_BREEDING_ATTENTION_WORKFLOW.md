@@ -155,6 +155,15 @@ The existing litter workflow accepts a canonical mother with `boar_pig_id`
 and historical `mating_id` absent. Unknown parentage remains visible as
 Unknown and does not degrade or duplicate the litter.
 
+Natural exposure capture through the application, typed Oom Sakkie, Telegram
+and voice follows
+`../../07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md` and
+`../../../06-operations/HERDMASTER_UNIFIED_BREEDING_CAPTURE_PLAN_20260812.md`.
+Every channel normalizes into the grouped exposure preview/execution contract.
+Normal 17-day exposure is not an exact mating/service date. Pen movement is an
+optional separately visible effect, and individual sow records retain a shared
+group identity for later capacity and outcome analysis.
+
 ## Delivery order and acceptance
 
 1. Finish and verify the current one-animal Auction List Add canary.

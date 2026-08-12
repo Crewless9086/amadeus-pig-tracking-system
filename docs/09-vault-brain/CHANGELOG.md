@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-08-12 - Channel-invariant canonical actions approved
+
+- Established application clicks, typed Oom Sakkie, Telegram and voice as
+  adapters to one specialist-owned canonical action rather than separate
+  business systems.
+- Required one normalization, preview, validator, authority gate, executor and
+  canonical readback per capability while allowing channel-specific display.
+- Prohibited new channel-specific mutation paths, shadow records and weaker
+  confirmation rules.
+- Recorded HERDMASTER natural breeding exposure as the first full parity
+  mission, including group identity, optional explicit movement, separate
+  exact-service capture and conservative group-capacity intelligence.
+- Kept existing features on an incremental migration path rather than
+  authorizing a risky whole-system rewrite.
+
 ## 2026-08-12 - Piglet weaning observation mission approved
 
 - Recorded Charl's real-world need to capture favourable pig-specific

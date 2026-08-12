@@ -111,6 +111,16 @@
   conception, pregnancy, movement, or litter rows. Recovery hold/clearance and
   near-farrowing evidence reuse `pig_observation_events`; no second
   observation or recommendation ledger exists.
+- Cross-channel action standard:
+  `docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
+  Application, typed Oom Sakkie, Telegram and voice normalize equivalent intent
+  into one specialist-owned canonical preview/execute/readback service; no new
+  channel-specific mutation path is permitted.
+- Unified breeding capture mission:
+  `docs/06-operations/HERDMASTER_UNIFIED_BREEDING_CAPTURE_PLAN_20260812.md`.
+  It makes grouped exposure the shared action for normal natural placement,
+  keeps exact service separate, treats movement as explicit and preserves
+  group identity for conservative HERDMASTER analysis.
 - Owner surfaces:
   existing authenticated Oom Sakkie specialist consumption and the Breeding
   Attention/mating-board view.

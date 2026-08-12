@@ -72,6 +72,13 @@ Examples:
 - â€œShow approvalsâ€
 - â€œGo back to Oom Sakkieâ€
 
+Voice, typed Oom Sakkie, Telegram and application clicks must be adapters to
+the same canonical business capability. Equivalent owner intent must produce
+one meaning, one material preview, one authority gate and one canonical result.
+Channels may present differently, but may not own different business rules or
+mutation paths. See
+`docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
+
 ### 2.5 Agents are specialist rooms, not menu items
 
 The specialist agents should feel like people or departments that Oom Sakkie can call forward.
