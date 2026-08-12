@@ -78,10 +78,20 @@ def authorize(source=None, overrides=None):
     return result, states, tokens, calls, query, request
 
 
-def test_readiness_requires_exact_redirect_and_false_flags():
+def test_readiness_requires_exact_redirect_and_false_actuation_flags():
     assert oauth_readiness(env())["status"] == "ready"
-    assert oauth_readiness(env(EWELINK_READBACK_ENABLED="true"))["status"] == "not_ready"
+    recovered = oauth_readiness(env(EWELINK_READBACK_ENABLED="true"))
+    assert recovered["status"] == "ready" and recovered["readback_enabled"] is True
+    for flag in ("ROOTLINE_AUTONOMOUS_BC_ENABLED", "ROOTLINE_FERTILIZER_MIXING_ENABLED",
+                 "ROOTLINE_FERTILIZER_INJECTION_ENABLED"):
+        assert oauth_readiness(env(**{flag: "true"}))["status"] == "not_ready"
     assert oauth_readiness(env(EWELINK_OAUTH_REDIRECT_URI="https://evil.test"))["status"] == "not_ready"
+
+
+def test_reauthorization_request_preserves_readback_only_without_actuation():
+    _, result, _ = start(env(EWELINK_READBACK_ENABLED="true"))
+    assert result["readback_enabled"] is True
+    assert result["autonomous_control_enabled"] is False
 
 
 def test_start_binds_nonce_and_persists_no_raw_secret():
@@ -100,6 +110,18 @@ def test_callback_uses_only_allowlisted_reads_and_encrypts_tokens():
                      ("GET", "/v2/device/thing/status", "bearer")]
     assert "secret-access" not in repr(tokens.records) and "secret-refresh" not in repr(tokens.records)
     assert result["provider_control_implemented"] is False
+
+
+def test_reauthorization_callback_reports_enabled_readback_without_control():
+    result, _, _, calls, _, _ = authorize(env(EWELINK_READBACK_ENABLED="true"))
+    assert result["status"] == "authorization_stored_readback_enabled"
+    assert result["readback_enabled"] is True
+    assert result["autonomous_control_enabled"] is False
+    assert result["provider_control_implemented"] is False
+    assert calls == [("POST", "/v2/user/oauth/token", "signed"),
+                     ("GET", "/v2/family", "bearer"),
+                     ("GET", "/v2/device/thing", "bearer"),
+                     ("GET", "/v2/device/thing/status", "bearer")]
 
 
 def test_replay_rejected_without_more_provider_calls():

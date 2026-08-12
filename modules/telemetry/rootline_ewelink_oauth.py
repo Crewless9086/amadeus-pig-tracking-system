@@ -49,10 +49,14 @@ def oauth_readiness(environ=None):
     missing = [name for name in REQUIRED_ENV if not str(source.get(name) or "").strip()]
     redirect = str(source.get("EWELINK_OAUTH_REDIRECT_URI") or "").strip()
     expected_redirect = "https://amadeus-pig-tracking-system.onrender.com" + CALLBACK_PATH
-    flags_safe = (
-        _false(source.get("EWELINK_READBACK_ENABLED"))
-        and _false(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED"))
-    )
+    # Reauthorization may recover an already reviewed read-only deployment.
+    # It must never bootstrap or retain any actuation authority.
+    readback_enabled = str(source.get("EWELINK_READBACK_ENABLED") or "").strip().lower() == "true"
+    flags_safe = all(_false(source.get(name)) for name in (
+        "ROOTLINE_AUTONOMOUS_BC_ENABLED",
+        "ROOTLINE_FERTILIZER_MIXING_ENABLED",
+        "ROOTLINE_FERTILIZER_INJECTION_ENABLED",
+    ))
     strong_secrets = all(
         len(str(source.get(name) or "")) >= MIN_SECRET_CHARS
         for name in ("EWELINK_CLIENT_SECRET", "EWELINK_OAUTH_STATE_SECRET")
@@ -64,7 +68,7 @@ def oauth_readiness(environ=None):
         "redirect_uri_matches": bool(redirect and redirect == expected_redirect),
         "activation_flags_false": flags_safe,
         "secret_strength_valid": strong_secrets,
-        "readback_enabled": False,
+        "readback_enabled": readback_enabled,
         "autonomous_control_enabled": False,
         "provider_control_implemented": False,
         "adapter_version": ADAPTER_VERSION,
@@ -112,7 +116,7 @@ def create_authorization_request(*, principal, state_store, environ=None, now=No
         "nonce": nonce, "grantType": "authorization_code", "showQRCode": "true",
     })
     return {"status": "authorization_ready", "authorization_url": AUTHORIZE_URL + "?" + query,
-            "expires_at": expires.isoformat(), "readback_enabled": False,
+            "expires_at": expires.isoformat(), "readback_enabled": ready["readback_enabled"],
             "autonomous_control_enabled": False, "secrets_exposed": False}
 
 
@@ -186,13 +190,15 @@ def complete_authorization(*, query, state_store, token_store, environ=None,
         "created_at": now,
     }
     created = token_store.append(record)
-    return {"status": "authorization_stored_readback_disabled",
+    readback_enabled = oauth_readiness(source)["readback_enabled"]
+    return {"status": ("authorization_stored_readback_enabled" if readback_enabled
+                       else "authorization_stored_readback_disabled"),
             "binding_created": bool(created), "device_bound": True,
             "provider_account_bound": True, "region": region,
             "status_field_names": record["status_field_names"],
             "safety_readback_complete": not safety_missing,
             "safety_readback_missing": safety_missing,
-            "readback_enabled": False, "autonomous_control_enabled": False,
+            "readback_enabled": readback_enabled, "autonomous_control_enabled": False,
             "provider_control_implemented": False, "secrets_exposed": False}
 
 
