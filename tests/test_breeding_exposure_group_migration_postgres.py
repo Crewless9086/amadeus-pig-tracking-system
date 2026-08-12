@@ -11,6 +11,16 @@ class BreedingExposureGroupMigrationTests(unittest.TestCase):
     def test_legacy_start_is_preserved_and_new_ungrouped_start_is_rejected(self):
         root=Path("supabase/migrations")
         with psycopg.connect(URL) as db, db.cursor() as cur:
+            # CI applies the current migration set before integration tests.
+            # Reconstruct the exact pre-120003 schema transactionally; the
+            # final rollback restores the shared disposable database.
+            cur.execute("""alter table public.pig_breeding_exposure_events
+                drop constraint if exists pig_breeding_exposure_started_group_required;
+                drop index if exists public.pig_breeding_exposure_group_chronology_idx;
+                alter table public.pig_breeding_exposure_events
+                drop column if exists exposure_group_identity;
+                delete from app_private.migration_log
+                where migration_id='202608120003_add_breeding_exposure_group_identity'""")
             cur.execute("""create table if not exists public.pigs(pig_id text primary key);
                 insert into public.pigs values('LEGACY-SOW'),('LEGACY-BOAR') on conflict do nothing""")
             cur.execute((root/"202608120001_create_breeding_exposure_events.sql").read_text())
