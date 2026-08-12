@@ -1,1 +1,36 @@
-<!DOCTYPE html><html lang="af"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Parings · Amadeus Farm</title><link rel="stylesheet" href="{{ url_for('static',filename='css/main.css') }}"><link rel="stylesheet" href="{{ url_for('static',filename='css/farmDashboardV2.css') }}"><link rel="stylesheet" href="{{ url_for('static',filename='css/matingsRegisterV2.css') }}"><link rel="stylesheet" href="{{ url_for('static',filename='css/matingsInteractionsV2.css') }}"></head><body><div class="farm-app-shell">{% include '_farm_nav.html' %}<main class="mating-register"><header class="mating-hero"><div><span class="farm-eyebrow">HERDMASTER · TEELBESTUUR</span><h1>Parings</h1><p>Van beerplasing tot jong datum—een duidelike werklys vir die volgende plaasaksie.</p></div><div class="mating-hero-actions"><a class="secondary-action" href="/api/pig-weights/breeding-attention/view">Teel-aandag</a><a class="secondary-action" href="/breeding-analytics">Teelontleding</a><a class="secondary-action" href="/verwagte-jongdatums">Verwagte Jong Datums</a><a class="primary-action" href="/master/add-mating">+ Voeg Paring By</a></div></header><div id="matings_message" class="message-box hidden"></div><section id="mating_summary" class="mating-metrics"></section><section class="mating-workspace"><div class="workspace-heading"><div><span class="farm-eyebrow">PARINGSREGISTER</span><h2>Huidige teelwerk</h2><p>Die belangrikste werk verskyn eerste. Maak ’n kaart oop vir die volledige rekord en beskermde aksies.</p></div><span class="record-count" id="mating_record_count">–</span></div><div id="mating_controls" class="matings-controls"></div><div id="matings_board" class="mating-board"></div></section></main></div><script src="{{ url_for('static',filename='js/matings.js') }}"></script></body></html>
+<!DOCTYPE html>
+<html lang="af">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Parings · Amadeus Farm</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/farmDashboardV2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/matingsRegisterV2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/matingsInteractionsV2.css') }}">
+</head>
+<body>
+  <div class="farm-app-shell">
+    {% include '_farm_nav.html' %}
+    <main class="mating-register">
+      <header class="mating-hero">
+        <div><span class="farm-eyebrow">HERDMASTER · TEELBESTUUR</span><h1>Parings</h1><p>Van beerplasing tot jong datum—een duidelike werklys vir die volgende plaasaksie.</p></div>
+        <div class="mating-hero-actions"><a class="secondary-action" href="/api/pig-weights/breeding-attention/view">Teel-aandag</a><a class="secondary-action" href="/breeding-analytics">Teelontleding</a><a class="secondary-action" href="/verwagte-jongdatums">Verwagte Jong Datums</a><a class="primary-action" href="/master/add-mating">+ Voeg Paring By</a></div>
+      </header>
+      <div id="matings_message" class="message-box hidden"></div>
+      <section id="mating_summary" class="mating-metrics"></section>
+      <section class="mating-workspace" aria-labelledby="exposure_removal_heading">
+        <div class="workspace-heading"><div><span class="farm-eyebrow">BESKERMDE OORGANG</span><h2 id="exposure_removal_heading">Natuurlike blootstelling: verwydering</h2><p>Noteer die werklike verwyderingsdatum sonder om ’n presiese diens-, konsepsie-, dragtigheids- of skuiffeit te skep.</p></div></div>
+        <div id="exposure_removal_board" class="mating-board"></div>
+        <div id="exposure_removal_preview" class="message-box hidden"></div>
+      </section>
+      <section class="mating-workspace">
+        <div class="workspace-heading"><div><span class="farm-eyebrow">PARINGSREGISTER</span><h2>Huidige teelwerk</h2><p>Die belangrikste werk verskyn eerste. Maak ’n kaart oop vir die volledige rekord en beskermde aksies.</p></div><span class="record-count" id="mating_record_count">–</span></div>
+        <div id="mating_controls" class="matings-controls"></div>
+        <div id="matings_board" class="mating-board"></div>
+      </section>
+    </main>
+  </div>
+  <script src="{{ url_for('static',filename='js/matings.js') }}"></script>
+</body>
+</html>

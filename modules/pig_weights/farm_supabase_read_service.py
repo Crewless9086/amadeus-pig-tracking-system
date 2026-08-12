@@ -1030,7 +1030,7 @@ def get_breeding_attention_source_snapshot(
         )
         exposure_rows = _fetch_all(
             """
-            select exposure_event_id, exposure_identity, event_kind,
+            select exposure_event_id, exposure_identity, exposure_group_identity, event_kind,
                    sow_pig_id, boar_pig_id, occurred_on,
                    planned_removal_on, created_at
             from public.pig_breeding_exposure_events
@@ -1926,6 +1926,8 @@ def project_mating_overview(rows, state_rows, today=None):
         is_open = _mating_is_open(row)
         expected_check = row.get("expected_pregnancy_check_date")
         expected_farrowing = row.get("expected_farrowing_date")
+        expected_window_start = row.get("expected_farrowing_window_start")
+        expected_window_end = row.get("expected_farrowing_window_end")
         if not isinstance(expected_farrowing, date) and isinstance(row.get("mating_date"), date):
             expected_farrowing = row["mating_date"] + timedelta(days=114)
         records.append({
@@ -1956,6 +1958,12 @@ def project_mating_overview(rows, state_rows, today=None):
             "pregnancy_check_time": _text(row.get("pregnancy_check_time")),
             "pregnancy_checked_at": _text(row.get("pregnancy_checked_at")),
             "expected_farrowing_date": _date_text(expected_farrowing),
+            "source_exposure_identity": _text(row.get("source_exposure_identity")),
+            "service_window_start": _date_text(row.get("service_window_start")),
+            "service_window_end": _date_text(row.get("service_window_end")),
+            "service_date_basis": _text(row.get("service_date_basis")),
+            "expected_farrowing_window_start": _date_text(expected_window_start),
+            "expected_farrowing_window_end": _date_text(expected_window_end),
             "actual_farrowing_date": _date_text(row.get("farrowing_date")),
             "mating_status": status,
             "outcome": _text(row.get("outcome")),
@@ -1963,7 +1971,11 @@ def project_mating_overview(rows, state_rows, today=None):
             "days_since_mating": _days_since(row.get("mating_date")),
             "is_open": is_open,
             "is_overdue_check": "Yes" if is_open == "Yes" and isinstance(expected_check, date) and expected_check < today and not row.get("pregnancy_check_result") else "No",
-            "is_overdue_farrowing": "Yes" if is_open == "Yes" and isinstance(expected_farrowing, date) and expected_farrowing < today and not row.get("farrowing_date") else "No",
+            "is_overdue_farrowing": "Yes" if is_open == "Yes" and (
+                (isinstance(expected_window_end, date) and expected_window_end < today)
+                or (not isinstance(expected_window_end, date) and isinstance(expected_farrowing, date)
+                    and expected_farrowing < today)
+            ) and not row.get("farrowing_date") else "No",
             "service_notes": _text(row.get("mating_notes")),
             "created_at": _date_text(row.get("created_at")),
             "updated_at": _date_text(row.get("updated_at")),

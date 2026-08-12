@@ -190,7 +190,11 @@ def _cycles(snapshot, breeders, pairings, litters, conflict_sows, today):
         pid=pig["pig_id"]
         supplied=dict(pig.get("current_cycle") or {})
         ordered=sorted(matings[pid],key=lambda row:(_date(row.get("mating_date")) or date.min,_text(row.get("mating_id"))))
-        unresolved=[row for row in ordered if 0 <= (today-_date(row.get("mating_date"))).days <= 125 and not row.get("farrowing_date") and not row.get("related_litter_id") and _norm(row.get("outcome")) not in terminal]
+        unresolved=[row for row in ordered
+            if _date(row.get("mating_date") or row.get("service_window_end"))
+            and 0 <= (today-_date(row.get("mating_date") or row.get("service_window_end"))).days <= 125
+            and not row.get("farrowing_date") and not row.get("related_litter_id")
+            and _norm(row.get("outcome")) not in terminal]
         latest_mating=unresolved[-1] if unresolved else None
         recent_litters=sorted((row for row in litter_rows[pid] if _date(row.get("farrowing_date")) and _date(row.get("farrowing_date"))<=today),key=lambda row:(_date(row.get("farrowing_date")),row["litter_id"]))
         latest_litter=recent_litters[-1] if recent_litters else None
@@ -220,12 +224,20 @@ def _cycles(snapshot, breeders, pairings, litters, conflict_sows, today):
             elif _date(supplied.get("mating_date")) and _date(supplied.get("mating_date"))!=_date(latest_mating.get("mating_date")):
                 conflicts.append("cycle mating date conflicts with canonical mating")
         elif latest_mating:
-            supplied={"state":"post_mating_monitoring","mating_id":latest_mating.get("mating_id"),"mating_date":latest_mating.get("mating_date")}
+            supplied={"state":"post_mating_monitoring","mating_id":latest_mating.get("mating_id"),
+                "mating_date":latest_mating.get("mating_date"),
+                "service_window_start":latest_mating.get("service_window_start"),
+                "service_window_end":latest_mating.get("service_window_end"),
+                "expected_farrowing_window_start":latest_mating.get("expected_farrowing_window_start"),
+                "expected_farrowing_window_end":latest_mating.get("expected_farrowing_window_end"),
+                "exact_service_date":None if latest_mating.get("source_exposure_identity") else latest_mating.get("mating_date")}
             recovered=True
         if conflicts:
             supplied={"state":"missing_evidence","conflicts":sorted(conflicts)}
         if latest_mating and not conflicts:
-            current[pid]={"mating_id":_text(latest_mating.get("mating_id")),"mating_date":_date_text(latest_mating.get("mating_date"))}
+            current[pid]={"mating_id":_text(latest_mating.get("mating_id")),"mating_date":_date_text(latest_mating.get("mating_date")),
+                "service_window_start":_date_text(latest_mating.get("service_window_start")),
+                "service_window_end":_date_text(latest_mating.get("service_window_end"))}
         result[pid]={"status":"conflicting" if conflicts else "recovered" if recovered else "confirmed_projection","cycle":supplied,"conflicts":sorted(conflicts)}
     result["__current_matings__"]=dict(sorted(current.items()))
     return result

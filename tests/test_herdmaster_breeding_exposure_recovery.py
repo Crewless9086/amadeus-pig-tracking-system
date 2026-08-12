@@ -2,6 +2,7 @@ from datetime import date
 
 from modules.pig_weights.herdmaster_breeding_exposure_recovery import (
     build_grouped_preview,
+    exposure_cycle_window,
     planned_exposure_removal_on,
 )
 from modules.pig_weights.herdmaster_breeding_operating_loop import build_breeding_operating_loop
@@ -11,6 +12,25 @@ from pathlib import Path
 
 def test_shared_channel_invariant_inclusive_removal_date():
     assert planned_exposure_removal_on("2026-08-12", 17) == "2026-08-28"
+
+
+def test_removal_preview_uses_windows_without_exact_service_or_conception():
+    result = build_grouped_preview({"rows": [{
+        "pig_id":"SOW-1","label":"Sophie","action":"exposure_removal",
+        "boar_pig_id":"BOAR-1","exposure_identity":"EXP-1",
+        "exposure_group_identity":"GROUP-1","exposure_started_on":"2026-08-12",
+        "actual_removed_on":"2026-08-28",
+    }]}, evidence_generation="GEN-REMOVAL")
+    assert result["success"] is True
+    row=result["preview"]["rows"][0]
+    assert exposure_cycle_window("2026-08-12","2026-08-28") == {
+        "service_window_start":"2026-08-12","service_window_end":"2026-08-28",
+        "expected_farrowing_window_start":"2026-12-04",
+        "expected_farrowing_window_end":"2026-12-20",
+        "service_date_basis":"exposure_window_estimate","exact_service_date":None}
+    assert row["exact_service_date"] is None
+    assert result["creates_breeding_cycle"] is True
+    assert result["asserts_service_date"] is False
 
 
 def test_preview_rejects_noncanonical_seventeen_day_removal():
@@ -148,3 +168,12 @@ def test_exposure_migration_is_append_only_and_not_a_mating_ledger():
     assert "grant update" not in sql
     assert "mating_date" not in sql
     assert "expected_farrowing" not in sql
+
+
+def test_cycle_window_migration_extends_canonical_mating_without_exact_date():
+    sql=Path("supabase/migrations/202608120004_add_exposure_breeding_cycle_windows.sql").read_text()
+    assert "alter table public.mating_events" in sql
+    assert "source_exposure_identity" in sql
+    assert "mating_date is null" in sql
+    assert "expected_farrowing_date is null" in sql
+    assert "expected_farrowing_window_start = service_window_start + 114" in sql

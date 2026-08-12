@@ -1,6 +1,7 @@
 document.addEventListener("DOMContentLoaded", function () {
     setupMatingBoardEvents();
     loadMatingBoard();
+    loadExposureRemovals();
 });
 
 let allMatingRecords = [];
@@ -10,6 +11,77 @@ let selectedSectionId = "";
 let activeAssumePregnantId = null;
 let activeMarkNotPregnantId = null;
 const expandedMatingIds = new Set();
+let activeExposureGroups = new Map();
+let pendingRemoval = null;
+
+async function loadExposureRemovals() {
+    const board = document.getElementById("exposure_removal_board");
+    if (!board) return;
+    try {
+        const response = await fetch("/api/pig-weights/breeding-attention/exposures");
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error("Exposure evidence unavailable.");
+        activeExposureGroups = new Map();
+        (data.records || []).forEach(row => {
+            const key = row.exposure_group_identity || row.exposure_identity;
+            if (!activeExposureGroups.has(key)) activeExposureGroups.set(key, []);
+            activeExposureGroups.get(key).push(row);
+        });
+        if (!activeExposureGroups.size) {
+            board.innerHTML = '<p class="pig-list-meta">Geen aktiewe natuurlike blootstelling wag vir verwydering nie.</p>';
+            return;
+        }
+        board.innerHTML = [...activeExposureGroups].map(([group, rows]) => {
+            const planned = rows.map(row => row.planned_removal_on).filter(Boolean).sort()[0] || "";
+            const assignments = rows.sort((a,b) => String(a.sow_label).localeCompare(String(b.sow_label)))
+                .map(row => `${escapeHtml(row.sow_label)} — ${escapeHtml(row.boar_label)}`).join("; ");
+            return `<article class="mating-card"><div class="mating-card-summary"><b>${escapeHtml(group)}</b><p>${assignments}</p>
+              <label>Werklike verwyderingsdatum <input type="date" value="${escapeHtml(planned)}" data-removal-date="${escapeHtml(group)}"></label>
+              <button type="button" class="primary-action" data-preview-removal="${escapeHtml(group)}">Wys beskermde voorskou</button></div></article>`;
+        }).join("");
+    } catch (error) {
+        board.innerHTML = `<p class="message-error">${escapeHtml(error.message)}</p>`;
+    }
+}
+
+function removalRows(group, actualRemovedOn) {
+    return (activeExposureGroups.get(group) || []).map(row => ({
+        pig_id: row.sow_pig_id, label: row.sow_label, action: "exposure_removal",
+        boar_pig_id: row.boar_pig_id, exposure_identity: row.exposure_identity,
+        exposure_group_identity: row.exposure_group_identity,
+        exposure_started_on: row.occurred_on, actual_removed_on: actualRemovedOn
+    }));
+}
+
+async function previewExposureRemoval(group) {
+    const dateInput = [...document.querySelectorAll("[data-removal-date]")]
+        .find(input => input.getAttribute("data-removal-date") === group);
+    const actualRemovedOn = dateInput?.value || "";
+    const rows = removalRows(group, actualRemovedOn);
+    const evidence_generation = `browser-removal:${group}:${actualRemovedOn}`;
+    const response = await fetch("/api/pig-weights/breeding-attention/grouped-actions/preview", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({rows,evidence_generation})
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error((data.errors || [data.status]).join("; "));
+    pendingRemoval = {rows,evidence_generation,confirmed_preview_sha256:data.preview_sha256};
+    const box=document.getElementById("exposure_removal_preview");
+    const lines=data.preview.rows.map(row => `<li><b>${escapeHtml(row.label)}</b>: ${escapeHtml(row.service_window_start)}–${escapeHtml(row.service_window_end)}; verwagte jong-venster ${escapeHtml(row.expected_farrowing_window_start)}–${escapeHtml(row.expected_farrowing_window_end)}</li>`).join("");
+    box.classList.remove("hidden");
+    box.innerHTML=`<b>Beskermde verwyderingsvoorskou</b><ul>${lines}</ul><p>Net blootstellingsverwydering en een oop teelsiklus per sog. Presiese diens, konsepsie en dragtigheid bly Onbekend. Geen skuif word voorgestel nie.</p><button type="button" class="primary-action" data-confirm-removal>Bevestig presiese voorskou</button>`;
+}
+
+async function confirmExposureRemoval() {
+    if (!pendingRemoval) return;
+    const response=await fetch("/api/pig-weights/breeding-attention/grouped-actions/execute",{
+        method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(pendingRemoval)});
+    const data=await response.json();
+    if (!response.ok || !data.success) throw new Error(data.status || "Removal failed.");
+    pendingRemoval=null;
+    document.getElementById("exposure_removal_preview").innerHTML=`<b>${data.rows_changed} verwydering(s) en teelsiklus(se) presies een keer aangeteken.</b>`;
+    await Promise.all([loadExposureRemovals(),loadMatingBoard()]);
+}
 
 const SECTION_DEFINITIONS = [
     {
@@ -127,6 +199,16 @@ function setupMatingBoardEvents() {
     });
 
     document.addEventListener("click", async function (event) {
+        const removalPreview=event.target.closest("[data-preview-removal]");
+        if (removalPreview) {
+            try { await previewExposureRemoval(removalPreview.getAttribute("data-preview-removal")); }
+            catch(error) { alert(error.message); }
+            return;
+        }
+        if (event.target.closest("[data-confirm-removal]")) {
+            try { await confirmExposureRemoval(); } catch(error) { alert(error.message); }
+            return;
+        }
         const summaryFilter = event.target.closest("[data-mating-section]");
         if (summaryFilter) {
             const nextSection = summaryFilter.getAttribute("data-mating-section") || "";
@@ -449,7 +531,7 @@ function renderMatingCard(record) {
             </div>
             <div>
               <div class="history-label">Expected Farrowing</div>
-              <div class="history-value ${record.is_overdue_farrowing === "Yes" ? "bad-text" : "neutral-text"}">${escapeHtml(record.expected_farrowing_date || "-")}</div>
+              <div class="history-value ${record.is_overdue_farrowing === "Yes" ? "bad-text" : "neutral-text"}">${escapeHtml(record.expected_farrowing_date || ((record.expected_farrowing_window_start && record.expected_farrowing_window_end) ? `${record.expected_farrowing_window_start} – ${record.expected_farrowing_window_end}` : "-"))}</div>
             </div>
             <div>
               <div class="history-label">Status / Outcome</div>
@@ -465,8 +547,8 @@ function renderMatingCard(record) {
                 <div class="pig-list-meta">Pen: ${escapeHtml(boarPen)}</div>
               </div>
               <div>
-                <div class="history-label">Mating Date</div>
-                <div class="history-value">${escapeHtml(record.mating_date || "-")}</div>
+                <div class="history-label">Service evidence</div>
+                <div class="history-value">${escapeHtml(record.mating_date || ((record.service_window_start && record.service_window_end) ? `${record.service_window_start} – ${record.service_window_end} (exposure estimate; exact service unknown)` : "Unknown"))}</div>
               </div>
               <div>
                 <div class="history-label">Days Since Mating</div>
@@ -627,7 +709,8 @@ function isEligibleForAddLitter(record) {
 
 function classifyMating(record) {
     const isClosed = record.is_open === "No" || Boolean(record.linked_litter_id);
-    const expectedFarrowing = parseDate(record.expected_farrowing_date);
+    const expectedFarrowing = parseDate(record.expected_farrowing_date || record.expected_farrowing_window_end);
+    const expectedFarrowingStart = parseDate(record.expected_farrowing_date || record.expected_farrowing_window_start);
     const actualFarrowing = parseDate(record.actual_farrowing_date);
     const expectedCheck = parseDate(record.expected_pregnancy_check_date);
     const checkResult = String(record.pregnancy_check_result || "").toLowerCase();
@@ -676,7 +759,9 @@ function classifyMating(record) {
         };
     }
 
-    if (expectedFarrowing && daysToFarrowing !== null && daysToFarrowing >= 0 && daysToFarrowing <= 14) {
+    const daysToFarrowingStart = daysBetween(today, expectedFarrowingStart);
+    if (expectedFarrowing && daysToFarrowing !== null && daysToFarrowing >= 0
+            && ((daysToFarrowingStart !== null && daysToFarrowingStart <= 14) || daysToFarrowing <= 14)) {
         return {
             section: "move_soon",
             actionText: "Prepare farrowing pen",
@@ -708,7 +793,7 @@ function classifyMating(record) {
 function buildMovementGuidance(record, sowPen) {
     if (record.is_overdue_farrowing === "Yes") {
         if (!record.linked_litter_id && !record.actual_farrowing_date) {
-            return `Sow is ${Math.abs(daysBetween(startOfDay(new Date()), parseDate(record.expected_farrowing_date)) || 0)} days past expected farrowing with no litter recorded. Check whether she has farrowed or if repeat service is needed. Current sow pen: ${sowPen}.`;
+            return `Sow is ${Math.abs(daysBetween(startOfDay(new Date()), parseDate(record.expected_farrowing_date || record.expected_farrowing_window_end)) || 0)} days past the expected farrowing ${record.expected_farrowing_date ? "date" : "window"} with no litter recorded. Check whether she has farrowed or if reproductive-status review is needed. Current sow pen: ${sowPen}.`;
         }
         return `Overdue farrowing. Check sow and record the litter if she has farrowed. Current sow pen: ${sowPen}.`;
     }
@@ -718,7 +803,10 @@ function buildMovementGuidance(record, sowPen) {
     }
 
     if (record.action_section === "move_soon") {
-        return `Prepare farrowing pen. Expected farrowing date: ${record.expected_farrowing_date || "unknown"}. Current sow pen: ${sowPen}.`;
+        const expected = record.expected_farrowing_date || ((record.expected_farrowing_window_start && record.expected_farrowing_window_end)
+            ? `${record.expected_farrowing_window_start}–${record.expected_farrowing_window_end} (exposure-derived window; exact service unknown)`
+            : "unknown");
+        return `Prepare farrowing pen. Expected farrowing: ${expected}. Current sow pen: ${sowPen}.`;
     }
 
     if (record.action_section === "check_soon") {

@@ -173,6 +173,26 @@ class MatingRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.get_json()["writes_performed"])
 
+    @patch("modules.pig_weights.mating_routes.require_owner_read_access", return_value=None)
+    @patch("modules.pig_weights.mating_routes.get_breeding_attention_source_snapshot")
+    def test_active_exposure_readback_is_owner_read_and_excludes_removed(self, snapshot, _guard):
+        snapshot.return_value={"allocation_inputs":{"pig_master_rows":[
+            {"Pig_ID":"S1","Tag_Number":"Sophie"},{"Pig_ID":"B1","Tag_Number":"Bola"}]},
+            "exposure_rows":[
+                {"exposure_identity":"E1","exposure_group_identity":"G1","event_kind":"started",
+                 "sow_pig_id":"S1","boar_pig_id":"B1","occurred_on":"2026-08-12",
+                 "planned_removal_on":"2026-08-28"},
+                {"exposure_identity":"E2","exposure_group_identity":"G0","event_kind":"started",
+                 "sow_pig_id":"S1","boar_pig_id":"B1","occurred_on":"2026-07-01"},
+                {"exposure_identity":"E2","exposure_group_identity":"G0","event_kind":"removed",
+                 "sow_pig_id":"S1","boar_pig_id":"B1","occurred_on":"2026-07-17"}]}
+        response=self.client.get("/api/pig-weights/breeding-attention/exposures")
+        self.assertEqual(response.status_code,200)
+        data=response.get_json()
+        self.assertEqual(len(data["records"]),1)
+        self.assertEqual((data["records"][0]["sow_label"],data["records"][0]["boar_label"]),("Sophie","Bola"))
+        self.assertFalse(data["writes_performed"])
+
     @patch("modules.pig_weights.mating_routes.execute_grouped_preview")
     @patch("modules.pig_weights.mating_routes.strict_owner_admin_principal", return_value="owner-admin:stable")
     @patch("modules.pig_weights.mating_routes.require_strict_owner_admin_access", return_value=None)
