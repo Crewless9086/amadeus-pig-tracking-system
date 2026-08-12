@@ -347,7 +347,8 @@ async function openPaymentDeepLinkOnce() {
   }
   paymentDeepLinkOpened = true;
   paymentDeepLinkMode = new URLSearchParams(window.location.search).get("payment_only") === "1";
-  openUpdatePanel(saleId, transaction.net_total, transaction.item_count);
+  const amountDue = transaction.net_settlement_payable ?? transaction.net_total;
+  openUpdatePanel(saleId, amountDue, transaction.item_count);
 }
 
 function buildPayload() {
@@ -565,7 +566,6 @@ async function submitUpdatePayment(event) {
       ? `/api/sales-transactions/${encodeURIComponent(saleId)}/payment-state`
       : `/api/sales-transactions/${encodeURIComponent(saleId)}/payment`;
     const requestPayload = paymentDeepLinkMode ? {
-      updated_by: payload.updated_by,
       payment_status: payload.payment_status,
       payment_method: payload.payment_method,
       payment_date: payload.payment_date,

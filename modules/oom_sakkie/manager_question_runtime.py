@@ -56,6 +56,14 @@ def semantic_context_with_manager_question(parsed, *, base_context_loader, quest
     if not question:
         return context
     recent = list(context.get("recent_turns") or [])
+    for prior in question.get("partial_replies") or ():
+        if isinstance(prior, dict) and str(prior.get("owner_evidence") or "").strip():
+            recent.append({"specialist": "OWNER", "task_state": "partial_answer",
+                "provider_message_id": str(prior.get("provider_message_id") or "")[:40],
+                "provider_timestamp": str(prior.get("provider_timestamp") or "")[:40],
+                "semantic_domain": str(prior.get("domain") or "")[:40],
+                "semantic_intent": "manager_question_partial_reply",
+                "observation": str(prior.get("owner_evidence") or "")[:240]})
     recent.append({"specialist": "OOM_SAKKIE",
         "task_state": "waiting_for_input",
         "card_mission_id": str(question.get("daily_identity") or "")[:80],
@@ -88,6 +96,11 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         return {"handled": False, **ZERO}, 200
     if exact_reply and semantic is not None and not semantic_continuation:
         return {"handled": False, **ZERO}, 200
+    if semantic is None:
+        return {"handled": True, "success": False,
+            "status": "manager_question_meaning_unavailable",
+            "answer": str(active.get("question") or "Could you clarify that answer?")[:240],
+            "requires_visible_notification": True, "question_count": 1, **ZERO}, 409
     bound = bind_gateway_owner_authority(authority, "farm_manager_round")
     if bound is None:
         return {"handled": True, "success": False,
@@ -103,11 +116,23 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             "answer": "I retained the active question, but the provider identity for this reply is unavailable.",
             "requires_visible_notification": True, **ZERO}, 409
     dedupe_key = str((active.get("question_binding") or {}).get("dedupe_key") or "").strip()
-    event_id = "OOM-MANAGER-REPLY-" + sha256(
-        f"{bound.owner_user_id}|{parsed.get('telegram_chat_id')}|{provider}".encode()).hexdigest()[:24].upper()
+    partials = [dict(item) for item in (active.get("partial_replies") or ())
+                if isinstance(item, dict)]
+    generation = len(partials) + 1
+    question_identity = "|".join((str(bound.owner_user_id),
+        str(parsed.get("telegram_chat_id") or ""), str(active.get("daily_identity") or ""),
+        str((active.get("question_binding") or {}).get("task_id") or ""), dedupe_key))
+    event_id = "OOM-MANAGER-QUESTION-" + sha256(
+        f"{question_identity}|{generation}".encode()).hexdigest()[:24].upper()
     facts = _semantic_facts(semantic)
     clarification = str(getattr(semantic, "clarification_question", "") or "").strip()
     partial = bool(getattr(semantic, "needs_clarification", False) and clarification)
+    binding = {"owner_user_id": str(parsed.get("telegram_user_id") or ""),
+        "chat_id": str(parsed.get("telegram_chat_id") or ""),
+        "provider_message_id": provider, "provider_timestamp": provider_at,
+        "reply_to_message_id": reply_to, "content_sha256": sha256(text.encode()).hexdigest()}
+    accumulated = _merge_semantic_facts(
+        [item.get("semantic_facts") for item in partials] + [facts])
     record = {"event_id": event_id, "status": "partial" if partial else "recorded",
         "owner_user_id": str(parsed.get("telegram_user_id") or ""),
         "chat_id": str(parsed.get("telegram_chat_id") or ""),
@@ -117,7 +142,9 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         "task_id": str((active.get("question_binding") or {}).get("task_id") or ""),
         "dedupe_key": dedupe_key, "domain": expected_domain,
         "question": str(active.get("question") or ""), "owner_evidence": text,
-        "semantic_facts": facts, "content_sha256": sha256(text.encode()).hexdigest()}
+        "semantic_facts": facts, "accumulated_semantic_facts": accumulated,
+        "generation": generation, "provider_binding": binding,
+        "content_sha256": binding["content_sha256"]}
     stored = (event_store or manager_question_event_store)(event_id, record)
     if not isinstance(stored, dict) or stored.get("success") is not True:
         return {"handled": True, "success": False,
@@ -125,9 +152,15 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             "answer": "I retained your reply, but could not prove its durable receipt yet.",
             "requires_visible_notification": True, **ZERO}, 503
     if stored.get("created") is False:
-        return {"handled": True, "success": True,
-            "status": "manager_question_reply_replay_suppressed", "answer": "",
-            "suppress_owner_delivery": True, **ZERO}, 200
+        existing = stored.get("record") if isinstance(stored.get("record"), dict) else {}
+        if existing.get("provider_binding") == binding:
+            return {"handled": True, "success": True,
+                "status": "manager_question_reply_replay_suppressed", "answer": "",
+                "suppress_owner_delivery": True, **ZERO}, 200
+        return {"handled": True, "success": False,
+            "status": "manager_question_concurrent_reply_conflict",
+            "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
+            "requires_visible_notification": True, **ZERO}, 409
     if partial:
         answer = clarification
         status = "manager_question_partial_reply_recorded"
@@ -155,8 +188,24 @@ def manager_question_event_store(event_id, record):
         "decision_json": {}, "facts_json": {}, "customer_message_excerpt": "",
         "sam_reply_excerpt": ""})
     result, status = record_sam_live_stock_review_event(event)
+    created = result.get("created", status < 300)
+    existing = record if created else _load_manager_question_record(event_id)
     return {**result, "success": status < 400 and result.get("success") is True,
-            "created": result.get("created", status < 300)}
+            "created": created, "record": existing}
+
+
+def _load_manager_question_record(event_id):
+    if not str(os.environ.get("DATABASE_URL") or "").strip():
+        return {}
+    import psycopg
+    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=5) as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            cursor.execute("""select review_json->'manager_question_reply'
+                from public.sam_live_stock_conversation_review_events
+                where review_event_id=%s""", (event_id,))
+            row = cursor.fetchone()
+            return dict(row[0]) if row and isinstance(row[0], dict) else {}
 
 
 def _load_questions(owner, chat):
@@ -183,7 +232,19 @@ def _load_questions(owner, chat):
                           review_json->'daily_farm_manager'->'question_binding'->>'task_id')
                 order by created_at desc, review_event_id desc limit 8""",
                 (owner, chat, owner, chat))
-            return [row[0] for row in cursor.fetchall()]
+            questions = [dict(row[0]) for row in cursor.fetchall()]
+            for question in questions:
+                cursor.execute("""select review_json->'manager_question_reply'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='oom_sakkie_manager_question_reply'
+                      and review_json->'manager_question_reply'->>'status'='partial'
+                      and review_json->'manager_question_reply'->>'owner_user_id'=%s
+                      and review_json->'manager_question_reply'->>'chat_id'=%s
+                      and review_json->'manager_question_reply'->>'task_id'=%s
+                    order by created_at, review_event_id""", (owner, chat,
+                    str((question.get("question_binding") or {}).get("task_id") or "")))
+                question["partial_replies"] = [row[0] for row in cursor.fetchall()]
+            return questions
 
 
 def _compatible(expected, actual):
@@ -200,6 +261,20 @@ def _semantic_facts(semantic):
         "observation": str(getattr(semantic, "observation", "") or ""),
         "observation_facts": list(getattr(semantic, "observation_facts", ()) or ()),
         "language": str(getattr(semantic, "language", "") or "")}
+
+
+def _merge_semantic_facts(rows):
+    merged = {"observations": [], "observation_facts": []}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        observation = str(row.get("observation") or "").strip()
+        if observation and observation not in merged["observations"]:
+            merged["observations"].append(observation)
+        for fact in row.get("observation_facts") or ():
+            if fact not in merged["observation_facts"]:
+                merged["observation_facts"].append(fact)
+    return merged
 
 
 def _timestamp(value):

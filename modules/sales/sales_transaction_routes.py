@@ -421,8 +421,13 @@ def sales_transaction_payment_state_update(sale_id):
     denied = require_owner_admin_access()
     if denied:
         return denied
+    principal = owner_admin_principal()
+    if not principal:
+        return jsonify({"success": False, "status": "owner_identity_required",
+                        "writes_to_supabase": False}), 403
     payload = request.get_json(silent=True) or {}
-    result, status_code = record_sale_payment_state(sale_id, payload)
+    result, status_code = record_sale_payment_state(
+        sale_id, payload, actor_id=principal)
     return jsonify(result), status_code
 
 

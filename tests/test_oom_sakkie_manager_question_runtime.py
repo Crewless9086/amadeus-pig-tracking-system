@@ -38,7 +38,7 @@ def memory():
         created = identity not in rows
         if created:
             rows[identity] = record
-        return {"success": True, "created": created}
+        return {"success": True, "created": created, "record": rows[identity]}
     store.rows = rows
     return store
 
@@ -115,3 +115,46 @@ def test_partial_reply_keeps_one_smallest_visible_follow_up():
     assert value["question_count"] == 1
     assert value["answer"] == "Are they also drinking and moving normally?"
     assert next(iter(state.rows.values()))["status"] == "partial"
+
+
+def test_partial_facts_are_retained_in_context_and_accumulated_on_completion():
+    prior = {"owner_evidence": "They are eating.", "provider_message_id": "3530",
+        "provider_timestamp": NOW.isoformat(), "domain": "herd_health",
+        "semantic_facts": {"observation": "They are eating.", "observation_facts": []}}
+    active = question(); active["partial_replies"] = [prior]
+    context = semantic_context_with_manager_question(parsed(message="3531"),
+        base_context_loader=lambda _parsed: {"recent_turns": []}, question=active)
+    assert context["recent_turns"][-2]["observation"] == "They are eating."
+    complete = SemanticInterpretation(domain="herd_health", intent="group_welfare_follow_up",
+        message_kind="observation", continuation=True,
+        observation="They are drinking and moving normally.", language="en", confidence=.98)
+    state = memory()
+    value, status = handle_manager_question_reply(parsed(
+        "They are drinking and moving normally", message="3531"),
+        issue_gateway_owner_authority(OWNER, OWNER), complete,
+        question=active, event_store=state)
+    record = next(iter(state.rows.values()))
+    assert status == 200 and value["status"] == "manager_question_reply_recorded"
+    assert record["generation"] == 2
+    assert record["accumulated_semantic_facts"]["observations"] == [
+        "They are eating.", "They are drinking and moving normally."]
+
+
+def test_semantic_outage_keeps_question_visible_and_unanswered():
+    state = memory()
+    value, status = handle_manager_question_reply(parsed("Yes"),
+        issue_gateway_owner_authority(OWNER, OWNER), None,
+        question=question(), event_store=state)
+    assert status == 409 and value["status"] == "manager_question_meaning_unavailable"
+    assert value["answer"] == question()["question"] and state.rows == {}
+
+
+def test_changed_provider_binding_cannot_be_suppressed_as_replay():
+    state = memory(); authority = issue_gateway_owner_authority(OWNER, OWNER)
+    first, _ = handle_manager_question_reply(parsed(), authority, semantic(),
+        question=question(), event_store=state)
+    changed, status = handle_manager_question_reply(
+        parsed("No, one is not eating", message="3531"), authority, semantic(),
+        question=question(), event_store=state)
+    assert first["status"] == "manager_question_reply_recorded"
+    assert status == 409 and changed["status"] == "manager_question_concurrent_reply_conflict"

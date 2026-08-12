@@ -11,17 +11,17 @@ PAYMENT_STATUSES = {"Unpaid", "Deposit_Paid", "Part_Paid", "Paid"}
 PAYMENT_METHODS = {"Cash", "EFT"}
 
 
-def record_sale_payment_state(sale_id, payload=None, database_url=None):
+def record_sale_payment_state(sale_id, payload=None, database_url=None, *, actor_id=""):
     sale_id = str(sale_id or "").strip(); payload = dict(payload or {})
     status = str(payload.get("payment_status") or "").strip()
     method = str(payload.get("payment_method") or "").strip()
     received = _money(payload.get("received_amount"))
     paid_at = _date(payload.get("payment_date"))
-    actor = str(payload.get("updated_by") or "").strip()
+    actor = str(actor_id or "").strip()
     errors = []
     if not sale_id: errors.append("sale_id is required.")
     if status not in PAYMENT_STATUSES: errors.append("payment_status is not supported.")
-    if not actor: errors.append("updated_by is required.")
+    if not actor: errors.append("authenticated owner actor is required.")
     if status == "Unpaid":
         if received not in (None, Decimal("0")): errors.append("Unpaid cannot record a received amount.")
     else:
@@ -72,6 +72,12 @@ def record_sale_payment_state(sale_id, payload=None, database_url=None):
                     return {"success": True, "status": "payment_state_replay_noop",
                             "created": False, "sale_id": sale_id,
                             "writes_to_supabase": False}, 200
+                existing_receipt = (row[4] not in (None, 0, Decimal("0"))
+                                    or str(row[1] or "") in {"Deposit_Paid", "Part_Paid", "Paid"})
+                if existing_receipt:
+                    return {"success": False,
+                            "status": "existing_receipt_requires_governed_correction",
+                            "writes_to_supabase": False}, 409
                 note = _note(row[8], actor, status, target_received, method, paid_at)
                 cursor.execute("""update public.sales_transactions set
                         received_total=%s,payment_status=%s,payment_method=%s,
