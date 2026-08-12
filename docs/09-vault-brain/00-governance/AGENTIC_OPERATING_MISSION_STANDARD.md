@@ -232,6 +232,7 @@ Do not combine a failing P0 operational incident with a broad new capability mis
 ## Workspace And Release Discipline
 
 - One specialist terminal uses one named branch and one separate git worktree.
+- Before starting, report the worktree path, branch, exact `HEAD`, upstream, clean/dirty state, untracked artifacts, and whether the branch is based on current authoritative lineage. Do not reuse an old specialist worktree merely because its name appears relevant.
 - Never run two implementation terminals in the same working directory.
 - Source work that touches disjoint files may proceed in parallel.
 - A source-file claim does not grant production or shared-runtime ownership.
@@ -240,6 +241,24 @@ Do not combine a failing P0 operational incident with a broad new capability mis
 - A terminal must not hold shared runtime while waiting for a customer reply, owner observation, future event, or another team.
 - A blocked terminal should continue safe disjoint work and leave a durable handover; it must not create a duplicate registry, workflow, or workaround interface.
 - Terminal windows are disposable. Git history, claim ledgers, authoritative documentation, and explicit handovers are the recovery truth.
+
+### Worktree lifecycle and closeout
+
+Every specialist worktree has one explicit state: `active`, `waiting`, `released-retain`, `safe-to-remove`, or `requires-reconciliation`.
+
+Before closing, containment, release, or handoff, the owning terminal must report:
+
+- exact worktree path, branch, `HEAD`, upstream, and complete Git status;
+- uncommitted, untracked, ignored, generated, and temporary mission artifacts;
+- whether every unique commit is merged, pushed, or preserved on a named branch;
+- whether the handover and required evidence are tracked or durably preserved;
+- one final classification: `safe-to-remove`, `released-retain`, or `requires-reconciliation`.
+
+A dirty worktree, broken Git pointer, unique unpushed commit, unresolved partial implementation, or unpreserved evidence is never `safe-to-remove`. Cleanup does not authorize reset, overwrite, broad stash, branch deletion, or deletion of unrelated owner work.
+
+After successful integration, remove clean, fully integrated, inactive worktrees promptly. Do not delete their branches until uniqueness and retention are separately verified. Generated test output, review copies, browser artifacts, and local agent workspaces belong outside the repository or in explicit ignore rules. Do not create another worktree for the same continuing mission until the previous worktree has supplied closeout or been classified for reconciliation.
+
+Control Tower must periodically report registered worktree count, active ownership, dirty worktrees, clean integrated cleanup candidates, clean unique branches, broken registrations, stale local review copies, and current production lineage. Historical cleanup proceeds in bounded verified batches and must not block safe work from a clean current-lineage worktree.
 
 The preferred execution order is therefore:
 
@@ -268,6 +287,22 @@ The goal card must state:
 - **Evidence/handover location**
 
 A terminal may perform supporting technical work, but every step must explain how it advances the current measurable outcome. If it does not, it belongs in the backlog rather than the active mission.
+
+## Mission Challenge And Improvement Check
+
+Before implementation, the target terminal must perform one concise challenge pass. Its purpose is better judgment, not delay or argument. It must answer:
+
+1. What owner-visible outcome is actually required, and is the requested mechanism the outcome or only one proposed method?
+2. What documented, runtime-loaded, canonical, and provider-verified facts support the approach, and what remains Unknown?
+3. Does an existing canonical model, route, workflow, component, or agent capability already solve this without a duplicate ledger, page, router, rule, or integration?
+4. Is there a simpler approach that reduces Charl's repeated input, clicks, confirmations, maintenance, failure modes, or future specialist work?
+5. What downstream states, users, agents, reports, automation, history, replay, concurrency, privacy, safety, and recovery paths could this change affect?
+6. What assumption is most likely to be wrong, and what smallest read-only check can disprove it before implementation?
+7. Does the proposed acceptance prove the real journey, or only code, CI, deployment, replay, containment, or a prepared question?
+
+If a materially better in-scope method is found, recommend it with the trade-off before building. If the owner's requested method is still sound, proceed without ceremonial debate. Challenge does not permit a terminal to broaden scope, override an explicit owner decision, repeatedly reopen a settled choice, or withhold safe routine progress in pursuit of perfection.
+
+Repeat the check only when material evidence, scope, risk, or owner intent changes. Record durable new farm truth or reusable lessons in the smallest authoritative document; keep temporary reasoning in the mission handover.
 
 ## Current Program Direction
 
