@@ -6,8 +6,11 @@
 .pwr-sheet { box-sizing: border-box; width: 210mm; min-height: 297mm; margin: auto; padding: 8mm; background: #fff; }
 .pwr-title { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #222; padding: 1mm 0 2mm; }
 .pwr-title img { width: 25mm; height: 14mm; object-fit: contain; }
+.pwr-title > div { flex: 1; }
 .pwr-title h1 { margin: 0; font-size: 21px; }
 .pwr-title p { margin: 2px 0 0; font-size: 10px; }
+.pwr-paper-check { align-self: center; font-size: 11px !important; }
+.pwr-check-box { display: inline-block; flex: 0 0 auto; width: 4.5mm; height: 4.5mm; border: 1.4px solid #111; background: #fff; }
 
 .pwr-sheet section { margin-top: 4.4mm; break-inside: avoid; }
 .pwr-sheet h2 { margin: 0 0 1.5mm; padding: 1.2mm 2mm; background: #eee; border: 1px solid #222; font-size: 12px; }
@@ -15,6 +18,9 @@
 .pwr-fields { display: grid; column-gap: 4mm; row-gap: 2mm; }
 .cols-2 { grid-template-columns: 1fr 1fr; }
 .cols-4 { grid-template-columns: repeat(4, 1fr); }
+.pwr-identity-fields { grid-template-columns: 1fr 1fr .7fr; }
+.pwr-date-pair { grid-column: 1 / -1; display: grid; grid-template-columns: 34mm 1fr 1fr; gap: 4mm; align-items: end; }
+.pwr-date-pair strong { font-size: 9px; white-space: nowrap; }
 .pwr-sheet label { display: flex; align-items: end; gap: 1.5mm; min-width: 0; font-size: 9px; font-weight: 700; white-space: nowrap; }
 .pwr-sheet input { min-width: 0; flex: 1; height: 5mm; padding: 0 1mm; border: 0; border-bottom: 1px solid #222; border-radius: 0; background: transparent; font: 10px Arial; }
 .pwr-sheet input.pwr-date { min-width: 34mm; font-size: 11px; letter-spacing: .45px; }
@@ -23,6 +29,8 @@
 
 .pwr-care { display: grid; grid-template-columns: 45mm 1fr 21mm; gap: 2mm 3mm; }
 .pwr-care .checks { grid-column: 1 / -1; }
+.pwr-section-heading { display: flex; align-items: center; justify-content: space-between; }
+.pwr-heading-check { display: inline-flex; align-items: center; margin-left: auto; padding-left: 3mm; }
 .checks { display: flex; gap: 8mm; padding-top: 1mm; font-size: 10px; font-weight: 700; }
 
 .pwr-wean { display: grid; grid-template-columns: 1fr 48mm; gap: 2mm; }
@@ -35,6 +43,8 @@
 .pwr-wean table th:nth-child(4) { width: 25mm; }
 .pwr-wean table td:first-child { text-align: center; }
 .pwr-summary { display: flex; flex-direction: column; justify-content: space-between; gap: 1.5mm; border: 1px solid #222; padding: 2mm; }
+.pwr-summary-date { display: grid !important; gap: .5mm !important; align-items: start !important; white-space: normal !important; }
+.pwr-summary-date input.pwr-date { width: 100%; min-width: 0; box-sizing: border-box; }
 .vertical { flex-direction: column; gap: 1.8mm; padding: 2mm 0; }
 
 .notes td { height: 6.5mm; }
