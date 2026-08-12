@@ -56,16 +56,18 @@ the existing protected callback precedence in
 is limited to dispatching that typed packet after semantic interpretation.
 There is no second router, Telegram sender, claim store, or persistence path.
 
-The future semantic producer must provide `semantic.domain=herd_management`,
-one `breeding_actions` list with exact canonical pig IDs, and the current
-`evidence_generation`. A partly resolved group is rejected before claim
-creation. Confirmation executes the exact stored preview and completes or
-contains the existing claim. No source path sends Telegram by itself.
+The existing semantic front door now emits a bounded `breeding_actions` list
+containing owner-stated references and facts only. The adapter resolves every
+sow and boar against the current canonical breeding snapshot and derives the
+evidence generation server-side. Ambiguous or partly resolved groups are
+rejected with one grouped question before claim creation. Confirmation
+executes the exact stored preview and completes or contains the existing
+claim. No source path sends Telegram by itself.
 
 ## Verification
 
-- Focused application, projection, read-service, Oom Sakkie claim and gateway
-  tests: 125 passed.
+- Focused application, projection, read-service, semantic-front-door, Oom
+  Sakkie claim and gateway tests: 152 passed.
 - Python syntax parsed successfully for every affected module.
 - `git diff --check`: clean.
 - Read-only production reconciliation performed zero writes.

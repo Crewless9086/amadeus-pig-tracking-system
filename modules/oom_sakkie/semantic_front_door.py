@@ -35,6 +35,7 @@ class SemanticInterpretation:
     continuation: bool = False
     observation: str = ""
     observation_facts: tuple[Mapping[str, Any], ...] = ()
+    breeding_actions: tuple[Mapping[str, Any], ...] = ()
     confirmation_facts: Mapping[str, bool] | None = None
     commissioning_facts: Mapping[str, bool] | None = None
     requested_action: str = ""
@@ -95,6 +96,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         if message_kind not in MESSAGE_KINDS:
             return None
         facts = _observation_facts(value.get("observation_facts"))
+        breeding_actions = _breeding_actions(value.get("breeding_actions"))
         confirmation_facts = _confirmation_facts(value.get("confirmation_facts"))
         commissioning_facts = _commissioning_facts(value.get("commissioning_facts"))
         return SemanticInterpretation(domain=domain,
@@ -103,6 +105,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             continuation=bool(value.get("continuation")),
             observation=str(value.get("observation") or "").strip()[:500],
             observation_facts=facts,
+            breeding_actions=breeding_actions,
             confirmation_facts=confirmation_facts,
             commissioning_facts=commissioning_facts,
             requested_action=str(value.get("requested_action") or "").strip()[:120],
@@ -190,8 +193,13 @@ def _payload(parsed, context, source):
         "for facts the owner affirmatively or negatively states; supported keys are interlock_off and no_enabled_scene with "
         "literal true/false values. Never turn presence alone into setting facts. Return JSON only with "
         "domain,intent,message_kind,entity_refs,continuation,"
-        "observation,observation_facts,confirmation_facts,commissioning_facts,requested_action,language,confidence,"
+        "observation,observation_facts,breeding_actions,confirmation_facts,commissioning_facts,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
+        " For an owner report of actual boar placements, removals, a body-condition recovery hold or clearance, or a sow appearing close to farrowing, "
+        "return breeding_actions with one object per supplied sow. Use animal_ref and, for exposure, boar_ref; supported action values are exposure, "
+        "exposure_removal, recovery_hold, recovery_clearance, and near_farrowing. Preserve only explicitly supplied exposure_started_on, "
+        "planned_removal_on, actual_removed_on, exposure_identity, body_condition_score, observed_at, and factual_note. Never infer a service, "
+        "conception, pregnancy, father, mating date, animal identity, or omitted group member."
         " For physical water observations, observation_facts must contain zero, one, or two objects using only "
         "subject storage_tanks or reservoir and either state LOW/OK/FULL or an exact fraction numerator/denominator. "
         "Resolve phrases such as both tanks or their Afrikaans equivalents from the message and bounded active question; "
@@ -255,6 +263,30 @@ def _observation_facts(value):
             return ()
     if len({row["subject"] for row in result}) != len(result):
         return ()
+    return tuple(result)
+
+
+def _breeding_actions(value):
+    if value in (None, []):
+        return ()
+    if not isinstance(value, list) or not 1 <= len(value) <= 24:
+        return ()
+    allowed = {"exposure", "exposure_removal", "recovery_hold", "recovery_clearance", "near_farrowing"}
+    keys = {"animal_ref", "boar_ref", "action", "exposure_started_on", "planned_removal_on",
+            "actual_removed_on", "exposure_identity", "body_condition_score", "observed_at", "factual_note"}
+    result = []
+    for raw in value:
+        if not isinstance(raw, Mapping) or set(raw) - keys:
+            return ()
+        action = str(raw.get("action") or "").strip().lower()
+        animal_ref = str(raw.get("animal_ref") or "").strip()[:80]
+        if action not in allowed or not animal_ref:
+            return ()
+        item = {"action": action, "animal_ref": animal_ref}
+        for key in keys - {"action", "animal_ref"}:
+            if raw.get(key) not in (None, ""):
+                item[key] = raw[key] if key == "body_condition_score" else str(raw[key]).strip()[:500]
+        result.append(item)
     return tuple(result)
 
 
