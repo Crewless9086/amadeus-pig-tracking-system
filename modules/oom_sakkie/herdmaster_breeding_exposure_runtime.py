@@ -57,9 +57,14 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
                 "answer": "I could not bind the complete group. Please correct the listed facts once; nothing was recorded.",
                 **_zero()}, 200
     creator = claim_creator or create_claim
-    claim = creator(action_kind=ACTION_KIND, owner_user_id=owner, private_chat_id=chat,
-                    mission_id=mission, provider_message_id=str(parsed.get("provider_message_id") or ""),
-                    evidence_generation=generation, preview_payload=preview)
+    try:
+        claim = creator(action_kind=ACTION_KIND, owner_user_id=owner, private_chat_id=chat,
+                        mission_id=mission, provider_message_id=str(parsed.get("provider_message_id") or ""),
+                        evidence_generation=generation, preview_payload=preview)
+    except Exception:
+        return {"handled": True, "success": False, "status": "breeding_group_claim_unavailable",
+                "answer": "I retained the complete group, but could not store its protected preview safely. Nothing was recorded.",
+                **_zero()}, 503
     return {"handled": True, "success": True, "status": "breeding_grouped_preview_ready",
             "mission_id": mission, "card_mission_id": mission,
             "preview": preview["preview"], "preview_sha256": preview["preview_sha256"],

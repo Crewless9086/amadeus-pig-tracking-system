@@ -3,6 +3,7 @@ from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import (
     ACTION_KIND,
     handle_grouped_breeding_message,
 )
+from pathlib import Path
 
 
 def _parsed(rows):
@@ -77,6 +78,24 @@ def test_non_owner_is_fail_closed():
         parsed, issue_gateway_owner_authority("42", "99"))
     assert status == 403
     assert result["writes_farm_data"] is False
+
+
+def test_claim_persistence_failure_is_visibly_contained_without_write():
+    result,status=handle_grouped_breeding_message(_parsed([
+        {"animal_ref":"Ms Piggy","action":"recovery_hold","body_condition_score":2,
+         "observed_at":"2026-08-12T08:00:00+02:00","factual_note":"BCS 2"},
+    ]),issue_gateway_owner_authority("42","42"),evidence_loader=_evidence,
+       claim_creator=lambda **_kwargs:(_ for _ in ()).throw(RuntimeError("constraint")))
+    assert status == 503 and result["status"] == "breeding_group_claim_unavailable"
+    assert result["writes_farm_data"] is False and "Nothing was recorded" in result["answer"]
+
+
+def test_claim_kind_migration_is_idempotent_private_and_allows_breeding():
+    sql=Path("supabase/migrations/202608120002_allow_breeding_protected_claims.sql").read_text().lower()
+    assert "herdmaster_breeding_grouped" in sql
+    assert "drop constraint" in sql and "add constraint" in sql
+    assert "revoke all on app_private.oom_protected_action_claims from public, anon, authenticated" in sql
+    assert "on conflict (migration_id) do nothing" in sql
 
 
 def test_genuine_seven_row_update_calculates_duration_and_renders_every_fact():
