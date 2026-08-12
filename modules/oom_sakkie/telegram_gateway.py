@@ -335,11 +335,15 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
 
     breeding_result, breeding_status = handle_grouped_breeding_message(parsed, gateway_authority)
     if breeding_result.get("handled"):
-        delivery = (deliver_family_result(parsed, breeding_result, specialist="HERDMASTER",
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                     "status": "owner_delivery_suppressed_replay"}
+            if breeding_result.get("suppress_owner_delivery") else
+            deliver_family_result(parsed, breeding_result, specialist="HERDMASTER",
             mission_id=str(breeding_result.get("mission_id") or ""),
             card_mission_id=str(breeding_result.get("card_mission_id") or ""))
             if breeding_result.get("answer") else {"success": False, "telegram_sends": 0, "telegram_edits": 0})
-        delivery = _bind_protected_preview_card(breeding_result, delivery)
+        if not breeding_result.get("suppress_owner_delivery"):
+            delivery = _bind_protected_preview_card(breeding_result, delivery)
         body, _ = _gateway_result(delivery.get("success") is True,
             str(breeding_result.get("status") or "contained"), policy, breeding_status)
         body.update({"telegram_user_id": parsed["telegram_user_id"], "telegram_chat_id": parsed["telegram_chat_id"],

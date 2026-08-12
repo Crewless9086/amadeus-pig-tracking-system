@@ -92,6 +92,18 @@ def test_claim_persistence_failure_is_visibly_contained_without_write():
     assert "original provider-bound message" in result["answer"]
 
 
+def test_existing_card_bound_claim_is_a_zero_delivery_replay():
+    result,status=handle_grouped_breeding_message(_parsed([
+        {"animal_ref":"Ms Piggy","action":"recovery_hold","body_condition_score":2,
+         "observed_at":"2026-08-12T08:00:00+02:00","factual_note":"BCS 2"},
+    ]),issue_gateway_owner_authority("42","42"),evidence_loader=_evidence,
+       claim_creator=lambda **_kwargs:{"status":"protected_claim_existing",
+          "callback_token":"TOKEN","preview_card_message_id":"3553"})
+    assert status == 200 and result["status"] == "breeding_group_preview_replay_suppressed"
+    assert result["replay_suppressed"] is True and result["suppress_owner_delivery"] is True
+    assert result["answer"] == "" and result["writes_farm_data"] is False
+
+
 def test_claim_kind_migration_is_idempotent_private_and_allows_breeding():
     sql=Path("supabase/migrations/202608120002_allow_breeding_protected_claims.sql").read_text().lower()
     assert "herdmaster_breeding_grouped" in sql

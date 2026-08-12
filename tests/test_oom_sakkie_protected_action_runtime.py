@@ -87,9 +87,9 @@ def test_expired_or_cross_bound_claim_is_never_represented_with_dead_buttons():
     payload={"row_count":1,"rows":[{"pig_id":"PIG-1","weight_kg":10.0}]}
     digest=canonical_preview_digest("grouped_weights",payload)
     expired=("old","expired",datetime.now(timezone.utc)-timedelta(seconds=1),
-      "42","42","500","GEN",payload)
+      "42","42","500","GEN",payload,None)
     for prior in (expired,("old","active",datetime.now(timezone.utc)+timedelta(minutes=5),
-                           "99","99","500","GEN",payload)):
+                           "99","99","500","GEN",payload,None)):
         try:
             create_claim(action_kind="grouped_weights",owner_user_id="42",private_chat_id="42",
               mission_id="MISSION",provider_message_id="500",evidence_generation="GEN",
