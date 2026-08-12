@@ -28,6 +28,8 @@ class PrintSheetsRouteTests(unittest.TestCase):
         self.assertIn("Hok".encode("utf-8"), response.data)
         self.assertIn("Verwagte Speendatum".encode("utf-8"), response.data)
         self.assertIn("Soggies".encode("utf-8"), response.data)
+        self.assertIn("Terug na Litters".encode("utf-8"), response.data)
+        self.assertIn(b'pwr_back_link', response.data)
         self.assertIn(b'pwr_exposure_in', response.data)
         self.assertIn(b'pwr_exposure_out', response.data)
         self.assertIn(b'pwr_expected_from', response.data)
