@@ -426,3 +426,19 @@ complete.
   Business completion remains waiting automatically for the next genuine
   authenticated breeding-plan request after deployment. Do not manufacture or
   replay owner traffic; release broad runtime while waiting.
+
+## Oom Sakkie actionable daily manager — 2026-08-12
+
+- Integrate the approved mission in
+  `docs/06-operations/OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md`
+  without creating a second manager lifecycle.
+- Preserve PR #828 and wait silently for the next genuine breeding-plan request;
+  it is the shared direct-specialist acceptance case.
+- Deploy the typed manager-question binding, concise three-plus-three plan and
+  canonical payment deep link only after independent reviews and exact-head CI.
+- Current read-only money truth: Michaels R2,250 Unpaid; Quinton R4,400 Unpaid;
+  Delia De Koker R2,600 Unpaid; BKB invoice S-EE02-2710 R4,470.51 settlement
+  payable with receipt Unknown. Never manufacture receipt.
+- Business completion still requires fresh provider proof of the scheduled
+  plan, natural contextual reply and direct specialist request. A genuine
+  payment journey remains waiting if no payment has actually arrived.

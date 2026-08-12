@@ -21,6 +21,9 @@ from modules.oom_sakkie.herdmaster_auction_runtime import handle_auction_confirm
 from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
 from modules.oom_sakkie.herdmaster_request_runtime import (
     delivery_retry_authority_for, handle_herdmaster_request)
+from modules.oom_sakkie.manager_question_runtime import (
+    handle_manager_question_reply, load_active_manager_question,
+    semantic_context_with_manager_question)
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -314,11 +317,41 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
           "sends_telegram":int(delivery.get("telegram_sends") or 0)>0,"writes":protected_result.get("writes_farm_data") is True})
         return body,protected_status if delivery.get("success") else 202
 
+    active_manager_question = (load_active_manager_question(parsed)
+                               if gateway_authority is not None else None)
     semantic_policy = semantic_front_door_policy(source)
     semantic_authoritative = bool(gateway_authority is not None and semantic_policy.get("enabled"))
-    semantic = interpret_owner_message(parsed, environ=source) if gateway_authority is not None else None
+    if gateway_authority is not None and active_manager_question:
+        from modules.oom_sakkie.semantic_front_door import load_bounded_owner_context
+        semantic = interpret_owner_message(parsed, environ=source,
+            context_loader=lambda inbound: semantic_context_with_manager_question(
+                inbound, base_context_loader=load_bounded_owner_context,
+                question=active_manager_question))
+    else:
+        semantic = interpret_owner_message(parsed, environ=source) if gateway_authority is not None else None
     if semantic is not None:
         parsed = {**parsed, "semantic": semantic.as_hint()}
+
+    manager_reply, manager_reply_status = handle_manager_question_reply(
+        parsed, gateway_authority, semantic, question=active_manager_question)
+    if manager_reply.get("handled"):
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                     "status": "owner_delivery_suppressed_replay"}
+                    if manager_reply.get("suppress_owner_delivery") else
+                    deliver_family_result(parsed, manager_reply,
+                        specialist=str(manager_reply.get("specialist_identity") or "OOM_SAKKIE"),
+                        mission_id=str(manager_reply.get("mission_id") or ""),
+                        card_mission_id=str(manager_reply.get("card_mission_id") or "")))
+        body, _ = _gateway_result(delivery.get("success") is True,
+            str(manager_reply.get("status") or "manager_question_contained"),
+            policy, manager_reply_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": manager_reply.get("answer", ""), "message": manager_reply,
+            "delivery": delivery, "records_audit_trace": True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        return body, manager_reply_status if delivery.get("success") else 202
 
     continuation_result, continuation_status = handle_owner_operational_continuation(
         parsed, gateway_authority,

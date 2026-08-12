@@ -85,3 +85,20 @@ specialist lifecycle against canonical animal state. Dead, Sold or off-farm
 animals retire stale active projections. Historical lifecycle and provider
 chronology remain immutable audit evidence, but no completed/superseded task
 may reappear as current owner work.
+
+## Actionable daily-manager continuation
+
+The scheduler stores one typed binding for the single grouped question on the
+provider-delivered daily plan. The next authenticated reply loads that binding
+before generic semantic intake. Exact reply identity or one compatible
+English/Afrikaans semantic continuation may advance it; unrelated direct
+specialist requests remain direct requests. Proven partial evidence is retained
+and receives only one smallest missing follow-up. A complete answer retires
+that exact task-generation question without suppressing a later materially new
+question.
+
+Daily presentation is limited to three do-today items and three watch items.
+Sale attention resolves human customer/outlet, amount and payment truth and
+links to the existing canonical transaction. The owner-governed payment-state
+rail changes only receipt state/amount/method/date; it does not rewrite BKB
+invoice, VAT, commission, settlement-payable or item-price facts.

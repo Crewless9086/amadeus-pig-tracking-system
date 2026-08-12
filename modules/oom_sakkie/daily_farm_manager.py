@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 from hashlib import sha256
 import html
 import json
@@ -15,7 +16,7 @@ from modules.oom_sakkie.farm_manager_loop import (
 )
 
 SAST = ZoneInfo("Africa/Johannesburg")
-CONTRACT_VERSION = "oom_sakkie_daily_farm_manager.v1"
+CONTRACT_VERSION = "oom_sakkie_daily_farm_manager.v2"
 EVENT_SOURCE = "oom_sakkie_daily_farm_manager"
 MORNING_HOUR = 6
 MORNING_MINUTE = 45
@@ -41,6 +42,9 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
     litter = build_litter_watch_result(litter_rows, now=now, language=language)
     sales = build_sale_watch_result(sale_rows, now=now, language=language)
     results = [row for row in specialist_results if isinstance(row, SpecialistResult)] + [litter, sales]
+    answered = store("load_answered_questions", identity, {
+        "owner_user_id": str(owner_user_id), "chat_id": str(chat_id)}) or ()
+    results = _retire_answered_questions(results, answered)
     packet = build_daily_management_packet(results, now=now, language=language,
         semantic_prioritizer=semantic_prioritizer)
     digest = packet["material_digest"]
@@ -88,6 +92,8 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
              "telegram_message_id": str(delivery.get("telegram_message_id"))})
     store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
         "material_digest": digest, "status": "presented", "observed_at": now.isoformat(),
+        "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
+        "question": packet["question"], "question_binding": packet["question_binding"],
         "telegram_message_id": str(delivery.get("telegram_message_id")),
         "telegram_sends": int(delivery.get("telegram_sends") or 0)})
     return {"success": True, "status": "daily_manager_presented",
@@ -184,19 +190,33 @@ def build_sale_watch_result(rows, *, now=None, language="en"):
                 and payment in {"paid", "settled"}):
             continue
         missing = []
-        if int(row.get("item_count") or 0) <= 0: missing.append("selected animal/items")
-        if not _text(row, "external_reference"): missing.append("paperwork/reference")
+        if sale_status != "completed" and int(row.get("item_count") or 0) <= 0:
+            missing.append("selected animal/items")
+        if sale_status != "completed" and not _text(row, "external_reference"):
+            missing.append("paperwork/reference")
         if payment not in {"paid", "settled"}: missing.append("payment/settlement follow-up")
-        result_id = "SALE-WATCH-" + sha256(f"{sale_id}|{sale_status}|{payment}|{'|'.join(missing)}".encode()).hexdigest()[:20]
+        label = (_text(row, "buyer_name") or _text(row, "destination")
+                 or _text(row, "sale_channel") or "Farm sale")
+        stream = _text(row, "sale_stream") or _text(row, "sale_channel") or "Sale"
+        amount = row.get("net_settlement_payable")
+        amount_kind = "settlement payable"
+        if amount in (None, ""):
+            amount = row.get("net_total")
+            amount_kind = "amount due"
+        amount_text = _money(amount)
+        action_url = "/sales/slaughter?update_sale=" + sale_id + "&payment_only=1"
+        result_id = "SALE-WATCH-" + sha256(f"{sale_id}|{sale_status}|{payment}|{amount}|{'|'.join(missing)}".encode()).hexdigest()[:20]
         provenance = Provenance("sam", result_id, ("canonical_sale:" + sale_id,), now, 1.0)
         due = "today" if sale_date == today else f"since {sale_date.isoformat()}"
         af = str(language).lower().startswith("af")
         items.append(SpecialistWorkItem(item_id=result_id, dedupe_key="sale:" + sale_id,
-            domain="sales", title=(f"Verkoopgereedheid — {sale_id}" if af else f"Sale readiness — {sale_id}"),
-            why=(f"Die huidige verkoop is {due} betaalbaar; uitstaande: {', '.join(missing) or 'finale oorhandigingsverifikasie'}."
-                if af else f"The canonical sale is due {due}; outstanding: {', '.join(missing) or 'final handover verification'}."),
-            next_action=("Berei die ondersteunde oorhandigings- en vereffeningsbewyse voor; vra Charl net vir enige beskermde verbintenis wat nog ontbreek."
-                if af else "Prepare the supported handover and settlement evidence; ask Charl only for any protected commitment still missing."),
+            domain="sales", title=(f"Betaling — {label}" if af else f"Payment — {label}"),
+            why=((f"{stream}: {amount_text} {amount_kind}; betaling is {payment or 'Onbekend'} {due}. "
+                  f"Uitstaande: {', '.join(missing) or 'finale verifikasie'}.")
+                if af else (f"{stream}: {amount_text} {amount_kind}; payment is {payment or 'Unknown'} {due}. "
+                            f"Outstanding: {', '.join(missing) or 'final verification'}.")),
+            next_action=((f"Werk die ontvangde bedrag, metode en datum by: {action_url}")
+                if af else f"Record the received amount, method and date: {action_url}"),
             assignee="charl", state=WorkState.DUE_TODAY,
             authority=Authority.OWNER_DECISION, provenance=provenance,
             business_value=115, due_at=datetime.combine(sale_date, datetime.min.time(), SAST)))
@@ -225,21 +245,29 @@ def build_daily_management_packet(results, *, now=None, language="en",
     ordered = sorted(by_key.values(), key=_priority)
     selected = (semantic_prioritizer or _semantic_prioritize)(ordered, language=language)
     ordered = _validated_semantic_order(ordered, selected)
-    priorities = ordered[:3]; watch = ordered[3:7]
+    priorities = ordered[:3]; watch = ordered[3:6]
     question = next((item.genuine_question for item in ordered
                      if item.genuine_question.strip()), "")
     tasks = [_task(row) for row in ordered]
     material = {"priorities": [_material(row) for row in priorities],
         "watch": [_material(row) for row in watch], "question": question}
     digest = sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    question_item = next((item for item in ordered
+                          if item.genuine_question.strip() == question), None)
+    question_binding = ({"task_id": question_item.item_id,
+        "dedupe_key": question_item.dedupe_key, "domain": question_item.domain,
+        "question": question} if question_item else {})
     return {"contract_version": CONTRACT_VERSION, "material_digest": digest,
         "priorities": priorities, "watch": watch, "all_tasks": tasks,
-        "question": question, "answer": _render(priorities, watch, question, now, language)}
+        "question": question, "question_binding": question_binding,
+        "answer": _render(priorities, watch, question, now, language)}
 
 
 def daily_farm_manager_store(action, identity, payload):
     if action == "load_daily":
         return _load_daily(identity)
+    if action == "load_answered_questions":
+        return _load_answered_questions(payload or {})
     from modules.sales.sam_live_stock_launch_control import (
         build_sam_live_stock_review_event, record_sam_live_stock_review_event)
     body = dict(payload or {})
@@ -272,6 +300,25 @@ def _load_daily(identity):
             row = cursor.fetchone(); return row[0] if row else None
 
 
+def _load_answered_questions(binding):
+    if not str(os.environ.get("DATABASE_URL") or "").strip():
+        return ()
+    import psycopg
+    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
+        connection.read_only = True
+        with connection.cursor() as cursor:
+            cursor.execute("""select distinct
+                    review_json->'manager_question_reply'->>'task_id'
+                from public.sam_live_stock_conversation_review_events
+                where event_source='oom_sakkie_manager_question_reply'
+                  and review_json->'manager_question_reply'->>'owner_user_id'=%s
+                  and review_json->'manager_question_reply'->>'chat_id'=%s
+                  and review_json->'manager_question_reply'->>'status'='recorded'""",
+                (str(binding.get("owner_user_id") or ""),
+                 str(binding.get("chat_id") or "")))
+            return tuple(str(row[0]) for row in cursor.fetchall() if row and row[0])
+
+
 def _render(priorities, watch, question, now, language):
     af = str(language).lower().startswith("af")
     lines = ["<b>🌅 OOM SAKKIE — VANDAG SE PLAASPLAN</b>" if af
@@ -279,14 +326,14 @@ def _render(priorities, watch, question, now, language):
              "<b>DOEN NOU / VANDAG</b>" if af else "<b>DO NOW / DO TODAY</b>"]
     if priorities:
         next_label = "Volgende" if af else "Next"
-        lines.extend(f"• <b>{html.escape(row.title)}</b> — {html.escape(row.why)} "
-                     f"<i>{next_label}:</i> {html.escape(row.next_action)}"
+        lines.extend(f"• <b>{html.escape(row.title)}</b> — {html.escape(_compact(row.why, 180))} "
+                     f"<i>{next_label}:</i> {html.escape(_compact(row.next_action, 140))}"
                      for row in priorities)
     else:
         lines.append("• Geen nuwe aksie nodig nie." if af else "• No new action is required.")
     if watch:
         lines.extend(("", "<b>KOMENDE / HOU DOP</b>" if af else "<b>COMING UP / WATCH</b>"))
-        lines.extend(f"• {html.escape(row.title)} — {html.escape(row.why)}" for row in watch)
+        lines.extend(f"• {html.escape(row.title)} — {html.escape(_compact(row.why, 150))}" for row in watch)
     if question:
         lines.extend(("", "<b>EEN VRAAG</b>" if af else "<b>ONE QUESTION</b>",
                       html.escape(question)))
@@ -371,6 +418,37 @@ def _validated_semantic_order(items, selected):
     if deterministic_classes != sorted(deterministic_classes):
         return list(items)
     return ordered
+
+
+def _retire_answered_questions(results, answered):
+    answered = {str(value) for value in answered or () if str(value)}
+    if not answered:
+        return results
+    projected = []
+    for result in results:
+        if not isinstance(result, SpecialistResult):
+            projected.append(result)
+            continue
+        items = tuple(replace(item, genuine_question="", question_for="")
+                      if item.item_id in answered else item
+                      for item in result.work_items)
+        projected.append(replace(result, work_items=items))
+    return projected
+
+
+def _compact(value, limit):
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    clipped = text[:max(1, limit - 1)].rsplit(" ", 1)[0].rstrip(" ,;:-")
+    return clipped + "…"
+
+
+def _money(value):
+    try:
+        return f"R{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return "Amount unknown"
 
 
 def _text(row, *keys):

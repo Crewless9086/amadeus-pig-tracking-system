@@ -41,6 +41,7 @@ from modules.sales.sales_transaction_lifecycle import (
 )
 from modules.sales.sales_transaction_read import get_sales_transaction, list_sales_transactions
 from modules.sales.sales_transaction_update import update_slaughter_sale_payment
+from modules.sales.sales_payment_receipt import record_sale_payment_state
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
 from modules.sales.butcher_truth_board import get_butcher_truth_board
 from modules.sales.meat_fulfillment import (
@@ -407,8 +408,21 @@ def sales_transaction_cancel(sale_id):
 
 @sales_bp.route("/sales-transactions/<sale_id>/payment", methods=["PATCH"])
 def sales_transaction_payment_update(sale_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = update_slaughter_sale_payment(sale_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales-transactions/<sale_id>/payment-state", methods=["PATCH"])
+def sales_transaction_payment_state_update(sale_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_sale_payment_state(sale_id, payload)
     return jsonify(result), status_code
 
 
