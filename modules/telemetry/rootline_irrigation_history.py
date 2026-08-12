@@ -139,7 +139,27 @@ def _trusted_typed_row(row):
     supplied = details.get("event_sha256")
     return (row.get("source_id") == "irrigation-controller-main" and row.get("actor") == "ROOTLINE"
             and details.get("contract_version") == CONTRACT
-            and supplied == _event_digest(row))
+            and supplied in {_event_digest(row), _pre_scale_event_digest(row)})
+
+
+def _pre_scale_event_digest(row):
+    """Verify rows signed before numeric(8,2) storage normalization.
+
+    The precise runtime remains digest-bound in typed details, allowing the
+    original writer payload to be reconstructed without trusting a rounded
+    database column or weakening any identity/evidence field.
+    """
+    details = row.get("details") if isinstance(row.get("details"), dict) else {}
+    precise_actual = details.get("verified_runtime_minutes")
+    precise_planned = details.get("maximum_runtime_minutes")
+    return _digest({"irrigation_event_id": row.get("irrigation_event_id"),
+        "event_at": _digest_timestamp(row.get("event_at")),
+        "event_type": row.get("event_type"), "zone_id": row.get("zone_id"),
+        "planned_minutes": _number(precise_planned if precise_planned is not None
+                                   else row.get("planned_minutes")),
+        "actual_minutes": _number(precise_actual if precise_actual is not None
+                                  else row.get("actual_minutes")),
+        "details": {key:details.get(key) for key in sorted(details) if key!="event_sha256"}})
 
 
 def _event_digest(row):

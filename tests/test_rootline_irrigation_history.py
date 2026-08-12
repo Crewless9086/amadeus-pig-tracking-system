@@ -118,6 +118,26 @@ def test_typed_digest_binds_numeric_columns_after_database_scale_normalization()
     assert result["verified_completed_day_count"] == 1
 
 
+def test_pre_scale_typed_digest_remains_verifiable_after_database_rounding():
+    event = completed(verified_runtime_minutes=3599 / 60)
+    event["actual_minutes"] = 3599 / 60
+    # Reproduce the original writer's pre-storage digest.
+    from modules.telemetry.rootline_irrigation_history import _digest, _digest_timestamp, _number
+    details = event["details"]
+    details["event_sha256"] = _digest({
+        "irrigation_event_id": event["irrigation_event_id"],
+        "event_at": _digest_timestamp(event["event_at"]),
+        "event_type": event["event_type"], "zone_id": event["zone_id"],
+        "planned_minutes": _number(event["planned_minutes"]),
+        "actual_minutes": _number(event["actual_minutes"]),
+        "details": {key: details.get(key) for key in sorted(details) if key != "event_sha256"},
+    })
+    event["actual_minutes"] = 59.98
+    result = project_canonical_irrigation_history(
+        [epoch("B12345"), event], snapshot_cutoff=NOW)["zones"]["B12345"]
+    assert result["verified_completed_day_count"] == 1
+
+
 def test_missing_shutdown_start_or_cutoff_never_qualifies():
     rows = [epoch("B12345"),
             completed(execution="NO-START", start_evidence_id=""),
