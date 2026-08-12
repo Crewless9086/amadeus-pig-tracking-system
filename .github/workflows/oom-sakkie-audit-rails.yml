@@ -144,6 +144,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202607270003_create_charlie_owner_execution_holds.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608090001_create_rootline_water_balance_ledger.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608090002_fix_rootline_water_balance_pgcrypto_search_path.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607210001_create_pig_lifecycle_events.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608110001_create_oom_protected_action_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608120002_allow_breeding_protected_claims.sql
 
