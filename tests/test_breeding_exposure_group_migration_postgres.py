@@ -45,6 +45,9 @@ class BreedingExposureGroupMigrationTests(unittest.TestCase):
                 sow_pig_id,boar_pig_id,occurred_on,planned_removal_on,observer_reference,
                 source_reference,idempotency_key) values('NEW-EVENT','NEW-EXPOSURE','GROUP-1',
                 'started','LEGACY-SOW','LEGACY-BOAR','2026-08-02','2026-08-18','owner','new','new-key')""")
-            cur.execute("select count(*) from public.pig_breeding_exposure_events")
-            self.assertEqual(cur.fetchone()[0],2)
+            cur.execute("""select exposure_event_id,exposure_group_identity
+                from public.pig_breeding_exposure_events
+                where exposure_event_id in ('LEGACY-EVENT','NEW-EVENT')
+                order by exposure_event_id""")
+            self.assertEqual(cur.fetchall(),[("LEGACY-EVENT",None),("NEW-EVENT","GROUP-1")])
             db.rollback()
