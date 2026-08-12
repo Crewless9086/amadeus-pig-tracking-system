@@ -29,6 +29,9 @@ def _semantic(domain, intent, **extra):
         "continuation": extra.get("continuation", False), "observation": extra.get("observation", ""),
         "observation_facts": extra.get("observation_facts", []),
         "confirmation_facts": extra.get("confirmation_facts"),
+        "breeding_facts": extra.get("breeding_facts", []),
+        "protected_preview_required": extra.get("protected_preview_required", False),
+        "recording_prohibited": extra.get("recording_prohibited", False),
         "requested_action": extra.get("requested_action", ""), "language": extra.get("language", "en"),
         "confidence": extra.get("confidence", .98), "needs_clarification": False,
         "clarification_question": ""}
@@ -104,6 +107,32 @@ def test_malformed_configuration_confirmation_facts_fail_closed():
         result = parse_semantic_response(_response(_semantic("rootline", "commissioning_ready",
             message_kind="confirmation", continuation=True,confirmation_facts=facts)))
         assert result.confirmation_facts is None
+
+
+def test_grouped_breeding_preview_facts_remain_complete_and_typed():
+    facts = [
+        {"kind":"exposure","sow":name,"boar":boar,"exposure_started_on":"2026-08-12","planned_days":17}
+        for name,boar in (("Sophie","Bola"),("Olive","Tyson"),("Shupe","Tyson"),
+                          ("Lucy","Tyson"),("Lolly","Prince"))]
+    facts += [{"kind":"recovery_hold","sow":"Ms Piggy","body_condition_score":2},
+              {"kind":"near_farrowing","sow":"Linda","prior_mating_known":False,
+               "father_known":False}]
+    result = parse_semantic_response(_response(_semantic("herd_management","breeding_update",
+        message_kind="observation",continuation=True,breeding_facts=facts,
+        protected_preview_required=True,recording_prohibited=True)))
+    assert len(result.breeding_facts) == 7
+    assert result.protected_preview_required and result.recording_prohibited
+    assert [row["sow"] for row in result.breeding_facts] == [
+        "Sophie","Olive","Shupe","Lucy","Lolly","Ms Piggy","Linda"]
+
+
+def test_duplicate_or_partial_grouped_breeding_shape_fails_closed():
+    facts = [{"kind":"exposure","sow":"Sophie","boar":"Bola",
+              "exposure_started_on":"2026-08-12","planned_days":17},
+             {"kind":"recovery_hold","sow":"Sophie","body_condition_score":2}]
+    result = parse_semantic_response(_response(_semantic("herd_management","breeding_update",
+        breeding_facts=facts,protected_preview_required=True,recording_prohibited=True)))
+    assert result.breeding_facts == ()
 
 
 def test_only_fresh_earlier_unambiguous_clarification_context_is_exposed():

@@ -37,6 +37,9 @@ class SemanticInterpretation:
     observation_facts: tuple[Mapping[str, Any], ...] = ()
     confirmation_facts: Mapping[str, bool] | None = None
     commissioning_facts: Mapping[str, bool] | None = None
+    breeding_facts: tuple[Mapping[str, Any], ...] = ()
+    protected_preview_required: bool = False
+    recording_prohibited: bool = False
     requested_action: str = ""
     language: str = "unknown"
     confidence: float = 0.0
@@ -97,6 +100,7 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
         facts = _observation_facts(value.get("observation_facts"))
         confirmation_facts = _confirmation_facts(value.get("confirmation_facts"))
         commissioning_facts = _commissioning_facts(value.get("commissioning_facts"))
+        breeding_facts = _breeding_facts(value.get("breeding_facts"))
         return SemanticInterpretation(domain=domain,
             intent=str(value.get("intent") or domain).strip()[:100], entity_refs=refs,
             message_kind=message_kind,
@@ -105,6 +109,9 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             observation_facts=facts,
             confirmation_facts=confirmation_facts,
             commissioning_facts=commissioning_facts,
+            breeding_facts=breeding_facts,
+            protected_preview_required=value.get("protected_preview_required") is True,
+            recording_prohibited=value.get("recording_prohibited") is True,
             requested_action=str(value.get("requested_action") or "").strip()[:120],
             language=str(value.get("language") or "unknown").strip()[:20],
             confidence=max(0.0, min(1.0, float(value.get("confidence") or 0))),
@@ -190,7 +197,8 @@ def _payload(parsed, context, source):
         "for facts the owner affirmatively or negatively states; supported keys are interlock_off and no_enabled_scene with "
         "literal true/false values. Never turn presence alone into setting facts. Return JSON only with "
         "domain,intent,message_kind,entity_refs,continuation,"
-        "observation,observation_facts,confirmation_facts,commissioning_facts,requested_action,language,confidence,"
+        "observation,observation_facts,confirmation_facts,commissioning_facts,breeding_facts,"
+        "protected_preview_required,recording_prohibited,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
         " For physical water observations, observation_facts must contain zero, one, or two objects using only "
         "subject storage_tanks or reservoir and either state LOW/OK/FULL or an exact fraction numerator/denominator. "
@@ -201,6 +209,12 @@ def _payload(parsed, context, source):
         "equivalents as a continuation of one unambiguous recent specialist setup question, not as a new physical tank observation."
         " When the active question asks about a supervised mixer proof, return commissioning_facts only for facts explicitly "
         "reported, using mixer_recirculating, pump_expected, and other_outputs_off with literal true/false values."
+        " For a grouped breeding update, preserve every named female once in breeding_facts. Each object uses kind exposure, "
+        "recovery_hold, or near_farrowing; sow; and only supported fields boar, exposure_started_on, planned_days, "
+        "body_condition_score, prior_mating_known, father_known, and factual_note. Physical placement is exposure, never "
+        "mating, service, conception, or pregnancy. If the owner requests a preview or says not to record, set "
+        "protected_preview_required true and recording_prohibited true. Such a direct protected update is not an answer "
+        "to an unrelated active manager question, even if conversational context exists."
     )
     user = {"message": str(parsed.get("text") or "")[:2000],
             "provider_message_id": str(parsed.get("provider_message_id") or "")[:80], "context": context}
@@ -276,6 +290,50 @@ def _commissioning_facts(value):
                         for key, item in value.items()):
         return None
     return {key: value[key] for key in sorted(value)}
+
+
+def _breeding_facts(value):
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not value or len(value) > 24:
+        return ()
+    allowed = {"kind", "sow", "boar", "exposure_started_on", "planned_days",
+               "body_condition_score", "prior_mating_known", "father_known", "factual_note"}
+    result, seen = [], set()
+    for raw in value:
+        if not isinstance(raw, Mapping) or any(key not in allowed for key in raw):
+            return ()
+        kind = str(raw.get("kind") or "").strip().lower()
+        sow = str(raw.get("sow") or "").strip()[:80]
+        if kind not in {"exposure", "recovery_hold", "near_farrowing"} or not sow:
+            return ()
+        identity = sow.casefold()
+        if identity in seen:
+            return ()
+        seen.add(identity)
+        item = {"kind": kind, "sow": sow}
+        if kind == "exposure":
+            boar = str(raw.get("boar") or "").strip()[:80]
+            started = str(raw.get("exposure_started_on") or "").strip()
+            days = raw.get("planned_days")
+            if not boar or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", started) or type(days) is not int or not 1 <= days <= 60:
+                return ()
+            item.update(boar=boar, exposure_started_on=started, planned_days=days)
+        elif kind == "recovery_hold":
+            score = raw.get("body_condition_score")
+            if not isinstance(score, (int, float)) or isinstance(score, bool) or not 1 <= float(score) <= 5:
+                return ()
+            item["body_condition_score"] = float(score)
+        else:
+            for field in ("prior_mating_known", "father_known"):
+                if type(raw.get(field)) is not bool:
+                    return ()
+                item[field] = raw[field]
+        note = str(raw.get("factual_note") or "").strip()[:240]
+        if note:
+            item["factual_note"] = note
+        result.append(item)
+    return tuple(result)
 
 
 def _eligible_clarification_context(rows, parsed):
