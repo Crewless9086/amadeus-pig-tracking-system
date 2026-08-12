@@ -72,6 +72,23 @@ class MatingRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Only Confirmed_Pregnant", response.get_json()["errors"][0])
 
+    @patch("modules.pig_weights.mating_routes.require_owner_read_access")
+    @patch("modules.pig_weights.mating_routes.get_mating_overview")
+    def test_matings_anonymous_is_denied_before_canonical_read(self, overview, guard):
+        guard.return_value = ({"success": False, "error": "owner_read_required"}, 403)
+        response = self.client.get("/api/pig-weights/matings")
+        self.assertEqual(response.status_code, 403)
+        overview.assert_not_called()
+
+    @patch("modules.pig_weights.mating_routes.require_owner_read_access", return_value=None)
+    @patch("modules.pig_weights.mating_routes.get_mating_overview")
+    def test_matings_owner_read_returns_private_canonical_projection(self, overview, _guard):
+        overview.return_value = [{"sow_pig_id": "SOW-1", "sow_name": "Sophie"}]
+        response = self.client.get("/api/pig-weights/matings")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["records"][0]["sow_name"], "Sophie")
+        self.assertEqual(response.headers["Cache-Control"], "no-store, private")
+
     @patch("modules.pig_weights.mating_routes.require_owner_read_access", return_value=None)
     @patch("modules.pig_weights.mating_routes.get_breeding_attention_source_snapshot")
     def test_breeding_attention_owner_read_is_advisory_and_write_free(

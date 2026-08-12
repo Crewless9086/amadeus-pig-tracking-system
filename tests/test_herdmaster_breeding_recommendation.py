@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from modules.pig_weights.herdmaster_breeding_recommendation import evaluate_breeding_attention
+from modules.pig_weights.herdmaster_breeding_policy import BREEDING_BODY_CONDITION_MIN
 
 
 TODAY = date(2026, 8, 5)
@@ -390,3 +391,11 @@ def test_only_no_active_cycle_with_missing_physical_evidence_is_a_session_candid
     held_packets = [row for row in result["oom_sakkie_packet"]["cases"] if row["tag_number"] != "Ready"]
     assert all("future_primary_boar" not in row and "future_reserve_boar" not in row for row in held_packets)
     assert all(row["recommended_boar"] is None and row["conditional_primary_boar"] is None for row in held_packets)
+def test_shared_body_condition_threshold_holds_real_low_scores_but_not_three():
+    assert BREEDING_BODY_CONDITION_MIN == 3
+    base = sow(current_cycle={"state":"eligible_for_mating_review"})
+    for score in (1, 2):
+        held = run(females=[{**base,"observations":{"body_condition":score}}])
+        assert held["cases"][0]["state"] == "held"
+    supported = run(females=[{**base,"observations":{"body_condition":3}}])
+    assert supported["cases"][0]["state"] == "eligible_for_mating_review"

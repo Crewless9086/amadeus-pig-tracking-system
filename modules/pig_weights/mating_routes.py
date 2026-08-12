@@ -232,12 +232,17 @@ def breeding_options():
 
 @mating_bp.route("/matings", methods=["GET"])
 def mating_list():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
     records = get_mating_overview()
-    return jsonify({
+    response = jsonify({
         "success": True,
         "count": len(records),
         "records": records
     })
+    response.headers["Cache-Control"] = "no-store, private"
+    return response
 
 
 @mating_bp.route("/breeding-analytics", methods=["GET"])
