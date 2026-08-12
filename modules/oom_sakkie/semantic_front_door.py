@@ -38,6 +38,8 @@ class SemanticInterpretation:
     breeding_actions: tuple[Mapping[str, Any], ...] = ()
     confirmation_facts: Mapping[str, bool] | None = None
     commissioning_facts: Mapping[str, bool] | None = None
+    protected_preview_required: bool = False
+    recording_prohibited: bool = False
     requested_action: str = ""
     language: str = "unknown"
     confidence: float = 0.0
@@ -108,6 +110,8 @@ def parse_semantic_response(body: str) -> SemanticInterpretation | None:
             breeding_actions=breeding_actions,
             confirmation_facts=confirmation_facts,
             commissioning_facts=commissioning_facts,
+            protected_preview_required=value.get("protected_preview_required") is True,
+            recording_prohibited=value.get("recording_prohibited") is True,
             requested_action=str(value.get("requested_action") or "").strip()[:120],
             language=str(value.get("language") or "unknown").strip()[:20],
             confidence=max(0.0, min(1.0, float(value.get("confidence") or 0))),
@@ -193,12 +197,14 @@ def _payload(parsed, context, source):
         "for facts the owner affirmatively or negatively states; supported keys are interlock_off and no_enabled_scene with "
         "literal true/false values. Never turn presence alone into setting facts. Return JSON only with "
         "domain,intent,message_kind,entity_refs,continuation,"
-        "observation,observation_facts,breeding_actions,confirmation_facts,commissioning_facts,requested_action,language,confidence,"
+        "observation,observation_facts,breeding_actions,confirmation_facts,commissioning_facts,"
+        "protected_preview_required,recording_prohibited,requested_action,language,confidence,"
         "needs_clarification,clarification_question."
         " For an owner report of actual boar placements, removals, a body-condition recovery hold or clearance, or a sow appearing close to farrowing, "
         "return breeding_actions with one object per supplied sow. Use animal_ref and, for exposure, boar_ref; supported action values are exposure, "
         "exposure_removal, recovery_hold, recovery_clearance, and near_farrowing. Preserve only explicitly supplied exposure_started_on, "
-        "planned_removal_on, actual_removed_on, exposure_identity, body_condition_score, observed_at, and factual_note. Never infer a service, "
+        "planned_days, planned_removal_on, actual_removed_on, exposure_identity, body_condition_score, observed_at, "
+        "prior_mating_known, father_known, and factual_note. Never infer a service, "
         "conception, pregnancy, father, mating date, animal identity, or omitted group member."
         " For physical water observations, observation_facts must contain zero, one, or two objects using only "
         "subject storage_tanks or reservoir and either state LOW/OK/FULL or an exact fraction numerator/denominator. "
@@ -209,6 +215,12 @@ def _payload(parsed, context, source):
         "equivalents as a continuation of one unambiguous recent specialist setup question, not as a new physical tank observation."
         " When the active question asks about a supervised mixer proof, return commissioning_facts only for facts explicitly "
         "reported, using mixer_recirculating, pump_expected, and other_outputs_off with literal true/false values."
+        " For a grouped breeding update, preserve every named female once in breeding_actions. Physical placement is "
+        "exposure, never mating, service, conception, or pregnancy. Preserve a shared duration as planned_days; deterministic "
+        "code calculates the removal date. Preserve explicit Unknown mating/father evidence with false prior_mating_known and "
+        "father_known values. If the owner requests a preview or says not to record, set "
+        "protected_preview_required true and recording_prohibited true. Such a direct protected update is not an answer "
+        "to an unrelated active manager question, even if conversational context exists."
     )
     user = {"message": str(parsed.get("text") or "")[:2000],
             "provider_message_id": str(parsed.get("provider_message_id") or "")[:80], "context": context}
@@ -245,7 +257,7 @@ def _strip_fence(value):
 def _observation_facts(value):
     if not isinstance(value, list) or len(value) > 2:
         return ()
-    result = []
+    result, seen = [], set()
     for raw in value:
         if not isinstance(raw, Mapping):
             return ()
@@ -272,9 +284,10 @@ def _breeding_actions(value):
     if not isinstance(value, list) or not 1 <= len(value) <= 24:
         return ()
     allowed = {"exposure", "exposure_removal", "recovery_hold", "recovery_clearance", "near_farrowing"}
-    keys = {"animal_ref", "boar_ref", "action", "exposure_started_on", "planned_removal_on",
-            "actual_removed_on", "exposure_identity", "body_condition_score", "observed_at", "factual_note"}
-    result = []
+    keys = {"animal_ref", "boar_ref", "action", "exposure_started_on", "planned_days", "planned_removal_on",
+            "actual_removed_on", "exposure_identity", "body_condition_score", "observed_at", "factual_note",
+            "prior_mating_known", "father_known"}
+    result, seen = [], set()
     for raw in value:
         if not isinstance(raw, Mapping) or set(raw) - keys:
             return ()
@@ -282,10 +295,21 @@ def _breeding_actions(value):
         animal_ref = str(raw.get("animal_ref") or "").strip()[:80]
         if action not in allowed or not animal_ref:
             return ()
+        identity = animal_ref.casefold()
+        if identity in seen:
+            return ()
+        seen.add(identity)
         item = {"action": action, "animal_ref": animal_ref}
         for key in keys - {"action", "animal_ref"}:
             if raw.get(key) not in (None, ""):
-                item[key] = raw[key] if key == "body_condition_score" else str(raw[key]).strip()[:500]
+                item[key] = raw[key] if key in {"body_condition_score", "planned_days",
+                    "prior_mating_known", "father_known"} else str(raw[key]).strip()[:500]
+        if "planned_days" in item and (type(item["planned_days"]) is not int
+                or not 1 <= item["planned_days"] <= 60):
+            return ()
+        if any(key in item and type(item[key]) is not bool
+               for key in ("prior_mating_known", "father_known")):
+            return ()
         result.append(item)
     return tuple(result)
 

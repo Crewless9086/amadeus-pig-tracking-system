@@ -333,6 +333,22 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if semantic is not None:
         parsed = {**parsed, "semantic": semantic.as_hint()}
 
+    breeding_result, breeding_status = handle_grouped_breeding_message(parsed, gateway_authority)
+    if breeding_result.get("handled"):
+        delivery = (deliver_family_result(parsed, breeding_result, specialist="HERDMASTER",
+            mission_id=str(breeding_result.get("mission_id") or ""),
+            card_mission_id=str(breeding_result.get("card_mission_id") or ""))
+            if breeding_result.get("answer") else {"success": False, "telegram_sends": 0, "telegram_edits": 0})
+        delivery = _bind_protected_preview_card(breeding_result, delivery)
+        body, _ = _gateway_result(delivery.get("success") is True,
+            str(breeding_result.get("status") or "contained"), policy, breeding_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"], "telegram_chat_id": parsed["telegram_chat_id"],
+            "text": parsed["text"], "answer": breeding_result.get("answer", ""), "message": breeding_result,
+            "delivery": delivery, "records_audit_trace": True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+        return body, breeding_status if delivery.get("success") else 202
+
     manager_reply, manager_reply_status = handle_manager_question_reply(
         parsed, gateway_authority, semantic, question=active_manager_question)
     if manager_reply.get("handled"):
@@ -424,22 +440,6 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         body["writes"] = operational_result.get("writes_farm_data")
         body["writes_unknown"] = operational_result.get("writes_farm_data_unknown") is True
         return body, 200 if delivery.get("success") else 202
-
-    breeding_result, breeding_status = handle_grouped_breeding_message(parsed, gateway_authority)
-    if breeding_result.get("handled"):
-        delivery = (deliver_family_result(parsed, breeding_result, specialist="HERDMASTER",
-            mission_id=str(breeding_result.get("mission_id") or ""),
-            card_mission_id=str(breeding_result.get("card_mission_id") or ""))
-            if breeding_result.get("answer") else {"success": False, "telegram_sends": 0, "telegram_edits": 0})
-        delivery = _bind_protected_preview_card(breeding_result, delivery)
-        body, _ = _gateway_result(delivery.get("success") is True,
-            str(breeding_result.get("status") or "contained"), policy, breeding_status)
-        body.update({"telegram_user_id": parsed["telegram_user_id"], "telegram_chat_id": parsed["telegram_chat_id"],
-            "text": parsed["text"], "answer": breeding_result.get("answer", ""), "message": breeding_result,
-            "delivery": delivery, "records_audit_trace": True,
-            "reply_transport": "backend_handles_owner_task_delivery",
-            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
-        return body, breeding_status if delivery.get("success") else 202
 
     weight_result, weight_status = handle_grouped_weight_message(parsed, gateway_authority)
     if weight_result.get("handled"):

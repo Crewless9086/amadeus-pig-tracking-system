@@ -3,6 +3,7 @@ from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import (
     ACTION_KIND,
     handle_grouped_breeding_message,
 )
+from pathlib import Path
 
 
 def _parsed(rows):
@@ -77,3 +78,50 @@ def test_non_owner_is_fail_closed():
         parsed, issue_gateway_owner_authority("42", "99"))
     assert status == 403
     assert result["writes_farm_data"] is False
+
+
+def test_claim_persistence_failure_is_visibly_contained_without_write():
+    result,status=handle_grouped_breeding_message(_parsed([
+        {"animal_ref":"Ms Piggy","action":"recovery_hold","body_condition_score":2,
+         "observed_at":"2026-08-12T08:00:00+02:00","factual_note":"BCS 2"},
+    ]),issue_gateway_owner_authority("42","42"),evidence_loader=_evidence,
+       claim_creator=lambda **_kwargs:(_ for _ in ()).throw(RuntimeError("constraint")))
+    assert status == 503 and result["status"] == "breeding_group_claim_unavailable"
+    assert result["writes_farm_data"] is False and "Nothing was recorded" in result["answer"]
+    assert "retained" not in result["answer"].lower()
+    assert "original provider-bound message" in result["answer"]
+
+
+def test_claim_kind_migration_is_idempotent_private_and_allows_breeding():
+    sql=Path("supabase/migrations/202608120002_allow_breeding_protected_claims.sql").read_text().lower()
+    assert "herdmaster_breeding_grouped" in sql
+    assert "drop constraint" in sql and "add constraint" in sql
+    assert "revoke all on app_private.oom_protected_action_claims from public, anon, authenticated" in sql
+    assert "on conflict (migration_id) do nothing" in sql
+
+
+def test_genuine_seven_row_update_calculates_duration_and_renders_every_fact():
+    evidence={"success":True,"allocation_inputs":{"pig_master_rows":[
+        {"Pig_ID":pig_id,"Tag_Number":name} for name,pig_id in
+        (("Sophie","S1"),("Olive","S2"),("Shupe","S3"),("Lucy","S4"),("Lolly","S5"),
+         ("Ms Piggy","S6"),("Linda","S7"),("Bola","B1"),("Tyson","B2"),("Prince","B3"))]}}
+    rows=[{"animal_ref":sow,"action":"exposure","boar_ref":boar,
+           "exposure_started_on":"2026-08-12","planned_days":17}
+          for sow,boar in (("Sophie","Bola"),("Olive","Tyson"),("Shupe","Tyson"),
+                           ("Lucy","Tyson"),("Lolly","Prince"))]
+    rows += [{"animal_ref":"Ms Piggy","action":"recovery_hold","body_condition_score":2,
+              "observed_at":"2026-08-12T11:41:25+00:00"},
+             {"animal_ref":"Linda","action":"near_farrowing","prior_mating_known":False,
+              "father_known":False,"observed_at":"2026-08-12T11:41:25+00:00"}]
+    captured={}
+    result,status=handle_grouped_breeding_message(_parsed(rows),
+        issue_gateway_owner_authority("42","42"),evidence_loader=lambda:evidence,
+        claim_creator=lambda **kwargs:(captured.update(kwargs) or {"callback_token":"TOKEN"}))
+    assert status == 200 and result["status"] == "breeding_grouped_preview_ready"
+    preview=captured["preview_payload"]["preview"]
+    assert preview["row_count"] == 7
+    assert [row["planned_removal_on"] for row in preview["rows"][:5]] == ["2026-08-29"]*5
+    assert all(name in result["answer"] for name in
+               ("Sophie","Olive","Shupe","Lucy","Lolly","Ms Piggy","Linda"))
+    assert "Nothing has been recorded yet" in result["answer"]
+    assert "previous mating date and father Unknown" in result["answer"]

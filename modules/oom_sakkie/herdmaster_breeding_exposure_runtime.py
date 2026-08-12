@@ -6,7 +6,9 @@ and delegates confirmed execution to the HERDMASTER grouped contract.
 """
 from __future__ import annotations
 
+from datetime import date, timedelta
 import hashlib
+import html
 import json
 
 from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authority
@@ -55,9 +57,15 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
                 "answer": "I could not bind the complete group. Please correct the listed facts once; nothing was recorded.",
                 **_zero()}, 200
     creator = claim_creator or create_claim
-    claim = creator(action_kind=ACTION_KIND, owner_user_id=owner, private_chat_id=chat,
-                    mission_id=mission, provider_message_id=str(parsed.get("provider_message_id") or ""),
-                    evidence_generation=generation, preview_payload=preview)
+    try:
+        claim = creator(action_kind=ACTION_KIND, owner_user_id=owner, private_chat_id=chat,
+                        mission_id=mission, provider_message_id=str(parsed.get("provider_message_id") or ""),
+                        evidence_generation=generation, preview_payload=preview)
+    except Exception:
+        return {"handled": True, "success": False, "status": "breeding_group_claim_unavailable",
+                "answer": ("I understood the complete group, but could not store its protected preview safely. "
+                           "Nothing was recorded. The original provider-bound message remains the recovery source."),
+                **_zero()}, 503
     return {"handled": True, "success": True, "status": "breeding_grouped_preview_ready",
             "mission_id": mission, "card_mission_id": mission,
             "preview": preview["preview"], "preview_sha256": preview["preview_sha256"],
@@ -74,10 +82,24 @@ def execute_claimed_group(claimed, *, actor_id, connect_factory):
 
 
 def _summary(rows):
-    labels = ", ".join(str(row.get("label") or row.get("pig_id")) for row in rows)
-    return (f"HERDMASTER preview: {len(rows)} animals ({labels}). This records only the displayed "
-            "exposures or observations. It creates no mating, conception, pregnancy, movement or litter. "
-            "Confirm the complete preview once, or request a change.")
+    lines = ["<b>HERDMASTER — GROUPED BREEDING PREVIEW</b>", ""]
+    for row in rows:
+        label = html.escape(str(row.get("label") or row.get("pig_id")))
+        if row.get("action") == "exposure":
+            boar = html.escape(str(row.get("boar_label") or row.get("boar_pig_id")))
+            lines.append(f"• <b>{label}</b> — with {boar} from {row['exposure_started_on']} "
+                         f"to {row['planned_removal_on']} (exposure only).")
+        elif row.get("action") == "recovery_hold":
+            lines.append(f"• <b>{label}</b> — recovery hold; body condition "
+                         f"{float(row['body_condition_score']):g}.")
+        elif row.get("action") == "near_farrowing":
+            lines.append(f"• <b>{label}</b> — appears close to farrowing; previous mating date "
+                         "and father Unknown.")
+        else:
+            lines.append(f"• <b>{label}</b> — {html.escape(str(row.get('action') or 'review'))}.")
+    lines += ["", "Nothing has been recorded yet. Confirm this complete group to record it once.",
+              "This does not record mating, conception, pregnancy, movement or a litter."]
+    return "\n".join(lines)
 
 
 def _resolve_rows(raw_rows, evidence):
@@ -111,6 +133,34 @@ def _resolve_rows(raw_rows, evidence):
                 errors.append(f"{boar_ref}: exact boar identity")
                 continue
             row["boar_pig_id"] = boar
+            row["boar_label"] = labels.get(boar, boar)
+        planned_days = row.pop("planned_days", None)
+        if planned_days is not None:
+            try:
+                started = date.fromisoformat(str(row.get("exposure_started_on") or ""))
+                days = int(planned_days)
+            except (TypeError, ValueError):
+                errors.append(f"{labels.get(sow, sow)}: exact exposure duration")
+                continue
+            if not 1 <= days <= 60:
+                errors.append(f"{labels.get(sow, sow)}: exact exposure duration")
+                continue
+            calculated = (started + timedelta(days=days)).isoformat()
+            if row.get("planned_removal_on") and str(row["planned_removal_on"]) != calculated:
+                errors.append(f"{labels.get(sow, sow)}: exposure duration conflicts with removal date")
+                continue
+            row["planned_removal_on"] = calculated
+        prior_known = row.pop("prior_mating_known", None)
+        father_known = row.pop("father_known", None)
+        if row.get("action") == "recovery_hold":
+            row["factual_note"] = str(row.get("factual_note") or
+                "Owner reports body condition and directs recovery hold.")
+        if row.get("action") == "near_farrowing":
+            if prior_known is True or father_known is True:
+                errors.append(f"{labels.get(sow, sow)}: previous mating date and father must remain Unknown")
+                continue
+            row["factual_note"] = str(row.get("factual_note") or
+                "Owner reports she appears close to farrowing; previous mating date and father are unknown.")
         row["pig_id"] = sow
         row["label"] = labels.get(sow, sow)
         resolved.append(row)
