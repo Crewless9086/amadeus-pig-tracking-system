@@ -141,6 +141,7 @@ def _summary(rows):
 
 def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
     master = ((evidence or {}).get("allocation_inputs") or {}).get("pig_master_rows") or []
+    pen_lookup = ((evidence or {}).get("allocation_inputs") or {}).get("pen_lookup") or {}
     index = {}
     labels = {}
     for row in master:
@@ -155,6 +156,16 @@ def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
                 index.setdefault(key, []).append(pig_id)
     def exact(reference):
         matches = list(dict.fromkeys(index.get(str(reference or "").strip().casefold(), [])))
+        return matches[0] if len(matches) == 1 else None
+    def exact_pen(reference):
+        ref = re.sub(r"\b0+(\d+)\b", r"\1", str(reference or "").strip().casefold())
+        matches=[]
+        for pen_id, value in pen_lookup.items():
+            label = value.get("pen_name") if isinstance(value, dict) else ""
+            aliases = {str(pen_id).strip().casefold(), str(label).strip().casefold(),
+                       re.sub(r"\b0+(\d+)\b", r"\1", str(label).strip().casefold())}
+            if ref in aliases:
+                matches.append((str(pen_id), str(label or pen_id)))
         return matches[0] if len(matches) == 1 else None
     resolved, errors = [], []
     exposure_rows = list((evidence or {}).get("exposure_rows") or ())
@@ -192,6 +203,17 @@ def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
             row["exposure_identity"]=str(active_row.get("exposure_identity") or "")
             row["exposure_group_identity"]=str(active_row.get("exposure_group_identity") or "") or None
             row["exposure_started_on"]=str(active_row.get("occurred_on") or "")
+        placement_ref = row.pop("placement_pen_ref", None)
+        if placement_ref:
+            destination = exact_pen(placement_ref)
+            if not destination:
+                errors.append(f"{placement_ref}: exact active pen identity")
+                continue
+            sow_master = next((item for item in master if str(item.get("Pig_ID") or item.get("pig_id") or "") == sow), {})
+            boar_master = next((item for item in master if str(item.get("Pig_ID") or item.get("pig_id") or "") == row.get("boar_pig_id")), {})
+            row.update(placement_pen_id=destination[0], placement_pen_name=destination[1],
+                       sow_current_pen_id=str(sow_master.get("Current_Pen_ID") or sow_master.get("current_pen_id") or ""),
+                       boar_current_pen_id=str(boar_master.get("Current_Pen_ID") or boar_master.get("current_pen_id") or ""))
         planned_days = row.pop("planned_days", None)
         if planned_days is not None:
             try:

@@ -20,10 +20,25 @@ def _parsed(rows):
 
 def _evidence():
     return {"success": True, "allocation_inputs": {"pig_master_rows": [
-        {"Pig_ID":"SOW-1","Tag_Number":"Ms Piggy"},
+        {"Pig_ID":"SOW-1","Tag_Number":"Ms Piggy","Current_Pen_ID":"PEN-17"},
         {"Pig_ID":"SOW-2","Tag_Number":"Linda"},
-        {"Pig_ID":"BOAR-1","Tag_Number":"Bola"},
-    ]}}
+        {"Pig_ID":"BOAR-1","Tag_Number":"Bola","Current_Pen_ID":"PEN-18"},
+    ],"pen_lookup":{"PEN-003":{"pen_id":"PEN-003","pen_name":"Kraam Saal 03"}}}}
+
+
+def test_semantic_placement_resolves_one_pen_and_unified_movement_preview():
+    captured={}
+    result,status=handle_grouped_breeding_message(_parsed([{
+        "animal_ref":"Ms Piggy","action":"exposure","boar_ref":"Bola",
+        "exposure_started_on":"2026-08-12","planned_days":17,
+        "placement_pen_ref":"Kraam Saal 3"}]),issue_gateway_owner_authority("42","42"),
+        claim_creator=lambda **kwargs:(captured.update(kwargs) or {"callback_token":"T"}),
+        evidence_loader=_evidence)
+    assert status == 200 and result["success"] is True
+    preview=captured["preview_payload"]
+    assert preview["creates_movement"] is True
+    assert {row["pig_id"] for row in preview["preview"]["movements"]} == {"SOW-1","BOAR-1"}
+    assert {row["to_pen_id"] for row in preview["preview"]["movements"]} == {"PEN-003"}
 
 
 def test_authenticated_group_creates_one_existing_rail_claim_and_no_write():

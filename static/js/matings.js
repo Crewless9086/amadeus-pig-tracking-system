@@ -549,6 +549,7 @@ function renderMatingCard(record) {
               <div>
                 <div class="history-label">Service evidence</div>
                 <div class="history-value">${escapeHtml(record.mating_date || ((record.service_window_start && record.service_window_end) ? `${record.service_window_start} – ${record.service_window_end} (exposure estimate; exact service unknown)` : "Unknown"))}</div>
+                ${record.source_exposure_identity ? (record.breeding_cycle_state ? `<div class="pig-list-meta">Status: ${escapeHtml(record.breeding_cycle_state)} · IN: ${escapeHtml(record.service_window_start || "Onbekend")} · ${record.exposure_actual_removal_on ? "Werklike UIT" : "Beplande UIT"}: ${escapeHtml(record.exposure_actual_removal_on || record.exposure_planned_removal_on || record.service_window_end || "Onbekend")}<br>Verwagte Jong Vanaf: ${escapeHtml(record.expected_farrowing_window_start || "Onbekend")} · Verwagte Jong Tot: ${escapeHtml(record.expected_farrowing_window_end || "Onbekend")}<br>Presiese diensdatum, konsepsie en dragtigheid: Onbekend</div>` : `<div class="pig-list-meta">Status: Ongeklassifiseerde historiese blootstelling · IN/UIT: Onbekend</div>`) : ""}
               </div>
               <div>
                 <div class="history-label">Days Since Mating</div>

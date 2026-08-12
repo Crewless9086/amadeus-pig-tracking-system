@@ -1691,6 +1691,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("data-pig-profile", js)
         self.assertIn("pigProfileHref", js)
         self.assertIn("return_to", js)
+
         self.assertIn("return_label", js)
         self.assertIn("updateBackLinkFromQuery", js)
         self.assertIn("safeInternalReturnPath", js)
@@ -1794,6 +1795,11 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("withReturnContext", js)
         self.assertIn('"Back to Breeding Board"', js)
         self.assertIn("return_to", js)
+
+    def test_mating_board_does_not_infer_active_state_for_legacy_exposure(self):
+        js = Path("static/js/matings.js").read_text(encoding="utf-8")
+        self.assertIn("Ongeklassifiseerde historiese blootstelling", js)
+        self.assertNotIn('record.breeding_cycle_state || "Exposure Active"', js)
 
     def test_add_litter_can_prefill_from_mating_query_param(self):
         js = Path("static/js/addLitter.js").read_text(encoding="utf-8")
