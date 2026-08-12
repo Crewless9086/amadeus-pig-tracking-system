@@ -1,5 +1,19 @@
 # Next Steps
 
+## HERDMASTER piglet weaning observations
+
+- Owner-approved mission:
+  `docs/06-operations/HERDMASTER_PIGLET_WEANING_OBSERVATION_PLAN_20260812.md`.
+- Add fast, exact-pig positive observation capture to Weaning Day plus a
+  historical paper-note path, reusing the append-only
+  `pig_observation_events` rail.
+- Codex owns the application capture and local visual acceptance; HERDMASTER
+  owns later cited purpose/breeding-review consumption.
+- Do not use Section 5/death notes, `General_Notes`, or a second observation
+  ledger. Do not automatically classify a pig.
+- Business completion requires one genuine owner observation, exact production
+  readback, a HERDMASTER explanation that cites it, and zero-effect replay.
+
 ## Oom Sakkie protected mortality and grouped weights
 
 - Deployed through PRs #820/#821; Pig 130 is canonically Dead/off-farm with effective date 2026-08-06, and the original event remains immutable.

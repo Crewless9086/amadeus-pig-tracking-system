@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-08-12 - Piglet weaning observation mission approved
+
+- Recorded Charl's real-world need to capture favourable pig-specific
+  observations while entering Weaning Day records without opening every pig
+  profile.
+- Kept Section 5 constrained to pre-weaning death capture and rejected litter
+  notes, medical notes and `General_Notes` as substitute evidence stores.
+- Bound the future capture workflow to the existing append-only
+  `pig_observation_events` rail with exact pig, litter, observation-date and
+  owner provenance.
+- Assigned Codex ownership of the capture UI/backend journey and HERDMASTER
+  ownership of cited advisory consumption in later purpose and breeding review.
+- Preserved the 14-day purpose-review rule and prohibited automatic purpose,
+  breeding, lifecycle, medical, movement or commercial effects.
+
 ## 2026-08-12 - Actionable Oom Sakkie manager candidate prepared
 
 - Integrated Charl's approved actionable daily-manager mission document and

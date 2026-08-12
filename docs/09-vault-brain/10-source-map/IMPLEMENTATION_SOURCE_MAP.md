@@ -120,6 +120,13 @@
   capacity. A low service count means less proven, not genetically superior;
   new boars receive controlled trials. Recommendations have zero mating or
   movement authority.
+- Owner-approved piglet weaning-observation mission:
+  `docs/06-operations/HERDMASTER_PIGLET_WEANING_OBSERVATION_PLAN_20260812.md`.
+  It extends the existing litter Weaning Day workflow with exact-pig positive
+  observation capture, reuses `pig_observation_events`, and adds a separate
+  historical paper-note path. Codex owns the capture UI/backend integration;
+  HERDMASTER owns cited advisory consumption. It creates no second observation
+  store and has no automatic purpose or breeding authority.
 
 ## Rootline owner daily brief
 
