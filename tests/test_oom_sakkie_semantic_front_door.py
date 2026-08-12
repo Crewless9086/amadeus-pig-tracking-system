@@ -417,3 +417,18 @@ def test_authenticated_owner_clarification_never_falls_back_to_keyword_code(
     assert status == 200
     assert result["needs_clarification"] is True
     assert result["tool_used"] == ""
+
+
+def test_parse_semantic_response_preserves_only_bounded_breeding_actions():
+    payload = _semantic("herd_management", "breeding_grouped_facts")
+    payload["breeding_actions"] = [
+        {"animal_ref":"Ms Piggy","action":"recovery_hold","body_condition_score":2,
+         "observed_at":"2026-08-12T08:00:00+02:00","factual_note":"BCS 2"},
+        {"animal_ref":"Linda","action":"near_farrowing",
+         "observed_at":"2026-08-12T08:00:00+02:00","factual_note":"Close to farrowing"},
+    ]
+    result = parse_semantic_response(_response(payload))
+    assert len(result.breeding_actions) == 2
+    assert result.breeding_actions[0]["animal_ref"] == "Ms Piggy"
+    assert result.breeding_actions[0]["body_condition_score"] == 2
+    assert result.breeding_actions[1]["action"] == "near_farrowing"

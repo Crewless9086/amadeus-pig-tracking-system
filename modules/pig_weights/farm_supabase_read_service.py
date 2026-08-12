@@ -15,6 +15,7 @@ ALLOCATION_READ_STAGES = (
 BREEDING_ATTENTION_READ_STAGES = ALLOCATION_READ_STAGES + (
     "mating_chronology",
     "human_observations",
+    "boar_exposures",
 )
 ALLOCATION_TOTAL_DEADLINE_SECONDS = 20.0
 ALLOCATION_STATEMENT_TIMEOUT_SECONDS = 3.0
@@ -1027,6 +1028,16 @@ def get_breeding_attention_source_snapshot(
             """,
             connect_factory=snapshot,
         )
+        exposure_rows = _fetch_all(
+            """
+            select exposure_event_id, exposure_identity, event_kind,
+                   sow_pig_id, boar_pig_id, occurred_on,
+                   planned_removal_on, created_at
+            from public.pig_breeding_exposure_events
+            order by exposure_identity, occurred_on, exposure_event_id
+            """,
+            connect_factory=snapshot,
+        )
         if snapshot.remaining_seconds() <= 0:
             raise TimeoutError("breeding snapshot deadline exhausted during projection")
         allocation_inputs["read_progress"] = snapshot.progress()
@@ -1036,6 +1047,7 @@ def get_breeding_attention_source_snapshot(
             "allocation_inputs": allocation_inputs,
             "mating_rows": mating_rows,
             "observation_rows": observation_rows,
+            "exposure_rows": exposure_rows,
             "read_progress": snapshot.progress(),
         }
 
