@@ -6,7 +6,7 @@ and delegates confirmed execution to the HERDMASTER grouped contract.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import hashlib
 import html
 import json
@@ -31,6 +31,12 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
     chat = str(parsed.get("telegram_chat_id") or "")
     if not validates_gateway_owner_authority(authority) or owner != chat or authority.owner_user_id != owner:
         return {"handled": True, "success": False, "status": "breeding_group_owner_required", **_zero()}, 403
+    provider_message_id = str(parsed.get("provider_message_id") or "").strip()
+    provider_timestamp = _provider_timestamp(parsed.get("provider_timestamp"))
+    if not provider_message_id or not provider_timestamp:
+        return {"handled": True, "success": False, "status": "breeding_provider_provenance_required",
+                "answer": ("I could not verify this message's provider identity and time safely. "
+                           "Nothing was recorded."), **_zero()}, 422
     if evidence_loader is None:
         from modules.pig_weights.farm_supabase_read_service import get_breeding_attention_source_snapshot
         evidence_loader = get_breeding_attention_source_snapshot
@@ -39,7 +45,8 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
     except Exception:
         return {"handled": True, "success": False, "status": "breeding_evidence_unavailable",
                 "answer": "I could not verify the current animals safely. Nothing was recorded.", **_zero()}, 503
-    rows, resolution_errors = _resolve_rows(raw_rows, evidence)
+    rows, resolution_errors = _resolve_rows(raw_rows, evidence,
+        provider_timestamp=provider_timestamp)
     if resolution_errors:
         return {"handled": True, "success": False, "status": "breeding_identity_clarification_required",
                 "errors": resolution_errors, "question_count": 1,
@@ -49,7 +56,7 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
                                 separators=(",", ":")).encode()).hexdigest()
     preview = build_grouped_preview({"rows": rows}, evidence_generation=generation)
     mission = "OOM-HERD-BREED-" + hashlib.sha256(
-        f"{owner}|{parsed.get('provider_message_id')}|{json.dumps(rows, sort_keys=True)}".encode()
+        f"{owner}|{provider_message_id}|{json.dumps(rows, sort_keys=True)}".encode()
     ).hexdigest()[:24].upper()
     if preview.get("success") is not True:
         return {"handled": True, "success": False, "status": preview["status"],
@@ -59,7 +66,7 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
     creator = claim_creator or create_claim
     try:
         claim = creator(action_kind=ACTION_KIND, owner_user_id=owner, private_chat_id=chat,
-                        mission_id=mission, provider_message_id=str(parsed.get("provider_message_id") or ""),
+                        mission_id=mission, provider_message_id=provider_message_id,
                         evidence_generation=generation, preview_payload=preview)
     except Exception:
         return {"handled": True, "success": False, "status": "breeding_group_claim_unavailable",
@@ -106,7 +113,7 @@ def _summary(rows):
     return "\n".join(lines)
 
 
-def _resolve_rows(raw_rows, evidence):
+def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
     master = ((evidence or {}).get("allocation_inputs") or {}).get("pig_master_rows") or []
     index = {}
     labels = {}
@@ -157,6 +164,7 @@ def _resolve_rows(raw_rows, evidence):
         prior_known = row.pop("prior_mating_known", None)
         father_known = row.pop("father_known", None)
         if row.get("action") == "recovery_hold":
+            row["observed_at"] = provider_timestamp
             row["factual_note"] = str(row.get("factual_note") or
                 "Owner reports body condition and directs recovery hold.")
         if row.get("action") == "near_farrowing":
@@ -165,10 +173,21 @@ def _resolve_rows(raw_rows, evidence):
                 continue
             row["factual_note"] = str(row.get("factual_note") or
                 "Owner reports she appears close to farrowing; previous mating date and father are unknown.")
+            row["observed_at"] = provider_timestamp
         row["pig_id"] = sow
         row["label"] = labels.get(sow, sow)
         resolved.append(row)
     return resolved, errors
+
+
+def _provider_timestamp(value):
+    try:
+        parsed = datetime.fromisoformat(str(value or "").strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return ""
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return ""
+    return parsed.isoformat()
 
 
 def _zero():
