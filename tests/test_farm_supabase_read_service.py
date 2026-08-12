@@ -1523,6 +1523,75 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(analytics["summary"]["mating_count"], 1)
         self.assertEqual(analytics["sows"][0]["average_born_alive"], 10.0)
 
+    def test_active_exposure_cycle_enriches_blank_names_and_preserves_windows(self):
+        current_rows = [
+            {"pig_id":"SOW-1","pig_name":"Sophie","tag_number":"Sophie",
+             "current_pen_id":"PEN-3","current_pen_name":"Kraam Saal 03"},
+            {"pig_id":"BOAR-1","pig_name":"Bola","tag_number":"Bola",
+             "current_pen_id":"PEN-3","current_pen_name":"Kraam Saal 03"},
+        ]
+        mating_rows = [{"mating_id":"MAT-EXPOSURE-1","sow_pig_id":"SOW-1",
+            "sow_tag_number":"","boar_pig_id":"BOAR-1","boar_tag_number":"",
+            "source_exposure_identity":"EXPOSURE-1","breeding_cycle_state":"Exposure Active",
+            "service_window_start":date(2026,8,12),"service_window_end":date(2026,8,28),
+            "exposure_planned_removal_on":date(2026,8,28),"exposure_actual_removal_on":None,
+            "expected_farrowing_window_start":date(2026,12,4),
+            "expected_farrowing_window_end":date(2026,12,20),"mating_date":None,
+            "pregnancy_check_result":None,"outcome":None}]
+        records=farm_supabase_read_service.project_mating_overview(
+            mating_rows,current_rows,today=date(2026,8,12))
+        row=records[0]
+        self.assertEqual((row["sow_name"],row["sow_pig_id"]),("Sophie","SOW-1"))
+        self.assertEqual((row["boar_name"],row["boar_pig_id"]),("Bola","BOAR-1"))
+        self.assertEqual(row["owner_facing_cycle_meaning"],"By beer")
+        self.assertEqual(row["exposure_planned_removal_status"],"Upcoming")
+        self.assertEqual(row["expected_farrowing_window_start"],"2026-12-04")
+        self.assertEqual(row["pregnancy_status"],"Unknown")
+
+    def test_canonical_name_wins_but_historical_name_conflict_is_explicit(self):
+        row={"mating_id":"MAT-1","sow_pig_id":"PIG-2026-069E","sow_tag_number":"Olivia",
+             "boar_pig_id":"BOAR-1","boar_tag_number":"Tyson"}
+        states=[{"pig_id":"PIG-2026-069E","tag_number":"Olive"},
+                {"pig_id":"BOAR-1","tag_number":"Tyson"}]
+        result=farm_supabase_read_service.project_mating_overview([row],states,today=date(2026,8,12))[0]
+        self.assertEqual(result["sow_name"],"Olive")
+        self.assertEqual(result["sow_pig_id"],"PIG-2026-069E")
+        self.assertEqual(result["sow_historical_name"],"Olivia")
+        self.assertEqual(result["sow_name_conflict"],"canonical_tag:Olive|historical_tag:Olivia")
+
+    def test_legacy_exact_date_mating_semantics_remain_unchanged(self):
+        row={"mating_id":"MAT-LEGACY","sow_pig_id":"SOW-1","sow_tag_number":"M1",
+             "boar_pig_id":"BOAR-1","boar_tag_number":"B1","mating_date":date(2026,5,1),
+             "expected_farrowing_date":date(2026,8,23),"pregnancy_check_result":"Pregnant"}
+        result=farm_supabase_read_service.project_mating_overview([row],[],today=date(2026,8,12))[0]
+        self.assertEqual(result["mating_date"],"2026-05-01")
+        self.assertEqual(result["mating_status"],"Confirmed_Pregnant")
+        self.assertEqual(result["owner_facing_cycle_meaning"],"")
+        self.assertEqual(result["sow_name"],"M1")
+
+    def test_canonical_name_and_matching_tag_do_not_create_false_conflict(self):
+        row={"mating_id":"MAT-1","sow_pig_id":"SOW-1","sow_tag_number":"SOW-17",
+             "boar_pig_id":"BOAR-1","boar_tag_number":"BOAR-2"}
+        states=[{"pig_id":"SOW-1","pig_name":"Sophie","tag_number":"SOW-17"},
+                {"pig_id":"BOAR-1","pig_name":"Bola","tag_number":"BOAR-2"}]
+        result=farm_supabase_read_service.project_mating_overview([row],states,today=date(2026,8,12))[0]
+        self.assertEqual(result["sow_name"],"Sophie")
+        self.assertEqual(result["sow_tag_number"],"SOW-17")
+        self.assertEqual(result["sow_canonical_tag_number"],"SOW-17")
+        self.assertEqual(result["sow_name_conflict"],"")
+
+    def test_name_fallback_and_planned_uit_status_do_not_claim_removal(self):
+        base={"mating_id":"MAT-EXPOSURE","sow_pig_id":"SOW-1","sow_tag_number":"History Sow",
+              "boar_pig_id":"BOAR-1","boar_tag_number":"","breeding_cycle_state":"Exposure Active",
+              "exposure_actual_removal_on":None}
+        for planned,expected in ((date(2026,8,11),"Overdue"),(date(2026,8,12),"Due")):
+            row={**base,"exposure_planned_removal_on":planned}
+            result=farm_supabase_read_service.project_mating_overview([row],[],today=date(2026,8,12))[0]
+            self.assertEqual(result["sow_name"],"History Sow")
+            self.assertEqual(result["boar_name"],"BOAR-1")
+            self.assertEqual(result["exposure_planned_removal_status"],expected)
+            self.assertEqual(result["exposure_actual_removal_on"],"")
+
     def test_pig_weights_service_prefers_supabase_when_available(self):
         with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
              patch.object(farm_supabase_read_service, "get_pens", return_value=[{"pen_id": "PEN-1"}]):

@@ -1915,6 +1915,29 @@ def _days_since(value):
     return str((date.today() - value).days)
 
 
+def _mating_owner_name(row, current, role):
+    """Prefer canonical current identity text without hiding historical conflicts."""
+    canonical_name = _text(current.get("pig_name"))
+    canonical_tag = _text(current.get("tag_number"))
+    historical = _text(row.get(f"{role}_tag_number"))
+    pig_id = _text(row.get(f"{role}_pig_id"))
+    name = canonical_name or canonical_tag or historical or pig_id
+    conflict = ""
+    if canonical_tag and historical and canonical_tag.casefold() != historical.casefold():
+        conflict = f"canonical_tag:{canonical_tag}|historical_tag:{historical}"
+    return name, canonical_name, canonical_tag, historical, conflict
+
+
+def _planned_removal_state(value, today):
+    if not isinstance(value, date):
+        return "Unknown"
+    if value < today:
+        return "Overdue"
+    if value == today:
+        return "Due"
+    return "Upcoming"
+
+
 def project_mating_overview(rows, state_rows, today=None):
     state_rows = {row["pig_id"]: row for row in state_rows}
     records = []
@@ -1928,16 +1951,30 @@ def project_mating_overview(rows, state_rows, today=None):
         expected_farrowing = row.get("expected_farrowing_date")
         expected_window_start = row.get("expected_farrowing_window_start")
         expected_window_end = row.get("expected_farrowing_window_end")
+        sow_name, sow_canonical_name, sow_canonical_tag, sow_historical_name, sow_name_conflict = _mating_owner_name(row, sow, "sow")
+        boar_name, boar_canonical_name, boar_canonical_tag, boar_historical_name, boar_name_conflict = _mating_owner_name(row, boar, "boar")
+        cycle_state = _text(row.get("breeding_cycle_state"))
+        exposure_active = cycle_state == "Exposure Active"
         if not isinstance(expected_farrowing, date) and isinstance(row.get("mating_date"), date):
             expected_farrowing = row["mating_date"] + timedelta(days=114)
         records.append({
             "mating_id": _text(row.get("mating_id")),
             "sow_pig_id": _text(row.get("sow_pig_id")),
+            "sow_name": sow_name,
             "sow_tag_number": _text(row.get("sow_tag_number")),
+            "sow_canonical_name": sow_canonical_name,
+            "sow_canonical_tag_number": sow_canonical_tag,
+            "sow_historical_name": sow_historical_name,
+            "sow_name_conflict": sow_name_conflict,
             "sow_current_pen_id": _text(sow.get("current_pen_id")),
             "sow_current_pen_name": _text(sow.get("current_pen_name")),
             "boar_pig_id": _text(row.get("boar_pig_id")),
+            "boar_name": boar_name,
             "boar_tag_number": _text(row.get("boar_tag_number")),
+            "boar_canonical_name": boar_canonical_name,
+            "boar_canonical_tag_number": boar_canonical_tag,
+            "boar_historical_name": boar_historical_name,
+            "boar_name_conflict": boar_name_conflict,
             "boar_current_pen_id": _text(boar.get("current_pen_id")),
             "boar_current_pen_name": _text(boar.get("current_pen_name")),
             "mating_date": _date_text(row.get("mating_date")),
@@ -1964,9 +2001,17 @@ def project_mating_overview(rows, state_rows, today=None):
             "service_date_basis": _text(row.get("service_date_basis")),
             "expected_farrowing_window_start": _date_text(expected_window_start),
             "expected_farrowing_window_end": _date_text(expected_window_end),
-            "breeding_cycle_state": _text(row.get("breeding_cycle_state")),
+            "breeding_cycle_state": cycle_state,
+            "owner_facing_cycle_code": "with_boar" if exposure_active else "",
+            "owner_facing_cycle_meaning": "By beer" if exposure_active else "",
             "exposure_planned_removal_on": _date_text(row.get("exposure_planned_removal_on")),
+            "exposure_planned_removal_status": _planned_removal_state(
+                row.get("exposure_planned_removal_on"), today
+            ),
             "exposure_actual_removal_on": _date_text(row.get("exposure_actual_removal_on")),
+            "exact_service_date_status": "Unknown" if exposure_active and not row.get("mating_date") else "",
+            "conception_status": "Unknown" if exposure_active else "",
+            "pregnancy_status": "Unknown" if exposure_active and not row.get("pregnancy_check_result") else "",
             "actual_farrowing_date": _date_text(row.get("farrowing_date")),
             "mating_status": status,
             "outcome": _text(row.get("outcome")),
