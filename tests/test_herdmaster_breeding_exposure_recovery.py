@@ -34,6 +34,8 @@ def test_grouped_preview_separates_exposure_hold_and_near_farrowing():
     assert result["success"] is True
     assert result["preview"]["row_count"] == 3
     assert len({row["pig_id"] for row in result["preview"]["rows"]}) == 3
+    assert result["preview"]["exposure_group_identity"].startswith("HERD-EXPOSURE-GROUP-")
+    assert result["preview"]["rows"][0]["exposure_group_identity"] == result["preview"]["exposure_group_identity"]
     assert result["creates_mating"] is False
     assert result["asserts_service_date"] is False
     linda = result["preview"]["rows"][2]

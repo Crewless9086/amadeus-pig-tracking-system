@@ -148,6 +148,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202608110001_create_oom_protected_action_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608120001_create_breeding_exposure_events.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608120002_allow_breeding_protected_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608120003_add_breeding_exposure_group_identity.sql
 
       - name: Run Beacon weekly owner-decision permission gates
         env:

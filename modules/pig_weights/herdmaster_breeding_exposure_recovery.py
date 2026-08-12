@@ -108,8 +108,17 @@ def build_grouped_preview(payload, *, evidence_generation):
         cleaned.append(item)
     if not rows:
         errors.append("complete_group_required")
+    exposure_material = sorted((row["pig_id"], row.get("boar_pig_id"),
+        row.get("exposure_started_on"), row.get("planned_removal_on"))
+        for row in cleaned if row.get("action") == "exposure")
+    group_identity = (_stable("HERD-EXPOSURE-GROUP-", str(evidence_generation), exposure_material)
+        if exposure_material else None)
+    for row in cleaned:
+        if row.get("action") == "exposure":
+            row["exposure_group_identity"] = group_identity
     canonical = {"contract_version": CONTRACT_VERSION, "evidence_generation": str(evidence_generation),
-                 "rows": cleaned, "row_count": len(cleaned)}
+                 "rows": cleaned, "row_count": len(cleaned),
+                 "exposure_group_identity": group_identity}
     digest = hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {"success": not errors, "status": "grouped_preview_ready" if not errors else "grouped_preview_invalid",
             "errors": errors, "preview": canonical, "preview_sha256": digest,
@@ -197,11 +206,11 @@ def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_i
                     event_kind = "started" if action == "exposure" else "removed"
                     occurred = row.get("exposure_started_on") if action == "exposure" else row.get("actual_removed_on")
                     cur.execute("""insert into public.pig_breeding_exposure_events(
-                        exposure_event_id,exposure_identity,event_kind,sow_pig_id,boar_pig_id,occurred_on,
+                        exposure_event_id,exposure_identity,exposure_group_identity,event_kind,sow_pig_id,boar_pig_id,occurred_on,
                         planned_removal_on,observer_reference,source_reference,idempotency_key)
-                        values(%s,%s,%s,%s,%s,%s::date,%s::date,%s,%s,%s)
+                        values(%s,%s,%s,%s,%s,%s,%s::date,%s::date,%s,%s,%s)
                         on conflict(idempotency_key) do nothing""",
-                        (event_id,identity,event_kind,row["pig_id"],row["boar_pig_id"],occurred,
+                        (event_id,identity,row.get("exposure_group_identity"),event_kind,row["pig_id"],row["boar_pig_id"],occurred,
                          row.get("planned_removal_on"),actor_id,preview_result["preview_sha256"],key))
                 else:
                     event_id = _stable("HERD-OBS-", key)
@@ -220,5 +229,6 @@ def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_i
                     raise ValueError("group_row_already_exists_or_conflicts")
                 inserted.append({"pig_id": row["pig_id"], "action": action, "event_id": event_id})
     return {"success": True, "status": "grouped_operation_completed", "operation_id": operation_id,
-            "rows_changed": len(inserted), "rows": inserted, "creates_mating": False,
+            "rows_changed": len(inserted), "rows": inserted,
+            "exposure_group_identity": preview.get("exposure_group_identity"), "creates_mating": False,
             "asserts_service_date": False, "creates_movement": False}, 201
