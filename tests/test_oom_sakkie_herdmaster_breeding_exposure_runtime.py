@@ -88,6 +88,8 @@ def test_claim_persistence_failure_is_visibly_contained_without_write():
        claim_creator=lambda **_kwargs:(_ for _ in ()).throw(RuntimeError("constraint")))
     assert status == 503 and result["status"] == "breeding_group_claim_unavailable"
     assert result["writes_farm_data"] is False and "Nothing was recorded" in result["answer"]
+    assert "retained" not in result["answer"].lower()
+    assert "original provider-bound message" in result["answer"]
 
 
 def test_claim_kind_migration_is_idempotent_private_and_allows_breeding():

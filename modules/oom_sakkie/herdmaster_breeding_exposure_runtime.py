@@ -63,7 +63,8 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
                         evidence_generation=generation, preview_payload=preview)
     except Exception:
         return {"handled": True, "success": False, "status": "breeding_group_claim_unavailable",
-                "answer": "I retained the complete group, but could not store its protected preview safely. Nothing was recorded.",
+                "answer": ("I understood the complete group, but could not store its protected preview safely. "
+                           "Nothing was recorded. The original provider-bound message remains the recovery source."),
                 **_zero()}, 503
     return {"handled": True, "success": True, "status": "breeding_grouped_preview_ready",
             "mission_id": mission, "card_mission_id": mission,

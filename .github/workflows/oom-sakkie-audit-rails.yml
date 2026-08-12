@@ -144,6 +144,8 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202607270003_create_charlie_owner_execution_holds.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608090001_create_rootline_water_balance_ledger.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608090002_fix_rootline_water_balance_pgcrypto_search_path.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608110001_create_oom_protected_action_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608120002_allow_breeding_protected_claims.sql
 
       - name: Run Beacon weekly owner-decision permission gates
         env:
@@ -168,6 +170,9 @@ jobs:
 
       - name: Run Herdmaster Weaning Day atomic transaction gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
+
+      - name: Run Oom Sakkie protected breeding claim persistence gates
+        run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_oom_sakkie_protected_breeding_claim_postgres
 
       - name: Run Riversdale auction disposable-Postgres integration tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_riversdale_auction_postgres
