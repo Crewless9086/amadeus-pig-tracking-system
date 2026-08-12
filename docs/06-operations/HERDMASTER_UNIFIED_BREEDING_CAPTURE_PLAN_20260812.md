@@ -21,6 +21,9 @@ separately observed and governed.
 One versioned preview accepts exact sow/boar identities, exposure start,
 planned removal or the documented 17-day default, shared group identity and
 size, optional notes, optional explicit pen effects, and source provenance.
+The 17-day default is inclusive: start is day 1 and planned removal is start
+plus 16 calendar days. Every channel obtains that date from the shared
+HERDMASTER contract rather than calculating it independently.
 
 It displays the natural-exposure default, removal date, group membership,
 expected farrowing range, every proposed exposure and movement, and all Unknown

@@ -6,25 +6,35 @@ and delegates confirmed execution to the HERDMASTER grouped contract.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 import hashlib
 import html
 import json
+import re
 
 from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authority
 from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
 from modules.pig_weights.herdmaster_breeding_exposure_recovery import (
     build_grouped_preview,
     execute_grouped_preview,
+    planned_exposure_removal_on,
 )
 
 
 ACTION_KIND = "herdmaster_breeding_grouped"
+EXPOSURE_DAYS = 17
 
 
 def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, evidence_loader=None):
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), dict) else {}
-    raw_rows = semantic.get("breeding_actions")
+    parsed_rows = parse_grouped_exposure_reply(
+        str(parsed.get("text") or ""), provider_timestamp=str(parsed.get("provider_timestamp") or "")
+    )
+    semantic_rows = semantic.get("breeding_actions")
+    # Deterministic parsing repairs a demonstrably incomplete semantic packet;
+    # it must not replace a complete compound packet or reinterpret sow-first
+    # lines as the boar-first recovery format.
+    raw_rows = (parsed_rows if len(parsed_rows) > len(semantic_rows or ()) else semantic_rows)
     if semantic.get("domain") != "herd_management" or not isinstance(raw_rows, (list, tuple)) or not raw_rows:
         return {"handled": False}, 200
     owner = str(parsed.get("telegram_user_id") or "")
@@ -148,15 +158,11 @@ def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
         planned_days = row.pop("planned_days", None)
         if planned_days is not None:
             try:
-                started = date.fromisoformat(str(row.get("exposure_started_on") or ""))
                 days = int(planned_days)
+                calculated = planned_exposure_removal_on(row.get("exposure_started_on"), days)
             except (TypeError, ValueError):
                 errors.append(f"{labels.get(sow, sow)}: exact exposure duration")
                 continue
-            if not 1 <= days <= 60:
-                errors.append(f"{labels.get(sow, sow)}: exact exposure duration")
-                continue
-            calculated = (started + timedelta(days=days)).isoformat()
             if row.get("planned_removal_on") and str(row["planned_removal_on"]) != calculated:
                 errors.append(f"{labels.get(sow, sow)}: exposure duration conflicts with removal date")
                 continue
@@ -188,6 +194,68 @@ def _provider_timestamp(value):
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         return ""
     return parsed.isoformat()
+
+
+def parse_grouped_exposure_reply(text, *, provider_timestamp=""):
+    """Parse bounded boar-first grouped exposure phrasing without identities.
+
+    This recognizes structure only. Canonical animal identity and ambiguity
+    remain the responsibility of `_resolve_rows` against current evidence.
+    """
+    source = str(text or "").strip()
+    if not source:
+        return ()
+    shared_date = _shared_date(source, provider_timestamp)
+    if not shared_date:
+        return ()
+    rows, seen = [], set()
+    for raw_line in source.splitlines():
+        line = raw_line.strip().strip("•*- ")
+        if not line or re.search(
+            r"\b(?:not\s+(?:placed|exposed)|nie\s+geplaas|was\s+nie\s+geplaas)\b", line, re.I
+        ):
+            continue
+        match = re.fullmatch(r"([^:–—-]{1,80})\s*(?::|\s[-–—]\s)\s*(.{1,500})", line)
+        if not match:
+            continue
+        boar = match.group(1).strip()
+        females = re.split(r"\s*(?:,|\band\b|\ben\b|&)\s*", match.group(2), flags=re.I)
+        females = [item.strip(" .") for item in females if item.strip(" .")]
+        if not boar or not females:
+            return ()
+        for female in females:
+            key = female.casefold()
+            if key in seen:
+                return ()
+            seen.add(key)
+            rows.append({"action": "exposure", "animal_ref": female, "boar_ref": boar,
+                         "exposure_started_on": shared_date, "planned_days": EXPOSURE_DAYS})
+    return tuple(rows) if rows else ()
+
+
+def _shared_date(text, provider_timestamp):
+    iso = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", text)
+    if iso:
+        try:
+            return date.fromisoformat(iso.group(1)).isoformat()
+        except ValueError:
+            return None
+    months = {"january":1,"januarie":1,"february":2,"februarie":2,"march":3,"maart":3,
+              "april":4,"may":5,"mei":5,"june":6,"junie":6,"july":7,"julie":7,
+              "august":8,"augustus":8,"september":9,"october":10,"oktober":10,
+              "november":11,"december":12,"desember":12}
+    named = re.search(r"\b(\d{1,2})\s+(" + "|".join(months) + r")\s+(20\d{2})\b", text, re.I)
+    if named:
+        try:
+            return date(int(named.group(3)), months[named.group(2).casefold()], int(named.group(1))).isoformat()
+        except ValueError:
+            return None
+    if re.search(r"\b(?:today|vandag)\b", text, re.I):
+        try:
+            return date.fromisoformat(str(provider_timestamp)[:10]).isoformat()
+        except ValueError:
+            return None
+    return None
 
 
 def _zero():

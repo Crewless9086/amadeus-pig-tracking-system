@@ -1,9 +1,25 @@
 from datetime import date
 
-from modules.pig_weights.herdmaster_breeding_exposure_recovery import build_grouped_preview
+from modules.pig_weights.herdmaster_breeding_exposure_recovery import (
+    build_grouped_preview,
+    planned_exposure_removal_on,
+)
 from modules.pig_weights.herdmaster_breeding_operating_loop import build_breeding_operating_loop
 from modules.pig_weights.pig_weights_validation import validate_new_litter_payload
 from pathlib import Path
+
+
+def test_shared_channel_invariant_inclusive_removal_date():
+    assert planned_exposure_removal_on("2026-08-12", 17) == "2026-08-28"
+
+
+def test_preview_rejects_noncanonical_seventeen_day_removal():
+    result = build_grouped_preview({"rows": [{
+        "pig_id":"SOW-1","label":"Sow One","action":"exposure","boar_pig_id":"BOAR-1",
+        "exposure_started_on":"2026-08-12","planned_removal_on":"2026-08-29",
+    }]}, evidence_generation="GEN-OLD")
+    assert result["success"] is False
+    assert result["errors"] == ["row_1_exact_exposure_required"]
 
 
 def test_grouped_preview_separates_exposure_hold_and_near_farrowing():
