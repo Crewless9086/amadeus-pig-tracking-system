@@ -152,6 +152,9 @@ def _pre_scale_event_digest(row):
     details = row.get("details") if isinstance(row.get("details"), dict) else {}
     precise_actual = details.get("verified_runtime_minutes")
     precise_planned = details.get("maximum_runtime_minutes")
+    if (_stored_minutes(row.get("planned_minutes")) != _stored_minutes(precise_planned)
+            or _stored_minutes(row.get("actual_minutes")) != _stored_minutes(precise_actual)):
+        return None
     return _digest({"irrigation_event_id": row.get("irrigation_event_id"),
         "event_at": _digest_timestamp(row.get("event_at")),
         "event_type": row.get("event_type"), "zone_id": row.get("zone_id"),
