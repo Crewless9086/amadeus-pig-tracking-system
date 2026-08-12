@@ -131,6 +131,20 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         "chat_id": str(parsed.get("telegram_chat_id") or ""),
         "provider_message_id": provider, "provider_timestamp": provider_at,
         "reply_to_message_id": reply_to, "content_sha256": sha256(text.encode()).hexdigest()}
+    for prior in partials:
+        prior_binding = prior.get("provider_binding") if isinstance(
+            prior.get("provider_binding"), dict) else {}
+        if prior_binding == binding:
+            return {"handled": True, "success": True,
+                "status": "manager_question_reply_replay_suppressed", "answer": "",
+                "suppress_owner_delivery": True, **ZERO}, 200
+        if (prior_binding.get("provider_message_id") == provider
+                and prior_binding.get("owner_user_id") == binding["owner_user_id"]
+                and prior_binding.get("chat_id") == binding["chat_id"]):
+            return {"handled": True, "success": False,
+                "status": "manager_question_provider_binding_conflict",
+                "answer": "I retained the original attributable reply and did not overwrite it.",
+                "requires_visible_notification": True, **ZERO}, 409
     accumulated = _merge_semantic_facts(
         [item.get("semantic_facts") for item in partials] + [facts])
     record = {"event_id": event_id, "status": "partial" if partial else "recorded",
@@ -241,8 +255,10 @@ def _load_questions(owner, chat):
                       and review_json->'manager_question_reply'->>'owner_user_id'=%s
                       and review_json->'manager_question_reply'->>'chat_id'=%s
                       and review_json->'manager_question_reply'->>'task_id'=%s
+                      and review_json->'manager_question_reply'->>'daily_identity'=%s
                     order by created_at, review_event_id""", (owner, chat,
-                    str((question.get("question_binding") or {}).get("task_id") or "")))
+                    str((question.get("question_binding") or {}).get("task_id") or ""),
+                    str(question.get("daily_identity") or "")))
                 question["partial_replies"] = [row[0] for row in cursor.fetchall()]
             return questions
 

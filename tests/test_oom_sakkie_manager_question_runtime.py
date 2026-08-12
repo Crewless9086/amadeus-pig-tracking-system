@@ -158,3 +158,19 @@ def test_changed_provider_binding_cannot_be_suppressed_as_replay():
         question=question(), event_store=state)
     assert first["status"] == "manager_question_reply_recorded"
     assert status == 409 and changed["status"] == "manager_question_concurrent_reply_conflict"
+
+
+def test_reloaded_partial_exact_replay_is_silent_and_does_not_advance_generation():
+    partial = SemanticInterpretation(domain="herd_health", intent="group_welfare_follow_up",
+        message_kind="observation", continuation=True, observation="They are eating.",
+        language="en", confidence=.9, needs_clarification=True,
+        clarification_question="Are they also drinking and moving normally?")
+    state = memory(); authority = issue_gateway_owner_authority(OWNER, OWNER)
+    first, _ = handle_manager_question_reply(parsed("They are eating"), authority, partial,
+        question=question(), event_store=state)
+    active = question(); active["partial_replies"] = [next(iter(state.rows.values()))]
+    replay, status = handle_manager_question_reply(parsed("They are eating"), authority,
+        partial, question=active, event_store=state)
+    assert first["status"] == "manager_question_partial_reply_recorded"
+    assert status == 200 and replay["status"] == "manager_question_reply_replay_suppressed"
+    assert replay["suppress_owner_delivery"] is True and len(state.rows) == 1
