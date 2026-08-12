@@ -91,6 +91,21 @@ class ProtectedBreedingClaimPostgresTests(unittest.TestCase):
             connect_factory=self.connect)
         self.assertEqual(rejected_status, 409)
         self.assertEqual(rejected["status"], "protected_callback_stale")
+        wrong_action, wrong_action_status = claim_callback(
+            f"oompa:{claim['callback_token']}:cancel",
+            owner_user_id="5721652188", private_chat_id="5721652188",
+            provider_message_id="CALLBACK-" + self.suffix,
+            provider_timestamp=confirmed_at, source_card_message_id="3566",
+            connect_factory=self.connect)
+        self.assertEqual(wrong_action_status, 409)
+        self.assertEqual(wrong_action["status"], "protected_callback_stale")
+        missing_card, missing_card_status = claim_callback(callback,
+            owner_user_id="5721652188", private_chat_id="5721652188",
+            provider_message_id="CALLBACK-" + self.suffix,
+            provider_timestamp=confirmed_at, source_card_message_id="",
+            connect_factory=self.connect)
+        self.assertEqual(missing_card_status, 409)
+        self.assertEqual(missing_card["status"], "protected_callback_card_mismatch")
 
 
 if __name__ == "__main__":
