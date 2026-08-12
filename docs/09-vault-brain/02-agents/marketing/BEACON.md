@@ -20,6 +20,7 @@ Role: marketing, media, campaign, and demand-generation department.
 - draft campaigns;
 - recommend channels, angles, timing, and spend caps;
 - catalog and review media;
+- receive owner media routed through an approved private intake gateway once that gateway is separately implemented and activated;
 - prepare deterministic, provider-disabled ElevenLabs and Happy Horse 1.0 mock evaluations from owner-approved, hash-verified source assets;
 - prepare owner-review publish packets;
 - record manual post and performance evidence;
@@ -36,6 +37,7 @@ Beacon must not:
 - create orders, quotes, invoices, reservations, or customer sends;
 - create demand the farm cannot fulfil;
 - overpromise stock, timing, delivery, final booking, or price.
+- treat media intake, library acceptance, public-use approval, and publication authorization as the same decision.
 
 ## Department Structure
 
@@ -45,6 +47,12 @@ Beacon should become its own department with focused sub-agents:
 - `BEACON_CREATIVE.md` for copy, offer framing, and content packs.
 - `BEACON_MEDIA_LIBRARIAN.md` for media catalog, approval, and public-use status.
 - `BEACON_PERFORMANCE_ANALYST.md` for performance evidence, learning, and next-action recommendations.
+
+## Queued Media Intake Direction
+
+The next media-library milestone after BEACON's current confirmed-publication learning work is `BEACON-MEDIA-INTAKE-1`. The preferred owner workflow is OOM SAKKIE Telegram intake -> private BEACON raw storage -> BEACON understanding and cataloguing -> visual Farm App approval. It must remove the routine OneDrive/manual-upload step while preserving separate library, public-use, and publication gates.
+
+Canonical workflow: `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`.
 
 ## Owner Review Packet
 

@@ -249,53 +249,45 @@ Feed sources to refine:
 
 ## Standard Cut Sets
 
-The first version should avoid unlimited custom choices.
+The authoritative pilot cutting routes are defined by
+`external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.md` and the
+owner-confirmed commercial rules in
+`docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`.
 
-### Set A: Family Freezer Pack
+Earlier four-set planning below is superseded for new sales. The pilot uses
+three collections only.
 
-Default balanced freezer pack:
+### Set A: Amadeus Signature Collection
 
-- pork chops
-- leg portions or roasts
-- shoulder roasts
-- belly strips
-- ribs
-- mince or stew meat
-- bones for soup/stock
+Boneless neck steaks, additional forequarter stew meat, loin chops, bone-in
+rib rashers, whole pork belly, two half legs, cut shanks, and standard stew
+meat.
 
-### Set B: Braai Pack
+### Set B: Amadeus Ember Collection
 
-South African buyer-friendly pack:
+Thick rib chops, shoulder chops, loin chops, whole pork rib, whole pork belly,
+one half leg, leg chops, cut shanks, and standard stew meat.
 
-- chops
-- rashers/belly strips
-- ribs
-- shoulder steaks
-- sosatie/stew cubes
-- mince or sausage meat option
+This collection is braai-led, not braai-only.
 
-### Set C: Lean Pack
+### Set C: Amadeus Grand Cut Collection
 
-For health-conscious customers:
+Neck chops, loin chops, whole pork rib, whole pork belly, whole pork leg, whole
+pork shanks (Eisbein), and standard stew meat.
 
-- lean chops
-- leg steaks
-- lean shoulder cuts
-- mince
-- stew cubes
-- fewer fatty belly cuts
+### Full-Carcass Selection
 
-### Set D: Budget Bulk Pack
+A full carcass contains two complete half-carcass selections. The customer may
+choose the same collection for both halves or a different collection per half.
+Each half must independently use one valid Set A, Set B, or Set C route.
 
-For value-focused families:
+Set D is retired from new pilot offers. Historical Set D evidence remains
+unchanged and must not be silently converted.
 
-- larger roasting cuts
-- mince
-- stew meat
-- soup bones
-- shoulder
-- mixed chops
-- less detailed trimming
+Standard suitable cut pieces are packed four per pack. Pork leg chops are
+packed two per pack. Whole cuts remain complete, and stew meat is distributed
+evenly across applicable packs. Head, feet, offal, excess bones/fat/skin and
+other unlisted by-products are excluded from the current offer.
 
 ### Custom Cut Option
 

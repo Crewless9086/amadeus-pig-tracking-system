@@ -34,16 +34,26 @@ The fallback path must also sound human. LLM timeout must not cause robotic repl
 
 - customer name and phone/context;
 - product interest: half carcass, full carcass, or later custom cut;
-- cut set, defaulting to Set A in pilot unless owner overrides;
+- one Set A, Set B, or Set C collection for a half carcass;
+- two half-carcass collection choices for a full carcass, which may be the same
+  or different;
 - delivery address/farm name and useful driver notes;
 - town/area and address/location context where relevant;
 - timing expectation;
 - payment method, currently EFT only;
 - freezer size, target packed kg, family size, or match preference when customer gives it;
 
-Public meat sales are delivery-first. SAM must not present collection as a normal option because there is no collection point yet. If a customer asks to collect, SAM should explain that the first public run is planned around delivery and capture the delivery details, unless the owner later approves a collection exception.
+Public meat sales are delivery-only. SAM must not present collection as an
+option because there is no approved collection facility. SAM captures delivery
+details and explains that delivery timing is confirmed only after the complete
+carcass, payment, processing and delivery-capacity gates pass.
 - active price book and VAT-inclusive pricing;
 - clear WhatsApp service-window or template state.
+
+Before generating a formal estimated quote, SAM must also have an approved
+estimated packed-weight basis. The quote uses R130/kg including VAT and a 50%
+estimated deposit, states that the final invoice uses actual packed weight,
+and never promises slaughter or delivery timing.
 
 ## Hard Gates
 
@@ -54,6 +64,10 @@ Public meat sales are delivery-first. SAM must not present collection as a norma
 - Vague meat-interest phrases should be treated as meat interest and answered with one meat-specific next question, not a generic loop.
 - SAM must not use internal rollout words such as `pilot` in customer-facing messages.
 - SAM must not sound robotic in customer-facing messages. Use the personality, playbook, and gold-standard examples when crafting live replies.
+- New pilot offers use the three collections defined in
+  `AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`. Set D is historical only.
+- A pig cannot move to slaughter booking until the whole carcass is committed
+  and all required deposits are bank-confirmed.
 
 ## Source References
 
@@ -64,3 +78,4 @@ Public meat sales are delivery-first. SAM must not present collection as a norma
 - `docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md`
 - `docs/09-vault-brain/05-playbooks/SAM_MEAT_HUMAN_SALES_PLAYBOOK.md`
 - `docs/09-vault-brain/09-examples/SAM_MEAT_GOLD_STANDARD_REPLIES.md`
+- `docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`

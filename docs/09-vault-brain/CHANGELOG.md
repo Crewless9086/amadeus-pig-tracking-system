@@ -1,5 +1,145 @@
 # Vault Brain Changelog
 
+## 2026-08-10 - Outcome-bound terminal missions and real-world proof gate
+
+- Strengthened the reusable invocation with a mandatory governance-availability preflight in both the Control Tower workspace and the target terminal's own `HEAD`.
+- Prohibited claiming that the Mission Standard was applied when it is absent, untracked, truncated, unread or replaced by fallback doctrine.
+- Required every final handoff to report the standard path and exact identity actually read, and queued reconciliation of the currently untracked standard into authoritative Git lineage.
+- Added a cross-system rule that terminals remain bound to the owner-visible outcome across sequential defects instead of returning after each PR, deployment or replay proof.
+- Required fresh post-deployment end-to-end evidence through external effect, authoritative readback and visible closure before a live journey is called Operational.
+- Distinguished repository/temporary handover knowledge from evidence actually loaded and verified by deployed agents.
+- Added a three-owner-attempt systemic-incident threshold and prohibited combining an unresolved P0 incident with a broad new capability mission.
+- Updated `NEXT_STEPS.md` to make the fertilizer mixer the immediate real-world acceptance case before the separate Daily Farm Manager mission.
+
+## 2026-08-08 - Genuine 18-pig auction sale queued for completion
+
+- Queued HERDMASTER-AUCTION-SALE-COMPLETION-1 immediately after ROOTLINE's active irrigation/readback outcome.
+- Preserved Charl's reported 18 slow-grower tags and R4,470.51 invoice total as mission evidence without creating sale, income, payment or lifecycle writes.
+- Required one auction-channel Livestock transaction, atomic Sold/off-farm exits, August income reconciliation, explicit payment truth and zero invented per-pig prices.
+- Made Oom Sakkie the ordinary owner interface, HERDMASTER the animal/lifecycle reconciler and the existing SAM/order-sales and Ledger boundaries the sale and payment authorities.
+- Preserved the current breeding PRs and queued their resumption after the bounded auction-sale business outcome.
+
+## 2026-08-08 - ROOTLINE gravity-fed irrigation and scalable device planning
+
+- Confirmed that B/C are gravity-fed irrigation valves and farm SOC, solar, load, grid and dynamic reserve must not govern their need, ranking, timing or execution eligibility.
+- Kept energy-aware planning for material electrical loads such as the future borehole pump and fertilizer mixer, with water continuity outranking strict grid avoidance.
+- Added a typed device-class contract so future plugs, valves, breakers, pumps and sensors declare only their relevant planning inputs, safety dependencies, readback and authority.
+- Queued the correction after the active eWeLink/readback and tonight-run mission so current operational work is not restarted.
+- Required one daily plan, silent unchanged reassessments, one pending question once, and concise material-change/start/completion/exception notifications.
+
+## 2026-08-04 - Semantic-first farm management and capability-family repairs
+
+- Recorded the 5 August owner direction that, after automatic Oom Sakkie follow-up closes, ROOTLINE must own routine B/C planning and execution within its commissioned safety envelope without per-run permission or a repeated visible-need report.
+- Added a durable laptop/session-loss resumption handover preserving the unsent ROOTLINE and HERDMASTER addendums, their exact restart order and duplicate-prompt prevention.
+- Made the approved LLM semantic front door authoritative for authenticated natural English and Afrikaans while retaining deterministic code for evidence, calculations, authority, replay, writes and physical safety.
+- Prohibited keyword, regex, menu and sheet-era classifiers from overriding a valid semantic decision or losing clarification context.
+- Required questions, requests, observations, corrections, confirmations and commands to remain typed and distinct through specialist routing.
+- Required reusable capability-family corrections and end-to-end outcomes instead of message-, phrase-, conversation- or animal-specific repair missions.
+- Required one LLM-assisted human response composer for ROOTLINE, HERDMASTER and manager briefs, with raw specialist packets kept out of family Telegram.
+- Required automatic read-only reassessment ownership: unchanged results remain silent and material changes produce one visible concise notification without expanding hardware or write authority.
+
+## 2026-08-03 - Post-P0 mortality intelligence direction
+
+- Queued a reusable Oom Sakkie/HERDMASTER mortality-intelligence capability immediately after the P0 operational spine.
+- Required on-demand natural Afrikaans/English analysis and proactive deduplicated surveillance across mortality baseline, litter/cohort, pen/movement, age, weight trajectory, health/treatment, feed/water and ROOTLINE environmental evidence.
+- Required proven facts, patterns, confidence-ranked hypotheses, counter-evidence, Unknowns, actions and reassessment triggers while prohibiting correlation from being presented as diagnosis or cause.
+- Bound the genuine recent-deaths period as the first operational proof and required one provider-confirmed useful assessment rather than source-only completion.
+
+## 2026-08-02 - Oom Sakkie P0 operational spine
+
+- Made one genuine end-to-end Oom Sakkie Telegram lifecycle the controlling programme priority ahead of further specialist feature expansion.
+- Bound the preserved Pig 125 found-dead report as the first acceptance case: visible acknowledgement, specialist dispatch, natural follow-up, preview, confirmation, exactly-once governed recording, reassessment and consolidated manager status.
+- Clarified that source-ready code, passing CI, healthy deployment, internal packets and safe containment are supporting evidence rather than business completion.
+- Prohibited solving the spine with another router, webhook, queue, direct specialist Telegram path or repeated owner resend.
+
+## 2026-08-01 - Existing CORE and operational dispatch correction
+
+- Corrected Control Tower drift that proposed a new CORE-like dispatcher despite CHARLIE CORE already existing as the Supabase mission queue, local runner, staged build/test/review workflow and release bridge.
+- Separated the operational plane (Oom Sakkie to its deployed specialist runtime/tools) from the software mission plane (CHARLIE to existing CORE to the local runner/Codex workflow).
+- Required missing operational capabilities to escalate through CHARLIE as CORE development missions while ordinary farm messages remain outside CORE's runtime path.
+
+## 2026-08-01 - Agent, terminal and specialist-role terminology
+
+- Defined an agent as the deployed cloud/runtime worker, a terminal as Charl's visible manually prompted development session, and a specialist role as the complete intended business responsibility.
+- Required Control Tower reports to state agent runtime activity, terminal engineering activity and full-role readiness independently instead of conflating them.
+- Clarified that Telegram input goes to the deployed Oom Sakkie agent while continuation prompts require manual delivery to the named terminal until a proven dispatcher exists.
+
+## 2026-08-01 - ROOTLINE bounded actuation closure
+
+- Defined ROOTLINE's concrete B/C actuation closure: state-setting ON with no ambiguous retry, physically idempotent at-least-once OFF, and an independently armed maximum-runtime fail-stop before ON.
+- Clarified that exactly one OFF request is not the safety goal and queued a bounded supervised canary rather than an indefinite read-only hold.
+
+## 2026-08-01 - Human-friendly Oom Sakkie Telegram standard
+
+- Added a reusable owner-interface standard for short bold headings, clear spacing, semantic emoji, plain family language, concise actions, and safe HTML escaping.
+- Separated one editable daily management card from new buttonless notifications for hardware start, completion, stop, failure, and other live events Charl must notice.
+- Allowed cleanup of a superseded temporary start notification only after confirmed completion while preserving the detailed card and durable backend audit.
+- Kept buttons exclusive to genuine protected decisions and prohibited dense technical walls, repeated facts, raw identifiers, and silent edits for time-sensitive operational transitions.
+- Added irrigation, herd, marketing, question, and systemic-exception examples plus provider, replay, stale-card, ambiguity, and rendering acceptance requirements.
+
+## 2026-08-01 - Prompt delivery and visible-terminal execution truth
+
+- Prohibited treating prepared prompts, release rows, queue artifacts, or automatic-resumption records as proof that a visible specialist terminal received or started work.
+- Added explicit prepared, delivered, acknowledged, started, progress-observed, and completed/contained states.
+- Required Control Tower to say when Charl must manually paste a prompt until a reviewed direct dispatcher exists.
+- Clarified that internal collaboration subagents and newly started processes are not the user's existing named terminals.
+- Allowed a parallel dispatch bundle when Charl explicitly asks to utilize multiple disjoint idle terminals, while preserving one serialized production owner.
+- Added a proposed real terminal dispatcher with worker/worktree binding, acknowledgement, heartbeat, and automatic outcome routing as a Control Tower improvement candidate.
+
+## 2026-08-01 - Natural Oom Sakkie health and animal-loss management goal
+
+- Added the owner-approved HERDMASTER/Oom Sakkie natural intake goal for ordinary sickness, injury, found-dead reports, farrowing complications and piglet losses.
+- Required natural clarification rather than rigid forms, immediate welfare prioritization, exact animal and chronology resolution, observation-versus-diagnosis separation, one complete-effect preview, explicit confirmation and atomic exact-once canonical writes.
+- Added Maya's maternal-death plus ten-stillborn report as the primary compound-event acceptance journey without creating animal-specific code or recording the scenario as a live farm fact.
+- Routed implementation through existing lifecycle death/removal, litter/stillborn, mating, medical/observation, movement/pen and downstream projection rails.
+- Added the goal to the active HERDMASTER queue, agent doctrine, Oom Sakkie doctrine, Vault index and implementation source map.
+
+## 2026-08-01 - Owner-aligned herd reproduction and night water operations
+
+- Defined HERDMASTER's practical reproductive cycle: recorded mating, post-mating quiet phase, later visual reassessment, operational `Assumed Pregnant`, farrowing-pen preparation, expected-window monitoring, and governed cycle closure without presenting routine visual inspection as clinical diagnosis.
+- Allowed grouped, individual, and partial natural observations through Oom Sakkie, using authenticated message time and sender by default while preserving exact per-sow previews and confirmation before writes.
+- Made water continuity a standing essential requirement and allowed storage/reservoir observations to arrive independently without globally blocking ROOTLINE reasoning.
+- Recorded `BOREHOLE PUMP (1)` as planned but not yet IFTTT-bound, with night catch-up planning and water-over-grid priority once governed control exists.
+- Recorded B/C camp irrigation at 22:00-00:00 SAST every other day, requiring the authoritative app to identify tonight's camp and physical valve proof before control.
+- Recorded current fertilizer injection windows and the missing IFTTT bindings for injection and mixing, while keeping actuation separately governed.
+- Corrected the old alternating 22:00-00:00 irrigation schedule to historical app-limitation evidence, not ROOTLINE policy.
+- Set the B/C target as evidence-driven drip irrigation of each camp about four days per week for a nominal two hours, with adaptive seasonal timing, recovery planning, and permission to schedule either or both camps when proven capacity supports it.
+- Defined ROOTLINE as the future IFTTT irrigation execution owner after device/control proof and added one in-place Oom Sakkie daily card moving through Planned, Active, Hold, Stopped, and Completed states.
+- Made fertilizer injection and mixing schedules adaptive to irrigation, weather, and power after their IFTTT bindings are physically proven; historical clock times remain baseline evidence only.
+
+## 2026-07-30 - Control Tower self-audit and improvement loop
+
+- Required a Control Tower self-audit after every terminal reconciliation covering goal integrity, active-work accuracy, owner-work reduction, proportional evidence controls, parallel progress, operational honesty, learning capture, and Control Tower mistakes.
+- Added a small improvement register with Suggested, Adopted, Verified, and Rejected states so repeated coordination weaknesses become durable corrections before owner frustration is required.
+- Seeded the register with active-mission prompt deduplication, separate reporting of component progress versus full-role readiness, and useful disjoint parallel work for idle specialists.
+- Required later terminal evidence before an adopted Control Tower improvement may be marked verified.
+
+## 2026-07-30 - Control Tower active-work and prompt deduplication
+
+- Required the Control Tower to reconcile each terminal's already-running mission and last instruction before issuing another prompt.
+- Added explicit `CONTINUE — SEND NOTHING`, `ADDENDUM`, `NEW MISSION`, `PARALLEL MISSION`, and `WAIT FOR INPUT` classifications.
+- Prohibited resending substantially identical prompts, restarting active work from confirming feedback, and manufacturing infrastructure work merely to keep a terminal busy.
+- Required useful disjoint parallel work to be identified when available, while preserving serialized runtime and overlapping-file boundaries.
+- Allowed the final handoff to state that no prompt should be sent when the correct terminal is already executing the right mission.
+
+## 2026-07-27 - HERDMASTER breeding attention queued after Auction
+
+- Recorded the verified first Riversdale Auction review as one append-only candidate review linked to one append-only observation for `PIG-2026-04A0` / tag `51`; the animal is selectable but remains unlisted with zero Auction List events.
+- Kept the separately prepared one-animal Auction List Add as the only next Auction action and did not authorize it through documentation.
+- Queued `HERDMASTER-BREEDING-ATTENTION-1` immediately after the Auction canary reaches a clean verified stopping point.
+- Defined one owner-only Breeding Attention table, general factual human observations, explained mating recommendations, a one-sow observation canary, and later recurring CORE observation.
+- Kept Auction suitability, breeding suitability, human observations, recommendations, owner decisions, mating writes, and other farm mutations separate.
+- This records owner-approved direction only. No Auction Add, observation, mating, lifecycle, medical, purpose, deployment, migration, scheduler, or CORE action was authorized or performed.
+
+## 2026-07-27 - BEACON owner media-intake direction
+
+- Recorded `BEACON-MEDIA-INTAKE-1` as the queued BEACON milestone after the current confirmed-publication learning work reaches a clean integration point.
+- Selected the existing owner-controlled OOM SAKKIE Telegram bot as the preferred phone photo/video/album intake gateway, with BEACON responsible for private storage, hashing, provenance, understanding, cataloguing, visual review, approval state, and usage history.
+- Required thumbnails/contact sheets and enlarged previews so the owner approves visible media rather than filenames.
+- Separated intake receipt, library acceptance, public-use approval, and exact publication authorization.
+- Kept historical OneDrive/folder ingestion as a later bounded phase using the same hash/provenance contract.
+- This documentation records owner-approved direction only. Telegram media intake, historical import, public use, posting, scheduling, messaging, advertising, and spending received no activation authority.
+
 ## 2026-07-14 - CORE final artifact ingestion and supervisor truth
 
 - Made Agent Runner v2 final artifacts idempotent durable stage inputs that advance only the matching first incomplete stage and preserve upstream evidence.
@@ -149,3 +289,24 @@
 - Added backend-generated owner-action guidance with a target stage, reason, expected outcome, and safe alternative.
 - Updated Mission Control so blocked missions show one prominent recommended action; secondary actions are collapsed and targeted send-back preselects the recommended agent.
 - Kept mission execution and approval authority unchanged; the dashboard still cannot run shell commands or bypass owner gates.
+## 2026-07-29 - Control-tower operating model and first Oom Sakkie milestone
+
+- Expanded `00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md` with the durable control-tower operating model.
+- Required one specialist per branch/worktree, parallel disjoint source work, and a single serialized production/shared-runtime release lane.
+- Added active goal cards, outcome-state progress tracking, explicit goal closure, and automatic next-terminal handoffs.
+- Added an evidence-based visual goal board using fixed Prepared, Integrated, Operational, Business-complete, and Closed stages so technical activity cannot inflate business progress.
+- Recorded the immediate program direction: make Oom Sakkie, SAM Livestock, HERDMASTER, ROOTLINE, BEACON, and then SAM Meat operationally useful before resuming broad CORE/CHARLIE autonomy.
+- Set the first milestone around real outcomes: one HERDMASTER fact loop, one useful always-on SAM Livestock response, one private BEACON photo intake, and one consolidated Oom Sakkie family brief.
+- Advanced the HERDMASTER goal to Operational (60%) after Oom Sakkie recovered Shupe’s authenticated weight message and delivered one correct owner preview; the existing canonical fact still requires idempotency proof and recommendation refresh before business completion.
+- Advanced the HERDMASTER goal to Business-complete (80%) after confirmation proved exactly one canonical Shupe weight fact, zero replay/confirmation duplicates, a refreshed Retain/Breeding Candidate recommendation, and Baby’s pregnancy check as the next overall herd action. Shared documentation reconciliation remains before closure.
+- Advanced SAM Livestock to Integrated (40%) after the response-usefulness authority merged and deployed, then correctly blocked an unsafe `AUTO_GENERAL` reply. The customer outcome remains incomplete because terse follow-up context can still be misrouted outside the Livestock specialist.
+- Recorded SAM Livestock routing commit `cd7981ee` as prepared, pushed, tested and independently approved source work. Its percentage remains 40% because GitHub authentication blocked PR creation, BEACON owns shared runtime, and no customer outcome occurred.
+- Advanced BEACON to Integrated (40%) after its reviewed correction merged at `c755ba26` with all CI passing. The bounded activation timed out and was contained with intake disabled, zero intake rows, private bucket baseline preserved, ordinary routes healthy, and runtime released to SAM Livestock; no photo outcome occurred.
+- Recorded SAM Livestock PR #593 at green, clean, mergeable head `f0324cd2`, preserving reviewed routing commit `cd7981ee`. SAM remains Integrated (40%) and source-only until HERDMASTER releases the serialized production lane.
+- Added ROOTLINE as a tracked source-active Control Tower goal: produce a reusable read-only water-and-energy specialist result for future Oom Sakkie briefs with current evidence, recommendations, reasons, reassessment timing and genuine owner questions, while retaining zero production and hardware authority.
+- Recorded BEACON timeout correction `8a8c72d7` as prepared, tested and independently approved source work. The defect was an impossible wait for a newer Render deployment after key-specific environment PUTs without an explicit deployment POST; BEACON remains Integrated (40%) until the correction is merged, deployed and produces a real private-photo result.
+- Closed the original HERDMASTER Shupe weight loop at 100% after one provider-confirmed Telegram answer, exact replay prevention, one unchanged canonical weight fact, zero farm writes and durable release to SAM Livestock.
+- Added a separate HERDMASTER ordinary herd-question quality goal at Integrated (40%). The first deployed answer was internally contradictory by stating both `Pregnancy evidence pending` and `pregnancy-check result: Pregnant`; that composition defect must be corrected source-only and cannot be counted as business-complete.
+- Advanced ROOTLINE to Prepared (20%) after commit `184b1ece` delivered a reviewed and tested read-only specialist-result contract with current power/weather/forecast separation, bounded rain reassessment, reserve reasoning, water recommendations, one genuine family question, and explicit zero command/hardware authority. Shared Oom Sakkie/runtime files remained untouched.
+- Recorded BEACON PR #596 as open, clean, mergeable and exact-head green at `dc422f8e`, with the reviewed deployment-reconciliation correction limited to five BEACON files. BEACON remains Integrated (40%) and must stay source-idle until SAM Livestock explicitly releases production.
+- Recorded ROOTLINE PR #595 as open, clean, mergeable and exact-head green at `184b1ece`, with 113 local tests passing, two expected skips, independent product/security approval and zero shared Oom Sakkie/runtime changes. ROOTLINE remains Prepared (20%) until the serialized queue permits integration and one real read-only Oom Sakkie proof.

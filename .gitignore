@@ -16,3 +16,9 @@ venv/
 /.tools/
 .charlie_runner/
 instance/*.sqlite3
+
+# Local agent/review workspaces and generated browser results.
+/.codex-worktrees/
+/.review_*/
+/test-results/
+/Untitled

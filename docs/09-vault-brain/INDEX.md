@@ -3,6 +3,7 @@
 ## Governance
 
 - `00-governance/BRAIN_GUARD.md`
+- `00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`
 - `00-governance/UPDATE_RULES.md`
 - `00-governance/SOURCE_OF_TRUTH_RULES.md`
 - `00-governance/REVIEW_AND_APPROVAL_RULES.md`
@@ -74,6 +75,8 @@
 - `04-workflows/BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md`
 - `04-workflows/BEACON_CAMPAIGN_WORKFLOW.md`
 - `04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md`
+- `04-workflows/HERDMASTER_BREEDING_ATTENTION_WORKFLOW.md`
+- `04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md`
 - `04-workflows/SUPABASE_MIGRATION_WORKFLOW.md`
 - `05-playbooks/*.md`
 
@@ -83,7 +86,9 @@
 - `06-data/BRAIN_AND_MEMORY_V2.md`
 - `07-standards/*.md`
 - `07-standards/AGENT_AUTHORITY_MATRIX.md`
+- `07-standards/OOM_SAKKIE_TELEGRAM_MESSAGE_STANDARD.md`
 - `08-business-rules/*.md`
+- `08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md`
 - `09-examples/*.md`
 - `10-source-map/*.md`
 - `10-source-map/REPO_CLEANUP_STATUS.md`

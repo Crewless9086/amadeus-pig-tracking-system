@@ -108,7 +108,8 @@ Completed:
 
 Next:
 
-- Deploy and owner-check `/sales/beacon-media`.
-- Apply migration `202606180006_extend_beacon_facebook_post_execution_statuses.sql`.
-- Live-smoke one approved-image Facebook post.
+- Finish and safely integrate the active confirmed-publication learning correction.
+- Implement the owner-approved `BEACON-MEDIA-INTAKE-1` direction: existing OOM SAKKIE Telegram bot -> private raw intake -> hash/provenance/media understanding -> visual Farm App review. See `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`.
+- Keep Telegram intake separate from public-use and publication authority.
+- Plan historical OneDrive/folder ingestion as a later bounded phase using the same hashes and provenance; do not import automatically.
 - Design read-only Meta/Facebook performance import without enabling Meta writes, boost execution, or paid spend.

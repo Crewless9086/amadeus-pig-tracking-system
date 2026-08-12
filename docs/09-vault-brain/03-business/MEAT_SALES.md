@@ -32,8 +32,10 @@ SAM is the Farm Sales CEO. Specialist sales agents can later sit under SAM for m
 Pilot V1 should stay simple:
 
 - public pilot focus: half carcass;
-- cut set: Set A / Family Freezer Pack first;
-- full carcass remains a manual override for known/trusted customers;
+- three standard half-carcass collections: Amadeus Signature, Ember, and Grand
+  Cut;
+- a full carcass contains two independently selected half-carcass collections,
+  which may be the same or different;
 - custom cuts stay later at a higher price and higher deposit;
 - Zone 1 towns: Riversdale, Albertinia, Still Bay;
 - first four weeks should be capped at 1 pig/week until the process is calm.
@@ -48,13 +50,14 @@ Pilot V1 should stay simple:
 - Final invoice uses actual packed weight.
 - POP is evidence only; bank-confirmed money unlocks the next gate.
 - Balance must clear before delivery.
+- Delivery only; customer collection is not currently offered.
 - Customer payment reference should stay short and stable, using the last six alphanumeric characters of the order/sale reference.
 
 ## Pricing Direction
 
-Planning price direction:
+Owner-confirmed pilot price:
 
-- standard half/full carcass: around `R130/kg` VAT-inclusive at launch;
+- standard half/full carcass: `R130/kg` VAT-inclusive;
 - custom processing later: around `R145-R150/kg`;
 - older `R100/kg` planning is too risky once VAT, slaughter, butchery, packaging, delivery, and admin are included.
 
@@ -86,22 +89,23 @@ The longer-term example target is about 24-25 meat pigs/month for a `R50,000` cl
 
 ## Cut Sets
 
-Start with Set A as the simplest public pilot product:
+The authoritative cutting and commercial contract is
+`AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`.
 
-- pork chops;
-- leg portions or roasts;
-- shoulder roasts;
-- belly strips;
-- ribs;
-- mince or stew meat;
-- bones for soup/stock.
+- Set A: Amadeus Signature Collection;
+- Set B: Amadeus Ember Collection;
+- Set C: Amadeus Grand Cut Collection.
 
-Future sets:
+Set D is retired from new pilot offers. Historical Set D evidence remains
+historical and must not be silently converted.
 
-- Set B / Braai Pack;
-- Set C / Lean Pack;
-- Set D / Slow-Cook Family Roast Pack;
-- Custom Cut option.
+Each collection is one complete half-carcass cutting route. A full carcass may
+use the same collection for both halves or a different collection per half.
+
+Standard suitable cut pieces are packed four per pack; pork leg chops are
+packed two per pack. Whole cuts remain complete. Stew meat is distributed
+evenly across its applicable packs. Head, feet, offal, excess bones/fat/skin,
+and other unlisted by-products are excluded from the current customer offer.
 
 ## Weekly Operating Rhythm
 

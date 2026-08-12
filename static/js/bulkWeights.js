@@ -7,6 +7,8 @@ const messageBox = document.getElementById("bulk_weights_message");
 const bulkWeightBody = document.getElementById("bulk_weight_body");
 const visibleCount = document.getElementById("bulk_visible_count");
 const enteredCount = document.getElementById("bulk_entered_count");
+const movementCount = document.getElementById("bulk_movement_count");
+const untouchedCount = document.getElementById("bulk_untouched_count");
 const draftStatus = document.getElementById("bulk_draft_status");
 const reviewPanel = document.getElementById("bulk_review_panel");
 const recoveryBanner = document.getElementById("bulk_recovery_banner");
@@ -109,7 +111,7 @@ function setUploadLocked(isLocked) {
   ].forEach((element) => {
     if (element) element.disabled = Boolean(isLocked);
   });
-  document.querySelectorAll("[data-bulk-weight], [data-bulk-pen], [data-bulk-notes]").forEach((input) => {
+  document.querySelectorAll("[data-bulk-weight], [data-bulk-move-toggle], [data-bulk-pen], [data-bulk-notes]").forEach((input) => {
     input.disabled = Boolean(isLocked);
   });
 }
@@ -171,8 +173,7 @@ function draftRowValues() {
 function actionableDraftRows() {
   return draftRowValues().filter((row) =>
     String(row.weight_kg || "").trim() !== "" ||
-    String(row.moved_to_pen_id || "").trim() !== "" ||
-    String(row.condition_notes || "").trim() !== ""
+    String(row.moved_to_pen_id || "").trim() !== ""
   );
 }
 
@@ -187,8 +188,7 @@ function buildDraftPayload(options = {}) {
   const enteredRows = rowValues.filter((row) => String(row.weight_kg || "").trim() !== "");
   const actionableRows = rowValues.filter((row) =>
     String(row.weight_kg || "").trim() !== "" ||
-    String(row.moved_to_pen_id || "").trim() !== "" ||
-    String(row.condition_notes || "").trim() !== ""
+    String(row.moved_to_pen_id || "").trim() !== ""
   );
   return {
     draft_id: options.draft_id || activeDraftId || createDraftId(),
@@ -317,8 +317,7 @@ function draftCountsForFailure() {
   const submittedCount = rows.length || Number(visibleCount.textContent || 0) || fallbackRows.length;
   const actionableCount = countRows.filter((row) =>
     String(row.weight_kg || "").trim() !== "" ||
-    String(row.moved_to_pen_id || "").trim() !== "" ||
-    String(row.condition_notes || "").trim() !== ""
+    String(row.moved_to_pen_id || "").trim() !== ""
   ).length;
   return { rows, submittedCount, actionableCount };
 }
@@ -448,8 +447,17 @@ function countEnteredRows(options = {}) {
 }
 
 function updateSummary(options = {}) {
-  visibleCount.textContent = String(filteredRows().length);
+  const visibleRows = filteredRows();
+  const drafts = draftRowValues();
+  const weights = drafts.filter((row) => String(row.weight_kg || "").trim() !== "").length;
+  const moves = drafts.filter((row) => String(row.moved_to_pen_id || "").trim() !== "").length;
+  const actedPigIds = new Set(Object.entries(draftRows || {})
+    .filter(([, row]) => String(row.weight_kg || "").trim() !== "" || String(row.moved_to_pen_id || "").trim() !== "")
+    .map(([pigId]) => pigId));
+  visibleCount.textContent = String(visibleRows.length);
   enteredCount.textContent = String(countEnteredRows(options));
+  if (movementCount) movementCount.textContent = String(moves);
+  if (untouchedCount) untouchedCount.textContent = String(visibleRows.filter((pig) => !actedPigIds.has(pig.pig_id)).length);
 }
 
 function renderTable(options = {}) {
@@ -467,8 +475,9 @@ function renderTable(options = {}) {
 
   bulkWeightBody.innerHTML = rows.map((pig) => {
     const draft = draftRows[pig.pig_id] || {};
+    const isMoving = String(draft.moved_to_pen_id || "").trim() !== "";
     return `
-      <tr data-bulk-pig-row data-pig-id="${escapeHtml(pig.pig_id || "")}">
+      <tr data-bulk-pig-row data-pig-id="${escapeHtml(pig.pig_id || "")}" class="${isMoving ? "bulk-row-moving" : ""}">
         <td>${escapeHtml(formatTagNumber(pig.tag_number || pig.pig_id || "-"))}</td>
         <td>${escapeHtml(pig.last_weight_date || "-")}</td>
         <td>${escapeHtml(formatKg(pig.current_weight_kg))}</td>
@@ -477,7 +486,14 @@ function renderTable(options = {}) {
         </td>
         <td>${escapeHtml(penLabelForPig(pig))}</td>
         <td>
-          <select data-bulk-pen class="bulk-pen-select">${penOptionsHtml(draft.moved_to_pen_id || "")}</select>
+          <div class="bulk-move-control">
+            <label class="bulk-move-toggle">
+              <input data-bulk-move-toggle type="checkbox" ${isMoving ? "checked" : ""} />
+              <span>Move pen</span>
+            </label>
+            <select data-bulk-pen class="bulk-pen-select ${isMoving ? "" : "hidden"}" aria-label="New pen for pig ${escapeHtml(formatTagNumber(pig.tag_number || pig.pig_id || ""))}">${penOptionsHtml(draft.moved_to_pen_id || "")}</select>
+            <span data-bulk-stay-label class="bulk-stay-label ${isMoving ? "hidden" : ""}">Stays in ${escapeHtml(penLabelForPig(pig))}</span>
+          </div>
         </td>
         <td>
           <input data-bulk-notes type="text" class="bulk-notes-input" value="${escapeHtml(draft.condition_notes || "")}" />
@@ -486,12 +502,35 @@ function renderTable(options = {}) {
     `;
   }).join("");
 
+  document.querySelectorAll("[data-bulk-move-toggle]").forEach((toggle) => {
+    toggle.addEventListener("change", () => {
+      const row = toggle.closest("[data-bulk-pig-row]");
+      const select = row?.querySelector("[data-bulk-pen]");
+      const stayLabel = row?.querySelector("[data-bulk-stay-label]");
+      if (!select) return;
+      if (toggle.checked) {
+        select.classList.remove("hidden");
+        stayLabel?.classList.add("hidden");
+        select.focus();
+      } else {
+        select.value = "";
+        select.classList.add("hidden");
+        stayLabel?.classList.remove("hidden");
+        row?.classList.remove("bulk-row-moving");
+      }
+      updateSummary();
+      scheduleAutosave();
+    });
+  });
   document.querySelectorAll("[data-bulk-weight], [data-bulk-pen], [data-bulk-notes]").forEach((input) => {
     input.addEventListener("input", () => {
       updateSummary();
       scheduleAutosave();
     });
     input.addEventListener("change", () => {
+      if (input.matches("[data-bulk-pen]")) {
+        input.closest("[data-bulk-pig-row]")?.classList.toggle("bulk-row-moving", Boolean(input.value));
+      }
       updateSummary();
       scheduleAutosave();
     });
@@ -544,7 +583,10 @@ function rowsPayload() {
       moved_to_pen_id: draft.moved_to_pen_id || "",
       condition_notes: draft.condition_notes || "",
     };
-  });
+  }).filter((row) =>
+    String(row.weight_kg || "").trim() !== "" ||
+    String(row.moved_to_pen_id || "").trim() !== ""
+  );
 }
 
 function importDraftPayload(payload) {

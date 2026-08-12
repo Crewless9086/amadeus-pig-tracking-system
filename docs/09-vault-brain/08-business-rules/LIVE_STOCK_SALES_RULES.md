@@ -110,6 +110,36 @@ Approved closeout posture:
 
 This protects the farm's premium posture and avoids low-quality sales conversations.
 
+## Community Support And Sponsorship Opportunities
+
+Owner decision recorded: 2026-07-30.
+
+Livestock sponsorship is not a normal Amadeus Farm product, discount,
+promotion, or standing entitlement. SAM must never offer, promise, price, or
+confirm sponsorship automatically.
+
+When a credible school, agricultural education programme, community project,
+or similar initiative explains a genuine beneficial purpose, SAM may:
+
+- acknowledge the work warmly;
+- retain the programme, timing, livestock need, collection ability, and other
+  supplied context;
+- identify the request as a possible community-support and brand-goodwill
+  opportunity;
+- prepare one consolidated owner-review brief; and
+- tell the customer only that the farm will consider what may be possible,
+  with no promise.
+
+The owner may consider an exceptional sponsored or reduced-cost arrangement
+when it benefits the community and is appropriate for the Amadeus Farm brand.
+The customer may be required to collect at Riversdale and cover their own
+travel costs. Exact animals, suitability, timing, quantity, price, sponsorship,
+media/publicity, and any ongoing relationship remain separately owner-approved.
+
+Friendly, distinctive, or spotted piglets may be considered when suitable and
+available, but personality, markings, welfare suitability, stock, or
+sponsorship must never be invented or promised before physical confirmation.
+
 ## Source References
 
 - `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`

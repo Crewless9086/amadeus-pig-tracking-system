@@ -80,3 +80,20 @@ If confidence is below 96%, CHARLIE CORE must either reduce scope, add checkpoin
 Beacon is officially a shared Marketing department under CHARLIE.
 
 Beacon should support multiple businesses and environments, not only Amadeus Farm.
+
+## ROOTLINE Water And Energy Direction
+
+ROOTLINE must protect farm water continuity while minimizing avoidable prepaid-grid use.
+
+Owner-confirmed rules:
+
+- forecast rain is not actual rain or captured tank water;
+- a forecast may support only a bounded pumping delay followed by mandatory comparison with fresh local weather and available tank evidence;
+- if forecast rain does not materialize, ROOTLINE must recommend recovery at the next suitable energy window;
+- grid-supported pumping is permitted when genuinely required for water or critical farm continuity;
+- approximately 40% battery SOC is the discretionary floor, approximately 50% is the provisional normal reserve, and ROOTLINE may recommend higher dynamic reserves from forecast confidence and learned consumption;
+- the solar transfer pump currently runs independently from solar and is not smart-controlled by ROOTLINE;
+- unused future IFTTT/relay channels may be configured for later use but must remain physically `Unconnected`, runtime-disabled, and default OFF until verified;
+- ROOTLINE must not treat a configured endpoint, relay state, or smart-plug state as proof of physical pumping or delivered water.
+
+The detailed controlling rules are in `../08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md`.

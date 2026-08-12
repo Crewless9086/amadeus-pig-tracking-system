@@ -100,10 +100,14 @@ Runtime rules:
 
 Safe pork cut-menu replies are allowed from the documented pork model only:
 
-- Set A: Family Freezer Pack: pork chops, leg portions or roasts, shoulder roasts, belly strips, ribs, mince or stew meat, and bones for soup or stock.
-- Set B: Braai Pack: chops, rashers or belly strips, ribs, shoulder steaks, sosatie or stew cubes, and mince or sausage meat option.
-- Set C: Lean Pack: lean chops, leg steaks, lean shoulder cuts, mince, stew cubes, and fewer fatty belly cuts.
-- Set D: Budget Bulk Pack: larger roasting cuts, mince, stew meat, soup bones, shoulder, mixed chops, and less detailed trimming.
+- Set A / Amadeus Signature Collection: boneless neck steaks, additional forequarter stew meat, loin chops, bone-in rib rashers, whole pork belly, two half legs, cut shanks, and standard stew meat.
+- Set B / Amadeus Ember Collection: thick rib chops, shoulder chops, loin chops, whole pork rib, whole pork belly, one half leg, leg chops, cut shanks, and standard stew meat.
+- Set C / Amadeus Grand Cut Collection: neck chops, loin chops, whole pork rib, whole pork belly, whole pork leg, whole pork shanks (Eisbein), and standard stew meat.
+
+Set D is historical-only and cannot be offered for a new pilot sale. A full
+carcass contains two independently selected half-carcass collections, which
+may be the same or different. Customer replies must follow
+`docs/09-vault-brain/03-business/AMADEUS_MEAT_CUTTING_AND_COMMERCIAL_STANDARD.md`.
 
 These descriptions do not grant pricing, timing, deposit, booking, order, or stock authority.
 
