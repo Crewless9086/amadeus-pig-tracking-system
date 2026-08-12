@@ -9,7 +9,8 @@ from pathlib import Path
 def _parsed(rows):
     return {
         "telegram_user_id": "42", "telegram_chat_id": "42",
-        "provider_message_id": "9001", "text": "grouped breeding facts",
+        "provider_message_id": "9001", "provider_timestamp":"2026-08-12T11:41:25Z",
+        "text": "grouped breeding facts",
         "semantic": {"domain": "herd_management", "evidence_generation": "GEN-1",
                      "breeding_actions": rows},
     }
@@ -80,6 +81,35 @@ def test_non_owner_is_fail_closed():
     assert result["writes_farm_data"] is False
 
 
+def test_provider_identity_and_timezone_aware_chronology_are_required_before_claim():
+    for field, value in (("provider_message_id", ""), ("provider_timestamp", ""),
+                         ("provider_timestamp", "2026-08-12T11:41:25"),
+                         ("provider_timestamp", "not-a-time")):
+        parsed = _parsed([{"animal_ref":"Linda","action":"near_farrowing"}])
+        parsed[field] = value
+        called = []
+        result, status = handle_grouped_breeding_message(
+            parsed, issue_gateway_owner_authority("42", "42"),
+            evidence_loader=_evidence, claim_creator=lambda **kw: called.append(kw))
+        assert status == 422
+        assert result["status"] == "breeding_provider_provenance_required"
+        assert result["writes_farm_data"] is False and called == []
+
+
+def test_authenticated_provider_time_overrides_unproven_semantic_observation_time():
+    captured = {}
+    result, status = handle_grouped_breeding_message(_parsed([
+        {"animal_ref":"Ms Piggy","action":"recovery_hold","body_condition_score":2,
+         "observed_at":"2035-01-01T00:00:00+00:00"},
+        {"animal_ref":"Linda","action":"near_farrowing",
+         "observed_at":"2035-01-01T00:00:00+00:00"},
+    ]), issue_gateway_owner_authority("42", "42"), evidence_loader=_evidence,
+        claim_creator=lambda **kwargs:(captured.update(kwargs) or {"callback_token":"TOKEN"}))
+    assert status == 200 and result["status"] == "breeding_grouped_preview_ready"
+    assert [row["observed_at"] for row in captured["preview_payload"]["preview"]["rows"]] == [
+        "2026-08-12T11:41:25+00:00", "2026-08-12T11:41:25+00:00"]
+
+
 def test_claim_persistence_failure_is_visibly_contained_without_write():
     result,status=handle_grouped_breeding_message(_parsed([
         {"animal_ref":"Ms Piggy","action":"recovery_hold","body_condition_score":2,
@@ -121,10 +151,9 @@ def test_genuine_seven_row_update_calculates_duration_and_renders_every_fact():
            "exposure_started_on":"2026-08-12","planned_days":17}
           for sow,boar in (("Sophie","Bola"),("Olive","Tyson"),("Shupe","Tyson"),
                            ("Lucy","Tyson"),("Lolly","Prince"))]
-    rows += [{"animal_ref":"Ms Piggy","action":"recovery_hold","body_condition_score":2,
-              "observed_at":"2026-08-12T11:41:25+00:00"},
+    rows += [{"animal_ref":"Ms Piggy","action":"recovery_hold","body_condition_score":2},
              {"animal_ref":"Linda","action":"near_farrowing","prior_mating_known":False,
-              "father_known":False,"observed_at":"2026-08-12T11:41:25+00:00"}]
+              "father_known":False}]
     captured={}
     result,status=handle_grouped_breeding_message(_parsed(rows),
         issue_gateway_owner_authority("42","42"),evidence_loader=lambda:evidence,
@@ -137,3 +166,5 @@ def test_genuine_seven_row_update_calculates_duration_and_renders_every_fact():
                ("Sophie","Olive","Shupe","Lucy","Lolly","Ms Piggy","Linda"))
     assert "Nothing has been recorded yet" in result["answer"]
     assert "previous mating date and father Unknown" in result["answer"]
+    assert preview["rows"][5]["observed_at"] == "2026-08-12T11:41:25+00:00"
+    assert preview["rows"][6]["observed_at"] == "2026-08-12T11:41:25+00:00"
