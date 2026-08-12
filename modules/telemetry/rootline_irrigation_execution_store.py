@@ -341,7 +341,10 @@ def _numeric_equal(left, right):
     if left is None or right is None:
         return left is None and right is None
     try:
-        return float(left) == float(right)
+        from decimal import Decimal, ROUND_HALF_UP
+        scale = Decimal("0.01")
+        return (Decimal(str(left)).quantize(scale, rounding=ROUND_HALF_UP)
+                == Decimal(str(right)).quantize(scale, rounding=ROUND_HALF_UP))
     except (TypeError, ValueError):
         return False
 
