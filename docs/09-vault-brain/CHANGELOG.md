@@ -1,5 +1,12 @@
 # Vault Brain Changelog
 
+## 2026-08-12 - Owner-facing performance mission
+
+- Added the owner-approved application performance mission for the dashboard and principal farm pages.
+- Required evidence-led latency baselines, compact canonical read models, independent progressive panels, bounded failures and safe short-lived caching instead of blind Render scaling.
+- Set owner-facing timing targets while preserving canonical truth, authentication, protected actions and hardware/farm safety.
+- Required deployed owner acceptance and non-destructive worktree closeout before Business completion.
+
 ## 2026-08-12 - Inclusive breeding exposure date reconciled
 
 - Made the farm's 17-day natural-exposure rule unambiguous: placement day is
