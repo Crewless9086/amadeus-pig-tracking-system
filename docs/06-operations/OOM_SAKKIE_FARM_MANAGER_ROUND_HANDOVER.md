@@ -261,3 +261,28 @@ The v4 contract keeps small identified lists explicit, renders large identified
 herds as a concise count bound to the canonical worklist, and keeps unlabelled
 pigs outside the recording preview until identity is proven. An all-unlabelled
 round remains visible as one waiting-evidence task rather than disappearing.
+
+## 12 August actionable-manager continuation
+
+The approved continuation is tracked in
+`OOM_SAKKIE_ACTIONABLE_DAILY_MANAGER_MISSION_20260812.md`. It extends the same
+scheduled manager and provider-bound family lifecycle; it does not create a
+second manager.
+
+The source candidate persists the single daily grouped-question binding,
+resolves it before generic semantic intake, retains partial English/Afrikaans
+evidence and retires only the exact answered task generation. Direct breeding,
+irrigation and sales requests retain specialist precedence. Presentation is
+bounded to three do-today and three watch items with compact complete wording.
+
+Read-only reconciliation found four genuine money-due transactions: Michaels
+R2,250 Unpaid; Quinton R4,400 Unpaid; Delia De Koker R2,600 Unpaid; and BKB
+invoice S-EE02-2710 with R4,470.51 settlement payable and receipt Unknown. The
+existing slaughter updater is not used for BKB because it can rewrite invoice
+totals. The candidate adds a separately owner-governed payment-state update on
+the same canonical transaction that changes only received amount/status/method/
+date and preserves all invoice/item accounting.
+
+This is Prepared, not Operational or Business-complete. Telegram 3527/3528 stay
+immutable. Production acceptance must use fresh genuine provider traffic and
+must not manufacture a breeding request, grouped observation or payment.

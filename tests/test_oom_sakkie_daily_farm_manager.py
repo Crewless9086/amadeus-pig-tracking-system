@@ -30,6 +30,8 @@ def store():
             candidates=[row for row in rows.values() if row.get("daily_identity")==identity
                         and row.get("status") in {"presented","unchanged","provider_ambiguous"}]
             return candidates[-1] if candidates else None
+        if action=="load_answered_questions":
+            return ()
         created=identity not in rows
         if created: rows[identity]=dict(payload or {})
         return {"success":True,"created":created}
@@ -76,7 +78,9 @@ def test_sale_watcher_surfaces_today_readiness_and_suppresses_closed_settled_sal
     }],now=NOW)
     assert len(value.work_items)==1
     task=value.work_items[0]
-    assert task.dedupe_key=="sale:SALE-TODAY" and "paperwork" in task.why
+    assert task.dedupe_key=="sale:SALE-TODAY" and task.title=="Payment — Farm sale"
+    assert "/sales/slaughter?update_sale=SALE-TODAY&amp;payment_only=1" in build_daily_management_packet(
+        [value],now=NOW)["answer"]
     assert task.authority is Authority.OWNER_DECISION
 
 
@@ -84,7 +88,7 @@ def test_maximum_three_priorities_retains_watch_and_one_question():
     items=[item(f"I-{index}",f"Task {index}",WorkState.URGENT if index<2 else WorkState.PLANNED,
         100-index,"One grouped question?" if index==0 else "") for index in range(7)]
     packet=build_daily_management_packet([result(items=items)],now=NOW)
-    assert len(packet["priorities"])==3 and len(packet["watch"])==4
+    assert len(packet["priorities"])==3 and len(packet["watch"])==3
     assert len(packet["all_tasks"])==7 and packet["question"]=="One grouped question?"
     assert packet["answer"].count("<b>ONE QUESTION</b>")==1
 

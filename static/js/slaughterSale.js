@@ -39,6 +39,8 @@ const closeUpdatePanelButton = document.getElementById("close_slaughter_update_p
 let allPigs = [];
 let allTransactions = [];
 let pigRowCounter = 0;
+let paymentDeepLinkOpened = false;
+let paymentDeepLinkMode = false;
 
 function setTodayDate() {
   const today = new Date();
@@ -315,9 +317,38 @@ async function loadTransactions() {
     }
     allTransactions = data.sales_transactions || [];
     applyTransactionFilters();
+    openPaymentDeepLinkOnce();
   } catch (error) {
     transactionsBody.innerHTML = '<tr><td colspan="6" class="table-empty">Could not load slaughter transactions.</td></tr>';
   }
+}
+
+async function openPaymentDeepLinkOnce() {
+  if (paymentDeepLinkOpened) return;
+  const saleId = new URLSearchParams(window.location.search).get("update_sale");
+  if (!saleId) return;
+  let transaction = allTransactions.find((item) => item.sale_id === saleId);
+  if (!transaction) {
+    try {
+      const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}`);
+      const data = await response.json();
+      if (response.ok && data.success) {
+        transaction = { ...data.sales_transaction, item_count: (data.items || []).length };
+        allTransactions.push(transaction);
+      }
+    } catch (_error) {
+      transaction = null;
+    }
+  }
+  if (!transaction) {
+    showMessage("That sale is not available in the current canonical list.", "error");
+    paymentDeepLinkOpened = true;
+    return;
+  }
+  paymentDeepLinkOpened = true;
+  paymentDeepLinkMode = new URLSearchParams(window.location.search).get("payment_only") === "1";
+  const amountDue = transaction.net_settlement_payable ?? transaction.net_total;
+  openUpdatePanel(saleId, amountDue, transaction.item_count);
 }
 
 function buildPayload() {
@@ -531,10 +562,19 @@ async function submitUpdatePayment(event) {
   setUpdateSubmitting(true);
 
   try {
-    const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/payment`, {
+    const endpoint = paymentDeepLinkMode
+      ? `/api/sales-transactions/${encodeURIComponent(saleId)}/payment-state`
+      : `/api/sales-transactions/${encodeURIComponent(saleId)}/payment`;
+    const requestPayload = paymentDeepLinkMode ? {
+      payment_status: payload.payment_status,
+      payment_method: payload.payment_method,
+      payment_date: payload.payment_date,
+      received_amount: payload.payment_status === "Unpaid" ? 0 : payload.line_total,
+    } : payload;
+    const response = await fetch(endpoint, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(requestPayload),
     });
     const data = await response.json();
 

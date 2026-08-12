@@ -676,6 +676,13 @@ def semantic_intent_match(semantic):
             confidence,
             "semantic:rootline_read_plan",
         )
+    if semantic.get("domain") == "sam":
+        return IntentMatch(
+            str(semantic.get("intent") or "sales_status")[:80],
+            "sales_dashboard",
+            confidence,
+            "semantic:sales_read_status",
+        )
     return None
 
 
