@@ -66,6 +66,10 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
                 "answer": ("I understood the complete group, but could not store its protected preview safely. "
                            "Nothing was recorded. The original provider-bound message remains the recovery source."),
                 **_zero()}, 503
+    if claim.get("status") == "protected_claim_existing" and claim.get("preview_card_message_id"):
+        return {"handled": True, "success": True, "status": "breeding_group_preview_replay_suppressed",
+                "mission_id": mission, "card_mission_id": mission, "answer": "",
+                "suppress_owner_delivery": True, "replay_suppressed": True, **_zero()}, 200
     return {"handled": True, "success": True, "status": "breeding_grouped_preview_ready",
             "mission_id": mission, "card_mission_id": mission,
             "preview": preview["preview"], "preview_sha256": preview["preview_sha256"],

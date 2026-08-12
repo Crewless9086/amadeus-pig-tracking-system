@@ -27,7 +27,7 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
     with (connect_factory() if connect_factory else _connect()) as db:
       with db.cursor() as cur:
         cur.execute("""select callback_token,status,expires_at,owner_user_id,private_chat_id,
-          provider_message_id,evidence_generation,preview_payload
+          provider_message_id,evidence_generation,preview_payload,preview_card_message_id
           from app_private.oom_protected_action_claims
           where action_kind=%s and mission_id=%s and preview_digest=%s""",
           (action_kind,mission_id,digest))
@@ -38,7 +38,8 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
               and prior[7]==preview_payload)
             if prior[1]=="active" and prior[2]>datetime.now(timezone.utc) and exact:
                 return {"success":True,"status":"protected_claim_existing","callback_token":prior[0],
-                  "preview_digest":digest,"expires_at":prior[2].isoformat()}
+                  "preview_digest":digest,"expires_at":prior[2].isoformat(),
+                  "preview_card_message_id":str(prior[8] or "")}
             raise RuntimeError("protected_claim_identity_or_state_conflict")
         cur.execute("""update app_private.oom_protected_action_claims set status='changed'
           where mission_id=%s and status='active'""",(mission_id,))
