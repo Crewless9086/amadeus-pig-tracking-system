@@ -4,6 +4,7 @@ from modules.pig_weights.herdmaster_breeding_exposure_recovery import (
     build_grouped_preview,
     exposure_cycle_window,
     planned_exposure_removal_on,
+    build_active_cycle_correction_preview,
 )
 from modules.pig_weights.herdmaster_breeding_operating_loop import build_breeding_operating_loop
 from modules.pig_weights.pig_weights_validation import validate_new_litter_payload
@@ -194,3 +195,14 @@ def test_cycle_window_migration_extends_canonical_mating_without_exact_date():
     assert "mating_date is null" in sql
     assert "expected_farrowing_date is null" in sql
     assert "expected_farrowing_window_start = service_window_start + 114" in sql
+
+
+def test_existing_exposure_cycle_correction_preview_is_exact_and_unknown_safe():
+    rows=[{"exposure_identity":f"EXP-{i}","sow_pig_id":f"SOW-{i}","boar_pig_id":"BOAR-1",
+           "occurred_on":"2026-08-12","planned_removal_on":"2026-08-28"} for i in range(5)]
+    result=build_active_cycle_correction_preview(rows,exposure_group_identity="GROUP-1")
+    assert result["success"] is True
+    assert {row["state"] for row in result["preview"]["rows"]} == {"Exposure Active"}
+    assert {row["expected_farrowing_window_start"] for row in result["preview"]["rows"]} == {"2026-12-04"}
+    assert {row["expected_farrowing_window_end"] for row in result["preview"]["rows"]} == {"2026-12-20"}
+    assert all(row["exact_service_date"] is row["conception"] is row["pregnancy"] is None for row in result["preview"]["rows"])

@@ -89,8 +89,12 @@ class BreedingExposurePostgresTests(unittest.TestCase):
                 "where sow_pig_id = any(%s)", (self.sows,),
             )
             self.assertEqual(cur.fetchone(), (5, 5, 5, 1))
-            cur.execute("select count(*) from public.mating_events where sow_pig_id = any(%s)", (self.sows,))
-            self.assertEqual(cur.fetchone()[0], 0)
+            cur.execute("""select count(*),count(mating_date),count(*) filter(where breeding_cycle_state='Exposure Active'),
+                min(service_window_start),max(service_window_end),min(expected_farrowing_window_start),max(expected_farrowing_window_end)
+                from public.mating_events where sow_pig_id = any(%s)""", (self.sows,))
+            self.assertEqual(cur.fetchone(),(5,0,5,__import__('datetime').date(2026,8,12),
+                __import__('datetime').date(2026,8,28),__import__('datetime').date(2026,12,4),
+                __import__('datetime').date(2026,12,20)))
             cur.execute("select count(*) from public.pig_location_events where pig_id = any(%s)", (self.sows,))
             self.assertEqual(cur.fetchone()[0], 0)
 
@@ -110,7 +114,7 @@ class BreedingExposurePostgresTests(unittest.TestCase):
             )
             self.assertEqual(cur.fetchone()[0], 0)
 
-    def test_group_removal_creates_five_window_cycles_once_without_exact_dates(self):
+    def test_group_removal_completes_same_five_window_cycles_without_exact_dates(self):
         started = self.preview()
         execute_grouped_preview(started, confirmed_preview_sha256=started["preview_sha256"],
                                 actor_id="owner-test", connect_factory=self.connect)
@@ -136,6 +140,8 @@ class BreedingExposurePostgresTests(unittest.TestCase):
             self.assertEqual(cur.fetchone(),(5,0,__import__('datetime').date(2026,8,12),
                 __import__('datetime').date(2026,8,28),__import__('datetime').date(2026,12,4),
                 __import__('datetime').date(2026,12,20),5))
+            cur.execute("select count(*) from public.mating_events where sow_pig_id=any(%s) and breeding_cycle_state='Exposure Complete'",(self.sows,))
+            self.assertEqual(cur.fetchone()[0],5)
             cur.execute("select count(*) from public.pig_location_events where pig_id=any(%s)",(self.sows,))
             self.assertEqual(cur.fetchone()[0],0)
         replay,replay_status=execute_grouped_preview(removal,
@@ -170,6 +176,62 @@ class BreedingExposurePostgresTests(unittest.TestCase):
         with self.connect() as db, db.cursor() as cur:
             cur.execute("select count(*) from public.pig_breeding_exposure_events where sow_pig_id=any(%s)",(self.sows,))
             self.assertEqual(cur.fetchone()[0],0)
+
+    def test_cycle_constraint_rejects_contradictory_active_and_complete_dates(self):
+        with self.connect() as db, db.cursor() as cur:
+            with self.assertRaises(psycopg.errors.CheckViolation):
+                cur.execute("""insert into public.mating_events(
+                    mating_id,sow_pig_id,boar_pig_id,source_exposure_identity,exposure_group_identity,
+                    service_window_start,service_window_end,expected_farrowing_window_start,
+                    expected_farrowing_window_end,exposure_planned_removal_on,service_date_basis,
+                    breeding_cycle_state,exposure_actual_removal_on)
+                    values(%s,%s,%s,%s,%s,'2026-08-12','2026-08-28','2026-12-04',
+                           '2026-12-20','2026-08-28','exposure_window_estimate',
+                           'Exposure Active','2026-08-28')""",
+                    (f"MAT-{self.suffix}",self.sows[0],self.boars[0],f"EXPOSURE-{self.suffix}",f"GROUP-{self.suffix}"))
+            db.rollback()
+
+    def test_early_and_late_uit_complete_same_cycle_and_keep_original_plan(self):
+        for index, actual in enumerate(("2026-08-26", "2026-08-30")):
+            started = self.preview()
+            started["preview"]["rows"] = [started["preview"]["rows"][index]]
+            import hashlib, json
+            digest = hashlib.sha256(json.dumps(started["preview"],sort_keys=True,separators=(",",":")).encode()).hexdigest()
+            started["preview_sha256"] = digest
+            from modules.pig_weights.herdmaster_breeding_exposure_recovery import _stable
+            started["operation_id"] = _stable("HERD-BREED-GROUP-",digest)
+            result,status=execute_grouped_preview(started,confirmed_preview_sha256=digest,
+                actor_id="owner-test",connect_factory=self.connect)
+            self.assertEqual((status,result["rows_changed"]),(201,1))
+            row=started["preview"]["rows"][0]
+            exposure_identity=_stable("HERD-EXPOSURE-ID-",row["pig_id"],row["boar_pig_id"],row["exposure_started_on"])
+            removal=build_grouped_preview({"rows":[{"pig_id":row["pig_id"],"action":"exposure_removal",
+                "boar_pig_id":row["boar_pig_id"],"exposure_identity":exposure_identity,
+                "exposure_group_identity":row["exposure_group_identity"],
+                "exposure_started_on":"2026-08-12","actual_removed_on":actual}]},
+                evidence_generation=f"UIT-{actual}")
+            result,status=execute_grouped_preview(removal,
+                confirmed_preview_sha256=removal["preview_sha256"],actor_id="owner-test",
+                connect_factory=self.connect)
+            self.assertEqual((status,result["rows_changed"]),(201,1))
+            with self.connect() as db, db.cursor() as cur:
+                cur.execute("""select breeding_cycle_state,exposure_planned_removal_on,
+                    exposure_actual_removal_on,service_window_end from public.mating_events
+                    where source_exposure_identity=%s""",(exposure_identity,))
+                self.assertEqual(cur.fetchone(),("Exposure Complete",__import__('datetime').date(2026,8,28),
+                    __import__('datetime').date.fromisoformat(actual),__import__('datetime').date.fromisoformat(actual)))
+        with self.connect() as db, db.cursor() as cur:
+            with self.assertRaises(psycopg.errors.CheckViolation):
+                cur.execute("""insert into public.mating_events(
+                    mating_id,sow_pig_id,boar_pig_id,source_exposure_identity,exposure_group_identity,
+                    service_window_start,service_window_end,expected_farrowing_window_start,
+                    expected_farrowing_window_end,exposure_planned_removal_on,service_date_basis,
+                    breeding_cycle_state,exposure_actual_removal_on)
+                    values(%s,%s,%s,%s,%s,'2026-08-12','2026-08-11','2026-12-04',
+                           '2026-12-03','2026-08-11','exposure_window_estimate',
+                           'Exposure Complete','2026-08-11')""",
+                    (f"MAT-{self.suffix}-2",self.sows[1],self.boars[0],f"EXPOSURE-{self.suffix}-2",f"GROUP-{self.suffix}"))
+            db.rollback()
 
 
 if __name__ == "__main__":

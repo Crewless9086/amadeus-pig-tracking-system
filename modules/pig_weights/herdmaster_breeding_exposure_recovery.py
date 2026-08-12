@@ -44,6 +44,98 @@ def exposure_cycle_window(started_on, removed_on):
     }
 
 
+def build_active_cycle_correction_preview(rows, *, exposure_group_identity):
+    """Seal existing canonical IN evidence for cycle-only governed recovery."""
+    cleaned, errors, seen = [], [], set()
+    for raw in rows if isinstance(rows, list) else []:
+        row = raw if isinstance(raw, dict) else {}
+        identity = str(row.get("exposure_identity") or "").strip()
+        sow, boar = str(row.get("sow_pig_id") or "").strip(), str(row.get("boar_pig_id") or "").strip()
+        started, planned = _date(row.get("occurred_on")), _date(row.get("planned_removal_on"))
+        if not identity or identity in seen or not sow or not boar:
+            errors.append("five_unique_canonical_exposures_required")
+        seen.add(identity)
+        try:
+            window = exposure_cycle_window(started, planned)
+        except ValueError:
+            errors.append(f"{identity or sow}:supported_window_required")
+            window = {}
+        cleaned.append({"exposure_identity":identity,"sow_pig_id":sow,"boar_pig_id":boar,
+            "exposure_group_identity":str(exposure_group_identity or ""),"state":"Exposure Active",
+            "in_on":str(started) if started else None,"planned_out_on":str(planned) if planned else None,
+            **window,"exact_service_date":None,"conception":None,"pregnancy":None})
+    if len(cleaned) != 5 or not exposure_group_identity:
+        errors.append("exact_five_row_group_required")
+    canonical={"contract_version":BREEDING_CYCLE_VERSION,"action":"recover_active_cycles_from_existing_exposures",
+               "exposure_group_identity":str(exposure_group_identity or ""),"rows":cleaned,"row_count":len(cleaned)}
+    digest=hashlib.sha256(json.dumps(canonical,sort_keys=True,separators=(",",":")).encode()).hexdigest().upper()
+    return {"success":not errors,"errors":errors,"preview":canonical,"preview_sha256":digest,
+            "operation_id":_stable("HERD-CYCLE-RECOVERY-",digest),"writes_performed":False}
+
+
+def execute_active_cycle_correction(preview_result, *, confirmed_preview_sha256, actor_id, connect_factory):
+    if (not preview_result.get("success") or confirmed_preview_sha256 != preview_result.get("preview_sha256")
+            or not str(actor_id or "").strip()):
+        return {"success":False,"status":"exact_owner_confirmation_required","rows_changed":0},409
+    preview=preview_result["preview"]
+    recalculated=hashlib.sha256(json.dumps(preview,sort_keys=True,separators=(",",":")).encode()).hexdigest().upper()
+    if recalculated != confirmed_preview_sha256:
+        return {"success":False,"status":"preview_digest_mismatch","rows_changed":0},409
+    created=[]
+    with connect_factory() as db, db.cursor() as cur:
+        cur.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",(preview_result["operation_id"],))
+        for sow_id in sorted(row["sow_pig_id"] for row in preview["rows"]):
+            cur.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",("herd-breeding-pig:"+sow_id,))
+        for row in preview["rows"]:
+            cur.execute("""select sow_pig_id,boar_pig_id,occurred_on,planned_removal_on,exposure_group_identity
+                from public.pig_breeding_exposure_events where exposure_identity=%s and event_kind='started' for share""",
+                (row["exposure_identity"],))
+            evidence=cur.fetchone()
+            expected=(row["sow_pig_id"],row["boar_pig_id"],_date(row["in_on"]),_date(row["planned_out_on"]),preview["exposure_group_identity"])
+            if not evidence or tuple(evidence) != expected:
+                raise ValueError("canonical_exposure_start_mismatch")
+        cur.execute("""select source_exposure_identity,sow_pig_id,boar_pig_id,exposure_group_identity,
+            service_window_start,service_window_end,expected_farrowing_window_start,
+            expected_farrowing_window_end,breeding_cycle_state,exposure_planned_removal_on,
+            exposure_actual_removal_on,mating_date,pregnancy_check_result,outcome
+            from public.mating_events where source_exposure_identity=any(%s) for update""",
+            ([row["exposure_identity"] for row in preview["rows"]],))
+        prior_rows=cur.fetchall()
+        expected_rows={(row["exposure_identity"],row["sow_pig_id"],row["boar_pig_id"],preview["exposure_group_identity"],
+            _date(row["service_window_start"]),_date(row["service_window_end"]),
+            _date(row["expected_farrowing_window_start"]),_date(row["expected_farrowing_window_end"]),
+            "Exposure Active",_date(row["planned_out_on"]),None,None,None,None) for row in preview["rows"]}
+        if len(prior_rows) == 5 and set(tuple(row) for row in prior_rows) == expected_rows:
+            return {"success":True,"status":"active_cycle_correction_replayed_noop","rows_changed":0},200
+        if prior_rows:
+            raise ValueError("partial_active_cycle_correction_conflict")
+        for row in preview["rows"]:
+            cur.execute("""select 1 from public.mating_events where sow_pig_id=%s
+                and source_exposure_identity is not null and breeding_cycle_state='Exposure Active' limit 1""",
+                (row["sow_pig_id"],))
+            if cur.fetchone() is not None:
+                raise ValueError("another_active_exposure_cycle_exists")
+            mating_id=_stable("MAT-EXPOSURE-",row["exposure_identity"])
+            cur.execute("""insert into public.mating_events(
+                mating_id,sow_pig_id,boar_pig_id,mating_date,mating_method,exposure_group,
+                exposure_group_identity,
+                pregnancy_check_result,outcome,mating_notes,source_exposure_identity,
+                service_window_start,service_window_end,service_date_basis,
+                expected_farrowing_window_start,expected_farrowing_window_end,
+                breeding_cycle_state,exposure_planned_removal_on,exposure_actual_removal_on,created_at,updated_at)
+                values(%s,%s,%s,null,'Natural Exposure',%s,%s,null,null,%s,%s,%s::date,%s::date,%s,
+                       %s::date,%s::date,'Exposure Active',%s::date,null,now(),now())""",
+                (mating_id,row["sow_pig_id"],row["boar_pig_id"],preview["exposure_group_identity"],
+                 preview["exposure_group_identity"],
+                 "Recovered from canonical physical IN; exact service, conception and pregnancy remain Unknown.",
+                 row["exposure_identity"],row["service_window_start"],row["service_window_end"],
+                 row["service_date_basis"],row["expected_farrowing_window_start"],
+                 row["expected_farrowing_window_end"],row["planned_out_on"]))
+            created.append(mating_id)
+    return {"success":True,"status":"active_cycle_correction_completed","rows_changed":len(created),
+            "mating_ids":created},201
+
+
 def _date(value):
     try:
         return date.fromisoformat(str(value or ""))
@@ -213,11 +305,15 @@ def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_i
                 cur.execute(f"select 1 from {table} where idempotency_key=%s", (key,))
                 event_exists = cur.fetchone() is not None
                 prior_count += int(event_exists)
-                if row["action"] == "exposure_removal":
+                if row["action"] in {"exposure", "exposure_removal"}:
+                    source_identity = (row.get("exposure_identity") or
+                        _stable("HERD-EXPOSURE-ID-", row["pig_id"], row["boar_pig_id"], row.get("exposure_started_on")))
                     cur.execute("select 1 from public.mating_events where source_exposure_identity=%s",
-                                (row["exposure_identity"],))
+                                (source_identity,))
                     cycle_exists = cur.fetchone() is not None
-                    if cycle_exists != event_exists:
+                    if row["action"] == "exposure" and cycle_exists != event_exists:
+                        raise ValueError("partial_exposure_cycle_transition_conflict")
+                    if row["action"] == "exposure_removal" and event_exists and not cycle_exists:
                         raise ValueError("partial_exposure_cycle_transition_conflict")
             movement_prior = 0
             for movement in preview.get("movements") or ():
@@ -302,24 +398,45 @@ def execute_grouped_preview(preview_result, *, confirmed_preview_sha256, actor_i
                 if cur.rowcount != 1:
                     raise ValueError("group_row_already_exists_or_conflicts")
                 inserted_row = {"pig_id": row["pig_id"], "action": action, "event_id": event_id}
-                if action == "exposure_removal":
-                    window = exposure_cycle_window(row["exposure_started_on"], row["actual_removed_on"])
+                if action == "exposure":
+                    window = exposure_cycle_window(row["exposure_started_on"], row["planned_removal_on"])
                     mating_id = _stable("MAT-EXPOSURE-", identity)
                     cur.execute("""insert into public.mating_events(
                         mating_id,sow_pig_id,boar_pig_id,mating_date,mating_method,exposure_group,
+                        exposure_group_identity,
                         pregnancy_check_result,outcome,mating_notes,source_exposure_identity,
                         service_window_start,service_window_end,service_date_basis,
-                        expected_farrowing_window_start,expected_farrowing_window_end,created_at,updated_at)
-                        values(%s,%s,%s,null,'Natural Exposure',%s,'Pending','Pending',%s,%s,
-                               %s::date,%s::date,%s,%s::date,%s::date,now(),now())
+                        expected_farrowing_window_start,expected_farrowing_window_end,
+                        breeding_cycle_state,exposure_planned_removal_on,exposure_actual_removal_on,
+                        created_at,updated_at)
+                        values(%s,%s,%s,null,'Natural Exposure',%s,%s,null,null,%s,%s,
+                               %s::date,%s::date,%s,%s::date,%s::date,'Exposure Active',%s::date,null,now(),now())
                         on conflict(source_exposure_identity) where source_exposure_identity is not null do nothing""",
                         (mating_id,row["pig_id"],row["boar_pig_id"],row.get("exposure_group_identity"),
-                         "Physical exposure completed; exact service and conception dates remain Unknown.",
+                         row.get("exposure_group_identity"),
+                         "Physical exposure active; exact service, conception and pregnancy remain Unknown.",
                          identity,window["service_window_start"],window["service_window_end"],
                          window["service_date_basis"],window["expected_farrowing_window_start"],
-                         window["expected_farrowing_window_end"]))
+                         window["expected_farrowing_window_end"],row["planned_removal_on"]))
                     if cur.rowcount != 1:
                         raise ValueError("exposure_cycle_already_exists_or_conflicts")
+                    inserted_row.update(mating_id=mating_id, **window)
+                elif action == "exposure_removal":
+                    window = exposure_cycle_window(row["exposure_started_on"], row["actual_removed_on"])
+                    mating_id = _stable("MAT-EXPOSURE-", identity)
+                    cur.execute("""update public.mating_events set
+                        service_window_end=%s::date,expected_farrowing_window_end=%s::date,
+                        breeding_cycle_state='Exposure Complete',exposure_actual_removal_on=%s::date,
+                        mating_notes=%s,updated_at=now()
+                        where source_exposure_identity=%s and mating_id=%s
+                          and breeding_cycle_state='Exposure Active'
+                          and service_window_start=%s::date""",
+                        (window["service_window_end"],window["expected_farrowing_window_end"],
+                         row["actual_removed_on"],
+                         "Physical exposure complete; exact service, conception and pregnancy remain Unknown.",
+                         identity,mating_id,window["service_window_start"]))
+                    if cur.rowcount != 1:
+                        raise ValueError("matching_active_exposure_cycle_required")
                     inserted_row.update(mating_id=mating_id, **window)
                 inserted.append(inserted_row)
             movement_rows=[]
