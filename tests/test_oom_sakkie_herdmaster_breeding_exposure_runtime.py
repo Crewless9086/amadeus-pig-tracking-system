@@ -214,6 +214,30 @@ def test_grouped_parser_supports_english_colons_conjunctions_and_named_date():
         ("Bola","Sophie"),("Bola","Olive"),("Tyson","Shupe"),("Tyson","Lucy")]
 
 
+def test_natural_removal_resolves_existing_exposure_and_matches_browser_contract():
+    evidence=_evidence()
+    evidence["exposure_rows"]=[{
+        "exposure_event_id":"START-1","exposure_identity":"EXP-1",
+        "exposure_group_identity":"GROUP-1","event_kind":"started",
+        "sow_pig_id":"SOW-1","boar_pig_id":"BOAR-1","occurred_on":"2026-08-12",
+        "planned_removal_on":"2026-08-28"}]
+    captured={}
+    result,status=handle_grouped_breeding_message(_parsed([{
+        "animal_ref":"Ms Piggy","boar_ref":"Bola","action":"exposure_removal",
+        "actual_removed_on":"2026-08-28"}]),issue_gateway_owner_authority("42","42"),
+        evidence_loader=lambda:evidence,
+        claim_creator=lambda **kwargs:(captured.update(kwargs) or {"callback_token":"TOKEN"}))
+    assert status == 200 and result["status"] == "breeding_grouped_preview_ready"
+    row=captured["preview_payload"]["preview"]["rows"][0]
+    assert row["exposure_identity"] == "EXP-1"
+    assert row["service_window_start"] == "2026-08-12"
+    assert row["service_window_end"] == "2026-08-28"
+    assert row["expected_farrowing_window_start"] == "2026-12-04"
+    assert row["expected_farrowing_window_end"] == "2026-12-20"
+    assert row["exact_service_date"] is None
+    assert "Exact service and conception remain Unknown" in result["answer"]
+
+
 def test_grouped_parser_uses_provider_date_for_today_and_ignores_explicit_not_placed():
     rows=parse_grouped_exposure_reply(
         "Vandag geplaas\nBola - Sophie\nMs Piggy en Linda was nie geplaas nie",

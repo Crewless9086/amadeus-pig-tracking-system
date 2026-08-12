@@ -285,7 +285,7 @@ def _breeding_actions(value):
         return ()
     allowed = {"exposure", "exposure_removal", "recovery_hold", "recovery_clearance", "near_farrowing"}
     keys = {"animal_ref", "boar_ref", "action", "exposure_started_on", "planned_days", "planned_removal_on",
-            "actual_removed_on", "exposure_identity", "body_condition_score", "observed_at", "factual_note",
+            "actual_removed_on", "exposure_identity", "exposure_group_identity", "body_condition_score", "observed_at", "factual_note",
             "prior_mating_known", "father_known"}
     result, seen = [], set()
     for raw in value:

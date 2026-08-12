@@ -10,6 +10,7 @@ def test_audit_workflow_applies_lifecycle_and_exposure_prerequisites_in_order():
         "202608120001_create_breeding_exposure_events.sql",
         "202608120002_allow_breeding_protected_claims.sql",
         "202608120003_add_breeding_exposure_group_identity.sql",
+        "202608120004_add_exposure_breeding_cycle_windows.sql",
     ]
     positions=[workflow.index(name) for name in names]
     assert positions == sorted(positions)

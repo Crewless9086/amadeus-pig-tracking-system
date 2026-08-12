@@ -110,6 +110,39 @@ class BreedingExposurePostgresTests(unittest.TestCase):
             )
             self.assertEqual(cur.fetchone()[0], 0)
 
+    def test_group_removal_creates_five_window_cycles_once_without_exact_dates(self):
+        started = self.preview()
+        execute_grouped_preview(started, confirmed_preview_sha256=started["preview_sha256"],
+                                actor_id="owner-test", connect_factory=self.connect)
+        rows=[]
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute("""select sow_pig_id,boar_pig_id,exposure_identity,exposure_group_identity,occurred_on
+                from public.pig_breeding_exposure_events where sow_pig_id=any(%s) and event_kind='started'
+                order by sow_pig_id""",(self.sows,))
+            for sow,boar,identity,group_identity,occurred_on in cur.fetchall():
+                rows.append({"pig_id":sow,"action":"exposure_removal","boar_pig_id":boar,
+                    "exposure_identity":identity,"exposure_group_identity":group_identity,
+                    "exposure_started_on":str(occurred_on),"actual_removed_on":"2026-08-28"})
+        removal=build_grouped_preview({"rows":rows},evidence_generation="REMOVAL-PROVIDER-1")
+        result,status=execute_grouped_preview(removal,
+            confirmed_preview_sha256=removal["preview_sha256"],actor_id="owner-test",
+            connect_factory=self.connect)
+        self.assertEqual((status,result["rows_changed"]),(201,5))
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute("""select count(*),count(mating_date),min(service_window_start),
+                max(service_window_end),min(expected_farrowing_window_start),
+                max(expected_farrowing_window_end),count(distinct source_exposure_identity)
+                from public.mating_events where sow_pig_id=any(%s)""",(self.sows,))
+            self.assertEqual(cur.fetchone(),(5,0,__import__('datetime').date(2026,8,12),
+                __import__('datetime').date(2026,8,28),__import__('datetime').date(2026,12,4),
+                __import__('datetime').date(2026,12,20),5))
+            cur.execute("select count(*) from public.pig_location_events where pig_id=any(%s)",(self.sows,))
+            self.assertEqual(cur.fetchone()[0],0)
+        replay,replay_status=execute_grouped_preview(removal,
+            confirmed_preview_sha256=removal["preview_sha256"],actor_id="owner-test",
+            connect_factory=self.connect)
+        self.assertEqual((replay_status,replay["rows_changed"]),(200,0))
+
     def test_valid_identity_tamper_and_stale_august_29_preview_both_write_zero(self):
         for mutate in ("identity", "date"):
             preview=self.preview()

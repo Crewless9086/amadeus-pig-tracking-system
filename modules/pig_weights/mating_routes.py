@@ -467,6 +467,30 @@ def breeding_grouped_action_preview():
     return jsonify(result), 200 if result["success"] else 400
 
 
+@mating_bp.route("/breeding-attention/exposures", methods=["GET"])
+def breeding_exposure_list():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    try:
+        snapshot = get_breeding_attention_source_snapshot()
+    except Exception:
+        return jsonify({"success": False, "status": "breeding_exposure_evidence_unavailable"}), 503
+    master = ((snapshot or {}).get("allocation_inputs") or {}).get("pig_master_rows") or []
+    labels = {str(row.get("Pig_ID") or row.get("pig_id") or ""): str(
+        row.get("Name") or row.get("Tag_Number") or row.get("tag_number") or
+        row.get("Pig_ID") or row.get("pig_id") or "") for row in master}
+    rows = list((snapshot or {}).get("exposure_rows") or ())
+    removed = {str(row.get("exposure_identity") or "") for row in rows
+               if row.get("event_kind") == "removed"}
+    active = [{**row,
+        "sow_label": labels.get(str(row.get("sow_pig_id") or ""), str(row.get("sow_pig_id") or "")),
+        "boar_label": labels.get(str(row.get("boar_pig_id") or ""), str(row.get("boar_pig_id") or ""))}
+        for row in rows if row.get("event_kind") == "started"
+        and str(row.get("exposure_identity") or "") not in removed]
+    return jsonify({"success": True, "records": active, "writes_performed": False}), 200
+
+
 @mating_bp.route("/breeding-attention/grouped-actions/execute", methods=["POST"])
 def breeding_grouped_action_execute():
     denied = require_strict_owner_admin_access()

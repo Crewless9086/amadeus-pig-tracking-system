@@ -120,6 +120,12 @@ def _summary(rows):
             boar = html.escape(str(row.get("boar_label") or row.get("boar_pig_id")))
             lines.append(f"• <b>{label}</b> — with {boar} from {row['exposure_started_on']} "
                          f"to {row['planned_removal_on']} (exposure only).")
+        elif row.get("action") == "exposure_removal":
+            boar = html.escape(str(row.get("boar_label") or row.get("boar_pig_id")))
+            lines.append(f"• <b>{label}</b> — remove from {boar} on {row['actual_removed_on']}; "
+                         f"possible service window {row['service_window_start']} to {row['service_window_end']}; "
+                         f"expected farrowing window {row['expected_farrowing_window_start']} to "
+                         f"{row['expected_farrowing_window_end']}. Exact service and conception remain Unknown.")
         elif row.get("action") == "recovery_hold":
             lines.append(f"• <b>{label}</b> — recovery hold; body condition "
                          f"{float(row['body_condition_score']):g}.")
@@ -151,6 +157,7 @@ def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
         matches = list(dict.fromkeys(index.get(str(reference or "").strip().casefold(), [])))
         return matches[0] if len(matches) == 1 else None
     resolved, errors = [], []
+    exposure_rows = list((evidence or {}).get("exposure_rows") or ())
     for raw in raw_rows:
         row = dict(raw) if isinstance(raw, dict) else dict(raw or {})
         sow = exact(row.pop("animal_ref", None) or row.get("pig_id"))
@@ -165,6 +172,26 @@ def _resolve_rows(raw_rows, evidence, *, provider_timestamp=""):
                 continue
             row["boar_pig_id"] = boar
             row["boar_label"] = labels.get(boar, boar)
+        if row.get("action") == "exposure_removal":
+            active=[]
+            for candidate in exposure_rows:
+                if str(candidate.get("sow_pig_id") or "") != sow or candidate.get("event_kind") != "started":
+                    continue
+                identity=str(candidate.get("exposure_identity") or "")
+                removed=any(str(other.get("exposure_identity") or "") == identity
+                    and other.get("event_kind") == "removed" for other in exposure_rows)
+                if not removed and (not row.get("boar_pig_id")
+                        or str(candidate.get("boar_pig_id") or "") == row.get("boar_pig_id")):
+                    active.append(candidate)
+            if len(active) != 1:
+                errors.append(f"{labels.get(sow, sow)}: one active exposure required")
+                continue
+            active_row=active[0]
+            row["boar_pig_id"]=str(active_row.get("boar_pig_id") or "")
+            row["boar_label"]=labels.get(row["boar_pig_id"],row["boar_pig_id"])
+            row["exposure_identity"]=str(active_row.get("exposure_identity") or "")
+            row["exposure_group_identity"]=str(active_row.get("exposure_group_identity") or "") or None
+            row["exposure_started_on"]=str(active_row.get("occurred_on") or "")
         planned_days = row.pop("planned_days", None)
         if planned_days is not None:
             try:
