@@ -102,4 +102,3 @@ Do not rewrite everything at once. When an existing workflow is next changed:
 
 No new feature may add another channel-specific mutation path after this
 standard is adopted.
-

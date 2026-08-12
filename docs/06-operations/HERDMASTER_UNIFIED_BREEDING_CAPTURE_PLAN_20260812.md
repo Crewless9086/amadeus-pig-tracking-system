@@ -87,4 +87,3 @@ the same exposure identities; conservative HERDMASTER use; and zero-effect
 replay/concurrent confirmation.
 
 The mission remains outcome-bound until the real cross-channel loop succeeds.
-
