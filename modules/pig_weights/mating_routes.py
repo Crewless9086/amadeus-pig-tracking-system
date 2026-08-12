@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 from math import isfinite
 from time import monotonic
@@ -39,6 +40,11 @@ from modules.pig_weights.herdmaster_breeding_observation_service import (
     record_observation,
     validate_observation,
 )
+from modules.pig_weights.herdmaster_breeding_exposure_recovery import (
+    build_grouped_preview,
+    execute_grouped_preview,
+)
+from services.database_service import DATABASE_URL_ENV
 from modules.pig_weights.mating_validation import (
     validate_new_mating_payload,
     validate_assume_pregnant_payload,
@@ -58,6 +64,11 @@ def _bounded_read_connection(database_url):
     )
 
 
+def _breeding_write_connection():
+    import psycopg
+    return psycopg.connect(os.environ[DATABASE_URL_ENV], connect_timeout=10)
+
+
 def _deadline_read(started, reader, *args, **kwargs):
     if monotonic() - started >= BREEDING_ATTENTION_READ_DEADLINE_SECONDS:
         raise TimeoutError("breeding attention read deadline exhausted")
@@ -72,6 +83,8 @@ def _project_breeding_observations(rows, now=None):
     by_pig = {}
     seen_heat = set()
     seen_body_condition = set()
+    seen_recovery_hold = set()
+    seen_near_farrowing = set()
     def chronological_key(row):
         if isinstance(row, dict):
             observed = row.get("observed_at")
@@ -100,6 +113,20 @@ def _project_breeding_observations(rows, now=None):
         if category == "other" and not is_breeding_observation:
             continue
         item = by_pig.setdefault(pig_id, {})
+        if pig_id not in seen_recovery_hold:
+            hold_action = str(measurements.get("recovery_hold_action") or "").strip().lower()
+            if hold_action in {"active", "cleared"}:
+                seen_recovery_hold.add(pig_id)
+                item["recovery_hold"] = hold_action
+                item["recovery_hold_observed_at"] = observed_at.isoformat()
+                item["recovery_hold_observation_event_id"] = str(event_id or "")
+        if pig_id not in seen_near_farrowing:
+            farrowing = str(measurements.get("near_farrowing") or "").strip().lower()
+            if farrowing in {"observed", "not_observed"}:
+                seen_near_farrowing.add(pig_id)
+                item["near_farrowing"] = farrowing
+                item["near_farrowing_observed_at"] = observed_at.isoformat()
+                item["near_farrowing_observation_event_id"] = str(event_id or "")
         if pig_id not in seen_heat:
             heat_value = (
                 measurements.get("standing_heat")
@@ -300,6 +327,7 @@ def _build_breeding_attention_packets(proposed_observation=None):
             litters=litters["litters"],
             observations=snapshot["observation_rows"],
             projected_observations=observations["by_pig"],
+            exposures=snapshot.get("exposure_rows", []),
             family_trees=family_evidence,
         )
         packet["source_read_progress"] = {
@@ -423,6 +451,36 @@ def breeding_attention_observation_record(pig_id):
     payload["pig_id"] = pig_id
     result, status = record_observation(
         payload, actor_id=strict_owner_admin_principal(),
+    )
+    return jsonify(result), status
+
+
+@mating_bp.route("/breeding-attention/grouped-actions/preview", methods=["POST"])
+def breeding_grouped_action_preview():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result = build_grouped_preview(
+        payload, evidence_generation=str(payload.get("evidence_generation") or "")
+    )
+    return jsonify(result), 200 if result["success"] else 400
+
+
+@mating_bp.route("/breeding-attention/grouped-actions/execute", methods=["POST"])
+def breeding_grouped_action_execute():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    preview = build_grouped_preview(
+        payload, evidence_generation=str(payload.get("evidence_generation") or "")
+    )
+    result, status = execute_grouped_preview(
+        preview,
+        confirmed_preview_sha256=str(payload.get("confirmed_preview_sha256") or ""),
+        actor_id=strict_owner_admin_principal(),
+        connect_factory=_breeding_write_connection,
     )
     return jsonify(result), status
 

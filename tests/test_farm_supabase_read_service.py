@@ -73,7 +73,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(connection.exit_count, 1)
         self.assertIsNone(connection.exit_exception)
 
-    def test_breeding_attention_snapshot_uses_one_connection_and_eight_queries(self):
+    def test_breeding_attention_snapshot_uses_one_connection_and_nine_queries(self):
         connection = self._SnapshotConnection()
         calls = []
 
@@ -84,7 +84,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
 
         self.assertEqual(len(calls), 1)
         self.assertEqual(result["read_progress"]["connection_count"], 1)
-        self.assertEqual(result["read_progress"]["query_count"], 8)
+        self.assertEqual(result["read_progress"]["query_count"], 9)
+        self.assertIn("exposure_rows", result)
         self.assertEqual(result["read_progress"]["status"], "complete")
         self.assertEqual(
             [stage["stage"] for stage in result["read_progress"]["stages"]],

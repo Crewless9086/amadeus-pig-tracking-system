@@ -135,6 +135,26 @@ Herdmaster remains advisory. No observation or recommendation may automatically:
 
 Actual farm-record changes require a separately reviewed backend action and explicit owner approval.
 
+## Exposure, recovery hold, and unknown-parent boundary
+
+Physical boar exposure is not an exact service, mating, conception, or
+pregnancy date. HERDMASTER records an actual exposure start and later removal
+as separate immutable events under one exposure identity; the planned removal
+date belongs to the start event. These events must never populate
+`mating_events.mating_date` or generate pregnancy/farrowing dates.
+
+Body-condition and near-farrowing facts continue to use the canonical
+append-only `pig_observation_events` rail. A BCS 2-or-lower observation may be
+bound to an explicit recovery hold. Clearance requires a fresh attributable
+BCS 3-or-higher observation plus a separate exact owner confirmation; elapsed
+time and a newer score alone never clear a hold. A current near-farrowing
+observation excludes the sow from placement without manufacturing a father or
+historical mating date.
+
+The existing litter workflow accepts a canonical mother with `boar_pig_id`
+and historical `mating_id` absent. Unknown parentage remains visible as
+Unknown and does not degrade or duplicate the litter.
+
 ## Delivery order and acceptance
 
 1. Finish and verify the current one-animal Auction List Add canary.
