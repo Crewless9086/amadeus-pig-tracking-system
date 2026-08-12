@@ -64,6 +64,10 @@
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
 
+## 2026-08-12 - Owner-Facing Application Performance
+
+Run `docs/06-operations/OWNER_FACING_APPLICATION_PERFORMANCE_MISSION_20260812.md` as a CHARLIE CORE outcome-bound mission when the serialized production lane is free. Baseline the live dashboard and principal farm pages before optimizing; remove invalid legacy fallback chains, repair slow canonical projections, reduce payloads, add only safe short-lived read caching, and preserve independent panel loading. Target a visible page shell within one second, ordinary useful data within two seconds and the full useful dashboard within three seconds. Do not weaken canonical truth, owner authentication or hardware/farm safety, and do not call the mission complete until Charl verifies the deployed owner journeys are practically fast.
+
 ## 2026-08-10 P0 - Outcome-Bound Terminal Operation
 
 1. Stop accepting a PR, green CI, deployment, replay proof, containment packet or newly sent owner question as completion of a live business journey.
