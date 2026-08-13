@@ -351,6 +351,25 @@ def _parse_report(text, provider_time):
         observed.append({"fact": "not_eating", "value": True})
     if not_drinking:
         observed.append({"fact": "not_drinking", "value": True})
+    if re.search(r"\b(?:is|was|appears? to be)\s+(?:lying|laying) down\b", lower):
+        observed.append({
+            "fact": "lying_down_reported", "value": True,
+            "attribution": "owner_reported_observation",
+        })
+    if re.search(r"\b(?:appears?|looks?|seems?)\s+otherwise fine\b", lower):
+        observed.append({
+            "fact": "otherwise_fine_reported", "value": True,
+            "attribution": "owner_general_impression_not_welfare_clearance",
+        })
+    if re.search(
+        r"\b(?:i|we)\s+(?:will|shall|am going to|are going to)\s+(?:keep\s+)?monitor(?:ing)?\b|"
+        r"\b(?:will|shall)\s+be\s+monitor(?:ed|ing)\b",
+        lower,
+    ):
+        observed.append({
+            "fact": "monitoring_intention_reported", "value": True,
+            "attribution": "owner_reported_future_intention_not_completed_action",
+        })
     if current_sign(r"limp"):
         observed.append({"fact": "limping", "value": True})
     if current_sign(r"bleed"):
