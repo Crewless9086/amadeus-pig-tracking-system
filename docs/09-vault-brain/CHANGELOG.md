@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+- Added the canonical Control Tower mission register for CORE, HERDMASTER,
+  ROOTLINE, OOM SAKKIE, SAM and BEACON. It separates temporary development
+  terminals from deployed runtimes and makes every terminal-feedback assessment
+  a persisted transaction before further dispatch.
+
 ## 2026-08-13 - Runtime Programme pathname reconciled
 
 - Confirmed PR #867 introduced the owner-approved controlling Programme only at
