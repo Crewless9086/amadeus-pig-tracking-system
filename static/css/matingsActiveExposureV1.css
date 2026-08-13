@@ -16,3 +16,4 @@
 .removal-action input { min-height: 39px; padding: 0 8px; border: 1px solid var(--farm-line); border-radius: 9px; }
 @media (max-width: 1040px) { .active-exposure-card { grid-template-columns: 1fr; } .active-exposure-actions { justify-items: start; } }
 @media (max-width: 620px) { .active-exposure-facts { grid-template-columns: 1fr; } .active-exposure-facts div { padding: 8px 0 0; border-top: 1px solid var(--farm-line); border-left: 0; } .removal-action { align-items: stretch; flex-direction: column; width: 100%; } }
+@media (max-width: 620px) { .farm-nav { flex-wrap: wrap; } .farm-nav-owner { margin-left: auto; } }

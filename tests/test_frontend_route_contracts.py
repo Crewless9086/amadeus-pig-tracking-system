@@ -1834,6 +1834,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('aria-controls="removal-', js)
         self.assertIn("Voorskoumodus is leesalleen.", js)
         self.assertIn("function isReadOnlyPreview()", js)
+        self.assertIn("function formatDateOnly(value)", js)
+        self.assertIn("row.boar_pig_id", js)
         self.assertIn('event.target.closest("[data-assume-pregnant-confirm],[data-mark-not-pregnant-confirm],[data-confirm-removal]")', js)
 
     def test_add_litter_can_prefill_from_mating_query_param(self):
