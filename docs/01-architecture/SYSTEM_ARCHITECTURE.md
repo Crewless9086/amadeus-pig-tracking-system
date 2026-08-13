@@ -1,6 +1,13 @@
 # System Architecture
 
-> Migrated from legacy system architecture.
+> Classification: historical architecture evidence. Superseded by
+> `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`. Statements below
+> that describe n8n as the brain or Google Sheets as the data layer must not be
+> used for new implementation. They remain only to explain the legacy system
+> being migrated, including its component boundaries, data flows and migration
+> dependencies. Retirement owner: CORE. Exact next proof: the Phase 0
+> dependency and retirement register plus proven replacement paths for every
+> retained legacy dependency.
 
 ---
 

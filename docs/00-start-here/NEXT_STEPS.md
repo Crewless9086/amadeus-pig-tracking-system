@@ -1,5 +1,20 @@
 # Next Steps
 
+## Controlling programme — unified action spine and durable farm runtime
+
+- Execute `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md` as the
+  controlling cross-system architecture and migration programme.
+- First mission: CORE inventories and classifies every n8n workflow, Google
+  Sheets operational path, scheduler, local relay and provider connector.
+- Apply
+  `docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`
+  so historical experiments remain learnable evidence without retaining active
+  architectural authority.
+- Run the first Farm Node on Charl's laptop. Defer hardware-specific Phase 5
+  installation until the always-on office computer is available; do not defer
+  portable runtime design or restart recovery.
+- No new n8n business logic or canonical Google Sheets write path may be added.
+
 ## Channel-invariant canonical actions
 
 - Apply

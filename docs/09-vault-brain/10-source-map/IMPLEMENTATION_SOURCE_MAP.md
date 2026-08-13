@@ -1,5 +1,24 @@
 # Implementation Source Map
 
+## Agentic farm runtime and legacy retirement
+
+- Highest operating authority:
+  `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`.
+- Controlling architecture:
+  `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`.
+- Documentation lifecycle:
+  `docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`.
+- Historical review handoff: `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` is
+  evidence only and must not govern current architecture or review.
+- Canonical channel contract:
+  `docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
+- Runtime truth: Supabase-backed domain events, projections, missions, claims,
+  receipts and provider readbacks. n8n and Google Sheets are transitional or
+  legacy surfaces unless a narrower current section explicitly proves otherwise.
+- Rule: new or materially changed work must move toward one canonical action and
+  durable runtime. It must not create new n8n business logic, canonical Sheets
+  writes, laptop-terminal dependencies or channel-specific mutation paths.
+
 ## ROOTLINE durable device doctrine and canonical action boundary
 
 - Agent doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`.
