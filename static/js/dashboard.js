@@ -125,8 +125,11 @@ async function loadFarm() {
     setText("breeding_litters", number(litters.length));
     if (litters.length) {
       const first = litters[0];
-      addAttention("litter", `${first.litter_id || "Litter"} needs attention`, first.reason || "Review current litter work", litterAttentionHref(first), 5);
-      addPriority("litter", `${first.litter_id || "A litter"}: ${first.reason || "review current work"}.`);
+      const sowName = first.sow_name || first.sow_tag_number || "";
+      const headline = sowName || first.litter_id || "Litter";
+      const litterContext = sowName && first.litter_id ? ` · ${first.litter_id}` : "";
+      addAttention("litter", `${headline} needs attention`, `${first.reason || "Review current litter work"}${litterContext}`, litterAttentionHref(first), 5);
+      addPriority("litter", `${headline}${litterContext}: ${first.reason || "review current work"}.`);
     } else { removeAttention("litter"); removePriority("litter"); }
     finish("herd_panel");
   } catch (_) { finish("herd_panel", false); setText("herd_total", "Unavailable"); }

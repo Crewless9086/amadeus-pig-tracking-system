@@ -135,6 +135,15 @@ class LitterPigletCreationTests(unittest.TestCase):
 
 
 class LitterWeaningDayWorkflowTests(unittest.TestCase):
+    def setUp(self):
+        self.confirmation_gate = patch.object(
+            pig_weights_service, "_valid_weaning_confirmation", return_value=True
+        )
+        self.confirmation_gate.start()
+
+    def tearDown(self):
+        self.confirmation_gate.stop()
+
     def _active_rows(self):
         return [
             {

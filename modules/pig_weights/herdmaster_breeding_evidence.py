@@ -78,6 +78,15 @@ def reconcile_breeding_evidence(snapshot, *, today=None):
         "evidence_generation": snapshot.get("evidence_generation"),
         "data_quality_recovery": sorted(data_quality, key=lambda row: (row["tag_number"], row["pig_id"], row["field"])),
         "coverage": {"reservation": reservations["__coverage__"], "withdrawal": withdrawals["__coverage__"]},
+        "observation_history_by_pig": observations.get("__history__", {}),
+        "unclassified_observation_watchlist": sorted([
+            {"pig_id": pig_id, "tag_number": pigs[pig_id].get("tag_number") or pig_id,
+             "classification": pigs[pig_id].get("purpose") or "Unknown",
+             "observation": current}
+            for pig_id, current in observations.items()
+            if pig_id != "__history__" and current.get("future_review_watch")
+            and not _breeder(pigs.get(pig_id, {}))
+        ], key=lambda row: (str(row["tag_number"]).casefold(), row["pig_id"])),
         "privacy_boundary": "internal_authorized_evidence_only",
         "writes_performed": False, "protected_actions_performed": False,
     }
@@ -318,11 +327,37 @@ def _coverage(raw,pig_ids,today):
 
 
 def _observations(rows, today):
-    latest=_latest_valid(rows,"pig_id","observed_at",today);out={}
-    for pig_id,row in latest.items():
+    valid = [dict(row) for row in rows if _text(row.get("pig_id")) and _date(row.get("observed_at")) and _date(row.get("observed_at")) <= today]
+    superseded = {_text(row.get("supersedes_observation_event_id")) for row in valid if _text(row.get("supersedes_observation_event_id"))}
+    grouped = defaultdict(list)
+    for row in valid: grouped[_text(row.get("pig_id"))].append(row)
+    out={"__history__": {}}
+    for pig_id, pig_rows in grouped.items():
+        ordered = sorted(pig_rows, key=lambda row: (_date(row.get("observed_at")), _text(row.get("recorded_at")), _text(row.get("observation_event_id"))))
+        current_rows = [row for row in ordered if _text(row.get("observation_event_id")) not in superseded]
+        row = (current_rows or ordered)[-1]
         measurements=row.get("measurements_json") if isinstance(row.get("measurements_json"),dict) else {}
         out[pig_id]={"observed_at":_date_text(row.get("observed_at")),"observation_event_id":_text(row.get("observation_event_id")),**{key:measurements.get(key) for key in ("body_condition","body_condition_score","legs_sound","feet_sound","build_acceptable","visible_concern","heat") if key in measurements}}
+        if measurements.get("contract_version") == "herdmaster_piglet_observation_v1":
+            traits = sorted({str(value) for value in measurements.get("traits", [])})
+            out[pig_id].update({
+                "weaning_observation_traits": traits,
+                "weaning_observation_sentiment": measurements.get("sentiment") or "Unknown",
+                "weaning_observation_note": _text(row.get("factual_note")),
+                "weaning_observation_freshness": "Historical evidence; reassess current structure before selection",
+                "weaning_observation_limitations": "Human observation is supporting evidence only; it does not assign purpose or breeding status",
+                "future_review_watch": measurements.get("watch_flag") is True or "potential_breeding_review" in traits,
+            })
         if "body_condition_score" in out[pig_id] and "body_condition" not in out[pig_id]: out[pig_id]["body_condition"]=out[pig_id].pop("body_condition_score")
+        out["__history__"][pig_id] = [{
+            "observation_event_id": _text(item.get("observation_event_id")),
+            "observed_at": _date_text(item.get("observed_at")),
+            "recorded_at": _text(item.get("recorded_at")) or None,
+            "factual_note": _text(item.get("factual_note")),
+            "supersedes_observation_event_id": _text(item.get("supersedes_observation_event_id")) or None,
+            "superseded": _text(item.get("observation_event_id")) in superseded,
+            "measurements": item.get("measurements_json") if isinstance(item.get("measurements_json"), dict) else {},
+        } for item in ordered]
     return out
 
 

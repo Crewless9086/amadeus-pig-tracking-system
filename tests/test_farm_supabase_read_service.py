@@ -910,6 +910,37 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertIn("1 piglet(s) remain active and on-farm", detail["attention"]["reason"])
         self.assertEqual(detail["estimated_wean_date"], (birth_date + timedelta(days=30)).isoformat())
 
+    def test_future_legacy_planned_wean_date_is_not_actual_weaning(self):
+        litters = [{
+            "litter_id": "LIT-2026-5C36", "farrowing_date": date(2026, 8, 12),
+            "sow_pig_id": "SOW-MOLLY", "sow_tag_number": "Molly",
+            "born_alive": 8, "total_born": 8, "litter_status": "Active",
+            "wean_date": date(2026, 9, 11), "weaned_count": 0,
+        }]
+        pigs = [{"pig_id": f"MOLLY-{index}", "status": "Active", "on_farm": True,
+                 "animal_type": "Piglet", "litter_id": "LIT-2026-5C36",
+                 "date_of_birth": date(2026, 8, 12)} for index in range(8)]
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, {"LIT-2026-5C36": pigs})):
+            overview = farm_supabase_read_service.list_litter_overview()
+            summary = farm_supabase_read_service.get_litter_attention_summary()
+        litter = overview["litters"][0]
+        self.assertNotEqual(litter["action_type"], "complete_weaning")
+        self.assertFalse(litter["weaning_evidence"]["actual_weaning_recorded"])
+        self.assertEqual(litter["weaning_evidence"]["planned_wean_date"], "2026-09-11")
+        if summary["items"]:
+            self.assertEqual(summary["items"][0]["sow_name"], "Molly")
+
+    def test_completed_lifecycle_has_no_incomplete_weaning_warning(self):
+        litters = [{"litter_id": "LIT-DONE", "farrowing_date": date(2026, 6, 1),
+                    "litter_status": "Completed", "wean_date": date(2026, 7, 1),
+                    "weaned_count": 1, "born_alive": 1, "total_born": 1}]
+        pigs = [{"pig_id": "DONE-1", "status": "Sold", "on_farm": False,
+                 "wean_date": date(2026, 7, 1), "animal_type": "Weaner",
+                 "litter_id": "LIT-DONE"}]
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, {"LIT-DONE": pigs})):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-DONE")
+        self.assertNotEqual((detail.get("attention") or {}).get("action_type"), "complete_weaning")
+
     def test_litter_detail_uses_piglet_birth_date_when_litter_farrowing_date_missing(self):
         litters = [{
             "litter_id": "LIT-FALLBACK",
