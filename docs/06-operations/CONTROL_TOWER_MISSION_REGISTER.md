@@ -103,10 +103,11 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
 
 - `HMQ-20260813-03` — `operationally_verified`: PR #884 is deployed; correct
   proposal/hold truth and zero-write repeated readback are proven.
-- `HMQ-20260813-02` — `business_complete_pending_knowledge_closeout`: PR #889
+- `HMQ-20260813-02` — `closed`: PR #889
   is deployed and the anonymous redirect, friendly login, successful return,
   authenticated page, JSON denial, malicious-next containment and zero farm
-  mutation were all production-verified. Development terminal released-retain.
+  mutation were all production-verified; NEXT_STEPS, source-map and changelog
+  reconciliation shipped in the same merge. Development terminal released-retain.
 - `HMQ-20260813-00` — integrated; waits for a natural exact-pig observation.
 - `HMQ-20260813-04` — queued attributable lifecycle/genetic merit.
 - `HMQ-20260813-05` — waits for a genuine completed weight batch.
@@ -188,7 +189,7 @@ result appear known earlier.
 | 2026-08-13 | CORE Programme | PR #878 proved canonical Programme location and merged pointer/source-map correction as `29f04528`. | Released; SAM may resume existing mission. |
 | 2026-08-13 | HERDMASTER `HMQ-20260813-03` | Candidate passed pre-advance gates; main advanced; no merge/deploy. | Preserve and reconcile non-destructively. |
 | 2026-08-13 | HERDMASTER `HMQ-20260813-03` completion | PR #884 merged as `b7c0edcf` and production/browser readback proved Bonnie proposal wording, three exact recovery holds, five unchanged exposures/cycles and zero writes on repeated reads. | Development worktree clean released-retain; promote HMQ-02. |
-| 2026-08-13 | HERDMASTER `HMQ-20260813-02` completion | PR #889 merged/deployed as `e154a397`. Production proved exact anonymous HTML login redirect and return, authenticated Breeding Attention rendering, retained API-style JSON denial, hostile-next containment and unchanged farm tables. | Owner-visible access defect is business-complete; terminal released-retain. Perform knowledge closeout without reopening implementation, then reconcile HMQ-04 ownership before dispatch. |
+| 2026-08-13 | HERDMASTER `HMQ-20260813-02` completion | PR #889 merged/deployed as `e154a397`. Production proved exact anonymous HTML login redirect and return, authenticated Breeding Attention rendering, retained API-style JSON denial, hostile-next containment and unchanged farm tables; NEXT_STEPS, source map and changelog were reconciled in the merge. | Mission closed; terminal released-retain. Reconcile HMQ-04 scope and file ownership before any new dispatch. |
 | 2026-08-13 | ROOTLINE `RMQ-20260813-02` | PR #875/#876 live; provider safety eligible; card `3480` updated; zero controls. | Pending protected physical journey. |
 | 2026-08-13 | ROOTLINE gateway incident | Telegram `3579` retained by n8n but relay received HTTP 403 before parsing/Supabase; presence expired; zero controls. | Repair end to end; no owner repetition. |
 | 2026-08-13 | ROOTLINE `RMQ-20260813-04` water evidence | Readiness held because 11 August storage evidence was stale. Charl then sent fresh `Reservoir 4/4` and `Storage tanks 3/4`, but read-only trace found no new canonical Supabase receipt; Telegram showed zero pending/error backlog. | Treat as the same systemic intake incident. Recover durable provider receipt if possible; do not request another owner message. |
