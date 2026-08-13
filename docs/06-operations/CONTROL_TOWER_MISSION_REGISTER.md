@@ -117,9 +117,15 @@ Detailed HERDMASTER evidence remains in
 
 - `RMQ-20260813-02` — `gateway_blocked`: repair HTTP 403 and prove protected
   receipt before requesting fresh owner presence.
-- `RMQ-20260813-04` — `ready_waiting_for_genuine_clock_event`: one enabled
-  provider scheduler is proven; the 14 August result must still correlate
-  ROOTLINE decision, durable claim, Telegram outcome and silent replay.
+- `RMQ-20260813-04` — `active_software_acceptance_blocked`: prior physical B/C
+  commissioning remains valid and must not be repeated merely to prove that the
+  valves work. The remaining defect is the canonical automation journey: it
+  must distinguish an intentional multi-segment irrigation job (required when
+  total runtime exceeds the controller's 3,599-second native fail-stop) from an
+  accidental replay/duplicate, persist segment and cumulative-runtime truth,
+  and expose one digest-bound protected preview/confirmation lifecycle before
+  B/C autonomy can be enabled. No further physical B test is authorized until
+  that source/runtime contract is reviewed and deployed.
 - `RMQ-20260813-03` — queued Injection commissioning after Mixer and preflow.
 - `RMQ-20260813-05` — queued water-credit lifecycle after B/C acceptance.
 - `RMQ-20260813-06` — hardware-blocked Borehole 1 independent fail-OFF proof.
@@ -184,6 +190,7 @@ result appear known earlier.
 | 2026-08-13 | ROOTLINE gateway incident | Telegram `3579` retained by n8n but relay received HTTP 403 before parsing/Supabase; presence expired; zero controls. | Repair end to end; no owner repetition. |
 | 2026-08-13 | ROOTLINE `RMQ-20260813-04` water evidence | Readiness held because 11 August storage evidence was stale. Charl then sent fresh `Reservoir 4/4` and `Storage tanks 3/4`, but read-only trace found no new canonical Supabase receipt; Telegram showed zero pending/error backlog. | Treat as the same systemic intake incident. Recover durable provider receipt if possible; do not request another owner message. |
 | 2026-08-13 | ROOTLINE shared Telegram intake repair | PR #887 merged as `e3c723aa`; dedicated gateway authentication and durable owner binding restored. Original reservoir/storage update recovered exactly once into Supabase with silent replay; zero controls. | Intake incident technically closed; B/C remains held on separate authority/lifecycle blockers. |
+| 2026-08-13 | ROOTLINE `RMQ-20260813-04` acceptance correction | Control Tower rejected treating the next action as another generic Valve B commissioning test. Prior B/C physical commissioning is retained. Irrigation longer than the 3,599-second native fail-stop legitimately needs multiple intentional segments; this must be represented as one durable job with explicit segment identity, expected OFF/re-arm transitions and cumulative delivered runtime, while unrelated retries/replays remain no-ops. | ROOTLINE Terminal must first reconcile and repair the software contract read-only/source-first. Do not actuate B/C or ask Charl to travel until a reviewed deployed preview proves the intended job/segment boundary. |
 | 2026-08-13 | OOM SAKKIE/HERDMASTER Pig 002 intake | Genuine Pig 002 not-eating report was accepted upstream but rejected before parsing under the pre-#887 identity split; no reply, preview or write exists. Gateway is repaired, but the owner-approved natural health/loss workflow remains inactive. | Preserve report as failed-acceptance evidence; begin zero-I/O interpreter/preview slice without replay or farm write. |
 | 2026-08-13 | OOM SAKKIE `OMQ-20260813-02` | No 13 August production morning trigger; PR #879 later integrated one Render-owned clock and synthetic non-actuating family. | Prove provider configuration and synthetic result; genuine clock proof still pending. |
 | 2026-08-13 | ROOTLINE/OOM SAKKIE morning readiness | Provider verified exactly one enabled 06:45 SAST Render scheduler; a later duplicate was suspended. No genuine daily invocation, hardware action or authority change occurred. | Run one isolated non-actuating synthetic acceptance, then await genuine clock. |
