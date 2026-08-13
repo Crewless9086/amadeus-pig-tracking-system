@@ -72,6 +72,9 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         "current_segment": decision["execution_eligibility"]["current_segment"],
         "segment_number": decision["execution_eligibility"]["current_segment"],
         "segment_identity": decision["execution_eligibility"]["segment_identity"],
+        "segment_requested_seconds": decision["execution_eligibility"]["segment_requested_seconds"],
+        "controller_safety_generation": decision["execution_eligibility"][
+            "controller_safety_generation"],
         "cumulative_verified_runtime_seconds": decision["execution_eligibility"][
             "cumulative_verified_runtime_seconds"],
         "predecessor_off_rearm_verified": decision["execution_eligibility"][
@@ -505,7 +508,7 @@ def _safe_configuration(value, zone):
     return (isinstance(value, dict) and value.get("authoritative") is True
             and value.get("zone_id") == zone and value.get("channel") == ZONES[zone]
             and value.get("native_inching_enabled") is True
-            and 0 < int(value.get("native_inching_seconds") or 0) <= 3600
+            and int(value.get("native_inching_seconds") or 0) == 3599
             and value.get("power_restoration_state") == "OFF"
             and value.get("schedules_enabled") is False
             and value.get("interlock_enabled") is False
