@@ -127,6 +127,12 @@
 - First natural specialist adapter and exact-preview factual writer:
   `modules/oom_sakkie/herdmaster_health_loss_runtime.py` and
   `modules/pig_weights/herdmaster_health_loss_recording.py`.
+- Canonical health/loss workflow and stage-one pure contracts:
+  `docs/09-vault-brain/04-workflows/HERDMASTER_NATURAL_HEALTH_AND_LOSS_INTAKE_WORKFLOW.md`,
+  `modules/pig_weights/herdmaster_natural_health_loss_intake.py`, and
+  `modules/oom_sakkie/herdmaster_health_loss_preview.py`. Runtime source and a
+  narrow protected writer exist separately; their presence does not prove an
+  enabled or operational production journey.
 - Dispatch truth reducer:
   `modules/oom_sakkie/specialist_dispatch_ack.py`.
 - Existing durable evidence rail:
