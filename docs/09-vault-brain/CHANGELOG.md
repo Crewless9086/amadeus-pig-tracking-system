@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Phase 0 provider/runtime ownership snapshot
+
+- Read n8n, Render, Telegram and Chatwoot provider state plus local Windows
+  task/process ownership without invoking or changing any provider component.
+- Reconciled 31 provider workflows, seven Render services, three Chatwoot
+  callbacks, two Telegram webhook owners and four relevant scheduled tasks.
+- Identified the ready local CHARLIE relay watchdog as the strongest suspected
+  competing scheduler/transport and retirement candidate; actual polling or
+  duplicate delivery remains unproven pending loaded-mode evidence. No task,
+  process, webhook or workflow was changed.
+
 ## 2026-08-13 - Agentic Farm Runtime Phase 0 repository discovery
 
 - Inventoried all 27 committed n8n workflow exports, Google Sheets operational
