@@ -194,6 +194,8 @@ def test_runtime_starts_only_under_production_ownership(monkeypatch):
     monkeypatch.setattr(runtime, "_STARTED", False)
     assert start_production_morning_runtime(environ={}, runner=lambda **k: None) is False
     assert start_production_morning_runtime(environ={"RENDER": "true"},
+                                            runner=lambda **k: None) is False
+    assert start_production_morning_runtime(environ={"OOM_SAKKIE_DAILY_MANAGER_RUNTIME_ENABLED": "true"},
                                             runner=lambda **k: None) is True
-    assert start_production_morning_runtime(environ={"RENDER": "true"},
+    assert start_production_morning_runtime(environ={"OOM_SAKKIE_DAILY_MANAGER_RUNTIME_ENABLED": "true"},
                                             runner=lambda **k: None) is False
