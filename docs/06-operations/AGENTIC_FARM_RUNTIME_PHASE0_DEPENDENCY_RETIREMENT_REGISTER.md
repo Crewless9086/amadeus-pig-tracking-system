@@ -149,15 +149,21 @@ verified as rollback.
 ## CMQ-20260813-02 — CHARLIE scheduler singularity read-only proof
 
 Observation window: `2026-08-13T09:03:45Z` to `2026-08-13T09:04:38Z` for
-Windows/process evidence; Telegram `getWebhookInfo` refreshed immediately after
-that window. No task, process, webhook, message, provider configuration or data
-was invoked or changed.
+Windows/process evidence; Telegram `getWebhookInfo` refreshed from
+`2026-08-13T09:13:05Z` to `2026-08-13T09:13:06Z`. No task, process, webhook,
+message, provider configuration or data was invoked or changed.
 
 - **Documented:** current source checks `CORE_RELAY_TRANSPORT` before polling and
   returns `webhook_managed` in webhook mode. The installed runtime is an older
-  copy: deployed relay SHA-256 `F4708249…` versus tracked `372DD486…`; deployed
-  watchdog `7A394FAE…` versus tracked `FA5F44A7…`. The deployed relay lacks the
-  current transport guard.
+  copy: deployed relay SHA-256
+  `F47082491B3E4CB7505A196FA75792317EA9A49C9FE572241EFC4F35C019391F`
+  versus tracked
+  `372DD4863A86A3CEBD3B081398CEBB3301769A156673E5076C674F4CDA4F9E63`;
+  deployed watchdog
+  `7A394FAE11F43948689FA7F32930BC16EDD4A5B02908204F108C573B8A440F7A`
+  versus tracked
+  `FA5F44A7A42632EEBDEF815304F9E6375C10F418DA09B0E391D5F30881C4CB92`.
+  The deployed relay lacks the current transport guard.
 - **Runtime-loaded:** read-only inspection of both relay processes (PIDs
   `9920`/`10996`, created `2026-08-13T05:02:57Z`) found all of
   `CORE_RELAY_TRANSPORT`, `CHARLIE_TELEGRAM_TRANSPORT` and
