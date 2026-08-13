@@ -112,14 +112,21 @@ def _preview(*, channel, facts, effective_date, destination_pen, pigs, pens):
         if pig_id in seen:
             return _failure("duplicate_animal_identity")
         seen.add(pig_id)
-        explicit_destination = fact.get("destination_pen") or fact.get("moved_to_pen_id")
+        explicit_destination = (
+            fact.get("destination_pen") or fact.get("moved_to_pen_id")
+            if channel == "application_typed" else None
+        )
         row_destination_value = explicit_destination if explicit_destination not in (None, "") else destination_pen
         destination = _resolve_pen(row_destination_value, pens)
         if destination[0] is False:
             return _failure(destination[1])
         destination_pen_id, destination_pen_label = destination[1], destination[2]
         raw_weight = fact.get("weight_kg")
-        weight = "Unknown" if raw_weight in (None, "") or str(raw_weight).strip().casefold() == "unknown" else _weight(raw_weight)
+        weight = (
+            "Unknown"
+            if channel == "application_typed" and (raw_weight in (None, "") or str(raw_weight).strip().casefold() == "unknown")
+            else _weight(raw_weight)
+        )
         if weight is None or (weight == "Unknown" and destination_pen_id == "Unknown"):
             return _failure("weight_invalid")
         current_pen_id = _unknown(record.get("current_pen_id") or record.get("pen_id"))

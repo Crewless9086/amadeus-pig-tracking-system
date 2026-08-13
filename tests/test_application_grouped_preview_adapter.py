@@ -97,3 +97,38 @@ def test_failed_or_malformed_preflight_is_returned_without_adapter_or_effect():
     assert (result, status) == (failed, 400)
     adapter.assert_not_called()
     executor.assert_not_called()
+
+
+def test_authoritative_preflight_identity_and_pen_rejections_pass_through_unchanged():
+    for reason in (
+        "Pig is not active/on-farm or could not be found.",
+        "Selected new pen is not active or could not be found.",
+        "This pig appears more than once in this batch.",
+    ):
+        failed = {
+            "ok": False, "success": False, "accepted_count": 0,
+            "accepted_rows": [], "blocked_rows": [{"reason": reason}],
+        }
+        with patch.object(pig_weights_controller, "preflight_bulk_weight_entries", return_value=(failed, 200)), \
+             patch("modules.pig_weights.pig_weights_controller.attach_canonical_preview") as adapter:
+            result, status = pig_weights_controller.preview_bulk_weight_entries({"rows": []})
+        assert status == 200 and result == failed
+        adapter.assert_not_called()
+
+
+def test_oom_and_browser_prepared_channels_do_not_gain_application_movement_only_semantics():
+    from modules.pig_weights.canonical_grouped_preview import preview_prepared_owner_text
+
+    for channel in ("oom_typed", "browser_voice_prepared_text"):
+        missing_weight = preview_prepared_owner_text(
+            "A1 moved to pen D3 on 2026-08-13",
+            channel=channel, effective_date=None, pigs=PIGS, pens=PENS,
+        )
+        ordinary = preview_prepared_owner_text(
+            "A1 47.2 kg, B2 118 kg; all moved to pen D3 on 2026-08-13",
+            channel=channel, effective_date=None, pigs=PIGS, pens=PENS,
+        )
+        assert missing_weight["status"] == "grouped_weight_facts_required"
+        assert ordinary["success"] is True
+        assert {row["moved_to_pen_id"] for row in ordinary["rows"]} == {"PEN-OPAQUE-D3"}
+        assert all(row["weight_kg"] != "Unknown" for row in ordinary["rows"])
