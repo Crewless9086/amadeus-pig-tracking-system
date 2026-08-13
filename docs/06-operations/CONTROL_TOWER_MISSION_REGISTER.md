@@ -40,14 +40,14 @@ say the register was not updated. Conversation memory alone is not tracking.
 
 ## Current control board
 
-Snapshot: 2026-08-13 SAST, reconciled through main `29f04528`.
+Snapshot: 2026-08-13 SAST, reconciled through main `f0584bba`.
 
 | Terminal | Terminal state | Existing mission and business/runtime truth | Next action |
 |---|---|---|---|
 | CORE | Released between prompts | `CMQ-20260813-02A`: watchdog proof rolled back; watchdog active; mission-ID truncation blocks another proof. PR #877 evidence remains to integrate. PR #878 corrected Programme discovery. | `CONTINUE`: integrate evidence and repair opaque mission-ID handling. No new watchdog window without separate authority. |
 | HERDMASTER | Preserved candidate | `HMQ-20260813-03`: Breeding Attention correction is neither merged nor deployed. Candidate remains at `C:\tmp\herdmaster-breeding-eligibility-truth-20260813`; deployed HERDMASTER unchanged. | `CONTINUE`: reconcile non-destructively against current main, rerun gates and review. |
-| ROOTLINE | Gateway incident | `RMQ-20260813-02`: Mixer source deployed and provider safety passed, but Telegram `3579` received HTTP 403 before parsing. Zero controls. `RMQ-20260813-04` morning-trigger acceptance remains separate and unresolved. | `CONTINUE`: repair gateway authentication/exactly-once receipt. Separately prove the scheduler with a non-actuating synthetic event. No owner repetition. |
-| OOM SAKKIE | Deployed logic; trigger unresolved | `OMQ-20260813-02`: startup containment deployed; no production trigger ran on 13 August. Terminal work is not scheduled runtime operation. | `CONTINUE`: prove a production-owned trigger and isolated non-actuating schedule test now; retain 14 August for natural clock proof. |
+| ROOTLINE | Gateway incident | `RMQ-20260813-02`: Mixer source deployed and provider safety passed, but Telegram `3579` received HTTP 403 before parsing. Zero controls. `RMQ-20260813-04` morning execution acceptance remains separate; its provider-clock source is integrated but synthetic/genuine outcomes remain to prove. | `CONTINUE`: repair gateway authentication/exactly-once receipt. No owner repetition. Preserve morning acceptance for its synthetic and genuine evidence. |
+| OOM SAKKIE | Provider-clock source integrated; outcome proof pending | `OMQ-20260813-02`: PR #879 merged the Render-owned 06:45 SAST cron entry and non-actuating synthetic family. This source integration is not proof that the provider clock or Telegram result executed. | `CONTINUE`: prove deployed provider configuration and one isolated synthetic result; retain 14 August for natural clock proof. |
 | SAM | Audit complete | `SMQ-20260813-02`: conversations `1533`/`2143` reached SAM; safe replies were prepared but not sent. WhatsApp/WebWidget authority and first-event card boundaries are traced. | `CONTINUE`: implement existing bounded correction; never replay or message those conversations. |
 | BEACON | Not launched | `BMQ-20260813-00`: provider/runtime and retained-worktree truth unreconciled; no posting authority inferred. | `NEW_MISSION` only when launched: read-only current-truth reconciliation. |
 
@@ -122,7 +122,7 @@ result appear known earlier.
 | 2026-08-13 | HERDMASTER `HMQ-20260813-03` | Candidate passed pre-advance gates; main advanced; no merge/deploy. | Preserve and reconcile non-destructively. |
 | 2026-08-13 | ROOTLINE `RMQ-20260813-02` | PR #875/#876 live; provider safety eligible; card `3480` updated; zero controls. | Pending protected physical journey. |
 | 2026-08-13 | ROOTLINE gateway incident | Telegram `3579` retained by n8n but relay received HTTP 403 before parsing/Supabase; presence expired; zero controls. | Repair end to end; no owner repetition. |
-| 2026-08-13 | OOM SAKKIE `OMQ-20260813-02` | No 13 August production morning trigger; late startup correctly produced no stale plan. | Prove scheduler and synthetic non-actuating path now. |
+| 2026-08-13 | OOM SAKKIE `OMQ-20260813-02` | No 13 August production morning trigger; PR #879 later integrated one Render-owned clock and synthetic non-actuating family. | Prove provider configuration and synthetic result; genuine clock proof still pending. |
 | 2026-08-13 | SAM `SMQ-20260813-02` | Conversations `1533`/`2143` produced safe unsent replies and non-actionable cards; defect traced. | Continue bounded correction; no historical sends. |
 
 ## New owner findings

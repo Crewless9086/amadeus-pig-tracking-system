@@ -588,6 +588,10 @@ Current Stage 4 surface:
   than a workstation process, arbitrate restarts and multiple web workers. One
   date-stable `:DELIVERY` claim is shared by the useful-plan and visible-failure
   outcomes; evidence changes never create another same-day send or edit.
+- `modules/oom_sakkie/morning_scheduler.py` and
+  `scripts/oom_sakkie_morning_scheduler.py` — authenticated Render cron entry,
+  exact daily-runtime dispatch and non-colliding read-only ROOTLINE schedule
+  acceptance. `modules/oom_sakkie/routes.py` exposes the bearer-protected target.
 - `modules/oom_sakkie/rootline_fertilizer_commissioning_runtime.py` — existing
   fertilizer lifecycle continuation through ROOTLINE auxiliary execution rails.
 - `modules/oom_sakkie/telegram_gateway.py` — authenticated owner, provider
