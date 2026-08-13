@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_message
+from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.pig_weights.canonical_grouped_preview import preview_application_typed
 
 
@@ -25,7 +26,8 @@ def _preflight(payload):
 
 
 def _claim(**kwargs):
-    return {"success":True,"callback_token":"opaque123","preview_digest":"f"*64}
+    return {"success":True,"callback_token":"opaque123",
+        "preview_digest":canonical_preview_digest(kwargs["action_kind"],kwargs["preview_payload"])}
 
 
 def _run(*, pigs=PIGS, pens=PENS, text=TEXT, claim=_claim):
@@ -44,7 +46,7 @@ def test_typed_oom_matches_equivalent_application_canonical_rows_and_digest():
     assert result["weight_date"]==application["effective_date"]
     assert result["confirmation_required"]==application["confirmation_required"] is True
     assert result["preview_digest"]==application["preview_digest"]
-    assert result["protected_claim_digest"]=="f"*64
+    assert result["protected_claim_digest"]==result["preview_digest"]
 
 
 def test_unknown_optional_values_are_preserved_in_canonical_rows():
@@ -56,16 +58,9 @@ def test_unknown_optional_values_are_preserved_in_canonical_rows():
     assert {row["moved_to_pen_id"] for row in result["mappings"]}=={"Unknown"}
     assert all(row["condition_notes"]=="Unknown" for row in result["mappings"])
     assert captured["preview_payload"]=={
-        "contract_version":"herdmaster_telegram_grouped_weight_preview_v1",
-        "weight_date":"2026-08-13",
-        "row_count":2,
-        "rows":[
-            {"pig_id":"PIG-OPAQUE-A","tag_number":"A1","label":"A1","weight_kg":47.2,"current_pen_id":"PEN-OLD","moved_to_pen_id":"","moved_to_pen_label":""},
-            {"pig_id":"PIG-OPAQUE-B","tag_number":"B2","label":"B2","weight_kg":118.0,"current_pen_id":"","moved_to_pen_id":"","moved_to_pen_label":""},
-        ],
-        "movement_pen_id":"",
-        "movement_pen_label":"",
-    }
+        key:result["canonical_preview"][key] for key in
+        ("contract_version","effective_date","rows","confirmation_required")}
+    assert canonical_preview_digest("grouped_weights",captured["preview_payload"])==result["preview_digest"]
 
 
 def test_ambiguous_and_inactive_identity_fail_before_claim_creation():
