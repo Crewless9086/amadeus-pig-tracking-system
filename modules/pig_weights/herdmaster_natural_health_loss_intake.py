@@ -351,12 +351,24 @@ def _parse_report(text, provider_time):
         observed.append({"fact": "not_eating", "value": True})
     if not_drinking:
         observed.append({"fact": "not_drinking", "value": True})
-    if re.search(r"\b(?:is|was|appears? to be)\s+(?:lying|laying) down\b", lower):
+    lying_down = latest_positive(
+        r"\b(?:is|was|appears? to be)\s+(?:lying|laying) down\b",
+        r"\b(?:is|was)\s+not\s+(?:lying|laying) down\b|"
+        r"\bdoes not appear to be\s+(?:lying|laying) down\b",
+        lower,
+    )
+    otherwise_fine = latest_positive(
+        r"\b(?:appears?|looks?|seems?)\s+otherwise fine\b",
+        r"\bdoes not\s+(?:appear|look|seem)\s+otherwise fine\b|"
+        r"\b(?:is|was)\s+not\s+otherwise fine\b",
+        lower,
+    )
+    if lying_down:
         observed.append({
             "fact": "lying_down_reported", "value": True,
             "attribution": "owner_reported_observation",
         })
-    if re.search(r"\b(?:appears?|looks?|seems?)\s+otherwise fine\b", lower):
+    if otherwise_fine:
         observed.append({
             "fact": "otherwise_fine_reported", "value": True,
             "attribution": "owner_general_impression_not_welfare_clearance",

@@ -135,6 +135,16 @@ def test_duplicate_owner_facts_are_emitted_once():
     assert names.count("lying_down_reported") == 1
 
 
+@pytest.mark.parametrize("text,excluded", [
+    ("Pig 002 is sick but does not appear to be lying down.", "lying_down_reported"),
+    ("Pig 002 is sick and does not look otherwise fine.", "otherwise_fine_reported"),
+])
+def test_negated_owner_impressions_are_not_recorded_as_positive_facts(text, excluded):
+    pig = animal("PIG-2026-0002", "Pig 002", "002")
+    result = evaluate_health_loss_intake(report(text), evidence(pig))
+    assert excluded not in {row["fact"] for row in result["observed_facts"]}
+
+
 def test_immutable_fixtures_execute_with_zero_io(monkeypatch):
     def forbidden(*_args, **_kwargs):
         raise AssertionError("pure intake attempted external I/O")
