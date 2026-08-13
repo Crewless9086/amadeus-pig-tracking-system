@@ -7,8 +7,8 @@ import re
 import urllib.request
 
 from modules.charlie.private_policy import private_policy
+from modules.charlie.mission_identity import extract_mission_id, extract_mission_ids, has_malformed_mission_id
 
-MISSION_ID_RE = re.compile(r"\b(?:CHARLIE-(?:MISSION|SCOPE)-)?[A-Z0-9]{8,32}\b", re.I)
 ALLOWED_INTENTS = {
     "help", "investigate", "executive_brief", "read_core_status", "read_queue", "read_blocked",
     "read_mission", "read_workforce", "read_analyst", "read_decisions",
@@ -108,11 +108,15 @@ def _deterministic_plan(text, context):
         return _intent("read_analyst", .97)
     if lower in {"/decisions", "decisions", "/review", "review", "what needs me"} or "need my decision" in lower:
         return _intent("read_decisions", .97)
-    if mission_id and any(word in lower for word in ("why", "explain", "status", "happening", "mission")):
-        return _intent("read_mission", .97, {"mission_id": mission_id})
     if lower.startswith(("create a mission", "create mission", "/mission ", "log a mission", "add a mission")):
         body = re.sub(r"^(create a mission|create mission|/mission|log a mission|add a mission)(?:\s+(?:for|to))?\s*", "", text, flags=re.I)
         return _intent("create_mission", .98, {"title": body[:180], "raw_text": body[:6000]}, explicit=True)
+    if len(extract_mission_ids(text)) > 1 and any(word in lower for word in ("why", "explain", "status", "happening", "mission", "approve", "pause", "reject")):
+        return _intent("clarify", .99, {"question": "Send one complete CORE mission ID so I act on exactly one mission."})
+    if has_malformed_mission_id(text) and any(word in lower for word in ("why", "explain", "status", "happening", "mission", "approve", "pause", "reject")):
+        return _intent("clarify", .99, {"question": "Send the complete CORE mission ID exactly as shown, including every hyphen and suffix."})
+    if mission_id and any(word in lower for word in ("why", "explain", "status", "happening", "mission")):
+        return _intent("read_mission", .97, {"mission_id": mission_id})
     action_map = {"approve": "approve_mission", "pause": "pause_mission", "reject": "reject_mission", "send back": "send_back_mission", "return": "send_back_mission"}
     if mission_id:
         for phrase, intent_type in action_map.items():
@@ -152,19 +156,20 @@ def _llm_plan(text, context, policy, *, environ=None, http_open=None):
     if intent_type not in ALLOWED_INTENTS:
         intent_type = "clarify"
     args = result.get("args") if isinstance(result.get("args"), dict) else {}
-    if intent_type == "read_mission" and not str(args.get("mission_id") or "").strip():
-        return _intent("clarify", .5, {"question": "Which CORE mission do you want me to inspect? Send its mission ID."})
+    if intent_type == "read_mission":
+        exact_mission_id = extract_mission_id(text)
+        if not exact_mission_id:
+            return _intent("clarify", .5, {"question": "Which CORE mission do you want me to inspect? Send its complete mission ID."})
+        args["mission_id"] = exact_mission_id
     # A classifier may identify an action, but only deterministic parsing of the
     # owner's exact text can establish explicit command authority.
     return _intent(intent_type, min(max(float(result.get("confidence") or 0), 0), 1), args, result.get("risk_flags") or [], False)
 
 
 def _mission_id(text, context):
-    match = MISSION_ID_RE.search(text)
-    if match:
-        value = match.group(0).upper()
-        if value.startswith("CHARLIE-") or any(char.isdigit() for char in value):
-            return value
+    value = extract_mission_id(text)
+    if value:
+        return value
     open_context = context.get("open_context") if isinstance(context.get("open_context"), dict) else {}
     subject = open_context.get("active_subject") if isinstance(open_context.get("active_subject"), dict) else {}
     return str(subject.get("mission_id") or open_context.get("mission_id") or "") if any(word in text.lower() for word in ("that mission", "it", "this one")) else ""

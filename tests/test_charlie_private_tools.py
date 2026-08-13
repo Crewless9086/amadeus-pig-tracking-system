@@ -82,6 +82,15 @@ class CharliePrivateToolsTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(result["status"], "mission_id_required")
 
+    @patch("modules.charlie.private_tools.get_mission")
+    def test_read_mission_uses_complete_identifier_for_exact_supabase_lookup(self, get_mission):
+        mission_id = "CMQ-20260813-02A"
+        get_mission.return_value = ({"mission": {"mission_id": mission_id, "title": "Safe proof", "status": "new", "metadata": {}}}, 200)
+        result, status = execute_private_tool("read_mission", {"mission_id": mission_id})
+        self.assertEqual(status, 200)
+        get_mission.assert_called_once_with(mission_id)
+        self.assertEqual(result["mission"]["mission_id"], mission_id)
+
     @patch("modules.charlie.private_tools.live_stock_learning_scorecard")
     def test_sam_status_is_read_only_scorecard(self, scorecard):
         scorecard.return_value = ({"scorecard": {"total_events": 12, "owner_edit_events": 3}}, 200)

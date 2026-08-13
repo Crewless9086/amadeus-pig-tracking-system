@@ -45,6 +45,30 @@ class CharliePrivatePlannerTests(unittest.TestCase):
         approve = plan_owner_intent("Approve CEA5089051B2", {}, environ={})
         self.assertEqual(approve["type"], "approve_mission")
 
+    def test_hyphenated_suffixed_mission_id_is_preserved_as_opaque_identity(self):
+        plan = plan_owner_intent("What is happening with mission CMQ-20260813-02A?", {}, environ={})
+        self.assertEqual(plan["type"], "read_mission")
+        self.assertEqual(plan["args"]["mission_id"], "CMQ-20260813-02A")
+
+    def test_create_command_wins_without_reinterpreting_embedded_identifier_digits(self):
+        plan = plan_owner_intent(
+            "Create a mission CMQ-20260813-02A durable queue acknowledgement only",
+            {}, environ={},
+        )
+        self.assertEqual(plan["type"], "create_mission")
+        self.assertEqual(plan["args"]["title"], "CMQ-20260813-02A durable queue acknowledgement only")
+        self.assertNotIn("mission_id", plan["args"])
+
+    def test_malformed_mission_identifier_fails_closed(self):
+        plan = plan_owner_intent("Status of mission CMQ-20260813--02A", {}, environ={})
+        self.assertEqual(plan["type"], "clarify")
+        self.assertNotIn("mission_id", plan["args"])
+
+    def test_ambiguous_multiple_mission_identifiers_fail_closed(self):
+        plan = plan_owner_intent("Compare mission CMQ-20260813-02A with CHARLIE-MISSION-ABC12345 status", {}, environ={})
+        self.assertEqual(plan["type"], "clarify")
+        self.assertNotIn("mission_id", plan["args"])
+
     def test_ambiguous_text_clarifies(self):
         plan = plan_owner_intent("please sort it", {}, environ={})
         self.assertEqual(plan["type"], "clarify")
