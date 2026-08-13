@@ -1,5 +1,14 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Morning lifecycle gains provider clock
+
+- Added one authenticated Render cron entry at 04:45 UTC (06:45 SAST) for the
+  deployed morning runtime after provider inventory proved no such clock existed.
+- Kept Supabase's date-stable claim authoritative across cron, web workers and
+  restarts; no n8n, Sheets, workstation or second business identity was added.
+- Added a non-colliding synthetic ROOTLINE schedule-test family with one durable
+  claim, one labelled Telegram TEST result and zero actuation or farm authority.
+
 ## 2026-08-13 - Runtime Programme pathname reconciled
 
 - Confirmed PR #867 introduced the owner-approved controlling Programme only at
