@@ -27,7 +27,9 @@ omits that field. It must not be treated as disabled or enabled provider truth.
 
 ## Read-only provider/runtime snapshot — 2026-08-13
 
-Observation window: `2026-08-13T08:26:38Z` to `2026-08-13T08:31:06Z`.
+Observation window: initial cross-provider snapshot `2026-08-13T08:26:38Z` to
+`2026-08-13T08:31:06Z`; Render timestamp refresh at
+`2026-08-13T08:38:35Z`.
 Credential values were never recorded. The primary repository supplied
 configuration presence for n8n, Render, Chatwoot, Oom Sakkie Telegram and
 CHARLIE Telegram; no separate SAM Telegram token was present.
@@ -85,11 +87,11 @@ readback and zero lost-message proof. Provider-only inactive utilities remain
 
 | Provider ID | Service | Type / state | Schedule | Command | Provider timestamps, configuration presence and lineage |
 | --- | --- | --- | --- | --- | --- |
-| `srv-d6sijjkhg0os73f7regg` | `amadeus-pig-tracking-system` | web service / not suspended | continuous | provider-default start/build | 20 direct env keys; SAM Meat webhook/autoreply, SAM sales cohort/autonomy, Telegram owner-review and telemetry-ingest names present. Last proven live deploy `dep-d9unuilg1s2s73e3l4fg` at merge `660bf679…`; a newer deploy was in progress during observation and is not claimed loaded. |
-| `srv-d25u8ic9c44c73efo920` | `amadeus-backend` | web service / not suspended | continuous | provider-default start/build | two direct env keys; stale service updated 2025-12-13; ownership remains Unknown pending domain confirmation. |
+| `srv-d6sijjkhg0os73f7regg` | `amadeus-pig-tracking-system` | web service / not suspended | continuous | provider-default start/build | service updated 2026-08-13T08:25:46Z; 20 direct env keys; SAM Meat webhook/autoreply, SAM sales cohort/autonomy, Telegram owner-review and telemetry-ingest names present. Deploy `dep-d9unuilg1s2s73e3l4fg` finished live 2026-08-13T08:25:46Z at merge `660bf679…`; a newer deploy was in progress during the initial observation and is not claimed application-loaded. |
+| `srv-d25u8ic9c44c73efo920` | `amadeus-backend` | web service / not suspended | continuous | provider-default start/build | service updated 2025-12-13T10:59:17Z; two direct env keys; provider deploy timestamp was not retained in this snapshot; ownership remains Unknown pending domain confirmation. |
 | `crn-d8a8q56l51nc73cif04g` | `amadeus-telemetry-daily-rollups` | cron / not suspended | `15 22 * * *` | `python scripts/telemetry_daily_rollup_plan.py --previous-day --apply` | service updated 2026-08-12T22:15:11Z; provider returned no last-success timestamp; `DATABASE_URL` name present; deploy `dep-d9uo13e7bikc73b2v5c0` finished live 2026-08-13T08:30:39Z at `1d98850d…`. |
 | `crn-d5cc6sjuibrs73e8pu6g` | `amadeus-localweatherstation-logger` | cron / not suspended | `*/5 * * * *` | `python main.py` | service updated 2026-08-13T08:35:08Z; last success 08:35:32Z; telemetry-ingest key name present; deploy `dep-d87s7eh9rddc73atie5g` finished live 2026-05-22T02:48:01Z. |
-| `crn-d5cb74juibrs73djmn6g` | `amadeus-weatherstation-logger` | cron / suspended | `*/5 * * * *` | `.venv/bin/python main.py` | service updated 2026-01-03T07:16:28Z; provider returned no last-success timestamp; six config names; historical Elixir-runtime service, deploy `dep-d5cbta9r7b3s73ag0qe0` finished live 07:03:14Z but service is provider-suspended. |
+| `crn-d5cb74juibrs73djmn6g` | `amadeus-weatherstation-logger` | cron / suspended | `*/5 * * * *` | `.venv/bin/python main.py` | service updated 2026-01-03T07:16:28Z; provider returned no last-success timestamp; six config names; historical Elixir-runtime service, deploy `dep-d5cbta9r7b3s73ag0qe0` finished live 2026-01-03T07:03:14Z but service is provider-suspended. |
 | `crn-d5a0plhr0fns73837e8g` | `amadeus-forecast-logger` | cron / not suspended | `0 4,16 * * *` | `python main.py` | service updated 2026-08-13T04:00:22Z; provider returned no last-success timestamp; telemetry-ingest key name present; deploy `dep-d9ndpj9t0dsc7390slmg` finished live 2026-08-02T06:00:05Z. |
 | `crn-d55dlp6mcj7s73f9smtg` | `amadeus-sunsynk-logger` | cron / not suspended | `*/5 * * * *` | `python main.py` | service updated 2026-08-13T08:35:10Z; last success 08:35:38Z; telemetry-ingest key name present; deploy `dep-d87od8gjs32c73edh9b0` finished live 2026-05-21T22:27:24Z. |
 
@@ -118,8 +120,8 @@ Chatwoot provider returned three account webhooks, all owned by the Render host:
 
 Therefore `1.0` is not the current Chatwoot inbound owner, while the n8n
 GateKeeper remains the current Oom Sakkie Telegram owner. Backend callback
-routes that are not registered at the provider are runtime-loaded capability,
-not provider-active ownership.
+routes that are not registered at the provider are documented/deployed-route
+capability, not provider-active or application-loaded ownership.
 
 ### Local Windows OS-observed truth
 
@@ -134,8 +136,9 @@ At `2026-08-13T08:29:31Z`:
 
 The ready watchdog plus disabled direct relay task is one logical local relay
 owner, not two independent relays. Telegram provider truth shows CHARLIE webhook
-ownership on Render, so the loaded polling relay is a competing transport even
-if its code is expected to self-contain in webhook mode. The first suspected
+ownership on Render, so the loaded relay is a potentially competing transport;
+its actual polling mode is unproven and its code may self-contain in webhook
+mode. The first suspected
 duplicate scheduler/transport and strongest retirement candidate is the
 `CHARLIE Telegram Relay Watchdog`, not a proven duplicate and not a production
 farm scheduler. Do not disable it until loaded transport mode proves the child
@@ -177,7 +180,7 @@ was observed. Provider and process metadata cannot establish physical truth.
 | Local CHARLIE Telegram polling relay/watchdog/Windows task | Watchdog task Ready with a loaded relay parent/child chain; direct relay task Disabled; CHARLIE provider webhook is Render-owned; loaded transport mode not yet proven | quarantine | If the child is actually polling, it can compete for updates; if it is self-contained in webhook mode, disabling the watchdog should have no delivery effect, but that is not yet proven. | Hosted authenticated CHARLIE webhook; owner CORE | Read loaded `CORE_RELAY_TRANSPORT` as mode only, prove process behavior, owner allowlist and Render callback. Rollback is task re-enable using the documented installer/definition. | Loaded mode proves no `getUpdates` ownership, fresh Render callback succeeds, child termination is observed only in a later authorized reversible window, and re-enable rollback is verified. |
 | Local CHARLIE executive watchdog/task | `scripts/install_charlie_executive_watchdog.ps1` and `scripts/charlie_executive_watchdog.py` define a distinct always-on executive watchdog | retain-temporarily | Disabling an active task can stop executive recovery/follow-up supervision; duplicate watchdogs can race the same mission state. | One supervised CORE executive process with durable leases; owner CORE | Windows task/process identity, mission store and heartbeat. | OS readback proves one configured task/process; restart recovery resumes one disposable mission without duplicate command; rollback task definition retained. |
 | Local CORE runner watchdog/promotion task | `scripts/install_charlie_runner_watchdog.ps1`, `scripts/promote_charlie_runtime.ps1`, runner/supervisor code and registered runner worktrees define the build-execution plane | retain-temporarily | Stopping an active runner pauses software missions but must not affect farm runtime; duplicate tasks can execute the same mission. | Portable supervised development runtime; owner CORE | Mission queue, claim/lease, promoted source identity and recovery truth. | OS/task/process readback proves singular ownership; restart recovery completes a disposable governed mission; no operational farm route depends on it. |
-| CHARLIE build-relay webhook and notification scripts | `modules/charlie/build_relay.py`, `scripts/charlie_build_relay_webhook.py` and `scripts/build_relay_notify.py` expose hosted webhook control and optional notifications | migrate | Disabling a loaded webhook can remove owner mission control; enabling legacy notification/polling aliases can duplicate messages. | CHARLIE private executive webhook/outbox on the canonical mission store; owner CORE | Telegram webhook/provider truth, owner allowlist, inbound idempotency and notification mode. | Provider endpoint and loaded route match canonical runtime; callback/notification readback succeeds once; legacy aliases receive zero events during rollback window. |
+| CHARLIE build-relay webhook and notification scripts | `modules/charlie/build_relay.py`, `scripts/charlie_build_relay_webhook.py` and `scripts/build_relay_notify.py` expose hosted webhook control and optional notifications | migrate | Disabling the provider-registered webhook can remove owner mission control; enabling legacy notification/polling aliases can duplicate messages. | CHARLIE private executive webhook/outbox on the canonical mission store; owner CORE | Telegram webhook/provider truth, owner allowlist, inbound idempotency and notification mode. | Provider endpoint and future application-level route readback match canonical runtime; callback/notification readback succeeds once; legacy aliases receive zero events during rollback window. |
 | Oom Sakkie morning runtime and reassessment scheduler | Backend-owned date-stable morning claim exists; reassessment contract exists; invocation owner needs provider/runtime confirmation | retain-temporarily | Disabling deployed invocation can remove daily brief/reassessment; duplicate n8n schedules can duplicate messages. | Durable agent runtime scheduler with canonical claims; owner Oom Sakkie/CORE | Process start command, timezone, claim store, provider outbox. | Two consecutive due windows survive restart with exactly one provider message/outcome; n8n duplicates remain disabled. |
 | Render Sunsynk logger cron | `TESTING_CHECKLIST.md` records a dashboard-managed Sunsynk logger schedule/command; no Render Blueprint is present | retain-temporarily | Disabling may stop power telemetry ingestion and make ROOTLINE evidence stale. | ROOTLINE durable telemetry ingestion schedule; owner ROOTLINE/CORE | Exact Render job/command/timezone, Sunsynk adapter and canonical ingest receipt. | Two scheduled ingestions have fresh canonical timestamps/readback after restart; Render confirms old job disabled through one rollback window. |
 | Render `amadeus-localweatherstation-logger` cron | `SUPABASE_TELEMETRY_PLAN.md` names the local-weather-station logger; testing evidence records cron deployment steps | retain-temporarily | Disabling may stop local observation refresh and make current weather evidence stale. | ROOTLINE durable local-weather ingestion schedule; owner ROOTLINE/CORE | Exact Render command/timezone, station adapter and freshness policy. | Two observation windows populate canonical evidence with freshness/readback; Render confirms this job alone disabled through rollback window. |
