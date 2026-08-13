@@ -16,8 +16,9 @@
 - No new n8n business logic or canonical Google Sheets write path may be added.
 - Phase 0 repository discovery register:
   `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`.
-  Its exported-state findings are documented fact only; complete the prioritized
-  read-only provider/runtime snapshot before authorizing any disablement.
+  The first provider/runtime snapshot is recorded there. Preserve the explicit
+  evidence levels and independently verify the CHARLIE relay-watchdog rollback
+  proof before any later retirement; this inventory authorizes no disablement.
 
 ## Channel-invariant canonical actions
 
