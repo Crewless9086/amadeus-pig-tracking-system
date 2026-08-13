@@ -143,16 +143,28 @@ Each metric has:
 - `confidence`: High / Moderate / Limited / Unknown;
 - `limitations`, `context_qualifiers`, and supporting event/animal identities.
 
-Confidence is evidence confidence, never biological worth:
+Confidence is evidence confidence, never biological worth. Every axis carries a
+versioned `confidence_rule_id`; initial rules are
+`herdmaster_merit_confidence_v1`. Implementations may not reinterpret the
+labels without a reviewed rule-version change:
 
-- **High:** exact identities, compatible complete outcomes, no unresolved
-  contradiction, repeated/comparable evidence.
-- **Moderate:** exact attribution with limited sample or material but bounded
-  context differences.
-- **Limited:** partial coverage, one small sample, stale context or important
-  unresolved comparability.
+- **High:** exact identity/attribution; zero unresolved contradiction; at least
+  3 eligible independent opportunities/cohorts; at least 80% outcome coverage;
+  and no known material management/season/environment comparability difference.
+- **Moderate:** exact identity/attribution; zero unresolved contradiction; at
+  least 2 eligible opportunities/cohorts; at least 60% coverage; comparability
+  differences are known and explicitly bounded.
+- **Limited:** exact identity/attribution but only 1 eligible opportunity/cohort,
+  coverage below 60%, stale supporting context, or a material unresolved
+  comparability difference.
 - **Unknown:** denominator, attribution or governing evidence is missing or
-  conflicting.
+  conflicting, or the axis cannot be classified deterministically.
+
+An axis whose natural sampling unit is an individual offspring uses eligible
+offspring as `sample_size`, but confidence remains capped at Limited when all
+offspring come from only one litter/cohort. The packet discloses both offspring
+and independent-cohort counts. Thresholds apply per axis; they do not combine
+different biological measures into a score.
 
 ### 5.2 Herd page `/breeding-analytics`
 
@@ -168,6 +180,10 @@ Return:
 - current trend summary and named partners/pairs without collapsing them into
   one rank;
 - `detail_href` for whole-row keyboard/pointer navigation.
+- backend-owned route-safe navigation objects for related animal, litter and
+  Breeding Attention targets: `{href, accessible_label, available,
+  unavailable_reason}`. `href` is an internal absolute path or null; CODEX must
+  not construct it from labels or IDs.
 
 Default ordering is data-quality attention then name, not a genetic leaderboard.
 Any alternate sort labels the chosen descriptive metric and retains Unknowns
@@ -188,10 +204,13 @@ Return:
 - current/superseded observations and relevant health/management context;
 - data-quality warnings and missing-evidence tasks;
 - plain-language interpretation.
+- route-safe navigation objects for every displayed parent, sibling, partner,
+  offspring and litter, plus the current animal's Breeding Attention target.
+  Missing/unavailable targets render as non-link text with the supplied reason.
 
 ## 6. Plain-language interpretation contract
 
-Every herd row and named profile may contain four labelled sections:
+Every herd row and named profile must contain all four labelled sections:
 
 - **Going well:** supported descriptive outcomes only, with n and period.
 - **Needs attention:** supported adverse association or current management/data
@@ -200,6 +219,13 @@ Every herd row and named profile may contain four labelled sections:
   follow-up needed to interpret the axis.
 - **Next review:** the next read-only reassessment trigger or physical evidence
   to record through its existing canonical action.
+
+When no supported positive or adverse statement exists, **Going well** or
+**Needs attention** uses neutral Unknown-safe copy (“No supported conclusion at
+this cutoff”) rather than disappearing. Going well always gives n and period;
+Needs attention stays non-causal; Missing evidence names the exact gap; Next
+review names the trigger or existing canonical action. Empty headings are not
+permitted.
 
 Required qualifier form: “These offspring were associated with this parent/pair
 under the recorded management and period. This does not establish genetic
@@ -221,8 +247,15 @@ No chart is implemented by this contract PR.
    comparable windows shaded; no line across missing intervals.
 5. **Survival:** counts and percentages together with born-alive denominator;
    Unknown weaned cohorts rendered as Unknown, not 0%.
-6. **Financial:** exact attributable gross/net values by channel and period;
-   costs/margin hidden as Unknown unless coverage passes. Lot values remain lot
+6. **Financial:** exact attributable `gross_total` and, only when supplied by
+   canonical `sales_transactions`, `net_settlement_payable`. Gross is the
+   transaction amount before recorded VAT/commission/other deductions. Net
+   settlement payable is gross including VAT less the explicitly recorded
+   commission including VAT and other deductions; it is a channel settlement,
+   not profit or contribution margin. Show the deduction fields and source
+   sale/lot identity. If item-to-transaction attribution cannot support the
+   requested animal/cohort scope, keep net Unknown. Costs/margin stay Unknown
+   unless compatible attributable cost coverage exists. Lot values remain lot
    level.
 
 All charts require accessible tabular equivalents, keyboard focus, text summary,
@@ -273,8 +306,8 @@ completion claim.
 
 - missing born-alive or weaned count stays null and never enters denominator;
 - partial cohort coverage reports observed/missing n;
-- superseded litter/observation/lifecycle fact governs current projection while
-  history remains visible;
+- effective non-superseded litter/observation/lifecycle fact governs current
+  projection while the superseded original and full lineage remain visible;
 - silence never becomes conception failure or mortality;
 - rates always equal disclosed numerator/denominator;
 - median/dispersion and comparable-window growth use eligible records only;
@@ -305,6 +338,8 @@ completion claim.
 
 - names first with tag/Pig ID secondary and Unknown fallback;
 - whole row and keyboard navigation;
+- backend-provided internal hrefs only; names-first accessible labels; null
+  targets remain non-link text with an explicit unavailable reason;
 - Unknown survival does not display 0%; denominators and sample sizes visible;
 - chart gaps, accessibility tables and plain-language qualification visible;
 - partner comparison never says a parent caused the outcome;
