@@ -153,6 +153,9 @@ def test_negated_owner_impressions_are_not_recorded_as_positive_facts(text, excl
     "Pig 002 is sick. I will monitor her, but I will not monitor her after all.",
     "Pig 002 is sick. We will monitor her, but we won't monitor her after all.",
     "Pig 002 is sick. She will be monitored, but will not be monitored after all.",
+    "Pig 002 is sick. We will monitor her, but we will no longer monitor her.",
+    "Pig 002 is sick. I will monitor her, but I will stop monitoring her.",
+    "Pig 002 is sick. She will be monitored, but will no longer be monitored.",
 ])
 def test_retracted_monitoring_intention_is_not_current_fact(text):
     pig = animal("PIG-2026-0002", "Pig 002", "002")
