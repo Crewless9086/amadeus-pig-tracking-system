@@ -6,9 +6,10 @@
   task/process ownership without invoking or changing any provider component.
 - Reconciled 31 provider workflows, seven Render services, three Chatwoot
   callbacks, two Telegram webhook owners and four relevant scheduled tasks.
-- Identified the ready local CHARLIE relay watchdog as the first genuinely
-  competing scheduler/transport candidate for later reversible retirement;
-  no task, process, webhook or workflow was changed.
+- Identified the ready local CHARLIE relay watchdog as the strongest suspected
+  competing scheduler/transport and retirement candidate; actual polling or
+  duplicate delivery remains unproven pending loaded-mode evidence. No task,
+  process, webhook or workflow was changed.
 
 ## 2026-08-13 - Agentic Farm Runtime Phase 0 repository discovery
 
