@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Grouped weight and movement read-only reconciliation
+
+- Mapped application, protected OOM SAKKIE, voice-preparation, Supabase and retained legacy paths without runtime or provider mutation.
+- Recorded that the application batch and OOM protected action converge on canonical Supabase events but do not yet share one preview/confirm/execute service.
+- Bounded the next step to a collision-cleared, side-effect-free shared preview contract; no cutover or Business completion is claimed.
+
 - Extended the canonical Control Tower contract with a mandatory all-terminal
   dispatch sweep after every owner message and terminal report. Control Tower
   now owns detection of idle/released terminals and selection of their next

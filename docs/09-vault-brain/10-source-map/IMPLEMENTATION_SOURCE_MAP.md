@@ -1,5 +1,10 @@
 # Implementation Source Map
 
+## CMQ-20260813-03 grouped weights and movements
+
+- Discovery-only reconciliation: `docs/06-operations/CMQ_20260813_03_GROUPED_WEIGHT_MOVEMENT_RECONCILIATION.md`
+- This entry grants no implementation or runtime authority. Control Tower file-boundary clearance is required before the recommended adapter-contract slice.
+
 ## Agentic farm runtime and legacy retirement
 
 - Highest operating authority:
