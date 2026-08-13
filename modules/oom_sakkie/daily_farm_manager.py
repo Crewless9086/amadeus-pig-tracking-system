@@ -54,7 +54,10 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0,
                 "next_due_at": _next_check(local), **ZERO}
-    claim_id = identity + ":" + digest[:24]
+    # One scheduled date owns one provider effect.  The material digest is
+    # evidence carried by the claim, not part of its identity: evidence may
+    # change while another worker starts or a process restarts.
+    claim_id = identity + ":DELIVERY"
     claim = store("claim_daily", claim_id, {"daily_identity": identity,
         "material_digest": digest, "status": "detected", "observed_at": now.isoformat(),
         "task_identities": [row["task_id"] for row in packet["all_tasks"]],
