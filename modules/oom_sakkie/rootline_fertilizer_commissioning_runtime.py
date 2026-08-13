@@ -30,6 +30,7 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
                                       transport=None, power_loader=None,
                                       acceptance_loader=None):
     """Advance only a fresh, exactly bound supervised mixer acceptance."""
+    deterministic_now = now is not None
     now = _aware(now or datetime.now(timezone.utc))
     source = environ if environ is not None else os.environ
     store = store or rootline_irrigation_execution_store
@@ -81,6 +82,7 @@ def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority
                     "ROOTLINE could not complete the current controller or power check. "
                     "It will reassess automatically; you do not need to repeat the setup."),
             next_reassessment="next_scheduler_tick")
+    now = _evaluation_time(now, deterministic_now)
     if not isinstance(history, list):
         return _result("commissioning_history_readback_unavailable")
     today = now.date()
@@ -205,6 +207,11 @@ def _load_power(now):
     grid = _number(power.get("grid_power_w"))
     suitable = None if None in (soc, solar, grid) else not (soc < 50 and solar < 1200 and grid <= 0)
     return {"suitable": suitable, "generation": str(generated), "observed_at": power.get("observed_at")}
+
+
+def _evaluation_time(initial, deterministic):
+    """Evaluate receipts after live I/O; preserve explicitly injected test clocks."""
+    return initial if deterministic else datetime.now(timezone.utc)
 
 
 def _load_exact_acceptance(result, parsed):

@@ -1,13 +1,24 @@
 from datetime import datetime, timedelta, timezone
 
 from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
-    continue_fertilizer_commissioning, recover_fertilizer_commissioning,
+    _evaluation_time, continue_fertilizer_commissioning, recover_fertilizer_commissioning,
 )
 from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
 from modules.telemetry.rootline_auxiliary_management import build_auxiliary_eligibility
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 
 NOW = datetime(2026, 8, 10, 6, 51, 14, tzinfo=timezone.utc)
+
+
+def test_live_evaluation_clock_is_sampled_after_provider_io(monkeypatch):
+    after = NOW + timedelta(seconds=61)
+    class Clock:
+        @staticmethod
+        def now(_tz): return after
+    monkeypatch.setattr(
+        "modules.oom_sakkie.rootline_fertilizer_commissioning_runtime.datetime", Clock)
+    assert _evaluation_time(NOW, False) == after
+    assert _evaluation_time(NOW, True) == NOW
 
 
 def owner_result():
