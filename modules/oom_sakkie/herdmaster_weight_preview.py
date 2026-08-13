@@ -108,7 +108,7 @@ def preview_grouped_herd_weights(owner_words, *, weight_date, readiness, preflig
     text = str(owner_words or "")
     pairs = re.findall(
         r"(?:^|(?<=[\n,;.]))\s*(?:(?:pig|vark)\s+)?"
-        r"([A-Za-z0-9-]+)\s*(?:-|:|weigh(?:ed|s)?\s+)?\s*"
+        r"([^\W_](?:[^\W_]|-)*)\s*(?:-|:|weigh(?:ed|s)?\s+)?\s*"
         r"(\d+(?:[.,]\d+)?)\s*kg\b", text, flags=re.I)
     if not pairs:
         return _failure("grouped_weight_facts_not_found", "Send each pig tag or name followed by its kg.")
