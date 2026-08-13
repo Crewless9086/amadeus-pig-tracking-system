@@ -484,6 +484,8 @@ def load_canonical_health_loss_evidence(*, connect_factory=None):
             "on_farm": str(row.get("On_Farm") or "").lower() == "yes",
             "availability": str(row.get("Purpose") or "Unknown"),
             "pen": str(row.get("Current_Pen_ID") or "Unknown"),
+            "birth_date": str(row.get("Date_Of_Birth") or ""),
+            "lifecycle_effective_date": str(row.get("Exit_Date") or ""),
         })
     matings = [{
         "mating_id": str(row.get("mating_id") or ""),

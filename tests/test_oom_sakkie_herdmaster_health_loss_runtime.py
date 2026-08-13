@@ -4,6 +4,7 @@ from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_health_loss_runtime import (
     _record_lifecycle_event,
     handle_authenticated_health_loss_message,
+    load_canonical_health_loss_evidence,
 )
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
@@ -67,6 +68,119 @@ def memory_store(active=None):
         return {"success": True, "created": True}
 
     return store, recorded
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_litter_register_rows")
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_mating_overview")
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.get_pig_master_rows")
+def test_canonical_loader_preserves_birth_and_terminal_chronology(pigs, matings, litters):
+    pigs.return_value = [{
+        "Pig_ID": "PIG-2026-0002", "Pig_Name": "Pig 002", "Tag_Number": "002",
+        "Status": "Deceased", "On_Farm": "No", "Purpose": "Unknown",
+        "Current_Pen_ID": "", "Date_Of_Birth": "2026-01-10",
+        "Exit_Date": "2026-08-12",
+    }]
+    matings.return_value = []
+    litters.return_value = []
+
+    packet = load_canonical_health_loss_evidence()
+    animal = packet["animals"][0]
+    assert animal["pig_id"] == "PIG-2026-0002"
+    assert animal["birth_date"] == "2026-01-10"
+    assert animal["lifecycle_effective_date"] == "2026-08-12"
+    assert len(packet["evidence_generation"]) == 64
+
+
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_synthetic_pig002_explicit_health_path_needs_no_semantic_front_door(loader):
+    loader.return_value = {
+        "evidence_generation": "SYNTHETIC-GEN-002",
+        "as_of_timestamp": "2026-08-13T07:01:01+00:00",
+        "animals": [{
+            "pig_id": "SYNTHETIC-PIG-002", "name": "Pig 002", "tag_number": "002",
+            "lifecycle_status": "Active", "on_farm": True, "availability": "Unknown",
+            "pen": "Unknown", "birth_date": "2026-01-10",
+            "lifecycle_effective_date": "",
+        }],
+        "matings": [], "litters": [],
+    }
+    store, recorded = memory_store()
+    inbound = {
+        **parsed(
+            "Pig 002 is not eating, appears otherwise fine, is lying down and will be monitored.",
+            "synthetic-stage2-002",
+        ),
+        "provider_timestamp": "2026-08-13T07:01:00+00:00",
+        "semantic": {},
+    }
+    result, status = handle_authenticated_health_loss_message(
+        inbound, issue_gateway_owner_authority("42", "42"), context_store=store,
+    )
+    assert status == 200
+    assert result["handled"] is True
+    assert result["status"] == "waiting_for_input"
+    assert result["writes_farm_data"] is False
+    assert result["protected_actions_performed"] is False
+    assert "able to stand, breathe normally and drink water" in result["answer"]
+    assert recorded[0]["semantic_interpretation"] == {}
+    assert recorded[0]["preview"]["zero_io"] is True
+    assert recorded[0]["preview"]["writes_farm_data"] is False
+
+
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+@patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay", return_value=None)
+@patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input", return_value=({"handled": False}, 200))
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime._record_lifecycle_event")
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime._load_active_contexts", return_value=[])
+@patch("modules.oom_sakkie.herdmaster_health_loss_runtime.load_canonical_health_loss_evidence")
+def test_authenticated_gateway_synthetic_health_acceptance_withholds_provider_send(
+        loader, _contexts, record, _owner_task, _replay, deliver):
+    loader.return_value = {
+        "evidence_generation": "SYNTHETIC-GEN-002",
+        "as_of_timestamp": "2026-08-13T07:01:01+00:00",
+        "animals": [{
+            "pig_id": "SYNTHETIC-PIG-002", "name": "Pig 002", "tag_number": "002",
+            "lifecycle_status": "Active", "on_farm": True, "availability": "Unknown",
+            "pen": "Unknown", "birth_date": "2026-01-10",
+            "lifecycle_effective_date": "",
+        }],
+        "matings": [], "litters": [],
+    }
+    record.return_value = {"success": True, "created": True}
+    deliver.return_value = {
+        "success": True, "status": "synthetic_provider_delivery_withheld",
+        "telegram_sends": 0, "telegram_edits": 0,
+    }
+    token = "s" * 40
+    env = {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": token,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42",
+        "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID": "42",
+        # Deliberately omit OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED.
+    }
+    payload = {"message": {
+        "message_id": "synthetic-stage2-gateway-002", "date": 1786604460,
+        "text": "Pig 002 is not eating, appears otherwise fine, is lying down and will be monitored.",
+        "from": {"id": 42}, "chat": {"id": 42, "type": "private"},
+    }}
+
+    result, status = handle_telegram_gateway_message(
+        payload, headers={"Authorization": "Bearer " + token}, environ=env,
+    )
+
+    assert status == 200
+    assert result["message"]["handled"] is True
+    assert result["message"]["writes_farm_data"] is False
+    assert result["message"]["protected_actions_performed"] is False
+    assert result["sends_telegram"] is False
+    assert result["delivery"]["telegram_sends"] == 0
+    assert result["delivery"]["telegram_edits"] == 0
+    assert "able to stand, breathe normally and drink water" in result["answer"]
+    record.assert_called_once()
+    assert record.call_args.args[0]["preview"]["zero_io"] is True
+    assert record.call_args.args[0]["preview"]["writes_farm_data"] is False
+    assert record.call_args.args[0]["semantic_interpretation"] == {}
 
 
 def test_recovery_identity_distinguishes_corrected_mission_from_prior_misbound_case():
