@@ -32,7 +32,9 @@ _ISO_DATE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
 
 def preview_application_typed(payload: Mapping, *, pigs: Sequence[Mapping], pens: Sequence[Mapping]):
     """Normalize explicit application rows without reading or writing state."""
-    facts = payload.get("rows") if isinstance(payload, Mapping) else None
+    if not isinstance(payload, Mapping):
+        return _failure("application_payload_invalid")
+    facts = payload.get("rows")
     return _preview(
         channel="application_typed",
         facts=facts,
@@ -164,7 +166,7 @@ def _resolve_pig(identity, pigs):
 
 
 def _resolve_pen(identity, pens):
-    if identity in (None, ""):
+    if identity in (None, "") or str(identity).strip().casefold() == "unknown":
         return True, "Unknown", "Unknown"
     needle = str(identity).strip().casefold()
     matches = [pen for pen in pens if needle in _pen_values(pen)]

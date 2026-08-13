@@ -38,10 +38,19 @@ def test_application_oom_and_prepared_browser_voice_are_byte_equivalent():
 
 def test_unknowns_are_explicit_and_stable():
     pigs = [{"pig_id": "PIG-OPAQUE", "tag_number": "X1", "status": "Active", "on_farm": True}]
-    result = preview_application_typed({"weight_date": "2026-08-13", "rows": [{"identity": "X1", "weight_kg": 12}]}, pigs=pigs, pens=[])
+    omitted = preview_application_typed({"weight_date": "2026-08-13", "rows": [{"identity": "X1", "weight_kg": 12}]}, pigs=pigs, pens=[])
+    result = preview_application_typed({"weight_date": "2026-08-13", "destination_pen": "Unknown", "rows": [{"identity": "X1", "weight_kg": 12}]}, pigs=pigs, pens=[])
     assert result["rows"][0]["current_pen_id"] == "Unknown"
     assert result["rows"][0]["moved_to_pen_id"] == "Unknown"
     assert result["rows"][0]["condition_notes"] == "Unknown"
+    assert _stable_contract(result) == _stable_contract(omitted)
+
+
+def test_malformed_application_payload_fails_closed():
+    result = preview_application_typed(None, pigs=PIGS, pens=PENS)
+    assert result["success"] is False
+    assert result["status"] == "application_payload_invalid"
+    assert result["writes_performed"] is False
 
 
 @pytest.mark.parametrize("pigs,status", [
