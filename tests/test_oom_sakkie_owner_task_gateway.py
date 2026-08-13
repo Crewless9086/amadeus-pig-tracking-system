@@ -79,7 +79,7 @@ class OwnerTaskGatewayTests(unittest.TestCase):
         self.assertEqual(relay["parameters"]["url"],
             "https://amadeus-pig-tracking-system.onrender.com/api/oom-sakkie/channels/telegram/message")
         headers=relay["parameters"]["headerParameters"]["parameters"]
-        self.assertEqual(headers[0]["name"],"Authorization")
+        self.assertEqual(headers[0]["name"],"X-Oom-Sakkie-Telegram-Token")
         self.assertIn("OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN",headers[0]["value"])
         self.assertEqual(sum(node.get("type")=="n8n-nodes-base.telegramTrigger" for node in workflow["nodes"]),1)
         outputs=workflow["connections"]["Switch - BEACON Media Intake"]["main"]
