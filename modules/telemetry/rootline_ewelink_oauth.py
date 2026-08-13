@@ -491,6 +491,10 @@ def _enforce_provider_operation(method, parsed, body, mode, environ):
         and body.get("grantType") == "authorization_code"
         and body.get("redirectUrl") == environ["EWELINK_OAUTH_REDIRECT_URI"]
     ) or (
+        method == "POST" and mode == "signed" and parsed.path == "/v2/user/refresh"
+        and not query and isinstance(body, dict) and set(body) == {"rt"}
+        and bool(str(body.get("rt") or ""))
+    ) or (
         method == "GET" and mode == "bearer" and body is None
         and parsed.path == "/v2/family" and not query
     ) or (
@@ -522,10 +526,21 @@ def _encrypt(value, key, aad):
 
 
 def decrypt_access_token(record, environ=None):
+    return _decrypt_token(record, "access_token_ciphertext", environ)
+
+
+def decrypt_refresh_token(record, environ=None):
+    return _decrypt_token(record, "refresh_token_ciphertext", environ)
+
+
+def _decrypt_token(record, field, environ=None):
     source = environ if environ is not None else os.environ
     aad = (f"{record['region']}|{record['provider_account_digest']}|"
            f"{record['device_id']}|{record['adapter_version']}").encode()
-    packet = base64.b64decode(record["access_token_ciphertext"], validate=True)
+    try:
+        packet = base64.b64decode(record[field], validate=True)
+    except Exception:
+        raise OAuthFailure("ewelink_token_ciphertext_invalid") from None
     if len(packet) < 29:
         raise OAuthFailure("ewelink_token_ciphertext_invalid")
     try:

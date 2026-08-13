@@ -31,8 +31,12 @@ access tokens and refresh tokens must never be copied into chat or Telegram.
 - Tokens are AES-GCM encrypted before append-only private persistence. Only
   expiry metadata, field names and digests are returned by the callback.
 - Refresh-token generations are retained as encrypted append-only records;
-  expired generations cannot enable readback and replacement must use the same
-  account/device binding.
+  an expired access token is rotated once through CoolKit's signed
+  `POST /v2/user/refresh` contract and the replacement access/refresh pair is
+  encrypted before an atomic append. The provider-documented 30-day access and
+  60-day refresh lifetimes are retained as expiry metadata. An expired refresh
+  generation cannot enable readback; rotation preserves the same pinned
+  account/device/region binding and performs zero device-control calls.
 
 ## Protected configuration
 
