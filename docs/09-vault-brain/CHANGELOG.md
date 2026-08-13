@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Channel-invariant grouped preview contract prepared
+
+- Added one unwired, side-effect-free grouped-weight/optional-movement preview contract and isolated adapter-conformance tests.
+- Proved application typed, OOM typed and prepared browser-voice text fixtures normalize to byte-equivalent canonical previews while Telegram voice remains excluded.
+- Changed no executor, route, UI, schema, fallback or production configuration; no runtime improvement or Business completion is claimed.
+
 ## 2026-08-13 - Breeding Attention protected page return prepared
 
 - Continued `HMQ-20260813-02` by placing only the Breeding Attention HTML view
