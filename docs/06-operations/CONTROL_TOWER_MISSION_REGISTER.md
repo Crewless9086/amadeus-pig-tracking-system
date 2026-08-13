@@ -94,12 +94,14 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
 - `CMQ-20260813-02A` — `parser_deployed_waiting_for_separate_authority`:
   PR #877 evidence and PR #885 opaque-ID repair are integrated; watchdog remains
   active and no additional proof window is authorized.
-- `CMQ-20260813-03` — `oom_preview_deployed_executor_compatibility_next`: PR
-  #897 merged as `69059933` and is live within `43b91712`. Production comparison
-  was correctly withheld because the real protected lifecycle must create one
-  claim and deliver one preview. Audit/converge the existing executor without a
-  bypass; genuine acceptance later permits those two intended preview effects
-  but no farm write before exact confirmation.
+- `CMQ-20260813-03` — `pr899_reconcile_before_integration`: PR #899 at reviewed
+  head `01d1631b` binds one canonical payload/digest through OOM preview, claim,
+  callback and grouped executor, with atomic/replay-safe completion and legacy-
+  claim compatibility. It remains unmerged and has no Business outcome. Current
+  main `693c11f7` advanced through ROOTLINE PR #900 and overlaps the protected
+  callback runtime and tests, so CORE must reconcile and renew exact-head review
+  before serialized integration. No genuine claim, Telegram preview, confirmation
+  or farm write is authorized for this integration step.
 - `CMQ-20260813-04` — queued reversible legacy-document retirement.
 - `CMQ-20260813-05` — `phase_a_shadow_authorized`: build observation-only
   Control Tower evaluation on the existing CORE queue/runner/register. No new
@@ -212,6 +214,7 @@ result appear known earlier.
 | 2026-08-13 | CORE `CMQ-20260813-03` application preview proof | PR #893 merged/deployed as `de4122ab`. Two identical authenticated movement-only previews used current opaque pig/pen identities, returned canonical contract v1 and the same digest, required confirmation and left batches, rows, weight events, location events and protected claims unchanged; no executor/provider call occurred. | Application preview adapter is operational. Continue one adapter at a time with source-only OOM typed preview wiring; no executor cutover or Business completion claim. |
 | 2026-08-13 | CORE `CMQ-20260813-03` OOM typed adapter ready | PR #897 exact head `14a93d44` on current main changes only the OOM typed preview boundary, tests and documentation. All CI and independent reviews pass; protected claims/execution remain byte-identical and no runtime/provider/farm mutation occurred. | Authorize normal integration/deployment plus one authenticated synthetic zero-effect equivalence proof; do not execute, confirm, send or alter fallbacks. |
 | 2026-08-13 | CORE `CMQ-20260813-03` OOM typed adapter deployed | PR #897 merged as `69059933` and is loaded in successor `43b91712`. CORE made no production call because the real OOM boundary necessarily creates a protected claim and Telegram preview, so Control Tower's requested zero-claim/zero-send proof was internally contradictory. | Do not add a preview-only public bypass. Audit canonical preview compatibility with the existing protected executor; later genuine acceptance should allow exactly one claim and preview while still performing zero farm writes before confirmation. |
+| 2026-08-13 | CORE `CMQ-20260813-03` claim/executor compatibility | PR #899 exact head `01d1631b` is reviewed with green checks and fixes a real preview-versus-claim payload/digest split, but provides no Business outcome and remains unmerged. Authoritative main advanced to `693c11f7` through ROOTLINE PR #900, overlapping `protected_action_runtime.py` and its tests; live GitHub mergeability is not presently proven clean. | Keep CMQ-03 and the existing CORE terminal active. Reconcile PR #899 non-destructively onto current main, preserve the ROOTLINE irrigation callback consumer, renew cross-domain tests/reviews, then integrate/deploy through the serialized lane only if both action families coexist. Do not start CMQ-05 Shadow work until this terminal is released. |
 | 2026-08-13 | CORE Programme | PR #878 proved canonical Programme location and merged pointer/source-map correction as `29f04528`. | Released; SAM may resume existing mission. |
 | 2026-08-13 | CORE `CMQ-20260813-05` Shadow Control Tower authorization | Owner approved learning from the current Control Tower method to reduce manual delegation without losing quality. Phase A must use the existing visible CORE development terminal and existing durable CORE runner/queue; it must not create hidden terminal fleets or gain dispatch/release/production authority. | Build source-only shadow observation/evaluation, then compare ten real feedback transactions. Current Control Tower remains sole dispatch authority; later promotion requires explicit owner approval. |
 | 2026-08-13 | HERDMASTER `HMQ-20260813-03` | Candidate passed pre-advance gates; main advanced; no merge/deploy. | Preserve and reconcile non-destructively. |
