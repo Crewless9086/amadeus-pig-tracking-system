@@ -1811,7 +1811,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertGreaterEqual(js.count('record.breeding_cycle_state === "Exposure Active"'), 4)
         attention_js = Path("static/js/breedingAttention.js").read_text(encoding="utf-8")
         self.assertIn('current_state:current.state', attention_js)
-        self.assertIn('held.state === "Boar exposure active" ? "Tans by beer"', attention_js)
+        self.assertIn('schedule.current_exposures || []', attention_js)
+        self.assertIn('<span>Tans by beer</span>', attention_js)
+        self.assertIn('row.name)} — ${escapeHtml(row.boar_name)', attention_js)
+        self.assertIn('beplan UIT ${escapeHtml(row.planned_out_date', attention_js)
 
     def test_add_litter_can_prefill_from_mating_query_param(self):
         js = Path("static/js/addLitter.js").read_text(encoding="utf-8")
