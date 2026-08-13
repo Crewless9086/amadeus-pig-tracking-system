@@ -15,12 +15,21 @@ let activeExposureGroups = new Map();
 let pendingRemoval = null;
 
 async function loadExposureRemovals() {
+    const workspace = document.getElementById("active_exposure_workspace");
     const board = document.getElementById("exposure_removal_board");
     if (!board) return;
     try {
-        const response = await fetch("/api/pig-weights/breeding-attention/exposures");
-        const data = await response.json();
-        if (!response.ok || !data.success) throw new Error("Exposure evidence unavailable.");
+        const previewMode = new URLSearchParams(window.location.search).get("preview");
+        let data;
+        if (previewMode === "active-exposure-v1") {
+            data = {success:true, records:PREVIEW_EXPOSURES};
+        } else if (previewMode === "active-exposure-empty-v1") {
+            data = {success:true, records:[]};
+        } else {
+            const response = await fetch("/api/pig-weights/breeding-attention/exposures");
+            data = await response.json();
+            if (!response.ok || !data.success) throw new Error("Exposure evidence unavailable.");
+        }
         activeExposureGroups = new Map();
         (data.records || []).forEach(row => {
             const key = row.exposure_group_identity || row.exposure_identity;
@@ -28,20 +37,34 @@ async function loadExposureRemovals() {
             activeExposureGroups.get(key).push(row);
         });
         if (!activeExposureGroups.size) {
-            board.innerHTML = '<p class="pig-list-meta">Geen aktiewe natuurlike blootstelling wag vir verwydering nie.</p>';
+            board.innerHTML = "";
+            workspace?.classList.add("hidden");
             return;
         }
+        workspace?.classList.remove("hidden");
         board.innerHTML = [...activeExposureGroups].map(([group, rows]) => {
             const planned = rows.map(row => row.planned_removal_on).filter(Boolean).sort()[0] || "";
-            const assignments = rows.sort((a,b) => String(a.sow_label).localeCompare(String(b.sow_label)))
-                .map(row => `${escapeHtml(row.sow_label)} — ${escapeHtml(row.boar_label)}`).join("; ");
-            return `<article class="mating-card"><div class="mating-card-summary"><b>${escapeHtml(group)}</b><p>${assignments}</p>
-              <label>Werklike verwyderingsdatum <input type="date" value="${escapeHtml(planned)}" data-removal-date="${escapeHtml(group)}"></label>
-              <button type="button" class="primary-action" data-preview-removal="${escapeHtml(group)}">Wys beskermde voorskou</button></div></article>`;
+            const started = rows.map(row => row.occurred_on).filter(Boolean).sort()[0] || "Onbekend";
+            const boars = [...new Set(rows.map(row => row.boar_label).filter(Boolean))].join(", ") || "Beer onbekend";
+            const sows = rows.slice().sort((a,b) => String(a.sow_label).localeCompare(String(b.sow_label))).map(row => escapeHtml(row.sow_label)).join(", ");
+            const pens = [...new Set(rows.map(row => row.current_pen_name || row.pen_name).filter(Boolean))].join(", ") || "Hok onbekend";
+            const timing = exposureTiming(planned);
+            return `<article class="active-exposure-card ${timing.cssClass}"><div class="active-exposure-main"><span class="exposure-state">${escapeHtml(timing.label)}</span><h3>${escapeHtml(boars)}</h3><p>${sows}</p></div>
+              <dl class="active-exposure-facts"><div><dt>IN</dt><dd>${escapeHtml(started)}</dd></div><div><dt>Beplande UIT</dt><dd>${escapeHtml(planned || "Onbekend")}</dd></div><div><dt>Hok</dt><dd>${escapeHtml(pens)}</dd></div></dl>
+              <div class="active-exposure-actions"><button type="button" class="secondary-action" data-open-removal="${escapeHtml(group)}">Teken werklike UIT aan</button><div class="removal-action hidden" data-removal-action="${escapeHtml(group)}"><label>Werklike UIT-datum <input type="date" value="" data-removal-date="${escapeHtml(group)}"></label><button type="button" class="primary-action" data-preview-removal="${escapeHtml(group)}">Gaan voort</button></div></div></article>`;
         }).join("");
     } catch (error) {
+        workspace?.classList.remove("hidden");
         board.innerHTML = `<p class="message-error">${escapeHtml(error.message)}</p>`;
     }
+}
+
+function exposureTiming(planned) {
+    const days = daysBetween(startOfDay(new Date()), parseDate(planned));
+    if (days === null) return {label: "UIT-datum onbekend", cssClass: "exposure-unknown"};
+    if (days < 0) return {label: `${Math.abs(days)} dag(e) agterstallig`, cssClass: "exposure-overdue"};
+    if (days === 0) return {label: "UIT vandag", cssClass: "exposure-due"};
+    return {label: `UIT oor ${days} dag(e)`, cssClass: "exposure-upcoming"};
 }
 
 function removalRows(group, actualRemovedOn) {
@@ -82,6 +105,14 @@ async function confirmExposureRemoval() {
     document.getElementById("exposure_removal_preview").innerHTML=`<b>${data.rows_changed} verwydering(s) en teelsiklus(se) presies een keer aangeteken.</b>`;
     await Promise.all([loadExposureRemovals(),loadMatingBoard()]);
 }
+
+const PREVIEW_EXPOSURES = [
+    {exposure_group_identity:"PREVIEW-BOLA", exposure_identity:"PREVIEW-SOPHIE", sow_pig_id:"PIG-2026-5FA6", sow_label:"Sophie", boar_pig_id:"PIG-2026-8645", boar_label:"Bola", occurred_on:"2026-08-12", planned_removal_on:"2026-08-28", current_pen_name:"Kraam Saal 03"},
+    {exposure_group_identity:"PREVIEW-TYSON", exposure_identity:"PREVIEW-OLIVE", sow_pig_id:"PIG-2026-069E", sow_label:"Olive", boar_pig_id:"PIG-2026-3B5F", boar_label:"Tyson", occurred_on:"2026-08-12", planned_removal_on:"2026-08-28", current_pen_name:"Kraam Saal 04"},
+    {exposure_group_identity:"PREVIEW-TYSON", exposure_identity:"PREVIEW-SHUPE", sow_pig_id:"PIG-2026-34BF", sow_label:"Shupe", boar_pig_id:"PIG-2026-3B5F", boar_label:"Tyson", occurred_on:"2026-08-12", planned_removal_on:"2026-08-28", current_pen_name:"Kraam Saal 04"},
+    {exposure_group_identity:"PREVIEW-TYSON", exposure_identity:"PREVIEW-LUCY", sow_pig_id:"PIG-2026-1248", sow_label:"Lucy", boar_pig_id:"PIG-2026-3B5F", boar_label:"Tyson", occurred_on:"2026-08-12", planned_removal_on:"2026-08-28", current_pen_name:"Kraam Saal 04"},
+    {exposure_group_identity:"PREVIEW-PRINCE", exposure_identity:"PREVIEW-LOLLY", sow_pig_id:"PIG-2026-94B9", sow_label:"Lolly", boar_pig_id:"PIG-2026-E057", boar_label:"Prince", occurred_on:"2026-08-12", planned_removal_on:"2026-08-28", current_pen_name:"Kraam Saal 01"}
+];
 
 const SECTION_DEFINITIONS = [
     {
@@ -204,6 +235,13 @@ function setupMatingBoardEvents() {
     });
 
     document.addEventListener("click", async function (event) {
+        const removalAction=event.target.closest("[data-open-removal]");
+        if (removalAction) {
+            const group=removalAction.getAttribute("data-open-removal");
+            const panel=[...document.querySelectorAll("[data-removal-action]")].find(item => item.getAttribute("data-removal-action") === group);
+            panel?.classList.toggle("hidden");
+            return;
+        }
         const removalPreview=event.target.closest("[data-preview-removal]");
         if (removalPreview) {
             try { await previewExposureRemoval(removalPreview.getAttribute("data-preview-removal")); }
@@ -516,13 +554,16 @@ function renderMatingCard(record) {
            </button>`
         : "";
     const markNotPregnantFormHtml = isMarkNotPregnantFormOpen ? renderMarkNotPregnantForm(record.mating_id) : "";
+    const compactFacts = isActiveExposure
+        ? `<div><div class="history-label">IN</div><div class="history-value">${escapeHtml(record.service_window_start || "-")}</div><div class="pig-list-meta">Hok: ${escapeHtml(sowPen)}</div></div><div><div class="history-label">${record.exposure_actual_removal_on ? "Werklike UIT" : "Beplande UIT"}</div><div class="history-value">${escapeHtml(record.exposure_actual_removal_on || record.exposure_planned_removal_on || record.service_window_end || "-")}</div></div><div><div class="history-label">Verwagte jong</div><div class="history-value neutral-text">${escapeHtml((record.expected_farrowing_window_start && record.expected_farrowing_window_end) ? `${record.expected_farrowing_window_start} – ${record.expected_farrowing_window_end}` : "-")}</div></div>`
+        : `<div><div class="history-label">Parings / Plasings Datum</div><div class="history-value">${escapeHtml(record.mating_date || "-")}</div><div class="pig-list-meta">Hok: ${escapeHtml(sowPen)}</div></div><div><div class="history-label">Expected Farrowing</div><div class="history-value ${record.is_overdue_farrowing === "Yes" ? "bad-text" : "neutral-text"}">${escapeHtml(record.expected_farrowing_date || ((record.expected_farrowing_window_start && record.expected_farrowing_window_end) ? `${record.expected_farrowing_window_start} – ${record.expected_farrowing_window_end}` : "-"))}</div></div><div><div class="history-label">Status / Outcome</div><div class="history-value">${escapeHtml(record.mating_status || "-")} / ${escapeHtml(record.outcome || "-")}</div></div>`;
 
     return `
         <div class="history-item mating-card stage-${escapeHtml(record.action_section)} ${isExpanded ? "mating-card-expanded" : ""}" data-mating-toggle="${escapeHtml(record.mating_id || "")}" role="button" tabindex="0" aria-expanded="${isExpanded ? "true" : "false"}">
           <div class="history-item-top">
             <div>
               <div class="history-item-date">${sowLabel} x ${boarLabel}</div>
-              <div class="pig-list-meta">Mating ID: ${escapeHtml(record.mating_id || "-")}</div>
+              ${isActiveExposure ? "" : `<div class="pig-list-meta">Mating ID: ${escapeHtml(record.mating_id || "-")}</div>`}
             </div>
             <div class="mating-card-actions">
               <div class="history-item-weight ${record.action_class}">${escapeHtml(record.action_text)}</div>
@@ -530,19 +571,7 @@ function renderMatingCard(record) {
           </div>
 
           <div class="history-item-grid mating-card-compact">
-            <div>
-              <div class="history-label">${isActiveExposure ? "IN" : "Parings / Plasings Datum"}</div>
-              <div class="history-value">${escapeHtml(isActiveExposure ? (record.service_window_start || "-") : (record.mating_date || "-"))}</div>
-              <div class="pig-list-meta">Hok: ${escapeHtml(sowPen)}</div>
-            </div>
-            <div>
-              <div class="history-label">Expected Farrowing</div>
-              <div class="history-value ${record.is_overdue_farrowing === "Yes" ? "bad-text" : "neutral-text"}">${escapeHtml(record.expected_farrowing_date || ((record.expected_farrowing_window_start && record.expected_farrowing_window_end) ? `${record.expected_farrowing_window_start} – ${record.expected_farrowing_window_end}` : "-"))}</div>
-            </div>
-            <div>
-              <div class="history-label">Status / Outcome</div>
-              <div class="history-value">${escapeHtml(record.mating_status || "-")} / ${escapeHtml(record.outcome || "-")}</div>
-            </div>
+            ${compactFacts}
           </div>
 
           <div class="mating-card-details ${isExpanded ? "" : "hidden"}">

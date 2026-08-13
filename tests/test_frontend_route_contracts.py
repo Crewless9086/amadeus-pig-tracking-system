@@ -1816,6 +1816,21 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('row.name)} — ${escapeHtml(row.boar_name)', attention_js)
         self.assertIn('beplan UIT ${escapeHtml(row.planned_out_date', attention_js)
 
+    def test_mating_board_hides_empty_exposure_workspace_and_defers_protected_action(self):
+        template = Path("templates/matings.html").read_text(encoding="utf-8")
+        js = Path("static/js/matings.js").read_text(encoding="utf-8")
+        css = Path("static/css/matingsActiveExposureV1.css").read_text(encoding="utf-8")
+        self.assertIn('id="active_exposure_workspace"', template)
+        self.assertIn("active-exposure-workspace hidden", template)
+        self.assertNotIn("BESKERMDE OORGANG", template)
+        self.assertIn("Sôe by beer", template)
+        self.assertIn('workspace?.classList.add("hidden")', js)
+        self.assertIn('data-open-removal=', js)
+        self.assertIn('data-removal-action=', js)
+        self.assertIn("Teken werklike UIT aan", js)
+        self.assertIn('previewMode === "active-exposure-empty-v1"', js)
+        self.assertIn(".active-exposure-card", css)
+
     def test_add_litter_can_prefill_from_mating_query_param(self):
         js = Path("static/js/addLitter.js").read_text(encoding="utf-8")
 
