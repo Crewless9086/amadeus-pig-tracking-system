@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Phase A Shadow Control Tower source prepared
+
+- Added a disabled-by-default, non-authoritative proposal/comparison contract for later genuine Control Tower feedback transactions.
+- Reused the existing observe-tier operational event fabric with deterministic replay identities; added no mission queue, schema, scheduler, hidden terminal, agent or competing ledger.
+- Proved zero dispatch/process/mission/provider/farm/release authority and prepared for ten later real comparisons without fabricating events or claiming learning success.
+
 ## 2026-08-13 - Full-lifecycle genetic merit contract reconciled
 
 - Continued `HMQ-20260813-04` from current main and preserved both historical
