@@ -140,6 +140,16 @@ def test_persisted_second_segment_claim_is_concurrent_single_use(monkeypatch):
     assert rootline_irrigation_execution_store("load_job_events",job)[0]["segment_number"]==1
     replay=_claim_single_controller(body)
     assert replay["created"] is False and replay["status"]=="execution_replay"
+    # Close this synthetic active claim so the shared disposable database does
+    # not correctly block the next test as an already-owned controller.
+    with psycopg.connect(url) as connection:
+        connection.execute("""insert into public.sam_live_stock_conversation_review_events
+            (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
+            values (%s,%s,'rootline_irrigation_execution','record_completed',%s::jsonb)""",
+            (f"TERMINAL-{suffix}",execution,json.dumps({"rootline_execution":{
+                "action":"record_completed","execution_id":execution,
+                "job_id":job,"segment_number":2,"state":"Completed",
+                "shutdown_verified":True}})))
 
 
 def test_auxiliary_claim_and_off_identities_are_stable_and_separate():
