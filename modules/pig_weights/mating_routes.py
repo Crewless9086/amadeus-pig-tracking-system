@@ -510,12 +510,16 @@ def breeding_exposure_list():
     labels = {str(row.get("Pig_ID") or row.get("pig_id") or ""): str(
         row.get("Name") or row.get("Tag_Number") or row.get("tag_number") or
         row.get("Pig_ID") or row.get("pig_id") or "") for row in master}
+    pens = {str(row.get("Pig_ID") or row.get("pig_id") or ""): str(
+        row.get("Current_Pen_Name") or row.get("current_pen_name") or
+        row.get("Pen_Name") or row.get("pen_name") or "") for row in master}
     rows = list((snapshot or {}).get("exposure_rows") or ())
     removed = {str(row.get("exposure_identity") or "") for row in rows
                if row.get("event_kind") == "removed"}
     active = [{**row,
         "sow_label": labels.get(str(row.get("sow_pig_id") or ""), str(row.get("sow_pig_id") or "")),
-        "boar_label": labels.get(str(row.get("boar_pig_id") or ""), str(row.get("boar_pig_id") or ""))}
+        "boar_label": labels.get(str(row.get("boar_pig_id") or ""), str(row.get("boar_pig_id") or "")),
+        "current_pen_name": pens.get(str(row.get("sow_pig_id") or ""), "")}
         for row in rows if row.get("event_kind") == "started"
         and str(row.get("exposure_identity") or "") not in removed]
     return jsonify({"success": True, "records": active, "writes_performed": False}), 200
