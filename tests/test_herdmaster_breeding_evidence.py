@@ -1,10 +1,21 @@
 from copy import deepcopy
 from datetime import date
+import inspect
 
 from modules.pig_weights.herdmaster_breeding_evidence import reconcile_breeding_evidence
 from modules.pig_weights.herdmaster_breeding_recommendation import evaluate_breeding_attention
+from modules.pig_weights import farm_supabase_read_service
 
 TODAY=date(2026,8,6)
+
+
+def test_authoritative_snapshot_loads_piglet_observation_history():
+    source = inspect.getsource(farm_supabase_read_service.get_breeding_attention_source_snapshot)
+    observation_query = source[source.index("observation_rows ="):source.index("exposure_rows =")]
+    assert "herdmaster_piglet_observation_v1" in observation_query
+    assert "event.factual_note" in observation_query
+    assert "event.supersedes_observation_event_id" in observation_query
+    assert "not exists" not in observation_query
 
 
 def pig(pig_id,tag,sex,**updates):

@@ -99,6 +99,8 @@ let latestTagNumbersPreview = null;
 let latestReconcilePreview = null;
 let latestStillbornReclassifyPreview = null;
 let latestWeaningDayPreview = null;
+let latestHistoricalObservationPreview = null;
+let historicalObservationOperationKey = null;
 let productsLoaded = false;
 let weaningProductsLoaded = false;
 let pensLoaded = false;
@@ -454,6 +456,14 @@ function renderClosedLitterView(litter) {
         </tr>`;
       }).join("")}</tbody>
     </table>`;
+  const historicalRows = document.getElementById("historical_observation_rows");
+  if (historicalRows) historicalRows.innerHTML = (litter.piglets || []).map((piglet) => `<fieldset class="piglet-observation-control historical-observation-row" data-pig-id="${escapeHtml(piglet.pig_id)}"><legend>${escapeHtml(piglet.tag_number || piglet.pig_id)} <small>${escapeHtml(piglet.pig_id)}</small></legend><select class="historical-observation-trait"><option value="">Geen waarneming</option><option value="good_build">Goeie bou</option><option value="strong_legs">Sterk bene</option><option value="good_growth">Goeie groei</option><option value="broad_body">Breë lyf</option><option value="good_temperament">Goeie temperament</option><option value="potential_breeding_review">Potensiële teeldier (hersien)</option><option value="concern">Kommer</option><option value="other">Ander</option></select><select class="historical-observation-sentiment"><option value="positive">Positief</option><option value="concerning">Kommer</option><option value="mixed">Gemeng</option><option value="neutral">Neutraal</option></select><input class="historical-observation-note" maxlength="500" placeholder="Kort feitelike papiernota"><label><input type="checkbox" class="historical-observation-watch"> Hou dop</label></fieldset>`).join("");
+  historicalRows?.querySelectorAll("input,select").forEach((input) => input.addEventListener("change", () => {
+    latestHistoricalObservationPreview = null;
+    historicalObservationOperationKey = null;
+    document.getElementById("historical_observation_apply_button").disabled = true;
+  }));
+  document.getElementById("historical_observation_date").value ||= litter.wean_date || "";
 
   const exceptions = [];
   (litter.piglets || []).forEach((piglet) => {
@@ -466,6 +476,41 @@ function renderClosedLitterView(litter) {
   const exceptionPanel = document.getElementById("closed_litter_exceptions");
   exceptionPanel.classList.toggle("hidden", exceptions.length === 0);
   document.getElementById("closed_litter_exception_list").innerHTML = exceptions.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
+function historicalObservationPayload(dryRun) {
+  const observedOn = document.getElementById("historical_observation_date").value;
+  const observations = Array.from(document.querySelectorAll(".historical-observation-row")).map((row) => ({
+    pig_id: row.dataset.pigId, traits: row.querySelector(".historical-observation-trait").value ? [row.querySelector(".historical-observation-trait").value] : [],
+    sentiment: row.querySelector(".historical-observation-sentiment").value,
+    factual_note: row.querySelector(".historical-observation-note").value.trim(),
+    watch_flag: row.querySelector(".historical-observation-watch").checked,
+  })).filter((row) => row.traits.length || row.factual_note);
+  return { dry_run: dryRun, observed_on: observedOn, source_context: "historical_weaning", source_reference: "paper-note", idempotency_key: historicalObservationOperationKey || "", observations };
+}
+
+async function previewHistoricalObservations() {
+  historicalObservationOperationKey ||= `paper-weaning:${getLitterIdFromUrl()}:${crypto.randomUUID()}`;
+  const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/piglet-observations`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(historicalObservationPayload(true))});
+  const data = await response.json();
+  if (!response.ok || !data.success) return showLitterMessage((data.errors || [data.status]).join(" "), "error");
+  latestHistoricalObservationPreview = data;
+  document.getElementById("historical_observation_apply_button").disabled = false;
+  const panel = document.getElementById("historical_observation_preview"); panel.classList.remove("hidden");
+  panel.innerHTML = `<strong>${data.observation_count} waarneming(s)</strong>${data.observation_effects.map((row) => `<p>${escapeHtml(row.visible_identity)}: ${escapeHtml(row.factual_note)}</p>`).join("")}`;
+}
+
+async function submitHistoricalObservations(event) {
+  event.preventDefault();
+  if (!latestHistoricalObservationPreview || !window.confirm("Teken hierdie presiese waarnemings een keer aan?")) return;
+  const payload = historicalObservationPayload(false); payload.confirmation_binding = latestHistoricalObservationPreview.confirmation_binding;
+  const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(getLitterIdFromUrl())}/piglet-observations`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
+  const data = await response.json();
+  if (!response.ok || !data.success) return showLitterMessage(data.status || "Waarnemings kon nie aangeteken word nie.", "error");
+  const panel = document.getElementById("historical_observation_preview");
+  panel.innerHTML = data.canonical_readback.map((row) => `<p><strong>${escapeHtml(row.pig_id)}</strong>: ${escapeHtml(row.factual_note)} · ${escapeHtml(row.observed_at)} · ${escapeHtml(row.observer)} · ${escapeHtml(row.observation_event_id)}</p>`).join("");
+  showLitterMessage(`${data.canonical_readback.length} kanonieke waarneming(s) bevestig met presiese teruglees.`, "success");
+  latestHistoricalObservationPreview = null; document.getElementById("historical_observation_apply_button").disabled = true;
 }
 
 document.getElementById("closed_history_toggle")?.addEventListener("click", (event) => {
@@ -695,9 +740,19 @@ function weaningDayPayload(dryRun) {
     if (!assignmentByPigId.has(pigId)) assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
     assignmentByPigId.get(pigId).sex = input.value;
   });
+  document.querySelectorAll(".piglet-observation-note").forEach((input) => {
+    const pigId = input.dataset.pigId || "";
+    if (!assignmentByPigId.has(pigId)) assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "", sex: "" });
+    const trait = document.querySelector(`.piglet-observation-trait[data-pig-id="${CSS.escape(pigId)}"]`)?.value || "";
+    const sentiment = document.querySelector(`.piglet-observation-sentiment[data-pig-id="${CSS.escape(pigId)}"]`)?.value || "neutral";
+    const watchFlag = document.querySelector(`.piglet-observation-watch[data-pig-id="${CSS.escape(pigId)}"]`)?.checked === true;
+    if (input.value.trim() || trait) assignmentByPigId.get(pigId).observation = {
+      factual_note: input.value.trim(), traits: trait ? [trait] : [], sentiment, watch_flag: watchFlag,
+    };
+  });
   const assignments = Array.from(assignmentByPigId.values())
     .filter((assignment) => assignment.pig_id || assignment.tag_number || assignment.wean_weight_kg);
-  return {
+  const payload = {
     wean_date: weaningDayDate.value,
     assignments,
     target_pen_id: weaningDayTargetPen.value,
@@ -711,6 +766,8 @@ function weaningDayPayload(dryRun) {
     },
     dry_run: dryRun,
   };
+  if (!dryRun && latestWeaningDayPreview?.confirmation_binding) payload.confirmation_binding = latestWeaningDayPreview.confirmation_binding;
+  return payload;
 }
 
 function resetWeaningDayPreview() {
@@ -753,7 +810,10 @@ function renderWeaningDayPreview(preview) {
       <div><span class="history-label">Geslag</span><span class="history-value">${preview.sex_count || 0}</span></div>
       <div><span class="history-label">Treatments</span><span class="history-value">${preview.treatment_count || 0}</span></div>
       <div><span class="history-label">Pen Moves</span><span class="history-value">${preview.movement_count || 0}</span></div>
+      <div><span class="history-label">Waarnemings</span><span class="history-value">${preview.observation_count || 0}</span></div>
     </div>
+    ${(preview.observation_result?.observation_effects || []).map((row) => `<p class="form-helper"><strong>${escapeHtml(row.visible_identity)}</strong>: ${escapeHtml(row.factual_note)} (${escapeHtml(row.sentiment)})</p>`).join("")}
+    ${(Array.isArray(preview.observation_result) ? preview.observation_result : []).map((row) => `<p class="form-helper"><strong>${escapeHtml(row.pig_id)}</strong>: ${escapeHtml(row.factual_note)} · ${escapeHtml(row.observed_at)} · ${escapeHtml(row.observer)} · ${escapeHtml(row.observation_event_id)}</p>`).join("")}
     <p class="form-helper">${escapeHtml(preview.message || "Review the packet before saving.")}</p>
   `;
 }
@@ -1582,12 +1642,19 @@ function buildPigletTable(piglets) {
     const sexCell = canEditWeanWeight
       ? `<select class="piglet-sex-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" aria-label="Geslag vir ${escapeHtml(piglet.tag_number || piglet.pig_id || "varkie")}"><option value="">Kies geslag</option><option value="Male" ${sexValue === "Reuntjie" ? "selected" : ""}>Reuntjie</option><option value="Female" ${sexValue === "Soggie" ? "selected" : ""}>Soggie</option><option value="Castrated_Male" ${sexValue === "Gekastreerde reuntjie" ? "selected" : ""}>Gekastreer</option></select>`
       : escapeHtml(sexValue);
+    const observationCell = canEditWeanWeight ? `<div class="piglet-observation-control">
+      <select class="piglet-observation-trait" data-pig-id="${escapeHtml(piglet.pig_id || "")}" aria-label="Waarnemingstipe"><option value="">Geen</option><option value="good_build">Goeie bou</option><option value="strong_legs">Sterk bene</option><option value="good_growth">Goeie groei</option><option value="broad_body">Breë lyf</option><option value="good_temperament">Goeie temperament</option><option value="potential_breeding_review">Potensiële teeldier (hersien)</option><option value="concern">Kommer</option><option value="other">Ander</option></select>
+      <select class="piglet-observation-sentiment" data-pig-id="${escapeHtml(piglet.pig_id || "")}" aria-label="Positief of kommer"><option value="positive">Positief</option><option value="concerning">Kommer</option><option value="mixed">Gemeng</option><option value="neutral">Neutraal</option></select>
+      <input class="piglet-observation-note" data-pig-id="${escapeHtml(piglet.pig_id || "")}" maxlength="500" placeholder="Kort feitelike waarneming" />
+      <label><input type="checkbox" class="piglet-observation-watch" data-pig-id="${escapeHtml(piglet.pig_id || "")}" /> Hou dop</label>
+    </div>` : "-";
     return `
       <tr class="litter-piglet-row" data-pig-profile="${profileHref}" tabindex="0">
         <td>${tagCell}<span class="table-subtext">${escapeHtml(piglet.pig_id || "")}</span></td>
         <td>${sexCell}</td>
         <td>${escapeHtml(pigletWeightText(piglet))}</td>
         <td>${weanWeightCell}</td>
+        <td>${observationCell}</td>
         <td><span>${escapeHtml(pigletStatusText(piglet))}</span><span class="table-subtext">${escapeHtml(piglet.current_pen_id || "Geen kamp")}</span></td>
         <td><a class="small-action-button table-open-link" href="${profileHref}">Maak oop</a></td>
       </tr>
@@ -1603,6 +1670,7 @@ function buildPigletTable(piglets) {
             <th>Geslag</th>
             <th>Huidige gewig</th>
             <th>Speengewig</th>
+            <th>Waarneming</th>
             <th>Status / kamp</th>
             <th>Profiel</th>
           </tr>
@@ -1637,6 +1705,10 @@ function wirePigletTableRows() {
     input.addEventListener("change", resetWeaningDayPreview);
   });
   document.querySelectorAll(".piglet-sex-input").forEach((input) => {
+    input.addEventListener("change", resetWeaningDayPreview);
+  });
+  document.querySelectorAll(".piglet-observation-control input, .piglet-observation-control select").forEach((input) => {
+    input.addEventListener("input", resetWeaningDayPreview);
     input.addEventListener("change", resetWeaningDayPreview);
   });
 }
@@ -1749,6 +1821,8 @@ tagNumbersPreviewButton.addEventListener("click", previewTagNumbers);
 tagNumbersForm.addEventListener("submit", submitTagNumbers);
 weaningDayPreviewButton.addEventListener("click", previewWeaningDay);
 weaningDayForm.addEventListener("submit", submitWeaningDay);
+document.getElementById("historical_observation_preview_button")?.addEventListener("click", previewHistoricalObservations);
+document.getElementById("historical_observation_form")?.addEventListener("submit", submitHistoricalObservations);
 reconcilePreviewButton.addEventListener("click", previewReconcileBirthCounts);
 reconcileForm.addEventListener("submit", submitReconcileBirthCounts);
 stillbornReclassifyPreviewButton.addEventListener("click", previewStillbornReclassify);

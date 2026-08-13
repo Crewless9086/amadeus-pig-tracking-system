@@ -186,6 +186,21 @@
   historical paper-note path. Codex owns the capture UI/backend integration;
   HERDMASTER owns cited advisory consumption. It creates no second observation
   store and has no automatic purpose or breeding authority.
+- Canonical action and integrations: `modules/pig_weights/herdmaster_piglet_observation_action.py`,
+  `modules/pig_weights/pig_weights_service.py`,
+  `modules/pig_weights/farm_supabase_write_service.py`,
+  `modules/pig_weights/pig_weights_routes.py`, `static/js/litterDetail.js`, and
+  `templates/litter-detail.html`. Later evidence consumption is in
+  `modules/pig_weights/herdmaster_breeding_evidence.py`; it retains attributable
+  history and an unclassified watchlist without asserting structural clearance.
+- Litter attention remains read-only in
+  `modules/pig_weights/farm_supabase_read_service.py` and `static/js/dashboard.js`.
+  Actual-weaning evidence is distinguished from a legacy planned date before
+  `complete_weaning` can be raised; the sow name is the primary tile identity.
+- Database-shaped gates: `tests/test_piglet_observation_action_postgres.py` and
+  `tests/test_litter_weaning_atomic_postgres.py`. Browser identity/readback gates:
+  `tests/dashboard_litter_attention_browser.spec.js` and
+  `tests/litter_weaning_day_browser.spec.js`.
 
 ## Rootline owner daily brief
 

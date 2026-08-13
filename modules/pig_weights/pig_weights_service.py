@@ -1,5 +1,9 @@
 import logging
 import math
+import hashlib
+import hmac
+import json
+import os
 from datetime import datetime, timedelta
 
 from services.google_sheets_service import (
@@ -28,6 +32,7 @@ from modules.pig_weights.pig_weights_utils import (
 from modules.pig_weights.mating_service import get_breeding_analytics, link_litter_to_mating
 from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights import farm_supabase_write_service
+from modules.pig_weights.herdmaster_piglet_observation_action import preview_action as preview_piglet_observation_action
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
 from modules.sales.riversdale_auction import (
     build_riversdale_auction_packet,
@@ -69,6 +74,7 @@ LITTER_HEALTH_EARMARK_FIELDS = ("Earmarked", "Earmark_Date")
 DEFAULT_LITTER_WEAN_AGE_DAYS = 30
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
 POST_WEAN_PURPOSE_REVIEW_DAYS = 14
+WEANING_PREVIEW_TTL_SECONDS = 30 * 60
 LIVE_SALE_TARGET_KG = 60
 MEAT_TARGET_MIN_KG = 60
 MEAT_TARGET_MAX_KG = 80
@@ -2223,6 +2229,42 @@ def mark_litter_weaned(
     }, 200
 
 
+def _weaning_confirmation_secret():
+    return str(os.getenv("OWNER_SESSION_SECRET") or os.getenv("SECRET_KEY") or "").encode()
+
+
+def _weaning_confirmation_binding(preview_digest, actor_id, *, now=None):
+    now = now or datetime.now()
+    issued_at = int(now.timestamp())
+    material = f"herdmaster_weaning_day_v2|{preview_digest}|{actor_id}|{issued_at}"
+    secret = _weaning_confirmation_secret()
+    signature = hmac.new(secret, material.encode(), hashlib.sha256).hexdigest() if secret else ""
+    return {"contract_version": "herdmaster_weaning_day_confirmation_v1",
+            "preview_digest": preview_digest, "actor_id": actor_id,
+            "issued_at": issued_at, "signature": signature}
+
+
+def _valid_weaning_confirmation(binding, preview_digest, actor_id, *, now=None):
+    if not isinstance(binding, dict):
+        return False
+    now = now or datetime.now()
+    try:
+        issued_at = int(binding.get("issued_at"))
+    except (TypeError, ValueError):
+        return False
+    if issued_at > int(now.timestamp()) or int(now.timestamp()) - issued_at > WEANING_PREVIEW_TTL_SECONDS:
+        return False
+    if (str(binding.get("preview_digest") or "") != preview_digest
+            or str(binding.get("actor_id") or "") != actor_id):
+        return False
+    expected = _weaning_confirmation_binding(
+        preview_digest, actor_id, now=datetime.fromtimestamp(issued_at)
+    )
+    return bool(expected["signature"] and hmac.compare_digest(
+        str(binding.get("signature") or ""), expected["signature"]
+    ))
+
+
 def process_litter_weaning_day(
     litter_id: str,
     payload=None,
@@ -2236,6 +2278,13 @@ def process_litter_weaning_day(
     target_pen_id = to_clean_string(payload.get("target_pen_id", ""))
     notes = to_clean_string(payload.get("notes", ""))
     medicine = payload.get("medicine", {}) if isinstance(payload.get("medicine", {}), dict) else {}
+    confirmation_material = {key: value for key, value in payload.items()
+                             if key not in {"dry_run", "confirmed_preview_digest", "confirmation_binding", "changed_by"}}
+    confirmation_material["changed_by"] = changed_by
+    preview_digest = hashlib.sha256(json.dumps(
+        confirmation_material, sort_keys=True, separators=(",", ":"), default=str
+    ).encode()).hexdigest()
+    confirmation_binding = _weaning_confirmation_binding(preview_digest, changed_by)
 
     if not to_clean_string(litter_id):
         return {"success": False, "errors": ["Litter ID is required."]}, 400
@@ -2252,6 +2301,29 @@ def process_litter_weaning_day(
         to_clean_string(row.get(columns["pig_id"], "")): row
         for row in active_rows
     }
+    observation_items = [dict(row.get("observation") or {}, pig_id=to_clean_string(row.get("pig_id")))
+                         for row in assignments if isinstance(row, dict) and isinstance(row.get("observation"), dict)
+                         and (to_clean_string(row.get("observation", {}).get("factual_note"))
+                              or row.get("observation", {}).get("traits"))]
+    observation_preview = {"success": True, "observation_count": 0, "observation_effects": []}
+    observation_action = None
+    if observation_items:
+        observation_payload = {
+            "litter_id": litter_id, "observed_on": action_date.isoformat(),
+            "source_context": "weaning", "source_reference": "litter_weaning_day",
+            "idempotency_key": f"weaning-observations:{litter_id}:{action_date.isoformat()}",
+            "observations": observation_items,
+        }
+        requested_observation_ids = {item["pig_id"] for item in observation_items}
+        identity_rows = [{"pig_id": pig_id, "litter_id": litter_id,
+                          "tag_number": to_clean_string(row.get("Tag_Number", ""))}
+                         for pig_id, row in current_by_id.items() if pig_id in requested_observation_ids]
+        observation_preview, observation_status = preview_piglet_observation_action(
+            observation_payload, channel="application", identity_rows=identity_rows)
+        if observation_status != 200:
+            validation_errors.extend(observation_preview.get("errors", [observation_preview.get("status")]))
+        else:
+            observation_action = observation_preview["action"]
     requested_tags = {
         to_clean_string(row.get("pig_id")): to_clean_string(row.get("tag_number"))
         for row in assignments if isinstance(row, dict)
@@ -2380,7 +2452,21 @@ def process_litter_weaning_day(
             changed_by=changed_by,
         )
         preview_result["sex_count"] = len(requested_sexes)
+        preview_result["observation_result"] = observation_preview
+        preview_result["observation_count"] = observation_preview.get("observation_count", 0)
+        preview_result["preview_digest"] = preview_digest
+        preview_result["confirmation_binding"] = confirmation_binding
         return preview_result, 200
+
+    if not _valid_weaning_confirmation(
+        payload.get("confirmation_binding"), preview_digest, changed_by
+    ):
+        return {
+            "success": False, "status": "exact_weaning_preview_confirmation_required",
+            "errors": ["Preview this exact Weaning Day packet before saving."],
+            "dry_run": False, "litter_id": litter_id,
+            "operation_committed": False, "writes_to_sheets": False, "writes_to_supabase": False,
+        }, 409
 
     if farm_supabase_write_service.farm_supabase_writes_available():
         assignment_by_id = {
@@ -2425,6 +2511,7 @@ def process_litter_weaning_day(
                 "treatment_rows": health_preview.get(
                     "planned_treatment_rows", []
                 ),
+                "observation_action": observation_action,
             })
         except Exception as exc:
             LOGGER.exception(
@@ -2483,12 +2570,26 @@ def process_litter_weaning_day(
                 atomic["status"] == "weaning_day_replayed_withheld"
             ),
             "atomic_counts": atomic,
+            "observation_result": atomic.get("observation_readback", []),
+            "observation_count": atomic.get("observations_created", 0),
         })
         result["source"] = {
             "writes_to_sheets": False,
             "writes_to_supabase": True,
         }
         return result, 200
+
+    if observation_action:
+        return {
+            "success": False,
+            "status": "atomic_observation_store_required",
+            "errors": ["Weaning Day observations require the canonical atomic observation store; nothing was saved."],
+            "dry_run": False,
+            "litter_id": litter_id,
+            "operation_committed": False,
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
+        }, 503
 
     # Preserve the established Google Sheets fallback when canonical
     # Supabase writes are unavailable.
