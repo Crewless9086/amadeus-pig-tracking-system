@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Channel-invariant grouped preview contract prepared
+
+- Added one unwired, side-effect-free grouped-weight/optional-movement preview contract and isolated adapter-conformance tests.
+- Proved application typed, OOM typed and prepared browser-voice text fixtures normalize to byte-equivalent canonical previews while Telegram voice remains excluded.
+- Changed no executor, route, UI, schema, fallback or production configuration; no runtime improvement or Business completion is claimed.
+
 ## 2026-08-13 - Grouped weight and movement read-only reconciliation
 
 - Mapped application, protected OOM SAKKIE, voice-preparation, Supabase and retained legacy paths without runtime or provider mutation.
