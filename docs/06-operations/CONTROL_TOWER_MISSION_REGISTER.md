@@ -5,7 +5,7 @@ Status: Active owner-facing dispatch authority
 ## Purpose
 
 This is the canonical planning and dispatch ledger for the visible development
-terminals CORE, HERDMASTER, ROOTLINE, OOM SAKKIE, SAM and BEACON. It grants no
+terminals CORE, HERDMASTER, ROOTLINE, OOM SAKKIE, SAM, BEACON and CODEX UI. It grants no
 customer-send, farm-write, provider-mutation, production-release or hardware
 authority.
 
@@ -50,6 +50,7 @@ Snapshot: 2026-08-13 SAST, reconciled through main `f0584bba`.
 | OOM SAKKIE | Provider-clock source integrated; outcome proof pending | `OMQ-20260813-02`: PR #879 merged the Render-owned 06:45 SAST cron entry and non-actuating synthetic family. This source integration is not proof that the provider clock or Telegram result executed. | `CONTINUE`: prove deployed provider configuration and one isolated synthetic result; retain 14 August for natural clock proof. |
 | SAM | Audit complete | `SMQ-20260813-02`: conversations `1533`/`2143` reached SAM; safe replies were prepared but not sent. WhatsApp/WebWidget authority and first-event card boundaries are traced. | `CONTINUE`: implement existing bounded correction; never replay or message those conversations. |
 | BEACON | Not launched | `BMQ-20260813-00`: provider/runtime and retained-worktree truth unreconciled; no posting authority inferred. | `NEW_MISSION` only when launched: read-only current-truth reconciliation. |
+| CODEX UI | Launched and ready; prompt prepared | `UIQ-20260813-01`: reconcile the preserved dirty `/matings` facelift and corrected deployed read contract before continuing UI work. The original shared workspace contains uncommitted UI files and must not be reset, stashed, deleted or overwritten. | `CONTINUE`: inspect and classify the existing diff, reconcile it with current main and the approved dashboard/facelift standards, then produce a local owner-review preview. No deployment without Charl's fresh visual approval. |
 
 ## Mission queues
 
@@ -110,6 +111,15 @@ Detailed HERDMASTER evidence remains in
 - `BMQ-20260813-04` — queued evidence-backed proposal.
 - `BMQ-20260813-05` — queued protected publication/performance loop.
 
+### CODEX UI
+
+- `UIQ-20260813-01` — `prompt_prepared`: preserve and reconcile the dirty
+  `/matings` facelift, authoritative names and IN/UIT/farrowing-window contract.
+- `UIQ-20260813-02` — queued conditional hiding/simplification of `Beskermde
+  Oorgang` when there is no actionable protected transition.
+- All new facelift work remains queued until the active UI mission is released;
+  no two terminals may edit the same UI files concurrently.
+
 ## Feedback ledger
 
 Append a row for every terminal report. Never rewrite history to make a later
@@ -124,6 +134,7 @@ result appear known earlier.
 | 2026-08-13 | ROOTLINE gateway incident | Telegram `3579` retained by n8n but relay received HTTP 403 before parsing/Supabase; presence expired; zero controls. | Repair end to end; no owner repetition. |
 | 2026-08-13 | OOM SAKKIE `OMQ-20260813-02` | No 13 August production morning trigger; PR #879 later integrated one Render-owned clock and synthetic non-actuating family. | Prove provider configuration and synthetic result; genuine clock proof still pending. |
 | 2026-08-13 | SAM `SMQ-20260813-02` | Conversations `1533`/`2143` produced safe unsent replies and non-actionable cards; defect traced. | Continue bounded correction; no historical sends. |
+| 2026-08-13 | CODEX UI `UIQ-20260813-01` | Dedicated UI terminal launched; preserved dirty `/matings` files exist in the original workspace; prompt prepared but not yet acknowledged. | Deliver one reconciliation/local-preview mission; no deployment yet. |
 
 ## New owner findings
 
