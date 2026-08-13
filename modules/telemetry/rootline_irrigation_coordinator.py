@@ -60,6 +60,19 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         "execution_id": decision["execution_id"], "eligibility_id": decision["eligibility_id"],
         "eligibility_sha256": decision["execution_eligibility"]["eligibility_sha256"],
         "consumption_key": decision["execution_eligibility"]["consumption_key"],
+        "job_id": decision["execution_eligibility"].get("job_id"),
+        "job_sha256": decision["execution_eligibility"].get("job_sha256"),
+        "requested_total_duration_seconds": decision["execution_eligibility"].get(
+            "requested_total_duration_seconds"),
+        "expected_segment_count": decision["execution_eligibility"].get(
+            "expected_segment_count"),
+        "current_segment": decision["execution_eligibility"].get("current_segment"),
+        "segment_number": decision["execution_eligibility"].get("current_segment"),
+        "segment_identity": decision["execution_eligibility"].get("segment_identity"),
+        "cumulative_verified_runtime_seconds": decision["execution_eligibility"].get(
+            "cumulative_verified_runtime_seconds", 0),
+        "predecessor_off_rearm_verified": decision["execution_eligibility"].get(
+            "predecessor_off_rearm_verified"),
         "operating_date": decision["execution_eligibility"]["operating_date"],
         "evidence_generation": decision["evidence_generation"], "zone_id": decision["zone_id"],
         "channel": ZONES[decision["zone_id"]], "planned_runtime_minutes": decision["runtime_minutes"],
@@ -309,6 +322,16 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
                  "objective_satisfied": objective.get("objective_satisfied") is True,
                  "objective_evidence": objective,
                  "shutdown_evidence": shutdown, "completed_at": completion_now.isoformat()}
+    completed["verified_runtime_seconds"] = int(
+        (objective.get("verified_runtime_minutes") or 0) * 60)
+    completed["rearm_readback_off"] = True
+    completed["cumulative_verified_runtime_seconds"] = int(
+        active.get("cumulative_verified_runtime_seconds") or 0
+    ) + completed["verified_runtime_seconds"]
+    completed["job_completed"] = (
+        completed["cumulative_verified_runtime_seconds"] >= int(
+            active.get("requested_total_duration_seconds") or
+            completed["verified_runtime_seconds"]))
     recorded = store("record_completed", completed)
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
         delivery = _notify(notify, store, "Intervention", {**completed,
