@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Breeding Attention eligibility truth prepared
+
+- Registered `HMQ-20260813-03` as a bounded read-model correction on the
+  existing Breeding Attention and append-only observation rails.
+- Preserved the governed minimum body-condition score as `3.0`; no handoff
+  shorthand was interpreted as score 35.
+- Made supersession lineage authoritative, retained below-minimum recovery
+  holds despite age, and required fresh in-range evidence for restored review.
+- Changed unexecuted cohort language from physical placement to explicit
+  proposal wording and carried exact observation identity, date, score and
+  freshness into the single recovery row.
+- Added disposable-PostgreSQL and browser regressions. This is Prepared source
+  evidence only until review, integration, deployment and authenticated
+  read-only production verification complete.
+
 - Added the canonical Control Tower mission register for CORE, HERDMASTER,
   ROOTLINE, OOM SAKKIE, SAM and BEACON. It separates temporary development
   terminals from deployed runtimes and makes every terminal-feedback assessment
@@ -21,6 +36,17 @@
   reverted, renamed or stranded.
 - Added a historical pointer for the mistaken `docs/06-operations` pathname and
   kept both source maps authoritative on the single canonical architecture file.
+
+## 2026-08-13 - CHARLIE watchdog reversible proof rolled back
+
+- Ran the single explicitly authorized watchdog disablement window, stopping
+  only its task ownership and two relay processes while Render webhook and
+  Supabase remained active.
+- Proved one authenticated Render update, one inbound claim, one owner/CHARLIE
+  conversation pair and one provider-confirmed reply without duplication.
+- Durable mission pickup failed because the CMQ date was parsed as a mission ID;
+  no retry was made. Restored the unchanged enabled/Ready task, healthy process
+  chain and webhook state. The watchdog remains retained, not retirement-ready.
 
 ## 2026-08-13 - Morning startup catch-up policy bounded
 

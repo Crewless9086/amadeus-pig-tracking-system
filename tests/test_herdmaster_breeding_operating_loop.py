@@ -539,6 +539,15 @@ def test_fresh_low_condition_holds_only_affected_sow_and_in_range_does_not_clear
     assert held["cases"][0]["classification"]["state"] == "Recovery hold"
 
 
+def test_above_maximum_condition_hold_names_the_correct_governed_boundary():
+    result = build(projected_observations={"PIG-MS": {"body_condition_score": 6}})
+    classification = result["cases"][0]["classification"]
+    assert classification["state"] == "Body condition recovery"
+    assert "above the governed maximum 5" in classification["reason"]
+    assert "below the governed minimum" not in classification["reason"]
+    assert classification["proposed_placement_date"] is None
+
+
 def test_current_named_condition_evidence_holds_only_the_three_below_threshold_cases():
     current={"Bonnie":3,"Waki":1,"Zigay":2,"Teena":1}
     states={name:build(
@@ -556,6 +565,39 @@ def test_missing_current_condition_is_not_automatically_ready():
     result=build(projected_observations={})
     assert result["cases"][0]["classification"]["state"] == "Needs current condition"
     assert result["cases"][0]["classification"]["proposed_placement_date"] is None
+
+
+def test_stale_low_condition_is_one_hold_with_no_boar_or_placement():
+    result = build(projected_observations={"PIG-MS": {
+        "body_condition_score": 2, "body_condition_fresh": False,
+        "body_condition_freshness": "Stale",
+        "body_condition_observed_at": "2026-06-20T08:00:00+00:00",
+        "body_condition_observation_event_id": "OBS-LOW",
+    }})
+    schedule = result["placement_cohorts"]
+    held = [row for row in schedule["held"] if row["pig_id"] == "PIG-MS"]
+    cohort_ids = [row["pig_id"] for group in schedule["cohorts"] for row in group["females"]]
+    assert len(held) == 1
+    assert "PIG-MS" not in cohort_ids
+    assert held[0]["body_condition_score"] == 2
+    assert held[0]["body_condition_observation_event_id"] == "OBS-LOW"
+    assert held[0]["boar_instruction"] is None
+    assert held[0]["placement_date"] is None
+    assert result["cases"][0]["classification"]["proposed_placement_date"] is None
+
+
+def test_later_fresh_in_range_condition_restores_review_without_creating_event():
+    result = build(projected_observations={"PIG-MS": {
+        "body_condition_score": 3, "body_condition_fresh": True,
+        "body_condition_freshness": "Fresh",
+        "body_condition_observed_at": "2026-08-13T08:00:00+00:00",
+        "body_condition_observation_event_id": "OBS-CLEAR",
+    }})
+    assert result["cases"][0]["classification"]["state"] == "Ready for mating review"
+    assert result["writes_performed"] is False
+    assert result["mating_execution_enabled"] is False
+    assert result["observation_recording_enabled"] is False
+    assert result["notification_delivery_operational"] is False
 
 
 def test_unresolved_positive_cycle_cannot_inherit_old_weaning_schedule():

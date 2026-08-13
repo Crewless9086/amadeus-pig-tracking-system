@@ -85,6 +85,11 @@ def _project_breeding_observations(rows, now=None):
     seen_body_condition = set()
     seen_recovery_hold = set()
     seen_near_farrowing = set()
+    def row_value(row, key, index, default=None):
+        if isinstance(row, dict):
+            return row.get(key, default)
+        return row[index] if len(row) > index else default
+
     def chronological_key(row):
         if isinstance(row, dict):
             observed = row.get("observed_at")
@@ -95,7 +100,18 @@ def _project_breeding_observations(rows, now=None):
         instant = observed.timestamp() if isinstance(observed, datetime) else float("-inf")
         return instant, str(event_id or "")
 
-    for row in sorted(list(rows), key=chronological_key, reverse=True):
+    source_rows = list(rows)
+    superseded_ids = {
+        str(row_value(row, "supersedes_observation_event_id", 7) or "")
+        for row in source_rows
+        if row_value(row, "supersedes_observation_event_id", 7)
+    }
+    effective_rows = [
+        row for row in source_rows
+        if str(row_value(row, "observation_event_id", 4) or "")
+        not in superseded_ids
+    ]
+    for row in sorted(effective_rows, key=chronological_key, reverse=True):
         if isinstance(row, dict):
             raw_pig_id = row.get("pig_id")
             observed_at = row.get("observed_at")
@@ -103,7 +119,11 @@ def _project_breeding_observations(rows, now=None):
             measurements = row.get("measurements_json")
             event_id = row.get("observation_event_id")
         else:
-            raw_pig_id, observed_at, raw_category, measurements, event_id = row
+            raw_pig_id = row_value(row, "pig_id", 0)
+            observed_at = row_value(row, "observed_at", 1)
+            raw_category = row_value(row, "observation_category", 2)
+            measurements = row_value(row, "measurements_json", 3)
+            event_id = row_value(row, "observation_event_id", 4)
         pig_id, category = str(raw_pig_id), str(raw_category)
         measurements = measurements if isinstance(measurements, dict) else {}
         age_seconds = (now - observed_at).total_seconds() if isinstance(observed_at, datetime) else float("inf")
@@ -156,12 +176,16 @@ def _project_breeding_observations(rows, now=None):
             and isinstance(score, (int, float))
             and isfinite(score)
             and 1 <= score <= 5
-            and 0 <= age_seconds <= 2592000
+            and age_seconds >= 0
         ):
             seen_body_condition.add(pig_id)
             item["body_condition_score"] = score
             item["body_condition_observed_at"] = observed_at.isoformat()
             item["body_condition_observation_event_id"] = str(event_id or "")
+            item["body_condition_fresh"] = age_seconds <= 2592000
+            item["body_condition_freshness"] = (
+                "Fresh" if age_seconds <= 2592000 else "Stale"
+            )
         if is_breeding_observation and 0 <= age_seconds <= 2592000:
             physical = item.setdefault("fresh_physical_facts", {})
             for key in (

@@ -28,6 +28,11 @@ another prompt is issued. Conversation memory is not the control system.
   but its stale deployed copy still attempts Telegram polling while Render owns
   the webhook. Retain it pending authorized fresh text/callback/mission-pickup
   and reversible-disable proof; duplication is not retirement readiness.
+- CMQ-20260813-02A completed its one authorized reversible window and restored
+  the watchdog. One authenticated Render update, Supabase claim and Telegram
+  reply were exactly-once, but the planner misread the CMQ date as a mission ID,
+  so durable mission pickup failed and was not retried. Retain the watchdog;
+  permanent retirement is not ready and no further window is scheduled.
 
 ## Channel-invariant canonical actions
 
@@ -63,6 +68,19 @@ another prompt is issued. Conversation memory is not the control system.
   plan, not proof of actual weaning, and displays the sow name before litter ID.
 - This remains Prepared, not Operational or Business-complete, until reviewed,
   integrated, deployed, and exercised by one naturally occurring owner journey.
+
+## HERDMASTER Breeding Attention eligibility truth
+
+- Registered mission `HMQ-20260813-03` corrects only the read-only Breeding
+  Attention projection; it does not restart piglet observations or create farm
+  facts.
+- The governed body-condition minimum is `3.0`. The latest valid attributable
+  score below that minimum remains one recovery hold even when stale; time does
+  not clear it. A later effective fresh in-range observation may restore review
+  but creates no placement, exposure, mating, service, conception or pregnancy.
+- Owner presentation must call unexecuted cohorts proposals and show held sow
+  name, supporting ID, observation date, score and recovery reason. Five active
+  exposures remain separate and exactly once.
 
 ## Oom Sakkie protected mortality and grouped weights
 
