@@ -5,7 +5,7 @@ Status: Active owner-facing dispatch authority
 ## Purpose
 
 This is the canonical planning and dispatch ledger for the visible development
-terminals CORE, HERDMASTER, ROOTLINE, OOM SAKKIE, SAM and BEACON. It grants no
+terminals CORE, HERDMASTER, ROOTLINE, OOM SAKKIE, SAM, BEACON and CODEX UI. It grants no
 customer-send, farm-write, provider-mutation, production-release or hardware
 authority.
 
@@ -35,21 +35,57 @@ Control Tower must:
    `NEW_MISSION`, `WAIT_FOR_INPUT` or `CLOSE`;
 9. only then return the assessment and continuation prompt to Charl.
 
+## Mandatory all-terminal dispatch sweep
+
+After every owner message and every terminal report, Control Tower must inspect
+the complete board, not only the terminal named in the latest message.
+
+For each visible development terminal, Control Tower must determine with fresh
+evidence whether it is `actively_working`, `idle_open`, `released`,
+`blocked`, `waiting_for_real_event`, `waiting_for_owner` or `not_launched`.
+An open Codex process is not sufficient proof of active work; Control Tower must
+correlate the assigned mission, attached worktree, recent activity and latest
+terminal acknowledgement or report.
+
+Control Tower must then:
+
+1. keep every actively working terminal on its existing mission unless a
+   genuine addendum is required;
+2. give each idle or released terminal the highest-priority eligible mission
+   from its existing queue;
+3. select a different eligible mission when the current outcome is truthfully
+   waiting on a clock, owner decision, provider event or physical evidence;
+4. explicitly release a terminal when no safe eligible work exists instead of
+   pretending that it is working;
+5. never assign two terminals to the same implementation files or serialized
+   production lane;
+6. prepare one self-contained prompt per newly eligible terminal and state
+   whether Charl must paste it;
+7. update prompt delivery and acknowledgement separately—prepared work is not
+   delivered, and delivered work is not started;
+8. repeat the sweep after any terminal completes, blocks or releases.
+
+The owner should not have to ask which terminal is idle or remember its next
+mission. Until automatic terminal delivery is proven, Control Tower remains
+responsible for detecting the opportunity and presenting the exact prompts to
+Charl immediately.
+
 If this transaction cannot be persisted safely, Control Tower must explicitly
 say the register was not updated. Conversation memory alone is not tracking.
 
 ## Current control board
 
-Snapshot: 2026-08-13 SAST, reconciled through main `f0584bba`.
+Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
 
 | Terminal | Terminal state | Existing mission and business/runtime truth | Next action |
 |---|---|---|---|
 | CORE | Released between prompts | `CMQ-20260813-02A`: watchdog proof rolled back; watchdog active; mission-ID truncation blocks another proof. PR #877 evidence remains to integrate. PR #878 corrected Programme discovery. | `CONTINUE`: integrate evidence and repair opaque mission-ID handling. No new watchdog window without separate authority. |
 | HERDMASTER | Preserved candidate | `HMQ-20260813-03`: Breeding Attention correction is neither merged nor deployed. Candidate remains at `C:\tmp\herdmaster-breeding-eligibility-truth-20260813`; deployed HERDMASTER unchanged. | `CONTINUE`: reconcile non-destructively against current main, rerun gates and review. |
-| ROOTLINE | Gateway incident | `RMQ-20260813-02`: Mixer source deployed and provider safety passed, but Telegram `3579` received HTTP 403 before parsing. Zero controls. `RMQ-20260813-04` morning execution acceptance remains separate; its provider-clock source is integrated but synthetic/genuine outcomes remain to prove. | `CONTINUE`: repair gateway authentication/exactly-once receipt. No owner repetition. Preserve morning acceptance for its synthetic and genuine evidence. |
-| OOM SAKKIE | Provider-clock source integrated; outcome proof pending | `OMQ-20260813-02`: PR #879 merged the Render-owned 06:45 SAST cron entry and non-actuating synthetic family. This source integration is not proof that the provider clock or Telegram result executed. | `CONTINUE`: prove deployed provider configuration and one isolated synthetic result; retain 14 August for natural clock proof. |
-| SAM | Audit complete | `SMQ-20260813-02`: conversations `1533`/`2143` reached SAM; safe replies were prepared but not sent. WhatsApp/WebWidget authority and first-event card boundaries are traced. | `CONTINUE`: implement existing bounded correction; never replay or message those conversations. |
+| ROOTLINE | Synthetic scheduler acceptance complete; Mixer gateway incident remains separate | `RMQ-20260813-04`: one deployed synthetic invocation used the real ROOTLINE planning path, one separate Supabase claim and one Telegram TEST send; eight direct/concurrent/post-restart replays were silent with zero farm/hardware/provider-control effects. `RMQ-20260813-02` Mixer still requires gateway repair before fresh owner presence. | `SEND_NOTHING` for morning work; deployed ROOTLINE supplies tomorrow's genuine decision. Continue Mixer gateway repair only as its separate incident. |
+| OOM SAKKIE | Synthetic path proven; genuine morning clock event pending | `OMQ-20260813-02`: provider-verified Render scheduler is enabled for 06:45 SAST; synthetic end-to-end delivery and durable replay passed. Business completion still requires the natural 14 August provider-clock outcome. | `SEND_NOTHING`: after 07:00 SAST on 14 August, the OOM SAKKIE development terminal performs read-only genuine-event verification. |
+| SAM | Development released; deployed acceptance pending | `SMQ-20260813-02`: bounded WhatsApp/WebWidget authority and first-event-card repair merged in PR #882 as `b36b2ca3` and is live within successor `6d7f3259`. Conversations `1533`/`2143` were untouched. Business completion needs the next genuine eligible inbound. | `SEND_NOTHING`: deployed SAM owns the next event. Use the development terminal only for read-only correlation or a reusable defect exposed by that event. |
 | BEACON | Not launched | `BMQ-20260813-00`: provider/runtime and retained-worktree truth unreconciled; no posting authority inferred. | `NEW_MISSION` only when launched: read-only current-truth reconciliation. |
+| CODEX UI | Launched and ready; prompt prepared | `UIQ-20260813-01`: reconcile the preserved dirty `/matings` facelift and corrected deployed read contract before continuing UI work. The original shared workspace contains uncommitted UI files and must not be reset, stashed, deleted or overwritten. | `CONTINUE`: inspect and classify the existing diff, reconcile it with current main and the approved dashboard/facelift standards, then produce a local owner-review preview. No deployment without Charl's fresh visual approval. |
 
 ## Mission queues
 
@@ -77,24 +113,28 @@ Detailed HERDMASTER evidence remains in
 
 - `RMQ-20260813-02` — `gateway_blocked`: repair HTTP 403 and prove protected
   receipt before requesting fresh owner presence.
-- `RMQ-20260813-04` — `scheduler_proof_required`: non-actuating schedule proof
-  now, then one genuine eligible B/C execution.
+- `RMQ-20260813-04` — `ready_waiting_for_genuine_clock_event`: one enabled
+  provider scheduler is proven; the 14 August result must still correlate
+  ROOTLINE decision, durable claim, Telegram outcome and silent replay.
 - `RMQ-20260813-03` — queued Injection commissioning after Mixer and preflow.
 - `RMQ-20260813-05` — queued water-credit lifecycle after B/C acceptance.
 - `RMQ-20260813-06` — hardware-blocked Borehole 1 independent fail-OFF proof.
 
 ### OOM SAKKIE
 
-- `OMQ-20260813-02` — `scheduler_proof_required`: isolated non-actuating proof
-  now and genuine 14 August clock proof later.
+- `OMQ-20260813-02` — `ready_waiting_for_genuine_clock_event`: post-07:00
+  read-only proof must correlate the Render invocation, one date-stable claim,
+  one Telegram plan/hold or recorded failure, and zero replay sends.
 - `OMQ-20260813-03` — waits for next genuine contextual reply.
 - `OMQ-20260813-04` — waits for next genuine specialist request.
 - `OMQ-20260813-05` — queued browser/Telegram/voice canonical parity.
 
 ### SAM
 
-- `SMQ-20260813-02` — `failed_acceptance_ready_for_bounded_fix` using
-  conversations `1533` and `2143` only as regression evidence.
+- `SMQ-20260813-02` — `deployed_waiting_for_genuine_acceptance` using
+  conversations `1533` and `2143` only as regression evidence; never replay
+  them. The next eligible genuine inbound must produce one provider-confirmed
+  useful reply or expose the next reusable defect.
 - `SMQ-20260813-01` — queued retained-context Front Door routing.
 - `SMQ-20260813-03` — waits for controlled pilot prerequisites.
 - `SMQ-20260813-04` — queued Meat shared-context reconciliation.
@@ -110,6 +150,15 @@ Detailed HERDMASTER evidence remains in
 - `BMQ-20260813-04` — queued evidence-backed proposal.
 - `BMQ-20260813-05` — queued protected publication/performance loop.
 
+### CODEX UI
+
+- `UIQ-20260813-01` — `prompt_prepared`: preserve and reconcile the dirty
+  `/matings` facelift, authoritative names and IN/UIT/farrowing-window contract.
+- `UIQ-20260813-02` — queued conditional hiding/simplification of `Beskermde
+  Oorgang` when there is no actionable protected transition.
+- All new facelift work remains queued until the active UI mission is released;
+  no two terminals may edit the same UI files concurrently.
+
 ## Feedback ledger
 
 Append a row for every terminal report. Never rewrite history to make a later
@@ -123,7 +172,11 @@ result appear known earlier.
 | 2026-08-13 | ROOTLINE `RMQ-20260813-02` | PR #875/#876 live; provider safety eligible; card `3480` updated; zero controls. | Pending protected physical journey. |
 | 2026-08-13 | ROOTLINE gateway incident | Telegram `3579` retained by n8n but relay received HTTP 403 before parsing/Supabase; presence expired; zero controls. | Repair end to end; no owner repetition. |
 | 2026-08-13 | OOM SAKKIE `OMQ-20260813-02` | No 13 August production morning trigger; PR #879 later integrated one Render-owned clock and synthetic non-actuating family. | Prove provider configuration and synthetic result; genuine clock proof still pending. |
+| 2026-08-13 | ROOTLINE/OOM SAKKIE morning readiness | Provider verified exactly one enabled 06:45 SAST Render scheduler; a later duplicate was suspended. No genuine daily invocation, hardware action or authority change occurred. | Run one isolated non-actuating synthetic acceptance, then await genuine clock. |
+| 2026-08-13 | ROOTLINE/OOM SAKKIE synthetic acceptance | Exactly one deployed-entry invocation, one separate Supabase claim and one provider-confirmed `ROOTLINE SCHEDULE TEST` send; eight direct/concurrent/post-restart replays were silent; genuine daily lifecycle unchanged; zero farm/hardware/provider-control effects. | Synthetic acceptance complete. Send nothing until post-07:00 genuine-event audit. |
 | 2026-08-13 | SAM `SMQ-20260813-02` | Conversations `1533`/`2143` produced safe unsent replies and non-actionable cards; defect traced. | Continue bounded correction; no historical sends. |
+| 2026-08-13 | SAM `SMQ-20260813-02` integration | PR #882 merged as `b36b2ca3`; successor `6d7f3259` is live. WhatsApp timestamp binding, WebWidget authority and safe first-event routing are corrected; historical conversations were untouched. | Development released; send nothing and observe next genuine inbound. |
+| 2026-08-13 | CODEX UI `UIQ-20260813-01` | Dedicated UI terminal launched; preserved dirty `/matings` files exist in the original workspace; prompt prepared but not yet acknowledged. | Deliver one reconciliation/local-preview mission; no deployment yet. |
 
 ## New owner findings
 

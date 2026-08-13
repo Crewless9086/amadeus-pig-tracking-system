@@ -3,7 +3,11 @@
 Control Tower uses `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md` as
 the canonical owner-facing terminal queue. Every terminal feedback must update
 mission, terminal, deployed-runtime, worktree and next-action truth before
-another prompt is issued. Conversation memory is not the control system.
+another prompt is issued. Every owner message or terminal result must also
+trigger an all-terminal dispatch sweep: actively working terminals continue,
+idle terminals receive their highest-priority eligible existing mission, and
+truthfully waiting terminals are released or assigned different safe work.
+Conversation memory is not the control system.
 
 ## Controlling programme — unified action spine and durable farm runtime
 
