@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Agentic Farm Runtime Phase 0 repository discovery
+
+- Inventoried all 27 committed n8n workflow exports, Google Sheets operational
+  families, local relays, scheduled processes, Render cron evidence, provider
+  callbacks and duplicate scheduler risks without runtime mutation.
+- Classified dependencies and recorded disable impact, canonical replacement,
+  owner, prerequisites, rollback and exact retirement proof.
+- Kept exported state distinct from runtime-loaded and provider-verified fact;
+  the next slice is a read-only external/runtime truth snapshot.
+
 ## 2026-08-13 - Oom Sakkie morning delivery claim made date-stable
 
 - Production proof of PR #865 found that material-digest claim identities

@@ -10,6 +10,8 @@
   `docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`.
 - Historical review handoff: `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` is
   evidence only and must not govern current architecture or review.
+- Phase 0 dependency and retirement truth:
+  `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`.
 - Canonical channel contract:
   `docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
 - Runtime truth: Supabase-backed domain events, projections, missions, claims,
