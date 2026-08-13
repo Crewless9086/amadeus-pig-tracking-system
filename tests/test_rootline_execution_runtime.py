@@ -254,3 +254,24 @@ def test_protected_segment_delegates_exactly_one_bounded_on_after_confirmation()
     assert result["status"]=="segment_started"
     assert [call["state"] for call in transport.calls]==["ON"]
     assert store.active["planned_runtime_seconds"]==3599
+
+
+def test_protected_restart_requires_full_claim_binding_and_never_reissues_on():
+    store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
+    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+        expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store)["artifact"]
+        first=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
+          environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+          evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
+          owner_user_id="42",chat_id="42")
+        replay=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
+          environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+          evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
+          owner_user_id="42",chat_id="42")
+        mismatch=run_protected_rootline_segment(expected_artifact={**expected,"controller_safety_generation":"OTHER"},notify=lambda *_:None,
+          environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+          evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
+          owner_user_id="42",chat_id="42")
+    assert first["status"]=="segment_started" and replay["status"]=="active_segment_owned"
+    assert mismatch["status"]=="active_execution_conflicts_with_protected_claim"
+    assert [call["state"] for call in transport.calls]==["ON"]

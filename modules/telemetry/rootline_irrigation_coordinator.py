@@ -72,6 +72,9 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         "current_segment": decision["execution_eligibility"]["current_segment"],
         "segment_number": decision["execution_eligibility"]["current_segment"],
         "segment_identity": decision["execution_eligibility"]["segment_identity"],
+        "segment_requested_seconds": decision["execution_eligibility"]["segment_requested_seconds"],
+        "controller_safety_generation": decision["execution_eligibility"][
+            "controller_safety_generation"],
         "cumulative_verified_runtime_seconds": decision["execution_eligibility"][
             "cumulative_verified_runtime_seconds"],
         "predecessor_off_rearm_verified": decision["execution_eligibility"][

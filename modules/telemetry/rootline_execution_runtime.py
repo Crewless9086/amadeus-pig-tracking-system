@@ -107,8 +107,18 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
     token_store=token_store or PostgresOAuthTokenStore(database_url)
     active=store("load_active",None)
     if active:
-        if any(active.get(k)!=expected_artifact.get(k) for k in
-               ("job_id","segment_identity","zone_id","channel")):
+        active_binding={
+          "job_id":active.get("job_id"),"job_sha256":active.get("job_sha256"),
+          "zone_id":active.get("zone_id"),"channel":active.get("channel"),
+          "segment_identity":active.get("segment_identity"),
+          "current_segment":active.get("current_segment"),
+          "segment_requested_seconds":active.get("segment_requested_seconds"),
+          "requested_total_duration_seconds":active.get("requested_total_duration_seconds"),
+          "governed_executable_duration_seconds":active.get("governed_executable_duration_seconds"),
+          "plan_generation":active.get("evidence_generation"),
+          "controller_safety_generation":active.get("controller_safety_generation"),
+          "eligibility_sha256":active.get("eligibility_sha256")}
+        if any(active_binding.get(k)!=expected_artifact.get(k) for k in active_binding):
             return _safe("active_execution_conflicts_with_protected_claim")
         transport=transport or RootlineIFTTTTransport(token_store=token_store,environ=source,readback=readback)
         return advance_irrigation_execution(decision_id="",commissioning_id="",
