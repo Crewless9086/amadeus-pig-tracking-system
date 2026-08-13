@@ -4,7 +4,7 @@ Status: discovery
 
 Owner: CORE, with HERDMASTER as farm-domain owner
 
-Authority: read-only repository reconciliation at `03f6443bf6a13d0e4f6948debd3c944ec6b84b08` on 2026-08-13. This document authorizes no implementation, deployment, provider invocation, message, workflow change, or farm-data write.
+Authority: read-only repository reconciliation begun at `03f6443bf6a13d0e4f6948debd3c944ec6b84b08` and reconciled without source conflicts to freshly fetched authoritative main `e3c723aadbc5801513c9dae2d2c17a90fb9c08e8` on 2026-08-13. This document authorizes no implementation, deployment, provider invocation, message, workflow change, or farm-data write.
 
 ## Evidence boundary
 
