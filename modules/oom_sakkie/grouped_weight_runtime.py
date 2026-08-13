@@ -54,10 +54,18 @@ def handle_grouped_weight_message(parsed, authority, *, readiness_loader=None, p
                 "mission_id":mission,"card_mission_id":mission,
                 "answer":"The canonical grouped preview did not accept every interpreted fact. Nothing was recorded.",
                 "question_count":1,**_zero()},200
-    payload={"contract_version":preview["contract_version"],"weight_date":preview["weight_date"],
-             "row_count":preview["row_count"],"rows":preview["rows"],
-             "movement_pen_id":preview.get("movement_pen_id") or "",
-             "movement_pen_label":preview.get("movement_pen_label") or ""}
+    legacy_rows=[(str(row.get("pig_id") or ""),format(float(row.get("weight_kg")),"g"),
+        str(row.get("moved_to_pen_id") or "")) for row in preview["rows"]]
+    canonical_rows=[(str(row.get("pig_id") or ""),format(float(row.get("weight_kg")),"g"),
+        "" if row.get("moved_to_pen_id")=="Unknown" else str(row.get("moved_to_pen_id") or ""))
+        for row in canonical["rows"]]
+    if (legacy_rows!=canonical_rows or preview["weight_date"]!=canonical["effective_date"]):
+        return {"handled":True,"success":False,"status":"canonical_grouped_preview_diverged",
+                "mission_id":mission,"card_mission_id":mission,
+                "answer":"The canonical grouped preview did not match every interpreted fact. Nothing was recorded.",
+                "question_count":1,**_zero()},200
+    payload={key:canonical[key] for key in
+             ("contract_version","effective_date","rows","confirmation_required")}
     generation=hashlib.sha256(json.dumps(readiness,sort_keys=True,default=str).encode()).hexdigest()
     creator=claim_creator or create_claim
     try:

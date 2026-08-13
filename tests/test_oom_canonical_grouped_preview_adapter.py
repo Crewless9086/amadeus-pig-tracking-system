@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.grouped_weight_runtime import handle_grouped_weight_message
+from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.pig_weights.canonical_grouped_preview import preview_application_typed
 
 
@@ -25,7 +26,8 @@ def _preflight(payload):
 
 
 def _claim(**kwargs):
-    return {"success":True,"callback_token":"opaque123","preview_digest":"f"*64}
+    return {"success":True,"callback_token":"opaque123",
+        "preview_digest":canonical_preview_digest(kwargs["action_kind"],kwargs["preview_payload"])}
 
 
 def _run(*, pigs=PIGS, pens=PENS, text=TEXT, claim=_claim):
@@ -44,7 +46,34 @@ def test_typed_oom_matches_equivalent_application_canonical_rows_and_digest():
     assert result["weight_date"]==application["effective_date"]
     assert result["confirmation_required"]==application["confirmation_required"] is True
     assert result["preview_digest"]==application["preview_digest"]
-    assert result["protected_claim_digest"]=="f"*64
+    assert result["protected_claim_digest"]==result["preview_digest"]
+
+
+def test_non_ascii_canonical_evidence_has_one_owner_claim_and_executor_digest():
+    pigs=[{**PIGS[0],"tag_number":"SØ-1"},PIGS[1]]
+    captured={}
+    def claim(**kwargs):captured.update(kwargs);return _claim(**kwargs)
+    result,status=_run(pigs=pigs,text="SØ-1 47.2 kg, B2 118 kg on 2026-08-13",claim=claim)
+    assert status==200 and result["success"] is True
+    assert [(row["pig_id"],row["weight_kg"]) for row in result["mappings"]]==[
+        ("PIG-OPAQUE-A","47.2"),("PIG-OPAQUE-B","118")]
+    assert result["preview_digest"]==result["protected_claim_digest"]
+    assert canonical_preview_digest("grouped_weights",captured["preview_payload"])==result["preview_digest"]
+
+
+def test_partial_canonical_parse_divergence_fails_before_claim(monkeypatch):
+    claim=[]
+    monkeypatch.setattr("modules.oom_sakkie.grouped_weight_runtime.preview_prepared_owner_text",
+        lambda *args,**kwargs:{"success":True,"status":"canonical_grouped_preview_ready",
+            "contract_version":"canonical_grouped_weight_movement_preview_v1",
+            "effective_date":"2026-08-13","rows":[{
+                "pig_id":"PIG-OPAQUE-B","tag_number":"B2","weight_kg":"118",
+                "current_pen_id":"Unknown","moved_to_pen_id":"Unknown",
+                "moved_to_pen_label":"Unknown","condition_notes":"Unknown"}],
+            "confirmation_required":True,"preview_digest":"0"*64})
+    result,status=_run(claim=lambda **kwargs:claim.append(kwargs))
+    assert status==200 and result["status"]=="canonical_grouped_preview_diverged"
+    assert claim==[] and result["writes_farm_data"] is False
 
 
 def test_unknown_optional_values_are_preserved_in_canonical_rows():
@@ -56,16 +85,9 @@ def test_unknown_optional_values_are_preserved_in_canonical_rows():
     assert {row["moved_to_pen_id"] for row in result["mappings"]}=={"Unknown"}
     assert all(row["condition_notes"]=="Unknown" for row in result["mappings"])
     assert captured["preview_payload"]=={
-        "contract_version":"herdmaster_telegram_grouped_weight_preview_v1",
-        "weight_date":"2026-08-13",
-        "row_count":2,
-        "rows":[
-            {"pig_id":"PIG-OPAQUE-A","tag_number":"A1","label":"A1","weight_kg":47.2,"current_pen_id":"PEN-OLD","moved_to_pen_id":"","moved_to_pen_label":""},
-            {"pig_id":"PIG-OPAQUE-B","tag_number":"B2","label":"B2","weight_kg":118.0,"current_pen_id":"","moved_to_pen_id":"","moved_to_pen_label":""},
-        ],
-        "movement_pen_id":"",
-        "movement_pen_label":"",
-    }
+        key:result["canonical_preview"][key] for key in
+        ("contract_version","effective_date","rows","confirmation_required")}
+    assert canonical_preview_digest("grouped_weights",captured["preview_payload"])==result["preview_digest"]
 
 
 def test_ambiguous_and_inactive_identity_fail_before_claim_creation():

@@ -15,10 +15,11 @@ from typing import Mapping, Sequence
 
 
 CONTRACT_VERSION = "canonical_grouped_weight_movement_preview_v1"
+PROTECTED_ACTION_KIND = "grouped_weights"
 SUPPORTED_CHANNELS = frozenset({"application_typed", "oom_typed", "browser_voice_prepared_text"})
 _FACT = re.compile(
     r"(?:^|(?<=[\n,;.]))\s*(?:(?:pig|vark)\s+)?"
-    r"(?P<identity>[A-Za-z0-9][A-Za-z0-9-]*)\s*(?:-|:|weigh(?:ed|s)?\s+)?\s*"
+    r"(?P<identity>[^\W_](?:[^\W_]|-)*)\s*(?:-|:|weigh(?:ed|s)?\s+)?\s*"
     r"(?P<weight>\d+(?:[.,]\d+)?)\s*kg\b",
     re.IGNORECASE,
 )
@@ -146,7 +147,8 @@ def _preview(*, channel, facts, effective_date, destination_pen, pigs, pens):
         "rows": rows,
         "confirmation_required": True,
     }
-    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    digest_material = {"kind": PROTECTED_ACTION_KIND, "payload": canonical}
+    encoded = json.dumps(digest_material, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     return {
         "success": True,
         "status": "canonical_grouped_preview_ready",
