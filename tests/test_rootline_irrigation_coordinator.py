@@ -38,7 +38,7 @@ class Transport:
     def read_safety_configuration(self, **kwargs):
         if not self.safety: return {"authoritative": False}
         return {"authoritative": True, "zone_id": "B12345", "channel": 1,
-                "native_inching_enabled": True, "native_inching_seconds": 3600,
+                "native_inching_enabled": True, "native_inching_seconds": 3599,
                 "power_restoration_state": "OFF", "schedules_enabled": False,
                 "interlock_enabled": False, "scenes_enabled": False,
                 "relevant_outputs_off": True, "controller_safety_generation":"BASELINE-1",
@@ -103,6 +103,16 @@ def test_missing_provider_safety_readback_disables_on():
     result=run(Store(),transport,notices)
     assert result["status"]=="provider_safety_readback_unavailable"
     assert result["hardware_commands"]==0 and transport.calls==[] and notices==[]
+
+
+def test_final_provider_readback_rejects_3600_second_fail_stop():
+    class UnsafeDuration(Transport):
+        def read_safety_configuration(self, **kwargs):
+            return {**super().read_safety_configuration(**kwargs),
+                    "native_inching_seconds":3600}
+    transport=UnsafeDuration();result=run(Store(),transport,[])
+    assert result["status"]=="provider_safety_readback_unavailable"
+    assert result["hardware_commands"]==0 and transport.calls==[]
 
 
 def test_forged_decision_or_commissioning_identity_never_reaches_on():

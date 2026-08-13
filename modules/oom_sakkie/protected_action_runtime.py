@@ -10,7 +10,8 @@ from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authori
 NATURAL_CONFIRM=re.compile(r"^(?:i\s+confirm(?:\s+this)?|confirm(?:\s+all)?|yes[, ]*confirm|ek\s+bevestig(?:\s+alles)?|bevestig(?:\s+alles)?)\s*[.!]?$",re.I)
 
 def handle_protected_action_input(parsed, gateway_authority, *, callback_data="",
-                                  connect_factory=None, health_handler=None):
+                                  connect_factory=None, health_handler=None,
+                                  irrigation_handler=None):
     owner=str(parsed.get("telegram_user_id") or "");chat=str(parsed.get("telegram_chat_id") or "")
     if not validates_gateway_owner_authority(gateway_authority) or not owner or owner!=chat:
         return {"handled":False,"status":"protected_action_not_applicable"},200
@@ -33,6 +34,32 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
                 "Cancelled. Nothing was recorded.")
         return {"handled":True,**claimed,"writes_farm_data":False,"suppress_owner_delivery":claimed.get("status")=="protected_callback_replayed_noop"},status
     claimed["callback_token"]=data.split(":")[1]
+    if claimed["action_kind"]=="rootline_irrigation_segment":
+        if irrigation_handler is None:
+            from modules.oom_sakkie.rootline_protected_irrigation import execute_claimed_segment
+            irrigation_handler=execute_claimed_segment
+        try:
+            result,result_status=irrigation_handler(claimed,parsed=parsed)
+        except Exception as exc:
+            result={"success":False,"status":"protected_irrigation_recovery_pending",
+              "hardware_commands":None,"provider_control_calls":None,
+              "control_outcome":"unknown_recovery_required","recovery_required":True,
+              "error_type":type(exc).__name__}
+            # Keep the atomic callback claim in ``executing``. Telegram retries a
+            # non-2xx callback with the same provider receipt, which
+            # claim_callback recognizes as protected_callback_recovered; the
+            # durable coordinator then resumes/contains any active execution.
+            return {"handled":True,**result},503
+        if result.get("success") is True and result.get("status") in {"segment_started","active_segment_owned"}:
+            complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        elif int(result.get("hardware_commands") or 0)==0:
+            contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        answer=("B irrigation segment 1 started. It is bounded to 59 minutes 59 seconds; "
+          "ROOTLINE will verify provider OFF before any later reassessment."
+          if result.get("status")=="segment_started" else
+          "B irrigation segment 1 remains owned by ROOTLINE; no duplicate command was issued.")
+        return {"handled":True,**result,"answer":answer,"specialist":"ROOTLINE",
+          "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"]},result_status
     if claimed["action_kind"]=="grouped_weights":
         result,result_status=execute_grouped_weight_claim(claimed,actor_id=owner,connect_factory=connect_factory)
         if not result.get("success"):return {"handled":True,**result},result_status

@@ -153,6 +153,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202608120005_add_active_exposure_cycle_state.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608060001_create_rootline_ewelink_oauth_vault.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608130001_serialize_rootline_ewelink_refresh.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608130002_allow_rootline_irrigation_protected_claims.sql
 
       - name: Run Beacon weekly owner-decision permission gates
         env:
@@ -179,7 +180,7 @@ jobs:
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
 
       - name: Run Oom Sakkie protected breeding claim persistence gates
-        run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_oom_sakkie_protected_breeding_claim_postgres
+        run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_oom_sakkie_protected_breeding_claim_postgres tests.test_rootline_protected_irrigation_postgres
 
       - name: Run Riversdale auction disposable-Postgres integration tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_riversdale_auction_postgres
