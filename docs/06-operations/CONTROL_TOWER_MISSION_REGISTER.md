@@ -79,7 +79,7 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
 
 | Terminal | Terminal state | Existing mission and business/runtime truth | Next action |
 |---|---|---|---|
-| CORE | Parser released; next read-only mission prepared | `CMQ-20260813-02A` parser repair is deployed through PR #885 merge `7c22cd5f`; the watchdog remains active and a new live proof window is not authorized. Operational completion still needs separate owner authority. | `NEW_MISSION`: begin `CMQ-20260813-03` as read-only grouped weights/movements canonical-cutover reconciliation. Do not mutate runtime or overlap active terminal files. |
+| CORE | Discovery integrated; source-only slice prepared | `CMQ-20260813-03` read-only reconciliation merged in PR #888 as `c5f4c68d`. It proves canonical Supabase convergence but separate application/OOM preview and execution contracts; no runtime/provider facts or duplicate production writes were claimed. | `CONTINUE`: implement only a new side-effect-free shared preview contract plus isolated adapter-conformance tests. Existing executors, routes, UI, migrations and legacy fallbacks remain untouched. |
 | HERDMASTER | HMQ-03 released; next mission prepared | `HMQ-20260813-03` is deployed and operationally verified through PR #884 merge `b7c0edcf`: Bonnie is an explicit proposal at BCS 3.0; Waki, Zigay and Teena appear once on recovery hold; five exposures/cycles remain unchanged; repeated reads performed zero writes. | `NEW_MISSION`: dispatch existing `HMQ-20260813-02` protected-page login/return correction. Deployed HERDMASTER remains independent of the development terminal. |
 | ROOTLINE | Telegram canonical-intake incident active | `RMQ-20260813-04`: B/C readiness correctly held on stale water evidence; Charl then supplied fresh physical levels (`Reservoir 4/4`, `Storage tanks 3/4`) through Telegram, but no new canonical Supabase receipt exists. This repeats the known upstream relay/gateway failure that also blocked Mixer message `3579`. Zero controls/writes occurred. | `CONTINUE`: ROOTLINE development terminal must repair and prove the shared Telegram-to-canonical ROOTLINE intake end to end. Do not ask Charl to repeat either message. Morning genuine-clock proof remains separate. |
 | OOM SAKKIE | Synthetic path proven; genuine morning clock event pending | `OMQ-20260813-02`: provider-verified Render scheduler is enabled for 06:45 SAST; synthetic end-to-end delivery and durable replay passed. Business completion still requires the natural 14 August provider-clock outcome. | `SEND_NOTHING`: after 07:00 SAST on 14 August, the OOM SAKKIE development terminal performs read-only genuine-event verification. |
@@ -94,8 +94,9 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
 - `CMQ-20260813-02A` — `parser_deployed_waiting_for_separate_authority`:
   PR #877 evidence and PR #885 opaque-ID repair are integrated; watchdog remains
   active and no additional proof window is authorized.
-- `CMQ-20260813-03` — `prompt_prepared_read_only`: reconcile grouped weights and
-  movements across application, Telegram and future voice before implementation.
+- `CMQ-20260813-03` — `discovery_integrated_source_slice_cleared`: PR #888 is
+  merged; next work is limited to a new side-effect-free preview contract and
+  isolated conformance tests with no executor, route, UI or fallback cutover.
 - `CMQ-20260813-04` — queued reversible legacy-document retirement.
 
 ### HERDMASTER
@@ -171,6 +172,7 @@ result appear known earlier.
 |---|---|---|---|
 | 2026-08-13 | CORE `CMQ-20260813-02A` | Reversible watchdog window rolled back; synthetic receipt/reply passed; mission pickup failed through ID truncation. | Released; repair parser before another window. |
 | 2026-08-13 | CORE `CMQ-20260813-02A` parser repair | PR #877 evidence merged as `8f8ec3b2`; PR #885 opaque mission-ID and creation-precedence repair merged/deployed as `7c22cd5f`; no Telegram proof or provider mutation occurred. | Parser development released; live proof remains unauthorized. Promote CMQ-03 read-only reconciliation. |
+| 2026-08-13 | CORE `CMQ-20260813-03` discovery | PR #888 documentation at exact head `5f5aa641` passed all checks and merged as `c5f4c68d`. Application and OOM converge on Supabase events but do not share one atomic group contract; Sheets fallback authority remains. | Clear only a new pure preview-contract module and isolated tests; prohibit executor/fallback cutover. |
 | 2026-08-13 | CORE Programme | PR #878 proved canonical Programme location and merged pointer/source-map correction as `29f04528`. | Released; SAM may resume existing mission. |
 | 2026-08-13 | HERDMASTER `HMQ-20260813-03` | Candidate passed pre-advance gates; main advanced; no merge/deploy. | Preserve and reconcile non-destructively. |
 | 2026-08-13 | HERDMASTER `HMQ-20260813-03` completion | PR #884 merged as `b7c0edcf` and production/browser readback proved Bonnie proposal wording, three exact recovery holds, five unchanged exposures/cycles and zero writes on repeated reads. | Development worktree clean released-retain; promote HMQ-02. |
