@@ -150,7 +150,10 @@ labels without a reviewed rule-version change:
 
 - **High:** exact identity/attribution; zero unresolved contradiction; at least
   3 eligible independent opportunities/cohorts; at least 80% outcome coverage;
-  and no known material management/season/environment comparability difference.
+  at least 80% attributable context coverage for the axis across applicable
+  management/pen, season, environment, feed and health fields; and those
+  observed context fields establish no material comparability difference under
+  the versioned axis rule.
 - **Moderate:** exact identity/attribution; zero unresolved contradiction; at
   least 2 eligible opportunities/cohorts; at least 60% coverage; comparability
   differences are known and explicitly bounded.
@@ -165,6 +168,14 @@ offspring as `sample_size`, but confidence remains capped at Limited when all
 offspring come from only one litter/cohort. The packet discloses both offspring
 and independent-cohort counts. Thresholds apply per axis; they do not combine
 different biological measures into a score.
+
+Missing or materially incomplete context coverage caps confidence at Limited;
+it never satisfies High through “no known difference.” Context coverage uses
+the count of applicable attributable context fields present divided by the
+applicable fields required by the versioned axis rule. If applicable context
+cannot be determined, confidence is Unknown. Deterministic tests must contrast
+otherwise identical evidence with missing context versus genuinely comparable
+context coverage.
 
 ### 5.2 Herd page `/breeding-analytics`
 
