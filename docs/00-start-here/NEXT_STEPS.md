@@ -1,5 +1,10 @@
 # Next Steps
 
+Control Tower uses `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md` as
+the canonical owner-facing terminal queue. Every terminal feedback must update
+mission, terminal, deployed-runtime, worktree and next-action truth before
+another prompt is issued. Conversation memory is not the control system.
+
 ## Controlling programme — unified action spine and durable farm runtime
 
 - Execute `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md` as the
@@ -19,6 +24,10 @@
   The first provider/runtime snapshot is recorded there. Preserve the explicit
   evidence levels and independently verify the CHARLIE relay-watchdog rollback
   proof before any later retirement; this inventory authorizes no disablement.
+- CMQ-20260813-02 proved the loaded CHARLIE relay is configured for webhook mode,
+  but its stale deployed copy still attempts Telegram polling while Render owns
+  the webhook. Retain it pending authorized fresh text/callback/mission-pickup
+  and reversible-disable proof; duplication is not retirement readiness.
 
 ## Channel-invariant canonical actions
 
@@ -539,3 +548,7 @@ complete.
   exact merge, then retain the mission until a genuine scheduler-originated
   provider-confirmed plan is visible. Do not manufacture or manually replay the
   missed plan.
+- Provider inventory later proved the web-process wake-up had no dedicated
+  provider clock. The reviewed follow-up adds one Render UTC cron at 04:45,
+  targeting the authenticated deployed entry point while retaining Supabase as
+  the one daily claim and the in-process loop only as restart-safe redundancy.

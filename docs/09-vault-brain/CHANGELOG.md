@@ -15,6 +15,28 @@
   evidence only until review, integration, deployment and authenticated
   read-only production verification complete.
 
+- Added the canonical Control Tower mission register for CORE, HERDMASTER,
+  ROOTLINE, OOM SAKKIE, SAM and BEACON. It separates temporary development
+  terminals from deployed runtimes and makes every terminal-feedback assessment
+  a persisted transaction before further dispatch.
+
+## 2026-08-13 - Morning lifecycle gains provider clock
+
+- Added one authenticated Render cron entry at 04:45 UTC (06:45 SAST) for the
+  deployed morning runtime after provider inventory proved no such clock existed.
+- Kept Supabase's date-stable claim authoritative across cron, web workers and
+  restarts; no n8n, Sheets, workstation or second business identity was added.
+- Added a non-colliding synthetic ROOTLINE schedule-test family with one durable
+  claim, one labelled Telegram TEST result and zero actuation or farm authority.
+
+## 2026-08-13 - Runtime Programme pathname reconciled
+
+- Confirmed PR #867 introduced the owner-approved controlling Programme only at
+  `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`; it was not deleted,
+  reverted, renamed or stranded.
+- Added a historical pointer for the mistaken `docs/06-operations` pathname and
+  kept both source maps authoritative on the single canonical architecture file.
+
 ## 2026-08-13 - Morning startup catch-up policy bounded
 
 - Preserved the late 13 August startup plan as immutable defect evidence.
@@ -23,6 +45,15 @@
 - Reused the one date-stable durable claim for a concise missed-window failure;
   repeated and concurrent startup remains zero-send/edit and plan loaders do not
   run after the window.
+
+## 2026-08-13 - CHARLIE scheduler singularity read-only proof
+
+- Proved the local relay loaded webhook transport mode while stale deployed
+  source continued Telegram `getUpdates` attempts under the enabled watchdog;
+  Render remained the provider webhook owner.
+- Classified it as a genuine duplicate transport owner but retained pending
+  fresh no-loss message, callback, mission-pickup and reversible-disable proof.
+  No task, process, provider route, message or production state changed.
 
 ## 2026-08-13 - Phase 0 provider/runtime ownership snapshot
 

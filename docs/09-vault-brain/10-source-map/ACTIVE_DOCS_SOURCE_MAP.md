@@ -18,6 +18,10 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 - `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`
 - `docs/00-start-here/PRODUCT_VISION.md`
 
+The similarly named
+`docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md` is a historical
+canonical-path pointer only. It is not an active or controlling source.
+
 ## Architecture And Data
 
 - `docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md`
@@ -61,6 +65,7 @@ architecture. Their use is bounded by the Agentic Farm Runtime Programme.
 
 ## Operations And Evidence
 
+- `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`
 - `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`
 - `docs/06-operations/RUNBOOK.md`
 - `docs/06-operations/TESTING_CHECKLIST.md`

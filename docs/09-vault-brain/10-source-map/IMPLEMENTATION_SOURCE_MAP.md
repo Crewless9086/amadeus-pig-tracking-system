@@ -6,12 +6,20 @@
   `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`.
 - Controlling architecture:
   `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`.
+- Historical path pointer:
+  `docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md` records the mistaken
+  operations pathname and must not be treated as a second controlling copy.
 - Documentation lifecycle:
   `docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`.
 - Historical review handoff: `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` is
   evidence only and must not govern current architecture or review.
 - Phase 0 dependency and retirement truth:
   `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`.
+- Canonical owner-facing development dispatch and feedback ledger:
+  `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`. Visible terminals are
+  temporary development workers, not deployed agents. Every pasted terminal
+  result must update this ledger transactionally before another prompt is
+  issued.
 - Canonical channel contract:
   `docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
 - Runtime truth: Supabase-backed domain events, projections, missions, claims,
@@ -591,6 +599,10 @@ Current Stage 4 surface:
   than a workstation process, arbitrate restarts and multiple web workers. One
   date-stable `:DELIVERY` claim is shared by the useful-plan and visible-failure
   outcomes; evidence changes never create another same-day send or edit.
+- `modules/oom_sakkie/morning_scheduler.py` and
+  `scripts/oom_sakkie_morning_scheduler.py` — authenticated Render cron entry,
+  exact daily-runtime dispatch and non-colliding read-only ROOTLINE schedule
+  acceptance. `modules/oom_sakkie/routes.py` exposes the bearer-protected target.
 - `modules/oom_sakkie/rootline_fertilizer_commissioning_runtime.py` — existing
   fertilizer lifecycle continuation through ROOTLINE auxiliary execution rails.
 - `modules/oom_sakkie/telegram_gateway.py` — authenticated owner, provider

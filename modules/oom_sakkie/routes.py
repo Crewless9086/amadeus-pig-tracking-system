@@ -115,6 +115,11 @@ from modules.oom_sakkie.sales_campaign_store import (
     send_customer_followup_to_chatwoot,
 )
 from modules.oom_sakkie.service import handle_message
+from modules.oom_sakkie.morning_scheduler import (
+    TOKEN_ENV as MORNING_SCHEDULER_TOKEN_ENV,
+    run_provider_schedule,
+    run_synthetic_acceptance,
+)
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
 from modules.oom_sakkie.telegram_gateway import (
@@ -236,6 +241,21 @@ def _meat_followup_send_denied(status):
 
 def _env_truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/morning-schedule", methods=["POST"])
+def oom_sakkie_morning_schedule():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success": False, "status": "morning_scheduler_auth_denied",
+                        "telegram_sends": 0, "telegram_edits": 0,
+                        "hardware_commands": 0, "writes_farm_data": False}), 403
+    payload = request.get_json(silent=True) or {}
+    synthetic = str(payload.get("synthetic_acceptance_identity") or "").strip()
+    result = (run_synthetic_acceptance(synthetic) if synthetic
+              else run_provider_schedule())
+    return jsonify(result), 200 if result.get("success") else 503
 
 
 @oom_sakkie_bp.route("/oom-sakkie/message", methods=["POST"])

@@ -1,4 +1,6 @@
 from unittest.mock import patch
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Lock
 import pytest
 
 from modules.oom_sakkie.family_message_lifecycle import bind_existing_card,bind_legacy_provider_request,deliver_family_result
@@ -379,6 +381,39 @@ def test_concurrent_completion_claim_allows_only_one_external_effect():
     assert first["telegram_edits"]==1 and first["telegram_sends"]==0
     assert second["telegram_edits"]==second["telegram_sends"]==0
     assert len(memory.edited)==1
+
+
+def test_concurrent_mixer_reassessment_preview_has_one_visible_effect_at_most():
+    memory=Memory(); mission="OOM-ROOTLINE-FERTILIZER-CONFIG-20260809"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    preview={"success":True,"status":"waiting_for_input",
+        "answer":"Mixer CH2 five-minute protected preview; fresh confirmation required.",
+        "contextual_task_kind":"fertilizer_commissioning","hardware_commands":0,
+        "provider_control_calls":0}
+    inbound={**PARSED,"provider_message_id":"scheduled:mixer-reassessment-1"}
+    barrier=Barrier(2); claim_lock=Lock(); effects=[]
+    def concurrent_store(action,identity,payload):
+        if action=="load":
+            rows=list(memory.rows.values()); barrier.wait(timeout=5); return rows
+        with claim_lock:
+            return memory.store(action,identity,payload)
+    def edit(chat,message_id,text):
+        with claim_lock: effects.append((chat,message_id,text))
+        return {"success":True,"telegram_message_id":message_id}
+    def invoke(_):
+        return deliver_family_result(inbound,preview,specialist="ROOTLINE",mission_id=mission,
+            card_mission_id=mission,event_store=concurrent_store,sender=memory.send,editor=edit)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results=list(executor.map(invoke,range(2)))
+    assert sum(result["telegram_edits"] for result in results)==1
+    assert sum(result["telegram_sends"] for result in results)==0
+    assert {result["status"] for result in results}=={
+        "family_message_card_updated","family_message_update_delivery_ambiguous"}
+    assert len(effects)==1
+    replay=deliver_family_result(inbound,preview,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
 
 
 def test_protected_completion_verified_edit_removes_preview_buttons():

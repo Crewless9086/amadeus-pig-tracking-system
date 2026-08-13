@@ -1404,6 +1404,11 @@ def _normal_provider_identity(value):
     value = _clean(value, 100).lower()
     if value in {"channel::whatsapp", "chatwoot_whatsapp", "whatsapp", "genuine_whatsapp"}:
         return "genuine_whatsapp"
+    if value in {
+        "channel::webwidget", "chatwoot_webwidget", "webwidget",
+        "website", "genuine_webwidget",
+    }:
+        return "genuine_webwidget"
     if value in {"chatwoot", "api", "webhook"}:
         return "transport_only"
     if value:
@@ -2895,6 +2900,9 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
                 provider_name = _clean(inbox_payload.get("provider"), 100).lower()
                 if channel_class == "genuine_whatsapp" and provider_name == "whatsapp_cloud":
                     provider_identity_class = "genuine_whatsapp"
+                    provider_identity_status = "chatwoot_inbox_provider_identity_loaded"
+                elif channel_class == "genuine_webwidget":
+                    provider_identity_class = "genuine_webwidget"
                     provider_identity_status = "chatwoot_inbox_provider_identity_loaded"
                 elif not channel_class or not provider_name:
                     provider_identity_status = "chatwoot_inbox_provider_identity_unavailable"

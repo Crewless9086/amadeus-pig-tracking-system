@@ -71,7 +71,7 @@ def evaluate_reply_window(
             urgent_hours=urgent_hours, now=now,
             latest_inbound=latest_inbound,
         )
-    if provider != "genuine_whatsapp":
+    if provider not in {"genuine_whatsapp", "genuine_webwidget"}:
         return _result(
             identity, "unavailable", "unavailable",
             reason="whatsapp_provider_identity_unavailable",
@@ -85,6 +85,17 @@ def evaluate_reply_window(
             warning_hours=warning_hours, urgent_hours=urgent_hours, now=now,
             latest_inbound=latest_inbound, provider_identity=provider,
         )
+
+    if provider == "genuine_webwidget":
+        result = _result(
+            identity, "not_applicable", "ordinary_reply_allowed",
+            reason="webwidget_reply_channel_open",
+            warning_hours=warning_hours, urgent_hours=urgent_hours, now=now,
+            latest_inbound=latest_inbound, provider_identity=provider,
+        )
+        result["ordinary_reply_allowed"] = True
+        result["send_reply_action_visible"] = True
+        return result
 
     expiry = latest_inbound["created_at_utc"] + timedelta(hours=WINDOW_HOURS)
     remaining_seconds = max(0, int((expiry - now).total_seconds()))
@@ -287,6 +298,11 @@ def _provider_class(value: Any) -> str:
         "channel::whatsapp", "chatwoot_whatsapp", "genuine_whatsapp", "whatsapp",
     }:
         return "genuine_whatsapp"
+    if value in {
+        "channel::webwidget", "chatwoot_webwidget", "genuine_webwidget",
+        "webwidget", "website",
+    }:
+        return "genuine_webwidget"
     if value in {"chatwoot", "api", "webhook"}:
         return "transport_only"
     if value in {
@@ -321,7 +337,20 @@ def _provider_conflict(
             canonical = _timestamp(timestamp)
         except ReplyWindowEvidenceError:
             return "provider_latest_inbound_timestamp_invalid"
-        if canonical != latest_inbound["created_at_utc"]:
+        # Chatwoot's conversation/message API exposes epoch-second precision,
+        # while its webhook can carry fractional seconds for the same exact
+        # message. The message ID remains the primary identity; accept only a
+        # sub-second representation difference for that already-bound event.
+        delta_seconds = abs(
+            (canonical - latest_inbound["created_at_utc"]).total_seconds()
+        )
+        exact_message_bound = bool(
+            message_id and message_id == latest_inbound["message_id"]
+        )
+        if (
+            delta_seconds != 0
+            and (not exact_message_bound or delta_seconds >= 1)
+        ):
             return "provider_latest_inbound_timestamp_conflict"
     return ""
 
