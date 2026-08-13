@@ -22,6 +22,17 @@
 - Added a historical pointer for the mistaken `docs/06-operations` pathname and
   kept both source maps authoritative on the single canonical architecture file.
 
+## 2026-08-13 - CHARLIE watchdog reversible proof rolled back
+
+- Ran the single explicitly authorized watchdog disablement window, stopping
+  only its task ownership and two relay processes while Render webhook and
+  Supabase remained active.
+- Proved one authenticated Render update, one inbound claim, one owner/CHARLIE
+  conversation pair and one provider-confirmed reply without duplication.
+- Durable mission pickup failed because the CMQ date was parsed as a mission ID;
+  no retry was made. Restored the unchanged enabled/Ready task, healthy process
+  chain and webhook state. The watchdog remains retained, not retirement-ready.
+
 ## 2026-08-13 - Morning startup catch-up policy bounded
 
 - Preserved the late 13 August startup plan as immutable defect evidence.
