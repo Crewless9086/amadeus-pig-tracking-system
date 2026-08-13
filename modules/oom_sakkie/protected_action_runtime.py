@@ -42,8 +42,13 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
             result,result_status=irrigation_handler(claimed,parsed=parsed)
         except Exception as exc:
             result={"success":False,"status":"protected_irrigation_recovery_pending",
-              "hardware_commands":0,"provider_control_calls":0,"error_type":type(exc).__name__}
-            contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+              "hardware_commands":None,"provider_control_calls":None,
+              "control_outcome":"unknown_recovery_required","recovery_required":True,
+              "error_type":type(exc).__name__}
+            # Keep the atomic callback claim in ``executing``. Telegram retries a
+            # non-2xx callback with the same provider receipt, which
+            # claim_callback recognizes as protected_callback_recovered; the
+            # durable coordinator then resumes/contains any active execution.
             return {"handled":True,**result},503
         if result.get("success") is True and result.get("status") in {"segment_started","active_segment_owned"}:
             complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)

@@ -104,6 +104,14 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
     clock=clock or (lambda: datetime.now(timezone.utc)); now=_aware(now or clock())
     if not owner_user_id or owner_user_id!=chat_id:
         return _safe("protected_owner_binding_invalid")
+    if (expected_artifact.get("zone_id")!="B12345"
+        or expected_artifact.get("channel")!=1
+        or expected_artifact.get("current_segment")!=1
+        or expected_artifact.get("segment_requested_seconds")!=3599
+        or expected_artifact.get("requested_total_duration_seconds")!=7200
+        or expected_artifact.get("governed_executable_duration_seconds")!=7198
+        or expected_artifact.get("expected_segment_count")!=2):
+        return _safe("protected_irrigation_boundary_invalid")
     token_store=token_store or PostgresOAuthTokenStore(database_url)
     active=store("load_active",None)
     if active:

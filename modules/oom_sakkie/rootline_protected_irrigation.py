@@ -38,9 +38,12 @@ def create_irrigation_preview_claim(*,artifact,owner_user_id,private_chat_id,
 
 def execute_claimed_segment(claim,*,parsed,environ=None,database_url=None,runner=None,notify=None):
     payload=claim.get("preview_payload") if isinstance(claim.get("preview_payload"),dict) else {}
+    try:
+        boundary=build_preview_payload(payload,mission_id=str(payload.get("mission_id") or ""))
+    except ValueError:
+        return _safe("protected_irrigation_preview_binding_mismatch"),409
     if (canonical_preview_digest(ACTION_KIND,payload)!=claim.get("preview_digest")
-        or str(payload.get("mission_id"))!=MISSION_ID
-        or str(claim.get("mission_id"))!=MISSION_ID):
+        or boundary!=payload or str(claim.get("mission_id"))!=MISSION_ID):
         return _safe("protected_irrigation_preview_binding_mismatch"),409
     if runner is None:
         from modules.telemetry.rootline_execution_runtime import run_protected_rootline_segment

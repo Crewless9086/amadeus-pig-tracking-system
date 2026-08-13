@@ -243,6 +243,20 @@ def test_protected_segment_issues_zero_control_when_current_digest_changed():
     assert result["hardware_commands"]==0 and transport.calls==[]
 
 
+def test_protected_runner_rejects_cross_zone_artifact_before_provider_access():
+    store=Store();transport=Transport()
+    expected={"zone_id":"C12345","channel":2,"current_segment":1,
+      "segment_requested_seconds":3599,"requested_total_duration_seconds":7200,
+      "governed_executable_duration_seconds":7198,"expected_segment_count":2}
+    result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
+      environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+      evidence_loader=lambda **_kwargs:(_ for _ in ()).throw(AssertionError("evidence accessed")),
+      readback=lambda **_kwargs:(_ for _ in ()).throw(AssertionError("provider accessed")),
+      owner_user_id="42",chat_id="42")
+    assert result["status"]=="protected_irrigation_boundary_invalid"
+    assert result["hardware_commands"]==0 and transport.calls==[]
+
+
 def test_protected_segment_delegates_exactly_one_bounded_on_after_confirmation():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
     with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):

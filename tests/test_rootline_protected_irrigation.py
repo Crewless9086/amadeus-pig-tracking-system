@@ -17,6 +17,13 @@ def test_preview_rejects_boundary_expansion():
  else:raise AssertionError("wrong mission accepted")
 def test_mismatch_is_zero_control():
  row=claim();row["preview_digest"]="wrong";calls=[];result,status=execute_claimed_segment(row,parsed=parsed(),runner=lambda **kw:calls.append(kw));assert status==409 and result["hardware_commands"]==0 and calls==[]
+def test_correctly_digested_generic_claim_cannot_cross_b_boundary():
+ payload=build_preview_payload(artifact(),mission_id="RMQ-20260813-04")
+ payload["zone_id"]="C12345";payload["channel"]=2
+ row={"preview_payload":payload,"preview_digest":canonical_preview_digest(ACTION_KIND,payload),
+   "mission_id":"RMQ-20260813-04","callback_token":"opaque"}
+ calls=[];result,status=execute_claimed_segment(row,parsed=parsed(),runner=lambda **kw:calls.append(kw))
+ assert status==409 and result["hardware_commands"]==0 and calls==[]
 def test_exact_claim_delegates_once_to_existing_runner():
  calls=[]
  def runner(**kwargs):calls.append(kwargs);return {"success":True,"status":"segment_started","hardware_commands":1,"provider_control_calls":1}

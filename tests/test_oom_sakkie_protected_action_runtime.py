@@ -75,6 +75,36 @@ def test_irrigation_confirmation_uses_existing_protected_callback_once(monkeypat
     assert len(calls)==1 and len(completed)==1
 
 
+def test_irrigation_exception_retains_executing_claim_for_provider_retry(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_claimed","callback_token":"opaque",
+      "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
+      "preview_digest":"DIGEST","preview_payload":{}},200))
+    contained=[]
+    monkeypatch.setattr(runtime,"contain_claim",lambda *args,**kwargs:contained.append(args))
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority(),
+      irrigation_handler=lambda *args,**kwargs:(_ for _ in ()).throw(ConnectionError("restart")))
+    assert status==503 and result["recovery_required"] is True
+    assert result["hardware_commands"] is None and result["provider_control_calls"] is None
+    assert contained==[]
+
+
+def test_retried_provider_receipt_recovers_irrigation_after_restart(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_recovered","callback_token":"opaque",
+      "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
+      "preview_digest":"DIGEST","preview_payload":{}},200))
+    completed=[]
+    monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:completed.append(args) or {
+      "completed":True,"result":args[1]})
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority(),
+      irrigation_handler=lambda *args,**kwargs:({"success":True,"status":"active_segment_owned",
+        "hardware_commands":0,"provider_control_calls":0},200))
+    assert status==200 and result["status"]=="active_segment_owned" and len(completed)==1
+
+
 def test_stale_irrigation_confirmation_never_reaches_runner(monkeypatch):
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
       "success":False,"status":"protected_callback_expired"},409))
