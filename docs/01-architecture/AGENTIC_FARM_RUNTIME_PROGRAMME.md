@@ -1,0 +1,190 @@
+# Agentic Farm Runtime Programme
+
+Status: owner-approved controlling architecture programme.
+
+## Outcome
+
+Amadeus operates as one evolving farm intelligence. Browser, Telegram and voice
+are interchangeable intake channels to the same canonical actions. Oom Sakkie
+is the single owner-facing manager; specialists provide typed domain decisions;
+Supabase preserves canonical operational truth; and a durable runtime continues
+scheduled work without depending on an open development terminal.
+
+The initial Farm Node may run on Charl's laptop. The design must remain portable
+to an always-on office computer without changing farm action semantics or data.
+Cloud services may provide durable hosting, synchronization and remote access,
+but no third-party workflow platform may become the farm brain.
+
+## Non-negotiable architecture
+
+```text
+Browser / Telegram / Voice
+            |
+            v
+    Oom Sakkie unified intake
+            |
+            v
+  typed canonical action contract
+            |
+            v
+HERDMASTER / ROOTLINE / SAM / BEACON / other specialists
+            |
+            v
+preview -> authority -> exactly-once execution -> readback
+            |
+            v
+Supabase canonical events and projections
+            |
+            v
+outcome evidence -> evaluation -> governed improvement proposal
+```
+
+Rules:
+
+1. Equivalent owner intent must produce the same specialist-owned action across
+   browser, Telegram and voice.
+2. Channel adapters may authenticate, transcribe, format and deliver. They may
+   not own competing business rules or mutation paths.
+3. Supabase is canonical operational truth. Google Sheets is export, historical
+   reference or bounded compatibility only.
+4. Oom Sakkie owns owner dialogue and consolidation. Specialists own their
+   domain facts, decisions and tools.
+5. Scheduled work must be durable, observable and restart-safe. A laptop,
+   terminal window or n8n editor session is not runtime ownership.
+6. n8n is transitional integration infrastructure. It may temporarily connect
+   providers, but must not own canonical state, safety logic, business rules,
+   memory, learning or action execution.
+7. Learning proposes evidence-backed change. It never silently changes doctrine,
+   thresholds, authority or executable code.
+
+## Programme phases
+
+### Phase 0 — Authority and inventory (1–2 weeks)
+
+- Establish this programme and the document-lifecycle standard as controlling.
+- Inventory every n8n workflow, Google Sheets read/write path, local relay,
+  Render cron, provider callback and duplicate scheduler.
+- Classify each as `retain-temporarily`, `migrate`, `retire`, `quarantine` or
+  `historical-evidence`.
+- Build an owner-visible dependency register showing what would break if each
+  legacy component were disabled.
+- Prohibit new n8n business logic and new canonical Google Sheets writes.
+
+Exit: every legacy dependency has an owner, replacement target and retirement
+proof; contradictory documents no longer present as active doctrine.
+
+### Phase 1 — Unified canonical action spine (4–8 weeks)
+
+- Standardize one envelope for intent, evidence, resolved identities, proposed
+  effects, authority, idempotency, execution receipt and readback.
+- Route browser, Telegram and later voice through the same service.
+- Convert the highest-value journeys first: livestock observation, breeding,
+  movement, grouped weights, litter/weaning, mortality, payments, irrigation
+  and fertilizer.
+- Remove channel-specific writes only after equivalence and replay tests pass.
+
+Exit: each priority journey has one canonical implementation and produces the
+same preview and result from every enabled channel.
+
+### Phase 2 — Canonical data completion (4–10 weeks, overlapping Phase 1)
+
+- Finish Supabase-first pigs, locations, weights, breeding, litters, medical,
+  sales/payments and device execution ledgers.
+- Replace formula-dependent operational projections with tested backend views.
+- Keep Sheets downstream as export during reconciliation, then disable its
+  operational write authority domain by domain.
+- Preserve uncertain legacy data as Unknown or quarantined evidence; never guess.
+
+Exit: priority farm journeys remain correct when Google Sheets is unavailable.
+
+### Phase 3 — Durable agent runtime (4–8 weeks, overlapping Phases 1–2)
+
+- Provide durable event intake, schedules, leases, retries, deadlines, replay
+  control, escalation and visible blocked states.
+- Separate the deployed operational plane from development terminals.
+- Add supervisor health, restart recovery, outbox delivery and owner-facing
+  status for Oom Sakkie and every specialist.
+- Move Oom Sakkie morning planning and other important schedules into this
+  runtime, then retire their duplicate triggers.
+
+Exit: closing terminals or restarting the laptop does not lose, repeat or hide
+scheduled work; every failure has a visible owner-relevant state.
+
+### Phase 4 — n8n and legacy retirement (3–8 weeks, incremental)
+
+- Migrate schedules, Telegram routing and business logic to the durable runtime.
+- Replace each n8n provider integration with a typed adapter where worthwhile.
+- Retain n8n only for explicitly accepted thin connectors until their adapters
+  exist; no retained workflow may be a canonical decision-maker.
+- Disable, observe, archive and finally remove workflows using reversible gates.
+- Remove stale runtime secrets and access only after rollback windows expire.
+
+Exit: core farm management, Telegram and schedules operate with n8n unavailable.
+
+### Phase 5 — Portable Farm Node (deferred hardware installation; 2–4 weeks)
+
+- Package the same runtime for Charl's laptop first, then the always-on office
+  computer when purchased.
+- Auto-start after reboot; provide kiosk, voice gateway, local cache, encrypted
+  credentials, offline outbox, health supervision and safe synchronization.
+- Keep Supabase/cloud canonical durability and remote family access. The node is
+  an edge operating presence, not the sole copy of farm truth.
+
+Exit: the farm computer can be replaced without changing actions or losing data,
+and temporary internet loss does not create duplicate farm or hardware effects.
+
+### Phase 6 — Controlled learning and optimisation (ongoing after reliable spine)
+
+- Bind recommendations to outcome chains and financial results.
+- Measure recommendation quality, confidence, calibration and harmful misses.
+- Generate reviewable improvement proposals and replay them against historical
+  evidence before promotion.
+- Require owner/governance approval for material rule or authority changes.
+- Monitor promoted changes and support rollback.
+
+Exit: the system demonstrably improves decisions without silently rewriting its
+rules or converting associations into facts.
+
+## Indicative duration
+
+With one primary implementation lane plus specialist review, a credible first
+operational version of Phases 0–4 is approximately 12–20 weeks. The useful core
+does not wait that long: the first unified journeys and durable schedules should
+be visible within 3–6 weeks. Phase 5 begins when hardware is available. Phase 6
+is continuous and should expand only as canonical outcome data becomes reliable.
+
+This is an evidence-based range, not a deadline promise. Provider limitations,
+legacy-data reconciliation and owner acceptance journeys control elapsed time.
+Work should deliver domain slices continuously rather than wait for a big-bang
+replacement.
+
+## Ownership
+
+| Owner | Responsibility |
+| --- | --- |
+| Charl | Operational truth, priorities, protected authority and acceptance. |
+| CHARLIE CORE | Programme queue, dependency order, cross-domain architecture, integration and retirement control. |
+| Codex/UI | Owner workflows, common interaction components, local previews and channel-equivalence presentation. |
+| Oom Sakkie | Unified intake, concise manager dialogue, specialist dispatch, schedules and owner-visible failure/reassessment. |
+| HERDMASTER | Canonical livestock actions, projections, lifecycle precedence and outcome scoring. |
+| ROOTLINE | Canonical water/energy/device actions, provider adapters and fail-safe execution. |
+| SAM / BEACON | Canonical sales/customer and marketing actions within their authority boundaries. |
+| Independent review | Data integrity, concurrency, safety, security, privacy and outcome verification. |
+
+Development terminals implement and prove missions; they are not deployed
+agents and must never be described as background runtime.
+
+## Programme order
+
+1. CORE completes Phase 0 inventory and publishes the dependency/retirement
+   register.
+2. CORE selects one representative canonical action library and runtime contract.
+3. Domain specialists migrate one complete owner journey at a time.
+4. Codex/UI proves channel-consistent owner presentation.
+5. CORE retires the replaced legacy path after shadow comparison and rollback
+   proof.
+6. Only then does the programme advance additional learning and autonomy.
+
+No broad rewrite is authorized. Each slice must leave production safer and more
+understandable than before.
+

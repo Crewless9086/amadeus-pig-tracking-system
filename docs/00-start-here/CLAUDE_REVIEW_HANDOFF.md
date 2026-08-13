@@ -1,5 +1,16 @@
 # Claude Review Handoff
 
+> Classification: historical review evidence. Superseded for current
+> architecture and review authority by
+> `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`,
+> `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md` and
+> the active source maps. Retain the review packets, findings and verification
+> history below as evidence only. Do not use its old Chatwoot -> n8n -> Flask ->
+> Google Sheets path, or any n8n-brain/Sheets-source-of-truth assumption, to
+> govern new review or implementation. Retirement owner: CORE. Exact next
+> proof: Phase 0 classification in the dependency and retirement register plus
+> proven replacement paths.
+
 ## How Charl Should Use This
 
 In Claude Code, say exactly:

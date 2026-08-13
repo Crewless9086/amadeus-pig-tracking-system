@@ -9,6 +9,18 @@
   changed evidence and replay remain zero-send/zero-edit after the first claim.
 - No missed 13 August brief was triggered, replayed or manufactured.
 
+## 2026-08-13 - Unified action spine and durable farm runtime programme
+
+- Established one controlling programme for channel-invariant actions,
+  Supabase canonical truth, durable specialist runtime, incremental n8n/Sheets
+  retirement, portable laptop-to-Farm-Node deployment and controlled learning.
+- Classified the legacy system architecture as historical and the n8n workflow
+  suite as transitional rather than allowing either to remain implicit current
+  authority.
+- Added document lifecycle and evidence-led cleanup rules so superseded methods
+  remain learnable without steering future builds.
+- Prohibited new n8n business logic and new canonical Google Sheets write paths.
+
 ## 2026-08-13 - Production-owned morning lifecycle prepared
 
 - Identified the daily manager's missing ownership boundary: durable composition

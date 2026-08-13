@@ -8,6 +8,9 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 
 ## Highest-Level Sources
 
+- `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`
+- `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`
+- `docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`
 - `docs/00-start-here/README.md`
 - `docs/00-start-here/CURRENT_STATE.md`
 - `docs/00-start-here/WORKFLOW.md`
@@ -27,6 +30,9 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 - `docs/03-google-sheets/WRITE_OWNERSHIP.md`
 
 ## Workflows
+
+The n8n documents below are transitional runtime evidence, not controlling
+architecture. Their use is bounded by the Agentic Farm Runtime Programme.
 
 - `docs/04-n8n/WORKFLOW_RULES.md`
 - `docs/04-n8n/DO_NOT_CHANGE.md`
@@ -89,4 +95,6 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 
 ## Archived After Migration
 
+- `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` (historical review evidence;
+  excluded from current architecture/review authority pending Phase 0 register)
 - `docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md`
