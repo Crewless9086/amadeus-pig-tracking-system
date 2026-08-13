@@ -133,6 +133,11 @@
   `modules/oom_sakkie/herdmaster_health_loss_preview.py`. Runtime source and a
   narrow protected writer exist separately; their presence does not prove an
   enabled or operational production journey.
+- Focused health/loss contract and runtime tests:
+  `tests/test_herdmaster_natural_health_loss_intake.py` and
+  `tests/test_oom_sakkie_herdmaster_health_loss_preview.py`, plus
+  `tests/test_oom_sakkie_herdmaster_health_loss_runtime.py`; the bounded writer
+  gate remains `tests/test_herdmaster_health_loss_recording.py` below.
 - Dispatch truth reducer:
   `modules/oom_sakkie/specialist_dispatch_ack.py`.
 - Existing durable evidence rail:
