@@ -505,7 +505,7 @@ def _safe_configuration(value, zone):
     return (isinstance(value, dict) and value.get("authoritative") is True
             and value.get("zone_id") == zone and value.get("channel") == ZONES[zone]
             and value.get("native_inching_enabled") is True
-            and 0 < int(value.get("native_inching_seconds") or 0) <= 3600
+            and int(value.get("native_inching_seconds") or 0) == 3599
             and value.get("power_restoration_state") == "OFF"
             and value.get("schedules_enabled") is False
             and value.get("interlock_enabled") is False

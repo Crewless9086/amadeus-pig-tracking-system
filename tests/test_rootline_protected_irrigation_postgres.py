@@ -7,7 +7,7 @@ URL=os.getenv("OOM_PROTECTED_ACTION_POSTGRES_URL","").strip()
 @unittest.skipUnless(URL,"disposable PostgreSQL URL is required")
 class RootlineProtectedIrrigationPostgresTests(unittest.TestCase):
  def connect(self):return psycopg.connect(URL)
- def setUp(self):self.suffix=uuid.uuid4().hex;self.mission="RMQ-"+self.suffix
+ def setUp(self):self.suffix=uuid.uuid4().hex;self.mission="RMQ-20260813-04"
  def tearDown(self):
   with self.connect() as db:db.execute("delete from app_private.oom_protected_action_claims where mission_id=%s",(self.mission,))
  def create(self,ttl=15):

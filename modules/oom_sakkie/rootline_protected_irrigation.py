@@ -6,12 +6,15 @@ from modules.oom_sakkie.protected_action_claims import (
 )
 
 ACTION_KIND="rootline_irrigation_segment"
+MISSION_ID="RMQ-20260813-04"
 BOUND_KEYS=("job_id","job_sha256","zone_id","channel","segment_identity",
  "current_segment","segment_requested_seconds","requested_total_duration_seconds",
  "governed_executable_duration_seconds","plan_generation",
  "controller_safety_generation","eligibility_sha256")
 
 def build_preview_payload(artifact,*,mission_id):
+    if str(mission_id)!=MISSION_ID:
+        raise ValueError("protected_irrigation_mission_mismatch")
     payload={k:artifact.get(k) for k in BOUND_KEYS}
     payload.update({"mission_id":str(mission_id),"expected_segment_count":artifact.get("expected_segment_count"),
       "maximum_duration_seconds":artifact.get("maximum_duration_seconds"),
@@ -36,7 +39,8 @@ def create_irrigation_preview_claim(*,artifact,owner_user_id,private_chat_id,
 def execute_claimed_segment(claim,*,parsed,environ=None,database_url=None,runner=None,notify=None):
     payload=claim.get("preview_payload") if isinstance(claim.get("preview_payload"),dict) else {}
     if (canonical_preview_digest(ACTION_KIND,payload)!=claim.get("preview_digest")
-        or str(payload.get("mission_id"))!=str(claim.get("mission_id"))):
+        or str(payload.get("mission_id"))!=MISSION_ID
+        or str(claim.get("mission_id"))!=MISSION_ID):
         return _safe("protected_irrigation_preview_binding_mismatch"),409
     if runner is None:
         from modules.telemetry.rootline_execution_runtime import run_protected_rootline_segment
