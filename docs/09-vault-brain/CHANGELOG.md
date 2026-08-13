@@ -9,6 +9,15 @@
   repeated and concurrent startup remains zero-send/edit and plan loaders do not
   run after the window.
 
+## 2026-08-13 - CHARLIE scheduler singularity read-only proof
+
+- Proved the local relay loaded webhook transport mode while stale deployed
+  source continued Telegram `getUpdates` attempts under the enabled watchdog;
+  Render remained the provider webhook owner.
+- Classified it as a genuine duplicate transport owner but retained pending
+  fresh no-loss message, callback, mission-pickup and reversible-disable proof.
+  No task, process, provider route, message or production state changed.
+
 ## 2026-08-13 - Phase 0 provider/runtime ownership snapshot
 
 - Read n8n, Render, Telegram and Chatwoot provider state plus local Windows

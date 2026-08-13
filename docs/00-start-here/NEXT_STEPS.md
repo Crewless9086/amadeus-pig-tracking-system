@@ -19,6 +19,10 @@
   The first provider/runtime snapshot is recorded there. Preserve the explicit
   evidence levels and independently verify the CHARLIE relay-watchdog rollback
   proof before any later retirement; this inventory authorizes no disablement.
+- CMQ-20260813-02 proved the loaded CHARLIE relay is configured for webhook mode,
+  but its stale deployed copy still attempts Telegram polling while Render owns
+  the webhook. Retain it pending authorized fresh text/callback/mission-pickup
+  and reversible-disable proof; duplication is not retirement readiness.
 
 ## Channel-invariant canonical actions
 
