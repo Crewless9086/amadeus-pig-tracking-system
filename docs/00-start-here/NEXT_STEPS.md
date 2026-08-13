@@ -102,6 +102,17 @@ Conversation memory is not the control system.
 - Prepared source must still pass independent security/data-integrity review,
   current-main integration, deployment and fresh read-only production proof.
 
+## HERDMASTER full-lifecycle genetic merit
+
+- Existing mission `HMQ-20260813-04` is in documentation/data-contract
+  reconciliation. The controlling contract is
+  `docs/06-operations/HERDMASTER_FULL_LIFECYCLE_GENETIC_MERIT_DATA_UX_CONTRACT_20260813.md`.
+- Preserve the clean historical worktrees at `68cf41c4...` and `c1702487...`
+  and open PR #823 as evidence only. They substantially predate current runtime
+  contracts and are not implementation bases.
+- Stop after the reviewed documentation PR. Control Tower must next assign
+  disjoint HERDMASTER backend read-model and CODEX UI presentation ownership.
+
 ## Oom Sakkie protected mortality and grouped weights
 
 - Deployed through PRs #820/#821; Pig 130 is canonically Dead/off-farm with effective date 2026-08-06, and the original event remains immutable.
