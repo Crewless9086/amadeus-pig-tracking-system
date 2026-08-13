@@ -1,4 +1,7 @@
 from copy import deepcopy
+import builtins
+import socket
+import subprocess
 
 import pytest
 
@@ -9,6 +12,13 @@ from modules.pig_weights.herdmaster_natural_health_loss_intake import (
 
 
 TIME = "2026-08-01T08:30:00+02:00"
+PIG_002_REPORT = (
+    "Pig 002 is not eating, appears otherwise fine, is lying down and will be monitored."
+)
+MAYA_REPORT = (
+    "Maya died yesterday after complications while farrowing. "
+    "All 10 piglets were stillborn. We believe she had a uterine infection."
+)
 
 
 def animal(pig_id="PIG-2026-MAYA", name="Maya", tag="Maya", **overrides):
@@ -49,10 +59,7 @@ def maya_packet():
 
 def test_maya_compound_preview_preserves_counts_and_suspicion_boundary():
     maya, canonical = maya_packet()
-    result = evaluate_health_loss_intake(report(
-        "Maya died yesterday after complications while farrowing. "
-        "All 10 piglets were stillborn. We believe she had a uterine infection."
-    ), canonical)
+    result = evaluate_health_loss_intake(report(MAYA_REPORT), canonical)
     assert result["status"] == "partial_preview_ready"
     assert result["event_family"] == "compound_event"
     observed = {x["fact"]: x["value"] for x in result["observed_facts"]}
@@ -80,6 +87,115 @@ def test_maya_compound_preview_preserves_counts_and_suspicion_boundary():
     assert "removed from the pen" in result["smallest_missing_follow_up_question"]
     assert result["writes_performed"] is False
     assert result["farm_write_authority"] is False
+
+
+def test_pig_002_immutable_fixture_preserves_observations_without_false_reassurance():
+    pig = animal("PIG-2026-0002", "Pig 002", "002")
+    result = evaluate_health_loss_intake(report(PIG_002_REPORT), evidence(pig))
+
+    assert result["owner_report_text"] == PIG_002_REPORT
+    facts = {row["fact"]: row for row in result["observed_facts"]}
+    assert facts["not_eating"]["value"] is True
+    assert facts["lying_down_reported"]["attribution"] == "owner_reported_observation"
+    assert facts["otherwise_fine_reported"]["attribution"] == (
+        "owner_general_impression_not_welfare_clearance"
+    )
+    assert facts["monitoring_intention_reported"]["attribution"] == (
+        "owner_reported_future_intention_not_completed_action"
+    )
+    assert result["agent_inference"] == []
+    assert result["immediate_welfare_priority"]["level"] == "urgent_assessment"
+    assert result["smallest_missing_follow_up_question"].count("?") == 1
+    assert "stand, breathe normally and drink water" in result[
+        "smallest_missing_follow_up_question"
+    ]
+
+
+def test_ambiguous_pig_002_fixture_fails_closed_with_one_identity_question():
+    result = evaluate_health_loss_intake(
+        report(PIG_002_REPORT),
+        evidence(
+            animal("PIG-2025-0002", "Pig 002", "002"),
+            animal("PIG-2026-0002", "Pig 002", "002"),
+        ),
+    )
+    assert result["status"] == "identity_required"
+    assert result["canonical_effects"] == []
+    assert result["smallest_missing_follow_up_question"].count("?") == 1
+
+
+def test_duplicate_owner_facts_are_emitted_once():
+    pig = animal("PIG-2026-0002", "Pig 002", "002")
+    result = evaluate_health_loss_intake(
+        report("Pig 002 is not eating, still not eating, and is lying down, lying down."),
+        evidence(pig),
+    )
+    names = [row["fact"] for row in result["observed_facts"]]
+    assert names.count("not_eating") == 1
+    assert names.count("lying_down_reported") == 1
+
+
+@pytest.mark.parametrize("text,excluded", [
+    ("Pig 002 is sick but does not appear to be lying down.", "lying_down_reported"),
+    ("Pig 002 is sick but doesn't appear to be lying down.", "lying_down_reported"),
+    ("Pig 002 is sick but didn't appear to be lying down.", "lying_down_reported"),
+    ("Pig 002 is sick and does not look otherwise fine.", "otherwise_fine_reported"),
+    ("Pig 002 is sick and doesn't look otherwise fine.", "otherwise_fine_reported"),
+    ("Pig 002 is sick and didn't look otherwise fine.", "otherwise_fine_reported"),
+    ("Pig 002 was lying down, but is no longer lying down.", "lying_down_reported"),
+    ("Pig 002 appeared otherwise fine, but no longer appears otherwise fine.", "otherwise_fine_reported"),
+])
+def test_negated_owner_impressions_are_not_recorded_as_positive_facts(text, excluded):
+    pig = animal("PIG-2026-0002", "Pig 002", "002")
+    result = evaluate_health_loss_intake(report(text), evidence(pig))
+    assert excluded not in {row["fact"] for row in result["observed_facts"]}
+
+
+@pytest.mark.parametrize("text", [
+    "Pig 002 is sick. I will monitor her, but I will not monitor her after all.",
+    "Pig 002 is sick. We will monitor her, but we won't monitor her after all.",
+    "Pig 002 is sick. She will be monitored, but will not be monitored after all.",
+    "Pig 002 is sick. We will monitor her, but we will no longer monitor her.",
+    "Pig 002 is sick. I will monitor her, but I will stop monitoring her.",
+    "Pig 002 is sick. She will be monitored, but will no longer be monitored.",
+    "Pig 002 is sick. I am going to monitor, but I am not going to monitor after all.",
+    "Pig 002 is sick. I will monitor her, but I have stopped monitoring her.",
+    "Pig 002 is sick. She will be monitored, but monitoring has ceased.",
+    "Pig 002 is sick. She will be monitored, but monitoring was stopped.",
+    "Pig 002 is sick. I will monitor her, but I am no longer monitoring.",
+    "Pig 002 is sick. I will monitor her, but I have completed monitoring.",
+    "Pig 002 is sick. We will monitor her, but we completed monitoring.",
+    "Pig 002 is sick. I will monitor her, but I have ended monitoring.",
+    "Pig 002 is sick. We will monitor her, but we ended monitoring.",
+    "Pig 002 is sick. She will be monitored, but monitoring is now complete.",
+    "Pig 002 is sick. She will be monitored, but monitoring has finished.",
+])
+def test_retracted_monitoring_intention_is_not_current_fact(text):
+    pig = animal("PIG-2026-0002", "Pig 002", "002")
+    result = evaluate_health_loss_intake(report(text), evidence(pig))
+    assert "monitoring_intention_reported" not in {
+        row["fact"] for row in result["observed_facts"]
+    }
+
+
+def test_immutable_fixtures_execute_with_zero_io(monkeypatch):
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("pure intake attempted external I/O")
+
+    monkeypatch.setattr(builtins, "open", forbidden)
+    monkeypatch.setattr(socket, "create_connection", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+
+    pig_result = evaluate_health_loss_intake(
+        report(PIG_002_REPORT), evidence(animal("PIG-2026-0002", "Pig 002", "002"))
+    )
+    maya, canonical = maya_packet()
+    maya_result = evaluate_health_loss_intake(report(MAYA_REPORT), canonical)
+    assert maya["name"] == "Maya"
+    for result in (pig_result, maya_result):
+        assert result["zero_io"] is True
+        assert result["writes_performed"] is False
+        assert result["transaction_policy"]["execution_authorized"] is False
 
 
 def test_maya_is_not_hard_coded_and_yesterday_uses_provider_timezone():
