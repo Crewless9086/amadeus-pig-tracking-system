@@ -1,5 +1,13 @@
 # Implementation Source Map
 
+## CMQ-20260813-05 Phase A Shadow Control Tower
+
+- Source contract: `modules/charlie/shadow_control_tower.py`.
+- Focused zero-authority tests: `tests/test_shadow_control_tower.py`.
+- Operating handover: `docs/06-operations/CMQ_20260813_05_PHASE_A_SHADOW_CONTROL_TOWER.md`.
+- Storage: existing Supabase `operational_events` fabric at authority tier `observe`; no new queue, scheduler, agent, terminal fleet, schema or ledger.
+- Default state: disabled unless `CHARLIE_SHADOW_CONTROL_TOWER_ENABLED` is explicitly true. Human Control Tower remains sole dispatcher and decision authority.
+
 ## CMQ-20260813-03 grouped weights and movements
 
 - Discovery-only reconciliation: `docs/06-operations/CMQ_20260813_03_GROUPED_WEIGHT_MOVEMENT_RECONCILIATION.md`
