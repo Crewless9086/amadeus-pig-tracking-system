@@ -18,3 +18,11 @@ def test_off_rearm_unknown_fails_closed():
  with pytest.raises(IrrigationJobError,match="off_rearm_unverified"): project_next_segment(plan,[row])
 def test_exact_short_final_segment():
  plan=job(4000); one=complete(plan,[],1); assert project_next_segment(plan,[one])["segment_requested_seconds"]==401
+def test_legacy_executions_are_not_adopted_or_rewritten():
+ plan=job(); legacy={"execution_id":"ROOTLINE-EXECUTION-LEGACY","state":"Completed","verified_runtime_seconds":3599,"shutdown_verified":True,"rearm_readback_off":True}
+ before=dict(legacy); ready=project_next_segment(plan,[legacy])
+ assert ready["segment_number"]==1 and legacy==before
+def test_completed_callback_with_wrong_identity_fails_closed():
+ plan=job(); one=complete(plan,[],1); two=complete(plan,[one],2); events=[one,two]
+ with pytest.raises(IrrigationJobError,match="completed_callback_identity_mismatch"):
+  apply_segment_completion(plan,events,{**two,"segment_identity":"wrong"})

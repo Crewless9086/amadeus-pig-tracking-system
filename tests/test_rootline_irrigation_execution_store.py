@@ -90,6 +90,57 @@ def test_daily_guard_allows_other_zone_or_day_when_all_atomic_checks_are_clear(m
         eligibility_sha256="c"*64,zone_id="C12345",operating_date="2026-08-13") is None
 
 
+def test_later_job_segment_requires_verified_off_rearm():
+    missing=DailyCursor([(1,),None])
+    status=_daily_dispatch_blocker(missing,execution_id="EXEC-2",eligibility_id="ELIG-2",
+        eligibility_sha256="b"*64,zone_id="B12345",operating_date="2026-08-14",
+        job_id="JOB-1",segment_number=2)
+    assert status=="prior_segment_off_rearm_unproven"
+    ready=DailyCursor([(1,),(1,),None])
+    assert _daily_dispatch_blocker(ready,execution_id="EXEC-2",eligibility_id="ELIG-2",
+        eligibility_sha256="b"*64,zone_id="B12345",operating_date="2026-08-14",
+        job_id="JOB-1",segment_number=2) is None
+
+
+@pytest.mark.skipif(not os.getenv("ROOTLINE_DISPOSABLE_POSTGRES_URL"),
+                    reason="disposable ROOTLINE PostgreSQL URL is required")
+def test_persisted_second_segment_claim_is_concurrent_single_use(monkeypatch):
+    import psycopg
+    from modules.telemetry.rootline_irrigation_execution_store import (
+        rootline_irrigation_execution_store,
+    )
+    url=os.environ["ROOTLINE_DISPOSABLE_POSTGRES_URL"]; monkeypatch.setenv("DATABASE_URL",url)
+    migration=Path("supabase/migrations/202607070001_create_sam_live_stock_conversation_review_events.sql")
+    history=Path("supabase/migrations/202605230001_create_irrigation_tables.sql")
+    with psycopg.connect(url) as connection:
+        connection.execute(history.read_text(encoding="utf-8"))
+        connection.execute(migration.read_text(encoding="utf-8"))
+    suffix=uuid.uuid4().hex; job=f"ROOTLINE-JOB-{suffix}"; execution=f"EXEC-2-{suffix}"
+    eligibility=f"ELIG-2-{suffix}"; digest="b"*64; consumption=f"ROOTLINE-BC-{suffix}"
+    prior={"action":"record_completed","execution_id":f"EXEC-1-{suffix}","job_id":job,
+        "segment_number":1,"state":"Completed","verified_runtime_seconds":3599,
+        "shutdown_verified":True,"rearm_readback_off":True}
+    artifact={"action":"record_eligibility","execution_id":execution,
+        "eligibility_id":eligibility,"eligibility_sha256":digest,"operating_date":"2026-08-14",
+        "zone_id":"B12345","job_id":job,"segment_number":2}
+    with psycopg.connect(url) as connection:
+        for event_id,payload,action in ((f"PRIOR-{suffix}",prior,"record_completed"),
+                                        (f"ELIG-{suffix}",artifact,"record_eligibility")):
+            connection.execute("""insert into public.sam_live_stock_conversation_review_events
+                (review_event_id,chatwoot_conversation_id,event_source,recommended_action,review_json)
+                values (%s,%s,'rootline_irrigation_execution',%s,%s::jsonb)""",
+                (event_id,execution,action,json.dumps({"rootline_execution":payload})))
+    body={"execution_id":execution,"eligibility_id":eligibility,"eligibility_sha256":digest,
+        "consumption_key":consumption,"zone_id":"B12345","operating_date":"2026-08-14",
+        "job_id":job,"segment_number":2}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda _:_claim_single_controller(body),(1,2)))
+    assert sum(row.get("created") is True for row in results)==1
+    assert rootline_irrigation_execution_store("load_job_events",job)[0]["segment_number"]==1
+    replay=_claim_single_controller(body)
+    assert replay["created"] is False and replay["status"]=="execution_replay"
+
+
 def test_auxiliary_claim_and_off_identities_are_stable_and_separate():
     claim=_event_id("claim_auxiliary_before_on",{"execution_id":"AUX-1"})
     assert claim==_event_id("claim_auxiliary_before_on",{

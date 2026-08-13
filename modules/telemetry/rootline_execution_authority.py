@@ -23,7 +23,8 @@ CONTRACT_VERSION = "rootline_execution_eligibility.v2"
 STANDING_AUTHORITY = "owner_approved_routine_bc_irrigation_v1"
 
 
-def build_execution_eligibility(*, plan, evidence, controller, now=None):
+def build_execution_eligibility(*, plan, evidence, controller, now=None,
+                                job_event_reader=lambda _job_id: ()):
     now = _aware(now or datetime.now(timezone.utc))
     if not isinstance(plan, dict) or not isinstance(evidence, dict):
         return _none("canonical_plan_unavailable")
@@ -70,15 +71,27 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None):
                            if key != "ledger_complete_through"}
     irrigation_plan_material = {"zone_id": zone, "zone_decision": task.get("zone_decision"),
         "rank": task.get("rank"), "planned_duration_minutes": task.get("planned_duration_minutes"),
+        "requested_total_duration_minutes": task.get("requested_total_duration_minutes"),
+        "expected_segment_count": task.get("expected_segment_count"),
         "weekly_obligation": governed_obligation, "reason": task.get("reason")}
     plan_generation = "ROOTLINE-BC-PLAN-" + _digest(irrigation_plan_material)[:24].upper()
     duration = min(60, int(task["planned_duration_minutes"]))
-    requested_total_seconds = int(task.get("requested_total_duration_seconds")
-        or min(MAX_SECONDS, duration * 60))
+    requested_minutes = int(task.get("requested_total_duration_minutes") or 0)
+    expected_segments = int(task.get("expected_segment_count") or 0)
+    if requested_minutes <= 0 or expected_segments <= 0:
+        return _none("governed_total_duration_unavailable")
+    requested_total_seconds = expected_segments * MAX_SECONDS
     job = build_irrigation_job(zone_id=zone, operating_date=operating_date,
         requested_total_seconds=requested_total_seconds,
-        maximum_segment_seconds=MAX_SECONDS, plan_identity=plan_generation)
-    segment = project_next_segment(job, [])
+        maximum_segment_seconds=MAX_SECONDS, plan_identity=plan_generation,
+        requested_total_minutes=requested_minutes,
+        expected_segment_count=expected_segments)
+    try:
+        segment = project_next_segment(job, job_event_reader(job["job_id"]) or ())
+    except Exception:
+        return _none("canonical_job_history_invalid")
+    if segment.get("status") != "segment_ready":
+        return _none(segment.get("status") or "canonical_job_not_dispatchable")
     consumption_key = "ROOTLINE-BC-CONSUMPTION-" + _digest({
         "source_plan_generation": source_plan_generation,
         "operating_date": operating_date,
@@ -101,12 +114,15 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None):
         "maximum_duration_seconds": segment["segment_requested_seconds"],
         "job_id": job["job_id"], "job_sha256": job["job_sha256"],
         "requested_total_duration_seconds": job["requested_total_seconds"],
+        "requested_total_duration_minutes": job["requested_total_minutes"],
         "expected_segment_count": job["expected_segment_count"],
         "current_segment": segment["segment_number"],
         "segment_identity": segment["segment_identity"],
         "segment_requested_seconds": segment["segment_requested_seconds"],
-        "cumulative_verified_runtime_seconds": 0,
-        "predecessor_off_rearm_verified": True,
+        "cumulative_verified_runtime_seconds": segment[
+            "cumulative_verified_runtime_seconds"],
+        "predecessor_off_rearm_verified": segment[
+            "predecessor_off_rearm_verified"],
         "weekly_debt": obligation,
         "observed_weather": {"observed_at": weather_time.isoformat(),
             "rain_rate_mm_h": _number(weather.get("rain_rate_mm_h")),
