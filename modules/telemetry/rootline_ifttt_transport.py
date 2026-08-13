@@ -9,7 +9,10 @@ from __future__ import annotations
 import json
 import os
 from urllib import parse as urllib_parse, request as urllib_request
-from modules.telemetry.rootline_device_registry import find_device_contract
+from modules.telemetry.rootline_device_registry import (
+    device_channel_assignments,
+    find_device_contract,
+)
 
 DEVICE_ID = "100204e9bc"
 EVENTS = {
@@ -36,8 +39,12 @@ class RootlineIFTTTTransport:
             and channel in supervised_channels)
         if contract["collection"] == "irrigation_zones":
             channel_commissioning = bool(snapshot.get("commissioned_baseline_id"))
+        authoritative = snapshot.get("actuation_configuration_safe") is True
+        if contract["collection"] == "irrigation_auxiliary_devices":
+            authoritative = self._auxiliary_commissioning_boundary_safe(
+                snapshot, contract, row)
         return {
-            "authoritative": snapshot.get("actuation_configuration_safe") is True,
+            "authoritative": authoritative,
             "device_id": snapshot.get("device_id"),
             "zone_id": contract["identity"] if contract["collection"] == "irrigation_zones" else None,
             "auxiliary_device_id": (contract["identity"]
@@ -60,9 +67,39 @@ class RootlineIFTTTTransport:
             "response_digest": snapshot.get("response_digest"),
             "observed_at": snapshot.get("retrieved_at"),
             "relevant_outputs_off": all(
-                self._channel(snapshot, relevant).get("output_state") == "OFF"
-                for relevant in (1, 2)),
+                item.get("output_state") == "OFF" for item in snapshot["channels"]),
         }
+
+    def _auxiliary_commissioning_boundary_safe(self, snapshot, contract, target):
+        """Project exact supervised safety without weakening full-device evidence."""
+        assignments = device_channel_assignments(contract["device_id"])
+        rows = {int(row["channel"]): row for row in snapshot["channels"]}
+        if (snapshot.get("actuation_safety_complete") is not True
+                or snapshot.get("current_outputs_authoritative") is not True
+                or snapshot.get("timers_enabled") is not False
+                or snapshot.get("scenes_enabled") is not False
+                or snapshot.get("interlock_enabled") is not False
+                or set(rows) != {1, 2, 3, 4}
+                or any(row.get("output_state") != "OFF" for row in rows.values())
+                or any(row.get("power_restoration_state") != "OFF"
+                       for row in rows.values())):
+            return False
+        if (target.get("native_auto_off_enabled") is not True
+                or int(target.get("native_auto_off_seconds") or 0)
+                    != int(contract["native_fail_stop_seconds"])):
+            return False
+        for assigned_channel, assigned in assignments.items():
+            if assigned_channel == int(contract["channel"]):
+                continue
+            if (contract["identity"] == "FERTILIZER-MIXER-CH2"
+                    and assigned.get("identity") != "FERTILIZER-INJECTION-CH1"):
+                return False
+            # A separately assigned output is part of the boundary. It must be
+            # disabled as well as provider-confirmed OFF; an unassigned output
+            # needs no artificial inching setting when it cannot energize.
+            if str(self.environ.get(assigned["authority_flag"]) or "").lower() == "true":
+                return False
+        return True
 
     def configuration_status(self, *, device_id, channel):
         """Return non-secret transport readiness without a provider call."""

@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 
 from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
@@ -7,6 +8,7 @@ from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
 def snapshot(**changes):
     value = {"device_id": "100204e9bc", "provider_control_calls": 0,
              "current_outputs_authoritative": True,
+             "actuation_safety_complete": True,
              "actuation_configuration_safe": True, "timers_enabled": False,
              "interlock_enabled": False, "scenes_enabled": False,
              "commissioned_baseline_id": "BASELINE-1",
@@ -141,6 +143,67 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
         self.assertTrue(revalidate_auxiliary_execution_edge(artifact,
             current_context=context,current_safety=current_safety,
             now=now+timedelta(seconds=1)))
+
+    def fertilizer_snapshot(self):
+        value=snapshot(device_id="100204d497",commissioned_supervised_channels=[2])
+        value["channels"][0].update(native_auto_off_seconds=120)
+        value["channels"][1].update(native_auto_off_seconds=300)
+        for row in value["channels"][2:]:
+            row.update(native_auto_off_enabled=False,native_auto_off_seconds=None)
+        value["actuation_configuration_safe"]=False
+        return value
+
+    def test_mixer_boundary_allows_off_unassigned_channels_without_auto_off(self):
+        transport,calls=self.transport(self.fertilizer_snapshot())
+        safety=transport.read_safety_configuration(device_id="100204d497",channel=2)
+        self.assertTrue(safety["authoritative"])
+        self.assertTrue(safety["relevant_outputs_off"])
+        self.assertEqual(calls,[])
+
+    def test_mixer_boundary_blocks_on_unknown_energizable_or_assigned_auxiliary(self):
+        cases=[]
+        on=self.fertilizer_snapshot(); on["channels"][2]["output_state"]="ON"; cases.append(on)
+        unknown=self.fertilizer_snapshot(); unknown["channels"][3]["power_restoration_state"]=None; cases.append(unknown)
+        scheduled=self.fertilizer_snapshot(); scheduled["timers_enabled"]=True; cases.append(scheduled)
+        scene=self.fertilizer_snapshot(); scene["scenes_enabled"]=True; cases.append(scene)
+        interlock=self.fertilizer_snapshot(); interlock["interlock_enabled"]=True; cases.append(interlock)
+        for value in cases:
+            transport,_=self.transport(value)
+            self.assertFalse(transport.read_safety_configuration(
+                device_id="100204d497",channel=2)["authoritative"])
+        assigned,_=self.transport(self.fertilizer_snapshot(),environ={
+            "ROOTLINE_FERTILIZER_INJECTION_ENABLED":"true"})
+        self.assertFalse(assigned.read_safety_configuration(
+            device_id="100204d497",channel=2)["authoritative"])
+
+    def test_mixer_boundary_blocks_missing_or_wrong_target_auto_off(self):
+        for enabled,seconds in ((False,300),(True,299),(True,None)):
+            value=self.fertilizer_snapshot()
+            value["channels"][1].update(native_auto_off_enabled=enabled,
+                native_auto_off_seconds=seconds)
+            transport,_=self.transport(value)
+            self.assertFalse(transport.read_safety_configuration(
+                device_id="100204d497",channel=2)["authoritative"])
+
+    def test_new_assignment_on_unused_mixer_channel_fails_closed(self):
+        transport,_=self.transport(self.fertilizer_snapshot())
+        assignments={1:{"identity":"FERTILIZER-INJECTION-CH1",
+            "authority_flag":"ROOTLINE_FERTILIZER_INJECTION_ENABLED"},
+            2:{"identity":"FERTILIZER-MIXER-CH2",
+               "authority_flag":"ROOTLINE_FERTILIZER_MIXING_ENABLED"},
+            3:{"identity":"UNEXPECTED-AUXILIARY",
+               "authority_flag":"ROOTLINE_UNEXPECTED_ENABLED"}}
+        with patch("modules.telemetry.rootline_ifttt_transport.device_channel_assignments",
+                   return_value=assignments):
+            self.assertFalse(transport.read_safety_configuration(
+                device_id="100204d497",channel=2)["authoritative"])
+
+    def test_injection_assignment_remains_isolated_and_off(self):
+        value=self.fertilizer_snapshot(); value["channels"][0]["output_state"]="ON"
+        transport,calls=self.transport(value)
+        self.assertFalse(transport.read_safety_configuration(
+            device_id="100204d497",channel=2)["authoritative"])
+        self.assertEqual(calls,[])
 
 
 if __name__ == "__main__":

@@ -84,6 +84,16 @@ def find_device_contract(device_id, channel):
     return matches[0]
 
 
+def device_channel_assignments(device_id):
+    """Return the complete canonical assignment map for one provider device."""
+    rows = [row for row in rootline_device_registry().values()
+            if row["device_id"] == str(device_id)]
+    assignments = {int(row["channel"]): row for row in rows}
+    if len(assignments) != len(rows):
+        raise ValueError("rootline_device_binding_not_unique")
+    return assignments
+
+
 def validate_device_registry(registry=None):
     rows = registry if isinstance(registry, dict) else {
         identity: _contract(identity, value) for identity, value in _DEVICES.items()}

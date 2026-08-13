@@ -381,6 +381,24 @@ def test_concurrent_completion_claim_allows_only_one_external_effect():
     assert len(memory.edited)==1
 
 
+def test_mixer_reassessment_preview_replay_has_one_visible_effect_at_most():
+    memory=Memory(); mission="OOM-ROOTLINE-FERTILIZER-CONFIG-20260809"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    preview={"success":True,"status":"waiting_for_input",
+        "answer":"Mixer CH2 five-minute protected preview; fresh confirmation required.",
+        "contextual_task_kind":"fertilizer_commissioning","hardware_commands":0,
+        "provider_control_calls":0}
+    inbound={**PARSED,"provider_message_id":"scheduled:mixer-reassessment-1"}
+    first=deliver_family_result(inbound,preview,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(inbound,preview,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert first["telegram_edits"]==1 and first["telegram_sends"]==0
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
+    assert len(memory.edited)==1
+
+
 def test_protected_completion_verified_edit_removes_preview_buttons():
     memory=Memory();mission="OOM-PROTECTED-CLEAR-BUTTONS"
     preview={**RESULT,"status":"preview_ready","reply_markup":{"inline_keyboard":[[

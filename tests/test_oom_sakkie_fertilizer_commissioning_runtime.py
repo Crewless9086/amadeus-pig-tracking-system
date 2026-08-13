@@ -192,7 +192,8 @@ def test_default_transport_reads_the_exact_registered_fertilizer_controller(monk
     observed = []
     def exact(device_id, *, token_store, environ):
         observed.append((device_id, token_store, environ))
-        return {"actuation_configuration_safe": True, "device_id": device_id,
+        return {"actuation_configuration_safe": True, "actuation_safety_complete": True,
+            "device_id": device_id,
             "channels": [{"channel": number, "output_state": "OFF",
                 "native_auto_off_enabled": True,
                 "native_auto_off_seconds": 300 if number == 2 else 120,
