@@ -67,6 +67,7 @@ from modules.pig_weights.purpose_correction_batch_service import (
     create_correction_batch,
     execute_correction_batch,
 )
+from modules.pig_weights.application_grouped_preview_adapter import attach_canonical_preview
 
 
 def get_status():
@@ -481,6 +482,8 @@ def create_weight_entry_with_optional_move(payload: dict):
 
 def preview_bulk_weight_entries(payload: dict):
     result, status_code = preflight_bulk_weight_entries(payload)
+    if status_code == 200 and result.get("success") is True and result.get("accepted_count", 0) > 0:
+        result = attach_canonical_preview(result)
     return result, status_code
 
 
