@@ -516,10 +516,11 @@ complete.
 - The missed 13 August plan exposed that the daily manager was only called as a
   side effect of the externally scheduled ROOTLINE reassessment endpoint. The
   backend contained composition, claims and delivery, but did not own a wake-up.
-- The prepared correction starts a read-only 06:45 SAST lifecycle inside the
-  production Render service, catches up only until 12:00 SAST, preserves one
-  logical daily identity and sends one provider-bound failure notice if source
-  recovery remains impossible. It has no irrigation, fertilizer, borehole,
+- The production runtime starts a read-only 06:45 SAST lifecycle inside the
+  Render service. Follow-up source bounds plan eligibility to 06:45–06:59:59;
+  later startup cannot construct a stale plan and may claim only one concise
+  missed-window failure for an otherwise unclaimed day. It preserves one
+  logical daily identity and has no irrigation, fertilizer, borehole,
   farm-write, customer-send or payment authority.
 - Integrate through normal review and exact-head/exact-merge tests, deploy the
   exact merge, then retain the mission until a genuine scheduler-originated

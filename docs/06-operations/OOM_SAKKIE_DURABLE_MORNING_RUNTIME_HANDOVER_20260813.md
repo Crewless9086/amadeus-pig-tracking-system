@@ -1,7 +1,23 @@
 # Oom Sakkie durable morning runtime handover
 
-Status: production lineage proven; replay defect repaired in follow-up source;
-next genuine scheduled provider result remains required.
+Status: production lineage proven; replay and startup catch-up defects repaired
+in follow-up source; next genuine scheduled provider result remains required.
+
+## Startup timing policy
+
+- The genuine scheduled boundary is 06:45 Africa/Johannesburg.
+- A plan may start only from 06:45:00 through 06:59:59. This 15-minute window
+  allows ordinary process jitter or a narrowly bounded restart without turning
+  an arbitrary later deployment into a stale plan trigger.
+- From 07:00 onward, plan evidence loaders are not called. A genuinely missed
+  day competes for the same date-stable `:DELIVERY` claim and may produce only
+  the existing concise bounded failure notice; concurrent or repeated startup
+  is silent after the first claim.
+- If that date already has a plan or failure claim, later startup performs no
+  send, edit, plan construction or farm write. Missed days are never rolled
+  forward or silently manufactured as plans.
+- The 13 August startup catch-up, durable claim and provider delivery remain
+  immutable defect evidence. They must not be deleted, rewritten or replayed.
 
 ## Production proof and follow-up defect
 
@@ -57,8 +73,10 @@ one logical daily lifecycle across workers and restarts. The cycle:
 3. loads HERDMASTER, ROOTLINE, litter and sale evidence concurrently, read-only;
 4. composes through the existing concise three-plus-three/one-question manager;
 5. claims before delivery and treats provider ambiguity as terminal quarantine;
-6. retries pre-claim composition failure until 12:00 SAST only; and
-7. after that deadline emits one stable provider-bound failure lifecycle.
+6. retries pre-claim composition failure only inside the 15-minute plan window;
+   and
+7. at or after 07:00 emits at most one stable provider-bound failure lifecycle
+   when the date has no prior plan/failure claim.
 
 The runtime never calls the ROOTLINE reassessment/execution coordinator and has
 zero irrigation, fertilizer, borehole, farm-write, customer-send or payment
@@ -83,6 +101,5 @@ does not import or depend on either local relay component.
 5. Record provider identity and lifecycle evidence without copying message
    content, credentials or private family data into the repository.
 
-Do not manually manufacture the missed 13 August plan. A same-day automatic
-catch-up is policy-safe only if the exact correction is deployed before 12:00
-SAST; otherwise wait for the next genuine farm morning.
+Do not manually manufacture or replay the 13 August plan. The preserved late
+startup delivery is defect evidence, not an accepted catch-up precedent.

@@ -1,10 +1,12 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from threading import Lock
 
 from modules.oom_sakkie.farm_manager_loop import SpecialistAvailability, SpecialistResult
 from modules.oom_sakkie.morning_runtime import run_morning_cycle, start_production_morning_runtime
 
 
-NOW = datetime(2026, 8, 13, 5, 0, tzinfo=timezone.utc)  # 07:00 SAST
+NOW = datetime(2026, 8, 13, 4, 50, tzinfo=timezone.utc)  # 06:50 SAST
 ENV = {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42"}
 
 
@@ -79,7 +81,7 @@ def test_changed_evidence_after_restart_cannot_edit_or_send_again():
     assert deliveries == ["OOM-DAILY-FARM-MANAGER-2026-08-13:DELIVERY"]
 
 
-def test_catchup_retries_before_deadline_and_escalates_after_deadline():
+def test_in_window_failure_retries_then_missed_window_escalates_once():
     def broken():
         raise RuntimeError("source unavailable")
     before = run_morning_cycle(now=NOW, environ=ENV, herd_loader=broken,
@@ -117,6 +119,47 @@ def test_catchup_retries_before_deadline_and_escalates_after_deadline():
     assert replay["status"] == "morning_runtime_failure_replay_suppressed"
     assert replay["telegram_sends"] == replay["telegram_edits"] == 0
     assert len(deliveries) == 1
+
+
+def test_restart_after_window_never_loads_or_creates_a_plan():
+    events = {}
+    deliveries = []
+    loader_calls = []
+    claim_lock = Lock()
+
+    def store(action, identity, payload):
+        if action == "load_daily":
+            return None
+        with claim_lock:
+            created = identity not in events
+            events.setdefault(identity, dict(payload or {}))
+        return {"success": True, "created": created}
+
+    def forbidden_loader():
+        loader_calls.append(True)
+        raise AssertionError("missed-window restart must not load plan evidence")
+
+    def deliver(*args, **kwargs):
+        deliveries.append(kwargs["mission_id"])
+        return {"success": True, "telegram_message_id": "failure-1",
+                "telegram_sends": 1, "telegram_edits": 0}
+
+    args = dict(now=datetime(2026, 8, 14, 5, 1, tzinfo=timezone.utc),
+                environ=ENV, store=store, deliver=deliver,
+                herd_loader=forbidden_loader, rootline_loader=forbidden_loader,
+                litter_loader=forbidden_loader, sales_loader=forbidden_loader)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: run_morning_cycle(**args), range(2)))
+
+    first = next(result for result in results
+                 if result["status"] == "morning_runtime_failure_escalated")
+    concurrent_restart = next(result for result in results
+                              if result["status"] == "morning_runtime_failure_replay_suppressed")
+    assert first["failure_class"] == "MorningWindowMissed"
+    assert concurrent_restart["status"] == "morning_runtime_failure_replay_suppressed"
+    assert concurrent_restart["telegram_sends"] == concurrent_restart["telegram_edits"] == 0
+    assert loader_calls == []
+    assert deliveries == ["OOM-DAILY-FARM-MANAGER-2026-08-14:FAILURE"]
 
 
 def test_success_claim_blocks_later_failure_card_for_same_date():
