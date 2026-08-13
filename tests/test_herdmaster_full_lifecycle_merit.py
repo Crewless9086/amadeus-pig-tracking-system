@@ -128,4 +128,16 @@ def test_populated_but_different_context_cannot_be_high_confidence():
         "environment_context": "same", "feed_context": "same", "health_context": "same",
     } for i in range(1, 4)]
     result = compose_full_lifecycle_merit(data, pig_id="S1")
-    assert result["rows"][0]["confidence"]["label"] == "Moderate"
+    assert result["rows"][0]["confidence"]["label"] == "Limited"
+
+
+def test_conflicting_exact_parent_roles_fail_closed():
+    data = evidence()
+    data["litters"].append({
+        "litter_id": "CONFLICT", "sow_pig_id": "B1", "boar_pig_id": "S1",
+        "farrowing_date": "2026-04-01", "litter_status": "Weaned",
+        "born_alive": 8, "weaned_count": 7,
+    })
+    row = compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]
+    assert row["breeding_role"] == "Unknown-conflicting"
+    assert row["litter_outcomes"]["observed_litter_count"] == 0

@@ -64,21 +64,21 @@ def _effective(rows, id_key, supersedes_key):
 
 
 def _confidence(cohorts, outcome_eligible, outcome_total, context_present, context_total,
-                *, comparable=True, stale=False, unresolved=False):
+                *, comparability="comparable", stale=False, unresolved=False):
     outcome_coverage = None if not outcome_total or not outcome_eligible else outcome_eligible / outcome_total
     context_coverage = None if not context_total else context_present / context_total
     inputs = {
         "cohort_count": cohorts,
         "outcome_coverage": outcome_coverage,
         "context_coverage": context_coverage,
-        "comparable": comparable,
+        "comparability": comparability,
         "stale_or_materially_unresolved": stale or unresolved,
     }
     if outcome_coverage is None or context_coverage is None:
         label = "Unknown"
-    elif stale or unresolved or cohorts <= 1 or outcome_coverage < .60 or context_coverage < .60:
+    elif stale or unresolved or comparability == "material_unresolved" or cohorts <= 1 or outcome_coverage < .60 or context_coverage < .60:
         label = "Limited"
-    elif cohorts >= 3 and outcome_coverage >= .80 and context_coverage >= .80 and comparable:
+    elif cohorts >= 3 and outcome_coverage >= .80 and context_coverage >= .80 and comparability == "comparable":
         label = "High"
     else:
         label = "Moderate"
@@ -175,7 +175,9 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
         sow_participation = any(_text(r.get("sow_pig_id")) == pid for r in litters + matings_all)
         boar_participation = any(_text(r.get("boar_pig_id")) == pid for r in litters + matings_all)
         governed_type = _text(parent.get("animal_type")).lower()
-        if sow_participation and not boar_participation:
+        if sow_participation and boar_participation:
+            key, role = None, "Unknown-conflicting"
+        elif sow_participation and not boar_participation:
             key, role = "sow_pig_id", "sow"
         elif boar_participation and not sow_participation:
             key, role = "boar_pig_id", "boar"
@@ -218,7 +220,7 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
         )
         confidence = _confidence(
             len(cohorts), len(eligible), len(cohorts), context_present, context_total,
-            comparable=context_comparable,
+            comparability="comparable" if context_comparable else "material_unresolved",
         )
         partners = sorted({_text(r.get("boar_pig_id" if key == "sow_pig_id" else "sow_pig_id")) for r in cohorts if r.get("boar_pig_id" if key == "sow_pig_id" else "sow_pig_id")})
         offspring = [child for litter in cohorts for child in offspring_by_litter[_text(litter.get("litter_id"))]]
@@ -301,10 +303,18 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
             return {"success": False, "contract_version": CONTRACT_VERSION, "reason": "unknown_pig_id", "writes_performed": False}
         attributable_pigs = {rows[0]["identity"]["pig_id"], *rows[0]["offspring"]["pig_ids"]}
         attributable_litters = set(rows[0]["evidence_lineage"]["litter_ids"])
+        attributable_superseded = {
+            _text(r.get("supersedes_litter_id")) for r in litters_raw
+            if _text(r.get("litter_id")) in attributable_litters and r.get("supersedes_litter_id")
+        }
         litter_lineage["events"] = [r for r in litter_lineage["events"] if (
-            _text(r.get("litter_id")) in attributable_litters
+            _text(r.get("litter_id")) in attributable_litters | attributable_superseded
             or _text(r.get("retained_litter_id")) in attributable_litters
         )]
+        litter_lineage["superseded_event_ids"] = sorted(attributable_superseded | {
+            _text(r.get("litter_id")) for r in litter_lineage["events"]
+            if r.get("is_superseded") is True
+        })
         observation_lineage["events"] = [r for r in observation_lineage["events"] if _text(r.get("pig_id")) in attributable_pigs]
         lifecycle_lineage["events"] = [r for r in lifecycle_lineage["events"] if _text(r.get("pig_id")) in attributable_pigs]
         observation_lineage["superseded_event_ids"] = sorted({_text(r.get("supersedes_observation_event_id")) for r in observation_lineage["events"] if r.get("supersedes_observation_event_id")})
