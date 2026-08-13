@@ -80,14 +80,15 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     expected_segments = int(task.get("expected_segment_count") or 0)
     if requested_minutes <= 0 or expected_segments <= 0:
         return _none("governed_total_duration_unavailable")
-    requested_total_seconds = expected_segments * MAX_SECONDS
+    requested_total_seconds = requested_minutes * 60
     job = build_irrigation_job(zone_id=zone, operating_date=operating_date,
         requested_total_seconds=requested_total_seconds,
         maximum_segment_seconds=MAX_SECONDS, plan_identity=plan_generation,
         requested_total_minutes=requested_minutes,
         expected_segment_count=expected_segments)
     try:
-        segment = project_next_segment(job, job_event_reader(job["job_id"]) or ())
+        segment = project_next_segment(job, job_event_reader(job["job_id"]) or (),
+            rearm_readback_off=True)
     except Exception:
         return _none("canonical_job_history_invalid")
     if segment.get("status") != "segment_ready":
@@ -114,6 +115,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "maximum_duration_seconds": segment["segment_requested_seconds"],
         "job_id": job["job_id"], "job_sha256": job["job_sha256"],
         "requested_total_duration_seconds": job["requested_total_seconds"],
+        "governed_executable_duration_seconds": job["governed_executable_seconds"],
         "requested_total_duration_minutes": job["requested_total_minutes"],
         "expected_segment_count": job["expected_segment_count"],
         "current_segment": segment["segment_number"],

@@ -122,7 +122,8 @@ def test_persisted_second_segment_claim_is_concurrent_single_use(monkeypatch):
         "shutdown_verified":True,"rearm_readback_off":True}
     artifact={"action":"record_eligibility","execution_id":execution,
         "eligibility_id":eligibility,"eligibility_sha256":digest,"operating_date":"2026-08-14",
-        "zone_id":"B12345","job_id":job,"segment_number":2}
+        "zone_id":"B12345","job_id":job,"segment_number":2,
+        "predecessor_off_rearm_verified":True}
     with psycopg.connect(url) as connection:
         for event_id,payload,action in ((f"PRIOR-{suffix}",prior,"record_completed"),
                                         (f"ELIG-{suffix}",artifact,"record_eligibility")):

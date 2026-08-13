@@ -64,6 +64,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         "job_sha256": decision["execution_eligibility"]["job_sha256"],
         "requested_total_duration_seconds": decision["execution_eligibility"][
             "requested_total_duration_seconds"],
+        "governed_executable_duration_seconds": decision["execution_eligibility"][
+            "governed_executable_duration_seconds"],
         "requested_total_duration_minutes": decision["execution_eligibility"][
             "requested_total_duration_minutes"],
         "expected_segment_count": decision["execution_eligibility"]["expected_segment_count"],
@@ -329,13 +331,15 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
     if active.get("job_id"):
         completed["verified_runtime_seconds"] = int(
             (objective.get("verified_runtime_minutes") or 0) * 60)
-        completed["rearm_readback_off"] = True
+        # Shutdown readback proves this segment OFF.  A later fresh controller
+        # safety readback proves re-arm before another segment gains authority.
+        completed["rearm_readback_off"] = False
         completed["cumulative_verified_runtime_seconds"] = int(
             active.get("cumulative_verified_runtime_seconds") or 0
         ) + completed["verified_runtime_seconds"]
         completed["job_completed"] = (
             completed["cumulative_verified_runtime_seconds"] >= int(
-                active["requested_total_duration_seconds"]))
+                active["governed_executable_duration_seconds"]))
     recorded = store("record_completed", completed)
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
         delivery = _notify(notify, store, "Intervention", {**completed,

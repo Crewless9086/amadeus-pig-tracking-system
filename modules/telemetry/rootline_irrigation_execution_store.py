@@ -261,9 +261,11 @@ def _daily_dispatch_blocker(cursor, *, execution_id, eligibility_id,
           and review_json->'rootline_execution'->>'eligibility_id'=%s
           and review_json->'rootline_execution'->>'eligibility_sha256'=%s
           and review_json->'rootline_execution'->>'operating_date'=%s
-          and review_json->'rootline_execution'->>'zone_id'=%s limit 1""",
+          and review_json->'rootline_execution'->>'zone_id'=%s
+          and (%s <= 1 or review_json->'rootline_execution'->>'predecessor_off_rearm_verified'='true')
+          limit 1""",
         (EVENT_SOURCE, execution_id, eligibility_id, eligibility_sha256,
-         operating_date, zone_id))
+         operating_date, zone_id, segment_number))
     if not cursor.fetchone():
         return "canonical_eligibility_unproven"
     if segment_number > 1:
@@ -275,7 +277,6 @@ def _daily_dispatch_blocker(cursor, *, execution_id, eligibility_id,
               and review_json->'rootline_execution'->>'job_id'=%s
               and (review_json->'rootline_execution'->>'segment_number')::int=%s
               and review_json->'rootline_execution'->>'shutdown_verified'='true'
-              and review_json->'rootline_execution'->>'rearm_readback_off'='true'
             limit 1""", (EVENT_SOURCE, job_id, segment_number-1))
         if not cursor.fetchone():
             return "prior_segment_off_rearm_unproven"

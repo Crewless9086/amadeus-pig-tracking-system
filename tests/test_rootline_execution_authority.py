@@ -39,7 +39,8 @@ def test_fresh_dry_debt_creates_one_typed_single_use_artifact():
     assert value["eligible"] is True and value["zone_id"]=="B12345"
     assert value["channel"]==1 and value["maximum_duration_seconds"]==3599
     assert value["requested_total_duration_minutes"]==120
-    assert value["requested_total_duration_seconds"]==7198
+    assert value["requested_total_duration_seconds"]==7200
+    assert value["governed_executable_duration_seconds"]==7198
     assert value["expected_segment_count"]==2 and value["current_segment"]==1
     assert value["operating_date"]=="2026-08-08"
     assert value["command_mapping"]=={"channel":1,"on":"irrigation_1_ch1_on",
@@ -71,11 +72,12 @@ def test_persisted_completion_projects_exact_residual_segment_two():
     event={"job_id":first["job_id"],"segment_number":1,
         "segment_identity":first["segment_identity"],"execution_id":first["execution_id"],
         "state":"Completed","verified_runtime_seconds":3599,
-        "shutdown_verified":True,"rearm_readback_off":True}
+        "shutdown_verified":True,"rearm_readback_off":False}
     second=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,
         now=NOW,job_event_reader=lambda job_id:[event])
     assert second["eligible"] is True and second["current_segment"]==2
     assert second["cumulative_verified_runtime_seconds"]==3599
+    assert second["predecessor_off_rearm_verified"] is True
     assert second["segment_identity"]!=first["segment_identity"]
 
 
