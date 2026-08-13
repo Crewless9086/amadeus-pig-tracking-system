@@ -9,6 +9,10 @@ strict owner-admin route. Charl opens that URL privately, signs in to the
 eWeLink account that owns device `100204e9bc`, and approves the provider's
 combined read/control credential. Passwords, MFA values, authorization codes,
 access tokens and refresh tokens must never be copied into chat or Telegram.
+The private Telegram URL is a direct same-device login/consent journey. It must
+not force CoolKit's optional QR presentation, which is intended for a separate
+scanning device and previously prevented the mobile journey from reaching the
+callback.
 
 ## Server boundary
 
