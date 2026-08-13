@@ -12,7 +12,8 @@ NOW=datetime(2026,8,8,18,0,tzinfo=timezone.utc)
 def inputs(*, rain=0, zone="B12345", debt=2, controller_changes=None,
            weather_at=NOW, water_at=NOW):
     task={"task_id":f"irrigation_{zone}","zone_decision":"Run now",
-          "recommendation":"Recommend","planned_duration_minutes":60,"rank":1,
+          "recommendation":"Recommend","planned_duration_minutes":60,
+          "requested_total_duration_minutes":120,"expected_segment_count":2,"rank":1,
           "weekly_obligation":{"status":"available","delivery_debt_days":debt,
                                "remaining_weekly_obligation_days":4}}
     plan={"evidence_generation":"PLAN-GEN-1","operating_date":"2026-08-08",
@@ -37,6 +38,10 @@ def test_fresh_dry_debt_creates_one_typed_single_use_artifact():
                                       controller=inputs()[2],now=NOW)
     assert value["eligible"] is True and value["zone_id"]=="B12345"
     assert value["channel"]==1 and value["maximum_duration_seconds"]==3599
+    assert value["requested_total_duration_minutes"]==120
+    assert value["requested_total_duration_seconds"]==7200
+    assert value["governed_executable_duration_seconds"]==7198
+    assert value["expected_segment_count"]==2 and value["current_segment"]==1
     assert value["operating_date"]=="2026-08-08"
     assert value["command_mapping"]=={"channel":1,"on":"irrigation_1_ch1_on",
                                        "off":"irrigation_1_ch1_off"}
@@ -50,6 +55,30 @@ def test_rain_hold_and_stale_or_conflicting_evidence_create_no_authority():
         value=build_execution_eligibility(plan=plan,evidence=evidence,
                                            controller=controller,now=NOW)
         assert value["eligible"] is False and value["command_authority"] is False
+
+
+def test_missing_governed_total_duration_fails_closed():
+    plan,evidence,controller=inputs()
+    plan["candidate_tasks"][0].pop("requested_total_duration_minutes")
+    value=build_execution_eligibility(plan=plan,evidence=evidence,
+        controller=controller,now=NOW)
+    assert value["status"]=="governed_total_duration_unavailable"
+    assert value["command_authority"] is False
+
+
+def test_persisted_completion_projects_exact_residual_segment_two():
+    plan,evidence,controller=inputs()
+    first=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,now=NOW)
+    event={"job_id":first["job_id"],"segment_number":1,
+        "segment_identity":first["segment_identity"],"execution_id":first["execution_id"],
+        "state":"Completed","verified_runtime_seconds":3599,
+        "shutdown_verified":True,"rearm_readback_off":False}
+    second=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,
+        now=NOW,job_event_reader=lambda job_id:[event])
+    assert second["eligible"] is True and second["current_segment"]==2
+    assert second["cumulative_verified_runtime_seconds"]==3599
+    assert second["predecessor_off_rearm_verified"] is True
+    assert second["segment_identity"]!=first["segment_identity"]
 
 
 def test_controller_drift_or_unexpected_output_creates_no_authority():

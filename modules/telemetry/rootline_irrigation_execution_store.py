@@ -12,7 +12,7 @@ def rootline_irrigation_execution_store(action, payload):
     if action in {"load_active", "load_off_attempts", "load_zone_containment",
                   "load_active_auxiliary", "load_auxiliary_off_attempts",
                   "load_auxiliary_containment", "load_auxiliary_history",
-                  "load_auxiliary_physical_outcome"}:
+                  "load_auxiliary_physical_outcome", "load_job_events"}:
         return _load(action, payload)
     body = dict(payload or {})
     execution_id = str(body.get("execution_id") or "").strip()
@@ -98,6 +98,16 @@ def _load(action, payload):
                             item = {**item, "state": "claimed_recovery_required"}
                         return item
                 return None
+            if action == "load_job_events":
+                cursor.execute("""select review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source=%s
+                      and review_json->'rootline_execution'->>'job_id'=%s
+                      and review_json->'rootline_execution'->>'action'
+                          in ('claim_before_on','mark_active','record_completed')
+                    order by created_at,review_event_id""", (EVENT_SOURCE, str(payload or "")))
+                return [row[0] if isinstance(row[0],dict) else json.loads(row[0])
+                        for row in cursor.fetchall()]
             if action in {"load_off_attempts","load_auxiliary_off_attempts"}:
                 outcome_action=("record_auxiliary_off_outcome"
                     if action=="load_auxiliary_off_attempts" else "record_off_outcome")
@@ -206,7 +216,9 @@ def _claim_single_controller(body):
                         "status": "eligibility_already_consumed"}
             blocked = _daily_dispatch_blocker(cursor, execution_id=execution_id,
                 eligibility_id=eligibility_id, eligibility_sha256=eligibility_sha256,
-                zone_id=zone_id, operating_date=operating_date)
+                zone_id=zone_id, operating_date=operating_date,
+                job_id=str(body.get("job_id") or ""),
+                segment_number=int(body.get("segment_number") or 0))
             if blocked:
                 return {"success": True, "created": False, "status": blocked}
             cursor.execute("""select 1
@@ -239,7 +251,8 @@ def _claim_single_controller(body):
 
 
 def _daily_dispatch_blocker(cursor, *, execution_id, eligibility_id,
-                            eligibility_sha256, zone_id, operating_date):
+                            eligibility_sha256, zone_id, operating_date,
+                            job_id="", segment_number=0):
     """Evaluate signed authority, completion and accepted-ON under caller's lock."""
     cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
         where event_source=%s
@@ -248,11 +261,32 @@ def _daily_dispatch_blocker(cursor, *, execution_id, eligibility_id,
           and review_json->'rootline_execution'->>'eligibility_id'=%s
           and review_json->'rootline_execution'->>'eligibility_sha256'=%s
           and review_json->'rootline_execution'->>'operating_date'=%s
-          and review_json->'rootline_execution'->>'zone_id'=%s limit 1""",
+          and review_json->'rootline_execution'->>'zone_id'=%s
+          and (%s <= 1 or review_json->'rootline_execution'->>'predecessor_off_rearm_verified'='true')
+          limit 1""",
         (EVENT_SOURCE, execution_id, eligibility_id, eligibility_sha256,
-         operating_date, zone_id))
+         operating_date, zone_id, segment_number))
     if not cursor.fetchone():
         return "canonical_eligibility_unproven"
+    if segment_number > 1:
+        if not job_id:
+            return "job_identity_incomplete"
+        cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
+            where event_source=%s
+              and review_json->'rootline_execution'->>'action'='record_completed'
+              and review_json->'rootline_execution'->>'job_id'=%s
+              and (review_json->'rootline_execution'->>'segment_number')::int=%s
+              and review_json->'rootline_execution'->>'shutdown_verified'='true'
+            limit 1""", (EVENT_SOURCE, job_id, segment_number-1))
+        if not cursor.fetchone():
+            return "prior_segment_off_rearm_unproven"
+        cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
+            where event_source=%s
+              and review_json->'rootline_execution'->>'action'='claim_before_on'
+              and review_json->'rootline_execution'->>'job_id'=%s
+              and (review_json->'rootline_execution'->>'segment_number')::int=%s
+            limit 1""", (EVENT_SOURCE, job_id, segment_number))
+        return "job_segment_already_claimed" if cursor.fetchone() else None
     # Reuse the canonical typed-history verifier rather than approximating its
     # digest, evidence, cutoff, runtime and replay rules in SQL. These rows and
     # the database clock are read inside the same advisory-locked transaction.

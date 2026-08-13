@@ -301,6 +301,8 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "preferred_window": window,
         "max_segment_minutes": 60,
         "proposed_segment_minutes": 60 if decision in {"Run now", "Run later"} else None,
+        "requested_total_duration_minutes": 120 if decision in {"Run now", "Run later"} else None,
+        "expected_segment_count": 2 if decision in {"Run now", "Run later"} else None,
         "fresh_decision_before_second_segment": True,
         "shutdown_verification_required": True,
         "simultaneous_with_other_zone": False,
