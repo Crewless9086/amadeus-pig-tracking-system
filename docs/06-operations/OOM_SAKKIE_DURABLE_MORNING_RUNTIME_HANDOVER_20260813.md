@@ -19,6 +19,20 @@ in follow-up source; next genuine scheduled provider result remains required.
 - The 13 August startup catch-up, durable claim and provider delivery remain
   immutable defect evidence. They must not be deleted, rewritten or replayed.
 
+## Provider clock
+
+- Render owns one dedicated cron service scheduled at `45 4 * * *`. Render
+  evaluates cron expressions in UTC, which is 06:45 SAST year-round.
+- The cron service calls the deployed authenticated
+  `POST /api/oom-sakkie/management/morning-schedule` entry point and exits.
+- A strong shared bearer secret authenticates only that entry point. The
+  endpoint still uses the same Supabase date-stable claim as the in-process
+  restart-safe wake-up, so two wakes cannot create two daily outcomes.
+- A separately prefixed `synthetic_acceptance:ROOTLINE-SCHEDULE-TEST:*` family
+  may exercise the read-only current ROOTLINE plan and one clearly labelled
+  Telegram TEST result. It cannot name or claim a genuine daily identity and
+  carries zero B/C, farm-write, provider-control or hardware authority.
+
 ## Production proof and follow-up defect
 
 - Render deployed PR #865 merge

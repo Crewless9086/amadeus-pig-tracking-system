@@ -530,3 +530,7 @@ complete.
   exact merge, then retain the mission until a genuine scheduler-originated
   provider-confirmed plan is visible. Do not manufacture or manually replay the
   missed plan.
+- Provider inventory later proved the web-process wake-up had no dedicated
+  provider clock. The reviewed follow-up adds one Render UTC cron at 04:45,
+  targeting the authenticated deployed entry point while retaining Supabase as
+  the one daily claim and the in-process loop only as restart-safe redundancy.
