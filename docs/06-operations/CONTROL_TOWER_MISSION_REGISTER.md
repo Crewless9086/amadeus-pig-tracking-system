@@ -80,7 +80,7 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
 | Terminal | Terminal state | Existing mission and business/runtime truth | Next action |
 |---|---|---|---|
 | CORE | Released between prompts | `CMQ-20260813-02A`: watchdog proof rolled back; watchdog active; mission-ID truncation blocks another proof. PR #877 evidence remains to integrate. PR #878 corrected Programme discovery. | `CONTINUE`: integrate evidence and repair opaque mission-ID handling. No new watchdog window without separate authority. |
-| HERDMASTER | Preserved candidate | `HMQ-20260813-03`: Breeding Attention correction is neither merged nor deployed. Candidate remains at `C:\tmp\herdmaster-breeding-eligibility-truth-20260813`; deployed HERDMASTER unchanged. | `CONTINUE`: reconcile non-destructively against current main, rerun gates and review. |
+| HERDMASTER | HMQ-03 released; next mission prepared | `HMQ-20260813-03` is deployed and operationally verified through PR #884 merge `b7c0edcf`: Bonnie is an explicit proposal at BCS 3.0; Waki, Zigay and Teena appear once on recovery hold; five exposures/cycles remain unchanged; repeated reads performed zero writes. | `NEW_MISSION`: dispatch existing `HMQ-20260813-02` protected-page login/return correction. Deployed HERDMASTER remains independent of the development terminal. |
 | ROOTLINE | Telegram canonical-intake incident active | `RMQ-20260813-04`: B/C readiness correctly held on stale water evidence; Charl then supplied fresh physical levels (`Reservoir 4/4`, `Storage tanks 3/4`) through Telegram, but no new canonical Supabase receipt exists. This repeats the known upstream relay/gateway failure that also blocked Mixer message `3579`. Zero controls/writes occurred. | `CONTINUE`: ROOTLINE development terminal must repair and prove the shared Telegram-to-canonical ROOTLINE intake end to end. Do not ask Charl to repeat either message. Morning genuine-clock proof remains separate. |
 | OOM SAKKIE | Synthetic path proven; genuine morning clock event pending | `OMQ-20260813-02`: provider-verified Render scheduler is enabled for 06:45 SAST; synthetic end-to-end delivery and durable replay passed. Business completion still requires the natural 14 August provider-clock outcome. | `SEND_NOTHING`: after 07:00 SAST on 14 August, the OOM SAKKIE development terminal performs read-only genuine-event verification. |
 | SAM | Development released; deployed acceptance pending | `SMQ-20260813-02`: bounded WhatsApp/WebWidget authority and first-event-card repair merged in PR #882 as `b36b2ca3` and is live within successor `6d7f3259`. Conversations `1533`/`2143` were untouched. Business completion needs the next genuine eligible inbound. | `SEND_NOTHING`: deployed SAM owns the next event. Use the development terminal only for read-only correlation or a reusable defect exposed by that event. |
@@ -98,9 +98,10 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
 
 ### HERDMASTER
 
-- `HMQ-20260813-03` — `preserved_requires_reconciliation`: low-BCS holds,
-  supersession truth and plan-only wording without farm writes.
-- `HMQ-20260813-02` — queued protected-page owner-login redirect.
+- `HMQ-20260813-03` — `operationally_verified`: PR #884 is deployed; correct
+  proposal/hold truth and zero-write repeated readback are proven.
+- `HMQ-20260813-02` — `prompt_prepared`: protected-page owner-login redirect
+  is the next eligible HERDMASTER development mission.
 - `HMQ-20260813-00` — integrated; waits for a natural exact-pig observation.
 - `HMQ-20260813-04` — queued attributable lifecycle/genetic merit.
 - `HMQ-20260813-05` — waits for a genuine completed weight batch.
@@ -169,12 +170,14 @@ result appear known earlier.
 | 2026-08-13 | CORE `CMQ-20260813-02A` | Reversible watchdog window rolled back; synthetic receipt/reply passed; mission pickup failed through ID truncation. | Released; repair parser before another window. |
 | 2026-08-13 | CORE Programme | PR #878 proved canonical Programme location and merged pointer/source-map correction as `29f04528`. | Released; SAM may resume existing mission. |
 | 2026-08-13 | HERDMASTER `HMQ-20260813-03` | Candidate passed pre-advance gates; main advanced; no merge/deploy. | Preserve and reconcile non-destructively. |
+| 2026-08-13 | HERDMASTER `HMQ-20260813-03` completion | PR #884 merged as `b7c0edcf` and production/browser readback proved Bonnie proposal wording, three exact recovery holds, five unchanged exposures/cycles and zero writes on repeated reads. | Development worktree clean released-retain; promote HMQ-02. |
 | 2026-08-13 | ROOTLINE `RMQ-20260813-02` | PR #875/#876 live; provider safety eligible; card `3480` updated; zero controls. | Pending protected physical journey. |
 | 2026-08-13 | ROOTLINE gateway incident | Telegram `3579` retained by n8n but relay received HTTP 403 before parsing/Supabase; presence expired; zero controls. | Repair end to end; no owner repetition. |
 | 2026-08-13 | ROOTLINE `RMQ-20260813-04` water evidence | Readiness held because 11 August storage evidence was stale. Charl then sent fresh `Reservoir 4/4` and `Storage tanks 3/4`, but read-only trace found no new canonical Supabase receipt; Telegram showed zero pending/error backlog. | Treat as the same systemic intake incident. Recover durable provider receipt if possible; do not request another owner message. |
 | 2026-08-13 | OOM SAKKIE `OMQ-20260813-02` | No 13 August production morning trigger; PR #879 later integrated one Render-owned clock and synthetic non-actuating family. | Prove provider configuration and synthetic result; genuine clock proof still pending. |
 | 2026-08-13 | ROOTLINE/OOM SAKKIE morning readiness | Provider verified exactly one enabled 06:45 SAST Render scheduler; a later duplicate was suspended. No genuine daily invocation, hardware action or authority change occurred. | Run one isolated non-actuating synthetic acceptance, then await genuine clock. |
 | 2026-08-13 | ROOTLINE/OOM SAKKIE synthetic acceptance | Exactly one deployed-entry invocation, one separate Supabase claim and one provider-confirmed `ROOTLINE SCHEDULE TEST` send; eight direct/concurrent/post-restart replays were silent; genuine daily lifecycle unchanged; zero farm/hardware/provider-control effects. | Synthetic acceptance complete. Send nothing until post-07:00 genuine-event audit. |
+| 2026-08-13 | OOM SAKKIE duplicate feedback | The same synthetic-acceptance evidence was submitted again with no newer event or changed evidence. | No status change, no duplicate mission, no repeat test and no new prompt. |
 | 2026-08-13 | SAM `SMQ-20260813-02` | Conversations `1533`/`2143` produced safe unsent replies and non-actionable cards; defect traced. | Continue bounded correction; no historical sends. |
 | 2026-08-13 | SAM `SMQ-20260813-02` integration | PR #882 merged as `b36b2ca3`; successor `6d7f3259` is live. WhatsApp timestamp binding, WebWidget authority and safe first-event routing are corrected; historical conversations were untouched. | Development released; send nothing and observe next genuine inbound. |
 | 2026-08-13 | CODEX UI `UIQ-20260813-01` | Dedicated UI terminal launched; preserved dirty `/matings` files exist in the original workspace; prompt prepared but not yet acknowledged. | Deliver one reconciliation/local-preview mission; no deployment yet. |
