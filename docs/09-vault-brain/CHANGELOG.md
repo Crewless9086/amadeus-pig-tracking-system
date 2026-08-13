@@ -6,6 +6,15 @@
 - Preserved staging, processing, retry and execution paths and avoided any second database or Sheets snapshot read.
 - Left OOM SAKKIE, Telegram, voice, UI, routes, protected actions, schema, fallbacks and production configuration unchanged; this remains undeployed source evidence.
 
+## 2026-08-13 - HERDMASTER natural health/loss workflow restored
+
+- Restored the owner-approved canonical workflow against current-main source
+  truth after its historical source branch closed without integration.
+- Distinguished the prepared zero-I/O evaluator and preview, existing runtime
+  source, narrow protected recording authority, and unproven production state.
+- Preserved Pig 002 and Maya as immutable test evidence with no provider replay,
+  farm write, route activation, or production-completion claim.
+
 ## 2026-08-13 - Channel-invariant grouped preview contract prepared
 
 - Added one unwired, side-effect-free grouped-weight/optional-movement preview contract and isolated adapter-conformance tests.
