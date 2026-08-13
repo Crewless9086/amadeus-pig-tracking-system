@@ -367,7 +367,13 @@ def _denied(status, status_code):
 
 def _safe_next(value):
     text = str(value or "").strip()
-    if not text or not text.startswith("/") or text.startswith("//"):
+    if (
+        not text
+        or not text.startswith("/")
+        or text.startswith("//")
+        or "\\" in text
+        or any(ord(character) < 32 for character in text)
+    ):
         return ""
     return text
 
