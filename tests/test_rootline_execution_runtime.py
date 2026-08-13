@@ -241,6 +241,13 @@ def test_protected_segment_accepts_fresh_provider_receipt_digest_for_same_govern
           owner_user_id="42",chat_id="42")
     assert result["status"]=="segment_started"
     assert [call["state"] for call in transport.calls]==["ON"]
+    fresh=next(row for action,row in store.rows if action=="record_eligibility")
+    claimed=next(row for action,row in store.rows if action=="claim_before_on")
+    assert fresh["eligibility_sha256"]!=expected["eligibility_sha256"]
+    assert claimed["eligibility_sha256"]==fresh["eligibility_sha256"]
+    assert claimed["eligibility_id"]==fresh["eligibility_id"]
+    assert claimed["execution_id"]==fresh["execution_id"]
+    assert store.active["eligibility_sha256"]==fresh["eligibility_sha256"]
 
 
 def test_protected_segment_rejects_changed_stable_job_identity_with_zero_control():
