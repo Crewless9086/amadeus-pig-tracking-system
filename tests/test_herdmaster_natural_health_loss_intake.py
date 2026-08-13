@@ -149,6 +149,19 @@ def test_negated_owner_impressions_are_not_recorded_as_positive_facts(text, excl
     assert excluded not in {row["fact"] for row in result["observed_facts"]}
 
 
+@pytest.mark.parametrize("text", [
+    "Pig 002 is sick. I will monitor her, but I will not monitor her after all.",
+    "Pig 002 is sick. We will monitor her, but we won't monitor her after all.",
+    "Pig 002 is sick. She will be monitored, but will not be monitored after all.",
+])
+def test_retracted_monitoring_intention_is_not_current_fact(text):
+    pig = animal("PIG-2026-0002", "Pig 002", "002")
+    result = evaluate_health_loss_intake(report(text), evidence(pig))
+    assert "monitoring_intention_reported" not in {
+        row["fact"] for row in result["observed_facts"]
+    }
+
+
 def test_immutable_fixtures_execute_with_zero_io(monkeypatch):
     def forbidden(*_args, **_kwargs):
         raise AssertionError("pure intake attempted external I/O")

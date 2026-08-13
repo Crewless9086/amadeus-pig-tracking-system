@@ -373,11 +373,14 @@ def _parse_report(text, provider_time):
             "fact": "otherwise_fine_reported", "value": True,
             "attribution": "owner_general_impression_not_welfare_clearance",
         })
-    if re.search(
+    monitoring_intention = latest_positive(
         r"\b(?:i|we)\s+(?:will|shall|am going to|are going to)\s+(?:keep\s+)?monitor(?:ing)?\b|"
         r"\b(?:will|shall)\s+be\s+monitor(?:ed|ing)\b",
+        r"\b(?:i|we)\s+(?:(?:will|shall)\s+not|(?:won|shan)['’]?t)\s+(?:keep\s+)?monitor(?:ing)?\b|"
+        r"\b(?:will|shall)\s+not\s+be\s+monitor(?:ed|ing)\b",
         lower,
-    ):
+    )
+    if monitoring_intention:
         observed.append({
             "fact": "monitoring_intention_reported", "value": True,
             "attribution": "owner_reported_future_intention_not_completed_action",
