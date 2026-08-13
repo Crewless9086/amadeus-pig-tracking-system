@@ -28,6 +28,11 @@ another prompt is issued. Conversation memory is not the control system.
   but its stale deployed copy still attempts Telegram polling while Render owns
   the webhook. Retain it pending authorized fresh text/callback/mission-pickup
   and reversible-disable proof; duplication is not retirement readiness.
+- CMQ-20260813-02A completed its one authorized reversible window and restored
+  the watchdog. One authenticated Render update, Supabase claim and Telegram
+  reply were exactly-once, but the planner misread the CMQ date as a mission ID,
+  so durable mission pickup failed and was not retried. Retain the watchdog;
+  permanent retirement is not ready and no further window is scheduled.
 
 ## Channel-invariant canonical actions
 

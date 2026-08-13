@@ -65,7 +65,10 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
     if not isinstance(claim, dict) or claim.get("success") is not True:
         return {"success": False, "status": "daily_manager_claim_unproven",
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
-    if claim.get("created") is False:
+    # A duplicate claim may be a restart before the provider attempt. Continue
+    # into the family lifecycle: its attempt claim safely sends when no attempt
+    # exists and fails ambiguous without retry after any possible provider call.
+    if claim.get("created") is False and store is not daily_farm_manager_store:
         return {"success": True, "status": "daily_manager_replay_suppressed",
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
