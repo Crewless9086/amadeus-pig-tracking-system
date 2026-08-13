@@ -5,7 +5,7 @@
 - Discovery-only reconciliation: `docs/06-operations/CMQ_20260813_03_GROUPED_WEIGHT_MOVEMENT_RECONCILIATION.md`
 - Unwired pure preview source handover: `docs/06-operations/CMQ_20260813_03_CANONICAL_PREVIEW_SOURCE_HANDOVER.md`
 - Pure contract: `modules/pig_weights/canonical_grouped_preview.py`
-- This entry grants no implementation or runtime authority. Control Tower file-boundary clearance is required before the recommended adapter-contract slice.
+- Control Tower cleared only the isolated pure-contract/test boundary now prepared here. This entry grants no wiring, executor, deployment or runtime authority; any adapter integration requires a separately cleared file boundary.
 
 ## Agentic farm runtime and legacy retirement
 
