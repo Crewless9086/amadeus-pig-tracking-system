@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import ANY, patch
 
 from app import app
@@ -88,6 +88,32 @@ class MatingRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["records"][0]["sow_name"], "Sophie")
         self.assertEqual(response.headers["Cache-Control"], "no-store, private")
+
+    @patch("modules.pig_weights.mating_routes.require_owner_read_access")
+    @patch("modules.pig_weights.mating_routes.get_full_lifecycle_merit")
+    def test_full_lifecycle_anonymous_is_denied_before_snapshot(self, merit, guard):
+        guard.return_value = ({"success": False, "error": "owner_read_required"}, 403)
+        response = self.client.get("/api/pig-weights/breeding-analytics/v1/full-lifecycle")
+        self.assertEqual(response.status_code, 403)
+        merit.assert_not_called()
+
+    @patch("modules.pig_weights.mating_routes.require_owner_read_access", return_value=None)
+    @patch("modules.pig_weights.mating_routes.get_full_lifecycle_merit")
+    def test_full_lifecycle_owner_read_is_private_and_write_free(self, merit, _guard):
+        merit.return_value = {"success": True, "contract_version": "herdmaster_full_lifecycle_merit_v1", "writes_performed": False}
+        response = self.client.get("/api/pig-weights/breeding-analytics/v1/full-lifecycle/SOW-1?cutoff=2026-08-13")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["writes_performed"])
+        self.assertEqual(response.headers["Cache-Control"], "no-store, private")
+        merit.assert_called_once_with(date(2026, 8, 13), pig_id="SOW-1")
+
+    @patch("modules.pig_weights.mating_routes.require_owner_read_access", return_value=None)
+    @patch("modules.pig_weights.mating_routes.get_full_lifecycle_merit")
+    def test_full_lifecycle_invalid_cutoff_fails_before_snapshot(self, merit, _guard):
+        response = self.client.get("/api/pig-weights/breeding-analytics/v1/full-lifecycle?cutoff=not-a-date")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()["writes_performed"])
+        merit.assert_not_called()
 
     @patch("modules.pig_weights.mating_routes.require_owner_read_access", return_value=None)
     @patch("modules.pig_weights.mating_routes.get_breeding_attention_source_snapshot")
