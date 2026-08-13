@@ -81,8 +81,8 @@
         "headerParameters": {
           "parameters": [
             {
-              "name": "Authorization",
-              "value": "={{`Bearer ${$vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN}`}}"
+              "name": "X-Oom-Sakkie-Telegram-Token",
+              "value": "={{$vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN}}"
             },
             {
               "name": "Content-Type",

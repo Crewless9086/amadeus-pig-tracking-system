@@ -583,7 +583,8 @@ def validate_workflow(path: Path = WORKFLOW_PATH) -> dict[str, Any]:
         owner_headers = owner_params.get("headerParameters", {}).get("parameters", [])
         if owner_params.get("url") != "https://amadeus-pig-tracking-system.onrender.com/api/oom-sakkie/channels/telegram/message":
             errors.append("owner-task media relay does not target the approved gateway")
-        if owner_headers != [{"name": "Authorization", "value": "={{'Bearer ' + $vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN}}"}]:
+        if owner_headers != [{"name": "X-Oom-Sakkie-Telegram-Token",
+                              "value": "={{$vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN}}"}]:
             errors.append("owner-task gateway token boundary changed")
         if (owner_params.get("contentType") != "json"
                 or owner_params.get("specifyBody") != "json"
