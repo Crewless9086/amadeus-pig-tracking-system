@@ -194,7 +194,8 @@ class MatingRoutesTests(unittest.TestCase):
     @patch("modules.pig_weights.mating_routes.get_breeding_attention_source_snapshot")
     def test_active_exposure_readback_is_owner_read_and_excludes_removed(self, snapshot, _guard):
         snapshot.return_value={"allocation_inputs":{"pig_master_rows":[
-            {"Pig_ID":"S1","Tag_Number":"Sophie"},{"Pig_ID":"B1","Tag_Number":"Bola"}]},
+            {"Pig_ID":"S1","Tag_Number":"Sophie","Current_Pen_Name":"Kraam Saal 03"},
+            {"Pig_ID":"B1","Tag_Number":"Bola"}]},
             "exposure_rows":[
                 {"exposure_identity":"E1","exposure_group_identity":"G1","event_kind":"started",
                  "sow_pig_id":"S1","boar_pig_id":"B1","occurred_on":"2026-08-12",
@@ -208,6 +209,7 @@ class MatingRoutesTests(unittest.TestCase):
         data=response.get_json()
         self.assertEqual(len(data["records"]),1)
         self.assertEqual((data["records"][0]["sow_label"],data["records"][0]["boar_label"]),("Sophie","Bola"))
+        self.assertEqual(data["records"][0]["current_pen_name"],"Kraam Saal 03")
         self.assertFalse(data["writes_performed"])
 
     @patch("modules.pig_weights.mating_routes.execute_grouped_preview")
