@@ -1,5 +1,14 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Morning startup catch-up policy bounded
+
+- Preserved the late 13 August startup plan as immutable defect evidence.
+- Limited plan construction to 06:45:00–06:59:59 SAST so deployment or restart
+  after that window cannot manufacture a stale plan.
+- Reused the one date-stable durable claim for a concise missed-window failure;
+  repeated and concurrent startup remains zero-send/edit and plan loaders do not
+  run after the window.
+
 ## 2026-08-13 - Phase 0 provider/runtime ownership snapshot
 
 - Read n8n, Render, Telegram and Chatwoot provider state plus local Windows

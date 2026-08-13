@@ -10,12 +10,16 @@ from zoneinfo import ZoneInfo
 
 SAST = ZoneInfo("Africa/Johannesburg")
 MORNING_DUE = time(6, 45)
-RECOVERY_DEADLINE = time(12, 0)
+PLAN_WINDOW_END = time(7, 0)
 POLL_SECONDS = 60
 OWNER_ENV = "OOM_SAKKIE_DAILY_MANAGER_OWNER_USER_ID"
 ENABLED_ENV = "OOM_SAKKIE_DAILY_MANAGER_RUNTIME_ENABLED"
 _START_LOCK = threading.Lock()
 _STARTED = False
+
+
+class MorningWindowMissed(RuntimeError):
+    """The process became available only after today's bounded plan window."""
 
 
 def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
@@ -33,9 +37,14 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
                 "next_due_at": local.replace(hour=6, minute=45, second=0,
                                               microsecond=0).isoformat()}
 
-    from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
     from modules.oom_sakkie.telegram_gateway import deliver_family_result
     deliver = deliver or deliver_family_result
+    if local.time() >= PLAN_WINDOW_END:
+        return _escalate_failure(
+            owner, now, deliver, MorningWindowMissed("morning_plan_window_missed"),
+            store=store)
+
+    from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
     try:
         results, litters, sales = _load_inputs(
             owner, now, source,
@@ -46,10 +55,10 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
             litter_rows=litters, sale_rows=sales, deliver=deliver, store=store,
             now=now, language=str(source.get("OOM_SAKKIE_DAILY_MANAGER_LANGUAGE") or "en"))
     except Exception as exc:
-        if local.time() < RECOVERY_DEADLINE:
-            return {**_safe("morning_runtime_recovery_pending", success=False),
-                    "failure_class": exc.__class__.__name__}
-        return _escalate_failure(owner, now, deliver, exc, store=store)
+        return {**_safe("morning_runtime_recovery_pending", success=False),
+                "failure_class": exc.__class__.__name__,
+                "recovery_deadline_at": local.replace(
+                    hour=7, minute=0, second=0, microsecond=0).isoformat()}
 
 
 def start_production_morning_runtime(*, environ=None, runner=None):

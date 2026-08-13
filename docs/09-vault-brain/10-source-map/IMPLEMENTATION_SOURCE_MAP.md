@@ -574,8 +574,9 @@ Current Stage 4 surface:
 - `modules/oom_sakkie/daily_farm_manager.py` — scheduler-owned whole-farm task
   packet, constrained semantic prioritization, presentation and durable replay.
 - `modules/oom_sakkie/morning_runtime.py` — production-Render-owned 06:45 SAST
-  wake-up, bounded same-day recovery, read-only concurrent evidence loading and
-  one provider-bound failure escalation. Durable daily/provider claims, rather
+  wake-up, plan eligibility only through 06:59:59, read-only concurrent evidence
+  loading and one provider-bound missed-window failure escalation. At or after
+  07:00 plan loaders never run. Durable daily/provider claims, rather
   than a workstation process, arbitrate restarts and multiple web workers. One
   date-stable `:DELIVERY` claim is shared by the useful-plan and visible-failure
   outcomes; evidence changes never create another same-day send or edit.
