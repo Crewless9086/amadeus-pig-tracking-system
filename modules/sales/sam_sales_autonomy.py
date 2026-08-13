@@ -312,9 +312,15 @@ def evaluate_level1_authority(
             and _canonical_instant(inbound.get("latest_observed_at")) is not None
         ),
         "channel_authorized": (
-            inbound.get("whatsapp_window_state")
-            in {"open", "approaching_expiry"}
-            and inbound.get("whatsapp_window_evidence_authoritative") is True
+            inbound.get("whatsapp_window_evidence_authoritative") is True
+            and (
+                inbound.get("reply_authority_state") == "ordinary_reply_allowed"
+                or (
+                    inbound.get("reply_authority_state") in {None, ""}
+                    and inbound.get("whatsapp_window_state")
+                    in {"open", "approaching_expiry"}
+                )
+            )
         ),
         "specialist_lane": lane in {"meat", "live_stock"},
         "reply_recommended": decision.get("should_reply") is True and bool(reply),
@@ -457,6 +463,8 @@ def bind_authoritative_conversation_evidence(
         **row,
         "chronology_current": current,
         "whatsapp_window_state": window.get("window_state", "unavailable"),
+        "reply_authority_state": window.get("reply_authority_state", "unavailable"),
+        "provider_identity_class": window.get("provider_identity_class", "unavailable"),
         "whatsapp_window_evidence_authoritative": True,
         "latest_observed_at": window.get("latest_inbound_at_utc") or "",
         "reply_window_evidence": window,
