@@ -54,17 +54,10 @@ def handle_grouped_weight_message(parsed, authority, *, readiness_loader=None, p
                 "mission_id":mission,"card_mission_id":mission,
                 "answer":"The canonical grouped preview did not accept every interpreted fact. Nothing was recorded.",
                 "question_count":1,**_zero()},200
-    execution_rows=[]
-    for row in canonical["rows"]:
-        execution_rows.append({**row,"weight_kg":float(row["weight_kg"]),
-            "current_pen_id":"" if row.get("current_pen_id")=="Unknown" else row.get("current_pen_id"),
-            "moved_to_pen_id":"" if row.get("moved_to_pen_id")=="Unknown" else row.get("moved_to_pen_id"),
-            "moved_to_pen_label":"" if row.get("moved_to_pen_label")=="Unknown" else row.get("moved_to_pen_label"),
-            "condition_notes":"" if row.get("condition_notes")=="Unknown" else row.get("condition_notes")})
-    payload={"contract_version":canonical["contract_version"],"weight_date":canonical["effective_date"],
-             "row_count":len(execution_rows),"rows":execution_rows,
-             "movement_pen_id":execution_rows[0].get("moved_to_pen_id") if execution_rows else "",
-             "movement_pen_label":execution_rows[0].get("moved_to_pen_label") if execution_rows else ""}
+    payload={"contract_version":preview["contract_version"],"weight_date":preview["weight_date"],
+             "row_count":preview["row_count"],"rows":preview["rows"],
+             "movement_pen_id":preview.get("movement_pen_id") or "",
+             "movement_pen_label":preview.get("movement_pen_label") or ""}
     generation=hashlib.sha256(json.dumps(readiness,sort_keys=True,default=str).encode()).hexdigest()
     creator=claim_creator or create_claim
     try:

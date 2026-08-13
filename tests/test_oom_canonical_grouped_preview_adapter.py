@@ -55,10 +55,17 @@ def test_unknown_optional_values_are_preserved_in_canonical_rows():
     assert result["mappings"][1]["current_pen_id"]=="Unknown"
     assert {row["moved_to_pen_id"] for row in result["mappings"]}=={"Unknown"}
     assert all(row["condition_notes"]=="Unknown" for row in result["mappings"])
-    execution_rows=captured["preview_payload"]["rows"]
-    assert execution_rows[1]["current_pen_id"]==""
-    assert {row["moved_to_pen_id"] for row in execution_rows}=={""}
-    assert all(isinstance(row["weight_kg"],float) for row in execution_rows)
+    assert captured["preview_payload"]=={
+        "contract_version":"herdmaster_telegram_grouped_weight_preview_v1",
+        "weight_date":"2026-08-13",
+        "row_count":2,
+        "rows":[
+            {"pig_id":"PIG-OPAQUE-A","tag_number":"A1","label":"A1","weight_kg":47.2,"current_pen_id":"PEN-OLD","moved_to_pen_id":"","moved_to_pen_label":""},
+            {"pig_id":"PIG-OPAQUE-B","tag_number":"B2","label":"B2","weight_kg":118.0,"current_pen_id":"","moved_to_pen_id":"","moved_to_pen_label":""},
+        ],
+        "movement_pen_id":"",
+        "movement_pen_label":"",
+    }
 
 
 def test_ambiguous_and_inactive_identity_fail_before_claim_creation():

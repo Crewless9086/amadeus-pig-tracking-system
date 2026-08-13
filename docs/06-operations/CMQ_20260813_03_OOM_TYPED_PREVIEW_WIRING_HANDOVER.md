@@ -13,9 +13,9 @@ that boundary and performs no additional database, provider or Sheets read.
 The owner-visible preview uses the same canonical rows, opaque identities,
 effective date, confirmation requirement and digest as an equivalent
 `application_typed` request. Optional facts remain `Unknown`. The separately
-stored protected claim retains its existing execution-compatible empty-value
-sentinels and numeric weights, and therefore keeps its own protected-claim
-digest. This translation does not execute, confirm or complete the claim.
+stored protected claim receives the exact established legacy preview payload
+shape and values and retains its existing protected-claim digest boundary.
+Canonical preview generation does not execute, confirm or complete the claim.
 
 Malformed or conflicting dates and ambiguous, duplicated, inactive or
 off-farm animal identities fail before claim creation. Existing OOM natural
