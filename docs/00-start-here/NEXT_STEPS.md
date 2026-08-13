@@ -91,6 +91,17 @@ Conversation memory is not the control system.
   name, supporting ID, observation date, score and recovery reason. Five active
   exposures remain separate and exactly once.
 
+## HERDMASTER Breeding Attention protected page access
+
+- Existing mission `HMQ-20260813-02` uses the shared owner page-login guard for
+  `/api/pig-weights/breeding-attention/view`; it does not create a second auth
+  system or alter the private JSON access contract.
+- Anonymous and invalid sessions return through `/owner/login` to the requested
+  internal page after successful authentication. Unsafe external or malformed
+  return destinations are rejected.
+- Prepared source must still pass independent security/data-integrity review,
+  current-main integration, deployment and fresh read-only production proof.
+
 ## Oom Sakkie protected mortality and grouped weights
 
 - Deployed through PRs #820/#821; Pig 130 is canonically Dead/off-farm with effective date 2026-08-06, and the original event remains immutable.
