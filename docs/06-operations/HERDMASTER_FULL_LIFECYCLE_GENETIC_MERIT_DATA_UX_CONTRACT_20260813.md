@@ -1,8 +1,11 @@
 # HERDMASTER full-lifecycle genetic merit data and UX contract
 
-Date: 2026-08-13  
-Mission: `HMQ-20260813-04`  
-Status: proposed authoritative documentation/data contract; no source or UI implementation  
+Date: 2026-08-13
+
+Mission: `HMQ-20260813-04`
+
+Status: proposed authoritative documentation/data contract; no source or UI implementation
+
 Surfaces: herd `/breeding-analytics`; named animal `/breeding-analytics/<pig_id>`
 
 ## 1. Owner outcome and boundary
