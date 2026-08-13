@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Application grouped preview adapter prepared
+
+- Wired only the existing application bulk preflight controller to attach the pure canonical grouped-weight/optional-movement preview after accepted legacy validation.
+- Preserved staging, processing, retry and execution paths and avoided any second database or Sheets snapshot read.
+- Left OOM SAKKIE, Telegram, voice, UI, routes, protected actions, schema, fallbacks and production configuration unchanged; this remains undeployed source evidence.
+
 ## 2026-08-13 - HERDMASTER natural health/loss workflow restored
 
 - Restored the owner-approved canonical workflow against current-main source
