@@ -17,6 +17,11 @@ class BreedingEligibilityReadModelPostgresTests(unittest.TestCase):
         if not cls.url:
             raise unittest.SkipTest("CHARLIE_DISPOSABLE_POSTGRES_URL not configured")
         with psycopg.connect(cls.url) as connection:
+            connection.execute("create schema if not exists app_private")
+            connection.execute("""create table if not exists app_private.migration_log(
+                migration_id text primary key,
+                description text not null
+            )""")
             connection.execute("create table if not exists public.pigs(pig_id text primary key)")
             if connection.execute("select to_regclass('public.pig_observation_events')").fetchone()[0] is None:
                 connection.execute(Path("supabase/migrations/202607200001_create_pig_observation_events.sql").read_text(encoding="utf-8"))
