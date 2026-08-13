@@ -156,8 +156,8 @@ labels without a reviewed rule-version change:
   the versioned axis rule.
 - **Moderate:** exact identity/attribution; zero unresolved contradiction; at
   least 2 eligible opportunities/cohorts; at least 60% outcome coverage; context
-  coverage from 60% through 79.99%; and observed comparability differences are
-  known and explicitly bounded.
+  coverage at least 60%; observed comparability differences are known and
+  explicitly bounded; and the complete High rule was not satisfied.
 - **Limited:** exact identity/attribution but only 1 eligible opportunity/cohort,
   outcome or context coverage below 60%, stale supporting context, or a material
   unresolved comparability difference.
@@ -173,15 +173,17 @@ different biological measures into a score.
 Context coverage is the number of attributable populated cohort-by-applicable-
 field cells divided by all cohort-by-applicable-field cells required by the
 versioned axis rule. A field present for one cohort does not cover another.
-Bands are non-overlapping: 80–100% may qualify High; 60–79.99% may qualify
-Moderate; below 60% caps Limited. Missing cells are permitted only according to
-those bands; missing applicability/required-cell definition makes confidence
-Unknown. Precedence is Unknown first, then Limited caps (one cohort, stale or
-material unresolved difference), then numeric High/Moderate evaluation. A
-higher label requires every condition for that label; otherwise fall to the
-next satisfied label. Deterministic tests must contrast otherwise identical
-evidence with sparse context, Moderate-band context and genuinely comparable
-High-band context coverage.
+Thresholds are non-overlapping by precedence rather than by rejecting more
+complete evidence: High requires every High condition; otherwise Moderate
+requires every Moderate condition with both coverages at least 60%; below 60%
+on either coverage caps Limited. Missing cells are permitted only according to
+those thresholds; missing applicability/required-cell definition makes
+confidence Unknown. Operationally the label is the minimum attained tier across
+independent-cohort count, outcome coverage, context coverage and comparability,
+after Unknown and explicit Limited caps. More complete context can never lower
+the label. Deterministic tests must contrast otherwise identical evidence with
+sparse context, Moderate evidence, one High dimension with another Moderate
+dimension, and genuinely comparable all-High evidence.
 
 ### 5.2 Herd page `/breeding-analytics`
 
