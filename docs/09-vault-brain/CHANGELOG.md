@@ -6,6 +6,19 @@
 - Proved application typed, OOM typed and prepared browser-voice text fixtures normalize to byte-equivalent canonical previews while Telegram voice remains excluded.
 - Changed no executor, route, UI, schema, fallback or production configuration; no runtime improvement or Business completion is claimed.
 
+## 2026-08-13 - Breeding Attention protected page return prepared
+
+- Continued `HMQ-20260813-02` by placing only the Breeding Attention HTML view
+  on the established page-oriented owner-login guard. Anonymous or invalid
+  sessions receive a friendly login return path; JSON evidence retains private
+  API-style HTTP 403 denial.
+- Constrained login return destinations to safe internal absolute paths and
+  added focused anonymous, login-return, invalid-session, authenticated,
+  malicious-next and JSON-denial regressions.
+- This is Prepared source evidence only until independent review, current-main
+  integration, exact deployment and fresh anonymous/authenticated production
+  verification complete.
+
 ## 2026-08-13 - Grouped weight and movement read-only reconciliation
 
 - Mapped application, protected OOM SAKKIE, voice-preparation, Supabase and retained legacy paths without runtime or provider mutation.

@@ -6,6 +6,7 @@ from time import monotonic
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from modules.auth.owner_access import (
+    require_owner_page_access,
     require_owner_read_access,
     require_strict_owner_admin_access,
     strict_owner_admin_principal,
@@ -418,7 +419,7 @@ def breeding_attention():
 
 @mating_bp.route("/breeding-attention/view", methods=["GET"])
 def breeding_attention_view():
-    denied = require_owner_read_access()
+    denied = require_owner_page_access()
     if denied:
         return denied
     return render_template("breeding-attention.html")

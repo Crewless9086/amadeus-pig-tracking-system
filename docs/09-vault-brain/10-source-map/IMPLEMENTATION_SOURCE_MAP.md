@@ -80,6 +80,19 @@
 - UI: `static/js/dashboard.js`, `static/js/operationsDetail.js`, `templates/dashboard.html`, `templates/irrigation.html`.
 - Rule: current operational status must not silently fall back to Sheets. Protected evidence remains protected; the UI must direct an unauthenticated owner through the existing session rail and return to the requested page.
 
+## HERDMASTER Breeding Attention page access
+
+- Protected HTML page: `/api/pig-weights/breeding-attention/view` in
+  `modules/pig_weights/mating_routes.py`, using the shared page-oriented guard
+  in `modules/auth/owner_access.py`.
+- Private JSON evidence remains under the API-oriented owner-read guard and
+  returns HTTP 403 rather than redirecting anonymous clients.
+- Owner navigation: `templates/dashboard.html` and `templates/matings.html`.
+- Focused access contract: `tests/test_breeding_attention_page_access.py`.
+- Rule: owner login may return only to a validated internal absolute path; an
+  external, scheme-relative, backslash or control-character destination is
+  rejected rather than redirected.
+
 ## Oom Sakkie owner-request lifecycle
 
 ### Specific HERDMASTER management requests
