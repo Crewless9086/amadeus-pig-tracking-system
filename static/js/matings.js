@@ -36,7 +36,8 @@ async function loadExposureRemovals() {
         }
         activeExposureGroups = new Map();
         (data.records || []).forEach(row => {
-            const key = row.exposure_group_identity || row.exposure_identity;
+            const key = [row.exposure_group_identity || row.exposure_identity, row.boar_pig_id]
+                .filter(Boolean).join(":");
             if (!activeExposureGroups.has(key)) activeExposureGroups.set(key, []);
             activeExposureGroups.get(key).push(row);
         });
@@ -47,8 +48,8 @@ async function loadExposureRemovals() {
         }
         workspace?.classList.remove("hidden");
         board.innerHTML = [...activeExposureGroups].map(([group, rows], groupIndex) => {
-            const planned = rows.map(row => row.planned_removal_on).filter(Boolean).sort()[0] || "";
-            const started = rows.map(row => row.occurred_on).filter(Boolean).sort()[0] || "Onbekend";
+            const planned = formatDateOnly(rows.map(row => row.planned_removal_on).filter(Boolean).sort()[0]) || "";
+            const started = formatDateOnly(rows.map(row => row.occurred_on).filter(Boolean).sort()[0]) || "Onbekend";
             const boars = [...new Set(rows.map(row => row.boar_label).filter(Boolean))].join(", ") || "Beer onbekend";
             const sows = rows.slice().sort((a,b) => String(a.sow_label).localeCompare(String(b.sow_label))).map(row => escapeHtml(row.sow_label)).join(", ");
             const pens = [...new Set(rows.map(row => row.current_pen_name || row.pen_name).filter(Boolean))].join(", ") || "Hok onbekend";
@@ -69,6 +70,15 @@ function exposureTiming(planned) {
     if (days < 0) return {label: `${Math.abs(days)} dag(e) agterstallig`, cssClass: "exposure-overdue"};
     if (days === 0) return {label: "UIT vandag", cssClass: "exposure-due"};
     return {label: `UIT oor ${days} dag(e)`, cssClass: "exposure-upcoming"};
+}
+
+function formatDateOnly(value) {
+    const parsed = parseDate(value);
+    if (!parsed) return "";
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
 }
 
 function removalRows(group, actualRemovedOn) {
