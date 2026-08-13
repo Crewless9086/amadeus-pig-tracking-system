@@ -122,6 +122,7 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
             build_auxiliary_eligibility,revalidate_auxiliary_execution_edge)
         now=datetime(2026,8,8,18,0,tzinfo=timezone.utc)
         fertilizer=snapshot(device_id="100204d497",commissioned_supervised_channels=[2])
+        fertilizer["channels"][0]["native_auto_off_seconds"]=120
         fertilizer["channels"][1]["native_auto_off_seconds"]=300
         transport,_calls=self.transport(fertilizer)
         safety_value=transport.read_safety_configuration(device_id="100204d497",channel=2)
