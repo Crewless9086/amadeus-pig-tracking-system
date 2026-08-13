@@ -40,7 +40,7 @@ say the register was not updated. Conversation memory alone is not tracking.
 
 ## Current control board
 
-Snapshot: 2026-08-13 SAST, reconciled through main `f0584bba`.
+Snapshot: 2026-08-13 SAST, reconciled through main `6d7f3259`.
 
 | Terminal | Terminal state | Existing mission and business/runtime truth | Next action |
 |---|---|---|---|
@@ -48,7 +48,7 @@ Snapshot: 2026-08-13 SAST, reconciled through main `f0584bba`.
 | HERDMASTER | Preserved candidate | `HMQ-20260813-03`: Breeding Attention correction is neither merged nor deployed. Candidate remains at `C:\tmp\herdmaster-breeding-eligibility-truth-20260813`; deployed HERDMASTER unchanged. | `CONTINUE`: reconcile non-destructively against current main, rerun gates and review. |
 | ROOTLINE | Gateway incident | `RMQ-20260813-02`: Mixer source deployed and provider safety passed, but Telegram `3579` received HTTP 403 before parsing. Zero controls. `RMQ-20260813-04` morning execution acceptance remains separate; its provider-clock source is integrated but synthetic/genuine outcomes remain to prove. | `CONTINUE`: repair gateway authentication/exactly-once receipt. No owner repetition. Preserve morning acceptance for its synthetic and genuine evidence. |
 | OOM SAKKIE | Provider-clock source integrated; outcome proof pending | `OMQ-20260813-02`: PR #879 merged the Render-owned 06:45 SAST cron entry and non-actuating synthetic family. This source integration is not proof that the provider clock or Telegram result executed. | `CONTINUE`: prove deployed provider configuration and one isolated synthetic result; retain 14 August for natural clock proof. |
-| SAM | Audit complete | `SMQ-20260813-02`: conversations `1533`/`2143` reached SAM; safe replies were prepared but not sent. WhatsApp/WebWidget authority and first-event card boundaries are traced. | `CONTINUE`: implement existing bounded correction; never replay or message those conversations. |
+| SAM | Development released; deployed acceptance pending | `SMQ-20260813-02`: bounded WhatsApp/WebWidget authority and first-event-card repair merged in PR #882 as `b36b2ca3` and is live within successor `6d7f3259`. Conversations `1533`/`2143` were untouched. Business completion needs the next genuine eligible inbound. | `SEND_NOTHING`: deployed SAM owns the next event. Use the development terminal only for read-only correlation or a reusable defect exposed by that event. |
 | BEACON | Not launched | `BMQ-20260813-00`: provider/runtime and retained-worktree truth unreconciled; no posting authority inferred. | `NEW_MISSION` only when launched: read-only current-truth reconciliation. |
 | CODEX UI | Launched and ready; prompt prepared | `UIQ-20260813-01`: reconcile the preserved dirty `/matings` facelift and corrected deployed read contract before continuing UI work. The original shared workspace contains uncommitted UI files and must not be reset, stashed, deleted or overwritten. | `CONTINUE`: inspect and classify the existing diff, reconcile it with current main and the approved dashboard/facelift standards, then produce a local owner-review preview. No deployment without Charl's fresh visual approval. |
 
@@ -94,8 +94,10 @@ Detailed HERDMASTER evidence remains in
 
 ### SAM
 
-- `SMQ-20260813-02` — `failed_acceptance_ready_for_bounded_fix` using
-  conversations `1533` and `2143` only as regression evidence.
+- `SMQ-20260813-02` — `deployed_waiting_for_genuine_acceptance` using
+  conversations `1533` and `2143` only as regression evidence; never replay
+  them. The next eligible genuine inbound must produce one provider-confirmed
+  useful reply or expose the next reusable defect.
 - `SMQ-20260813-01` — queued retained-context Front Door routing.
 - `SMQ-20260813-03` — waits for controlled pilot prerequisites.
 - `SMQ-20260813-04` — queued Meat shared-context reconciliation.
@@ -134,6 +136,7 @@ result appear known earlier.
 | 2026-08-13 | ROOTLINE gateway incident | Telegram `3579` retained by n8n but relay received HTTP 403 before parsing/Supabase; presence expired; zero controls. | Repair end to end; no owner repetition. |
 | 2026-08-13 | OOM SAKKIE `OMQ-20260813-02` | No 13 August production morning trigger; PR #879 later integrated one Render-owned clock and synthetic non-actuating family. | Prove provider configuration and synthetic result; genuine clock proof still pending. |
 | 2026-08-13 | SAM `SMQ-20260813-02` | Conversations `1533`/`2143` produced safe unsent replies and non-actionable cards; defect traced. | Continue bounded correction; no historical sends. |
+| 2026-08-13 | SAM `SMQ-20260813-02` integration | PR #882 merged as `b36b2ca3`; successor `6d7f3259` is live. WhatsApp timestamp binding, WebWidget authority and safe first-event routing are corrected; historical conversations were untouched. | Development released; send nothing and observe next genuine inbound. |
 | 2026-08-13 | CODEX UI `UIQ-20260813-01` | Dedicated UI terminal launched; preserved dirty `/matings` files exist in the original workspace; prompt prepared but not yet acknowledged. | Deliver one reconciliation/local-preview mission; no deployment yet. |
 
 ## New owner findings
