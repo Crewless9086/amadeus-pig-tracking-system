@@ -35,6 +35,41 @@ Control Tower must:
    `NEW_MISSION`, `WAIT_FOR_INPUT` or `CLOSE`;
 9. only then return the assessment and continuation prompt to Charl.
 
+## Mandatory all-terminal dispatch sweep
+
+After every owner message and every terminal report, Control Tower must inspect
+the complete board, not only the terminal named in the latest message.
+
+For each visible development terminal, Control Tower must determine with fresh
+evidence whether it is `actively_working`, `idle_open`, `released`,
+`blocked`, `waiting_for_real_event`, `waiting_for_owner` or `not_launched`.
+An open Codex process is not sufficient proof of active work; Control Tower must
+correlate the assigned mission, attached worktree, recent activity and latest
+terminal acknowledgement or report.
+
+Control Tower must then:
+
+1. keep every actively working terminal on its existing mission unless a
+   genuine addendum is required;
+2. give each idle or released terminal the highest-priority eligible mission
+   from its existing queue;
+3. select a different eligible mission when the current outcome is truthfully
+   waiting on a clock, owner decision, provider event or physical evidence;
+4. explicitly release a terminal when no safe eligible work exists instead of
+   pretending that it is working;
+5. never assign two terminals to the same implementation files or serialized
+   production lane;
+6. prepare one self-contained prompt per newly eligible terminal and state
+   whether Charl must paste it;
+7. update prompt delivery and acknowledgement separately—prepared work is not
+   delivered, and delivered work is not started;
+8. repeat the sweep after any terminal completes, blocks or releases.
+
+The owner should not have to ask which terminal is idle or remember its next
+mission. Until automatic terminal delivery is proven, Control Tower remains
+responsible for detecting the opportunity and presenting the exact prompts to
+Charl immediately.
+
 If this transaction cannot be persisted safely, Control Tower must explicitly
 say the register was not updated. Conversation memory alone is not tracking.
 

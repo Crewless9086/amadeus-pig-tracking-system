@@ -19,7 +19,9 @@
   `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`. Visible terminals are
   temporary development workers, not deployed agents. Every pasted terminal
   result must update this ledger transactionally before another prompt is
-  issued.
+  issued. Every owner message and terminal report also triggers an all-terminal
+  dispatch sweep so idle terminals receive the next eligible existing mission
+  without making the owner act as dispatcher.
 - Canonical channel contract:
   `docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
 - Runtime truth: Supabase-backed domain events, projections, missions, claims,

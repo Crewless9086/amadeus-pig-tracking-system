@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+- Extended the canonical Control Tower contract with a mandatory all-terminal
+  dispatch sweep after every owner message and terminal report. Control Tower
+  now owns detection of idle/released terminals and selection of their next
+  eligible mission while keeping terminal activity separate from deployed-agent
+  operation.
+
 ## 2026-08-13 - Breeding Attention eligibility truth prepared
 
 - Registered `HMQ-20260813-03` as a bounded read-model correction on the
