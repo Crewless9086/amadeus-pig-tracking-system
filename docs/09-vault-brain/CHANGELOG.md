@@ -1,5 +1,19 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Full-lifecycle genetic merit contract reconciled
+
+- Continued `HMQ-20260813-04` from current main and preserved both historical
+  lifetime-merit worktrees plus PR #823 without merging or reviving them.
+- Defined one read-only herd/named-animal data and UX contract across pedigree,
+  breeding, litter, actual weaning, growth, mortality, health/observations,
+  destinations and supported financial evidence.
+- Prohibited missing-to-zero coercion, genetic-causation claims, unexplained
+  merit scores and farm mutation; specified denominators, sample sizes,
+  confidence, context qualifiers, charts, backend ownership and CODEX UI
+  handover.
+- This is Prepared documentation only. Backend and UI implementation remain
+  stopped pending Control Tower collision/file ownership division.
+
 ## 2026-08-13 - Typed OOM grouped preview adapter prepared
 
 - Wired only the existing authenticated typed OOM grouped-weight preview boundary to the pure canonical contract after its established natural interpretation and readiness preflight.

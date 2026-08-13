@@ -97,6 +97,21 @@
   external, scheme-relative, backslash or control-character destination is
   rejected rather than redirected.
 
+## HERDMASTER full-lifecycle genetic merit analytics
+
+- Authoritative page-specific data/UX contract:
+  `docs/06-operations/HERDMASTER_FULL_LIFECYCLE_GENETIC_MERIT_DATA_UX_CONTRACT_20260813.md`.
+- Current surfaces: `templates/breeding-analytics.html`,
+  `templates/breeding-analytics-detail.html`, `static/js/breedingAnalytics.js`,
+  `static/js/breedingAnalyticsDetail.js`; current routes/readers are
+  `modules/pig_weights/mating_routes.py`, `modules/pig_weights/mating_service.py`
+  and `modules/pig_weights/farm_supabase_read_service.py`.
+- Retained worktrees at heads `68cf41c4...` and `c1702487...` plus open PR #823
+  are historical design/test evidence only and must not be merged or revived.
+- Rule: later HERDMASTER work owns the canonical read packet and statistical
+  semantics; later CODEX UI work owns rendering only after Control Tower assigns
+  disjoint files. Neither slice creates a genetic ledger, score or farm fact.
+
 ## Oom Sakkie owner-request lifecycle
 
 ### Specific HERDMASTER management requests
