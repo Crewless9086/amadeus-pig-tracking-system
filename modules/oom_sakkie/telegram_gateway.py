@@ -307,7 +307,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if protected_result.get("handled"):
         delivery=({"success":True,"telegram_sends":0,"telegram_edits":0,"status":"protected_replay_noop"}
           if protected_result.get("suppress_owner_delivery") else deliver_family_result(
-            parsed,protected_result,specialist="HERDMASTER",
+            parsed,protected_result,specialist=str(protected_result.get("specialist") or "HERDMASTER"),
             mission_id=str(protected_result.get("mission_id") or ""),
             card_mission_id=str(protected_result.get("card_mission_id") or protected_result.get("mission_id") or "")))
         body,_=_gateway_result(protected_result.get("success") is True,
