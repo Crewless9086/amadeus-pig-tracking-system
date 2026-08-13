@@ -1,5 +1,10 @@
 # Next Steps
 
+Control Tower uses `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md` as
+the canonical owner-facing terminal queue. Every terminal feedback must update
+mission, terminal, deployed-runtime, worktree and next-action truth before
+another prompt is issued. Conversation memory is not the control system.
+
 ## Controlling programme — unified action spine and durable farm runtime
 
 - Execute `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md` as the

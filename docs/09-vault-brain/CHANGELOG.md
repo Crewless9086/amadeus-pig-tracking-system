@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+- Added the canonical Control Tower mission register for CORE, HERDMASTER,
+  ROOTLINE, OOM SAKKIE, SAM and BEACON. It separates temporary development
+  terminals from deployed runtimes and makes every terminal-feedback assessment
+  a persisted transaction before further dispatch.
+
 ## 2026-08-13 - Morning lifecycle gains provider clock
 
 - Added one authenticated Render cron entry at 04:45 UTC (06:45 SAST) for the
