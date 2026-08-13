@@ -75,8 +75,11 @@ def test_duplicate_proposal_replay_is_one_operational_event():
     assert first["event_id"]==second["event_id"] and first["proposal_id"]==second["proposal_id"]
 
 
-def test_comparison_is_deterministic_and_records_no_dispatch_effect():
+def test_comparison_is_deterministic_and_records_no_dispatch_effect(monkeypatch):
     proposal=shadow.propose_shadow_decision(transaction(),environ={shadow.ENABLE_ENV:"1"})["proposal"]
+    monkeypatch.setattr(shadow,"load_operational_events",lambda **kwargs:({"success":True,"events":[{
+        "event_type":"shadow_control_tower_proposal_recorded","aggregate_id":proposal["feedback_transaction_id"],
+        "payload":{"record_type":"proposal","proposal":proposal}}]},200))
     db=EventDb(); env={shadow.ENABLE_ENV:"1"}
     first,status1=shadow.compare_human_decision(proposal,actual(),environ=env,connect_factory=lambda _url:db)
     second,status2=shadow.compare_human_decision(deepcopy(proposal),deepcopy(actual()),environ=env,connect_factory=lambda _url:db)
@@ -84,6 +87,57 @@ def test_comparison_is_deterministic_and_records_no_dispatch_effect():
     assert first["comparison"]==second["comparison"]
     assert first["comparison"]["exact_match"] is True
     assert first["dispatches"]==first["prompts_sent"]==first["terminals_started"]==0
+
+
+def test_comparison_rejects_fabricated_or_unrecorded_proposal(monkeypatch):
+    proposal=shadow.propose_shadow_decision(transaction(),environ={shadow.ENABLE_ENV:"1"})["proposal"]
+    monkeypatch.setattr(shadow,"load_operational_events",lambda **kwargs:({"success":True,"events":[]},200))
+    result,status=shadow.compare_human_decision(proposal,actual(),environ={shadow.ENABLE_ENV:"1"},
+        connect_factory=lambda _url:EventDb())
+    assert status==409 and result["status"]=="persisted_shadow_proposal_not_found"
+
+
+def test_comparison_rejects_tampered_proposal_with_same_identity(monkeypatch):
+    proposal=shadow.propose_shadow_decision(transaction(),environ={shadow.ENABLE_ENV:"1"})["proposal"]
+    monkeypatch.setattr(shadow,"load_operational_events",lambda **kwargs:({"success":True,"events":[{
+        "event_type":"shadow_control_tower_proposal_recorded","aggregate_id":proposal["feedback_transaction_id"],
+        "payload":{"proposal":proposal}}]},200))
+    tampered={**proposal,"proposed_next_terminal":"hidden terminal"}
+    result,status=shadow.compare_human_decision(tampered,actual(),environ={shadow.ENABLE_ENV:"1"},
+        connect_factory=lambda _url:EventDb())
+    assert status==409 and result["status"]=="shadow_proposal_content_mismatch"
+
+
+def test_same_human_decision_identity_with_changed_actual_decision_fails_closed(monkeypatch):
+    proposal=shadow.propose_shadow_decision(transaction(),environ={shadow.ENABLE_ENV:"1"})["proposal"]
+    base_events=[{"event_type":"shadow_control_tower_proposal_recorded",
+        "aggregate_id":proposal["feedback_transaction_id"],"payload":{"proposal":proposal}}]
+    monkeypatch.setattr(shadow,"load_operational_events",lambda **kwargs:({"success":True,"events":base_events},200))
+    db=EventDb(); env={shadow.ENABLE_ENV:"1"}
+    first,status=shadow.compare_human_decision(proposal,actual(),environ=env,connect_factory=lambda _url:db)
+    assert status==201
+    base_events.append({"event_type":"shadow_control_tower_human_comparison_recorded",
+        "aggregate_id":proposal["feedback_transaction_id"],"payload":first["comparison"]})
+    changed={**actual(),"actual_next_action":"CLOSE"}
+    result,status=shadow.compare_human_decision(proposal,changed,environ=env,connect_factory=lambda _url:db)
+    assert status==409 and result["status"]=="human_decision_replay_conflict"
+
+
+def test_readiness_counts_distinct_persisted_proposal_pairs_not_decision_revisions(monkeypatch):
+    events=[]
+    for index in range(2):
+        proposal={**shadow.propose_shadow_decision({**transaction(),
+            "feedback_transaction_id":f"FTX-{index}"},environ={shadow.ENABLE_ENV:"1"})["proposal"]}
+        events.append({"event_type":"shadow_control_tower_proposal_recorded",
+            "aggregate_id":proposal["feedback_transaction_id"],"payload":{"proposal":proposal}})
+        for decision in range(7):
+            events.append({"event_type":"shadow_control_tower_human_comparison_recorded",
+                "aggregate_id":proposal["feedback_transaction_id"],"payload":{
+                    "proposal_id":proposal["proposal_id"],"human_decision_id":f"D-{decision}"}})
+    monkeypatch.setattr(shadow,"load_operational_events",lambda **kwargs:({"success":True,"events":events},200))
+    result,status=shadow.comparison_readiness()
+    assert status==200 and result["comparison_count"]==2
+    assert result["target_reached"] is False and result["learning_success_claimed"] is False
 
 
 def test_no_dispatch_process_mission_or_provider_dependencies_are_imported():

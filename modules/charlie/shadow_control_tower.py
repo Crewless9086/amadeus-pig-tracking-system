@@ -83,10 +83,20 @@ def compare_human_decision(proposal, actual_decision, *, environ=None,
     """Record deterministic comparison; never apply the actual or proposed decision."""
     if not shadow_enabled(environ):
         return _disabled(), 403
-    proposal = proposal if isinstance(proposal, Mapping) else {}
+    proposal_ref = proposal if isinstance(proposal, Mapping) else {}
     actual = actual_decision if isinstance(actual_decision, Mapping) else {}
-    if proposal.get("authority") != "non_authoritative_shadow_proposal" or not proposal.get("proposal_id"):
+    proposal_id = str(proposal_ref.get("proposal_id") or "").strip()
+    feedback_id = str(proposal_ref.get("feedback_transaction_id") or "").strip()
+    if not proposal_id or not feedback_id:
         return {"success": False, "status": "shadow_proposal_required", **_zero_authority()}, 400
+    persisted, persisted_status = _persisted_proposal(proposal_id, feedback_id,
+        database_url=database_url, connect_factory=connect_factory)
+    if persisted_status >= 400:
+        return persisted, persisted_status
+    proposal = persisted["proposal"]
+    if _digest(proposal_ref) != _digest(proposal):
+        return {"success": False, "status": "shadow_proposal_content_mismatch",
+            **_zero_authority()}, 409
     required = ("human_decision_id", "actual_next_terminal", "actual_next_action",
         "actual_continuation_prompt", "actual_owner_visible_result")
     if any(not str(actual.get(key) or "").strip() for key in required):
@@ -115,7 +125,15 @@ def compare_human_decision(proposal, actual_decision, *, environ=None,
         "human_control_tower_remained_authoritative": True,
         **_zero_authority(),
     }
-    comparison["comparison_id"] = "SCTC-" + _digest(comparison)[:24].upper()
+    comparison["comparison_id"] = "SCTC-" + _digest({"proposal_id":proposal["proposal_id"],
+        "feedback_transaction_id":proposal["feedback_transaction_id"],
+        "human_decision_id":comparison["human_decision_id"]})[:24].upper()
+    prior = [event.get("payload") for event in persisted.get("events", [])
+        if event.get("event_type") == "shadow_control_tower_human_comparison_recorded"
+        and (event.get("payload") or {}).get("comparison_id") == comparison["comparison_id"]]
+    if prior and any(_digest(value) != _digest(comparison) for value in prior):
+        return {"success": False, "status": "human_decision_replay_conflict",
+            **_zero_authority()}, 409
     result, status = append_operational_event(_event_packet(
         event_type="shadow_control_tower_human_comparison_recorded", proposal=proposal,
         payload=comparison, source_record_id=comparison["comparison_id"]),
@@ -129,12 +147,36 @@ def comparison_readiness(*, database_url=None, connect_factory=None):
         database_url=database_url, connect_factory=connect_factory)
     if status >= 400:
         return loaded, status
-    comparisons = [event for event in loaded["events"]
-        if event.get("event_type") == "shadow_control_tower_human_comparison_recorded"]
+    proposals = {(event.get("aggregate_id"), (event.get("payload") or {}).get("proposal", {}).get("proposal_id"))
+        for event in loaded["events"] if event.get("event_type") == "shadow_control_tower_proposal_recorded"}
+    comparisons = {(event.get("aggregate_id"), (event.get("payload") or {}).get("proposal_id"))
+        for event in loaded["events"] if event.get("event_type") == "shadow_control_tower_human_comparison_recorded"}
+    valid_pairs = {pair for pair in comparisons if pair in proposals and all(pair)}
     return {"success": True, "status": "shadow_comparison_readiness",
-        "comparison_count": len(comparisons), "target_count": 10,
-        "target_reached": len(comparisons) >= 10,
+        "comparison_count": len(valid_pairs), "target_count": 10,
+        "target_reached": len(valid_pairs) >= 10,
         "learning_success_claimed": False, **_zero_authority()}, 200
+
+
+def _persisted_proposal(proposal_id, feedback_id, *, database_url=None, connect_factory=None):
+    loaded, status = load_operational_events(domain="missions",
+        aggregate_type="control_tower_feedback_transaction", aggregate_id=feedback_id, limit=100,
+        database_url=database_url, connect_factory=connect_factory)
+    if status >= 400:
+        return loaded, status
+    matches = []
+    for event in loaded.get("events", []):
+        payload = event.get("payload") if isinstance(event.get("payload"), Mapping) else {}
+        candidate = payload.get("proposal") if isinstance(payload.get("proposal"), Mapping) else {}
+        if (event.get("event_type") == "shadow_control_tower_proposal_recorded"
+                and candidate.get("proposal_id") == proposal_id
+                and candidate.get("feedback_transaction_id") == feedback_id):
+            matches.append(dict(candidate))
+    if len(matches) != 1:
+        return {"success": False, "status": "persisted_shadow_proposal_not_found",
+            **_zero_authority()}, 409
+    return {"success": True, "status": "persisted_shadow_proposal_ready",
+        "proposal": matches[0], "events": loaded.get("events", [])}, 200
 
 
 def _validate_transaction(tx):

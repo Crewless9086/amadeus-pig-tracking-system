@@ -33,11 +33,14 @@ provider-verified and physical evidence. The deterministic proposal records:
 - confidence and reasons.
 
 The proposal is explicitly non-authoritative. A later human Control Tower
-decision is stored as a second event and compared deterministically across next
-terminal, action, prompt and expected result. Duplicate proposal or comparison
-receipts reuse the same idempotency identity. Readiness reports progress toward
-ten later real comparisons but never manufactures them and never claims
-learning success.
+decision can be compared only after the exact proposal is loaded from durable
+storage and its content identity matches the caller's reference. It is stored
+as a second event and compared deterministically across next terminal, action,
+prompt and expected result. Duplicate receipts reuse stable proposal/human
+decision identity; a changed replay fails closed. Readiness counts distinct
+durably paired feedback transactions, so repeated decisions cannot inflate the
+ten later real comparisons. It never manufactures them or claims learning
+success.
 
 ## Kill switch and zero authority
 

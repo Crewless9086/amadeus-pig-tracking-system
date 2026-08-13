@@ -3,7 +3,7 @@
 ## 2026-08-13 - Phase A Shadow Control Tower source prepared
 
 - Added a disabled-by-default, non-authoritative proposal/comparison contract for later genuine Control Tower feedback transactions.
-- Reused the existing observe-tier operational event fabric with deterministic replay identities; added no mission queue, schema, scheduler, hidden terminal, agent or competing ledger.
+- Reused the existing observe-tier operational event fabric with durable proposal linkage, conflicting-replay rejection and distinct-pair readiness accounting; added no mission queue, schema, scheduler, hidden terminal, agent or competing ledger.
 - Proved zero dispatch/process/mission/provider/farm/release authority and prepared for ten later real comparisons without fabricating events or claiming learning success.
 
 ## 2026-08-13 - Full-lifecycle genetic merit contract reconciled
