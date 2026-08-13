@@ -3,6 +3,7 @@ import os
 import copy
 import unittest
 import uuid
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
@@ -36,6 +37,9 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
             )
 
     def setUp(self):
+        with psycopg.connect(self.url) as connection:
+            if connection.execute("select to_regclass('public.pig_observation_events')").fetchone()[0] is None:
+                connection.execute(Path("supabase/migrations/202607200001_create_pig_observation_events.sql").read_text(encoding="utf-8"))
         suffix = uuid.uuid4().hex[:10]
         self.litter_id = f"LIT-WEAN-{suffix}"
         self.pen_from = f"PEN-WF-{suffix}"
@@ -43,6 +47,9 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
         self.pigs = [f"PIG-WEAN-{suffix}-1", f"PIG-WEAN-{suffix}-2"]
         with psycopg.connect(self.url) as connection:
             with connection.cursor() as cursor:
+                cursor.execute("alter table public.pig_observation_events disable trigger trg_pig_observation_events_no_update_delete")
+                cursor.execute("delete from public.pig_observation_events where pig_id=any(%s)", (self.pigs,))
+                cursor.execute("alter table public.pig_observation_events enable trigger trg_pig_observation_events_no_update_delete")
                 cursor.execute(
                     """
                     insert into public.pens(pen_id,pen_name)
@@ -76,6 +83,18 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
     def tearDown(self):
         with psycopg.connect(self.url) as connection:
             with connection.cursor() as cursor:
+                cursor.execute(
+                    "alter table public.pig_observation_events disable trigger "
+                    "trg_pig_observation_events_no_update_delete"
+                )
+                cursor.execute(
+                    "delete from public.pig_observation_events where pig_id=any(%s)",
+                    (self.pigs,),
+                )
+                cursor.execute(
+                    "alter table public.pig_observation_events enable trigger "
+                    "trg_pig_observation_events_no_update_delete"
+                )
                 cursor.execute(
                     "delete from public.pig_medical_events where pig_id=any(%s)",
                     (self.pigs,),
@@ -116,13 +135,13 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
             "changed_by": "owner-admin:test",
             "piglets": [
                 {
-                    "pig_id": self.pigs[0], "tag_number": "901",
+                    "pig_id": self.pigs[0], "tag_number": self.pigs[0],
                     "sex": "Male",
                     "weight_kg": 7.1, "from_pen_id": self.pen_from,
                     "to_pen_id": self.pen_to, "notes": "Weaning Day.",
                 },
                 {
-                    "pig_id": self.pigs[1], "tag_number": "902",
+                    "pig_id": self.pigs[1], "tag_number": self.pigs[1],
                     "sex": "Female",
                     "weight_kg": 7.4, "from_pen_id": self.pen_from,
                     "to_pen_id": self.pen_to, "notes": "Weaning Day.",
@@ -146,6 +165,21 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
                     )
                     values.append(cursor.fetchone()[0])
                 return tuple(values)
+
+    def observation_action(self, pig_ids=None):
+        pig_ids = pig_ids or self.pigs
+        return {"contract_version": "herdmaster_piglet_observation_v1",
+                "action_type": "record_piglet_observations", "litter_id": self.litter_id,
+                "source_context": "weaning", "source_reference": "litter_weaning_day",
+                "input_provenance": "application", "idempotency_key": "atomic-" + self.litter_id,
+                "observations": [{"pig_id": pig_id, "observed_on": "2026-07-28",
+                    "factual_note": "Good build.", "traits": ["good_build"],
+                    "sentiment": "positive", "watch_flag": True,
+                    "supersedes_observation_event_id": None} for pig_id in pig_ids]}
+
+    def observation_count(self):
+        with psycopg.connect(self.url) as connection:
+            return connection.execute("select count(*) from public.pig_observation_events where pig_id=any(%s)", (self.pigs,)).fetchone()[0]
 
     def row_versions(self):
         with psycopg.connect(self.url) as connection:
@@ -333,6 +367,23 @@ class LitterWeaningAtomicPostgresTests(unittest.TestCase):
             "serialization_withheld",
         }))
         self.assertEqual(self.counts(), (2, 2, 2))
+
+    def test_observations_commit_atomically_and_exact_replay_adds_zero(self):
+        packet = self.packet(); packet["observation_action"] = self.observation_action()
+        first = apply_litter_weaning_day_packet(packet, connect_factory=lambda _url: psycopg.connect(self.url))
+        self.assertEqual((first["observations_created"], self.observation_count()), (2, 2))
+        replay = apply_litter_weaning_day_packet(packet, connect_factory=lambda _url: psycopg.connect(self.url))
+        self.assertEqual((replay["observations_created"], self.observation_count()), (0, 2))
+        self.assertTrue(all(row["replay"] for row in replay["observation_readback"]))
+
+    def test_unresolved_observation_group_rolls_back_complete_weaning_packet(self):
+        packet = self.packet(); packet["observation_action"] = self.observation_action([self.pigs[0], "UNKNOWN-PIG"])
+        with self.assertRaisesRegex(ValueError, "exact_litter_pig_identity_required"):
+            apply_litter_weaning_day_packet(packet, connect_factory=lambda _url: psycopg.connect(self.url))
+        self.assertEqual(self.counts(), (0, 0, 0))
+        self.assertEqual(self.observation_count(), 0)
+        with psycopg.connect(self.url) as connection:
+            self.assertEqual(connection.execute("select tag_number,wean_date from public.pigs where pig_id=%s", (self.pigs[0],)).fetchone(), (None, None))
 
 
 if __name__ == "__main__":

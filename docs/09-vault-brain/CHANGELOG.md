@@ -130,6 +130,20 @@
 - Preserved the 14-day purpose-review rule and prohibited automatic purpose,
   breeding, lifecycle, medical, movement or commercial effects.
 
+## 2026-08-13 - Piglet observation candidate reconciled with litter attention
+
+- Added one channel-invariant, actor-bound preview/confirm action that appends
+  exact-pig weaning observations to `pig_observation_events` and returns exact
+  canonical readback while retaining provenance, replay and correction history.
+- Preserved Unknown-purpose piglets for later cited HERDMASTER review without
+  converting owner observations into classification or breeding clearance.
+- Corrected litter attention so a future or unsupported legacy planned
+  `wean_date` does not imply completed weaning; actual evidence plus incomplete
+  active lifecycles is required for `complete_weaning`.
+- Made the sow name the dashboard headline and litter ID secondary context,
+  with a safe litter-only fallback. This records Prepared source/test evidence;
+  no owner event, production proof or Business-complete claim was manufactured.
+
 ## 2026-08-12 - Actionable Oom Sakkie manager candidate prepared
 
 - Integrated Charl's approved actionable daily-manager mission document and

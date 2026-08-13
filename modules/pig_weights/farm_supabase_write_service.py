@@ -6,6 +6,10 @@ from datetime import datetime
 
 from modules.pig_weights.pig_weights_utils import parse_sheet_date, to_clean_string, to_float
 from services.database_service import DATABASE_URL_ENV
+from modules.pig_weights.herdmaster_piglet_observation_action import (
+    _readback as _readback_piglet_observations,
+    _validate_and_insert as _insert_piglet_observations,
+)
 
 
 def farm_supabase_writes_available():
@@ -638,6 +642,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
         list(row or []) + [""] * 18
         for row in packet.get("treatment_rows", [])
     ]
+    observation_action = packet.get("observation_action") if isinstance(packet.get("observation_action"), dict) else None
     if not litter_id or not wean_date or not piglets:
         raise ValueError("complete_weaning_packet_required")
     pig_ids = [to_clean_string(row.get("pig_id")) for row in piglets]
@@ -681,6 +686,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
             row["withdrawal_end"], row["given_by"], row["follow_up"],
             row["follow_up_date"], row["notes"],
         )),
+        "observations": observation_action,
     }
     operation_id = "WEAN-" + hashlib.sha256(json.dumps(
         identity_packet, sort_keys=True, separators=(",", ":")
@@ -689,7 +695,9 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
         "tags_created": 0, "treatments_created": 0,
         "weights_created": 0, "movements_created": 0,
         "piglets_updated": 0, "litter_updated": 0,
+        "observations_created": 0,
     }
+    observation_readback = []
     with _connect(connect_factory=connect_factory) as connection:
         with connection.cursor() as cursor:
             cursor.execute("set transaction isolation level serializable")
@@ -991,6 +999,17 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
                 )
                 counts["treatments_created"] += 1
 
+            if observation_action:
+                existing_keys = set()
+                for index, item in enumerate(observation_action["observations"]):
+                    key = f"{observation_action['idempotency_key']}:{item['pig_id']}:{index}"
+                    cursor.execute("select 1 from public.pig_observation_events where idempotency_key=%s", (key,))
+                    if cursor.fetchone():
+                        existing_keys.add(key)
+                _insert_piglet_observations(cursor, observation_action, changed_by)
+                counts["observations_created"] = len(observation_action["observations"]) - len(existing_keys)
+                observation_readback = _readback_piglet_observations(cursor, observation_action, existing_keys=existing_keys)
+
             if not exact_complete:
                 cursor.execute(
                     """
@@ -1008,6 +1027,7 @@ def apply_litter_weaning_day_packet(packet, connect_factory=None):
         if exact_complete and not any(counts.values())
         else "weaning_day_committed",
         "operation_id": operation_id,
+        "observation_readback": observation_readback,
         **counts,
     }
 

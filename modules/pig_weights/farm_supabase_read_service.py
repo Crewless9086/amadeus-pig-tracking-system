@@ -1009,20 +1009,20 @@ def get_breeding_attention_source_snapshot(
         observation_rows = _fetch_all(
             """
             select event.pig_id, event.observed_at, event.observation_category,
-                   event.measurements_json, event.observation_event_id
+                   event.measurements_json, event.observation_event_id,
+                   event.recorded_at, event.factual_note,
+                   event.supersedes_observation_event_id
             from public.pig_observation_events event
             where (
                 event.observation_category in ('behaviour', 'body_condition')
                 or (
                     event.observation_category = 'other'
-                    and event.measurements_json->>'contract_version' =
-                        'herdmaster_breeding_observation_v1'
+                    and event.measurements_json->>'contract_version' in (
+                        'herdmaster_breeding_observation_v1',
+                        'herdmaster_piglet_observation_v1'
+                    )
                 )
             )
-              and not exists (
-                select 1 from public.pig_observation_events correction
-                where correction.supersedes_observation_event_id = event.observation_event_id
-              )
             order by event.pig_id, event.observation_category,
                      event.observed_at desc, event.observation_event_id desc
             """,
@@ -1391,7 +1391,10 @@ def _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean
     if int(lifecycle_outcomes.get("active") or 0) <= 0:
         return None
     recorded_wean_date = _date_or_none(litter.get("wean_date"))
-    if recorded_wean_date:
+    actual_weaning_evidence = _actual_weaning_evidence(
+        litter, pigs, recorded_wean_date
+    )
+    if actual_weaning_evidence["actual_weaning_recorded"]:
         return {
             "action_type": "complete_weaning",
             "reason": (
@@ -1400,6 +1403,7 @@ def _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean
             ),
             "recommended_action": "Complete and verify the remaining weaning lifecycle before closing the litter.",
             "wean_date": _date_text(recorded_wean_date),
+            "weaning_evidence": actual_weaning_evidence,
             "estimated_wean_date": wean_timing.get("estimated_wean_date", ""),
             "wean_tag_attention_start_date": wean_timing.get("wean_tag_attention_start_date", ""),
             "wean_planning_monday": wean_timing.get("wean_planning_monday", ""),
@@ -1431,6 +1435,34 @@ def _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean
         "wean_planning_monday": wean_timing.get("wean_planning_monday", ""),
         "days_until_estimated_wean": days_until,
         "active_pig_count": int(lifecycle_outcomes.get("active") or 0),
+    }
+
+
+def _actual_weaning_evidence(litter, pigs, recorded_wean_date, *, today=None):
+    """Distinguish an overloaded planned date from attributable actual weaning."""
+    today = today or date.today()
+    status = _text(litter.get("litter_status")).lower()
+    weaned_count = _float_or_none(litter.get("weaned_count"))
+    pig_evidence_ids = sorted({
+        _text(pig.get("pig_id")) for pig in pigs
+        if (_date_or_none(pig.get("wean_date"))
+            or _float_or_none(pig.get("wean_weight_kg")) is not None
+            or _text(pig.get("animal_type")).lower() == "weaner")
+        and _text(pig.get("pig_id"))
+    })
+    status_evidence = status in {"weaned", "completed"}
+    count_and_date_evidence = bool(
+        recorded_wean_date and recorded_wean_date <= today
+        and weaned_count is not None and weaned_count > 0
+    )
+    actual = bool(status_evidence or pig_evidence_ids or count_and_date_evidence)
+    return {
+        "actual_weaning_recorded": actual,
+        "actual_wean_date": _date_text(recorded_wean_date) if actual else "",
+        "planned_wean_date": _date_text(recorded_wean_date) if recorded_wean_date and not actual else "",
+        "litter_status_evidence": status if status_evidence else "",
+        "weaned_count_evidence": weaned_count if count_and_date_evidence else None,
+        "pig_evidence_ids": pig_evidence_ids,
     }
 
 
@@ -1593,11 +1625,15 @@ def list_litter_overview(connect_factory=None):
             "litter_id": litter_id,
             "sow_pig_id": _text(litter.get("sow_pig_id")),
             "sow_tag_number": _text(litter.get("sow_tag_number")),
+            "sow_name": _text(litter.get("sow_name") or litter.get("sow_tag_number")),
             "boar_pig_id": _text(litter.get("boar_pig_id")),
             "boar_tag_number": _text(litter.get("boar_tag_number")),
             "current_pen_id": "",
             "farrowing_date": _date_text(litter.get("farrowing_date")),
             "wean_date": _date_text(litter.get("wean_date")),
+            "weaning_evidence": _actual_weaning_evidence(
+                litter, pigs, _date_or_none(litter.get("wean_date"))
+            ),
             "litter_status": litter_status,
             "needs_attention": needs_attention,
             "sheet_needs_attention": "",
@@ -1840,6 +1876,7 @@ def get_litter_attention_summary(limit=5, connect_factory=None):
         items.append({
             "litter_id": litter.get("litter_id", ""),
             "sow_tag_number": litter.get("sow_tag_number", ""),
+            "sow_name": litter.get("sow_name") or litter.get("sow_tag_number", ""),
             "farrowing_date": litter.get("farrowing_date", ""),
             "wean_date": litter.get("wean_date", ""),
             "litter_status": litter.get("litter_status", ""),

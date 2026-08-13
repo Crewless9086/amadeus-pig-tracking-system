@@ -47,6 +47,13 @@
   ledger. Do not automatically classify a pig.
 - Business completion requires one genuine owner observation, exact production
   readback, a HERDMASTER explanation that cites it, and zero-effect replay.
+- Source candidate now uses one actor-bound preview/confirm action across the
+  supported adapters, preserves correction history and source provenance, and
+  keeps unclassified piglets visible to later HERDMASTER review. The adjacent
+  litter-attention correction treats an overloaded future `wean_date` as a
+  plan, not proof of actual weaning, and displays the sow name before litter ID.
+- This remains Prepared, not Operational or Business-complete, until reviewed,
+  integrated, deployed, and exercised by one naturally occurring owner journey.
 
 ## Oom Sakkie protected mortality and grouped weights
 

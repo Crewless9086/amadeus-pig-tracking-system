@@ -77,6 +77,15 @@
           <div class="section-title-row"><div><h2>Ontbrekende of onsekere feite</h2></div></div>
           <ul id="closed_litter_exception_list"></ul>
         </section>
+        <section class="closed-litter-section" id="historical_observation_panel">
+          <div class="section-title-row"><div><h2>Historiese speenwaarnemings</h2><p>Teken papiernotas teen die presiese varkies aan sonder om speen weer uit te voer.</p></div></div>
+          <form id="historical_observation_form" class="attention-action-form">
+            <label>Werklike waarnemingsdatum <input type="date" id="historical_observation_date" required></label>
+            <div id="historical_observation_rows"></div>
+            <div id="historical_observation_preview" class="bulk-review-panel hidden"></div>
+            <div class="form-actions"><button type="button" id="historical_observation_preview_button" class="button-link button-link-secondary">Kontroleer waarnemings</button><button type="submit" id="historical_observation_apply_button" disabled>Bevestig en teken aan</button></div>
+          </form>
+        </section>
       </section>
 
       <div id="litter_workspace" class="litter-workspace">
