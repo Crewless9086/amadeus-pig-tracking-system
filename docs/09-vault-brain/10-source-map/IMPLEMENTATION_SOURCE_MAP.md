@@ -6,6 +6,9 @@
   `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`.
 - Controlling architecture:
   `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`.
+- Historical path pointer:
+  `docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md` records the mistaken
+  operations pathname and must not be treated as a second controlling copy.
 - Documentation lifecycle:
   `docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`.
 - Historical review handoff: `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` is

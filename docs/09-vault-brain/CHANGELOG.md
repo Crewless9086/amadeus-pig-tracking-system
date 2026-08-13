@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Runtime Programme pathname reconciled
+
+- Confirmed PR #867 introduced the owner-approved controlling Programme only at
+  `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`; it was not deleted,
+  reverted, renamed or stranded.
+- Added a historical pointer for the mistaken `docs/06-operations` pathname and
+  kept both source maps authoritative on the single canonical architecture file.
+
 ## 2026-08-13 - Morning startup catch-up policy bounded
 
 - Preserved the late 13 August startup plan as immutable defect evidence.
