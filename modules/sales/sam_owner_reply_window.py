@@ -341,7 +341,16 @@ def _provider_conflict(
         # while its webhook can carry fractional seconds for the same exact
         # message. The message ID remains the primary identity; accept only a
         # sub-second representation difference for that already-bound event.
-        if abs((canonical - latest_inbound["created_at_utc"]).total_seconds()) >= 1:
+        delta_seconds = abs(
+            (canonical - latest_inbound["created_at_utc"]).total_seconds()
+        )
+        exact_message_bound = bool(
+            message_id and message_id == latest_inbound["message_id"]
+        )
+        if (
+            delta_seconds != 0
+            and (not exact_message_bound or delta_seconds >= 1)
+        ):
             return "provider_latest_inbound_timestamp_conflict"
     return ""
 

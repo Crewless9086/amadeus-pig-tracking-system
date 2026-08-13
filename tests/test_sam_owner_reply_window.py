@@ -141,6 +141,18 @@ def test_exact_whatsapp_message_accepts_webhook_fractional_second_timestamp():
     assert result["reply_authority_state"] == "ordinary_reply_allowed"
 
 
+def test_fractional_timestamp_without_exact_message_binding_fails_closed():
+    result = evaluate(
+        [incoming()],
+        provider_evidence={
+            "provider_identity_class": "genuine_whatsapp",
+            "latest_inbound_at_utc": "2026-07-26T11:00:00.897Z",
+        },
+    )
+    assert result["window_state"] == "unavailable"
+    assert result["reason"] == "provider_latest_inbound_timestamp_conflict"
+
+
 def test_webwidget_exact_current_inbound_has_bounded_channel_authority():
     result = evaluate_reply_window(
         [incoming()],
