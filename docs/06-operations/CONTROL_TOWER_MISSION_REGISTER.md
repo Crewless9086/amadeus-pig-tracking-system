@@ -79,7 +79,7 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
 
 | Terminal | Terminal state | Existing mission and business/runtime truth | Next action |
 |---|---|---|---|
-| CORE | Discovery integrated; source-only slice prepared | `CMQ-20260813-03` read-only reconciliation merged in PR #888 as `c5f4c68d`. It proves canonical Supabase convergence but separate application/OOM preview and execution contracts; no runtime/provider facts or duplicate production writes were claimed. | `CONTINUE`: implement only a new side-effect-free shared preview contract plus isolated adapter-conformance tests. Existing executors, routes, UI, migrations and legacy fallbacks remain untouched. |
+| CORE | Pure grouped-preview contract review-ready | `CMQ-20260813-03` PR #890 is open at exact head `37c95264`, base `e154a397`, mergeable/clean with all three required checks green. It adds only an unwired zero-I/O canonical preview module and isolated equivalence/fail-closed tests; no runtime or business behavior changed. | `CONTINUE`: merge PR #890 normally only while exact head/base/checks remain unchanged, reconcile merged main and release. Do not wire adapters, executors, routes, UI, migrations or fallbacks without a separately cleared boundary. |
 | HERDMASTER | HMQ-02 and HMQ-03 production-verified; terminal released | `HMQ-20260813-02` is live through PR #889 merge `e154a397`: anonymous HTML redirects to the friendly owner login and returns after authentication, while anonymous JSON remains a 403; hostile return targets fail safe and farm counts remain unchanged. `HMQ-20260813-03` remains operationally verified. | `CONTINUE — SEND NOTHING`: development terminal is released-retain. Do not manufacture another HERDMASTER task; promote the next queued mission only after its exact scope and active file ownership are reconciled. |
 | ROOTLINE | Shared Telegram intake repaired; B/C remains held | PR #887 merge `e3c723aa` restored the dedicated authenticated gateway header and durable owner binding. The original `Reservoir 4/4`, `Storage tanks 3/4` observation was recovered once into Supabase and replay was silent. B/C remains held because autonomy and protected B/C confirmation lifecycle are not deployed. | `SEND_NOTHING` on the intake incident. Retain RMQ-04 pending reviewed B/C confirmation lifecycle; no owner repetition or control. |
 | OOM SAKKIE | Health/loss intake slice prepared; morning clock remains deployed-owned | `HERDMASTER-NATURAL-HEALTH-LOSS-1`: Pig 002 genuine report failed before PR #887 and remains unrecorded/unanswered; authentication is now repaired but the natural health/loss capability is still inactive. `OMQ-20260813-02` remains separately waiting for the genuine clock. | `NEW_MISSION`: implement only delivery stage 1 zero-I/O natural event interpreter and complete-effect preview contract with Pig 002/Maya fixtures. No replay, message, route activation or farm write. |
@@ -94,9 +94,10 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
 - `CMQ-20260813-02A` — `parser_deployed_waiting_for_separate_authority`:
   PR #877 evidence and PR #885 opaque-ID repair are integrated; watchdog remains
   active and no additional proof window is authorized.
-- `CMQ-20260813-03` — `discovery_integrated_source_slice_cleared`: PR #888 is
-  merged; next work is limited to a new side-effect-free preview contract and
-  isolated conformance tests with no executor, route, UI or fallback cutover.
+- `CMQ-20260813-03` — `source_ready_waiting_normal_merge`: PR #890 exact head
+  `37c95264` is mergeable/clean and all required checks pass. Scope remains an
+  unwired side-effect-free preview contract and isolated conformance tests;
+  adapter, executor, route, UI and fallback cutover are not cleared.
 - `CMQ-20260813-04` — queued reversible legacy-document retirement.
 
 ### HERDMASTER
@@ -186,6 +187,7 @@ result appear known earlier.
 | 2026-08-13 | CORE `CMQ-20260813-02A` | Reversible watchdog window rolled back; synthetic receipt/reply passed; mission pickup failed through ID truncation. | Released; repair parser before another window. |
 | 2026-08-13 | CORE `CMQ-20260813-02A` parser repair | PR #877 evidence merged as `8f8ec3b2`; PR #885 opaque mission-ID and creation-precedence repair merged/deployed as `7c22cd5f`; no Telegram proof or provider mutation occurred. | Parser development released; live proof remains unauthorized. Promote CMQ-03 read-only reconciliation. |
 | 2026-08-13 | CORE `CMQ-20260813-03` discovery | PR #888 documentation at exact head `5f5aa641` passed all checks and merged as `c5f4c68d`. Application and OOM converge on Supabase events but do not share one atomic group contract; Sheets fallback authority remains. | Clear only a new pure preview-contract module and isolated tests; prohibit executor/fallback cutover. |
+| 2026-08-13 | CORE `CMQ-20260813-03` preview contract | PR #890 exact head `37c95264`, base `e154a397`, is live-GitHub mergeable/clean with all three checks green. The module is pure and unwired; it normalizes application, OOM and prepared browser-voice preview bytes, preserves Unknown, requires confirmation and fails closed on invalid identity/state. | Authorize normal merge only; no production usefulness or adapter/executor cutover is claimed or cleared. |
 | 2026-08-13 | CORE Programme | PR #878 proved canonical Programme location and merged pointer/source-map correction as `29f04528`. | Released; SAM may resume existing mission. |
 | 2026-08-13 | HERDMASTER `HMQ-20260813-03` | Candidate passed pre-advance gates; main advanced; no merge/deploy. | Preserve and reconcile non-destructively. |
 | 2026-08-13 | HERDMASTER `HMQ-20260813-03` completion | PR #884 merged as `b7c0edcf` and production/browser readback proved Bonnie proposal wording, three exact recovery holds, five unchanged exposures/cycles and zero writes on repeated reads. | Development worktree clean released-retain; promote HMQ-02. |
