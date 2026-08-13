@@ -8,8 +8,8 @@ Concise owner tracking register prepared on 2026-08-12. This is a planning view,
 
 | Priority | Mission | Current status | Dependency | Next genuine trigger |
 |---|---|---|---|---|
-| 1 | Breeding Attention and `/matings` current-truth correction | In progress through HERDMASTER terminal | Authoritative production/read contract | Prove names, `Tans by beer`, Molly nursing and body-condition holds on real owner pages |
-| 2 | `/matings` UI simplification | Queued for Codex/UI after priority 1 | Stable, proven HERDMASTER read contract | Build isolated faithful local preview for Charl |
+| 1 | Breeding Attention and `/matings` current-truth correction | `/matings` names, pens and windows deployed and live-proven on 2026-08-13; Breeding Attention lifecycle and readiness corrections remain pending | Authoritative production/read contract | Prove active-exposure exclusion, Molly nursing and body-condition holds on the real Breeding Attention page |
+| 2 | `/matings` UI simplification | Ready for isolated Codex/UI work against the deployed read contract; existing dirty facelift work remains preserved | Stable, live-proven HERDMASTER read contract | Reconcile the preserved facelift and build a faithful local preview for Charl |
 | 3 | Individual piglet observations at weaning | Owner-approved plan; implementation not started | Stable litter/weaning UI and canonical observation writer | Implement exact-pig positive/negative capture and prove one genuine observation |
 | 4 | Full-lifecycle genetic merit | Substantial unmerged branch work; not authoritative | Reconcile `docs/herdmaster-lifetime-genetic-merit` and `feat/herdmaster-lifetime-genetic-merit-evidence` without rebuilding blindly | Reviewed integration of mating-to-financial outcome evidence |
 | 5 | Weight-batch intelligence | Implemented and merged; real-world acceptance pending | Next genuine completed weight batch | Printable report plus one concise provider-confirmed Afrikaans summary and zero-effect replay |

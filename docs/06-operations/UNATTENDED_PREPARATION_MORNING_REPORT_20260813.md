@@ -2,7 +2,7 @@
 
 ## Safety and governance
 
-Preparation only. No deployment, merge, provider mutation, secret change, Telegram send, farm write or hardware command occurred.
+The unattended preparation itself made no deployment, merge, provider mutation, secret change, Telegram send, farm write or hardware command. Morning reconciliation subsequently verified terminal deployments and committed only the approved preparation documents.
 
 The shared workspace standard was tracked but its checked-out content was not authoritative:
 
@@ -22,11 +22,20 @@ The authoritative terminal lineage had reported a different 603-line standard. T
 5. Added a ROOTLINE eWeLink credential lifecycle and recovery plan.
 6. Preserved all existing dirty/untracked work and all historical/unique worktrees.
 
+## Morning reconciliation
+
+- HERDMASTER PR `#863` merged as `42aa9bc1b9ec98b5359ef36ec931d66dfd6be5d1`; that exact descendant revision is live and healthy.
+- Authenticated production readback proves five active cycles with the correct sow/boar names, breeding pens, `IN` date, planned `UIT` date and farrowing windows.
+- ROOTLINE PR `#862` merged as `2afafbf954094c794d6b1c3d5a8ab1390fb690f4` and is included in the current live descendant revision.
+- All required eWeLink variable names are present in Render, but the retained OAuth grant remains undecryptable with the current secret. The deployed reauthorization route is therefore still required.
+- No Render morning-manager request and no active n8n morning-manager schedule were found for 2026-08-13. The missing brief was not delivered because its trigger did not run.
+
 ## Unresolved blockers
 
-- HERDMASTER must finish and owner-visibly prove its current Breeding Attention/eligibility contract before UI implementation starts.
+- HERDMASTER must still finish and owner-visibly prove the Breeding Attention eligibility/lifecycle contract; the separate `/matings` read contract is now live-proven.
 - The current workspace's governance/UI-standard changes require separate authoritative reconciliation; they were not modified during unattended preparation.
-- ROOTLINE needs one durable eWeLink reauthorization only after the complete callback/secret lifecycle is ready.
+- ROOTLINE needs one durable eWeLink reauthorization through the deployed recovery route, followed by immediate and post-restart readback proof.
+- Oom Sakkie's daily manager requires a durable production-owned schedule; the workstation restart must not be able to suppress the morning brief.
 - Mixer commissioning requires restored zero-command readback and a genuine owner-observed physical test.
 - B/C routine autonomy still requires its next genuinely eligible end-to-end acceptance.
 - Borehole remains hardware-blocked pending independent five-minute fail-OFF installation.
