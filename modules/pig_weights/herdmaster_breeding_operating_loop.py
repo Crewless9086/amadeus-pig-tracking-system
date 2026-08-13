@@ -316,7 +316,12 @@ def _schedule_placement_cohorts(tasks, today, *, cases=None, readiness_by_id=Non
                 continue
             held.append({"pig_id": task.get("pig_id"), "name": _owner_label(task.get("tag_number")),
                 "state": _owner_label(task.get("provisional_recommendation")),
-                "reason": _owner_label(task.get("why"), 160)})
+                "reason": _owner_label(task.get("why"), 240),
+                "body_condition_score": (cases_by_id.get(_text(task.get("pig_id"))) or {}).get("classification", {}).get("body_condition"),
+                "body_condition_observed_at": (cases_by_id.get(_text(task.get("pig_id"))) or {}).get("classification", {}).get("body_condition_observed_at"),
+                "body_condition_observation_event_id": (cases_by_id.get(_text(task.get("pig_id"))) or {}).get("classification", {}).get("body_condition_observation_event_id"),
+                "body_condition_freshness": (cases_by_id.get(_text(task.get("pig_id"))) or {}).get("classification", {}).get("body_condition_freshness"),
+                "boar_instruction": None, "placement_date": None})
             continue
         assignment = trial_male if trial_task is task else primary
         if trial_task is task:
@@ -546,6 +551,15 @@ def _classify(
     )
     latest_heat = projected_observation.get("heat_state")
     latest_bcs = projected_observation.get("body_condition_score")
+    body_condition_fresh = projected_observation.get(
+        "body_condition_fresh", latest_bcs is not None
+    ) is True
+    body_condition_observed_at = projected_observation.get(
+        "body_condition_observed_at"
+    )
+    body_condition_event_id = projected_observation.get(
+        "body_condition_observation_event_id"
+    )
     recovery_hold = projected_observation.get("recovery_hold")
     near_farrowing = projected_observation.get("near_farrowing")
     physical = projected_observation.get("fresh_physical_facts") or {}
@@ -614,8 +628,10 @@ def _classify(
             "Body condition recovery", "support recovery and record fresh in-range condition before governed clearance", 4,
         )
         reason = (
-            f"Fresh body condition {latest_bcs:g} is outside the governed "
-            f"{BREEDING_BODY_CONDITION_MIN:g}–{BREEDING_BODY_CONDITION_MAX:g} breeding range."
+            f"Latest valid body condition {latest_bcs:g}, observed "
+            f"{_date_text(_date(body_condition_observed_at)) or 'Unknown'}, "
+            f"is below the governed minimum {BREEDING_BODY_CONDITION_MIN:g}. "
+            "Time alone does not clear recovery."
         )
         hold_reasons.append("body condition outside governed range")
     elif near_farrowing == "observed":
@@ -715,7 +731,9 @@ def _classify(
         reason = "Lifecycle, location or purpose excludes breeding."
         readiness_status = "Do Not Breed"
         readiness_reason = "Lifecycle, location or purpose excludes breeding."
-    elif state == "Ready for mating review" and latest_bcs is None:
+    elif state == "Ready for mating review" and (
+        latest_bcs is None or not body_condition_fresh
+    ):
         readiness_status = "Needs Data"
         readiness_reason = "A current body-condition observation is required before placement review."
         state, action, priority = "Needs current condition", "record current body condition", 24
@@ -762,6 +780,11 @@ def _classify(
         "unsuccessful_service_count": len(unsuccessful),
         "current_heat": latest_heat or "unknown",
         "body_condition": latest_bcs,
+        "body_condition_observed_at": body_condition_observed_at,
+        "body_condition_observation_event_id": body_condition_event_id,
+        "body_condition_freshness": projected_observation.get(
+            "body_condition_freshness", "Unknown"
+        ),
         "recovery_hold": recovery_hold or "unknown",
         "near_farrowing": near_farrowing or "unknown",
         "active_exposure": active_exposure,

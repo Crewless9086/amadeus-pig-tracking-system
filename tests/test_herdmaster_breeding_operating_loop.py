@@ -558,6 +558,39 @@ def test_missing_current_condition_is_not_automatically_ready():
     assert result["cases"][0]["classification"]["proposed_placement_date"] is None
 
 
+def test_stale_low_condition_is_one_hold_with_no_boar_or_placement():
+    result = build(projected_observations={"PIG-MS": {
+        "body_condition_score": 2, "body_condition_fresh": False,
+        "body_condition_freshness": "Stale",
+        "body_condition_observed_at": "2026-06-20T08:00:00+00:00",
+        "body_condition_observation_event_id": "OBS-LOW",
+    }})
+    schedule = result["placement_cohorts"]
+    held = [row for row in schedule["held"] if row["pig_id"] == "PIG-MS"]
+    cohort_ids = [row["pig_id"] for group in schedule["cohorts"] for row in group["females"]]
+    assert len(held) == 1
+    assert "PIG-MS" not in cohort_ids
+    assert held[0]["body_condition_score"] == 2
+    assert held[0]["body_condition_observation_event_id"] == "OBS-LOW"
+    assert held[0]["boar_instruction"] is None
+    assert held[0]["placement_date"] is None
+    assert result["cases"][0]["classification"]["proposed_placement_date"] is None
+
+
+def test_later_fresh_in_range_condition_restores_review_without_creating_event():
+    result = build(projected_observations={"PIG-MS": {
+        "body_condition_score": 3, "body_condition_fresh": True,
+        "body_condition_freshness": "Fresh",
+        "body_condition_observed_at": "2026-08-13T08:00:00+00:00",
+        "body_condition_observation_event_id": "OBS-CLEAR",
+    }})
+    assert result["cases"][0]["classification"]["state"] == "Ready for mating review"
+    assert result["writes_performed"] is False
+    assert result["mating_execution_enabled"] is False
+    assert result["observation_recording_enabled"] is False
+    assert result["notification_delivery_operational"] is False
+
+
 def test_unresolved_positive_cycle_cannot_inherit_old_weaning_schedule():
     result = build(
         matings=[{"mating_id":"MAT-NEW", "sow_pig_id":"PIG-MS", "boar_pig_id":"BOAR-1", "mating_date":"2026-07-20", "pregnancy_check_result":"Pregnant"}],

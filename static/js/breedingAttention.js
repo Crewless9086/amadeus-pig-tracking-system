@@ -62,11 +62,21 @@ function practicalAttention(row) {
   if (row.current_state === "Post-litter recovery") return "Bevestig die werklike speenuitkoms en hersteltoestand.";
   return "Geen dringende menslike aksie uit die huidige plan nie.";
 }
+function heldEvidenceText(held) {
+  const score = held.body_condition_score;
+  const observed = held.body_condition_observed_at
+    ? new Date(held.body_condition_observed_at).toLocaleDateString("af-ZA")
+    : "Onbekend";
+  if (score != null) {
+    return `Liggaamskondisie ${score}; waargeneem ${observed}. ${afHoldReason(held.reason || held.state)}`;
+  }
+  return afHoldReason(held.reason || held.state);
+}
 function planCell(row) {
   const assignment = placementByPig.get(row.pig_id);
-  if (assignment) return `<div class="breeding-plan-cell"><span class="breeding-plan-badge ${assignment.kind === "immediate" ? "is-now" : "is-next"}">${assignment.kind === "immediate" ? "Plaas nou" : "Volgende groep"}</span><strong>${escapeHtml(assignment.boar_name)}</strong><small>${escapeHtml(assignment.start_date)} tot ${escapeHtml(assignment.end_date)}</small><small>${escapeHtml(afEvidenceClass(assignment.evidence_class))}</small></div>`;
+  if (assignment) return `<div class="breeding-plan-cell"><span class="breeding-plan-badge ${assignment.kind === "immediate" ? "is-now" : "is-next"}">${assignment.kind === "immediate" ? "Voorgestelde plasing" : "Volgende voorgestelde groep"}</span><strong>${escapeHtml(assignment.boar_name)}</strong><small>Planvenster: ${escapeHtml(assignment.start_date)} tot ${escapeHtml(assignment.end_date)}</small><small>Nie bewys van werklike plasing of diens nie.</small><small>${escapeHtml(afEvidenceClass(assignment.evidence_class))}</small></div>`;
   const held = heldByPig.get(row.pig_id);
-  if (held) return `<div class="breeding-plan-cell"><span class="breeding-plan-badge is-held">${held.state === "Boar exposure active" ? "Tans by beer" : "Hou terug"}</span><small>${escapeHtml(afHoldReason(held.reason || held.state))}</small></div>`;
+  if (held) return `<div class="breeding-plan-cell"><span class="breeding-plan-badge is-held">${held.state === "Boar exposure active" ? "Tans by beer" : "Herstelhouvas"}</span><small>${escapeHtml(heldEvidenceText(held))}</small></div>`;
   return `<span class="breeding-plan-none">Nog nie in die huidige plasingsplan nie.</span>`;
 }
 function render() {
@@ -133,7 +143,7 @@ function renderWorklist(loop) {
     const cohortSection = (title, items, css) => `<section class="breeding-cohort ${css}"><div class="breeding-cohort-heading"><span>${title}</span><strong>${items.reduce((total, item) => total + item.females.length, 0)} sôe</strong></div>${items.map(cohort => `<article class="breeding-boar-group"><header><strong>${escapeHtml(cohort.boar_name)}</strong><span>${escapeHtml(cohort.start_date)} tot ${escapeHtml(cohort.end_date)}</span></header>${cohort.females.map(row => `<button type="button" class="breeding-female-chip worklist-observe" data-pig-id="${escapeHtml(row.pig_id)}"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(afEvidenceClass(row.evidence_class))}</small></button>`).join("")}</article>`).join("") || `<p>Geen groep nie.</p>`}</section>`;
     const active = schedule.current_exposures || [];
     const activeSection = active.length ? `<section class="breeding-cohort held"><div class="breeding-cohort-heading"><span>Tans by beer</span><strong>${active.length} sôe</strong></div>${active.map(row => `<button type="button" class="breeding-held-row worklist-observe" data-pig-id="${escapeHtml(row.pig_id)}"><strong>${escapeHtml(row.name)} — ${escapeHtml(row.boar_name)}</strong><small>IN ${escapeHtml(row.in_date || "Onbekend")}; beplan UIT ${escapeHtml(row.planned_out_date || "Onbekend")}; ${escapeHtml(row.current_pen_name || "Hok onbekend")}</small></button>`).join("")}</section>` : "";
-    worklistTasks.innerHTML = activeSection + cohortSection("Plaas nou", immediate, "is-immediate") + cohortSection("Volgende groep", next, "is-next") + (schedule.held?.length ? `<section class="breeding-cohort held"><div class="breeding-cohort-heading"><span>Hou terug</span><strong>${schedule.held.length} sôe</strong></div>${schedule.held.map(row => `<button type="button" class="breeding-held-row worklist-observe" data-pig-id="${escapeHtml(row.pig_id)}"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(afHoldReason(row.reason || row.state))}</small></button>`).join("")}</section>` : "");
+    worklistTasks.innerHTML = activeSection + cohortSection("Voorgestelde plasing", immediate, "is-immediate") + cohortSection("Volgende voorgestelde groep", next, "is-next") + (schedule.held?.length ? `<section class="breeding-cohort held"><div class="breeding-cohort-heading"><span>Herstel / houvas</span><strong>${schedule.held.length} sôe</strong></div>${schedule.held.map(row => `<button type="button" class="breeding-held-row worklist-observe" data-pig-id="${escapeHtml(row.pig_id)}"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(heldEvidenceText(row))}</small></button>`).join("")}</section>` : "");
     return;
   }
   worklistTasks.innerHTML = (loop.tasks || []).length
@@ -167,7 +177,7 @@ async function load() {
     freshness.textContent = `Bewyse: ${data.source_status}; waargeneem ${data.observation_timestamp || "Onbekend"}.`;
     renderWorklist(data.operating_loop);
     const observed = rows.filter(row => (data.operating_loop?.cases || []).find(item => item.pig_id === row.pig_id)?.observation_history?.length).length;
-    counts.innerHTML = `<div><span class="info-title">Plaas nou</span><span class="info-value">${[...placementByPig.values()].filter(row => row.kind === "immediate").length}</span><small>Volgens die huidige praktiese plan</small></div><div><span class="info-title">Volgende groep</span><span class="info-value">${[...placementByPig.values()].filter(row => row.kind !== "immediate").length}</span><small>Reeds in ’n latere venster</small></div><div><span class="info-title">Werklike houvas</span><span class="info-value">${heldByPig.size}</span><small>Nie tans geskik vir plasing nie</small></div><div><span class="info-title">Met waarnemings</span><span class="info-value">${observed}</span><small>Feitelike dierbewyse beskikbaar</small></div>`;
+    counts.innerHTML = `<div><span class="info-title">Voorgestelde plasing</span><span class="info-value">${[...placementByPig.values()].filter(row => row.kind === "immediate").length}</span><small>Plan alleen; nie werklike plasing nie</small></div><div><span class="info-title">Volgende voorstel</span><span class="info-value">${[...placementByPig.values()].filter(row => row.kind !== "immediate").length}</span><small>Plan alleen; geen diens afgelei nie</small></div><div><span class="info-title">Herstel / houvas</span><span class="info-value">${heldByPig.size}</span><small>Nie tans geskik vir plasing nie</small></div><div><span class="info-title">Met waarnemings</span><span class="info-value">${observed}</span><small>Feitelike dierbewyse beskikbaar</small></div>`;
     render();
   } catch (error) {
     rows = []; counts.innerHTML = ""; renderWorklist(null);

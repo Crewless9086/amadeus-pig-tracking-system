@@ -442,6 +442,31 @@ class MatingRoutesTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             _deadline_read(0.0, lambda: {"success": True})
 
+    def test_superseded_body_condition_is_not_effective(self):
+        now = datetime(2026, 8, 13, 10, tzinfo=timezone.utc)
+        rows = [
+            {"pig_id":"PIG-1", "observed_at":now-timedelta(days=2),
+             "observation_category":"body_condition", "measurements_json":{"body_condition_score":1},
+             "observation_event_id":"OBS-LOW", "supersedes_observation_event_id":None},
+            {"pig_id":"PIG-1", "observed_at":now-timedelta(days=1),
+             "observation_category":"body_condition", "measurements_json":{"body_condition_score":3},
+             "observation_event_id":"OBS-CLEAR", "supersedes_observation_event_id":"OBS-LOW"},
+        ]
+        projected = _project_breeding_observations(rows, now=now)
+        self.assertEqual(projected["PIG-1"]["body_condition_score"], 3)
+        self.assertEqual(projected["PIG-1"]["body_condition_observation_event_id"], "OBS-CLEAR")
+
+    def test_stale_low_condition_remains_effective_recovery_evidence(self):
+        now = datetime(2026, 8, 13, 10, tzinfo=timezone.utc)
+        projected = _project_breeding_observations([{
+            "pig_id":"PIG-1", "observed_at":now-timedelta(days=40),
+            "observation_category":"body_condition", "measurements_json":{"body_condition_score":2},
+            "observation_event_id":"OBS-LOW",
+        }], now=now)
+        self.assertEqual(projected["PIG-1"]["body_condition_score"], 2)
+        self.assertFalse(projected["PIG-1"]["body_condition_fresh"])
+        self.assertEqual(projected["PIG-1"]["body_condition_freshness"], "Stale")
+
 
 if __name__ == "__main__":
     unittest.main()

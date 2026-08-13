@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Breeding Attention eligibility truth prepared
+
+- Registered `HMQ-20260813-03` as a bounded read-model correction on the
+  existing Breeding Attention and append-only observation rails.
+- Preserved the governed minimum body-condition score as `3.0`; no handoff
+  shorthand was interpreted as score 35.
+- Made supersession lineage authoritative, retained below-minimum recovery
+  holds despite age, and required fresh in-range evidence for restored review.
+- Changed unexecuted cohort language from physical placement to explicit
+  proposal wording and carried exact observation identity, date, score and
+  freshness into the single recovery row.
+- Added disposable-PostgreSQL and browser regressions. This is Prepared source
+  evidence only until review, integration, deployment and authenticated
+  read-only production verification complete.
+
 ## 2026-08-13 - Morning startup catch-up policy bounded
 
 - Preserved the late 13 August startup plan as immutable defect evidence.
