@@ -19,6 +19,12 @@
   authority.
 - Added document lifecycle and evidence-led cleanup rules so superseded methods
   remain learnable without steering future builds.
+- Preserved the Mission Standard's owner-directed authority, mapped existing
+  status vocabulary, and grandfathered source-map-designated active doctrine
+  only until Phase 0 performs document-by-document classification.
+- Classified the old Claude review handoff as historical evidence and completed
+  the legacy architecture retirement banner with CORE ownership and Phase 0
+  replacement proof.
 - Prohibited new n8n business logic and new canonical Google Sheets write paths.
 
 ## 2026-08-13 - Production-owned morning lifecycle prepared

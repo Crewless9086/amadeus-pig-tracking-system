@@ -19,7 +19,6 @@
   durable runtime. It must not create new n8n business logic, canonical Sheets
   writes, laptop-terminal dependencies or channel-specific mutation paths.
 
-
 ## ROOTLINE durable device doctrine and canonical action boundary
 
 - Agent doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`.
