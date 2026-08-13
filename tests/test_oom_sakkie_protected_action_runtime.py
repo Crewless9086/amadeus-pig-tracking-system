@@ -56,6 +56,23 @@ def test_proven_replay_is_silent_and_has_no_effects(monkeypatch):
     assert result["writes_farm_data"] is False
 
 
+def test_recovered_grouped_executor_completed_replay_is_silent(monkeypatch):
+    payload={"contract_version":"canonical_grouped_weight_movement_preview_v1",
+        "effective_date":"2026-08-13","rows":[{"pig_id":"PIG-1","weight_kg":"64.4"}],
+        "confirmation_required":True}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+        "success":True,"status":"protected_callback_recovered","callback_token":"opaque",
+        "action_kind":"grouped_weights","mission_id":"MISSION","preview_digest":"DIGEST",
+        "preview_payload":payload},200))
+    monkeypatch.setattr(runtime,"execute_grouped_weight_claim",lambda *args,**kwargs:({
+        "success":True,"status":"grouped_weights_replayed_noop","writes_farm_data":False,
+        "telegram_sends":0,"telegram_edits":0},200))
+    result,status=runtime.handle_protected_action_input(
+        {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority())
+    assert status==200 and result["suppress_owner_delivery"] is True and result["answer"]==""
+    assert result["writes_farm_data"] is False
+
+
 def test_connection_failure_after_claim_is_retained_for_exact_recovery(monkeypatch):
     payload={"preview":{"row_count":7},"preview_sha256":"DIGEST"}
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({

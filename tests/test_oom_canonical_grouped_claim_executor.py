@@ -24,11 +24,14 @@ def canonical_claim(destination="D3"):
 
 
 class ExecutionDb:
-    def __init__(self, *, current=None, existing=None, active_pens=None, fail_on_weight=0):
+    def __init__(self, *, current=None, existing=None, active_pens=None, fail_on_weight=0,
+                 claim_status="executing", claim_result=None):
         self.current = current or {"PIG-A": ("Active", True, "PEN-OLD"), "PIG-B": ("Active", True, None)}
         self.existing = set(existing or ())
         self.active_pens = set({"PEN-D3"} if active_pens is None else active_pens)
         self.fail_on_weight = fail_on_weight
+        self.claim_status = claim_status
+        self.claim_result = claim_result
         self.weight_inserts = 0
         self.statements = []
         self.last = (None, None)
@@ -54,6 +57,8 @@ class ExecutionDb:
         sql, params = self.last
         if "from public.current_canonical_pig_state" in sql:
             return self.current.get(params[0])
+        if "from app_private.oom_protected_action_claims" in sql:
+            return self.claim_status, self.claim_result
         if "from public.pig_weight_events" in sql:
             return (1,) if params[0] in self.existing else None
         if "from public.pens" in sql:
@@ -156,6 +161,18 @@ def test_completed_exact_replay_is_noop_before_executor():
         source_card_message_id="700", connect_factory=lambda: db)
     assert status == 200 and result["status"] == "protected_callback_replayed_noop"
     assert result["telegram_sends"] == result["telegram_edits"] == 0
+
+
+def test_recovered_executor_reads_completed_result_under_lock_and_performs_no_writes():
+    claim, _ = canonical_claim()
+    prior={"success":True,"status":"grouped_weights_completed","batch_id":"BATCH-1",
+        "row_count":2,"movement_count":2,"rows":[],"writes_farm_data":True}
+    db=ExecutionDb(claim_status="completed",claim_result=prior)
+    result,status=claims.execute_grouped_weight_claim(claim,actor_id="OWNER",connect_factory=lambda:db)
+    assert status==200 and result["status"]=="grouped_weights_replayed_noop"
+    assert result["writes_farm_data"] is False
+    assert result["telegram_sends"]==result["telegram_edits"]==0
+    assert not any("insert into public." in sql for sql,_ in db.statements)
 
 
 def test_preexisting_legacy_claim_remains_execution_compatible():

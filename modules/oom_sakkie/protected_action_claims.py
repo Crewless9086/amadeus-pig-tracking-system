@@ -166,6 +166,17 @@ def execute_grouped_weight_claim(claim, *, actor_id, connect_factory=None):
       with db.cursor() as cur:
         cur.execute("set transaction isolation level serializable")
         cur.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",("oom-protected:"+str(claim["callback_token"]),))
+        cur.execute("""select status,result_payload from app_private.oom_protected_action_claims
+          where callback_token=%s for update""",(claim["callback_token"],))
+        durable_claim=cur.fetchone()
+        if not durable_claim:
+            raise RuntimeError("protected claim missing during execution")
+        if durable_claim[0]=="completed":
+            prior=durable_claim[1] if isinstance(durable_claim[1],Mapping) else {}
+            return {**prior,"success":True,"status":"grouped_weights_replayed_noop",
+                "writes_farm_data":False,"telegram_sends":0,"telegram_edits":0},200
+        if durable_claim[0]!="executing":
+            raise RuntimeError("protected claim lost execution ownership")
         for pig_id in sorted(str(row["pig_id"]) for row in rows):
             cur.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",("oom-protected-pig:"+pig_id,))
         for row in rows:

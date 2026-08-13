@@ -148,7 +148,7 @@ def _preview(*, channel, facts, effective_date, destination_pen, pigs, pens):
         "confirmation_required": True,
     }
     digest_material = {"kind": PROTECTED_ACTION_KIND, "payload": canonical}
-    encoded = json.dumps(digest_material, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    encoded = json.dumps(digest_material, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     return {
         "success": True,
         "status": "canonical_grouped_preview_ready",

@@ -23,6 +23,8 @@ durable claim. Consequently the owner-visible preview digest, claim digest and
 executor binding are identical. The claim retains the already computed
 evidence-generation identity, owner/private-chat identity, provider message,
 expiry and preview-card binding.
+The canonical digest uses the established protected-claim JSON serializer, so
+non-ASCII tag or note evidence cannot split the displayed and durable identity.
 
 The existing executor accepts the canonical contract directly. It preserves
 opaque pig and destination-pen identifiers, effective date, numeric weight,
@@ -38,8 +40,9 @@ truth and same-date weight absence, and writes the batch, rows, weight events,
 optional movement events and claim completion in one database transaction.
 Changed evidence is contained with zero farm effects. A partial database
 failure rolls back the group. The exact confirmation receipt can recover an
-`executing` claim; competing confirmation is stale and a completed replay is a
-zero-send, zero-edit, zero-write no-op.
+`executing` claim; after the token lock, durable completed state returns the
+stored result as a zero-send, zero-edit, zero-write no-op. Competing
+confirmation remains stale.
 
 ## Authority boundary
 

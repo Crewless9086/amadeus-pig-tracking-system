@@ -49,6 +49,16 @@ def test_typed_oom_matches_equivalent_application_canonical_rows_and_digest():
     assert result["protected_claim_digest"]==result["preview_digest"]
 
 
+def test_non_ascii_canonical_evidence_has_one_owner_claim_and_executor_digest():
+    pigs=[{**PIGS[0],"tag_number":"SØ-1"},PIGS[1]]
+    captured={}
+    def claim(**kwargs):captured.update(kwargs);return _claim(**kwargs)
+    result,status=_run(pigs=pigs,text="SØ-1 47.2 kg, B2 118 kg on 2026-08-13",claim=claim)
+    assert status==200 and result["success"] is True
+    assert result["preview_digest"]==result["protected_claim_digest"]
+    assert canonical_preview_digest("grouped_weights",captured["preview_payload"])==result["preview_digest"]
+
+
 def test_unknown_optional_values_are_preserved_in_canonical_rows():
     captured={}
     def claim(**kwargs):captured.update(kwargs);return _claim(**kwargs)

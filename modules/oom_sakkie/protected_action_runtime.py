@@ -36,6 +36,8 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
     if claimed["action_kind"]=="grouped_weights":
         result,result_status=execute_grouped_weight_claim(claimed,actor_id=owner,connect_factory=connect_factory)
         if not result.get("success"):return {"handled":True,**result},result_status
+        if result.get("status")=="grouped_weights_replayed_noop":
+            return {"handled":True,**result,"answer":"","suppress_owner_delivery":True},result_status
         rows=result["rows"]
         answer=(f"✅ <b>WEIGHTS RECORDED</b>\n\n{len(rows)} weights were recorded exactly as previewed."
                 + (f" {result['movement_count']} pen movements were also recorded." if result["movement_count"] else ""))
