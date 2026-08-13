@@ -61,6 +61,7 @@ architecture. Their use is bounded by the Agentic Farm Runtime Programme.
 
 ## Operations And Evidence
 
+- `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`
 - `docs/06-operations/RUNBOOK.md`
 - `docs/06-operations/TESTING_CHECKLIST.md`
 - `docs/06-operations/RELEASE_CHECKLIST.md`
