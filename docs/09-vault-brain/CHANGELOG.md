@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Production-owned morning lifecycle prepared
+
+- Identified the daily manager's missing ownership boundary: durable composition
+  and Telegram delivery existed, but invocation was nested inside an external
+  ROOTLINE reassessment request and therefore stopped when no scheduler called it.
+- Added a Render-process-owned 06:45 Africa/Johannesburg wake-up with durable
+  daily/provider claims, bounded catch-up through 12:00, replay silence and one
+  visible deduplicated failure escalation.
+- Kept evidence loading and planning read-only and removed all dependency on the
+  local CHARLIE Telegram relay, n8n business logic and ROOTLINE hardware execution.
+- Source and tests are prepared only. Exact-merge deployment and a genuine
+  provider-confirmed scheduled plan remain required for Business completion.
+
 ## 2026-08-12 - Inclusive breeding exposure date reconciled
 
 - Made the farm's 17-day natural-exposure rule unambiguous: placement day is
