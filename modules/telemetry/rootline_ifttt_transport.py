@@ -84,6 +84,9 @@ class RootlineIFTTTTransport:
                 or any(row.get("power_restoration_state") != "OFF"
                        for row in rows.values())):
             return False
+        if (contract["identity"] == "FERTILIZER-MIXER-CH2"
+                and set(assignments) != {1, 2}):
+            return False
         if (target.get("native_auto_off_enabled") is not True
                 or int(target.get("native_auto_off_seconds") or 0)
                     != int(contract["native_fail_stop_seconds"])):
@@ -94,10 +97,11 @@ class RootlineIFTTTTransport:
             if (contract["identity"] == "FERTILIZER-MIXER-CH2"
                     and assigned.get("identity") != "FERTILIZER-INJECTION-CH1"):
                 return False
-            # A separately assigned output is part of the boundary. It must be
-            # disabled as well as provider-confirmed OFF; an unassigned output
-            # needs no artificial inching setting when it cannot energize.
-            if str(self.environ.get(assigned["authority_flag"]) or "").lower() == "true":
+            assigned_row = rows.get(assigned_channel) or {}
+            if (str(self.environ.get(assigned["authority_flag"]) or "").lower() == "true"
+                    or assigned_row.get("native_auto_off_enabled") is not True
+                    or int(assigned_row.get("native_auto_off_seconds") or 0)
+                        != int(assigned["native_fail_stop_seconds"])):
                 return False
         return True
 

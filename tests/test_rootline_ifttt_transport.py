@@ -205,6 +205,15 @@ class RootlineIFTTTTransportTests(unittest.TestCase):
             device_id="100204d497",channel=2)["authoritative"])
         self.assertEqual(calls,[])
 
+    def test_injection_assignment_requires_its_native_fail_stop(self):
+        for enabled,seconds in ((False,120),(True,121),(True,None)):
+            value=self.fertilizer_snapshot()
+            value["channels"][0].update(native_auto_off_enabled=enabled,
+                native_auto_off_seconds=seconds)
+            transport,_=self.transport(value)
+            self.assertFalse(transport.read_safety_configuration(
+                device_id="100204d497",channel=2)["authoritative"])
+
 
 if __name__ == "__main__":
     unittest.main()
