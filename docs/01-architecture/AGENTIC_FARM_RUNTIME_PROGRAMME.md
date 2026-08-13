@@ -187,4 +187,3 @@ agents and must never be described as background runtime.
 
 No broad rewrite is authorized. Each slice must leave production safer and more
 understandable than before.
-

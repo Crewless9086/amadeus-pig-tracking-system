@@ -99,4 +99,3 @@ not cleanup candidates merely because they are old.
 CORE must run a documentation/runtime drift audit at each programme phase exit
 and at least monthly while migration is active. The audit reports contradictory
 authority, stale active links, legacy runtime dependencies and retirement debt.
-
