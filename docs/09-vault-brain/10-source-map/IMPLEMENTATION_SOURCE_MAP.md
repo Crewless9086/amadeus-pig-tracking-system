@@ -28,6 +28,14 @@
 - Rule: new or materially changed work must move toward one canonical action and
   durable runtime. It must not create new n8n business logic, canonical Sheets
   writes, laptop-terminal dependencies or channel-specific mutation paths.
+- Canonical private-CHARLIE mission identity: `modules/charlie/mission_identity.py`
+  preserves opaque mission identifiers through
+  `modules/charlie/private_planner.py`, `modules/charlie/private_runtime.py`,
+  `modules/charlie/private_tools.py` and the exact Supabase lookup in
+  `modules/charlie/mission_store.py`; tests are
+  `tests/test_charlie_private_planner.py`,
+  `tests/test_charlie_private_runtime.py` and
+  `tests/test_charlie_private_tools.py`. Embedded digits never define identity.
 
 ## ROOTLINE durable device doctrine and canonical action boundary
 
