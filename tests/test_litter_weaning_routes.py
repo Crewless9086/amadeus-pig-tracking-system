@@ -24,6 +24,39 @@ class LitterWeaningRoutesTests(unittest.TestCase):
         "modules.pig_weights.pig_weights_routes.require_owner_admin_access",
         return_value=None,
     )
+    @patch("modules.pig_weights.pig_weights_routes.require_strict_owner_admin_access")
+    def test_unproven_strict_owner_authority_cannot_preview(
+        self, strict_guard, _legacy_guard,
+    ):
+        strict_guard.return_value = (
+            {"success": False, "status": "strict_owner_admin_access_denied"}, 403
+        )
+        response = self.client.post(
+            "/api/pig-weights/litter/LIT-1/weaning-day", json={"dry_run": True}
+        )
+        self.assertEqual(response.status_code, 403)
+
+    @patch(
+        "modules.pig_weights.pig_weights_routes.require_owner_admin_access",
+        return_value=None,
+    )
+    @patch("modules.pig_weights.pig_weights_routes.require_strict_owner_admin_access")
+    def test_unproven_strict_owner_authority_cannot_execute_observation(
+        self, strict_guard, _legacy_guard,
+    ):
+        strict_guard.return_value = (
+            {"success": False, "status": "strict_owner_admin_access_denied"}, 403
+        )
+        response = self.client.post(
+            "/api/pig-weights/litter/LIT-1/piglet-observations",
+            json={"dry_run": False, "confirmation_binding": {}},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    @patch(
+        "modules.pig_weights.pig_weights_routes.require_owner_admin_access",
+        return_value=None,
+    )
     @patch(
         "modules.pig_weights.pig_weights_routes.owner_admin_principal",
         return_value="owner-admin:server-derived",
