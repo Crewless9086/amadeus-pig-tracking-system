@@ -22,12 +22,12 @@ def evidence(rain=0):
             "tanks":{"observed_at":NOW.isoformat(),"reservoir_state":"FULL","reservoir_fraction":1.0}}
 
 
-def controller():
+def controller(response_digest="READ-1"):
     return {"device_id":"100204e9bc","online":True,"firmware":"3.8.2",
         "actuation_configuration_safe":True,"timers_enabled":False,"scenes_enabled":False,
         "interlock_enabled":False,"provider_control_calls":0,"trusted_receipt_at":NOW.isoformat(),
         "commissioned_baseline_id":"ROOTLINE-EWELINK-BASELINE-1AB8753412B8851C4513D6CC",
-        "response_digest":"READ-1","channels":[{"channel":n,"output_state":"OFF",
+        "response_digest":response_digest,"channels":[{"channel":n,"output_state":"OFF",
             "native_auto_off_enabled":True,"native_auto_off_seconds":3599,
             "power_restoration_state":"OFF"} for n in range(1,5)]}
 
@@ -231,11 +231,30 @@ def test_real_advancing_clock_accepts_fresh_revalidation_before_claim():
     assert [call["state"] for call in transport.calls]==["ON"]
 
 
-def test_protected_segment_issues_zero_control_when_current_digest_changed():
+def test_protected_segment_accepts_fresh_provider_receipt_digest_for_same_governed_identity():
+    store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
+    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+        expected=_current(loader,lambda **_kwargs:controller("PREVIEW-RECEIPT"),object(),{},"db",NOW,store)["artifact"]
+        result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
+          environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+          evidence_loader=loader,readback=lambda **_kwargs:controller("CURRENT-RECEIPT"),clock=lambda:NOW,
+          owner_user_id="42",chat_id="42")
+    assert result["status"]=="segment_started"
+    assert [call["state"] for call in transport.calls]==["ON"]
+    fresh=next(row for action,row in store.rows if action=="record_eligibility")
+    claimed=next(row for action,row in store.rows if action=="claim_before_on")
+    assert fresh["eligibility_sha256"]!=expected["eligibility_sha256"]
+    assert claimed["eligibility_sha256"]==fresh["eligibility_sha256"]
+    assert claimed["eligibility_id"]==fresh["eligibility_id"]
+    assert claimed["execution_id"]==fresh["execution_id"]
+    assert store.active["eligibility_sha256"]==fresh["eligibility_sha256"]
+
+
+def test_protected_segment_rejects_changed_stable_job_identity_with_zero_control():
     store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
     with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
         expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store)["artifact"]
-        expected={**expected,"eligibility_sha256":"wrong"}
+        expected={**expected,"job_sha256":"wrong"}
         result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
           evidence_loader=loader,readback=lambda **_kwargs:controller(),owner_user_id="42",chat_id="42")
@@ -278,7 +297,7 @@ def test_protected_restart_requires_full_claim_binding_and_never_reissues_on():
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
           evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
           owner_user_id="42",chat_id="42")
-        replay=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
+        replay=run_protected_rootline_segment(expected_artifact={**expected,"eligibility_sha256":"preview-receipt-digest"},notify=lambda *_:{"success":True},
           environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
           evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
           owner_user_id="42",chat_id="42")
