@@ -14,6 +14,12 @@
 - This is Prepared documentation only. Backend and UI implementation remain
   stopped pending Control Tower collision/file ownership division.
 
+## 2026-08-13 - Canonical grouped claim/executor compatibility prepared
+
+- Corrected the typed OOM preview so its displayed canonical digest binds the exact payload retained by the existing protected claim and consumed by the grouped executor.
+- Added fail-closed canonical `Unknown` handling, Unicode-safe identity parsing with full natural-preview equivalence, Unicode-stable digest identity, exact state revalidation, legacy active-claim compatibility, and focused digest/stale-state/rollback/concurrency/replay tests.
+- Added no route or lifecycle bypass and invoked no production preview, claim, confirmation, provider or farm effect; this remains undeployed source evidence.
+
 ## 2026-08-13 - Typed OOM grouped preview adapter prepared
 
 - Wired only the existing authenticated typed OOM grouped-weight preview boundary to the pure canonical contract after its established natural interpretation and readiness preflight.

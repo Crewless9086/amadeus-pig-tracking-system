@@ -1,7 +1,7 @@
 """Single-use, exact-preview owner claims for protected Oom Sakkie actions."""
 from __future__ import annotations
 import hashlib, json, os, secrets, uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Mapping
 
 CALLBACK_PREFIX = "oompa:"
@@ -149,28 +149,56 @@ def execute_grouped_weight_claim(claim, *, actor_id, connect_factory=None):
     """Atomically apply exactly the rows and movements bound into one claim."""
     payload=claim.get("preview_payload") if isinstance(claim.get("preview_payload"),Mapping) else {}
     rows=payload.get("rows") if isinstance(payload.get("rows"),list) else []
-    weight_date=str(payload.get("weight_date") or "")
+    canonical_contract=(payload.get("contract_version")=="canonical_grouped_weight_movement_preview_v1"
+        and payload.get("confirmation_required") is True)
+    legacy_contract=(payload.get("contract_version")=="herdmaster_telegram_grouped_weight_preview_v1"
+        and len(rows)==int(payload.get("row_count") or 0))
+    weight_date=str(payload.get("effective_date") if canonical_contract else payload.get("weight_date") or "")
     digest=canonical_preview_digest("grouped_weights",payload)
-    if not rows or len(rows)!=int(payload.get("row_count") or 0) or digest!=claim.get("preview_digest"):
+    try: date.fromisoformat(weight_date)
+    except ValueError: weight_date=""
+    if not (canonical_contract or legacy_contract) or not rows or not weight_date or digest!=claim.get("preview_digest"):
         result={"success":False,"status":"protected_preview_binding_mismatch","writes_farm_data":False}
         contain_claim(claim["callback_token"],result,connect_factory=connect_factory)
         return result,409
     batch_id=str(uuid.uuid4())
     with (connect_factory() if connect_factory else _connect()) as db:
       with db.cursor() as cur:
+        cur.execute("set transaction isolation level serializable")
         cur.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",("oom-protected:"+str(claim["callback_token"]),))
+        cur.execute("""select status,result_payload from app_private.oom_protected_action_claims
+          where callback_token=%s for update""",(claim["callback_token"],))
+        durable_claim=cur.fetchone()
+        if not durable_claim:
+            raise RuntimeError("protected claim missing during execution")
+        if durable_claim[0]=="completed":
+            prior=durable_claim[1] if isinstance(durable_claim[1],Mapping) else {}
+            return {**prior,"success":True,"status":"grouped_weights_replayed_noop",
+                "writes_farm_data":False,"telegram_sends":0,"telegram_edits":0},200
+        if durable_claim[0]!="executing":
+            raise RuntimeError("protected claim lost execution ownership")
         for pig_id in sorted(str(row["pig_id"]) for row in rows):
             cur.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",("oom-protected-pig:"+pig_id,))
         for row in rows:
             cur.execute("""select status,on_farm,current_pen_id from public.current_canonical_pig_state
               where pig_id=%s""",(row["pig_id"],)); current=cur.fetchone()
+            expected_pen="" if row.get("current_pen_id")=="Unknown" else str(row.get("current_pen_id") or "")
             if (not current or str(current[0]).casefold()!="active" or current[1] is not True
-                    or str(current[2] or "")!=str(row.get("current_pen_id") or "")):
+                    or str(current[2] or "")!=expected_pen):
                 result={"success":False,"status":"protected_row_changed_repreview_required","writes_farm_data":False}
                 cur.execute("""update app_private.oom_protected_action_claims set status='contained',
                   result_payload=%s::jsonb,completed_at=now() where callback_token=%s and status='executing'""",
                   (json.dumps(result,sort_keys=True),claim["callback_token"]))
                 return result,409
+            destination_pen=_movement_destination(row)
+            if destination_pen:
+                cur.execute("select 1 from public.pens where pen_id=%s and is_active is true for share",(destination_pen,))
+                if not cur.fetchone():
+                    result={"success":False,"status":"protected_destination_changed_repreview_required","writes_farm_data":False}
+                    cur.execute("""update app_private.oom_protected_action_claims set status='contained',
+                      result_payload=%s::jsonb,completed_at=now() where callback_token=%s and status='executing'""",
+                      (json.dumps(result,sort_keys=True),claim["callback_token"]))
+                    return result,409
             cur.execute("select 1 from public.pig_weight_events where pig_id=%s and weight_date=%s::date",(row["pig_id"],weight_date))
             if cur.fetchone():
                 result={"success":False,"status":"protected_weight_already_exists","writes_farm_data":False}
@@ -178,7 +206,7 @@ def execute_grouped_weight_claim(claim, *, actor_id, connect_factory=None):
                   result_payload=%s::jsonb,completed_at=now() where callback_token=%s and status='executing'""",
                   (json.dumps(result,sort_keys=True),claim["callback_token"]))
                 return result,409
-        movement_count=sum(bool(r.get("moved_to_pen_id") and r.get("moved_to_pen_id")!=r.get("current_pen_id")) for r in rows)
+        movement_count=sum(_movement_destination(r)!=_current_pen(r) and bool(_movement_destination(r)) for r in rows)
         cur.execute("""insert into public.bulk_weight_batches(batch_id,client_draft_id,weight_date,status,
           visible_row_count,actionable_row_count,weight_row_count,movement_row_count,skipped_row_count,
           success_count,failed_count,duplicate_count,source,notes,error_summary,payload_summary_json,completed_at)
@@ -188,14 +216,15 @@ def execute_grouped_weight_claim(claim, *, actor_id, connect_factory=None):
         results=[]
         for index,row in enumerate(rows):
             row_id=str(uuid.uuid4()); weight_event="WGT-"+secrets.token_hex(4).upper()
-            moved=bool(row.get("moved_to_pen_id") and row.get("moved_to_pen_id")!=row.get("current_pen_id"))
+            current_pen=_current_pen(row); destination_pen=_movement_destination(row)
+            moved=bool(destination_pen and destination_pen!=current_pen)
             original={**row,"weight_date":weight_date,"preview_digest":claim["preview_digest"]}
             cur.execute("""insert into public.bulk_weight_batch_rows(row_id,batch_id,row_index,pig_id,pig_name,
               weight_kg,from_pen_id,to_pen_id,movement_type,status,status_reason,processed_at,result_json,
               original_row_json,idempotency_key) values(%s::uuid,%s::uuid,%s,%s,%s,%s,%s,%s,%s,'success',
               'Exact protected preview recorded.',now(),%s::jsonb,%s::jsonb,%s)""",
-              (row_id,batch_id,index,row["pig_id"],row.get("label") or row.get("tag_number"),row["weight_kg"],
-               row.get("current_pen_id") or None,row.get("moved_to_pen_id") or None,"pen_change" if moved else "",
+              (row_id,batch_id,index,row["pig_id"],row.get("tag_number") or row.get("label"),row["weight_kg"],
+               current_pen or None,destination_pen or None,"pen_change" if moved else "",
                json.dumps({"has_weight":True,"has_pen_change":moved,"preview_digest":claim["preview_digest"]},sort_keys=True),
                json.dumps(original,sort_keys=True),f"{claim['preview_digest']}:{index}"))
             cur.execute("""insert into public.pig_weight_events(weight_event_id,pig_id,weight_date,weight_kg,
@@ -206,8 +235,8 @@ def execute_grouped_weight_claim(claim, *, actor_id, connect_factory=None):
                 cur.execute("""insert into public.pig_location_events(location_event_id,pig_id,move_date,from_pen_id,to_pen_id,
                   reason_for_move,moved_by,move_notes,source,bulk_batch_id,bulk_row_id)
                   values(%s,%s,%s::date,%s,%s,'Moved during exact protected grouped weight confirmation',%s,'','oom_sakkie_protected',%s::uuid,%s::uuid)""",
-                  (move_event,row["pig_id"],weight_date,row.get("current_pen_id") or None,row["moved_to_pen_id"],actor_id,batch_id,row_id))
-            results.append({"pig_id":row["pig_id"],"weight_kg":row["weight_kg"],"moved_to_pen_id":row.get("moved_to_pen_id") or ""})
+                  (move_event,row["pig_id"],weight_date,current_pen or None,destination_pen,actor_id,batch_id,row_id))
+            results.append({"pig_id":row["pig_id"],"weight_kg":row["weight_kg"],"moved_to_pen_id":destination_pen})
         result={"success":True,"status":"grouped_weights_completed","batch_id":batch_id,"row_count":len(rows),
                 "movement_count":movement_count,"rows":results,"writes_farm_data":True}
         cur.execute("""update app_private.oom_protected_action_claims set status='completed',result_payload=%s::jsonb,
@@ -215,6 +244,14 @@ def execute_grouped_weight_claim(claim, *, actor_id, connect_factory=None):
           (json.dumps(result,sort_keys=True),claim["callback_token"]))
         if cur.rowcount!=1:raise RuntimeError("protected claim lost execution ownership")
     return result,201
+
+def _current_pen(row):
+    value=row.get("current_pen_id")
+    return "" if value in (None,"","Unknown") else str(value)
+
+def _movement_destination(row):
+    value=row.get("moved_to_pen_id")
+    return "" if value in (None,"","Unknown") else str(value)
 
 def _connect():
     import psycopg
