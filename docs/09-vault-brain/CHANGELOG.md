@@ -15,6 +15,19 @@
   evidence only until review, integration, deployment and authenticated
   read-only production verification complete.
 
+## 2026-08-13 - Canonical mission identifiers made opaque
+
+- Replaced digit-substring mission parsing with one shared opaque identifier
+  boundary that preserves every hyphen and suffix through private Telegram
+  planning, canonical action selection and exact Supabase lookup.
+- Put explicit mission creation ahead of mission-reference lookup, fail closed
+  on malformed identifier-shaped input, and bind LLM mission reads back to the
+  exact identifier present in the owner's text.
+- Added exact lookup and creation-acknowledgement regression coverage plus
+  update-level replay/concurrency and zero-unrelated-effect checks. This does
+  not claim atomic creation across distinct updates. No provider or production
+  mission was invoked.
+
 - Added the canonical Control Tower mission register for CORE, HERDMASTER,
   ROOTLINE, OOM SAKKIE, SAM and BEACON. It separates temporary development
   terminals from deployed runtimes and makes every terminal-feedback assessment

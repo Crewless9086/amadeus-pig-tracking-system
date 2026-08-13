@@ -33,6 +33,11 @@ another prompt is issued. Conversation memory is not the control system.
   reply were exactly-once, but the planner misread the CMQ date as a mission ID,
   so durable mission pickup failed and was not retried. Retain the watchdog;
   permanent retirement is not ready and no further window is scheduled.
+- CMQ-20260813-02A remediation now preserves complete opaque mission IDs through
+  private Telegram planning, canonical action selection and exact Supabase
+  lookup. Integrate and deploy the reviewed parser repair, then perform
+  read-only readiness verification only. A genuine Telegram proof remains a
+  separately authorized future action; do not infer authority from this repair.
 
 ## Channel-invariant canonical actions
 
