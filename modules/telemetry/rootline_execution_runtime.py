@@ -90,6 +90,68 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
         eligibility_revalidator=revalidate, now=now, clock=clock)
 
 
+def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
+        now=None, database_url=None, store=rootline_irrigation_execution_store,
+        token_store=None, transport=None, outcome_reader=lambda _identity: None,
+        evidence_loader=read_current_water_energy_evidence, readback=read_current_device,
+        clock=None, owner_user_id="", chat_id=""):
+    """Execute one owner-confirmed segment through the existing coordinator.
+
+    This is not standing autonomy: the protected claim is the sole authority and
+    the complete eligibility artifact must be rebuilt immediately before claim.
+    """
+    source=environ if environ is not None else os.environ
+    clock=clock or (lambda: datetime.now(timezone.utc)); now=_aware(now or clock())
+    if not owner_user_id or owner_user_id!=chat_id:
+        return _safe("protected_owner_binding_invalid")
+    token_store=token_store or PostgresOAuthTokenStore(database_url)
+    active=store("load_active",None)
+    if active:
+        if any(active.get(k)!=expected_artifact.get(k) for k in
+               ("job_id","segment_identity","zone_id","channel")):
+            return _safe("active_execution_conflicts_with_protected_claim")
+        transport=transport or RootlineIFTTTTransport(token_store=token_store,environ=source,readback=readback)
+        return advance_irrigation_execution(decision_id="",commissioning_id="",
+          decision_reader=lambda _identity:{},commissioning_reader=lambda _identity:{},
+          store=store,transport=transport,notify=notify,outcome_reader=outcome_reader,
+          now=now,clock=clock)
+    current=_current(evidence_loader,readback,token_store,source,database_url,now,store)
+    artifact=current["artifact"]
+    bound_keys=("job_id","job_sha256","zone_id","channel","segment_identity",
+      "current_segment","segment_requested_seconds","requested_total_duration_seconds",
+      "governed_executable_duration_seconds","plan_generation",
+      "controller_safety_generation","eligibility_sha256")
+    if (artifact.get("eligible") is not True or artifact.get("current_segment")!=1
+            or any(artifact.get(k)!=expected_artifact.get(k) for k in bound_keys)):
+        return _safe("protected_irrigation_eligibility_changed")
+    stored=store("record_eligibility",artifact)
+    if not isinstance(stored,dict) or stored.get("success") is not True:
+        return {**_safe("eligibility_persistence_unproven"),"success":False}
+    baseline=commissioned_controller_baseline(); zone=artifact["zone_id"]
+    commissioning_id=baseline["b_commissioning_id"]
+    decision={"decision_id":"ROOTLINE-DECISION-"+artifact["eligibility_sha256"][:24].upper(),
+      "decision":"Run now","standing_authority":True,"zone_id":zone,
+      "runtime_minutes":60,"runtime_seconds":artifact["maximum_duration_seconds"],
+      "execution_id":artifact["execution_id"],"eligibility_id":artifact["eligibility_id"],
+      "evidence_generation":artifact["plan_generation"],"assessed_at":artifact["decision_at"],
+      "commissioning_id":commissioning_id,"commissioning_generation":baseline["configuration_generation"],
+      "execution_eligibility":artifact}
+    decision["decision_sha256"]=_digest(decision)
+    selected=next(row for row in current["controller"]["channels"] if row["channel"]==artifact["channel"])
+    commissioning={"commissioning_id":commissioning_id,"zone_id":zone,"channel":artifact["channel"],
+      "firmware":current["controller"]["firmware"],"native_inching_seconds":selected["native_auto_off_seconds"],
+      "accepted_controller_baseline":baseline}
+    transport=transport or RootlineIFTTTTransport(token_store=token_store,environ=source,readback=readback)
+    def revalidate(_decision):
+        return _current(evidence_loader,readback,token_store,source,database_url,
+          _aware(clock()),store)["artifact"]
+    return advance_irrigation_execution(decision_id=decision["decision_id"],
+      commissioning_id=commissioning_id,decision_reader=lambda _identity:decision,
+      commissioning_reader=lambda _identity:commissioning,store=store,transport=transport,
+      notify=notify,outcome_reader=outcome_reader,eligibility_revalidator=revalidate,
+      now=now,clock=clock)
+
+
 def _current(evidence_loader, readback, token_store, source, database_url, now,
              store=rootline_irrigation_execution_store):
     evidence, operating_date, generated_at = evidence_loader(

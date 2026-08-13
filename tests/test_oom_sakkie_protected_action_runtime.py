@@ -56,6 +56,35 @@ def test_proven_replay_is_silent_and_has_no_effects(monkeypatch):
     assert result["writes_farm_data"] is False
 
 
+def test_irrigation_confirmation_uses_existing_protected_callback_once(monkeypatch):
+    payload={"mission_id":"RMQ-20260813-04","job_id":"JOB-1"}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_claimed","callback_token":"opaque",
+      "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
+      "preview_digest":"DIGEST","preview_payload":payload},200))
+    completed=[]
+    monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:completed.append(args) or {
+      "completed":True,"replayed":False,"result":args[1]})
+    calls=[]
+    def handler(claim,**kwargs):
+        calls.append((claim,kwargs));return {"success":True,"status":"segment_started",
+          "hardware_commands":1,"provider_control_calls":1},200
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority(),irrigation_handler=handler)
+    assert status==200 and result["status"]=="segment_started"
+    assert len(calls)==1 and len(completed)==1
+
+
+def test_stale_irrigation_confirmation_never_reaches_runner(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":False,"status":"protected_callback_expired"},409))
+    calls=[]
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority(),
+      irrigation_handler=lambda *args,**kwargs:calls.append(args))
+    assert status==409 and result["status"]=="protected_callback_expired" and calls==[]
+
+
 def test_connection_failure_after_claim_is_retained_for_exact_recovery(monkeypatch):
     payload={"preview":{"row_count":7},"preview_sha256":"DIGEST"}
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
