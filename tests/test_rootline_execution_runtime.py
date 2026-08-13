@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
-from modules.telemetry.rootline_execution_runtime import run_rootline_execution_cycle
+from modules.telemetry.rootline_execution_runtime import (
+    _current, run_protected_rootline_segment, run_rootline_execution_cycle,
+)
 
 NOW=datetime(2026,8,8,18,0,tzinfo=timezone.utc)
 
@@ -226,4 +228,64 @@ def test_real_advancing_clock_accepts_fresh_revalidation_before_claim():
     instants=iter((NOW+timedelta(seconds=1),NOW+timedelta(seconds=2)))
     value=run(store,transport,clock=lambda:next(instants))
     assert value["status"]=="segment_started"
+    assert [call["state"] for call in transport.calls]==["ON"]
+
+
+def test_protected_segment_issues_zero_control_when_current_digest_changed():
+    store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
+    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+        expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store)["artifact"]
+        expected={**expected,"eligibility_sha256":"wrong"}
+        result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
+          environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+          evidence_loader=loader,readback=lambda **_kwargs:controller(),owner_user_id="42",chat_id="42")
+    assert result["status"]=="protected_irrigation_eligibility_changed"
+    assert result["hardware_commands"]==0 and transport.calls==[]
+
+
+def test_protected_runner_rejects_cross_zone_artifact_before_provider_access():
+    store=Store();transport=Transport()
+    expected={"zone_id":"C12345","channel":2,"current_segment":1,
+      "segment_requested_seconds":3599,"requested_total_duration_seconds":7200,
+      "governed_executable_duration_seconds":7198,"expected_segment_count":2}
+    result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,
+      environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+      evidence_loader=lambda **_kwargs:(_ for _ in ()).throw(AssertionError("evidence accessed")),
+      readback=lambda **_kwargs:(_ for _ in ()).throw(AssertionError("provider accessed")),
+      owner_user_id="42",chat_id="42")
+    assert result["status"]=="protected_irrigation_boundary_invalid"
+    assert result["hardware_commands"]==0 and transport.calls==[]
+
+
+def test_protected_segment_delegates_exactly_one_bounded_on_after_confirmation():
+    store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
+    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+        expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store)["artifact"]
+        result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
+          environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+          evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
+          owner_user_id="42",chat_id="42")
+    assert result["status"]=="segment_started"
+    assert [call["state"] for call in transport.calls]==["ON"]
+    assert store.active["planned_runtime_seconds"]==3599
+
+
+def test_protected_restart_requires_full_claim_binding_and_never_reissues_on():
+    store=Store();transport=Transport();loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
+    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",return_value=plan()):
+        expected=_current(loader,lambda **_kwargs:controller(),object(),{},"db",NOW,store)["artifact"]
+        first=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
+          environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+          evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
+          owner_user_id="42",chat_id="42")
+        replay=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:{"success":True},
+          environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+          evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
+          owner_user_id="42",chat_id="42")
+        mismatch=run_protected_rootline_segment(expected_artifact={**expected,"controller_safety_generation":"OTHER"},notify=lambda *_:None,
+          environ={},now=NOW,database_url="db",store=store,token_store=object(),transport=transport,
+          evidence_loader=loader,readback=lambda **_kwargs:controller(),clock=lambda:NOW,
+          owner_user_id="42",chat_id="42")
+    assert first["status"]=="segment_started" and replay["status"]=="active_segment_owned"
+    assert mismatch["status"]=="active_execution_conflicts_with_protected_claim"
     assert [call["state"] for call in transport.calls]==["ON"]
