@@ -11,8 +11,8 @@ route, customer system or hardware was mutated.
 
 - **Documented fact:** asserted by tracked documentation or a committed export.
 - **Runtime-loaded fact:** application/process evidence proves a setting or
-  capability was loaded inside that running process. No application-level
-  loaded-setting proof was obtained in this slice.
+  capability was loaded inside that running process. The scheduler-singularity
+  slice obtained this proof only for the local CHARLIE relay transport variables.
 - **Provider-verified fact:** authoritative n8n, Render, Google, Telegram,
   Chatwoot or device-provider readback. The dated snapshot records n8n, Render,
   Telegram and Chatwoot control-plane state, including configured key names but
@@ -146,6 +146,64 @@ does not own `getUpdates` or delivery, one fresh CHARLIE owner callback is
 provider-confirmed through Render, and the documented task re-enable command is
 verified as rollback.
 
+## CMQ-20260813-02 — CHARLIE scheduler singularity read-only proof
+
+Observation window: `2026-08-13T09:03:45Z` to `2026-08-13T09:04:38Z` for
+Windows/process evidence; Telegram `getWebhookInfo` refreshed from
+`2026-08-13T09:13:05Z` to `2026-08-13T09:13:06Z`. No task, process, webhook,
+message, provider configuration or data was invoked or changed.
+
+- **Documented:** current source checks `CORE_RELAY_TRANSPORT` before polling and
+  returns `webhook_managed` in webhook mode. The installed runtime is an older
+  copy: deployed relay SHA-256
+  `F47082491B3E4CB7505A196FA75792317EA9A49C9FE572241EFC4F35C019391F`
+  versus tracked
+  `372DD4863A86A3CEBD3B081398CEBB3301769A156673E5076C674F4CDA4F9E63`;
+  deployed watchdog
+  `7A394FAE11F43948689FA7F32930BC16EDD4A5B02908204F108C573B8A440F7A`
+  versus tracked
+  `FA5F44A7A42632EEBDEF815304F9E6375C10F418DA09B0E391D5F30881C4CB92`.
+  The deployed relay lacks the current transport guard.
+- **Runtime-loaded:** read-only inspection of both relay processes (PIDs
+  `9920`/`10996`, created `2026-08-13T05:02:57Z`) found all of
+  `CORE_RELAY_TRANSPORT`, `CHARLIE_TELEGRAM_TRANSPORT` and
+  `CHARLIE_TELEGRAM_INGRESS_TRANSPORT` loaded as `webhook`. No secret value was
+  retained.
+- **OS-observed:** the watchdog is enabled/Ready, runs every two minutes with
+  `IgnoreNew`, and at `09:03:45Z` reported PID `10996` healthy. The direct relay
+  task is Disabled. The watchdog owns the venv `pythonw.exe` parent (`9920`) and
+  system-Python child (`10996`), which holds repeated Telegram HTTPS connections.
+- **Behavior:** the deployed relay log was approximately 21 MB and continued to
+  append `getUpdates` HTTP errors. This proves polling attempts despite loaded
+  webhook mode. Telegram rejects `getUpdates` while a webhook is registered, so
+  successful update consumption or a duplicate reply is not proven.
+- **Provider-verified:** fresh `getWebhookInfo` confirms the same bot is owned by
+  the Render `/api/charlie/build-relay/telegram/webhook` endpoint, with zero
+  pending updates and no current provider error.
+- **Physical:** none.
+
+The watchdog is a **genuine duplicate transport owner**, but it is **retained
+pending evidence**, not retirement-ready. It duplicates ingress ownership and
+polling attempts; the provider webhook currently prevents update consumption.
+Disabling it would stop two-minute health/restart supervision and the legacy
+polling fallback. Render should retain ordinary delivery, but this slice did not
+send a fresh owner callback and therefore did not prove loss-free webhook
+handling or durable mission pickup.
+
+The canonical replacement is the authenticated Render webhook plus Supabase
+inbound claim, conversation/mission store and durable CORE pickup runtime; owner
+CORE. A later authorized reversible window must snapshot task XML, state/log,
+process chain and provider truth; prove one fresh owner text, mission callback,
+provider receipt, inbound claim, reply and requested durable mission pickup;
+disable only the scheduled watchdog, then explicitly stop its already-loaded
+relay parent/child because disabling a task does not terminate them; observe the
+two-minute boundary and full rollback window; and repeat the proof. If any
+receipt, reply, claim or pickup is missing, rollback must re-enable the unchanged
+task and start it once, then verify one healthy child and provider ownership.
+Retirement requires two clean windows, zero polling connections/log growth,
+zero lost or duplicate messages, unchanged webhook ownership and verified
+re-enable recovery.
+
 ### Physical facts
 
 None. No device, pump, valve, farm condition, customer effect or on-site state
@@ -177,7 +235,7 @@ was observed. Provider and process metadata cannot establish physical truth.
 | Google Sheets formula/read family | `PIG_OVERVIEW`, `MATING_OVERVIEW`, `LITTER_OVERVIEW`, `ORDER_OVERVIEW`, sales availability/detail/summary/totals | migrate | Current reports and legacy AI/n8n reads may depend on formulas. | Tested Supabase views/projections; domain owners/CORE | Formula parity fixtures and freshness semantics. | Every caller points to canonical view; forced Sheets-unavailable read suite passes; formula deltas resolved or quarantined. |
 | Google Sheets registers/settings | `PEN_REGISTER`, `PRODUCT_REGISTER`, `USERS`, `SALES_PRICING`, `SYSTEM_SETTINGS` retain admin/manual ownership | retain-temporarily | Removing early can break reference, pricing, access or document settings. | Governed Supabase reference tables/admin rails; owner relevant domain/CORE | Owner-approved edit authority and audit. | Named replacement has audited edit/readback, export and rollback; all runtime callers cut over before Sheets becomes downstream-only. |
 | Google Sheets irrigation family | `modules/telemetry/irrigation_service.py`, `scripts/irrigation_import_dry_run.py` and `scripts/irrigation_daily_sync.py` read zone, daily-plan, state and log tabs in a named spreadsheet; the sync script can project data | migrate | Disabling Sheets can break legacy irrigation status/plan reads and explicit sync/import tooling; it must not be assumed safe because the n8n controller export is disabled. | ROOTLINE Supabase plan, execution and status projections; owner ROOTLINE/CORE | Exact tab/caller inventory, timezone/date parity, source provenance and dry-run/export rollback. | Every runtime caller uses canonical projections with Sheets unavailable; sync/import tooling is historical or export-only; two daily plans/status readbacks reconcile before the Sheets path is disabled. |
-| Local CHARLIE Telegram polling relay/watchdog/Windows task | Watchdog task Ready with a loaded relay parent/child chain; direct relay task Disabled; CHARLIE provider webhook is Render-owned; loaded transport mode not yet proven | quarantine | If the child is actually polling, it can compete for updates; if it is self-contained in webhook mode, disabling the watchdog should have no delivery effect, but that is not yet proven. | Hosted authenticated CHARLIE webhook; owner CORE | Read loaded `CORE_RELAY_TRANSPORT` as mode only, prove process behavior, owner allowlist and Render callback. Rollback is task re-enable using the documented installer/definition. | Loaded mode proves no `getUpdates` ownership, fresh Render callback succeeds, child termination is observed only in a later authorized reversible window, and re-enable rollback is verified. |
+| Local CHARLIE Telegram polling relay/watchdog/Windows task | Watchdog enabled/Ready and owns loaded parent/child; direct task Disabled; loaded transport variables say `webhook`, but stale deployed relay lacks the guard and is proven attempting `getUpdates`; Telegram webhook is Render-owned | retain-temporarily | Disabling stops legacy polling fallback and restart supervision. Render should retain ingress, but fresh text/callback and durable mission-pickup equivalence are unproven. | Hosted authenticated webhook plus canonical inbound claims/conversation/mission store and durable CORE pickup; owner CORE | Snapshot task XML/state/log/process/provider truth. Later rollback is re-enable the unchanged watchdog if any canonical receipt, reply, claim or pickup is missing. | Two authorized clean windows prove text, callback and requested pickup; one claim/reply/effect per update; zero loss/duplicates and polling activity; webhook unchanged; re-enable recovery verified. |
 | Local CHARLIE executive watchdog/task | `scripts/install_charlie_executive_watchdog.ps1` and `scripts/charlie_executive_watchdog.py` define a distinct always-on executive watchdog | retain-temporarily | Disabling an active task can stop executive recovery/follow-up supervision; duplicate watchdogs can race the same mission state. | One supervised CORE executive process with durable leases; owner CORE | Windows task/process identity, mission store and heartbeat. | OS readback proves one configured task/process; restart recovery resumes one disposable mission without duplicate command; rollback task definition retained. |
 | Local CORE runner watchdog/promotion task | `scripts/install_charlie_runner_watchdog.ps1`, `scripts/promote_charlie_runtime.ps1`, runner/supervisor code and registered runner worktrees define the build-execution plane | retain-temporarily | Stopping an active runner pauses software missions but must not affect farm runtime; duplicate tasks can execute the same mission. | Portable supervised development runtime; owner CORE | Mission queue, claim/lease, promoted source identity and recovery truth. | OS/task/process readback proves singular ownership; restart recovery completes a disposable governed mission; no operational farm route depends on it. |
 | CHARLIE build-relay webhook and notification scripts | `modules/charlie/build_relay.py`, `scripts/charlie_build_relay_webhook.py` and `scripts/build_relay_notify.py` expose hosted webhook control and optional notifications | migrate | Disabling the provider-registered webhook can remove owner mission control; enabling legacy notification/polling aliases can duplicate messages. | CHARLIE private executive webhook/outbox on the canonical mission store; owner CORE | Telegram webhook/provider truth, owner allowlist, inbound idempotency and notification mode. | Provider endpoint and future application-level route readback match canonical runtime; callback/notification readback succeeds once; legacy aliases receive zero events during rollback window. |
