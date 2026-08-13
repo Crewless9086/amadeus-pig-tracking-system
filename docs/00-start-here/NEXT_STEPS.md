@@ -2,6 +2,10 @@
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
 
+## 2026-08-12 Matings Active Exposure UI Simplification
+
+Owner-approved coordinated mission. First, HERDMASTER must correct the `/matings` and Breeding Attention projections so the five canonical 12 August cycles return authoritative names and dates, appear exactly once as `Tans by beer`, and are excluded from both placement cohorts. Correct lifecycle precedence so Molly's newer confirmed litter supersedes retained pregnancy evidence in her current summary. Enforce the shared governed body-condition threshold before scheduling: reconcile Bonnie, Waki, Zigay and Teena's 11 August observations and exclude every fresh below-threshold sow from `Plaas Nou` and `Volgende Groep` until later in-range governed evidence supports a new readiness review. Then Codex/UI completes the compact active-exposure and individual-card presentation. Preserve history, protected confirmation, atomic writes and replay controls. Do not overwrite current dirty `/matings` facelift work. Full contract: `docs/06-operations/MATINGS_ACTIVE_EXPOSURE_UI_SIMPLIFICATION_PLAN_20260812.md`.
+
 ## 2026-08-10 P0 - Outcome-Bound Terminal Operation
 
 1. Stop accepting a PR, green CI, deployment, replay proof, containment packet or newly sent owner question as completion of a live business journey.
