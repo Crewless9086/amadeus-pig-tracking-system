@@ -1816,6 +1816,26 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('row.name)} — ${escapeHtml(row.boar_name)', attention_js)
         self.assertIn('beplan UIT ${escapeHtml(row.planned_out_date', attention_js)
 
+    def test_matings_active_exposure_ui_hides_empty_transition_and_preserves_guard(self):
+        template = Path("templates/matings.html").read_text(encoding="utf-8")
+        js = Path("static/js/matings.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="active_exposure_workspace"', template)
+        self.assertIn("Sôe by beer", template)
+        self.assertNotIn("BESKERMDE OORGANG", template)
+        self.assertIn('workspace?.classList.add("hidden")', js)
+        self.assertIn('data-open-removal=', js)
+        self.assertIn('data-preview-removal=', js)
+        self.assertIn('data-confirm-removal', js)
+        self.assertIn("confirmed_preview_sha256", js)
+        self.assertIn("Teken werklike UIT aan", js)
+        self.assertIn("Beplande UIT", js)
+        self.assertIn('aria-expanded="false"', js)
+        self.assertIn('aria-controls="removal-', js)
+        self.assertIn("Voorskoumodus is leesalleen.", js)
+        self.assertIn("function isReadOnlyPreview()", js)
+        self.assertIn('event.target.closest("[data-assume-pregnant-confirm],[data-mark-not-pregnant-confirm],[data-confirm-removal]")', js)
+
     def test_add_litter_can_prefill_from_mating_query_param(self):
         js = Path("static/js/addLitter.js").read_text(encoding="utf-8")
 
