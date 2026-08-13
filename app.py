@@ -67,6 +67,11 @@ app.register_blueprint(telemetry_bp, url_prefix="/api")
 app.register_blueprint(oom_sakkie_bp, url_prefix="/api")
 app.register_blueprint(charlie_bp, url_prefix="/api")
 
+# Render owns the morning lifecycle. Durable database/provider claims arbitrate
+# process restarts and multiple web workers; local development remains inert.
+from modules.oom_sakkie.morning_runtime import start_production_morning_runtime
+start_production_morning_runtime()
+
 
 @app.context_processor
 def owner_access_navigation():

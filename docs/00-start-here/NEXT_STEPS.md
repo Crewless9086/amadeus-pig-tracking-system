@@ -483,3 +483,18 @@ complete.
 - Business completion still requires fresh provider proof of the scheduled
   plan, natural contextual reply and direct specialist request. A genuine
   payment journey remains waiting if no payment has actually arrived.
+
+## Oom Sakkie durable morning runtime — 2026-08-13
+
+- The missed 13 August plan exposed that the daily manager was only called as a
+  side effect of the externally scheduled ROOTLINE reassessment endpoint. The
+  backend contained composition, claims and delivery, but did not own a wake-up.
+- The prepared correction starts a read-only 06:45 SAST lifecycle inside the
+  production Render service, catches up only until 12:00 SAST, preserves one
+  logical daily identity and sends one provider-bound failure notice if source
+  recovery remains impossible. It has no irrigation, fertilizer, borehole,
+  farm-write, customer-send or payment authority.
+- Integrate through normal review and exact-head/exact-merge tests, deploy the
+  exact merge, then retain the mission until a genuine scheduler-originated
+  provider-confirmed plan is visible. Do not manufacture or manually replay the
+  missed plan.
