@@ -204,6 +204,67 @@ Retirement requires two clean windows, zero polling connections/log growth,
 zero lost or duplicate messages, unchanged webhook ownership and verified
 re-enable recovery.
 
+## CMQ-20260813-02A — controlled reversible proof
+
+Authorized observation window: `2026-08-13T11:57:50Z` to
+`2026-08-13T11:59:51Z`. This was the single owner-authorized window; no second
+window was attempted or scheduled.
+
+- **Documented:** Mission Standard blob
+  `a2e17a434a5ca0449905e40aeb1a7fa07bd6268e` and Programme blob
+  `3b3b1279469ee94ad0c9ab8fbb80c80a8d01a764` governed the proof at exact main
+  `288f4d5fd20b094de945727942aa5a2224d313c9`.
+- **OS-observed before:** the watchdog was enabled/Ready with result `0`, a
+  two-minute trigger, and task XML SHA-256
+  `0ad32add7e57000bb5044b9dd4f08959581e6aa3649a4039316c9c5a223b4a01`
+  over its UTF-16LE export. Its relay chain was venv parent PID `9920` and
+  system-Python child PID `10996`; both loaded all three transport variables as
+  `webhook`.
+- **Provider-verified before:** Telegram reported the Render webhook, zero
+  pending updates and no current error. Render service
+  `srv-d6sijjkhg0os73f7regg` was live and not suspended.
+- **Concurrent provider lineage:** the after-read found that Render had promoted
+  deploy `dep-d9ur083m8hqs73985qq0` from commit
+  `af04d9260489a6a0407ca3c75f96e52b46817a57`, created at `11:53:04Z` and live
+  at `11:53:58Z`, after the initial baseline but before the task disablement.
+  This terminal did not request that deploy. The service and Telegram endpoint
+  identity remained unchanged, but the concurrent lineage further prevents this
+  window from proving a stable permanent-retirement baseline.
+- **Temporary action:** the scheduled task was disabled without changing its
+  definition, then only PIDs `10996` and `9920` were stopped. No relay process
+  remained. The error log stopped before the action and did not grow during the
+  disabled interval; the replacement chain was created only after rollback.
+- **Bounded acceptance result:** one owner-authenticated, infrastructure-labelled
+  synthetic update was posted once to the Render webhook. This proves the
+  authenticated deployed route, not Telegram-originated delivery. Supabase
+  recorded exactly one processed inbound claim and exactly two correlated
+  conversation messages (one owner, one CHARLIE). The webhook returned one
+  provider-confirmed Telegram reply. No duplicate correlated claim or message
+  was found.
+- **Mission pickup failed:** the deterministic planner interpreted the date-like
+  `CMQ-20260813-02A` label as mission ID `20260813`, selected `read_mission`, and
+  returned a bounded not-found outcome. Mission count remained `361`; no durable
+  mission was created or acknowledged. Per the authorization, no retry occurred.
+- **Mandatory rollback:** rollback began immediately. The task was re-enabled
+  unchanged and started. Its stale runtime PID lock had to be preserved aside so
+  the watchdog could replace the stopped PID; the resulting venv/system-Python
+  chain was PIDs `47764`/`33932`, both again loaded as `webhook`. The task was
+  enabled/Ready, result `0`, and its XML identity remained exactly unchanged.
+  Telegram again reported the same webhook, zero pending updates and no error;
+  Render remained live and not suspended. The restored stale relay resumed its
+  known polling-error log behavior.
+- **Physical:** none.
+
+The single update/claim/reply path was loss-free and non-duplicating for the
+correlated acceptance identity, and absence of the stopped local process plus
+the log gap supports absence of watchdog polling during the window. The required
+mission-pickup outcome failed, however, so CMQ-20260813-02A **contradicts full
+replacement readiness** and does not establish permanent retirement. Keep the
+watchdog **retain-temporarily**. Remaining proof requires a planner-safe,
+separately authorized future window, a genuine Telegram-originated owner update,
+exactly-once durable mission creation/acknowledgement, and the already specified
+two-clean-window retirement evidence. No such window is scheduled here.
+
 ### Physical facts
 
 None. No device, pump, valve, farm condition, customer effect or on-site state
