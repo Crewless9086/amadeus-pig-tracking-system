@@ -86,7 +86,8 @@ class EWeLinkOAuthPostgresTests(unittest.TestCase):
 
     def test_rotated_ciphertext_reloads_in_fresh_store_and_reads_zero_command(self):
         now = datetime.now(timezone.utc)
-        source = {"EWELINK_CLIENT_SECRET": "c" * 40, "EWELINK_CLIENT_ID": "client",
+        source = {"EWELINK_CLIENT_SECRET": "c" * 40, "EWELINK_OAUTH_STATE_SECRET": "s" * 40,
+                  "EWELINK_CLIENT_ID": "client",
                   "EWELINK_EXPECTED_DEVICE_ID": "100204e9bc", "EWELINK_READBACK_ENABLED": "true"}
         account = _digest("account")
         aad = f"eu|{account}|100204e9bc|{ADAPTER_VERSION}".encode()
