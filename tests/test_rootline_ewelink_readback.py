@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
+import threading
 import urllib.parse
 
 import pytest
@@ -36,6 +38,14 @@ class Store:
     def latest(self): return self.record
     def append(self, record):
         self.records.append(record); self.record = record; return True
+    def rotate_exact(self, predecessor_id, build):
+        if self.record["token_binding_id"] != predecessor_id:
+            return None
+        record = build(dict(self.record))
+        record["predecessor_token_binding_id"] = predecessor_id
+        record["generation"] = self.record.get("generation", 1) + 1
+        self.records.append(record); self.record = record
+        return record
 
 
 def provider(overrides=None):
@@ -116,6 +126,40 @@ def test_refresh_response_failure_writes_no_generation():
     with pytest.raises(OAuthFailure, match="refresh_response_incomplete"):
         read_current_device(token_store=store, environ=env(), http_request=request, now=NOW)
     assert store.records == []
+
+
+def test_two_workers_refresh_exact_predecessor_once_and_replay_latest():
+    class SerializedStore(Store):
+        def __init__(self):
+            super().__init__(); self.lock = threading.Lock()
+            self.record["access_expires_at"] = NOW - timedelta(seconds=1)
+        def rotate_exact(self, predecessor_id, build):
+            with self.lock:
+                return super().rotate_exact(predecessor_id, build)
+    store = SerializedStore()
+    request, calls = provider({"/v2/user/refresh": {"at": "rotated-access", "rt": "rotated-refresh"}})
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        results = list(workers.map(lambda _: read_current_device(
+            token_store=store, environ=env(), http_request=request, now=NOW), range(2)))
+    assert len(store.records) == 1
+    assert calls.count(("POST", "/v2/user/refresh")) == 1
+    assert all(result["provider_control_calls"] == 0 for result in results)
+    assert all(result["authoritative"] is True for result in results)
+
+
+def test_provider_success_persistence_failure_fails_closed_without_reuse():
+    class FailedStore(Store):
+        def rotate_exact(self, predecessor_id, build):
+            self.pending = build(dict(self.record))
+            raise RuntimeError("database unavailable after provider success")
+    store = FailedStore(); store.record["access_expires_at"] = NOW - timedelta(seconds=1)
+    request, calls = provider({"/v2/user/refresh": {"at": "rotated-access", "rt": "rotated-refresh"}})
+    with pytest.raises(OAuthFailure, match="refresh_recovery_required"):
+        read_current_device(token_store=store, environ=env(), http_request=request, now=NOW)
+    assert calls == [("POST", "/v2/user/refresh")]
+    assert store.records == []
+    assert "rotated-access" not in repr(store.pending)
+    assert "rotated-refresh" not in repr(store.pending)
 
 
 def test_registered_fertilizer_device_uses_anchor_token_for_zero_command_read():

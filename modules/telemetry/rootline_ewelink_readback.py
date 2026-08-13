@@ -96,24 +96,25 @@ def _read_bound_device(*, expected, token_store, source, http_request, now,
 
 
 def _refresh_token_generation(record, *, token_store, source, request, now):
-    """Rotate an expired access token into one append-only encrypted generation."""
-    if not record.get("refresh_expires_at") or record["refresh_expires_at"] <= now:
-        raise OAuthFailure("ewelink_refresh_token_unavailable")
-    refresh = decrypt_refresh_token(record, source)
-    data = request("POST", REGION_HOSTS[record["region"]] + "/v2/user/refresh",
-        body={"rt": refresh}, mode="signed", environ=source)
-    access = str(data.get("at") or "")
-    rotated_refresh = str(data.get("rt") or "")
-    if not access or not rotated_refresh:
-        raise OAuthFailure("ewelink_refresh_response_incomplete")
-    key = _token_key(source)
-    generation_digest = __import__("hmac").new(
-        key, (access + "\0" + rotated_refresh).encode(), __import__("hashlib").sha256
-    ).hexdigest()
-    aad = (f"{record['region']}|{record['provider_account_digest']}|"
-           f"{record['device_id']}|{record['adapter_version']}").encode()
-    refreshed = {
-        **record,
+    """Rotate through the store's serialized exact-predecessor CAS lifecycle."""
+    def build(locked):
+        if not locked.get("refresh_expires_at") or locked["refresh_expires_at"] <= now:
+            raise OAuthFailure("ewelink_refresh_token_unavailable")
+        refresh = decrypt_refresh_token(locked, source)
+        data = request("POST", REGION_HOSTS[locked["region"]] + "/v2/user/refresh",
+            body={"rt": refresh}, mode="signed", environ=source)
+        access = str(data.get("at") or "")
+        rotated_refresh = str(data.get("rt") or "")
+        if not access or not rotated_refresh:
+            raise OAuthFailure("ewelink_refresh_response_incomplete")
+        key = _token_key(source)
+        generation_digest = __import__("hmac").new(
+            key, (access + "\0" + rotated_refresh).encode(), __import__("hashlib").sha256
+        ).hexdigest()
+        aad = (f"{locked['region']}|{locked['provider_account_digest']}|"
+               f"{locked['device_id']}|{locked['adapter_version']}").encode()
+        return {
+        **locked,
         "token_binding_id": "ROOTLINE-EWELINK-" + generation_digest[:24].upper(),
         "access_token_ciphertext": _encrypt(access, key, aad),
         "refresh_token_ciphertext": _encrypt(rotated_refresh, key, aad),
@@ -126,10 +127,16 @@ def _refresh_token_generation(record, *, token_store, source, request, now):
         }, sort_keys=True, separators=(",", ":"))),
         "status_field_names": [],
         "created_at": now,
-    }
-    if token_store.append(refreshed) is not True:
+        }
+    try:
+        refreshed = token_store.rotate_exact(record["token_binding_id"], build)
+    except OAuthFailure:
+        raise
+    except Exception as exc:
+        raise OAuthFailure("ewelink_refresh_recovery_required") from exc
+    if refreshed is None:
         latest = token_store.latest()
-        if not latest or latest.get("token_binding_id") != refreshed["token_binding_id"]:
-            raise OAuthFailure("ewelink_refresh_persistence_failed")
+        if not latest:
+            raise OAuthFailure("ewelink_refresh_recovery_required")
         refreshed = latest
     return refreshed

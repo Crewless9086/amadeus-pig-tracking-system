@@ -151,6 +151,8 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202608120003_add_breeding_exposure_group_identity.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608120004_add_exposure_breeding_cycle_windows.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608120005_add_active_exposure_cycle_state.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608060001_create_rootline_ewelink_oauth_vault.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608130001_serialize_rootline_ewelink_refresh.sql
 
       - name: Run Beacon weekly owner-decision permission gates
         env:
@@ -190,6 +192,9 @@ jobs:
 
       - name: Run ROOTLINE plan-only ledger disposable-Postgres tests
         run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_irrigation_command_ledger_postgres tests.test_irrigation_daily_plan_postgres
+
+      - name: Run ROOTLINE eWeLink refresh durability gates
+        run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_ewelink_oauth_postgres
 
       - name: Run ROOTLINE Operating Knowledge policy-review permission gates
         run: ROOTLINE_POLICY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_operating_policy_postgres
