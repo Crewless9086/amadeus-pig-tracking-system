@@ -353,14 +353,16 @@ def _parse_report(text, provider_time):
         observed.append({"fact": "not_drinking", "value": True})
     lying_down = latest_positive(
         r"\b(?:is|was|appears? to be)\s+(?:lying|laying) down\b",
-        r"\b(?:is|was)\s+not\s+(?:lying|laying) down\b|"
-        r"\b(?:(?:does|did)\s+not|(?:doesn|didn)['’]t)\s+appear to be\s+(?:lying|laying) down\b",
+        r"\b(?:is|was)\s+(?:not|no longer)\s+(?:lying|laying) down\b|"
+        r"\b(?:(?:does|did)\s+not|(?:doesn|didn)['’]t)\s+appear to be\s+(?:lying|laying) down\b|"
+        r"\bno longer\s+(?:appears?|looks?|seems?) to be\s+(?:lying|laying) down\b",
         lower,
     )
     otherwise_fine = latest_positive(
         r"\b(?:appears?|looks?|seems?)\s+otherwise fine\b",
         r"\b(?:(?:does|did)\s+not|(?:doesn|didn)['’]t)\s+(?:appear|look|seem)\s+otherwise fine\b|"
-        r"\b(?:is|was)\s+not\s+otherwise fine\b",
+        r"\b(?:is|was)\s+(?:not|no longer)\s+otherwise fine\b|"
+        r"\bno longer\s+(?:appears?|looks?|seems?)\s+otherwise fine\b",
         lower,
     )
     if lying_down:
@@ -378,7 +380,10 @@ def _parse_report(text, provider_time):
         r"\b(?:will|shall)\s+be\s+monitor(?:ed|ing)\b",
         r"\b(?:i|we)\s+(?:(?:will|shall)\s+(?:not|no longer)|(?:won|shan)['’]?t)\s+(?:keep\s+)?monitor(?:ing)?\b|"
         r"\b(?:i|we)\s+(?:will|shall)\s+stop\s+monitoring\b|"
-        r"\b(?:will|shall)\s+(?:not|no longer)\s+be\s+monitor(?:ed|ing)\b",
+        r"\b(?:i|we)\s+(?:am|are)\s+not\s+going to\s+(?:keep\s+)?monitor(?:ing)?\b|"
+        r"\b(?:i|we)\s+(?:have|had)\s+stopped\s+monitoring\b|"
+        r"\b(?:will|shall)\s+(?:not|no longer)\s+be\s+monitor(?:ed|ing)\b|"
+        r"\bmonitoring\s+(?:(?:has|had)\s+ceased|(?:was|has been|had been)\s+stopped)\b",
         lower,
     )
     if monitoring_intention:

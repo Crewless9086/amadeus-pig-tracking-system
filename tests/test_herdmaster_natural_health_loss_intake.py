@@ -142,6 +142,8 @@ def test_duplicate_owner_facts_are_emitted_once():
     ("Pig 002 is sick and does not look otherwise fine.", "otherwise_fine_reported"),
     ("Pig 002 is sick and doesn't look otherwise fine.", "otherwise_fine_reported"),
     ("Pig 002 is sick and didn't look otherwise fine.", "otherwise_fine_reported"),
+    ("Pig 002 was lying down, but is no longer lying down.", "lying_down_reported"),
+    ("Pig 002 appeared otherwise fine, but no longer appears otherwise fine.", "otherwise_fine_reported"),
 ])
 def test_negated_owner_impressions_are_not_recorded_as_positive_facts(text, excluded):
     pig = animal("PIG-2026-0002", "Pig 002", "002")
@@ -156,6 +158,10 @@ def test_negated_owner_impressions_are_not_recorded_as_positive_facts(text, excl
     "Pig 002 is sick. We will monitor her, but we will no longer monitor her.",
     "Pig 002 is sick. I will monitor her, but I will stop monitoring her.",
     "Pig 002 is sick. She will be monitored, but will no longer be monitored.",
+    "Pig 002 is sick. I am going to monitor, but I am not going to monitor after all.",
+    "Pig 002 is sick. I will monitor her, but I have stopped monitoring her.",
+    "Pig 002 is sick. She will be monitored, but monitoring has ceased.",
+    "Pig 002 is sick. She will be monitored, but monitoring was stopped.",
 ])
 def test_retracted_monitoring_intention_is_not_current_fact(text):
     pig = animal("PIG-2026-0002", "Pig 002", "002")
