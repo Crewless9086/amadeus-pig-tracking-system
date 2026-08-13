@@ -20,7 +20,9 @@ create table if not exists app_private.rootline_ewelink_oauth_tokens (
     response_digest text not null check (response_digest ~ '^[0-9a-f]{64}$'),
     adapter_version text not null check (adapter_version = 'rootline_ewelink_oauth_v1'),
     status_field_names jsonb not null check (jsonb_typeof(status_field_names) = 'array'),
-    created_at timestamptz not null
+    created_at timestamptz not null,
+    predecessor_token_binding_id text,
+    generation bigint not null default 1
 );
 
 create table if not exists app_private.rootline_ewelink_account_binding (
