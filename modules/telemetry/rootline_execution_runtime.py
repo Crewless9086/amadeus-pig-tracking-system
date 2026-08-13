@@ -124,8 +124,7 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
           "requested_total_duration_seconds":active.get("requested_total_duration_seconds"),
           "governed_executable_duration_seconds":active.get("governed_executable_duration_seconds"),
           "plan_generation":active.get("evidence_generation"),
-          "controller_safety_generation":active.get("controller_safety_generation"),
-          "eligibility_sha256":active.get("eligibility_sha256")}
+          "controller_safety_generation":active.get("controller_safety_generation")}
         if any(active_binding.get(k)!=expected_artifact.get(k) for k in active_binding):
             return _safe("active_execution_conflicts_with_protected_claim")
         transport=transport or RootlineIFTTTTransport(token_store=token_store,environ=source,readback=readback)
@@ -135,10 +134,13 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
           now=now,clock=clock)
     current=_current(evidence_loader,readback,token_store,source,database_url,now,store)
     artifact=current["artifact"]
+    # A mandatory fresh provider read produces a new response/eligibility digest.
+    # Bind the immutable governed job and segment here; the fresh artifact itself
+    # remains fully validated and becomes the sole coordinator authority below.
     bound_keys=("job_id","job_sha256","zone_id","channel","segment_identity",
       "current_segment","segment_requested_seconds","requested_total_duration_seconds",
       "governed_executable_duration_seconds","plan_generation",
-      "controller_safety_generation","eligibility_sha256")
+      "controller_safety_generation")
     if (artifact.get("eligible") is not True or artifact.get("current_segment")!=1
             or any(artifact.get(k)!=expected_artifact.get(k) for k in bound_keys)):
         return _safe("protected_irrigation_eligibility_changed")
