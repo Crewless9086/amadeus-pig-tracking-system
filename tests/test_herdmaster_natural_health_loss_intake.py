@@ -165,6 +165,8 @@ def test_negated_owner_impressions_are_not_recorded_as_positive_facts(text, excl
     "Pig 002 is sick. I will monitor her, but I am no longer monitoring.",
     "Pig 002 is sick. I will monitor her, but I have completed monitoring.",
     "Pig 002 is sick. We will monitor her, but we completed monitoring.",
+    "Pig 002 is sick. I will monitor her, but I have ended monitoring.",
+    "Pig 002 is sick. We will monitor her, but we ended monitoring.",
     "Pig 002 is sick. She will be monitored, but monitoring is now complete.",
     "Pig 002 is sick. She will be monitored, but monitoring has finished.",
 ])

@@ -382,7 +382,7 @@ def _parse_report(text, provider_time):
         r"\b(?:i|we)\s+(?:will|shall)\s+stop\s+monitoring\b|"
         r"\b(?:i|we)\s+(?:am|are)\s+not\s+going to\s+(?:keep\s+)?monitor(?:ing)?\b|"
         r"\b(?:i|we)\s+(?:am|are)\s+no longer\s+monitoring\b|"
-        r"\b(?:i|we)\s+(?:(?:have|had)\s+)?(?:stopped|completed|finished)\s+monitoring\b|"
+        r"\b(?:i|we)\s+(?:(?:have|had)\s+)?(?:stopped|completed|finished|ended)\s+monitoring\b|"
         r"\b(?:will|shall)\s+(?:not|no longer)\s+be\s+monitor(?:ed|ing)\b|"
         r"\bmonitoring\s+(?:(?:has|had)\s+(?:ceased|finished|ended)|(?:was|has been|had been)\s+stopped|"
         r"(?:is|was)\s+(?:now\s+)?(?:complete|finished|ended))\b",
