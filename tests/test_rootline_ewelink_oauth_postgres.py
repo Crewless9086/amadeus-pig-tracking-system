@@ -193,7 +193,16 @@ print(json.dumps({
         replay = read_current_device(token_store=PostgresOAuthTokenStore(DATABASE_URL),
             environ=source, http_request=request, now=now + timedelta(seconds=1))
         self.assertEqual(calls.count(("POST", "/v2/user/refresh")), 1)
-        self.assertEqual(sum(bool(row["token_refreshed"]) for row in results), 1)
+        # Both callers began from the expired predecessor and therefore report
+        # that their read used the refreshed generation; CAS still permits only
+        # one provider rotation and one durable successor.
+        self.assertTrue(all(row["token_refreshed"] for row in results))
+        import psycopg
+        with psycopg.connect(DATABASE_URL) as connection:
+            count, maximum = connection.execute(
+                "select count(*),max(generation) from app_private.rootline_ewelink_oauth_tokens"
+            ).fetchone()
+        self.assertEqual((count, maximum), (2, 2))
         self.assertFalse(replay["token_refreshed"])
         self.assertTrue(all(row["provider_control_calls"] == 0 for row in results + [replay]))
 
