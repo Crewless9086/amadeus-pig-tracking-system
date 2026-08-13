@@ -1509,6 +1509,29 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
             bound["reply_window_evidence"]["evaluated_at_utc"],
         )
 
+    def test_webwidget_chronology_uses_bounded_non_whatsapp_channel_contract(self):
+        bound = bind_authoritative_conversation_evidence(
+            inbound(channel="Channel::WebWidget"),
+            [{
+                "id": "M-1", "message_type": 0, "private": False,
+                "created_at": "2026-07-28T07:30:00Z", "attachments": [],
+            }],
+            now=datetime(2026, 7, 28, 8, 0, tzinfo=timezone.utc),
+        )
+        self.assertTrue(bound["chronology_current"])
+        self.assertEqual(bound["reply_authority_state"], "ordinary_reply_allowed")
+        self.assertEqual(bound["provider_identity_class"], "genuine_webwidget")
+        authority = evaluate_level1_authority(
+            lane="live_stock", inbound=bound, decision=decision(),
+            review=review(), evidence=evidence(),
+            environ={
+                "SAM_SALES_AUTONOMY_LEVEL": "1",
+                "SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED": "1",
+                "SAM_SALES_LEVEL1_BROAD_DISPATCH_ENABLED": "1",
+            },
+        )
+        self.assertTrue(authority["checks"]["channel_authorized"])
+
     def test_later_outgoing_or_malformed_chronology_fails_closed(self):
         cases = (
             [

@@ -803,6 +803,34 @@ def _send_sam_live_stock_owner_notification_if_needed(event, learning_result):
         sent, status_code = send_sam_live_stock_owner_review_telegram(event)
         return {"attempted": True, "type": "owner_review", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
     if int(learning_result.get("conversation_event_count") or 0) == 1:
+        review = event.get("review_json") if isinstance(event.get("review_json"), dict) else {}
+        decision = event.get("decision_json") if isinstance(event.get("decision_json"), dict) else {}
+        routine = decision.get("routine_reply_delivery") if isinstance(decision.get("routine_reply_delivery"), dict) else {}
+        ordinary_safe_reply = bool(
+            event.get("safe_to_send") is True
+            and review.get("safe_to_send") is True
+            and event.get("escalation_required") is not True
+            and review.get("escalation_required") is not True
+            and review.get("owner_authority_required") is not True
+            and event.get("owner_send_required") is not True
+            and decision.get("protected_owner_exception_required") is not True
+            and decision.get("should_reply") is True
+            and str(
+                decision.get("suggested_reply_text")
+                or event.get("sam_reply_excerpt")
+                or ""
+            ).strip()
+        )
+        if ordinary_safe_reply:
+            return {
+                "attempted": False,
+                "status": (
+                    "safe_first_event_routine_reply_owned_no_telegram"
+                    if routine.get("sent") is True
+                    else "safe_first_event_withheld_no_triage_card"
+                ),
+                "review_event_id": learning_result.get("review_event_id"),
+            }
         sent, status_code = send_sam_live_stock_new_lead_telegram(event)
         return {"attempted": True, "type": "new_lead", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
     return {"attempted": False, "status": "not_new_or_escalation"}
