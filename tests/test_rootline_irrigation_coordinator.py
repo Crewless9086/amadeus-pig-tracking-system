@@ -58,6 +58,7 @@ def decision(**changes):
     plan={"evidence_generation":"GEN-1","operating_date":"2026-08-05",
           "candidate_tasks":[{"task_id":"irrigation_B12345",
         "zone_decision":"Run now","recommendation":"Recommend","planned_duration_minutes":60,
+        "requested_total_duration_minutes":120,"expected_segment_count":2,
         "rank":1,"weekly_obligation":{"status":"available","delivery_debt_days":2,
                                         "remaining_weekly_obligation_days":4}}]}
     evidence={"weather":{"observed_at":NOW.isoformat(),"rain_rate_mm_h":0,"rain_today_mm":0},

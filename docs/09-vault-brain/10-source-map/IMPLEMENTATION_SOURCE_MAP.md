@@ -7,7 +7,9 @@
 - Pure contract: `modules/pig_weights/canonical_grouped_preview.py`
 - Application-only adapter wiring handover: `docs/06-operations/CMQ_20260813_03_APPLICATION_PREVIEW_WIRING_HANDOVER.md`
 - Application adapter: `modules/pig_weights/application_grouped_preview_adapter.py`; only `pig_weights_controller.preview_bulk_weight_entries` is wired.
-- Control Tower cleared only the isolated pure-contract/test boundary now prepared here. This entry grants no wiring, executor, deployment or runtime authority; any adapter integration requires a separately cleared file boundary.
+- Typed OOM preview wiring handover: `docs/06-operations/CMQ_20260813_03_OOM_TYPED_PREVIEW_WIRING_HANDOVER.md`
+- Typed OOM adapter boundary: only `modules/oom_sakkie/grouped_weight_runtime.py` calls the pure contract after its existing natural interpretation and readiness preflight.
+- Control Tower separately cleared the pure contract, application preview adapter and typed OOM preview boundaries recorded above. This entry grants no executor, protected-action, deployment or runtime authority; every further adapter or execution integration requires a separately cleared file boundary.
 
 ## Agentic farm runtime and legacy retirement
 

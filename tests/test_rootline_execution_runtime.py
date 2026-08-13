@@ -10,7 +10,8 @@ def plan():
     return {"evidence_generation":"PLAN-GEN-1","operating_date":"2026-08-08",
             "candidate_tasks":[{
         "task_id":"irrigation_B12345","zone_decision":"Run now","recommendation":"Recommend",
-        "planned_duration_minutes":60,"rank":1,"weekly_obligation":{"status":"available",
+        "planned_duration_minutes":60,"requested_total_duration_minutes":120,
+        "expected_segment_count":2,"rank":1,"weekly_obligation":{"status":"available",
             "delivery_debt_days":2,"remaining_weekly_obligation_days":4}}]}
 
 
@@ -33,6 +34,10 @@ class Store:
     def __init__(self): self.active=None; self.rows=[]; self.contained=set()
     def __call__(self,action,payload):
         if action=="load_active": return self.active
+        if action=="load_job_events":
+            return [row for name,row in self.rows if name in {
+                "claim_before_on","mark_active","record_completed"}
+                and row.get("job_id")==payload]
         if action=="load_zone_containment": return {"contained":payload in self.contained}
         if action=="load_off_attempts": return []
         if action=="claim_before_on":

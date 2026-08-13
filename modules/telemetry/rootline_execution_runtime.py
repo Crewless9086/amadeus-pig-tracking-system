@@ -41,7 +41,7 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
             outcome_reader=outcome_reader, now=now, clock=clock)
     if not owner_user_id or owner_user_id != chat_id:
         return _safe("canonical_observation_binding_invalid")
-    initial = _current(evidence_loader, readback, token_store, source, database_url, now)
+    initial = _current(evidence_loader, readback, token_store, source, database_url, now, store)
     observation = _planning_observation(initial, owner_user_id, chat_id,
                                         next_reassessment_at)
     if observation_store is None:
@@ -82,7 +82,7 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     def revalidate(_decision):
         current_now = _aware(clock())
         return _current(evidence_loader, readback, token_store, source,
-                        database_url, current_now)["artifact"]
+                        database_url, current_now, store)["artifact"]
     return advance_irrigation_execution(decision_id=decision["decision_id"],
         commissioning_id=commissioning_id, decision_reader=lambda _identity: decision,
         commissioning_reader=lambda _identity: commissioning, store=store,
@@ -90,7 +90,8 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
         eligibility_revalidator=revalidate, now=now, clock=clock)
 
 
-def _current(evidence_loader, readback, token_store, source, database_url, now):
+def _current(evidence_loader, readback, token_store, source, database_url, now,
+             store=rootline_irrigation_execution_store):
     evidence, operating_date, generated_at = evidence_loader(
         database_url=database_url, now=now)
     plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
@@ -98,7 +99,8 @@ def _current(evidence_loader, readback, token_store, source, database_url, now):
     return {"evidence": evidence, "plan": plan, "controller": controller,
             "operating_date": str(operating_date), "generated_at": generated_at,
             "artifact": build_execution_eligibility(
-                plan=plan, evidence=evidence, controller=controller, now=now)}
+                plan=plan, evidence=evidence, controller=controller, now=now,
+                job_event_reader=lambda job_id: store("load_job_events", job_id))}
 
 
 def _safe(status):
