@@ -156,6 +156,17 @@
 - Breeding observation rail:
   `modules/pig_weights/herdmaster_breeding_observation_service.py`,
   `modules/pig_weights/mating_routes.py`
+- Breeding eligibility/read-only cohort projection:
+  `modules/pig_weights/herdmaster_breeding_operating_loop.py` and
+  `static/js/breedingAttention.js`. Effective body-condition evidence follows
+  append-only supersession lineage. A below-minimum score remains a single
+  recovery hold irrespective of elapsed time; ordinary review requires current
+  in-range evidence. Proposed placement dates are explicitly plan-only.
+- Database and browser gates:
+  `tests/test_breeding_eligibility_read_model_postgres.py`,
+  `tests/test_herdmaster_breeding_operating_loop.py`,
+  `tests/test_mating_routes.py`, and
+  `tests/breeding_attention_phase2_visual_proof.spec.js`.
 - Grouped exposure/recovery contract:
   `modules/pig_weights/herdmaster_breeding_exposure_recovery.py`,
   `supabase/migrations/202608120001_create_breeding_exposure_events.sql`.

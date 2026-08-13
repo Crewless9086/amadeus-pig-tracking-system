@@ -69,6 +69,19 @@ another prompt is issued. Conversation memory is not the control system.
 - This remains Prepared, not Operational or Business-complete, until reviewed,
   integrated, deployed, and exercised by one naturally occurring owner journey.
 
+## HERDMASTER Breeding Attention eligibility truth
+
+- Registered mission `HMQ-20260813-03` corrects only the read-only Breeding
+  Attention projection; it does not restart piglet observations or create farm
+  facts.
+- The governed body-condition minimum is `3.0`. The latest valid attributable
+  score below that minimum remains one recovery hold even when stale; time does
+  not clear it. A later effective fresh in-range observation may restore review
+  but creates no placement, exposure, mating, service, conception or pregnancy.
+- Owner presentation must call unexecuted cohorts proposals and show held sow
+  name, supporting ID, observation date, score and recovery reason. Five active
+  exposures remain separate and exactly once.
+
 ## Oom Sakkie protected mortality and grouped weights
 
 - Deployed through PRs #820/#821; Pig 130 is canonically Dead/off-farm with effective date 2026-08-06, and the original event remains immutable.

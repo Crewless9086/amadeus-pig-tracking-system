@@ -156,7 +156,7 @@ def test_active_exposure_refreshes_worklist_without_inventing_service():
     assert case["proposed_placement_date"] is None
 
 
-def test_removed_exposure_no_longer_blocks_recommendation_refresh():
+def test_removed_exposure_restores_review_but_missing_condition_still_blocks():
     result = _loop({}, exposures=[
         {"exposure_event_id":"EXP-EVT-1","exposure_identity":"EXP-1","event_kind":"started",
          "sow_pig_id":"SOW-1","boar_pig_id":"BOAR-1","occurred_on":"2026-07-20",
@@ -166,8 +166,9 @@ def test_removed_exposure_no_longer_blocks_recommendation_refresh():
          "planned_removal_on":None},
     ])
     case = result["cases"][0]["classification"]
-    assert case["state"] == "Ready for mating review"
+    assert case["state"] == "Needs current condition"
     assert case["active_exposure"] is None
+    assert case["proposed_placement_date"] is None
 
 
 def test_litter_validation_accepts_unknown_father_and_no_mating_id():

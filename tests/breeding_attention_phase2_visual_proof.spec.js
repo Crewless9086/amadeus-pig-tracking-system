@@ -15,7 +15,7 @@ const animals = Array.from({ length: 18 }, (_, index) => ({
   recommended_human_action: "owner decision required",
 }));
 
-async function mount(page) {
+async function mount(page, placementCohorts = null) {
   await page.route("**/api/pig-weights/breeding-attention", route => route.fulfill({
     json: {
       success: true, source_status: "Available", observation_timestamp: "2026-07-27",
@@ -35,6 +35,7 @@ async function mount(page) {
           required_checks: ["availability", "family-tree constraints", "withdrawal"],
           delay_consequence: "Mating remains unsupported.",
         }],
+        placement_cohorts: placementCohorts,
       },
     },
   }));
@@ -92,4 +93,23 @@ test("mobile observation workflow remains one compact panel", async ({ page }) =
   await page.locator(".observation-review").first().click();
   await expect(page.locator("#observation_panel")).toBeVisible();
   await page.screenshot({path: "test-results/breeding-attention-phase2-mobile.png", fullPage: true});
+});
+
+test("proposal and recovery groups cannot imply completed placement", async ({ page }) => {
+  await mount(page, {
+    cohorts: [{kind:"immediate", boar_name:"Prince", start_date:"2026-08-12",
+      end_date:"2026-08-28", females:[{pig_id:"PROTECTED-SOW-1", name:"Bonnie",
+        evidence_class:"Controlled trial"}]}],
+    current_exposures: [],
+    held: [{pig_id:"PROTECTED-SOW-2", name:"Waki", state:"Body condition recovery",
+      reason:"Latest valid body condition 1, observed 2026-08-11, is below the governed minimum 3.",
+      body_condition_score:1, body_condition_observed_at:"2026-08-11T14:57:00+00:00",
+      boar_instruction:null, placement_date:null}],
+  });
+  const worklist = page.locator("#breeding_worklist_tasks");
+  await expect(worklist).toContainText("Voorgestelde plasing");
+  await expect(worklist).toContainText("Herstel / houvas");
+  await expect(worklist).toContainText("Liggaamskondisie 1");
+  await expect(worklist).not.toContainText("Plaas nou");
+  await expect(page.locator("#attention_counts")).toContainText("Plan alleen; nie werklike plasing nie");
 });
