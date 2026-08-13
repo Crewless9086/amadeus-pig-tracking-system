@@ -1,0 +1,12 @@
+const assert=require("assert"),fs=require("fs"),vm=require("vm");
+const sandbox={module:{exports:{}},document:{getElementById:id=>id==="vjd_print_button"?{addEventListener(){}}:{innerHTML:"",textContent:""}},fetch:async()=>({ok:true,json:async()=>({success:true,records:[]})}),window:{print(){}},String,Object,Array,Promise,console};
+vm.runInNewContext(fs.readFileSync("static/js/verwagteJongdatums.js","utf8"),sandbox);
+const {ownerIdentity,compareExpectedRows}=sandbox.module.exports;
+assert.equal(ownerIdentity("Sophie","S-01","PIG-1"),"Sophie");
+assert.equal(ownerIdentity("","S-01","PIG-1"),"S-01");
+assert.equal(ownerIdentity("","","PIG-1"),"PIG-1");
+assert.equal(ownerIdentity("","PIG-1","PIG-1"),"PIG-1");
+assert.equal(ownerIdentity("","",""),"-");
+const rows=[["2026-12-05","Alpha","P3","Bola","B1"],["2026-12-04","Zulu","P2","Bola","B1"],["2026-12-04","Alpha","P1","Tyson","B2"],["2026-12-04","Alpha","P0","Bola","B1"]].map(([expected_farrowing_date,sow_name,sow_pig_id,boar_name,boar_pig_id])=>({expected_farrowing_date,sow_name,sow_pig_id,boar_name,boar_pig_id}));
+assert.deepEqual(rows.sort(compareExpectedRows).map(r=>r.sow_pig_id),["P0","P1","P2","P3"]);
+console.log("verwagte_jongdatums_identity_node: PASS");
