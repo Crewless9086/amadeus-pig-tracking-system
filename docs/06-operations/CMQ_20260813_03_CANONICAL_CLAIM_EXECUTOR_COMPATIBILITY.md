@@ -25,6 +25,10 @@ evidence-generation identity, owner/private-chat identity, provider message,
 expiry and preview-card binding.
 The canonical digest uses the established protected-claim JSON serializer, so
 non-ASCII tag or note evidence cannot split the displayed and durable identity.
+Natural OOM and canonical parsing accept the same Unicode letter/digit and
+hyphen identity tokens. Before claim creation the runtime compares every
+canonical pig, normalized weight, movement destination and effective date to
+the accepted natural preview; a partial or divergent parse fails closed.
 
 The existing executor accepts the canonical contract directly. It preserves
 opaque pig and destination-pen identifiers, effective date, numeric weight,

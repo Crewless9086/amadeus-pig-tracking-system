@@ -55,8 +55,25 @@ def test_non_ascii_canonical_evidence_has_one_owner_claim_and_executor_digest():
     def claim(**kwargs):captured.update(kwargs);return _claim(**kwargs)
     result,status=_run(pigs=pigs,text="SØ-1 47.2 kg, B2 118 kg on 2026-08-13",claim=claim)
     assert status==200 and result["success"] is True
+    assert [(row["pig_id"],row["weight_kg"]) for row in result["mappings"]]==[
+        ("PIG-OPAQUE-A","47.2"),("PIG-OPAQUE-B","118")]
     assert result["preview_digest"]==result["protected_claim_digest"]
     assert canonical_preview_digest("grouped_weights",captured["preview_payload"])==result["preview_digest"]
+
+
+def test_partial_canonical_parse_divergence_fails_before_claim(monkeypatch):
+    claim=[]
+    monkeypatch.setattr("modules.oom_sakkie.grouped_weight_runtime.preview_prepared_owner_text",
+        lambda *args,**kwargs:{"success":True,"status":"canonical_grouped_preview_ready",
+            "contract_version":"canonical_grouped_weight_movement_preview_v1",
+            "effective_date":"2026-08-13","rows":[{
+                "pig_id":"PIG-OPAQUE-B","tag_number":"B2","weight_kg":"118",
+                "current_pen_id":"Unknown","moved_to_pen_id":"Unknown",
+                "moved_to_pen_label":"Unknown","condition_notes":"Unknown"}],
+            "confirmation_required":True,"preview_digest":"0"*64})
+    result,status=_run(claim=lambda **kwargs:claim.append(kwargs))
+    assert status==200 and result["status"]=="canonical_grouped_preview_diverged"
+    assert claim==[] and result["writes_farm_data"] is False
 
 
 def test_unknown_optional_values_are_preserved_in_canonical_rows():

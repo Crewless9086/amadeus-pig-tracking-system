@@ -19,7 +19,7 @@ PROTECTED_ACTION_KIND = "grouped_weights"
 SUPPORTED_CHANNELS = frozenset({"application_typed", "oom_typed", "browser_voice_prepared_text"})
 _FACT = re.compile(
     r"(?:^|(?<=[\n,;.]))\s*(?:(?:pig|vark)\s+)?"
-    r"(?P<identity>[A-Za-z0-9][A-Za-z0-9-]*)\s*(?:-|:|weigh(?:ed|s)?\s+)?\s*"
+    r"(?P<identity>[^\W_](?:[^\W_]|-)*)\s*(?:-|:|weigh(?:ed|s)?\s+)?\s*"
     r"(?P<weight>\d+(?:[.,]\d+)?)\s*kg\b",
     re.IGNORECASE,
 )
