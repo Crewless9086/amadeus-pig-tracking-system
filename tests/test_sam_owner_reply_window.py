@@ -128,6 +128,48 @@ def test_provider_identity_or_timestamp_conflict_is_unavailable():
     assert result["reason"] == "provider_latest_inbound_identity_conflict"
 
 
+def test_exact_whatsapp_message_accepts_webhook_fractional_second_timestamp():
+    result = evaluate(
+        [incoming()],
+        provider_evidence={
+            "provider_identity_class": "genuine_whatsapp",
+            "latest_inbound_message_id": "101",
+            "latest_inbound_at_utc": "2026-07-26T11:00:00.897Z",
+        },
+    )
+    assert result["window_state"] == "open"
+    assert result["reply_authority_state"] == "ordinary_reply_allowed"
+
+
+def test_fractional_timestamp_without_exact_message_binding_fails_closed():
+    result = evaluate(
+        [incoming()],
+        provider_evidence={
+            "provider_identity_class": "genuine_whatsapp",
+            "latest_inbound_at_utc": "2026-07-26T11:00:00.897Z",
+        },
+    )
+    assert result["window_state"] == "unavailable"
+    assert result["reason"] == "provider_latest_inbound_timestamp_conflict"
+
+
+def test_webwidget_exact_current_inbound_has_bounded_channel_authority():
+    result = evaluate_reply_window(
+        [incoming()],
+        conversation_identity={**IDENTITY, "channel": "Channel::WebWidget"},
+        provider_evidence={
+            "provider_identity_class": "genuine_webwidget",
+            "latest_inbound_message_id": "101",
+        },
+        now=NOW,
+        environ={},
+    )
+    assert result["provider_identity_class"] == "genuine_webwidget"
+    assert result["window_state"] == "not_applicable"
+    assert result["reply_authority_state"] == "ordinary_reply_allowed"
+    assert result["ordinary_reply_allowed"] is True
+
+
 def test_suspicious_link_evidence_withholds_without_content():
     result = evaluate([incoming()], suspicious_link_evidence=True)
     encoded = json.dumps(result, sort_keys=True)

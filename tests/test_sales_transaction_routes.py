@@ -2687,6 +2687,47 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         owner_review.assert_called_once()
         new_lead.assert_not_called()
 
+    def test_safe_non_protected_first_event_never_uses_triage_only_card(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-FIRST-SAFE",
+            "chatwoot_conversation_id": "2402",
+            "safe_to_send": True,
+            "escalation_required": False,
+            "owner_send_required": False,
+            "sam_reply_excerpt": "How many slaughter-size pigs would you like?",
+            "review_json": {
+                "safe_to_send": True,
+                "escalation_required": False,
+                "owner_authority_required": False,
+            },
+            "decision_json": {
+                "should_reply": True,
+                "suggested_reply_text": "How many slaughter-size pigs would you like?",
+                "protected_owner_exception_required": False,
+                "routine_reply_delivery": {"sent": False, "attempted": False},
+            },
+        }
+        learning = {
+            "success": True,
+            "created": True,
+            "review_event_id": "SAM-LIVE-REVIEW-FIRST-SAFE",
+            "conversation_event_count": 1,
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_new_lead_telegram",
+        ) as new_lead, patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_owner_review_telegram",
+        ) as owner_review:
+            notification = sales_transaction_routes._send_sam_live_stock_owner_notification_if_needed(
+                event, learning
+            )
+        self.assertFalse(notification["attempted"])
+        self.assertEqual(notification["status"], "safe_first_event_withheld_no_triage_card")
+        new_lead.assert_not_called()
+        owner_review.assert_not_called()
+
     def test_sam_live_stock_duplicate_review_event_does_not_send_duplicate_telegram(self):
         event = {
             "review_event_id": "SAM-LIVE-REVIEW-DUPE",
