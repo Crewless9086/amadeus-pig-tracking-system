@@ -145,7 +145,9 @@ def _escalate_failure(owner, now, deliver, exc, *, store=None):
     if not isinstance(claim, dict) or claim.get("success") is not True:
         return {**_safe("morning_runtime_failure_claim_unproven", success=False),
                 "failure_class": exc.__class__.__name__}
-    if claim.get("created") is False:
+    # Resume through the provider-attempt ledger on restart. That ledger sends
+    # only if no attempt exists and refuses any ambiguous provider retry.
+    if claim.get("created") is False and store is not daily_farm_manager_store:
         return {**_safe("morning_runtime_failure_replay_suppressed"),
                 "failure_class": exc.__class__.__name__}
     identity = daily_identity + ":FAILURE"

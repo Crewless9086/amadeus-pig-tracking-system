@@ -27,7 +27,7 @@ def run_job(*, cycle=run_morning_cycle, now_fn=None, sleep_fn=None) -> tuple[dic
         status = str(result.get("status") or "")
         if status not in {"morning_runtime_recovery_pending", "daily_manager_claim_unproven"}:
             return result, _exit_code(result)
-        local = now.astimezone(SAST)
+        local = now_fn().astimezone(SAST)
         remaining = (local.replace(hour=7, minute=0, second=0, microsecond=0)
                      - local).total_seconds()
         if remaining <= 0:

@@ -8,7 +8,7 @@ START = datetime(2026, 8, 14, 4, 45, tzinfo=timezone.utc)
 
 def test_one_provider_invocation_retries_recovery_then_presents_once():
     calls = []
-    moments = iter((START, START + timedelta(minutes=1)))
+    moments = iter((START, START, START + timedelta(minutes=1), START + timedelta(minutes=1)))
     outcomes = iter((
         {"success": False, "status": "morning_runtime_recovery_pending",
          "telegram_sends": 0, "hardware_commands": 0},
@@ -69,7 +69,7 @@ def test_unproven_claim_retries_inside_bounded_window():
         {"success": True, "status": "daily_manager_replay_suppressed",
          "telegram_sends": 0, "hardware_commands": 0},
     ))
-    moments = iter((START, START + timedelta(minutes=1)))
+    moments = iter((START, START, START + timedelta(minutes=1), START + timedelta(minutes=1)))
     result, code = run_job(cycle=lambda **_: next(outcomes),
                            now_fn=lambda: next(moments), sleep_fn=lambda _: None)
     assert code == 0
