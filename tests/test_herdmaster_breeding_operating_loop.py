@@ -460,11 +460,74 @@ def test_active_exposure_always_excludes_current_and_next_placement():
     exposure={"exposure_identity":"EXP-1","exposure_event_id":"START-1","event_kind":"started",
               "sow_pig_id":"PIG-MS","boar_pig_id":"BOAR-1","occurred_on":"2026-07-28",
               "planned_removal_on":"2026-08-13"}
-    result=build(projected_observations={"PIG-MS":{"body_condition_score":3}},exposures=[exposure])
+    result=build(
+        female_row=female(current_pen_id="PEN-1", current_pen_name="Pen 1"),
+        projected_observations={"PIG-MS":{"body_condition_score":3}},
+        exposures=[exposure],
+    )
     classification=result["cases"][0]["classification"]
     assert classification["state"] == "Boar exposure active"
     assert classification["proposed_placement_date"] is None
     assert result["cases"][0]["male_recommendation"]["recommended"] is None
+    schedule=result["placement_cohorts"]
+    assert schedule["held"] == []
+    assert schedule["cohorts"] == []
+    assert schedule["accounted_for_once"] is True
+    assert schedule["current_exposures"] == [{
+        "pig_id":"PIG-MS", "name":"Ms Piggy", "boar_pig_id":"BOAR-1",
+        "boar_name":"Prince", "in_date":"2026-07-28",
+        "planned_out_date":"2026-08-13", "current_pen_id":"PEN-1",
+        "current_pen_name":"Pen 1", "state":"Boar exposure active",
+        "asserts_service_date":False, "asserts_conception":False,
+        "asserts_pregnancy":False,
+    }]
+
+
+def test_five_current_exposures_are_projected_once_with_names_pens_and_windows():
+    assignments = [
+        ("SOPHIE", "Sophie", "BOLA", "Bola", "Kraam Saal 03"),
+        ("OLIVE", "Olive", "TYSON", "Tyson", "Kraam Saal 04"),
+        ("SHUPE", "Shupe", "TYSON", "Tyson", "Kraam Saal 04"),
+        ("LUCY", "Lucy", "TYSON", "Tyson", "Kraam Saal 04"),
+        ("LOLLY", "Lolly", "PRINCE", "Prince", "Kraam Saal 01"),
+    ]
+    females = [female(
+        pig_id=f"PIG-{sow_id}", tag_number=sow_name,
+        current_pen_id=f"PEN-{sow_id}", current_pen_name=pen,
+    ) for sow_id, sow_name, _, _, pen in assignments]
+    boars = {
+        boar_id: male(pig_id=f"BOAR-{boar_id}", tag=boar_name)
+        for _, _, boar_id, boar_name, _ in assignments
+    }
+    result = build_breeding_operating_loop(
+        {"success": True, "animals": [attention(
+            pig_id=row["pig_id"], tag_number=row["tag_number"]
+        ) for row in females]},
+        readiness={"success": True, "pigs": [*females, *boars.values()]},
+        matings=[], litters=[], observations=[],
+        projected_observations={row["pig_id"]: {"body_condition_score": 3} for row in females},
+        exposures=[{
+            "exposure_identity": f"EXP-{sow_id}",
+            "exposure_event_id": f"START-{sow_id}", "event_kind": "started",
+            "sow_pig_id": f"PIG-{sow_id}", "boar_pig_id": f"BOAR-{boar_id}",
+            "occurred_on": "2026-08-12", "planned_removal_on": "2026-08-28",
+        } for sow_id, _, boar_id, _, _ in assignments],
+        family_trees={"success": True, "by_pig": {}}, today=date(2026, 8, 13),
+    )
+    schedule = result["placement_cohorts"]
+    assert schedule["cohorts"] == []
+    assert schedule["held"] == []
+    assert schedule["accounted_for_once"] is True
+    rows = schedule["current_exposures"]
+    assert len(rows) == len({row["pig_id"] for row in rows}) == 5
+    assert {(row["name"], row["boar_name"], row["current_pen_name"]) for row in rows} == {
+        (sow_name, boar_name, pen) for _, sow_name, _, boar_name, pen in assignments
+    }
+    assert {(row["in_date"], row["planned_out_date"]) for row in rows} == {
+        ("2026-08-12", "2026-08-28")
+    }
+    assert all(not row["asserts_service_date"] and not row["asserts_conception"]
+               and not row["asserts_pregnancy"] for row in rows)
 
 
 def test_fresh_low_condition_holds_only_affected_sow_and_in_range_does_not_clear_explicit_hold():

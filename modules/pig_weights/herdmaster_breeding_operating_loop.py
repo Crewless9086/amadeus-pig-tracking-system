@@ -130,7 +130,10 @@ def build_breeding_operating_loop(
     # The published plan is built for the next physical work day, not the
     # assessment timestamp.  Anchoring it to the worklist week also prevents
     # same-week rebuilds from sliding every cohort forward.
-    cohorts = _schedule_placement_cohorts(tasks, week_start + timedelta(days=2))
+    cohorts = _schedule_placement_cohorts(
+        tasks, week_start + timedelta(days=2), cases=cases,
+        readiness_by_id=readiness_by_pig,
+    )
     _reconcile_controlled_trial_backlog(tasks, cases)
     cases.sort(key=lambda item: (
         next((
@@ -277,14 +280,40 @@ def oom_sakkie_worklist_summary(loop):
     return "\n".join(lines)
 
 
-def _schedule_placement_cohorts(tasks, today):
+def _schedule_placement_cohorts(tasks, today, *, cases=None, readiness_by_id=None):
     """Sequence ready females without changing their evidence-backed pairing."""
     grouped, held = {}, []
+    current_exposures = []
+    cases_by_id = {
+        _text(row.get("pig_id")): row for row in (cases or [])
+        if isinstance(row, dict)
+    }
+    readiness_by_id = readiness_by_id or {}
     trial_task, trial_male = _select_controlled_trial(tasks)
     for task in tasks:
         recommendation = task.get("male_recommendation") or {}
         primary = recommendation.get("recommended") or {}
         if task.get("provisional_recommendation") != "Ready for mating review" or not primary.get("pig_id"):
+            if task.get("provisional_recommendation") == "Boar exposure active":
+                case = cases_by_id.get(_text(task.get("pig_id"))) or {}
+                exposure = (case.get("classification") or {}).get("active_exposure") or {}
+                sow = readiness_by_id.get(_text(task.get("pig_id"))) or {}
+                boar = readiness_by_id.get(_text(exposure.get("boar_pig_id"))) or {}
+                current_exposures.append({
+                    "pig_id": _text(task.get("pig_id")),
+                    "name": _owner_label(task.get("tag_number")),
+                    "boar_pig_id": _text(exposure.get("boar_pig_id")),
+                    "boar_name": _owner_label(boar.get("tag_number")) or "Unknown",
+                    "in_date": exposure.get("started_on"),
+                    "planned_out_date": exposure.get("planned_removal_on"),
+                    "current_pen_id": _text(sow.get("current_pen_id")),
+                    "current_pen_name": _owner_label(sow.get("current_pen_name") or sow.get("current_pen_id")),
+                    "state": "Boar exposure active",
+                    "asserts_service_date": False,
+                    "asserts_conception": False,
+                    "asserts_pregnancy": False,
+                })
+                continue
             held.append({"pig_id": task.get("pig_id"), "name": _owner_label(task.get("tag_number")),
                 "state": _owner_label(task.get("provisional_recommendation")),
                 "reason": _owner_label(task.get("why"), 160)})
@@ -347,9 +376,13 @@ def _schedule_placement_cohorts(tasks, today):
                 "boar_pig_id": group["boar_pig_id"], "boar_name": group["boar_name"],
                 "start_date": start.isoformat(), "end_date": end.isoformat(), "capacity": capacity,
                 "females": females})
+    current_exposures.sort(key=lambda row: (
+        row["boar_name"].casefold(), row["name"].casefold(), row["pig_id"]
+    ))
     return {"capacity_per_boar": IMMEDIATE_BOAR_GROUP_CAPACITY, "exposure_days": EXPOSURE_DAYS,
-        "cohorts": cohorts, "held": held, "actionable_count": len(assigned),
-        "accounted_for_once": len(assigned) + len(held) == len(tasks)
+        "cohorts": cohorts, "current_exposures": current_exposures,
+        "held": held, "actionable_count": len(assigned),
+        "accounted_for_once": len(assigned) + len(held) + len(current_exposures) == len(tasks)
             and len(assigned) == sum(len(row["females"]) for row in cohorts),
         "mating_execution_enabled": False, "writes_performed": False}
 
