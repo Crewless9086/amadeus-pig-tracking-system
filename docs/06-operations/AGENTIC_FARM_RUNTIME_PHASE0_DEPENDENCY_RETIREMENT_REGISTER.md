@@ -10,12 +10,138 @@ record, Telegram route, customer system or hardware was mutated.
 
 - **Documented fact:** asserted by tracked documentation or a committed export.
 - **Runtime-loaded fact:** a deployed process or configuration was read and its
-  loaded state proved. None was inspected in this bounded repository pass.
+  loaded state proved. The dated snapshot below records loaded Render lineage,
+  direct configuration-name presence and local Windows tasks/processes.
 - **Provider-verified fact:** authoritative n8n, Render, Google, Telegram,
-  Chatwoot or device-provider readback. None was requested in this pass.
+  Chatwoot or device-provider readback. The dated snapshot below records n8n,
+  Render, Telegram and Chatwoot provider state.
+- **Physical fact:** direct owner/site observation of physical equipment or
+  effects. None was requested or claimed in this slice.
 
 An export's `active` field is documented fact only. `unknown` means the export
 omits that field. It must not be treated as disabled or enabled provider truth.
+
+## Read-only provider/runtime snapshot — 2026-08-13
+
+Observation window: `2026-08-13T08:26:38Z` to `2026-08-13T08:31:06Z`.
+Credential values were never recorded. The primary repository supplied
+configuration presence for n8n, Render, Chatwoot, Oom Sakkie Telegram and
+CHARLIE Telegram; no separate SAM Telegram token was present.
+
+### n8n provider truth
+
+The n8n API returned 31 workflows. This is provider-verified active state, not
+proof that every active workflow is safe, needed or producing business effects.
+
+| Provider ID | Workflow | Provider active | Last updated (UTC) | Ownership evidence |
+| --- | --- | ---: | --- | --- |
+| `1VNdetSbgP0ffNyH` | `2.4.4 - Order Lookup Tool` | yes | 2026-05-19T02:41:00Z | callable only; no execution in latest 100 |
+| `2LETWzde7lMDlMnl` | `ALERT - Sunsynk` | no | 2026-05-23T03:14:12Z | inactive schedule |
+| `3gUUnTs94kXvq2Xl` | `1. Email Gatekeeper` | yes | 2026-02-11T19:30:03Z | Outlook trigger; not represented by a committed export |
+| `4RTDP1ZlBWDdo6Jh` | `1.3 - SAM - Sales Agent - Media Tool` | yes | 2026-04-27T11:24:29Z | callable/manual; contradicts disabled suite doctrine |
+| `6UscGE44eTfdLp1A` | `2.0 - OOM SAKKIE - Amadeus Assistant Agent` | yes | 2026-05-23T05:34:53Z | callable |
+| `8b14lAqmyrD0LYZz` | `2.4.5 - Document Send Callback Handler` | yes | 2026-05-19T00:18:00Z | callable |
+| `DoTVVGjcSsCZOyF1` | `1.6 - Daily Order Summary` | yes | 2026-05-10T14:28:33Z | active schedule/manual trigger |
+| `GwWZueB0iyonpscl` | `2.4.1 - Test Caller` | no | 2026-05-19T00:17:06Z | inactive manual trigger |
+| `I4D76Gb9ddGFhSP5` | `ALERT - Weather Forecast` | no | 2026-05-23T01:08:58Z | inactive schedule |
+| `L4c34rFmN0kUJvWc` | `2.1 - Amadeus Weather Sub-Agent` | yes | 2026-05-22T05:13:21Z | callable |
+| `MuEyz3dNaJFTSg7t` | `1.4 - Outbound Order Notification` | yes | 2026-05-09T20:07:56Z | active webhook |
+| `QTWhdK6i8DirCPCZ` | `1.5 - Outbound Document Delivery` | yes | 2026-05-10T06:01:48Z | active webhook |
+| `T8LLCAtYDLNRPoRx` | `2.4 - Amadeus Orders Sub Agent` | yes | 2026-05-19T00:16:20Z | callable |
+| `TlKy9kUgJJE0msU4` | `2.0B - Oom Sakkie Backend Read-Only Relay` | yes | 2026-08-02T16:42:16Z | execution `64125`, success at 06:30:50Z |
+| `UNwNmx0TwtFf8mjo` | `2.3.1 - Build Daily Irrigation Plan` | yes | 2026-03-12T16:21:53Z | execution `64055`, success at 22:05:53Z |
+| `V73HaIqVpzv44SFc` | `1.0 - SAM - Sales Agent - Chatwoot` | no | 2026-06-16T01:34:56Z | inactive webhook |
+| `YDRs6fwde7MzPYn7` | `1.2 - Amadeus Order Steward` | yes | 2026-05-17T05:43:28Z | callable/manual |
+| `aij6CO9zokC3IsZY` | `Capture Telegram IDs` | no | 2026-05-19T00:09:22Z | inactive; not represented by a committed export |
+| `dAz5VSX9VZaXVTN8` | `1.1 - SAM - Sales Agent – Escalation Telegram` | yes | 2026-04-29T20:29:42Z | active Telegram trigger |
+| `f6oPLsaolGH4pMKC` | `2.3.2 - Run Irrigation Controller` | no | 2026-03-12T18:30:00Z | inactive schedule |
+| `g0ajlm9gBp7J72Jn` | `ALERT - Local Weather Station` | no | 2026-05-23T01:09:03Z | inactive schedule |
+| `jIRPu33UOFCbk2Gx` | `ALERT - Power Backend Delivery` | yes | 2026-08-05T06:36:59Z | 48/100 recent executions; latest `64139` success at 08:15:43Z |
+| `k4XVMoJ1hK09PIvT` | `2.4.3 - Order Approval Request Webhook` | no | 2026-05-19T00:17:03Z | inactive webhook |
+| `kd5wrJEgBfUNNxnb` | `ALERT - Farm Attention Digest` | yes | 2026-05-30T20:04:01Z | execution `64053`, success at 22:00:40Z |
+| `leo7eCFlo2Ilbvk7` | `ALERT - Weather Backend Delivery` | yes | 2026-05-23T00:51:16Z | 48/100 recent executions; latest `64138` success at 08:15:16Z |
+| `oyGH9ynKZ38IQY48` | `2.3.3 - Irrigation Status Tool` | yes | 2026-05-23T05:25:02Z | callable |
+| `rujGugAcNxmZlv1t` | `SAM Livestock - Autonomous Inbox Operator` | no | 2026-07-29T20:44:50Z | inactive schedule |
+| `s8QaxmqT69Z5mhvE` | `2 - The GateKeeper` | yes | 2026-08-12T14:18:24Z | execution `64124`, success at 06:30:48Z |
+| `tKVKoCcxhT7CAydT` | `2.2 - Amadeus Sunsynk Sub-Agent` | yes | 2026-05-22T01:09:41Z | callable |
+| `vx1lV8aFCG28KSIN` | `2.1.1 - Amadeus Forecast Tool` | no | 2026-05-19T03:53:23Z | inactive callable workflow |
+| `y05APXoAq3ejq1gd` | `Research Expert` | no | 2026-05-19T00:09:19Z | inactive; not represented by a committed export |
+
+Provider inventory did not contain committed exports `2.4.2 - Orders Approval
+Callback Handler`, `SAM Livestock - Continuous Chatwoot Inbound`, or the three
+newer repository `ALERT` exports under those exact names. Absence is not an
+inactive-state claim. The provider-only active `1. Email Gatekeeper` is
+`retain-temporarily`: disabling it may lose business email intake; CORE owns
+discovery, rollback is provider re-enable after sole-trigger verification, and
+retirement requires an owner-mapped canonical email adapter with fresh receipt,
+readback and zero lost-message proof. Provider-only inactive utilities remain
+`historical-evidence` pending export/retention reconciliation.
+
+### Render provider and loaded-lineage truth
+
+| Provider ID | Service | Type / state | Schedule | Command | Configuration presence and lineage |
+| --- | --- | --- | --- | --- | --- |
+| `srv-d6sijjkhg0os73f7regg` | `amadeus-pig-tracking-system` | web service / not suspended | continuous | provider-default start/build | 20 direct env keys; SAM Meat webhook/autoreply, SAM sales cohort/autonomy, Telegram owner-review and telemetry-ingest names present. Last proven live deploy `dep-d9unuilg1s2s73e3l4fg` at merge `660bf679…`; a newer deploy was in progress during observation and is not claimed loaded. |
+| `srv-d25u8ic9c44c73efo920` | `amadeus-backend` | web service / not suspended | continuous | provider-default start/build | two direct env keys; stale service updated 2025-12-13; ownership remains Unknown pending domain confirmation. |
+| `crn-d8a8q56l51nc73cif04g` | `amadeus-telemetry-daily-rollups` | cron / not suspended | `15 22 * * *` | `python scripts/telemetry_daily_rollup_plan.py --previous-day --apply` | `DATABASE_URL` name present; deploy `dep-d9uo13e7bikc73b2v5c0` live at `1d98850d…`. |
+| `crn-d5cc6sjuibrs73e8pu6g` | `amadeus-localweatherstation-logger` | cron / not suspended | `*/5 * * * *` | `python main.py` | telemetry-ingest key name present; last successful run field loaded; live deploy `dep-d87s7eh9rddc73atie5g`. |
+| `crn-d5cb74juibrs73djmn6g` | `amadeus-weatherstation-logger` | cron / suspended | `*/5 * * * *` | `.venv/bin/python main.py` | six config names; historical Elixir-runtime service, live artifact but provider-suspended. |
+| `crn-d5a0plhr0fns73837e8g` | `amadeus-forecast-logger` | cron / not suspended | `0 4,16 * * *` | `python main.py` | telemetry-ingest key name present; live deploy `dep-d9ndpj9t0dsc7390slmg`. |
+| `crn-d55dlp6mcj7s73f9smtg` | `amadeus-sunsynk-logger` | cron / not suspended | `*/5 * * * *` | `python main.py` | telemetry-ingest key name present; last successful run field loaded; live deploy `dep-d87od8gjs32c73edh9b0`. |
+
+No value was read into this document. Disabling any enabled telemetry cron can
+make its evidence stale; replacements, rollback and retirement proofs remain the
+per-service obligations already recorded below. The suspended
+`amadeus-weatherstation-logger` is the first Render historical-evidence
+candidate, but this mission did not retire it.
+
+### Webhook and callback ownership
+
+Telegram provider `getWebhookInfo` returned zero pending updates and no current
+error for both configured bots:
+
+- CHARLIE -> Render host, `/api/charlie/build-relay/telegram/webhook`;
+- Oom Sakkie -> n8n host, `/webhook/b419b4e9-adf4-40a3-b582-a3e4ca1f3488/webhook`.
+
+Chatwoot provider returned three account webhooks, all owned by the Render host:
+
+- `17850`, `message_updated` ->
+  `/api/sales/channels/chatwoot/meat-documents/delivery-status`;
+- `18495`, `message_created` ->
+  `/api/sales/channels/chatwoot/sam-live-stock/inbound`;
+- `17758`, `message_created` ->
+  `/api/sales/channels/chatwoot/sam-meat/inbound`.
+
+Therefore `1.0` is not the current Chatwoot inbound owner, while the n8n
+GateKeeper remains the current Oom Sakkie Telegram owner. Backend callback
+routes that are not registered at the provider are runtime-loaded capability,
+not provider-active ownership.
+
+### Local Windows runtime truth
+
+At `2026-08-13T08:29:31Z`:
+
+| Task | Loaded state | Last result | Process ownership |
+| --- | --- | ---: | --- |
+| `CHARLIE Always-On Executive` | Disabled | `267014` | no matching executive watchdog process found |
+| `CHARLIE CORE Runner Watchdog` | Disabled | `0` | no matching runner watchdog process found |
+| `CHARLIE Telegram Relay` | Disabled | `2` | one relay parent/child `pythonw.exe` chain was loaded (PIDs 9920/10996) |
+| `CHARLIE Telegram Relay Watchdog` | Ready; last run 08:28:54Z, next 08:30:53Z | `0` | periodic watchdog owns the loaded relay chain |
+
+The ready watchdog plus disabled direct relay task is one logical local relay
+owner, not two independent relays. Telegram provider truth shows CHARLIE webhook
+ownership on Render, so the loaded polling relay is a competing transport even
+if its code is expected to self-contain in webhook mode. The first genuinely
+duplicated scheduler/transport candidate for later reversible retirement is the
+`CHARLIE Telegram Relay Watchdog`, not a production farm scheduler. Do not
+disable it until one fresh CHARLIE owner callback is provider-confirmed through
+Render, process inspection proves the polling child is unnecessary, and the
+documented task re-enable command is verified as rollback.
+
+### Physical facts
+
+None. No device, pump, valve, farm condition, customer effect or on-site state
+was observed. Provider and process metadata cannot establish physical truth.
 
 ## Owner-visible dependency and retirement register
 
