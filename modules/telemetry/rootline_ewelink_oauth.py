@@ -113,7 +113,11 @@ def create_authorization_request(*, principal, state_store, environ=None, now=No
     query = urllib.parse.urlencode({
         "state": state, "clientId": client_id, "authorization": authorization,
         "seq": seq, "redirectUrl": str(source["EWELINK_OAUTH_REDIRECT_URI"]),
-        "nonce": nonce, "grantType": "authorization_code", "showQRCode": "true",
+        # This URL is delivered directly to the owner's phone. CoolKit's
+        # official client defaults QR presentation off; forcing QR mode here
+        # creates a second-device journey that cannot reliably complete when
+        # the link itself is opened/scanned on that same phone.
+        "nonce": nonce, "grantType": "authorization_code",
     })
     return {"status": "authorization_ready", "authorization_url": AUTHORIZE_URL + "?" + query,
             "expires_at": expires.isoformat(), "readback_enabled": ready["readback_enabled"],

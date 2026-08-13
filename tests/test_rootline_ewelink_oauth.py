@@ -103,6 +103,15 @@ def test_start_binds_nonce_and_persists_no_raw_secret():
     assert result["readback_enabled"] is False and result["autonomous_control_enabled"] is False
 
 
+def test_owner_mobile_link_uses_direct_login_and_never_forces_qr_mode():
+    states, result, query = start(env(EWELINK_READBACK_ENABLED="true"))
+    assert urllib.parse.urlparse(result["authorization_url"]).netloc == "c2ccdn.coolkit.cc"
+    assert "showQRCode" not in query
+    assert query["grantType"] == ["authorization_code"]
+    assert query["redirectUrl"] == [REDIRECT]
+    assert states.used is False
+
+
 def test_callback_uses_only_allowlisted_reads_and_encrypts_tokens():
     result, _, tokens, calls, _, _ = authorize()
     assert calls == [("POST", "/v2/user/oauth/token", "signed"), ("GET", "/v2/family", "bearer"),
