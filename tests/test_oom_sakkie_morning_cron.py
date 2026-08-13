@@ -44,6 +44,38 @@ def test_provider_ambiguous_delivery_fails_closed_without_retry():
     assert result["hardware_commands"] == 0
 
 
+def test_success_status_fails_closed_on_authority_or_delivery_violation():
+    unsafe = (
+        {"status": "daily_manager_presented", "telegram_sends": 2,
+         "telegram_message_id": "id", "hardware_commands": 0},
+        {"status": "daily_manager_presented", "telegram_sends": 1,
+         "telegram_message_id": "id", "hardware_commands": 1},
+        {"status": "daily_manager_presented", "telegram_sends": 1,
+         "telegram_message_id": "id", "hardware_commands": 0,
+         "writes_farm_data": True},
+        {"status": "daily_manager_replay_suppressed", "telegram_sends": 1,
+         "hardware_commands": 0},
+    )
+    for outcome in unsafe:
+        _, code = run_job(cycle=lambda **_: outcome,
+                          now_fn=lambda: START, sleep_fn=lambda _: None)
+        assert code == 1
+
+
+def test_unproven_claim_retries_inside_bounded_window():
+    outcomes = iter((
+        {"success": False, "status": "daily_manager_claim_unproven",
+         "telegram_sends": 0, "hardware_commands": 0},
+        {"success": True, "status": "daily_manager_replay_suppressed",
+         "telegram_sends": 0, "hardware_commands": 0},
+    ))
+    moments = iter((START, START + timedelta(minutes=1)))
+    result, code = run_job(cycle=lambda **_: next(outcomes),
+                           now_fn=lambda: next(moments), sleep_fn=lambda _: None)
+    assert code == 0
+    assert result["status"] == "daily_manager_replay_suppressed"
+
+
 def test_explicit_failure_requires_provider_confirmation():
     for confirmed, expected in ((True, 0), (False, 1)):
         _, code = run_job(

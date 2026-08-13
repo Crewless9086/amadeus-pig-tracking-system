@@ -66,8 +66,7 @@ def start_production_morning_runtime(*, environ=None, runner=None):
     global _STARTED
     source = environ if environ is not None else os.environ
     explicitly = _truthy(source.get(ENABLED_ENV))
-    render_owned = _truthy(source.get("RENDER"))
-    if not (explicitly or render_owned) or _truthy(source.get("OOM_SAKKIE_DAILY_MANAGER_RUNTIME_DISABLED")):
+    if not explicitly or _truthy(source.get("OOM_SAKKIE_DAILY_MANAGER_RUNTIME_DISABLED")):
         return False
     with _START_LOCK:
         if _STARTED:
