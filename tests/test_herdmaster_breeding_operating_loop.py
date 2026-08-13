@@ -539,6 +539,15 @@ def test_fresh_low_condition_holds_only_affected_sow_and_in_range_does_not_clear
     assert held["cases"][0]["classification"]["state"] == "Recovery hold"
 
 
+def test_above_maximum_condition_hold_names_the_correct_governed_boundary():
+    result = build(projected_observations={"PIG-MS": {"body_condition_score": 6}})
+    classification = result["cases"][0]["classification"]
+    assert classification["state"] == "Body condition recovery"
+    assert "above the governed maximum 5" in classification["reason"]
+    assert "below the governed minimum" not in classification["reason"]
+    assert classification["proposed_placement_date"] is None
+
+
 def test_current_named_condition_evidence_holds_only_the_three_below_threshold_cases():
     current={"Bonnie":3,"Waki":1,"Zigay":2,"Teena":1}
     states={name:build(

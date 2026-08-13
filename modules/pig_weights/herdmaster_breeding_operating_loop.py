@@ -627,10 +627,15 @@ def _classify(
         state, action, priority = (
             "Body condition recovery", "support recovery and record fresh in-range condition before governed clearance", 4,
         )
+        governed_boundary = (
+            f"below the governed minimum {BREEDING_BODY_CONDITION_MIN:g}"
+            if latest_bcs < BREEDING_BODY_CONDITION_MIN
+            else f"above the governed maximum {BREEDING_BODY_CONDITION_MAX:g}"
+        )
         reason = (
             f"Latest valid body condition {latest_bcs:g}, observed "
             f"{_date_text(_date(body_condition_observed_at)) or 'Unknown'}, "
-            f"is below the governed minimum {BREEDING_BODY_CONDITION_MIN:g}. "
+            f"is {governed_boundary}. "
             "Time alone does not clear recovery."
         )
         hold_reasons.append("body condition outside governed range")
