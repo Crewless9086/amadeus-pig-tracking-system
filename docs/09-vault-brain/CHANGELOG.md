@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Typed OOM grouped preview adapter prepared
+
+- Wired only the existing authenticated typed OOM grouped-weight preview boundary to the pure canonical contract after its established natural interpretation and readiness preflight.
+- Reused already loaded pig and pen evidence, preserved owner-visible `Unknown` facts, and kept the existing protected claim payload and digest boundary execution-compatible without invoking it.
+- Left protected execution, writers, persistence, Sheets fallback, application, UI, voice, routes, schema, configuration and production unchanged; this remains undeployed source evidence.
+
 ## 2026-08-13 - Application grouped preview adapter prepared
 
 - Wired only the existing application bulk preflight controller to attach the pure canonical grouped-weight/optional-movement preview after accepted legacy validation.

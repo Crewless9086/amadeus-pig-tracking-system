@@ -6,6 +6,7 @@ from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authori
 from modules.oom_sakkie.herdmaster_weight_preview import preview_grouped_herd_weights
 from modules.oom_sakkie.owner_response_composer import compose_weight_preview
 from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
+from modules.pig_weights.canonical_grouped_preview import preview_prepared_owner_text
 
 _MULTI_WEIGHT = re.compile(r"(?:(?:pig|vark)\s+)?[A-Za-z0-9-]+\s+\d+(?:[.,]\d+)?\s*kg", re.I)
 
@@ -31,8 +32,9 @@ def handle_grouped_weight_message(parsed, authority, *, readiness_loader=None, p
         from modules.pig_weights.farm_supabase_read_service import get_pens
         pen_loader=get_pens
     readiness=readiness_loader()
+    pen_snapshot=pen_loader() or []
     pen_lookup={}
-    for pen in pen_loader() or []:
+    for pen in pen_snapshot:
         if not isinstance(pen,dict):continue
         pid=str(pen.get("pen_id") or pen.get("Pen_ID") or "")
         for value in (pid,pen.get("pen_name"),pen.get("Pen_Name"),pen.get("name")):
@@ -45,10 +47,24 @@ def handle_grouped_weight_message(parsed, authority, *, readiness_loader=None, p
         return {"handled": True, "success": False, "status": preview.get("status"),
                 "mission_id": mission, "card_mission_id": mission,
                 "answer": preview.get("clarification"), "question_count": 1, **_zero()}, 200
-    payload={"contract_version":preview["contract_version"],"weight_date":preview["weight_date"],
-             "row_count":preview["row_count"],"rows":preview["rows"],
-             "movement_pen_id":preview.get("movement_pen_id") or "",
-             "movement_pen_label":preview.get("movement_pen_label") or ""}
+    canonical=preview_prepared_owner_text(text,channel="oom_typed",
+        effective_date=preview["weight_date"],pigs=readiness["pigs"],pens=pen_snapshot)
+    if canonical.get("success") is not True:
+        return {"handled":True,"success":False,"status":canonical.get("status"),
+                "mission_id":mission,"card_mission_id":mission,
+                "answer":"The canonical grouped preview did not accept every interpreted fact. Nothing was recorded.",
+                "question_count":1,**_zero()},200
+    execution_rows=[]
+    for row in canonical["rows"]:
+        execution_rows.append({**row,"weight_kg":float(row["weight_kg"]),
+            "current_pen_id":"" if row.get("current_pen_id")=="Unknown" else row.get("current_pen_id"),
+            "moved_to_pen_id":"" if row.get("moved_to_pen_id")=="Unknown" else row.get("moved_to_pen_id"),
+            "moved_to_pen_label":"" if row.get("moved_to_pen_label")=="Unknown" else row.get("moved_to_pen_label"),
+            "condition_notes":"" if row.get("condition_notes")=="Unknown" else row.get("condition_notes")})
+    payload={"contract_version":canonical["contract_version"],"weight_date":canonical["effective_date"],
+             "row_count":len(execution_rows),"rows":execution_rows,
+             "movement_pen_id":execution_rows[0].get("moved_to_pen_id") if execution_rows else "",
+             "movement_pen_label":execution_rows[0].get("moved_to_pen_label") if execution_rows else ""}
     generation=hashlib.sha256(json.dumps(readiness,sort_keys=True,default=str).encode()).hexdigest()
     creator=claim_creator or create_claim
     try:
@@ -60,9 +76,10 @@ def handle_grouped_weight_message(parsed, authority, *, readiness_loader=None, p
                 "answer":"I retained the weights, but the protected preview could not be stored safely. Nothing was recorded.",**_zero()},503
     return {"handled": True, "success": True, "status": "grouped_weight_preview_ready",
         "specialist_identity": "HERDMASTER", "mission_id": mission, "card_mission_id": mission,
-        "preview_id": preview["preview_id"], "weight_date": preview["weight_date"],
-        "mappings": preview["rows"], "confirmation_required": True,
-        "preview_digest":claim["preview_digest"],"evidence_generation":generation,
+        "preview_id": preview["preview_id"], "weight_date": canonical["effective_date"],
+        "mappings": canonical["rows"], "confirmation_required": canonical["confirmation_required"],
+        "preview_digest":canonical["preview_digest"],"protected_claim_digest":claim["preview_digest"],
+        "canonical_preview":canonical,"evidence_generation":generation,
         "callback_token":claim["callback_token"],"reply_markup":build_buttons(claim["callback_token"],grouped=True),
         "answer": compose_weight_preview(preview["rows"],
             language="af" if str(semantic.get("language")).startswith("af") else "en",
