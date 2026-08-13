@@ -155,11 +155,12 @@ labels without a reviewed rule-version change:
   observed context fields establish no material comparability difference under
   the versioned axis rule.
 - **Moderate:** exact identity/attribution; zero unresolved contradiction; at
-  least 2 eligible opportunities/cohorts; at least 60% coverage; comparability
-  differences are known and explicitly bounded.
+  least 2 eligible opportunities/cohorts; at least 60% outcome coverage; context
+  coverage from 60% through 79.99%; and observed comparability differences are
+  known and explicitly bounded.
 - **Limited:** exact identity/attribution but only 1 eligible opportunity/cohort,
-  coverage below 60%, stale supporting context, or a material unresolved
-  comparability difference.
+  outcome or context coverage below 60%, stale supporting context, or a material
+  unresolved comparability difference.
 - **Unknown:** denominator, attribution or governing evidence is missing or
   conflicting, or the axis cannot be classified deterministically.
 
@@ -169,13 +170,18 @@ offspring come from only one litter/cohort. The packet discloses both offspring
 and independent-cohort counts. Thresholds apply per axis; they do not combine
 different biological measures into a score.
 
-Missing or materially incomplete context coverage caps confidence at Limited;
-it never satisfies High through “no known difference.” Context coverage uses
-the count of applicable attributable context fields present divided by the
-applicable fields required by the versioned axis rule. If applicable context
-cannot be determined, confidence is Unknown. Deterministic tests must contrast
-otherwise identical evidence with missing context versus genuinely comparable
-context coverage.
+Context coverage is the number of attributable populated cohort-by-applicable-
+field cells divided by all cohort-by-applicable-field cells required by the
+versioned axis rule. A field present for one cohort does not cover another.
+Bands are non-overlapping: 80–100% may qualify High; 60–79.99% may qualify
+Moderate; below 60% caps Limited. Missing cells are permitted only according to
+those bands; missing applicability/required-cell definition makes confidence
+Unknown. Precedence is Unknown first, then Limited caps (one cohort, stale or
+material unresolved difference), then numeric High/Moderate evaluation. A
+higher label requires every condition for that label; otherwise fall to the
+next satisfied label. Deterministic tests must contrast otherwise identical
+evidence with sparse context, Moderate-band context and genuinely comparable
+High-band context coverage.
 
 ### 5.2 Herd page `/breeding-analytics`
 
