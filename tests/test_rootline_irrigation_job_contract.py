@@ -26,3 +26,8 @@ def test_completed_callback_with_wrong_identity_fails_closed():
  plan=job(); one=complete(plan,[],1); two=complete(plan,[one],2); events=[one,two]
  with pytest.raises(IrrigationJobError,match="completed_callback_identity_mismatch"):
   apply_segment_completion(plan,events,{**two,"segment_identity":"wrong"})
+def test_oversized_or_short_persisted_runtime_cannot_complete_or_advance():
+ plan=job(); one=complete(plan,[],1)
+ for runtime in (3598,7198):
+  with pytest.raises(IrrigationJobError,match="completed_segment_authority_mismatch"):
+   project_next_segment(plan,[{**one,"verified_runtime_seconds":runtime}],rearm_readback_off=True)

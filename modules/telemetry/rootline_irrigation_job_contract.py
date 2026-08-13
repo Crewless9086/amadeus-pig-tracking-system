@@ -19,7 +19,14 @@ def project_next_segment(job,events,rearm_readback_off=False):
   if row.get("state") in {"claimed","Active"}: active_by_segment.setdefault(number,[]).append(row)
   if row.get("state")=="Completed":
    if row.get("shutdown_verified") is not True: raise IrrigationJobError("completed_segment_shutdown_unverified")
-   _pos(row.get("verified_runtime_seconds"),"verified_runtime_seconds_invalid")
+   runtime=_pos(row.get("verified_runtime_seconds"),"verified_runtime_seconds_invalid")
+   expected_duration=min(job["maximum_segment_seconds"],max(0,
+       job["governed_executable_seconds"]-(number-1)*job["maximum_segment_seconds"]))
+   expected_identity="ROOTLINE-JOB-SEGMENT-"+_digest({"job_id":job["job_id"],
+       "segment_number":number,"duration_seconds":expected_duration})[:24].upper()
+   if (number<1 or number>job["expected_segment_count"]
+       or runtime!=expected_duration or row.get("segment_identity")!=expected_identity):
+    raise IrrigationJobError("completed_segment_authority_mismatch")
    if number in completed and _digest(completed[number])!=_digest(row): raise IrrigationJobError("conflicting_segment_completion")
    completed[number]=row
  active=[row for number,rows in active_by_segment.items() if number not in completed for row in rows]
