@@ -207,6 +207,9 @@ jobs:
           python -m pip install pytest
           ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m pytest tests/test_rootline_water_balance.py -q
 
+      - name: Run ROOTLINE irrigation job persistence and concurrency gates
+        run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m pytest tests/test_rootline_irrigation_execution_store.py -q
+
       - name: Run HERDMASTER breeding operating-loop gates
         run: |
           python - <<'PY'
