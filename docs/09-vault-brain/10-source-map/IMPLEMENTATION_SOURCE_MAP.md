@@ -537,10 +537,15 @@ Current Stage 4 surface:
 
 - `modules/oom_sakkie/daily_farm_manager.py` — scheduler-owned whole-farm task
   packet, constrained semantic prioritization, presentation and durable replay.
+- `modules/oom_sakkie/morning_runtime.py` — production-Render-owned 06:45 SAST
+  wake-up, bounded same-day recovery, read-only concurrent evidence loading and
+  one provider-bound failure escalation. Durable daily/provider claims, rather
+  than a workstation process, arbitrate restarts and multiple web workers.
 - `modules/oom_sakkie/rootline_fertilizer_commissioning_runtime.py` — existing
   fertilizer lifecycle continuation through ROOTLINE auxiliary execution rails.
-- `modules/oom_sakkie/telegram_gateway.py` — authenticated owner and existing
-  scheduler composition boundary.
+- `modules/oom_sakkie/telegram_gateway.py` — authenticated owner, provider
+  delivery and optional legacy ROOTLINE scheduler composition boundary. The
+  morning plan no longer depends on that external tick.
 - `modules/oom_sakkie/manager_question_runtime.py` — provider/card-bound
   grouped-question continuation and exact replay-safe evidence receipt before
   generic semantic intake; zero farm/customer/payment/hardware authority.
