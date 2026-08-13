@@ -85,7 +85,7 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
 | OOM SAKKIE | Health/loss Stage 2 deployed; genuine event acceptance pending | PR #898 merged/deployed as `43b91712`. Production readback proved exact tag-002 resolution, canonical birth/terminal chronology, authenticated owner/config presence and a synthetic gateway journey through the real health handler with a welfare question, zero delivery and zero farm/protected effects. Historical events were untouched. | `CONTINUE — SEND NOTHING`: release the development terminal and leave the deployed Oom Sakkie/HERDMASTER runtime to own the next genuine authenticated health report. Observe/correlate it read-only; repair only a reusable defect if exposed. |
 | SAM | Development released; deployed acceptance pending | `SMQ-20260813-02`: bounded WhatsApp/WebWidget authority and first-event-card repair merged in PR #882 as `b36b2ca3` and is live within successor `6d7f3259`. Conversations `1533`/`2143` were untouched. Business completion needs the next genuine eligible inbound. | `SEND_NOTHING`: deployed SAM owns the next event. Use the development terminal only for read-only correlation or a reusable defect exposed by that event. |
 | BEACON | Not launched | `BMQ-20260813-00`: provider/runtime and retained-worktree truth unreconciled; no posting authority inferred. | `NEW_MISSION` only when launched: read-only current-truth reconciliation. |
-| CODEX UI | UIQ-01 complete; expected-farrowing identity omission promoted | `UIQ-20260813-01` remains production-complete. The live `/verwagte-jongdatums` renderer ignores deployed `sow_name`/`boar_name` and falls from blank tags directly to technical Pig IDs. Backend name truth is already proven; `static/js/verwagteJongdatums.js` has no active dirty-file collision. | `NEW MISSION UIQ-20260813-03`: change only expected-farrowing display/sort identity preference to name, meaningful tag, then Pig ID; test and prove the authenticated live page with zero writes. HERDMASTER terminal remains released. |
+| CODEX UI | UIQ-03 production-complete; UIQ-02 eligible for reconciliation | PR #901 merged/deployed as `c86adba1`; authenticated desktop/mobile proof shows nine genuine active rows names-first and correctly ordered, with repeated reads and unchanged canonical farm tables. UIQ-03 has a genuine owner-visible result and its clean worktree is released-retain. | `PROMOTE UIQ-20260813-02 READ-ONLY`: reconcile the queued conditional `Beskermde Oorgang` simplification against current production, active UI files and HERDMASTER protected-transition semantics before assigning implementation files. Do not combine HMQ-04 breeding analytics work. |
 
 ## Mission queues
 
@@ -187,12 +187,13 @@ Detailed HERDMASTER evidence remains in
 - `UIQ-20260813-01` — `production_complete`: PR #894 plus fidelity correction
   PR #896 are one reviewed mission release, deployed at `c0065fb3` as
   `dep-d9uv650ae00c738qh2ng`. CODEX UI terminal is released.
-- `UIQ-20260813-02` — queued conditional hiding/simplification of `Beskermde
-  Oorgang` when there is no actionable protected transition.
-- `UIQ-20260813-03` — `promoted_small_ui_integration`: expected-farrowing page
-  must display and sort by `sow_name`/`boar_name`, then meaningful canonical
-  tag, with Pig ID as final fallback. Scope is the page renderer/tests only;
-  backend read-model semantics and farm data remain unchanged.
+- `UIQ-20260813-02` — `promoted_readonly_reconciliation`: inspect conditional
+  hiding/simplification of `Beskermde Oorgang` when there is no actionable
+  protected transition; confirm file ownership/collisions before implementation.
+- `UIQ-20260813-03` — `production_complete`: PR #901 merged/deployed as
+  `c86adba1`; genuine desktop/mobile rows show canonical names first, with
+  meaningful tag and Pig ID fallbacks, deterministic date-first sorting and
+  zero farm-data writes. Worktree clean and released-retain.
 - All new facelift work remains queued until the active UI mission is released;
   no two terminals may edit the same UI files concurrently.
 
@@ -244,6 +245,7 @@ result appear known earlier.
 | 2026-08-13 | CODEX UI `UIQ-20260813-01` | Dedicated UI terminal launched; preserved dirty `/matings` files exist in the original workspace; prompt prepared but not yet acknowledged. | Deliver one reconciliation/local-preview mission; no deployment yet. |
 | 2026-08-13 | CODEX UI `UIQ-20260813-01` production completion | PR #894 merged as `9300ca3f`; production-fidelity correction PR #896 merged as deployed revision `c0065fb3`, deployment `dep-d9uv650ae00c738qh2ng`. Both PRs are retained as one mission release. | Mark UIQ-01 production-complete and release the UI terminal; do not assign another UI mission until explicit Control Tower promotion. |
 | 2026-08-13 | CODEX UI `UIQ-20260813-03` expected-farrowing identity | Live `/verwagte-jongdatums` uses `sow_tag_number || sow_pig_id` and `boar_tag_number || boar_pig_id`, ignoring the already deployed owner-facing name fields. Current main read model supplies separate `sow_name` and `boar_name`; the target JS file is outside preserved dirty `/matings` work. | Assign the released CODEX UI terminal one isolated page-only correction and authenticated live proof. Do not reopen HERDMASTER backend missions or combine UIQ-02. |
+| 2026-08-13 | CODEX UI `UIQ-20260813-03` production completion | PR #901 reviewed head `44e99b5d` merged/deployed as `c86adba1`. Authenticated 1440x1000 and 390x844 production proof showed nine genuine active expected-farrowing rows names-first with exact API/order agreement; three repeated reads left pigs 301, matings 20, exposures 5 and litters 25 unchanged. | Mark Business complete and release the clean isolated worktree. Promote queued UIQ-02 to read-only reconciliation only; keep HMQ-04 backend intelligence separate. |
 
 ## New owner findings
 
