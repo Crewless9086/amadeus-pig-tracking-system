@@ -138,6 +138,15 @@ def compare_human_decision(proposal, actual_decision, *, environ=None,
         event_type="shadow_control_tower_human_comparison_recorded", proposal=proposal,
         payload=comparison, source_record_id=comparison["comparison_id"]),
         database_url=database_url, connect_factory=connect_factory)
+    if result.get("success") and result.get("created") is False:
+        durable, durable_status = _persisted_comparison(comparison["comparison_id"], feedback_id,
+            database_url=database_url, connect_factory=connect_factory)
+        if durable_status >= 400:
+            return durable, durable_status
+        if _digest(durable["comparison"]) != _digest(comparison):
+            return {"success": False, "status": "human_decision_replay_conflict",
+                **_zero_authority()}, 409
+        comparison = durable["comparison"]
     return {**result, "comparison": comparison, **_zero_authority()}, status
 
 
@@ -177,6 +186,23 @@ def _persisted_proposal(proposal_id, feedback_id, *, database_url=None, connect_
             **_zero_authority()}, 409
     return {"success": True, "status": "persisted_shadow_proposal_ready",
         "proposal": matches[0], "events": loaded.get("events", [])}, 200
+
+
+def _persisted_comparison(comparison_id, feedback_id, *, database_url=None, connect_factory=None):
+    loaded, status = load_operational_events(domain="missions",
+        aggregate_type="control_tower_feedback_transaction", aggregate_id=feedback_id, limit=100,
+        database_url=database_url, connect_factory=connect_factory)
+    if status >= 400:
+        return loaded, status
+    matches = [dict(event["payload"]) for event in loaded.get("events", [])
+        if event.get("event_type") == "shadow_control_tower_human_comparison_recorded"
+        and isinstance(event.get("payload"), Mapping)
+        and event["payload"].get("comparison_id") == comparison_id]
+    if len(matches) != 1:
+        return {"success": False, "status": "persisted_shadow_comparison_not_found",
+            **_zero_authority()}, 409
+    return {"success": True, "status": "persisted_shadow_comparison_ready",
+        "comparison": matches[0]}, 200
 
 
 def _validate_transaction(tx):

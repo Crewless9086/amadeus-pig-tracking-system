@@ -80,10 +80,10 @@ def test_comparison_is_deterministic_and_records_no_dispatch_effect(monkeypatch)
     monkeypatch.setattr(shadow,"load_operational_events",lambda **kwargs:({"success":True,"events":[{
         "event_type":"shadow_control_tower_proposal_recorded","aggregate_id":proposal["feedback_transaction_id"],
         "payload":{"record_type":"proposal","proposal":proposal}}]},200))
-    db=EventDb(); env={shadow.ENABLE_ENV:"1"}
-    first,status1=shadow.compare_human_decision(proposal,actual(),environ=env,connect_factory=lambda _url:db)
-    second,status2=shadow.compare_human_decision(deepcopy(proposal),deepcopy(actual()),environ=env,connect_factory=lambda _url:db)
-    assert status1==201 and status2==200
+    env={shadow.ENABLE_ENV:"1"}
+    first,status1=shadow.compare_human_decision(proposal,actual(),environ=env,connect_factory=lambda _url:EventDb())
+    second,status2=shadow.compare_human_decision(deepcopy(proposal),deepcopy(actual()),environ=env,connect_factory=lambda _url:EventDb())
+    assert status1==status2==201
     assert first["comparison"]==second["comparison"]
     assert first["comparison"]["exact_match"] is True
     assert first["dispatches"]==first["prompts_sent"]==first["terminals_started"]==0
@@ -120,6 +120,36 @@ def test_same_human_decision_identity_with_changed_actual_decision_fails_closed(
         "aggregate_id":proposal["feedback_transaction_id"],"payload":first["comparison"]})
     changed={**actual(),"actual_next_action":"CLOSE"}
     result,status=shadow.compare_human_decision(proposal,changed,environ=env,connect_factory=lambda _url:db)
+    assert status==409 and result["status"]=="human_decision_replay_conflict"
+
+
+def test_concurrent_duplicate_loser_reloads_winner_and_rejects_different_payload(monkeypatch):
+    proposal=shadow.propose_shadow_decision(transaction(),environ={shadow.ENABLE_ENV:"1"})["proposal"]
+    winner_actual=actual()
+    winner_matches={"next_terminal":True,"next_action":True,"continuation_prompt":True,"owner_visible_result":True}
+    winner={"schema_version":shadow.VERSION,"record_type":"human_control_tower_comparison",
+        "proposal_id":proposal["proposal_id"],"feedback_transaction_id":proposal["feedback_transaction_id"],
+        "human_decision_id":winner_actual["human_decision_id"],"field_matches":winner_matches,
+        "matched_field_count":4,"compared_field_count":4,"exact_match":True,
+        "actual_decision":winner_actual,"human_control_tower_remained_authoritative":True,
+        **shadow._zero_authority()}
+    winner["comparison_id"]="SCTC-"+shadow._digest({"proposal_id":proposal["proposal_id"],
+        "feedback_transaction_id":proposal["feedback_transaction_id"],
+        "human_decision_id":winner_actual["human_decision_id"]})[:24].upper()
+    calls=[]
+    def load(**kwargs):
+        calls.append(True)
+        events=[{"event_type":"shadow_control_tower_proposal_recorded",
+            "aggregate_id":proposal["feedback_transaction_id"],"payload":{"proposal":proposal}}]
+        if len(calls)>1:
+            events.append({"event_type":"shadow_control_tower_human_comparison_recorded",
+                "aggregate_id":proposal["feedback_transaction_id"],"payload":winner})
+        return {"success":True,"events":events},200
+    monkeypatch.setattr(shadow,"load_operational_events",load)
+    monkeypatch.setattr(shadow,"append_operational_event",lambda *args,**kwargs:({
+        "success":True,"status":"operational_event_duplicate","created":False,"event_id":"EVT-WINNER"},200))
+    loser={**actual(),"actual_next_action":"CLOSE"}
+    result,status=shadow.compare_human_decision(proposal,loser,environ={shadow.ENABLE_ENV:"1"})
     assert status==409 and result["status"]=="human_decision_replay_conflict"
 
 

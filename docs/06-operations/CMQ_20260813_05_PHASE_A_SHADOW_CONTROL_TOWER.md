@@ -41,6 +41,9 @@ decision identity; a changed replay fails closed. Readiness counts distinct
 durably paired feedback transactions, so repeated decisions cannot inflate the
 ten later real comparisons. It never manufactures them or claims learning
 success.
+After an idempotent insert collision, the caller reloads the winning durable
+comparison and accepts it only when the complete payload matches. Concurrent
+conflicting decisions therefore cannot return two competing truths.
 
 ## Kill switch and zero authority
 
