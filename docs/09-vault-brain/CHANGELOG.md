@@ -1,5 +1,14 @@
 # Vault Brain Changelog
 
+## 2026-08-13 - Oom Sakkie morning delivery claim made date-stable
+
+- Production proof of PR #865 found that material-digest claim identities
+  allowed changed evidence after restart to re-enter same-day provider editing.
+- The backend morning lifecycle now shares one date-stable delivery claim
+  between the useful plan and concise failure outcome; restart, concurrency,
+  changed evidence and replay remain zero-send/zero-edit after the first claim.
+- No missed 13 August brief was triggered, replayed or manufactured.
+
 ## 2026-08-13 - Production-owned morning lifecycle prepared
 
 - Identified the daily manager's missing ownership boundary: durable composition

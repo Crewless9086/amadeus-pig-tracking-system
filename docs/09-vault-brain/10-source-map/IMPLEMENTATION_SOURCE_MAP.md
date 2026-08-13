@@ -540,7 +540,9 @@ Current Stage 4 surface:
 - `modules/oom_sakkie/morning_runtime.py` — production-Render-owned 06:45 SAST
   wake-up, bounded same-day recovery, read-only concurrent evidence loading and
   one provider-bound failure escalation. Durable daily/provider claims, rather
-  than a workstation process, arbitrate restarts and multiple web workers.
+  than a workstation process, arbitrate restarts and multiple web workers. One
+  date-stable `:DELIVERY` claim is shared by the useful-plan and visible-failure
+  outcomes; evidence changes never create another same-day send or edit.
 - `modules/oom_sakkie/rootline_fertilizer_commissioning_runtime.py` — existing
   fertilizer lifecycle continuation through ROOTLINE auxiliary execution rails.
 - `modules/oom_sakkie/telegram_gateway.py` — authenticated owner, provider

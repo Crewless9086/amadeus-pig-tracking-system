@@ -1,6 +1,29 @@
 # Oom Sakkie durable morning runtime handover
 
-Status: source prepared; no production or provider effect claimed.
+Status: production lineage proven; replay defect repaired in follow-up source;
+next genuine scheduled provider result remains required.
+
+## Production proof and follow-up defect
+
+- Render deployed PR #865 merge
+  `c735a34d1a37a35e71223999cc4b0cc37459ffb1` as
+  `dep-d9ulrj3bc2fs739i8evg`, then deployed descendant `origin/main`
+  `6c03d1e1a7719e2c847ce440fab5afb7bce394a2` as live deployment
+  `dep-d9ulsem7bikc73b1afi0`.
+- Authorized read-only Render and database inspection found no 13 August daily
+  lifecycle row. The missed brief was not triggered, replayed or manufactured.
+- Production history for 12 August proved one initial provider send followed by
+  same-day changed-evidence recompositions against the same provider card.
+  Source inspection found the cause: the delivery claim included the material
+  digest, so changed evidence after restart could obtain another daily claim;
+  the failure path also used a separate provider-card identity.
+- Follow-up source makes `OOM-DAILY-FARM-MANAGER-YYYY-MM-DD:DELIVERY` the one
+  date-stable claim shared by useful-plan and visible-failure outcomes. Material
+  digest remains evidence, not claim identity. A restart, changed evidence,
+  concurrent worker, later failure or ambiguous provider outcome cannot obtain
+  a second send or edit for that date.
+- Focused regression proof covers changed-evidence restart, repeated failure,
+  success-then-failure collision and existing family lifecycle replay safety.
 
 ## Incident trace
 

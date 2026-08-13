@@ -49,7 +49,7 @@ def run_morning_cycle(*, now=None, environ=None, deliver=None, store=None,
         if local.time() < RECOVERY_DEADLINE:
             return {**_safe("morning_runtime_recovery_pending", success=False),
                     "failure_class": exc.__class__.__name__}
-        return _escalate_failure(owner, now, deliver, exc)
+        return _escalate_failure(owner, now, deliver, exc, store=store)
 
 
 def start_production_morning_runtime(*, environ=None, runner=None):
@@ -122,8 +122,25 @@ def _load_inputs(owner, now, source, *, herd_loader, rootline_loader,
         executor.shutdown(wait=False, cancel_futures=True)
 
 
-def _escalate_failure(owner, now, deliver, exc):
-    identity = f"OOM-DAILY-FARM-MANAGER-{now.astimezone(SAST).date().isoformat()}:FAILURE"
+def _escalate_failure(owner, now, deliver, exc, *, store=None):
+    from modules.oom_sakkie.daily_farm_manager import daily_farm_manager_store
+    store = store or daily_farm_manager_store
+    daily_identity = f"OOM-DAILY-FARM-MANAGER-{now.astimezone(SAST).date().isoformat()}"
+    claim_id = daily_identity + ":DELIVERY"
+    claim = store("claim_daily", claim_id, {
+        "daily_identity": daily_identity,
+        "status": "failure_detected",
+        "observed_at": now.isoformat(),
+        "failure_class": exc.__class__.__name__,
+        "contract_version": "oom_sakkie_daily_farm_manager.v2",
+    })
+    if not isinstance(claim, dict) or claim.get("success") is not True:
+        return {**_safe("morning_runtime_failure_claim_unproven", success=False),
+                "failure_class": exc.__class__.__name__}
+    if claim.get("created") is False:
+        return {**_safe("morning_runtime_failure_replay_suppressed"),
+                "failure_class": exc.__class__.__name__}
+    identity = daily_identity + ":FAILURE"
     parsed = {"telegram_user_id": owner, "telegram_chat_id": owner,
               "provider_message_id": "scheduled:" + identity,
               "provider_timestamp": now.isoformat(), "text": "Daily Farm Manager failure"}
@@ -134,12 +151,21 @@ def _escalate_failure(owner, now, deliver, exc):
               "hardware_commands": 0, "writes_farm_data": False}
     delivery = deliver(parsed, result, specialist="OOM_SAKKIE",
                        mission_id=identity, card_mission_id=identity)
+    confirmed = bool((delivery or {}).get("success")
+                     and (delivery or {}).get("telegram_message_id"))
+    store("record_daily", claim_id + ":OUTCOME", {
+        "daily_identity": daily_identity,
+        "status": "failure_presented" if confirmed else "provider_ambiguous",
+        "observed_at": now.isoformat(),
+        "failure_class": exc.__class__.__name__,
+        "telegram_message_id": str((delivery or {}).get("telegram_message_id") or ""),
+        "telegram_sends": int((delivery or {}).get("telegram_sends") or 0),
+    })
     return {**_safe("morning_runtime_failure_escalated", success=False),
             "failure_class": exc.__class__.__name__,
             "telegram_sends": int((delivery or {}).get("telegram_sends") or 0),
             "telegram_message_id": str((delivery or {}).get("telegram_message_id") or ""),
-            "provider_delivery_confirmed": bool((delivery or {}).get("success")
-                                                and (delivery or {}).get("telegram_message_id"))}
+            "provider_delivery_confirmed": confirmed}
 
 
 def _configured_owner(source):
