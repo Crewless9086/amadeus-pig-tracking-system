@@ -137,7 +137,11 @@ def test_duplicate_owner_facts_are_emitted_once():
 
 @pytest.mark.parametrize("text,excluded", [
     ("Pig 002 is sick but does not appear to be lying down.", "lying_down_reported"),
+    ("Pig 002 is sick but doesn't appear to be lying down.", "lying_down_reported"),
+    ("Pig 002 is sick but didn't appear to be lying down.", "lying_down_reported"),
     ("Pig 002 is sick and does not look otherwise fine.", "otherwise_fine_reported"),
+    ("Pig 002 is sick and doesn't look otherwise fine.", "otherwise_fine_reported"),
+    ("Pig 002 is sick and didn't look otherwise fine.", "otherwise_fine_reported"),
 ])
 def test_negated_owner_impressions_are_not_recorded_as_positive_facts(text, excluded):
     pig = animal("PIG-2026-0002", "Pig 002", "002")

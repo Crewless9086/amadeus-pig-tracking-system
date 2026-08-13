@@ -354,12 +354,12 @@ def _parse_report(text, provider_time):
     lying_down = latest_positive(
         r"\b(?:is|was|appears? to be)\s+(?:lying|laying) down\b",
         r"\b(?:is|was)\s+not\s+(?:lying|laying) down\b|"
-        r"\bdoes not appear to be\s+(?:lying|laying) down\b",
+        r"\b(?:(?:does|did)\s+not|(?:doesn|didn)['’]t)\s+appear to be\s+(?:lying|laying) down\b",
         lower,
     )
     otherwise_fine = latest_positive(
         r"\b(?:appears?|looks?|seems?)\s+otherwise fine\b",
-        r"\bdoes not\s+(?:appear|look|seem)\s+otherwise fine\b|"
+        r"\b(?:(?:does|did)\s+not|(?:doesn|didn)['’]t)\s+(?:appear|look|seem)\s+otherwise fine\b|"
         r"\b(?:is|was)\s+not\s+otherwise fine\b",
         lower,
     )
