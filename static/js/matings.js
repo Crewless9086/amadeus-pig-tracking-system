@@ -14,6 +14,16 @@ const expandedMatingIds = new Set();
 let activeExposureGroups = new Map();
 let pendingRemoval = null;
 
+function ownerCanRecordExposureRemoval(workspace) {
+    const previewRole = new URLSearchParams(window.location.search).get("preview_owner_role");
+    if (isReadOnlyPreview() && ["admin", "read"].includes(previewRole)) return previewRole === "admin";
+    return String(workspace?.dataset?.ownerRole || "").toLowerCase() === "admin";
+}
+
+function hasActionableRemovalEvidence(row) {
+    return Boolean(row && row.exposure_identity && row.sow_pig_id && row.boar_pig_id && row.occurred_on);
+}
+
 function isReadOnlyPreview() {
     return Boolean(new URLSearchParams(window.location.search).get("preview"));
 }
@@ -22,13 +32,18 @@ async function loadExposureRemovals() {
     const workspace = document.getElementById("active_exposure_workspace");
     const board = document.getElementById("exposure_removal_board");
     if (!board) return;
+    workspace?.classList.add("hidden");
     try {
         const previewMode = new URLSearchParams(window.location.search).get("preview");
         let data;
         if (previewMode === "active-exposure-v1") {
             data = {success:true, records:PREVIEW_EXPOSURES};
+        } else if (previewMode === "active-exposure-incomplete-v1") {
+            data = {success:true, records:PREVIEW_INCOMPLETE_EXPOSURES};
         } else if (previewMode === "active-exposure-empty-v1") {
             data = {success:true, records:[]};
+        } else if (previewMode === "active-exposure-failure-v1") {
+            throw new Error("Exposure evidence unavailable.");
         } else {
             const response = await fetch("/api/pig-weights/breeding-attention/exposures");
             data = await response.json();
@@ -43,9 +58,12 @@ async function loadExposureRemovals() {
         });
         if (!activeExposureGroups.size) {
             board.innerHTML = "";
+            pendingRemoval = null;
+            document.getElementById("exposure_removal_preview")?.classList.add("hidden");
             workspace?.classList.add("hidden");
             return;
         }
+        const canRecordRemoval = ownerCanRecordExposureRemoval(workspace);
         workspace?.classList.remove("hidden");
         board.innerHTML = [...activeExposureGroups].map(([group, rows], groupIndex) => {
             const planned = formatDateOnly(rows.map(row => row.planned_removal_on).filter(Boolean).sort()[0]) || "";
@@ -54,13 +72,18 @@ async function loadExposureRemovals() {
             const sows = rows.slice().sort((a,b) => String(a.sow_label).localeCompare(String(b.sow_label))).map(row => escapeHtml(row.sow_label)).join(", ");
             const pens = [...new Set(rows.map(row => row.current_pen_name || row.pen_name).filter(Boolean))].join(", ") || "Hok onbekend";
             const timing = exposureTiming(planned);
+            const action = canRecordRemoval && rows.every(hasActionableRemovalEvidence)
+                ? `<div class="active-exposure-actions"><button type="button" class="secondary-action" data-open-removal="${escapeHtml(group)}" aria-expanded="false" aria-controls="removal-${groupIndex}">Teken werklike UIT aan</button><div id="removal-${groupIndex}" class="removal-action hidden" data-removal-action="${escapeHtml(group)}"><label>Werklike UIT-datum <input type="date" value="" data-removal-date="${escapeHtml(group)}"></label><button type="button" class="primary-action" data-preview-removal="${escapeHtml(group)}">Gaan voort</button></div></div>`
+                : "";
             return `<article class="active-exposure-card ${timing.cssClass}"><div class="active-exposure-main"><span class="exposure-state">${escapeHtml(timing.label)}</span><h3>${escapeHtml(boars)}</h3><p>${sows}</p></div>
               <dl class="active-exposure-facts"><div><dt>IN</dt><dd>${escapeHtml(started)}</dd></div><div><dt>Beplande UIT</dt><dd>${escapeHtml(planned || "Onbekend")}</dd></div><div><dt>Hok</dt><dd>${escapeHtml(pens)}</dd></div></dl>
-              <div class="active-exposure-actions"><button type="button" class="secondary-action" data-open-removal="${escapeHtml(group)}" aria-expanded="false" aria-controls="removal-${groupIndex}">Teken werklike UIT aan</button><div id="removal-${groupIndex}" class="removal-action hidden" data-removal-action="${escapeHtml(group)}"><label>Werklike UIT-datum <input type="date" value="" data-removal-date="${escapeHtml(group)}"></label><button type="button" class="primary-action" data-preview-removal="${escapeHtml(group)}">Gaan voort</button></div></div></article>`;
+              ${action}</article>`;
         }).join("");
     } catch (error) {
+        pendingRemoval = null;
+        document.getElementById("exposure_removal_preview")?.classList.add("hidden");
         workspace?.classList.remove("hidden");
-        board.innerHTML = `<p class="message-error">${escapeHtml(error.message)}</p>`;
+        board.innerHTML = `<p class="message-error">Aktiewe blootstellings is tans nie beskikbaar nie.</p>`;
     }
 }
 
@@ -130,6 +153,10 @@ const PREVIEW_EXPOSURES = [
     {exposure_group_identity:"PREVIEW-TYSON", exposure_identity:"PREVIEW-SHUPE", sow_pig_id:"PIG-2026-34BF", sow_label:"Shupe", boar_pig_id:"PIG-2026-3B5F", boar_label:"Tyson", occurred_on:"2026-08-12", planned_removal_on:"2026-08-28", current_pen_name:"Kraam Saal 04"},
     {exposure_group_identity:"PREVIEW-TYSON", exposure_identity:"PREVIEW-LUCY", sow_pig_id:"PIG-2026-1248", sow_label:"Lucy", boar_pig_id:"PIG-2026-3B5F", boar_label:"Tyson", occurred_on:"2026-08-12", planned_removal_on:"2026-08-28", current_pen_name:"Kraam Saal 04"},
     {exposure_group_identity:"PREVIEW-PRINCE", exposure_identity:"PREVIEW-LOLLY", sow_pig_id:"PIG-2026-94B9", sow_label:"Lolly", boar_pig_id:"PIG-2026-E057", boar_label:"Prince", occurred_on:"2026-08-12", planned_removal_on:"2026-08-28", current_pen_name:"Kraam Saal 01"}
+];
+
+const PREVIEW_INCOMPLETE_EXPOSURES = [
+    {exposure_group_identity:"PREVIEW-INCOMPLETE", exposure_identity:"", sow_pig_id:"PIG-2026-5FA6", sow_label:"Sophie", boar_pig_id:"PIG-2026-8645", boar_label:"Bola", occurred_on:"2026-08-12", planned_removal_on:"", current_pen_name:"Kraam Saal 03"}
 ];
 
 const SECTION_DEFINITIONS = [

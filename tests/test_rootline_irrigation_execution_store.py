@@ -27,7 +27,7 @@ class FailedConnection:
 
 def test_active_history_bounded_read_failure_is_not_interpreted_as_empty(monkeypatch):
     calls=[];connection=FailedConnection()
-    monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_read",
+    monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_rootline_postgres",
         lambda **kwargs:(calls.append(kwargs) or connection))
     with pytest.raises(RootlineExecutionStoreUnavailable,match="load_active"):
         rootline_irrigation_execution_store("load_active",None)
@@ -37,7 +37,7 @@ def test_active_history_bounded_read_failure_is_not_interpreted_as_empty(monkeyp
 @pytest.mark.parametrize("failure_name",["OperationalError","ConnectionTimeout","PoolTimeout","QueryCanceled","LockNotAvailable"])
 def test_connection_pool_and_query_deadlines_fail_closed(monkeypatch,failure_name):
     failure=type(failure_name,(Exception,),{"__module__":"psycopg.errors"})
-    monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_read",
+    monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_rootline_postgres",
         lambda **kwargs:(_ for _ in ()).throw(failure(failure_name)))
     with pytest.raises(RootlineExecutionStoreUnavailable,match="load_active"):
         rootline_irrigation_execution_store("load_active",None)
@@ -54,7 +54,7 @@ def test_store_recovers_cleanly_after_database_availability_returns(monkeypatch)
         def __exit__(self,*args):return False
         def cursor(self):return EmptyCursor()
     attempts=iter([FailedConnection(),EmptyConnection()])
-    monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_read",
+    monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_rootline_postgres",
         lambda **kwargs:next(attempts))
     with pytest.raises(RootlineExecutionStoreUnavailable):
         rootline_irrigation_execution_store("load_active",None)
