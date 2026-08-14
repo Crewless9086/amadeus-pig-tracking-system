@@ -368,22 +368,26 @@ def test_protected_completion_without_card_sends_one_message_only():
     assert replay["telegram_sends"]==replay["telegram_edits"]==0
 
 
-def test_protected_completion_ambiguous_edit_never_falls_back_to_second_message():
+def test_protected_completion_ambiguous_edit_retries_same_card_once_without_second_message():
     memory=Memory();mission="OOM-PROTECTED-AMBIGUOUS"
     deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
         card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
     completed={"success":True,"status":"completed","answer":"Recorded once.",
         "owner_visible_completion_policy":"verified_edit_or_new_message"}
     inbound={**PARSED,"provider_message_id":"501"}
-    editor=lambda *args:{"success":False,"status":"provider_outcome_ambiguous"}
+    edits=[]
+    def editor(*args):
+        edits.append(args)
+        return ({"success":False,"status":"provider_outcome_ambiguous"} if len(edits)==1
+          else {"success":True,"telegram_message_id":str(args[1])})
     first=deliver_family_result(inbound,completed,specialist="HERDMASTER",mission_id=mission,
         card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=editor)
     delayed=deliver_family_result(inbound,completed,specialist="HERDMASTER",mission_id=mission,
         card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=editor)
     assert first["status"]=="family_message_update_contained"
-    assert delayed["status"]=="family_message_completion_delivery_ambiguous"
+    assert delayed["status"]=="family_message_completion_card_updated"
     assert first["telegram_sends"]==delayed["telegram_sends"]==0
-    assert delayed["telegram_edits"]==0 and len(memory.sent)==1
+    assert delayed["telegram_edits"]==1 and len(memory.sent)==1 and len(edits)==2
 
 
 def test_protected_completion_requires_exact_provider_card_identity():

@@ -92,9 +92,16 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         row=cur.fetchone()
         if not row:return {"success":False,"status":"protected_callback_unknown"},404
         if str(row[1])!=str(owner_user_id) or str(row[2])!=str(private_chat_id):return {"success":False,"status":"protected_callback_unauthorized"},403
-        if row[10] and str(row[10])!=str(source_card_message_id or ""):
+        if not row[10]:
+            return {"success":False,"status":"protected_callback_card_unbound"},409
+        if str(row[10])!=str(source_card_message_id or ""):
             return {"success":False,"status":"protected_callback_card_mismatch"},409
-        if row[7]=="completed":return {"success":True,"status":"protected_callback_replayed_noop","result":row[9],"telegram_sends":0,"telegram_edits":0},200
+        if row[7]=="completed":
+            if row[0]=="rootline_irrigation_segment":
+                return {"success":True,"status":"protected_callback_completed_delivery_retry",
+                  "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
+                  "result":row[9],"telegram_sends":0,"telegram_edits":0},200
+            return {"success":True,"status":"protected_callback_replayed_noop","result":row[9],"telegram_sends":0,"telegram_edits":0},200
         if row[7]=="executing":
             if action!="confirm":
                 return {"success":False,"status":"protected_callback_stale"},409
@@ -102,10 +109,11 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
               confirmation_provider_timestamp from app_private.oom_protected_action_claims
               where callback_token=%s""",(token,))
             confirmation=cur.fetchone()
+            # Telegram callback-query IDs are the stable provider receipt across
+            # webhook retries; the gateway receipt timestamp is process-local.
             exact_confirmation=(confirmation and
               str(confirmation[0] or "")==str(provider_message_id) and
-              confirmation[1] is not None and
-              confirmation[1].astimezone(timezone.utc)==provider_time.astimezone(timezone.utc))
+              confirmation[1] is not None)
             if not exact_confirmation:
                 return {"success":False,"status":"protected_callback_stale"},409
             return {"success":True,"status":"protected_callback_recovered",
@@ -144,6 +152,17 @@ def contain_claim(token, result, *, connect_factory=None):
           set status='contained',result_payload=%s::jsonb,completed_at=now()
           where callback_token=%s and status='executing'""",
           (json.dumps(result,sort_keys=True,default=str),token))
+
+def contain_unbound_preview_claim(token, result, *, connect_factory=None):
+    """Contain a preview whose provider card was never durably bound."""
+    with (connect_factory() if connect_factory else _connect()) as db:
+      with db.cursor() as cur:
+        cur.execute("""update app_private.oom_protected_action_claims
+          set status='contained',result_payload=%s::jsonb,completed_at=now()
+          where callback_token=%s and status='active'
+          and preview_card_message_id is null""",
+          (json.dumps(result,sort_keys=True,default=str),token))
+        return cur.rowcount==1
 
 def execute_grouped_weight_claim(claim, *, actor_id, connect_factory=None):
     """Atomically apply exactly the rows and movements bound into one claim."""

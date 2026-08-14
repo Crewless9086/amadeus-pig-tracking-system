@@ -193,14 +193,18 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         action_result,action_status=handle_protected_action_input(parsed,authority,callback_data=callback["callback_data"])
         delivery=({"success":True,"telegram_sends":0,"telegram_edits":0}
           if action_result.get("suppress_owner_delivery") or not action_result.get("answer") else
-          deliver_family_result(parsed,action_result,specialist="HERDMASTER",
-            mission_id=str(action_result.get("mission_id") or ""),card_mission_id=str(action_result.get("mission_id") or "")))
+          deliver_family_result(parsed,action_result,
+            specialist=str(action_result.get("specialist") or "HERDMASTER"),
+            mission_id=str(action_result.get("mission_id") or ""),
+            card_mission_id=str(action_result.get("card_mission_id") or action_result.get("mission_id") or "")))
         ack_result,ack_status=acknowledge_telegram_callback(callback["callback_query_id"],environ=environ)
         body,_=_direct_result(action_result.get("success") is True and delivery.get("success") is True and ack_status<400,
           str(action_result.get("status") or "protected_callback_contained"),policy,action_status)
         body.update({"protected_action":action_result,"delivery":delivery,"callback_acknowledgement":ack_result,
           "sends_telegram":int(delivery.get("telegram_sends") or 0)>0,"writes":action_result.get("writes_farm_data") is True})
-        return body,ack_status if ack_status>=400 else action_status
+        return body,(ack_status if ack_status>=400 else
+          503 if action_result.get("success") is True and delivery.get("success") is not True
+          else action_status)
     if callback["callback_data"].startswith("sam_live_"):
         allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
         if callback["telegram_user_id"] not in allowed_ids:
