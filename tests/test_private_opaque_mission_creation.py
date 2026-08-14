@@ -18,6 +18,16 @@ PAYLOAD = {"message": {"from": {"id": 42}, "chat": {"id": 42, "type": "private"}
 HEADERS = {"X-Telegram-Bot-Api-Secret-Token": "s" * 32}
 TITLE = "Phase A observation-only Shadow Control Tower comparison of human Control Tower decisions"
 RAW = TITLE
+ADMISSION = {
+    "portfolio_epoch": "CORE-CURRENT-2026-08-14",
+    "classification": "current",
+    "lifecycle_state": "WORKING",
+    "admission_version": "portfolio_admission_v1",
+    "admission_evidence": "owner_approved_cmq_20260813_05_bootstrap",
+    "decision_authority": "human_control_tower",
+    "dispatch_authority": "human_control_tower",
+    "runnable": False,
+}
 
 
 def context(mission_id):
@@ -26,7 +36,8 @@ def context(mission_id):
 
 def args(mission_id="CMQ-20260813-05", **changes):
     value = {"mission_id": mission_id, "title": TITLE, "raw_text": RAW,
-        "mission_type": "system improvement", "urgency": "P1"}
+        "mission_type": "system improvement", "urgency": "P1",
+        "portfolio_admission": ADMISSION}
     value.update(changes)
     return value
 
@@ -36,7 +47,8 @@ def args(mission_id="CMQ-20260813-05", **changes):
 @patch("modules.charlie.private_tools.get_mission")
 def test_exact_owner_approved_id_is_forwarded_unchanged_and_verified(get_mission, record_mission, _list):
     get_mission.side_effect = [({"status": "not_found"}, 404),
-        ({"mission": {"mission_id": "CMQ-20260813-05", "title": TITLE, "raw_text": RAW}}, 200)]
+        ({"mission": {"mission_id": "CMQ-20260813-05", "title": TITLE, "raw_text": RAW,
+            "status": "paused", "metadata": {"portfolio_admission": ADMISSION}}}, 200)]
     record_mission.return_value = ({"mission_id": "CMQ-20260813-05", "stored": True}, 201)
     result, status = execute_private_tool("create_mission", args(), context("CMQ-20260813-05"))
     assert status == 200 and result["mission_id"] == "CMQ-20260813-05" and result["verified"]
@@ -51,7 +63,8 @@ def test_exact_owner_approved_id_is_forwarded_unchanged_and_verified(get_mission
 @patch("modules.charlie.private_tools.get_mission")
 def test_raw_private_authentication_boundary_seals_and_forwards_exact_id(get_mission, record_mission, _list):
     get_mission.side_effect = [({"status": "not_found"}, 404),
-        ({"mission": {"mission_id": "CMQ-20260813-05", "title": TITLE, "raw_text": RAW}}, 200)]
+        ({"mission": {"mission_id": "CMQ-20260813-05", "title": TITLE, "raw_text": RAW,
+            "status": "paused", "metadata": {"portfolio_admission": ADMISSION}}}, 200)]
     record_mission.return_value = ({"mission_id": "CMQ-20260813-05", "stored": True}, 201)
     action = {"action": "create_mission", **args()}
     result, status = handle_authenticated_private_action(
@@ -69,7 +82,8 @@ def test_suffixed_opaque_identity_is_not_reduced_to_embedded_digits(get_mission,
     get_mission.side_effect = [({"status": "not_found"}, 404),
         ({"mission": {"mission_id": mission_id, "title": TITLE, "raw_text": RAW}}, 200)]
     record_mission.return_value = ({"mission_id": mission_id}, 201)
-    result, status = execute_private_tool("create_mission", args(mission_id), context(mission_id))
+    result, status = execute_private_tool("create_mission",
+        args(mission_id, portfolio_admission=None), context(mission_id))
     assert status == 200 and result["mission_id"] == mission_id
     assert record_mission.call_args.args[0]["mission_id"] == mission_id
 
@@ -102,7 +116,8 @@ def test_malformed_multiple_alias_and_conflicting_content_fail_closed():
 @patch("modules.charlie.private_tools.get_mission")
 def test_exact_replay_returns_same_canonical_mission_without_write(get_mission):
     get_mission.return_value = ({"mission": {
-        "mission_id": "CMQ-20260813-05", "title": TITLE, "raw_text": RAW}}, 200)
+        "mission_id": "CMQ-20260813-05", "title": TITLE, "raw_text": RAW,
+        "status": "paused", "metadata": {"portfolio_admission": ADMISSION}}}, 200)
     with patch("modules.charlie.private_tools.record_mission") as record:
         result, status = execute_private_tool("create_mission", args(), context("CMQ-20260813-05"))
     assert status == 200 and result["duplicate_prevented"] is True
@@ -148,7 +163,8 @@ def test_concurrent_exact_creation_converges_on_one_identity():
             writes.append(mission["mission_id"])
             durable.setdefault(mission["mission_id"], {
                 "mission_id": mission["mission_id"], "title": mission["title"],
-                "raw_text": mission["raw_text"]})
+                "raw_text": mission["raw_text"], "status": mission["status"],
+                "metadata": dict(mission["metadata"])})
         return {"mission_id": mission["mission_id"]}, 201
 
     with patch("modules.charlie.private_tools.get_mission", side_effect=get_mission), \
@@ -172,3 +188,65 @@ def test_legacy_authenticated_creation_without_explicit_id_is_unchanged(_list, r
     result, status = execute_private_tool("create_mission", {"title": TITLE}, context("OWNER-BOUND-CONTEXT"))
     assert status == 200 and result["mission_id"] == "CHARLIE-MISSION-GENERATED"
     assert "mission_id" not in record_mission.call_args.args[0]
+
+
+@patch("modules.charlie.private_tools.list_missions", return_value=({"missions": []}, 200))
+@patch("modules.charlie.private_tools.record_mission")
+@patch("modules.charlie.private_tools.get_mission")
+def test_bootstrap_admission_is_structured_non_runnable_and_verified(get_mission, record_mission, _list):
+    get_mission.side_effect = [({"status": "not_found"}, 404), ({"mission": {
+        "mission_id": "CMQ-20260813-05", "title": TITLE, "raw_text": RAW,
+        "status": "paused", "metadata": {"portfolio_admission": ADMISSION}}}, 200)]
+    record_mission.return_value = ({"mission_id": "CMQ-20260813-05", "stored": True}, 201)
+    result, status = execute_private_tool("create_mission",
+        args(portfolio_admission=ADMISSION), context("CMQ-20260813-05"))
+    assert status == 200 and result["verified"] is True
+    mission = record_mission.call_args.args[0]
+    assert mission["status"] == "paused"
+    assert mission["metadata"]["portfolio_admission"] == ADMISSION
+    assert result["portfolio_admission"] == ADMISSION
+
+
+def test_bootstrap_admission_rejects_malformed_alias_and_other_mission_without_store_access():
+    invalid = [None, [], {**ADMISSION, "runnable": True},
+        {**ADMISSION, "portfolio_epoch": "CORE-CURRENT-OTHER"}]
+    with patch("modules.charlie.private_tools.get_mission") as get_mission, \
+         patch("modules.charlie.private_tools.record_mission") as record_mission:
+        missing = args()
+        missing.pop("portfolio_admission")
+        result, status = execute_private_tool("create_mission", missing,
+            context("CMQ-20260813-05"))
+        assert status == 409 and result["status"] == "portfolio_admission_required"
+        for value in invalid:
+            supplied = "bad" if value is None else value
+            result, status = execute_private_tool("create_mission",
+                args(portfolio_admission=supplied), context("CMQ-20260813-05"))
+            assert status == 409 and result["success"] is False
+        result, status = execute_private_tool("create_mission",
+            args("CMQ-20260813-02A", portfolio_admission=ADMISSION),
+            context("CMQ-20260813-02A"))
+    assert status == 409 and result["status"] == "portfolio_admission_not_authorized"
+    get_mission.assert_not_called()
+    record_mission.assert_not_called()
+
+
+@patch("modules.charlie.private_tools.get_mission")
+def test_bootstrap_exact_replay_requires_identical_admission_and_writes_nothing(get_mission):
+    get_mission.return_value = ({"mission": {
+        "mission_id": "CMQ-20260813-05", "title": TITLE, "raw_text": RAW,
+        "status": "paused", "metadata": {"portfolio_admission": ADMISSION}}}, 200)
+    with patch("modules.charlie.private_tools.record_mission") as record:
+        result, status = execute_private_tool("create_mission",
+            args(portfolio_admission=ADMISSION), context("CMQ-20260813-05"))
+    assert status == 200 and result["duplicate_prevented"] is True
+    record.assert_not_called()
+
+    get_mission.return_value = ({"mission": {
+        "mission_id": "CMQ-20260813-05", "title": TITLE, "raw_text": RAW,
+        "status": "paused", "metadata": {"portfolio_admission": {
+            **ADMISSION, "lifecycle_state": "OWNER_HOLD"}}}}, 200)
+    with patch("modules.charlie.private_tools.record_mission") as record:
+        conflict, conflict_status = execute_private_tool("create_mission",
+            args(portfolio_admission=ADMISSION), context("CMQ-20260813-05"))
+    assert conflict_status == 409 and conflict["status"] == "mission_identity_replay_conflict"
+    record.assert_not_called()

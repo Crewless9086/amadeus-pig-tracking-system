@@ -4,12 +4,19 @@ from concurrent.futures import ThreadPoolExecutor
 
 import psycopg
 
-from modules.charlie.mission_store import record_mission
+from modules.charlie.mission_store import record_mission, record_mission_event, update_mission_status
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 PREFIX = "CMQ-OPAQUE-POSTGRES-"
 TITLE_PREFIX = "Opaque postgres mission creation"
+ADMISSION = {
+    "portfolio_epoch": "CORE-CURRENT-2026-08-14", "classification": "current",
+    "lifecycle_state": "WORKING", "admission_version": "portfolio_admission_v1",
+    "admission_evidence": "owner_approved_cmq_20260813_05_bootstrap",
+    "decision_authority": "human_control_tower", "dispatch_authority": "human_control_tower",
+    "runnable": False,
+}
 
 
 @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL is required")
@@ -28,6 +35,8 @@ class PrivateOpaqueMissionCreationPostgresTests(unittest.TestCase):
             cursor.execute("delete from public.charlie_missions where title like %s", (TITLE_PREFIX + "%",))
             cursor.execute("delete from public.charlie_mission_events where mission_id like %s", (PREFIX + "%",))
             cursor.execute("delete from public.charlie_missions where mission_id like %s", (PREFIX + "%",))
+            cursor.execute("delete from public.charlie_mission_events where mission_id = %s", ("CMQ-20260813-05",))
+            cursor.execute("delete from public.charlie_missions where mission_id = %s", ("CMQ-20260813-05",))
 
     def _mission(self, mission_id, title):
         return {"mission_id": mission_id, "title": title, "raw_text": title,
@@ -117,6 +126,62 @@ class PrivateOpaqueMissionCreationPostgresTests(unittest.TestCase):
         self.assertEqual(mission_count, 1)
         self.assertEqual(event_count, 1)
         self.assertEqual(sum(status == 201 for _result, status in results), 1)
+
+    def test_atomic_bootstrap_admission_replay_is_one_mission_and_one_admission_event(self):
+        mission_id = "CMQ-20260813-05"
+        title = TITLE_PREFIX + " atomic bootstrap"
+        mission = self._mission(mission_id, title)
+        mission["status"] = "paused"
+        mission["metadata"]["portfolio_admission"] = ADMISSION
+        first = record_mission(mission, source_context={"source": "charlie_private_executive"},
+            database_url=DATABASE_URL, exact_identity=True)
+        replay = record_mission(mission, source_context={"source": "charlie_private_executive"},
+            database_url=DATABASE_URL, exact_identity=True)
+        self.assertEqual((first[1], replay[1]), (201, 200))
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute("select status,metadata_json from public.charlie_missions where mission_id=%s", (mission_id,))
+            status, metadata = cursor.fetchone()
+            cursor.execute("select event_type,count(*) from public.charlie_mission_events where mission_id=%s group by event_type", (mission_id,))
+            events = dict(cursor.fetchall())
+        self.assertEqual(status, "paused")
+        self.assertEqual(metadata["portfolio_admission"], ADMISSION)
+        self.assertEqual(events, {"created": 1, "portfolio_admitted": 1})
+
+    def test_concurrent_bootstrap_replay_has_no_duplicate_admission_event(self):
+        mission_id = "CMQ-20260813-05"
+        title = TITLE_PREFIX + " concurrent bootstrap"
+        mission = self._mission(mission_id, title)
+        mission["status"] = "paused"
+        mission["metadata"]["portfolio_admission"] = ADMISSION
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: record_mission(mission,
+                source_context={"source": "charlie_private_executive"},
+                database_url=DATABASE_URL, exact_identity=True), range(2)))
+        self.assertEqual(sorted(code for _result, code in results), [200, 201])
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute("select count(*) from public.charlie_missions where mission_id=%s", (mission_id,))
+            self.assertEqual(cursor.fetchone()[0], 1)
+            cursor.execute("select event_type,count(*) from public.charlie_mission_events where mission_id=%s group by event_type", (mission_id,))
+            self.assertEqual(dict(cursor.fetchall()), {"created": 1, "portfolio_admitted": 1})
+
+    def test_store_rejects_arbitrary_or_legacy_admission_before_write(self):
+        for mission_id, exact in ((PREFIX + "UNAUTHORIZED", True), (PREFIX + "LEGACY", False)):
+            mission = self._mission(mission_id, TITLE_PREFIX + " unauthorized " + mission_id)
+            mission["status"] = "paused"
+            mission["metadata"]["portfolio_admission"] = ADMISSION
+            result, status = record_mission(mission,
+                source_context={"source": "charlie_private_executive"},
+                database_url=DATABASE_URL, exact_identity=exact)
+            self.assertEqual((status, result["status"]), (409, "portfolio_admission_not_authorized"))
+        self.assertEqual(self._counts(), (0, 0))
+
+    def test_generic_event_and_status_apis_cannot_emit_portfolio_admission(self):
+        event, event_status = record_mission_event("CMQ-20260813-05", "portfolio_admitted",
+            database_url=DATABASE_URL)
+        transition, transition_status = update_mission_status("CMQ-20260813-05", "paused",
+            event_type="portfolio_admitted", database_url=DATABASE_URL)
+        self.assertEqual((event_status, event["status"]), (400, "invalid_event_type"))
+        self.assertEqual((transition_status, transition["status"]), (400, "invalid_event_type"))
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from modules.charlie.executive_store import executive_scorecard
 from modules.charlie.executive_store import list_capability_trust
 from modules.charlie.improvement_analyst import analyst_scorecard
 from modules.charlie.mission_store import (
+    BOOTSTRAP_PORTFOLIO_ADMISSION, BOOTSTRAP_PORTFOLIO_MISSION_ID,
     get_mission, list_missions, mission_status_summary, record_mission,
     transition_mission_review_state, update_mission_status,
 )
@@ -318,18 +319,26 @@ def _create_mission(args, runtime_context=None):
         if identity_error:
             return {"success": False, "status": identity_error,
                 "summary": "CORE rejected the explicit mission identity without creating or aliasing a mission."}, 409
+        admission, admission_error = _bootstrap_portfolio_admission(
+            args.get("portfolio_admission"), approved_mission_id)
+        if admission_error:
+            return {"success": False, "status": admission_error,
+                "summary": "CORE rejected the bootstrap portfolio admission without creating a mission."}, 409
         loaded, loaded_status = get_mission(approved_mission_id)
         if loaded_status < 400:
             mission = loaded.get("mission") or {}
             if (mission.get("mission_id") != approved_mission_id
                     or str(mission.get("title") or "").strip() != title
-                    or str(mission.get("raw_text") or "").strip() != raw_text):
+                    or str(mission.get("raw_text") or "").strip() != raw_text
+                    or (admission and not _portfolio_admission_matches(
+                        mission.get("metadata"), admission, mission.get("status")))):
                 return {"success": False, "status": "mission_identity_replay_conflict",
                     "summary": "CORE found the opaque mission identity with different canonical content."}, 409
             return {"success": True, "status": "existing_mission_reused",
                 "summary": f"CORE already has the exact approved mission [{approved_mission_id}].",
                 "mission_id": approved_mission_id, "verified": True,
-                "duplicate_prevented": True}, 200
+                "duplicate_prevented": True,
+                **({"portfolio_admission": admission} if admission else {})}, 200
         if loaded_status != 404:
             return {"success": False, "status": "mission_identity_readback_unavailable",
                 "summary": "CORE could not safely establish whether the approved mission identity already exists."}, loaded_status
@@ -346,16 +355,20 @@ def _create_mission(args, runtime_context=None):
         if title_collision:
             return {"success": False, "status": "mission_title_identity_conflict",
                 "summary": "CORE found this active title under a different canonical mission identity."}, 409
+        metadata = {"created_from": "charlie_private_executive",
+            "owner_work": True, "executive_outcome": title[:500],
+            "opaque_identity_owner_approved": True}
+        if admission:
+            metadata["portfolio_admission"] = admission
         result, status = record_mission({
             "mission_id": approved_mission_id,
+            "status": "paused" if admission else "new",
             "title": title[:180],
             "raw_text": raw_text[:6000],
             "urgency": str(args.get("urgency") or "P2"),
             "mission_type": str(args.get("mission_type") or "feature build"),
             "approval_level": "LEVEL 3",
-            "metadata": {"created_from": "charlie_private_executive",
-                "owner_work": True, "executive_outcome": title[:500],
-                "opaque_identity_owner_approved": True},
+            "metadata": metadata,
         }, source_context={"source": "charlie_private_executive"}, exact_identity=True)
         if status < 400 and result.get("mission_id") != approved_mission_id:
             return {"success": False, "status": "mission_identity_alias_rejected",
@@ -368,13 +381,18 @@ def _create_mission(args, runtime_context=None):
             verified = (verified_status < 400
                 and verified_mission.get("mission_id") == approved_mission_id
                 and str(verified_mission.get("title") or "").strip() == title
-                and str(verified_mission.get("raw_text") or "").strip() == raw_text)
+                and str(verified_mission.get("raw_text") or "").strip() == raw_text
+                and (not admission or _portfolio_admission_matches(
+                    verified_mission.get("metadata"), admission,
+                    verified_mission.get("status"))))
         code = status if status >= 400 else (200 if verified else 503)
         return {"success": verified,
             "status": "mission_created_verified" if verified else result.get("status") or "mission_create_unverified",
-            "summary": (f"Mission created and verified in CORE: {title} [{approved_mission_id}]. It is waiting in New for approval."
+            "summary": (f"Mission created and verified in CORE: {title} [{approved_mission_id}]. "
+                + ("Its bootstrap admission is non-runnable." if admission else "It is waiting in New for approval.")
                 if verified else "CORE did not verify the exact approved mission identity and content."),
-            "mission_id": mission_id, "verified": verified}, code
+            "mission_id": mission_id, "verified": verified,
+            **({"portfolio_admission": admission} if admission else {})}, code
 
     existing, existing_status = list_missions(limit=100, compact=True)
     if existing_status < 400:
@@ -395,6 +413,23 @@ def _create_mission(args, runtime_context=None):
 
 def _mission_fingerprint(value):
     return " ".join(re.findall(r"[a-z0-9]+", str(value or "").lower()))
+
+
+def _bootstrap_portfolio_admission(value, mission_id):
+    if value in (None, ""):
+        return (None, "portfolio_admission_required"
+            if mission_id == "CMQ-20260813-05" else "")
+    if not isinstance(value, dict):
+        return None, "portfolio_admission_mapping_required"
+    expected = BOOTSTRAP_PORTFOLIO_ADMISSION
+    if mission_id != BOOTSTRAP_PORTFOLIO_MISSION_ID or value != expected:
+        return None, "portfolio_admission_not_authorized"
+    return dict(expected), ""
+
+
+def _portfolio_admission_matches(metadata, expected, status):
+    metadata = metadata if isinstance(metadata, dict) else {}
+    return status == "paused" and metadata.get("portfolio_admission") == expected
 
 
 def _approved_mission_identity_error(mission_id, title, raw_text, runtime_context):
