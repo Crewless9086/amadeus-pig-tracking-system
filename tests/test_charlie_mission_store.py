@@ -707,8 +707,10 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 201)
         self.assertTrue(result["stored"])
         self.assertEqual(result["status"], "ok")
-        self.assertEqual(len(connection.cursor_instance.executed), 4)
-        mission_params = connection.cursor_instance.executed[1][1]
+        self.assertEqual(len(connection.cursor_instance.executed), 5)
+        self.assertIn("pg_advisory_xact_lock", connection.cursor_instance.executed[0][0])
+        mission_params = next(params for sql, params in connection.cursor_instance.executed
+            if "insert into public.charlie_missions" in sql)
         self.assertEqual(mission_params["raw_text"], "Build CHARLIE mission queue")
         self.assertEqual(mission_params["telegram_user_id"], "12345")
         self.assertEqual(mission_params["urgency"], "P1")
@@ -970,7 +972,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertFalse(result["stored"])
         self.assertEqual(result["status"], "duplicate_open_mission")
         self.assertEqual(result["mission_id"], "BEACON-FOLLOWUP-1")
-        insert_sql = connection.cursor_instance.executed[1][0]
+        insert_sql = next(sql for sql, _params in connection.cursor_instance.executed
+            if "insert into public.charlie_missions" in sql)
         self.assertIn("on conflict (mission_id) do nothing", insert_sql)
         self.assertIn("returning mission_id", insert_sql)
 

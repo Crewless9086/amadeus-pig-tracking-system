@@ -26,6 +26,8 @@ from modules.pig_weights.pig_weights_service import get_pig_detail, get_sales_av
 from modules.sales.conversation_learning import live_stock_learning_scorecard
 from modules.charlie.agent_runtime import delegate_to_agent
 from modules.charlie.shadow_control_tower_input import handle_shadow_control_tower_input
+from modules.charlie.mission_identity import extract_mission_ids, has_malformed_mission_id
+from modules.charlie.private_policy import is_authenticated_private_action_context
 
 
 TOOL_FOR_INTENT = {
@@ -55,6 +57,8 @@ def execute_private_tool(intent_type, args, runtime_context=None):
         return _pig(args or {}, runtime_context=runtime_context)
     if tool == "shadow_control_tower_input":
         return handle_shadow_control_tower_input(args or {}, runtime_context=runtime_context)
+    if tool == "create_mission":
+        return _create_mission(args or {}, runtime_context=runtime_context)
     return globals()[f"_{tool}"](args or {})
 
 
@@ -302,10 +306,76 @@ def _business_status(_args):
     return {"success": all(value.get("success") for value in sections.values()), "status": "business_status_ready", "summary": summary, "sections": sections}, 200
 
 
-def _create_mission(args):
+def _create_mission(args, runtime_context=None):
     title = str(args.get("title") or args.get("raw_text") or "").strip()
     if not title:
         return {"success": False, "status": "mission_text_required", "summary": "Tell me what outcome the mission must deliver."}, 400
+    raw_text = str(args.get("raw_text") or title).strip()
+    approved_mission_id = str(args.get("mission_id") or "").strip()
+    if approved_mission_id:
+        identity_error = _approved_mission_identity_error(
+            approved_mission_id, title, raw_text, runtime_context)
+        if identity_error:
+            return {"success": False, "status": identity_error,
+                "summary": "CORE rejected the explicit mission identity without creating or aliasing a mission."}, 409
+        loaded, loaded_status = get_mission(approved_mission_id)
+        if loaded_status < 400:
+            mission = loaded.get("mission") or {}
+            if (mission.get("mission_id") != approved_mission_id
+                    or str(mission.get("title") or "").strip() != title
+                    or str(mission.get("raw_text") or "").strip() != raw_text):
+                return {"success": False, "status": "mission_identity_replay_conflict",
+                    "summary": "CORE found the opaque mission identity with different canonical content."}, 409
+            return {"success": True, "status": "existing_mission_reused",
+                "summary": f"CORE already has the exact approved mission [{approved_mission_id}].",
+                "mission_id": approved_mission_id, "verified": True,
+                "duplicate_prevented": True}, 200
+        if loaded_status != 404:
+            return {"success": False, "status": "mission_identity_readback_unavailable",
+                "summary": "CORE could not safely establish whether the approved mission identity already exists."}, loaded_status
+
+        existing, existing_status = list_missions(limit=1000, compact=True)
+        if existing_status >= 400:
+            return {"success": False, "status": "mission_duplicate_readback_unavailable",
+                "summary": "CORE could not safely exclude a conflicting mission before creation."}, existing_status
+        fingerprint = _mission_fingerprint(title)
+        title_collision = next((row for row in existing.get("missions") or []
+            if row.get("status") not in {"done", "merged", "deployed", "rejected"}
+            and _mission_fingerprint(row.get("title")) == fingerprint
+            and row.get("mission_id") != approved_mission_id), None)
+        if title_collision:
+            return {"success": False, "status": "mission_title_identity_conflict",
+                "summary": "CORE found this active title under a different canonical mission identity."}, 409
+        result, status = record_mission({
+            "mission_id": approved_mission_id,
+            "title": title[:180],
+            "raw_text": raw_text[:6000],
+            "urgency": str(args.get("urgency") or "P2"),
+            "mission_type": str(args.get("mission_type") or "feature build"),
+            "approval_level": "LEVEL 3",
+            "metadata": {"created_from": "charlie_private_executive",
+                "owner_work": True, "executive_outcome": title[:500],
+                "opaque_identity_owner_approved": True},
+        }, source_context={"source": "charlie_private_executive"}, exact_identity=True)
+        if status < 400 and result.get("mission_id") != approved_mission_id:
+            return {"success": False, "status": "mission_identity_alias_rejected",
+                "summary": "CORE refused a creation result under a different mission identity."}, 409
+        mission_id = result.get("mission_id")
+        verified = False
+        if status < 400 and mission_id:
+            verified_result, verified_status = get_mission(approved_mission_id)
+            verified_mission = verified_result.get("mission") or {}
+            verified = (verified_status < 400
+                and verified_mission.get("mission_id") == approved_mission_id
+                and str(verified_mission.get("title") or "").strip() == title
+                and str(verified_mission.get("raw_text") or "").strip() == raw_text)
+        code = status if status >= 400 else (200 if verified else 503)
+        return {"success": verified,
+            "status": "mission_created_verified" if verified else result.get("status") or "mission_create_unverified",
+            "summary": (f"Mission created and verified in CORE: {title} [{approved_mission_id}]. It is waiting in New for approval."
+                if verified else "CORE did not verify the exact approved mission identity and content."),
+            "mission_id": mission_id, "verified": verified}, code
+
     existing, existing_status = list_missions(limit=100, compact=True)
     if existing_status < 400:
         fingerprint = _mission_fingerprint(title)
@@ -313,7 +383,7 @@ def _create_mission(args):
         if duplicate:
             mission_id = duplicate.get("mission_id")
             return {"success": True, "status": "existing_mission_reused", "summary": f"CORE already has this active outcome [{mission_id}]. I reused it instead of creating a duplicate.", "mission_id": mission_id, "verified": True, "duplicate_prevented": True}, 200
-    result, status = record_mission({"title": title[:180], "raw_text": str(args.get("raw_text") or title)[:6000], "urgency": str(args.get("urgency") or "P2"), "mission_type": str(args.get("mission_type") or "feature build"), "approval_level": "LEVEL 3", "metadata": {"created_from": "charlie_private_executive", "owner_work": True, "executive_outcome": title[:500]}}, source_context={"source": "charlie_private_executive"})
+    result, status = record_mission({"title": title[:180], "raw_text": raw_text[:6000], "urgency": str(args.get("urgency") or "P2"), "mission_type": str(args.get("mission_type") or "feature build"), "approval_level": "LEVEL 3", "metadata": {"created_from": "charlie_private_executive", "owner_work": True, "executive_outcome": title[:500]}}, source_context={"source": "charlie_private_executive"})
     mission_id = result.get("mission_id")
     verified = False
     if status < 400 and mission_id:
@@ -325,6 +395,26 @@ def _create_mission(args):
 
 def _mission_fingerprint(value):
     return " ".join(re.findall(r"[a-z0-9]+", str(value or "").lower()))
+
+
+def _approved_mission_identity_error(mission_id, title, raw_text, runtime_context):
+    if not is_authenticated_private_action_context(runtime_context):
+        return "explicit_mission_identity_authentication_required"
+    if runtime_context.authentication_scope != "core_private_owner":
+        return "explicit_mission_identity_authentication_required"
+    if runtime_context.existing_mission_id != mission_id:
+        return "explicit_mission_identity_binding_conflict"
+    if len(mission_id) > 90 or len(title) > 160 or len(raw_text) > 3000:
+        return "explicit_mission_identity_content_invalid"
+    if has_malformed_mission_id(mission_id):
+        return "explicit_mission_identity_malformed"
+    identities = extract_mission_ids(mission_id)
+    if identities != [mission_id]:
+        return "explicit_mission_identity_malformed"
+    referenced = extract_mission_ids(f"{title}\n{raw_text}")
+    if any(value != mission_id for value in referenced):
+        return "explicit_mission_identity_content_conflict"
+    return ""
 
 
 def _mission_transition(args, target):
