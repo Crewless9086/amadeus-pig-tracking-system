@@ -43,6 +43,19 @@ def test_connection_pool_and_query_deadlines_fail_closed(monkeypatch,failure_nam
         rootline_irrigation_execution_store("load_active",None)
 
 
+def test_real_connect_stall_is_bounded_before_execution_truth_can_become_empty(monkeypatch):
+    import time
+    monkeypatch.setenv("DATABASE_URL","postgresql://stalled")
+    monkeypatch.setattr(
+        "modules.oom_sakkie.bounded_postgres_read.ROOTLINE_CONNECT_DEADLINE_SECONDS",.03)
+    monkeypatch.setattr("psycopg.connect",
+        lambda *_args,**_kwargs:(time.sleep(.2),None)[1])
+    started=time.monotonic()
+    with pytest.raises(RootlineExecutionStoreUnavailable,match="load_job_events"):
+        rootline_irrigation_execution_store("load_job_events","JOB-UNCONSUMED")
+    assert time.monotonic()-started < .12
+
+
 def test_store_recovers_cleanly_after_database_availability_returns(monkeypatch):
     class EmptyCursor:
         def __enter__(self):return self

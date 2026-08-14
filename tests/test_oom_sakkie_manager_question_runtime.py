@@ -9,6 +9,7 @@ from modules.oom_sakkie.bounded_postgres_read import (
     connect_bounded_read, is_database_unavailable)
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
 from unittest.mock import patch
+import pytest
 
 NOW = datetime(2026, 8, 12, 6, 5, tzinfo=timezone.utc)
 OWNER = "5721652188"
@@ -190,6 +191,112 @@ def test_rootline_pooled_session_enforces_transaction_local_deadlines():
         connect=lambda *_args,**_kwargs:Connection())
     assert statements==["set transaction read only",
         "set local statement_timeout='3000ms'","set local lock_timeout='1000ms'"]
+
+
+def test_rootline_connection_acquisition_has_real_wall_clock_deadline_and_late_cleanup():
+    import threading
+    import time
+    from modules.oom_sakkie.bounded_postgres_read import (
+        RootlineConnectionDeadlineExceeded, connect_bounded_rootline_postgres,
+    )
+    finished=threading.Event()
+    class LateConnection:
+        closed=False
+        def close(self):self.closed=True
+    late=LateConnection()
+    def stalled_connect(*_args,**_kwargs):
+        time.sleep(.15);finished.set();return late
+    started=time.monotonic()
+    with pytest.raises(RootlineConnectionDeadlineExceeded):
+        connect_bounded_rootline_postgres(database_url="postgresql://stalled",
+            connect=stalled_connect,connect_deadline_seconds=.03)
+    assert time.monotonic()-started < .12
+    assert finished.wait(.4) and late.closed is True
+
+
+def test_rootline_deadline_includes_transaction_setup_and_closes_connection():
+    import time
+    from modules.oom_sakkie.bounded_postgres_read import (
+        RootlineConnectionDeadlineExceeded, connect_bounded_rootline_postgres,
+    )
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*_args):return False
+        def execute(self,*_args):time.sleep(.05)
+    class Connection:
+        closed=False
+        rolled_back=False
+        def cursor(self):return Cursor()
+        def rollback(self):self.rolled_back=True
+        def close(self):self.closed=True
+    connection=Connection();started=time.monotonic()
+    with pytest.raises(RootlineConnectionDeadlineExceeded):
+        connect_bounded_rootline_postgres(database_url="postgresql://setup-stall",
+            connect=lambda *_args,**_kwargs:connection,connect_deadline_seconds=.02)
+    assert time.monotonic()-started < .1
+    deadline=time.monotonic()+.4
+    while not connection.closed and time.monotonic()<deadline:time.sleep(.01)
+    assert connection.closed is True
+
+
+@pytest.mark.skipif(not hasattr(__import__("signal"),"setitimer"),
+                    reason="POSIX interval timers are required")
+def test_existing_earlier_process_alarm_is_not_suppressed_and_late_connection_closes():
+    import signal
+    import time
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    class EarlierDeadline(Exception):pass
+    class LateConnection:
+        closed=False
+        def close(self):self.closed=True
+    late=LateConnection()
+    previous=signal.getsignal(signal.SIGALRM)
+    def earlier(_signum,_frame):raise EarlierDeadline("outer_request_deadline")
+    signal.signal(signal.SIGALRM,earlier);signal.setitimer(signal.ITIMER_REAL,.02)
+    try:
+        with pytest.raises(EarlierDeadline):
+            connect_bounded_rootline_postgres(database_url="postgresql://outer-deadline",
+                connect=lambda *_args,**_kwargs:(time.sleep(.08),late)[1],
+                connect_deadline_seconds=.2)
+        time.sleep(.1)
+        assert late.closed is True
+    finally:
+        signal.setitimer(signal.ITIMER_REAL,0);signal.signal(signal.SIGALRM,previous)
+
+
+def test_rootline_fallback_connect_slot_exhaustion_fails_immediately(monkeypatch):
+    from modules.oom_sakkie import bounded_postgres_read as bounded
+    class Exhausted:
+        def acquire(self,**_kwargs):return False
+    monkeypatch.setattr(bounded,"_FALLBACK_CONNECT_SLOTS",Exhausted())
+    with pytest.raises(bounded.RootlineConnectionDeadlineExceeded,
+                       match="connect_slots_exhausted"):
+        bounded._thread_bounded_connect(lambda *_args,**_kwargs:None,
+            "postgresql://unused",{},.1)
+
+
+def test_rootline_worker_start_failure_releases_slot_and_is_typed(monkeypatch):
+    import threading
+    from modules.oom_sakkie import bounded_postgres_read as bounded
+    released=[]
+    class Slot:
+        def acquire(self,**_kwargs):return True
+        def release(self):released.append(True)
+    monkeypatch.setattr(bounded,"_FALLBACK_CONNECT_SLOTS",Slot())
+    monkeypatch.setattr(threading.Thread,"start",
+        lambda _self:(_ for _ in ()).throw(RuntimeError("thread unavailable")))
+    with pytest.raises(bounded.RootlineConnectionDeadlineExceeded,
+                       match="worker_start_failed"):
+        bounded._thread_bounded_connect(lambda *_args,**_kwargs:None,
+            "postgresql://unused",{},.1)
+    assert released==[True]
+
+
+def test_rootline_connection_deadline_is_a_database_unavailability():
+    from modules.oom_sakkie.bounded_postgres_read import (
+        RootlineConnectionDeadlineExceeded, is_database_unavailable,
+    )
+    assert is_database_unavailable(RootlineConnectionDeadlineExceeded("bounded")) is True
 
 
 def test_only_database_failures_acquire_zero_downstream_classification():
