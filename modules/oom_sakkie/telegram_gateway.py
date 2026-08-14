@@ -22,6 +22,7 @@ from modules.oom_sakkie.herdmaster_auction_runtime import handle_auction_confirm
 from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
 from modules.oom_sakkie.herdmaster_request_runtime import (
     delivery_retry_authority_for, handle_herdmaster_request)
+from modules.oom_sakkie.beacon_request_runtime import handle_beacon_request
 from modules.oom_sakkie.manager_question_runtime import (
     handle_manager_question_reply, load_active_manager_question,
     semantic_context_with_manager_question)
@@ -349,6 +350,25 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         semantic = interpret_owner_message(parsed, environ=source) if gateway_authority is not None else None
     if semantic is not None:
         parsed = {**parsed, "semantic": semantic.as_hint()}
+
+    beacon_result, beacon_status = handle_beacon_request(parsed, gateway_authority)
+    if beacon_result.get("handled"):
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                     "status": "owner_delivery_suppressed_replay"}
+                    if beacon_result.get("suppress_owner_delivery") else
+                    deliver_family_result(parsed, beacon_result, specialist="BEACON",
+                        mission_id=str(beacon_result.get("mission_id") or ""),
+                        card_mission_id=str(beacon_result.get("card_mission_id") or "")))
+        body, _ = _gateway_result(delivery.get("success") is True,
+            str(beacon_result.get("status") or "beacon_request_contained"), policy, beacon_status)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": beacon_result.get("answer", ""), "message": beacon_result,
+            "delivery": delivery, "records_audit_trace": True,
+            "reply_transport": "backend_handles_owner_task_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": False})
+        return body, beacon_status if delivery.get("success") else 202
 
     breeding_result, breeding_status = handle_grouped_breeding_message(parsed, gateway_authority)
     if breeding_result.get("handled"):

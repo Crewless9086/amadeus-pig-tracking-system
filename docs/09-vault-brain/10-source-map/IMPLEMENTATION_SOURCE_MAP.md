@@ -598,6 +598,17 @@ Current built pilot surface:
 
 Current built gated surface:
 
+- Oom Sakkie current-proposal boundary: `modules/oom_sakkie/beacon_request_runtime.py`
+  consumes the existing semantic front door, authenticated Telegram gateway,
+  `modules/beacon/opportunity_scanner.py`, and the private media-intake read
+  model. It records one provider-bound result in the existing durable review
+  rail and passes replay to the existing family lifecycle, which owns safe
+  exactly-once delivery suppression or recovery. `modules/beacon/marketing_proposal.py`
+  remains the pure proposal/media-request contract. No public-use,
+  publication, customer-send, spend, farm-write, n8n, or Sheets authority is
+  introduced. Coverage: `tests/test_beacon_marketing_proposal.py` and
+  `tests/test_oom_sakkie_beacon_request_runtime.py`.
+
 - routes: `/sales/beacon-media`, `/api/beacon/media-assets`, `/api/beacon/creative-studio/providers`, `/api/beacon/creative-studio/jobs`, `/api/beacon/creative-studio/jobs/<job_id>/reviews`, `/api/beacon/campaign-draft-selection`, `/api/beacon/campaign-publish-packet`, `/api/beacon/facebook-image-launch-packet`, `/api/beacon/manual-post-evidence`, `/api/beacon/campaign-performance`;
 - owner media-intake workflow: `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`; OOM SAKKIE is the preferred owner-only Telegram intake gateway, while BEACON owns private storage, cataloguing, understanding, visual review, approval state, and usage history. A default-disabled foundation is built as a candidate; its migration is unapplied and the gateway is inactive;
 - code: `modules/beacon/media_library.py`, `modules/beacon/media_intake.py`, `modules/beacon/creative_providers.py`, `modules/beacon/creative_studio.py`, `modules/beacon/organic_media_intelligence.py`, `modules/beacon/organic_publication_binding.py`, `modules/beacon/organic_publication_authorization.py`, `modules/beacon/weekly_owner_review.py`, `modules/beacon/weekly_owner_review_decisions.py`, `modules/oom_sakkie/telegram_direct.py`, `modules/oom_sakkie/routes.py`, `modules/sales/beacon_campaign.py`, `modules/sales/sales_transaction_routes.py`;
