@@ -34,7 +34,6 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
         connect = lambda: connect_bounded_rootline_postgres(database_url=url)
     try:
         with connect() as connection:
-            connection.read_only = True
             with connection.cursor() as cursor:
                 cursor.execute("select clock_timestamp()")
                 snapshot_cutoff = _aware(cursor.fetchone()[0])

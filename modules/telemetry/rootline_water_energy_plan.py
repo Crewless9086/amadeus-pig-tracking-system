@@ -720,13 +720,13 @@ def _normalize_forecast(packet):
 
 
 def _read_historical_context(database_url):
-    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
         return {"status": UNAVAILABLE}
     try:
         import psycopg
-        with connect_bounded_rootline_postgres(database_url=database_url) as connection:
+        with connect_bounded_read(database_url=database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -766,8 +766,8 @@ def _read_latest_tank_observation(database_url):
     if not database_url:
         return {}
     try:
-        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
-        with connect_bounded_rootline_postgres(database_url=database_url) as connection:
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+        with connect_bounded_read(database_url=database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
