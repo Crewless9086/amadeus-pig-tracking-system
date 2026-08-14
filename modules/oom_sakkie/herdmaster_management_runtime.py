@@ -128,9 +128,10 @@ def _load_observations(owner_user_id):
                 from public.sam_live_stock_conversation_review_events
                 where event_source=%s order by created_at desc,review_event_id desc limit 5001""",
                 (OBSERVATION_SOURCE,))
-            rows = [row[0] for row in cursor.fetchall() if isinstance(row[0], dict)]
-            if len(rows) > 5000:
+            fetched = cursor.fetchall()
+            if len(fetched) > 5000:
                 raise RuntimeError("herdmaster_observation_row_bound_exceeded")
+            rows = [row[0] for row in fetched if isinstance(row[0], dict)]
             rows.reverse()
     return [row for row in rows if row.get("authenticated_owner") is True
             and str(row.get("owner_user_id") or "") == str(owner_user_id)
@@ -155,9 +156,10 @@ def _load_active_lifecycles(owner_user_id, *, include_terminal=False):
                 where h.event_source='oom_sakkie_herdmaster_health_loss_runtime'
                   and h.review_json->'herdmaster_health_loss'->>'owner_user_id'=%s
                 order by h.created_at desc,h.review_event_id desc limit 5001""", (str(owner_user_id),))
-            rows = [(row[0], str(row[1] or "")) for row in cursor.fetchall() if isinstance(row[0], dict)]
-            if len(rows) > 5000:
+            fetched = cursor.fetchall()
+            if len(fetched) > 5000:
                 raise RuntimeError("herdmaster_lifecycle_row_bound_exceeded")
+            rows = [(row[0], str(row[1] or "")) for row in fetched if isinstance(row[0], dict)]
             rows.reverse()
     terminal_pigs = _load_terminal_pig_ids()
     active = {}
@@ -275,9 +277,10 @@ def _load_prior_consumptions(owner_user_id, invocation_context_digest):
                   and review_json->'herdmaster_management_consumption'->'binding'->'invocation_context'->>'digest'=%s
                 order by created_at desc,review_event_id desc limit 5001""",
                 (EVENT_SOURCE, owner_hash, invocation_context_digest))
-            bindings = [row[0] for row in cursor.fetchall() if isinstance(row[0], dict)]
-            if len(bindings) > 5000:
+            fetched = cursor.fetchall()
+            if len(fetched) > 5000:
                 raise RuntimeError("herdmaster_consumption_row_bound_exceeded")
+            bindings = [row[0] for row in fetched if isinstance(row[0], dict)]
             bindings.reverse()
     return [{"management_round_identity": row.get("management_round_identity"),
         "deduplication_key": row.get("deduplication_key"), "result_digest": row.get("result_digest"),
