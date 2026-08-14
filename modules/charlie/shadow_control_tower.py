@@ -71,10 +71,22 @@ def record_shadow_proposal(transaction, *, environ=None, database_url=None, conn
     if not ready.get("success"):
         return ready, 403 if ready.get("status") == "shadow_control_tower_disabled" else 400
     proposal = ready["proposal"]
+    stable_record_id = "SCTF-" + _digest({"feedback_transaction_id": proposal["feedback_transaction_id"]})[:24].upper()
     result, status = append_operational_event(_event_packet(
         event_type="shadow_control_tower_proposal_recorded", proposal=proposal,
-        payload={"record_type": "proposal", "proposal": proposal}),
+        payload={"record_type": "proposal", "proposal": proposal},
+        source_record_id=stable_record_id),
         database_url=database_url, connect_factory=connect_factory)
+    if result.get("success") and result.get("created") is False:
+        durable, durable_status = _persisted_proposal_for_feedback(
+            proposal["feedback_transaction_id"], database_url=database_url,
+            connect_factory=connect_factory)
+        if durable_status >= 400:
+            return durable, durable_status
+        if _digest(durable["proposal"]) != _digest(proposal):
+            return {"success": False, "status": "shadow_feedback_transaction_replay_conflict",
+                **_zero_authority()}, 409
+        proposal = durable["proposal"]
     return {**result, "proposal_id": proposal["proposal_id"], **_zero_authority()}, status
 
 
@@ -161,9 +173,10 @@ def comparison_readiness(*, database_url=None, connect_factory=None):
     comparisons = {(event.get("aggregate_id"), (event.get("payload") or {}).get("proposal_id"))
         for event in loaded["events"] if event.get("event_type") == "shadow_control_tower_human_comparison_recorded"}
     valid_pairs = {pair for pair in comparisons if pair in proposals and all(pair)}
+    valid_feedback_transactions = {feedback_id for feedback_id, _proposal_id in valid_pairs}
     return {"success": True, "status": "shadow_comparison_readiness",
-        "comparison_count": len(valid_pairs), "target_count": 10,
-        "target_reached": len(valid_pairs) >= 10,
+        "comparison_count": len(valid_feedback_transactions), "target_count": 10,
+        "target_reached": len(valid_feedback_transactions) >= 10,
         "learning_success_claimed": False, **_zero_authority()}, 200
 
 
@@ -186,6 +199,23 @@ def _persisted_proposal(proposal_id, feedback_id, *, database_url=None, connect_
             **_zero_authority()}, 409
     return {"success": True, "status": "persisted_shadow_proposal_ready",
         "proposal": matches[0], "events": loaded.get("events", [])}, 200
+
+
+def _persisted_proposal_for_feedback(feedback_id, *, database_url=None, connect_factory=None):
+    loaded, status = load_operational_events(domain="missions",
+        aggregate_type="control_tower_feedback_transaction", aggregate_id=feedback_id, limit=100,
+        database_url=database_url, connect_factory=connect_factory)
+    if status >= 400:
+        return loaded, status
+    matches = [dict((event.get("payload") or {}).get("proposal") or {})
+        for event in loaded.get("events", [])
+        if event.get("event_type") == "shadow_control_tower_proposal_recorded"
+        and isinstance((event.get("payload") or {}).get("proposal"), Mapping)]
+    if len(matches) != 1:
+        return {"success": False, "status": "persisted_shadow_feedback_proposal_not_unique",
+            **_zero_authority()}, 409
+    return {"success": True, "status": "persisted_shadow_proposal_ready",
+        "proposal": matches[0]}, 200
 
 
 def _persisted_comparison(comparison_id, feedback_id, *, database_url=None, connect_factory=None):
