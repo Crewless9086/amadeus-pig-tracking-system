@@ -824,8 +824,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "answer": answer}, specialist="ROOTLINE",
                         mission_id=event_identity, card_mission_id=event_identity)
                     return {**delivery,
-                        "provider_delivery_confirmed": delivery.get("success") is True
-                            and bool(delivery.get("telegram_message_id")),
+                        "provider_delivery_confirmed": bool(delivery.get("telegram_message_id"))
+                            and (delivery.get("success") is True
+                                 or delivery.get("provider_delivery_confirmed") is True),
                         "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
                         "provider_message_id": str(delivery.get("telegram_message_id") or "")}
                 cycle_result = dict(cycle(notify=notify, environ=source, now=scheduler_now,
@@ -888,7 +889,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
     deliver = family_delivery or deliver_family_result
     delivery = deliver(parsed, {**result, "status": result["status"]}, specialist="ROOTLINE",
         mission_id=result["notification_identity"], card_mission_id=result["notification_identity"])
-    delivery_proof = {"provider_delivery_confirmed": delivery.get("success") is True and bool(delivery.get("telegram_message_id")),
+    delivery_proof = {"provider_delivery_confirmed": bool(delivery.get("telegram_message_id"))
+        and (delivery.get("success") is True or delivery.get("provider_delivery_confirmed") is True),
         "provider_delivery_ambiguous": "ambiguous" in str(delivery.get("status") or ""),
         "provider_message_id": str(delivery.get("telegram_message_id") or ""),
         "provider_timestamp": str(delivery.get("provider_timestamp") or "")}
