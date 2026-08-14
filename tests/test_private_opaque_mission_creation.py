@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from modules.charlie.private_policy import authenticate_private_action_context
+from modules.charlie.private_runtime import handle_authenticated_private_action
 from modules.charlie.private_tools import execute_private_tool
 
 
@@ -42,6 +43,22 @@ def test_exact_owner_approved_id_is_forwarded_unchanged_and_verified(get_mission
     mission = record_mission.call_args.args[0]
     assert mission["mission_id"] == "CMQ-20260813-05"
     assert mission["metadata"]["opaque_identity_owner_approved"] is True
+    assert record_mission.call_args.kwargs["exact_identity"] is True
+
+
+@patch("modules.charlie.private_tools.list_missions", return_value=({"missions": []}, 200))
+@patch("modules.charlie.private_tools.record_mission")
+@patch("modules.charlie.private_tools.get_mission")
+def test_raw_private_authentication_boundary_seals_and_forwards_exact_id(get_mission, record_mission, _list):
+    get_mission.side_effect = [({"status": "not_found"}, 404),
+        ({"mission": {"mission_id": "CMQ-20260813-05", "title": TITLE, "raw_text": RAW}}, 200)]
+    record_mission.return_value = ({"mission_id": "CMQ-20260813-05", "stored": True}, 201)
+    action = {"action": "create_mission", **args()}
+    result, status = handle_authenticated_private_action(
+        action, PAYLOAD, HEADERS, existing_mission_id="CMQ-20260813-05", environ=ENV)
+    assert status == 200 and result["mission_id"] == "CMQ-20260813-05"
+    assert record_mission.call_args.args[0]["mission_id"] == "CMQ-20260813-05"
+    assert record_mission.call_args.kwargs["exact_identity"] is True
 
 
 @patch("modules.charlie.private_tools.list_missions", return_value=({"missions": []}, 200))
@@ -125,7 +142,8 @@ def test_concurrent_exact_creation_converges_on_one_identity():
                 return {"status": "not_found"}, 404
             return {"mission": dict(durable[mission_id])}, 200
 
-    def record_mission(mission, source_context=None):
+    def record_mission(mission, source_context=None, exact_identity=False):
+        assert exact_identity is True
         with lock:
             writes.append(mission["mission_id"])
             durable.setdefault(mission["mission_id"], {

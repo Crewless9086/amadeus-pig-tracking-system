@@ -1001,6 +1001,10 @@
   context binding. Malformed, aliased, multiple, substituted, conflicting and
   title-colliding identities fail closed. Exact replay reuses the same mission;
   legacy authenticated calls without an explicit ID retain generated IDs.
+- The canonical store's opt-in exact-identity transaction serializes the opaque
+  ID and normalized title before any insert or event. It forbids legacy
+  replacement/alias behavior for this authenticated call and makes concurrent
+  exact replay or competing-title creation converge without unrelated effects.
 - Cross-references the CMQ-20260813-02A opaque-identity repair. This source-only
   change creates no mission, Shadow event, route, scheduler, process, agent,
   queue, schema, provider action, n8n authority or Google Sheets authority.

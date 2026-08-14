@@ -60,7 +60,9 @@
   `tests/test_charlie_private_planner.py`,
   `tests/test_charlie_private_runtime.py` and
   `tests/test_charlie_private_tools.py`. Authenticated explicit creation and
-  exact replay are covered by `tests/test_private_opaque_mission_creation.py`.
+  exact replay are covered by `tests/test_private_opaque_mission_creation.py`;
+  canonical transaction serialization is covered by
+  `tests/test_private_opaque_mission_creation_postgres.py`.
   Embedded digits never define identity.
 
 ## ROOTLINE durable device doctrine and canonical action boundary

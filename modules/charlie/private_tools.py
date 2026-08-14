@@ -356,7 +356,7 @@ def _create_mission(args, runtime_context=None):
             "metadata": {"created_from": "charlie_private_executive",
                 "owner_work": True, "executive_outcome": title[:500],
                 "opaque_identity_owner_approved": True},
-        }, source_context={"source": "charlie_private_executive"})
+        }, source_context={"source": "charlie_private_executive"}, exact_identity=True)
         if status < 400 and result.get("mission_id") != approved_mission_id:
             return {"success": False, "status": "mission_identity_alias_rejected",
                 "summary": "CORE refused a creation result under a different mission identity."}, 409

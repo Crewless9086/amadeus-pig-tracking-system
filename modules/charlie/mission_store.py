@@ -203,12 +203,15 @@ SYSTEM_TEST_MISSION_MARKERS = (
 )
 
 
-def record_mission(mission, source_context=None, database_url=None, connect_factory=None):
+def record_mission(mission, source_context=None, database_url=None, connect_factory=None,
+                   exact_identity=False):
     mission = mission if isinstance(mission, dict) else {}
     source_context = source_context if isinstance(source_context, dict) else {}
     raw_text = _clean_text(mission.get("raw_text", ""), 3000)
     if not raw_text:
         return {"stored": False, "status": "mission_text_required"}, 400
+    if exact_identity and not _clean_text(mission.get("mission_id", ""), 90):
+        return {"stored": False, "status": "exact_mission_identity_required"}, 400
     intake_quality = _mission_intake_quality(mission, raw_text)
     if intake_quality["blocked"]:
         return {
@@ -225,7 +228,11 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
         params = _mission_params(mission, source_context)
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
-                duplicate = _find_open_duplicate_mission(cursor, params)
+                exact_result = (_resolve_exact_identity_intake(cursor, params)
+                    if exact_identity else None)
+                if exact_result:
+                    return exact_result
+                duplicate = None if exact_identity else _find_open_duplicate_mission(cursor, params)
                 replacement = None
                 if duplicate:
                     duplicate_contract = _duplicate_contract_state(duplicate)
@@ -2655,6 +2662,48 @@ def _find_open_duplicate_mission(cursor, params):
         existing_metadata = row[4] if len(row) > 4 and isinstance(row[4], dict) else {}
         if new_family_key and _mission_family_scope_key(existing_metadata) == new_family_key:
             return _duplicate_row(row)
+    return None
+
+
+def _resolve_exact_identity_intake(cursor, params):
+    """Serialize owner-approved identity/title and fail before unrelated writes."""
+    mission_id = params["mission_id"]
+    normalized_title = _normalize_mission_text(params.get("title", ""))
+    lock_keys = sorted({f"mission-id:{mission_id}", f"mission-title:{normalized_title}"})
+    for lock_key in lock_keys:
+        cursor.execute(
+            "select pg_advisory_xact_lock(hashtextextended(%(lock_key)s, 0))",
+            {"lock_key": lock_key},
+        )
+    cursor.execute(
+        """select mission_id, status, title, raw_text
+           from public.charlie_missions
+           where mission_id = %(mission_id)s
+           for update""",
+        {"mission_id": mission_id},
+    )
+    exact_rows = cursor.fetchall()
+    if exact_rows:
+        row = exact_rows[0]
+        if row[2] == params.get("title") and row[3] == params.get("raw_text"):
+            return ({"stored": False, "configured": True,
+                "status": "duplicate_exact_mission", "mission_id": mission_id,
+                "existing_status": row[1], "title": row[2]}, 200)
+        return ({"stored": False, "configured": True,
+            "status": "exact_mission_identity_conflict", "mission_id": mission_id}, 409)
+    cursor.execute(
+        """select mission_id, status, title
+           from public.charlie_missions
+           where status = any(%(statuses)s)
+           order by updated_at desc""",
+        {"statuses": sorted(OPEN_DUPLICATE_STATUSES)},
+    )
+    for row in cursor.fetchall():
+        if (_normalize_mission_text(row[2]) == normalized_title
+                and row[0] != mission_id):
+            return ({"stored": False, "configured": True,
+                "status": "exact_mission_title_conflict",
+                "mission_id": mission_id, "conflicting_mission_id": row[0]}, 409)
     return None
 
 
