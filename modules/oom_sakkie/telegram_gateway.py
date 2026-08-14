@@ -320,6 +320,22 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
 
     active_manager_question = (load_active_manager_question(parsed)
                                if gateway_authority is not None else None)
+    if isinstance(active_manager_question, dict) and active_manager_question.get("load_unavailable"):
+        body, _ = _gateway_result(False, "manager_question_context_unavailable", policy, 503)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": ("I received the update, but could not safely load the active farm "
+                       "question. Nothing was retained or acted on; the same provider receipt "
+                       "will remain eligible for exact recovery."),
+            "message": {"handled": True, "success": False,
+                "status": "manager_question_context_unavailable",
+                "writes_farm_data": False, "hardware_commands": 0},
+            "delivery": {"success": False, "status": "durable_context_unavailable",
+                "telegram_sends": 0, "telegram_edits": 0},
+            "records_audit_trace": False,
+            "reply_transport": "bounded_authenticated_gateway_response",
+            "sends_telegram": False, "writes": False})
+        return body, 503
     semantic_policy = semantic_front_door_policy(source)
     semantic_authoritative = bool(gateway_authority is not None and semantic_policy.get("enabled"))
     if gateway_authority is not None and active_manager_question:
@@ -631,6 +647,7 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         from modules.oom_sakkie.automatic_reassessment_scheduler import run_due_reassessment
         from concurrent.futures import ThreadPoolExecutor, wait
         from modules.oom_sakkie.daily_farm_manager import run_daily_farm_manager
+        production_persistence = schedule_store is None or state_store is None
         if schedule_store is None:
             from modules.oom_sakkie.automatic_reassessment_store import automatic_reassessment_store
             schedule_store = automatic_reassessment_store
@@ -656,33 +673,22 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             return current
         def invoke():
             deliver = family_delivery or deliver_family_result
+            if production_persistence:
+                try:
+                    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+                    with connect_bounded_read(database_url=source.get("DATABASE_URL")) as connection:
+                        with connection.cursor() as cursor:
+                            cursor.execute("select 1")
+                            cursor.fetchone()
+                except Exception:
+                    return {"success": False,
+                        "status": "scheduled_reassessment_database_unavailable",
+                        "telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0,
+                        "writes_farm_data": False, "automatic_irrigation_authority": False,
+                        "answer": ("The scheduled assessment could not load its durable context. "
+                                   "No provider or hardware action was attempted.")}
             mixer_recovery = {"status": "fertilizer_recovery_unproven",
                               "hardware_commands": 0, "telegram_sends": 0}
-            if not str(source.get("DATABASE_URL") or "").strip():
-                mixer_recovery = {"status": "no_active_fertilizer_commissioning",
-                    "hardware_commands": 0, "telegram_sends": 0}
-            else:
-                try:
-                    from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
-                        MISSION_ID, recover_fertilizer_commissioning,
-                    )
-                    mixer_recovery = recover_fertilizer_commissioning(
-                        now=scheduler_now, environ=source)
-                    if mixer_recovery.get("answer"):
-                        mixer_parsed = {
-                            "telegram_user_id": str(manual_payload.get("owner_user_id") or ""),
-                            "telegram_chat_id": str(manual_payload.get("chat_id") or ""),
-                            "provider_message_id": "scheduled:fertilizer:" + str(
-                                manual_payload.get("trigger_id") or ""),
-                            "provider_timestamp": str(manual_payload.get("trigger_timestamp") or "")}
-                        mixer_delivery = deliver(mixer_parsed, mixer_recovery,
-                            specialist="ROOTLINE", mission_id=MISSION_ID,
-                            card_mission_id=MISSION_ID)
-                        mixer_recovery = {**mixer_recovery,
-                            "telegram_sends": int(mixer_delivery.get("telegram_sends") or 0)}
-                except Exception:
-                    mixer_recovery = {"status": "fertilizer_recovery_unproven",
-                        "hardware_commands": 0, "telegram_sends": 0}
             try:
                 from modules.oom_sakkie.farm_manager_runtime import _load_herdmaster, _load_rootline
                 from modules.pig_weights.farm_supabase_read_service import get_breeding_attention_source_snapshot
@@ -703,7 +709,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                             deadline_seconds=20),
                         "sales": executor.submit(list_sales_transactions),
                     }
-                    done, pending = wait(tuple(futures.values()), timeout=40)
+                    from modules.oom_sakkie.bounded_postgres_read import OWNER_REQUEST_DEADLINE_SECONDS
+                    done, pending = wait(tuple(futures.values()),
+                                         timeout=OWNER_REQUEST_DEADLINE_SECONDS)
                     if futures["herd"] not in done or futures["rootline"] not in done:
                         raise TimeoutError("daily_manager_specialist_deadline")
                     specialists = [futures["herd"].result(), futures["rootline"].result()]
@@ -730,10 +738,60 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     sale_rows=sale_rows,
                     deliver=deliver, now=manager_now,
                     language=str(manual_payload.get("language") or "en"))
-            except Exception:
-                daily = {"success": False, "status": "daily_farm_manager_unavailable",
+            except TimeoutError:
+                daily = {"success": False, "status": "daily_farm_manager_deadline_exceeded",
                          "telegram_sends": 0, "telegram_edits": 0,
                          "hardware_commands": 0, "writes_farm_data": False}
+            except Exception as exc:
+                from modules.oom_sakkie.bounded_postgres_read import is_database_unavailable
+                daily = {"success": False, "status": (
+                    "daily_farm_manager_database_unavailable"
+                    if production_persistence and is_database_unavailable(exc)
+                    else "daily_farm_manager_unavailable"),
+                         "telegram_sends": 0, "telegram_edits": 0,
+                         "hardware_commands": 0, "writes_farm_data": False}
+            if daily.get("status") in {"daily_farm_manager_deadline_exceeded",
+                                      "daily_farm_manager_database_unavailable"}:
+                database_unavailable = daily.get("status") == "daily_farm_manager_database_unavailable"
+                return {"success": False,
+                    "status": ("scheduled_reassessment_database_unavailable" if database_unavailable
+                               else "scheduled_reassessment_evidence_deadline_exceeded"),
+                    "daily_presentation_status": str(daily.get("status") or "unavailable"),
+                    "telegram_sends": int(mixer_recovery.get("telegram_sends") or 0),
+                    "telegram_edits": 0,
+                    "hardware_commands": int(mixer_recovery.get("hardware_commands") or 0),
+                    "writes_farm_data": False, "automatic_irrigation_authority": False,
+                    "answer": (("The scheduled assessment lost durable database availability. "
+                                "No further ROOTLINE assessment was started; the durable schedule "
+                                "remains recoverable.") if database_unavailable else
+                               ("The scheduled assessment exceeded its bounded evidence deadline. "
+                                "No further ROOTLINE assessment was started; the durable schedule "
+                                "remains recoverable."))}
+            if not str(source.get("DATABASE_URL") or "").strip():
+                mixer_recovery = {"status": "no_active_fertilizer_commissioning",
+                    "hardware_commands": 0, "telegram_sends": 0}
+            else:
+                try:
+                    from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
+                        MISSION_ID, recover_fertilizer_commissioning,
+                    )
+                    mixer_recovery = recover_fertilizer_commissioning(
+                        now=scheduler_now, environ=source)
+                    if mixer_recovery.get("answer"):
+                        mixer_parsed = {
+                            "telegram_user_id": str(manual_payload.get("owner_user_id") or ""),
+                            "telegram_chat_id": str(manual_payload.get("chat_id") or ""),
+                            "provider_message_id": "scheduled:fertilizer:" + str(
+                                manual_payload.get("trigger_id") or ""),
+                            "provider_timestamp": str(manual_payload.get("trigger_timestamp") or "")}
+                        mixer_delivery = deliver(mixer_parsed, mixer_recovery,
+                            specialist="ROOTLINE", mission_id=MISSION_ID,
+                            card_mission_id=MISSION_ID)
+                        mixer_recovery = {**mixer_recovery,
+                            "telegram_sends": int(mixer_delivery.get("telegram_sends") or 0)}
+                except Exception:
+                    mixer_recovery = {"status": "fertilizer_recovery_unproven",
+                        "hardware_commands": 0, "telegram_sends": 0}
             mixer_status = str(mixer_recovery.get("status") or "")
             mixer_owns_controller = mixer_status not in {
                 "no_active_fertilizer_commissioning", "auxiliary_completed"}

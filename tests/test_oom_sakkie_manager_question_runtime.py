@@ -5,6 +5,10 @@ from modules.oom_sakkie.manager_question_runtime import (
     handle_manager_question_reply, load_active_manager_question,
     semantic_context_with_manager_question)
 from modules.oom_sakkie.semantic_front_door import SemanticInterpretation
+from modules.oom_sakkie.bounded_postgres_read import (
+    connect_bounded_read, is_database_unavailable)
+from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
+from unittest.mock import patch
 
 NOW = datetime(2026, 8, 12, 6, 5, tzinfo=timezone.utc)
 OWNER = "5721652188"
@@ -105,6 +109,57 @@ def test_stale_or_mismatched_reply_does_not_bind():
     assert load_active_manager_question(parsed(), loader=rows) is None
     assert load_active_manager_question(parsed(reply="9999"),
         loader=lambda _owner, _chat: [question()]) is None
+
+
+def test_context_database_failure_is_explicit_not_silent_no_question():
+    value = load_active_manager_question(
+        parsed(), loader=lambda *_: (_ for _ in ()).throw(TimeoutError("database")))
+    assert value == {"load_unavailable": True, "load_failure_class": "TimeoutError"}
+
+
+def test_bounded_read_sets_acquisition_query_and_lock_deadlines():
+    calls = []
+    connection = object()
+    result = connect_bounded_read(database_url="postgresql://example", connect=lambda *a, **kw:
+                                  calls.append((a, kw)) or connection)
+    assert result is connection
+    assert calls[0][1]["connect_timeout"] == 3
+    assert "default_transaction_read_only=on" in calls[0][1]["options"]
+    assert "statement_timeout=3000" in calls[0][1]["options"]
+    assert "lock_timeout=1000" in calls[0][1]["options"]
+
+
+def test_only_database_failures_acquire_zero_downstream_classification():
+    OperationalError = type("OperationalError", (Exception,), {})
+    assert is_database_unavailable(OperationalError("database")) is True
+    assert is_database_unavailable(AssertionError("specialist defect")) is False
+
+
+@patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input",
+       return_value=({"handled": False}, 200))
+@patch("modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay",
+       return_value=None)
+@patch("modules.oom_sakkie.telegram_gateway.load_active_manager_question",
+       return_value={"load_unavailable": True, "load_failure_class": "OperationalError"})
+def test_authenticated_context_database_failure_returns_bounded_zero_effect_response(
+        _load, _replay, _owner_task):
+    token = "c" * 40
+    env = {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": token,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": OWNER,
+        "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID": OWNER}
+    payload = {"message": {"message_id": "synthetic-context-db-down",
+        "date": int(NOW.timestamp()), "text": "They are eating and drinking normally",
+        "from": {"id": int(OWNER)},
+        "chat": {"id": int(OWNER), "type": "private"}}}
+    result, status = handle_telegram_gateway_message(
+        payload, headers={"Authorization": "Bearer " + token}, environ=env)
+    assert status == 503
+    assert result["status"] == "manager_question_context_unavailable"
+    assert result["sends_telegram"] is False
+    assert result["delivery"]["telegram_sends"] == 0
+    assert result["message"]["writes_farm_data"] is False
+    assert result["message"]["hardware_commands"] == 0
 
 
 def test_context_places_active_manager_question_before_semantic_classification():

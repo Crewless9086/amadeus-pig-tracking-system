@@ -9,6 +9,7 @@ import json
 import os
 from urllib import error as urllib_error, request as urllib_request
 from zoneinfo import ZoneInfo
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 from modules.oom_sakkie.farm_manager_loop import (
     Authority, Provenance, SpecialistAvailability, SpecialistResult,
@@ -73,8 +74,12 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
     for task in packet["all_tasks"]:
-        store("record_task", task["task_id"], {**task, "daily_identity": identity,
+        detected = store("record_task", task["task_id"], {**task, "daily_identity": identity,
             "lifecycle_state": "detected", "detected_at": now.isoformat()})
+        if not isinstance(detected, dict) or detected.get("success") is not True:
+            return {"success": False, "status": "daily_manager_task_receipt_unavailable",
+                "daily_identity": identity, "material_digest": digest,
+                "telegram_sends": 0, "telegram_edits": 0, **ZERO}
     parsed = {"telegram_user_id": str(owner_user_id), "telegram_chat_id": str(chat_id),
         "provider_message_id": "scheduled:" + claim_id,
         "provider_timestamp": now.isoformat(), "text": "Daily Farm Manager"}
@@ -83,25 +88,47 @@ def run_daily_farm_manager(*, owner_user_id, chat_id, specialist_results,
         "hardware_commands": 0, "writes_farm_data": False}
     delivery = deliver(parsed, result, specialist="OOM_SAKKIE",
         mission_id=claim_id, card_mission_id=identity)
-    if not isinstance(delivery, dict) or delivery.get("success") is not True \
-            or not str(delivery.get("telegram_message_id") or ""):
+    message_id = str((delivery or {}).get("telegram_message_id") or "")
+    provider_confirmed = bool(message_id and ((delivery or {}).get("success") is True
+        or (delivery or {}).get("provider_delivery_confirmed") is True))
+    if not provider_confirmed:
         store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
             "material_digest": digest, "status": "provider_ambiguous",
             "observed_at": now.isoformat(), "telegram_sends": 0})
         return {"success": False, "status": "daily_manager_delivery_ambiguous",
                 "daily_identity": identity, "material_digest": digest,
                 "telegram_sends": 0, "telegram_edits": 0, **ZERO}
+    if delivery.get("success") is not True:
+        store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
+            "material_digest": digest, "status": "provider_confirmed_receipt_unavailable",
+            "observed_at": now.isoformat(), "telegram_message_id": message_id,
+            "telegram_sends": int(delivery.get("telegram_sends") or 1)})
+        return {"success": False,
+            "status": "daily_manager_provider_confirmed_receipt_unavailable",
+            "daily_identity": identity, "material_digest": digest,
+            "telegram_message_id": message_id,
+            "telegram_sends": int(delivery.get("telegram_sends") or 1),
+            "telegram_edits": int(delivery.get("telegram_edits") or 0), **ZERO}
+    task_receipts_proven = True
     for task in packet["all_tasks"]:
-        store("record_task", task["task_id"] + ":PRESENTED:" + digest[:16],
+        receipt = store("record_task", task["task_id"] + ":PRESENTED:" + digest[:16],
             {**task, "daily_identity": identity, "lifecycle_state": "presented",
              "presented_at": now.isoformat(),
              "telegram_message_id": str(delivery.get("telegram_message_id"))})
-    store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
+        task_receipts_proven = task_receipts_proven and isinstance(receipt, dict) \
+            and receipt.get("success") is True
+    outcome = store("record_daily", claim_id + ":OUTCOME", {"daily_identity": identity,
         "material_digest": digest, "status": "presented", "observed_at": now.isoformat(),
         "owner_user_id": str(owner_user_id), "chat_id": str(chat_id),
         "question": packet["question"], "question_binding": packet["question_binding"],
         "telegram_message_id": str(delivery.get("telegram_message_id")),
         "telegram_sends": int(delivery.get("telegram_sends") or 0)})
+    if not task_receipts_proven or not isinstance(outcome, dict) or outcome.get("success") is not True:
+        return {"success": False, "status": "daily_manager_provider_confirmed_lifecycle_unavailable",
+            "daily_identity": identity, "material_digest": digest,
+            "telegram_message_id": message_id,
+            "telegram_sends": int(delivery.get("telegram_sends") or 1),
+            "telegram_edits": int(delivery.get("telegram_edits") or 0), **ZERO}
     return {"success": True, "status": "daily_manager_presented",
         "daily_identity": identity, "material_digest": digest,
         "telegram_message_id": str(delivery.get("telegram_message_id")),
@@ -291,9 +318,7 @@ def daily_farm_manager_store(action, identity, payload):
 
 
 def _load_daily(identity):
-    import psycopg
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-        connection.read_only = True
+    with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select review_json->'daily_farm_manager'
                 from public.sam_live_stock_conversation_review_events
@@ -309,9 +334,7 @@ def _load_daily(identity):
 def _load_answered_questions(binding):
     if not str(os.environ.get("DATABASE_URL") or "").strip():
         return ()
-    import psycopg
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-        connection.read_only = True
+    with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select distinct
                     review_json->'manager_question_reply'->>'task_id'

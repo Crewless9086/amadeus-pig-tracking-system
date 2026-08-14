@@ -179,6 +179,7 @@ def test_enabled_scheduler_uses_canonical_execution_cycle_not_readonly_packet_au
             "telegram_message_id":"9100","telegram_sends":1}
     value,status=handle_rootline_reassessment_trigger(bound,
         {"X-Oom-Sakkie-Telegram-Token":"x"*40},env,schedule_store=schedules,
+        state_store=lambda action, identity, payload: {"success": True, "created": True},
         scheduler_now=NOW,family_delivery=deliver,execution_cycle=cycle,
         specialist_loader=lambda:(_ for _ in ()).throw(AssertionError("read-only packet used")))
     assert status==200 and value["status"]=="segment_started"
