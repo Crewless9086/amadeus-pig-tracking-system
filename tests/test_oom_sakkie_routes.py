@@ -257,9 +257,12 @@ class OomSakkieRouteTests(unittest.TestCase):
            return_value=({"handled": False}, 200))
     @patch("modules.oom_sakkie.telegram_gateway.handle_farm_manager_round",
            return_value=({"handled": False}, 200))
+    @patch("modules.oom_sakkie.telegram_gateway.load_active_manager_question",
+           return_value=None)
     @patch("modules.oom_sakkie.telegram_gateway.handle_message")
     def test_telegram_gateway_route_returns_read_only_reply_payload(
-            self, mock_handle, _manager, _specialist, _continuation, _owner_task, _deliver):
+            self, mock_handle, _question, _manager, _specialist, _continuation,
+            _owner_task, _deliver):
         mock_handle.return_value = ({
             "success": True,
             "answer": "Read-only answer.",
