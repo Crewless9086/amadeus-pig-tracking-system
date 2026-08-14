@@ -112,10 +112,11 @@ def append_zone_water_balance(value, database_url):
 
 
 def read_latest_zone_water_balances(database_url, *, now=None, freshness_minutes=30):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     now=_aware(now or datetime.now(timezone.utc))
     try:
         import psycopg
-        with psycopg.connect(database_url,connect_timeout=10) as connection:
+        with connect_bounded_read(database_url=database_url) as connection:
             connection.read_only=True
             with connection.cursor() as cursor:
                 cursor.execute("""select distinct on (zone_id) balance_json,complete_through

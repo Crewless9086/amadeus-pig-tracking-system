@@ -194,7 +194,8 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
     evidence, operating_date, generated_at = evidence_loader(
         database_url=database_url, now=now)
     history = evidence.get("irrigation_history") if isinstance(evidence, dict) else None
-    if isinstance(history, dict) and history.get("status") == "Unavailable":
+    if ((isinstance(history, dict) and history.get("status") == "Unavailable")
+            or (isinstance(evidence, dict) and evidence.get("database_read_failures"))):
         raise RootlineExecutionStoreUnavailable("load_canonical_irrigation_history")
     plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
     controller = readback(token_store=token_store, environ=source, now=now)
