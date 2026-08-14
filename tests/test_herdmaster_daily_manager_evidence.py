@@ -192,13 +192,14 @@ def test_multiple_new_deaths_receive_one_bounded_attributable_cluster():
     packet_data = mortality()
     packet_data["proven_facts"].extend({"event_id": f"D{number}", "pig_id": f"P{number}",
         "effective_date": "2026-08-14", "event_kind": "individual_death"}
-        for number in range(2, 5))
+        for number in range(2, 11))
     packet = build(weights=[weight()], mortality=packet_data, prior_mortality="OLD")
     result = consume_daily_manager_evidence(packet, observed_at=NOW)
     mortality_items = [item for item in result.work_items if "mortality-cluster:" in item.dedupe_key]
     assert len(mortality_items) == 1
-    assert "P1, P2, P3, P4" in mortality_items[0].why
+    assert "P1, P10, P2, P3, P4, P5, and 4 more" in mortality_items[0].why
     assert "Each identity remains separate" in mortality_items[0].why
+    assert len(mortality_items[0].why) < 300
 
 
 def test_new_death_item_persists_full_prior_and_current_fingerprint_baseline():

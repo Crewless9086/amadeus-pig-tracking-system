@@ -114,21 +114,26 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     assignee="charl", state=WorkState.URGENT, authority=Authority.ADVISORY,
                     provenance=provenance, business_value=1000,
                     metadata={"mortality_fingerprints": dict(
-                        mortality["durable_death_event_fingerprints"])}))
+                        mortality["durable_death_event_fingerprints"]),
+                        "welfare_exception": True}))
             else:
                 identities = [str(row.get("tag") or row.get("pig_id") or row.get("event_id"))
                               for row in ordered]
                 event_ids = [str(row.get("event_id") or row.get("pig_id")) for row in ordered]
+                visible = ", ".join(identities[:6])
+                if len(identities) > 6:
+                    visible += f", and {len(identities) - 6} more"
                 items.append(SpecialistWorkItem(
                     item_id=packet["material_digest"]+":mortality-cluster",
                     dedupe_key="herdmaster:mortality-cluster:"+_compact_identity(event_ids),
                     domain="herd", title=f"Mortality follow-ups — {len(ordered)} attributable deaths",
-                    why="Changed canonical deaths: " + ", ".join(identities) + ". Each identity remains separate; the grouping only keeps the morning brief bounded.",
+                    why="Changed canonical deaths: " + visible + ". Each identity remains separate; the grouping only keeps the morning brief bounded.",
                     next_action="Review each attributable death once. Completion closes that identity; patterns remain associations, not diagnoses.",
                     assignee="charl", state=WorkState.URGENT,
                     authority=Authority.ADVISORY, provenance=provenance, business_value=1000,
                     metadata={"mortality_fingerprints": dict(
-                        mortality["durable_death_event_fingerprints"])}))
+                        mortality["durable_death_event_fingerprints"]),
+                        "welfare_exception": True}))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
     baseline = ({"mortality_fingerprints": mortality.get("durable_death_event_fingerprints") or {}}
                 if not any("mortality" in item.dedupe_key for item in items) else {})
