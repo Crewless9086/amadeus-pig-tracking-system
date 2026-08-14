@@ -111,8 +111,8 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                          if str(row.get("pig_id") or "") not in open_ids else
                          "One changed canonical death has an unresolved attributable individual lifecycle."),
                     next_action="Review this individual once; completion closes it. Patterns remain associations, not diagnoses.",
-                    assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
-                    provenance=provenance, business_value=125,
+                    assignee="charl", state=WorkState.URGENT, authority=Authority.ADVISORY,
+                    provenance=provenance, business_value=1000,
                     metadata={"mortality_fingerprints": dict(
                         mortality["durable_death_event_fingerprints"])}))
             else:
@@ -125,8 +125,8 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     domain="herd", title=f"Mortality follow-ups — {len(ordered)} attributable deaths",
                     why="Changed canonical deaths: " + ", ".join(identities) + ". Each identity remains separate; the grouping only keeps the morning brief bounded.",
                     next_action="Review each attributable death once. Completion closes that identity; patterns remain associations, not diagnoses.",
-                    assignee="charl", state=WorkState.WAITING_EVIDENCE,
-                    authority=Authority.ADVISORY, provenance=provenance, business_value=125,
+                    assignee="charl", state=WorkState.URGENT,
+                    authority=Authority.ADVISORY, provenance=provenance, business_value=1000,
                     metadata={"mortality_fingerprints": dict(
                         mortality["durable_death_event_fingerprints"])}))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]

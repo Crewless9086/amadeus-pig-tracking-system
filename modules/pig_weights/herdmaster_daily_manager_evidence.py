@@ -212,7 +212,7 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                 from public.pig_lifecycle_events where effective_at::date between %s and %s
                 order by effective_at,lifecycle_event_id limit 5000""", (window_start, window_end))
             owner_hash = hashlib.sha256(str(owner_user_id or "").encode()).hexdigest()
-            cursor.execute("""select review_json->'mortality_consumption'
+            cursor.execute("""select review_json->'mortality_consumption',created_at
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_herdmaster_mortality_consumption'
                   and review_json->'mortality_consumption'->>'review_identity'=%s
@@ -221,11 +221,12 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                 (MORTALITY_IDENTITY, owner_hash))
             row = cursor.fetchone()
             prior_consumption = (row[0] if row else {}) or {}
+            prior_consumption_at = row[1] if row and len(row) > 1 else None
             prior_digest = str(prior_consumption.get("evidence_digest") or "")
             prior_event_fingerprints = dict(
                 prior_consumption.get("canonical_death_event_fingerprints") or {})
             cursor.execute("""select review_json->'farm_manager_round'->'result'
-                    ->'herdmaster_mortality_fingerprints'
+                    ->'herdmaster_mortality_fingerprints',created_at
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_farm_manager_round'
                   and review_json->'farm_manager_round'->'result'
@@ -235,7 +236,13 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                 (str(owner_user_id or ""),))
             manager_row = cursor.fetchone()
             if manager_row and isinstance(manager_row[0], dict):
-                prior_event_fingerprints.update(dict(manager_row[0]))
+                manager_values = dict(manager_row[0])
+                manager_at = manager_row[1] if len(manager_row) > 1 else None
+                if (prior_consumption_at is None or manager_at is None
+                        or manager_at >= prior_consumption_at):
+                    prior_event_fingerprints.update(manager_values)
+                else:
+                    prior_event_fingerprints = {**manager_values, **prior_event_fingerprints}
     if mortality_evidence_loader is None:
         from modules.pig_weights.herdmaster_mortality_evidence import load_current_mortality_evidence
         mortality_evidence_loader = load_current_mortality_evidence
