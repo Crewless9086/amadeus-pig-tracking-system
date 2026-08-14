@@ -113,6 +113,12 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
             }
         if prior_binding == binding:
             preserved = prior.get("result") or {}
+            if prior.get("mortality_packet") and not _append_mortality_receipt(
+                    prior["mortality_packet"], authority, owner, now,
+                    str(semantic.get("language") or "en")):
+                return {"handled": True, "success": False,
+                    "status": "farm_manager_mortality_receipt_unavailable",
+                    "mission_id": mission_id, **ZERO_AUTHORITY}, 503
             return {**preserved, "status": "farm_manager_round_replay_suppressed"}, 200
     providers = loaders or {
         "herdmaster": lambda: _load_herdmaster(authority, owner, now,
@@ -183,7 +189,9 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
         "herdmaster_mortality_fingerprints": _mortality_fingerprints(brief),
         **ZERO_AUTHORITY,
     }
-    recorded = store("record", mission_id, {"binding": binding, "result": output})
+    mortality_packet = _mortality_packet(brief)
+    recorded = store("record", mission_id, {"binding": binding, "result": output,
+        "mortality_packet": mortality_packet})
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
         return {"handled": True, "success": False,
             "status": "farm_manager_round_persistence_unproven",
@@ -194,18 +202,19 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
             return {"handled": True, "success": False,
                 "status": "farm_manager_provider_binding_conflict",
                 "mission_id": mission_id, **ZERO_AUTHORITY}, 409
+        if winner.get("mortality_packet") and not _append_mortality_receipt(
+                winner["mortality_packet"], authority, owner, composition_now,
+                str(semantic.get("language") or "en")):
+            return {"handled": True, "success": False,
+                "status": "farm_manager_mortality_receipt_unavailable",
+                "mission_id": mission_id, **ZERO_AUTHORITY}, 503
         return {**(winner.get("result") or {}),
                 "status": "farm_manager_round_replay_suppressed"}, 200
-    mortality_packet = _mortality_packet(brief)
-    if mortality_packet:
-        # Secondary append-only specialist receipt follows the atomically
-        # persisted manager outcome; it never gates or duplicates delivery.
-        try:
-            consume_current_mortality_packet(packet=mortality_packet,
-                authority=authority, owner_user_id=owner, observed_at=composition_now,
-                active_lifecycles=(), language=str(semantic.get("language") or "en"))
-        except Exception:
-            pass
+    if mortality_packet and not _append_mortality_receipt(mortality_packet,
+            authority, owner, composition_now, str(semantic.get("language") or "en")):
+        return {"handled": True, "success": False,
+            "status": "farm_manager_mortality_receipt_unavailable",
+            "mission_id": mission_id, **ZERO_AUTHORITY}, 503
     return output, 200
 
 
@@ -304,6 +313,16 @@ def _mortality_packet(brief):
         if isinstance(packet, dict):
             return packet
     return None
+
+
+def _append_mortality_receipt(packet, authority, owner, observed_at, language):
+    try:
+        _, meta = consume_current_mortality_packet(packet=packet,
+            authority=authority, owner_user_id=owner, observed_at=observed_at,
+            active_lifecycles=(), language=language)
+        return meta.get("success") is True
+    except Exception:
+        return False
     return herd
 
 
