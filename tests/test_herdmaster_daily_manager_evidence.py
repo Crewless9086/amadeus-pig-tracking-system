@@ -233,6 +233,17 @@ def test_cluster_bounds_each_display_identity():
     assert len(item.why) < 300
 
 
+def test_single_death_bounds_display_and_replay_identity():
+    packet_data = mortality()
+    packet_data["proven_facts"][0].update({"tag": "X" * 1000,
+                                             "event_id": "E" * 1000})
+    result = consume_daily_manager_evidence(
+        build(weights=[weight()], mortality=packet_data, prior_mortality="OLD"),
+        observed_at=NOW)
+    item = next(item for item in result.work_items if "mortality:" in item.dedupe_key)
+    assert len(item.title) < 80 and len(item.item_id) < 120 and len(item.dedupe_key) < 80
+
+
 def test_mortality_state_is_normalized_and_missing_state_fails_closed():
     packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD")
     result = consume_daily_manager_evidence(packet, observed_at=NOW,

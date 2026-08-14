@@ -103,9 +103,10 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                 str(value.get("effective_date") or ""), str(value.get("event_id") or "")))
             if len(ordered) == 1:
                 row = ordered[0]
-                tag = str(row.get("tag") or row.get("pig_id") or "the pig")
-                items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":mortality:"+str(row.get("event_id") or tag),
-                    dedupe_key="herdmaster:mortality:"+str(row.get("event_id") or row.get("pig_id")),
+                tag = _bounded_identity(row.get("tag") or row.get("pig_id") or "the pig")
+                event_key = _compact_identity([str(row.get("event_id") or row.get("pig_id") or tag)])
+                items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":mortality:"+event_key,
+                    dedupe_key="herdmaster:mortality:"+event_key,
                     domain="herd", title=f"Mortality follow-up — {tag}",
                     why=("One changed canonical death opened this attributable individual follow-up."
                          if str(row.get("pig_id") or "") not in open_ids else
