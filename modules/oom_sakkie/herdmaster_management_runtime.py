@@ -133,7 +133,7 @@ def _load_observations(owner_user_id):
             and row.get("provider_message_id") and row.get("provider_timestamp")]
 
 
-def _load_active_lifecycles(owner_user_id):
+def _load_active_lifecycles(owner_user_id, *, include_terminal=False):
     with _connect() as connection:
         connection.read_only = True
         with connection.cursor() as cursor:
@@ -159,10 +159,11 @@ def _load_active_lifecycles(owner_user_id):
         pig_id = str(identity.get("pig_id") or "")
         if not pig_id:
             continue
-        if pig_id in terminal_pigs:
-            active.pop(pig_id, None)
-            continue
         lifecycle_id = str(row.get("mission_id") or "")
+        if pig_id in terminal_pigs:
+            if not include_terminal:
+                active.pop(pig_id, None)
+                continue
         if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
                                   "preview_correction_pending"} and card_message_id:
             observations = (((row.get("preview") or {}).get("evaluator") or {}).get("observations") or [])
@@ -178,7 +179,11 @@ def _load_active_lifecycles(owner_user_id):
         else:
             # Chronology is ordered. A later terminal lifecycle for an animal
             # supersedes stale earlier active projections for that animal.
-            active.pop(pig_id, None)
+            if include_terminal:
+                active[pig_id] = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
+                                  "state": "completed"}
+            else:
+                active.pop(pig_id, None)
     return list(active.values())
 
 

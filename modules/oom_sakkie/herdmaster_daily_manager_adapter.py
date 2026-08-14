@@ -96,8 +96,10 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
         candidates = [row for row in mortality.get("candidate_deaths") or ()
                       if str(row.get("pig_id") or "") not in closed_ids]
         if candidates and not materiality_state:
-            for row in sorted(candidates, key=lambda value: (
-                    str(value.get("effective_date") or ""), str(value.get("event_id") or ""))):
+            ordered = sorted(candidates, key=lambda value: (
+                str(value.get("effective_date") or ""), str(value.get("event_id") or "")))
+            if len(ordered) == 1:
+                row = ordered[0]
                 tag = str(row.get("tag") or row.get("pig_id") or "the pig")
                 items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":mortality:"+str(row.get("event_id") or tag),
                     dedupe_key="herdmaster:mortality:"+str(row.get("event_id") or row.get("pig_id")),
@@ -108,6 +110,18 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     next_action="Review this individual once; completion closes it. Patterns remain associations, not diagnoses.",
                     assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
                     provenance=provenance, business_value=125))
+            else:
+                identities = [str(row.get("tag") or row.get("pig_id") or row.get("event_id"))
+                              for row in ordered]
+                event_ids = [str(row.get("event_id") or row.get("pig_id")) for row in ordered]
+                items.append(SpecialistWorkItem(
+                    item_id=packet["material_digest"]+":mortality-cluster",
+                    dedupe_key="herdmaster:mortality-cluster:"+_compact_identity(event_ids),
+                    domain="herd", title=f"Mortality follow-ups — {len(ordered)} attributable deaths",
+                    why="Changed canonical deaths: " + ", ".join(identities) + ". Each identity remains separate; the grouping only keeps the morning brief bounded.",
+                    next_action="Review each attributable death once. Completion closes that identity; patterns remain associations, not diagnoses.",
+                    assignee="charl", state=WorkState.WAITING_EVIDENCE,
+                    authority=Authority.ADVISORY, provenance=provenance, business_value=125))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
     rebound = tuple(replace(item, provenance=replace(provenance, result_id=result_id)) for item in items)
     return SpecialistResult("herdmaster", result_id, observed_at,
@@ -120,6 +134,11 @@ def _findings(rows):
     return "Descriptive changes for review: " + "; ".join(
         f"{row.get('tag') or row['pig_id']} {row['change_kg']:+g} kg ({row['change_pct']:+g}%)"
         for row in rows[:4]) + ". No cause or diagnosis is inferred."
+
+
+def _compact_identity(values):
+    import hashlib
+    return hashlib.sha256("|".join(sorted(values)).encode()).hexdigest()[:20]
 
 
 def _valid(packet):

@@ -187,14 +187,17 @@ def test_changed_digest_does_not_reopen_previously_consumed_death():
     assert all("mortality" not in item.dedupe_key for item in result.work_items)
 
 
-def test_multiple_new_deaths_each_receive_an_attributable_followup():
+def test_multiple_new_deaths_receive_one_bounded_attributable_cluster():
     packet_data = mortality()
-    packet_data["proven_facts"].append({"event_id": "D2", "pig_id": "P2",
-        "effective_date": "2026-08-14", "event_kind": "individual_death"})
+    packet_data["proven_facts"].extend({"event_id": f"D{number}", "pig_id": f"P{number}",
+        "effective_date": "2026-08-14", "event_kind": "individual_death"}
+        for number in range(2, 5))
     packet = build(weights=[weight()], mortality=packet_data, prior_mortality="OLD")
     result = consume_daily_manager_evidence(packet, observed_at=NOW)
-    assert {item.dedupe_key for item in result.work_items if "mortality:" in item.dedupe_key} == {
-        "herdmaster:mortality:D1", "herdmaster:mortality:D2"}
+    mortality_items = [item for item in result.work_items if "mortality-cluster:" in item.dedupe_key]
+    assert len(mortality_items) == 1
+    assert "P1, P2, P3, P4" in mortality_items[0].why
+    assert "Each identity remains separate" in mortality_items[0].why
 
 
 def test_mortality_state_is_normalized_and_missing_state_fails_closed():

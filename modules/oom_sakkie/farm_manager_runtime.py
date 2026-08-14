@@ -201,7 +201,7 @@ def _load_herdmaster(authority, owner, now, language="en"):
     futures = {
         "canonical": _HERD_EVIDENCE_EXECUTOR.submit(load_current_breeding_operating_loop),
         "observations": _HERD_EVIDENCE_EXECUTOR.submit(_load_observations, owner),
-        "active": _HERD_EVIDENCE_EXECUTOR.submit(_load_active_lifecycles, owner),
+        "active": _HERD_EVIDENCE_EXECUTOR.submit(_load_manager_lifecycles, owner),
         "daily": _HERD_EVIDENCE_EXECUTOR.submit(load_daily_manager_evidence,
             analysis_date=now.astimezone(ZoneInfo("Africa/Johannesburg")).date()),
     }
@@ -213,15 +213,19 @@ def _load_herdmaster(authority, owner, now, language="en"):
         canonical = futures["canonical"].result()
         observations = futures["observations"].result()
         active = futures["active"].result()
+        active_current = tuple(row for row in active if str(row.get("state") or "").casefold()
+            not in {"completed", "closed", "handled"})
         # Reproductive and welfare evidence remains in the existing whole-herd
         # result. Weekly cohort biology comes only from the versioned producer.
-        herd = _whole_herd_specialist_result(canonical, observations, active, now)
+        herd = _whole_herd_specialist_result(canonical, observations, active_current, now)
     except Exception:
         try:
             active = futures["active"].result(timeout=0) if futures["active"] in done else ()
         except Exception:
             active = ()
-        return _active_welfare_result(active, now)
+        active_current = tuple(row for row in active if str(row.get("state") or "").casefold()
+            not in {"completed", "closed", "handled"})
+        return _active_welfare_result(active_current, now)
     else:
         try:
             packet = futures["daily"].result() if futures["daily"] in done else None
@@ -272,7 +276,17 @@ def _augment_herd_with_mortality(*,herd,mortality_future,mortality_done,authorit
         combined_id=herd.result_id+":"+mortality.result_id
         items=tuple(replace(item,provenance=replace(item.provenance,result_id=combined_id))
                     for item in tuple(mortality.work_items)+tuple(herd.work_items))
-        return replace(herd,work_items=items,result_id=combined_id)
+    return replace(herd,work_items=items,result_id=combined_id)
+
+
+def _load_manager_lifecycles(owner):
+    """Retain terminal closure evidence without breaking injected legacy loaders."""
+    try:
+        return _load_active_lifecycles(owner, include_terminal=True)
+    except TypeError as exc:
+        if "include_terminal" not in str(exc):
+            raise
+        return _load_active_lifecycles(owner)
     return herd
 
 
