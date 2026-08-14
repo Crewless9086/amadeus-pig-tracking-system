@@ -45,6 +45,7 @@ MISSION_STATUSES = {
 }
 MISSION_EVENT_TYPES = {
     "created",
+    "portfolio_admitted",
     "selected_next_step",
     "codex_chat_write",
     "status_changed",
@@ -397,6 +398,10 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
                         "replacement_identity": replacement["replacement_identity"],
                     } if replacement else {}),
                 })
+                admission = persisted_metadata.get("portfolio_admission")
+                if isinstance(admission, dict):
+                    _insert_event(cursor, params["mission_id"], "portfolio_admitted",
+                        "Owner-approved bootstrap portfolio admission recorded.", admission)
     except Exception as exc:
         return {
             "stored": False,
@@ -2677,7 +2682,7 @@ def _resolve_exact_identity_intake(cursor, params):
         {"lock_key": f"mission-id:{mission_id}"},
     )
     cursor.execute(
-        """select mission_id, status, title, raw_text
+        """select mission_id, status, title, raw_text, metadata_json
            from public.charlie_missions
            where mission_id = %(mission_id)s
            for update""",
@@ -2686,7 +2691,14 @@ def _resolve_exact_identity_intake(cursor, params):
     exact_rows = cursor.fetchall()
     if exact_rows:
         row = exact_rows[0]
-        if row[2] == params.get("title") and row[3] == params.get("raw_text"):
+        expected_metadata = json.loads(params.get("metadata_json") or "{}")
+        expected_admission = expected_metadata.get("portfolio_admission")
+        persisted_metadata = row[4] if isinstance(row[4], dict) else {}
+        admission_matches = (not expected_admission or (
+            row[1] == params.get("status")
+            and persisted_metadata.get("portfolio_admission") == expected_admission))
+        if (row[2] == params.get("title") and row[3] == params.get("raw_text")
+                and admission_matches):
             return ({"stored": False, "configured": True,
                 "status": "duplicate_exact_mission", "mission_id": mission_id,
                 "existing_status": row[1], "title": row[2]}, 200)

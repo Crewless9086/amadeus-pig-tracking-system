@@ -10,6 +10,13 @@ from modules.charlie.mission_store import record_mission
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 PREFIX = "CMQ-OPAQUE-POSTGRES-"
 TITLE_PREFIX = "Opaque postgres mission creation"
+ADMISSION = {
+    "portfolio_epoch": "CORE-CURRENT-2026-08-14", "classification": "current",
+    "lifecycle_state": "WORKING", "admission_version": "portfolio_admission_v1",
+    "admission_evidence": "owner_approved_cmq_20260813_05_bootstrap",
+    "decision_authority": "human_control_tower", "dispatch_authority": "human_control_tower",
+    "runnable": False,
+}
 
 
 @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL is required")
@@ -117,6 +124,43 @@ class PrivateOpaqueMissionCreationPostgresTests(unittest.TestCase):
         self.assertEqual(mission_count, 1)
         self.assertEqual(event_count, 1)
         self.assertEqual(sum(status == 201 for _result, status in results), 1)
+
+    def test_atomic_bootstrap_admission_replay_is_one_mission_and_one_admission_event(self):
+        mission_id = PREFIX + "BOOTSTRAP"
+        title = TITLE_PREFIX + " atomic bootstrap"
+        mission = self._mission(mission_id, title)
+        mission["status"] = "paused"
+        mission["metadata"]["portfolio_admission"] = ADMISSION
+        first = record_mission(mission, source_context={"source": "charlie_private_executive"},
+            database_url=DATABASE_URL, exact_identity=True)
+        replay = record_mission(mission, source_context={"source": "charlie_private_executive"},
+            database_url=DATABASE_URL, exact_identity=True)
+        self.assertEqual((first[1], replay[1]), (201, 200))
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute("select status,metadata_json from public.charlie_missions where mission_id=%s", (mission_id,))
+            status, metadata = cursor.fetchone()
+            cursor.execute("select event_type,count(*) from public.charlie_mission_events where mission_id=%s group by event_type", (mission_id,))
+            events = dict(cursor.fetchall())
+        self.assertEqual(status, "paused")
+        self.assertEqual(metadata["portfolio_admission"], ADMISSION)
+        self.assertEqual(events, {"created": 1, "portfolio_admitted": 1})
+
+    def test_concurrent_bootstrap_replay_has_no_duplicate_admission_event(self):
+        mission_id = PREFIX + "BOOTSTRAP-CONCURRENT"
+        title = TITLE_PREFIX + " concurrent bootstrap"
+        mission = self._mission(mission_id, title)
+        mission["status"] = "paused"
+        mission["metadata"]["portfolio_admission"] = ADMISSION
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: record_mission(mission,
+                source_context={"source": "charlie_private_executive"},
+                database_url=DATABASE_URL, exact_identity=True), range(2)))
+        self.assertEqual(sorted(code for _result, code in results), [200, 201])
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute("select count(*) from public.charlie_missions where mission_id=%s", (mission_id,))
+            self.assertEqual(cursor.fetchone()[0], 1)
+            cursor.execute("select event_type,count(*) from public.charlie_mission_events where mission_id=%s group by event_type", (mission_id,))
+            self.assertEqual(dict(cursor.fetchall()), {"created": 1, "portfolio_admitted": 1})
 
 
 if __name__ == "__main__":

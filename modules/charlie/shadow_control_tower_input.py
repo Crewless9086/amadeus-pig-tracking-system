@@ -64,9 +64,15 @@ def handle_shadow_control_tower_input(
         return _failure("shadow_control_tower_cross_mission_record_denied", 409)
     reader = mission_reader or get_mission
     loaded, loaded_status = reader(mission_id)
-    exact = (loaded.get("mission") or {}).get("mission_id") if isinstance(loaded, Mapping) else ""
+    mission = (loaded.get("mission") or {}) if isinstance(loaded, Mapping) else {}
+    exact = mission.get("mission_id")
     if loaded_status >= 400 or not hmac.compare_digest(str(exact or ""), mission_id):
         return _failure("shadow_control_tower_existing_mission_not_found", 404)
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), Mapping) else {}
+    admission = (metadata.get("portfolio_admission")
+        if isinstance(metadata.get("portfolio_admission"), Mapping) else {})
+    if admission and admission.get("runnable") is not True:
+        return _failure("shadow_control_tower_mission_not_runnable", 409)
     if record_type == "proposal":
         prepared = propose_shadow_decision(transaction, environ=environ)
         if not prepared.get("success"):
