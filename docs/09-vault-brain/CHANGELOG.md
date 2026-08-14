@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-08-14 - Repeated owner-journey systemic acceptance gate adopted
+
+- Strengthened the outcome-bound mission standard so three failed owner attempts
+  trigger a complete reusable execution-family investigation rather than another
+  narrow patch and retry.
+- Prohibited using Charl as the production test harness for sequential internal
+  defects; another owner action now requires a complete trace, bounded dependency
+  failure matrix, configuration-driven family coverage, deployed-runtime readback
+  and a production-safe non-actuating or non-committing proof.
+- Kept the same mission identity and real-world Business-complete requirement;
+  PRs, deployments, containment and latest-exception tests remain intermediate
+  technical evidence only.
+
 ## 2026-08-14 - Phase A private observation input prepared
 
 - Added a disabled-by-default internal private CORE action for supplying one genuine Shadow proposal and its later human Control Tower decision to the existing operational-event fabric.
