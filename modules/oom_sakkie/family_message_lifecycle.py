@@ -211,10 +211,18 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "telegram_sends": 0, "telegram_edits": 0,
                 "delivery_definitely_not_sent": response.get("delivery_definitely_not_sent") is True}
     delivered_id = card_mission_id + "-DELIVERED"
-    store("record", delivered_id, {**payload, "event_id": delivered_id, "state": "delivered",
+    delivered = store("record", delivered_id, {**payload, "event_id": delivered_id, "state": "delivered",
         "telegram_message_id": message_id,
         "delivery_provider_timestamp": str(response.get("provider_timestamp") or "")})
+    if not isinstance(delivered, dict) or delivered.get("success") is not True:
+        return {"success": False,
+            "status": "family_message_provider_confirmed_receipt_unavailable",
+            "provider_delivery_confirmed": True,
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_message_id": message_id, "telegram_sends": 1,
+            "telegram_edits": 0}
     return {"success": True, "status": "family_message_delivered",
+            "provider_delivery_confirmed": True,
             "mission_id": mission_id, "card_mission_id": card_mission_id,
             "telegram_message_id": message_id, "telegram_sends": 1, "telegram_edits": 0}
 
@@ -238,11 +246,20 @@ def _deliver_visible_notification(parsed, payload, text, mission_id, card_missio
         return {"success": False, "status": "family_message_notification_contained",
             "mission_id": mission_id, "card_mission_id": card_mission_id,
             "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": prior_edits}
-    store("record", notification_id + "-DELIVERED", {**payload,
+    notification_receipt = store("record", notification_id + "-DELIVERED", {**payload,
         "event_id": notification_id + "-DELIVERED", "state": "notification_delivered",
         "telegram_message_id": card_id, "notification_message_id": notification_message_id,
         "delivery_provider_timestamp": str(notification.get("provider_timestamp") or "")})
+    if not isinstance(notification_receipt, dict) or notification_receipt.get("success") is not True:
+        return {"success": False,
+            "status": "family_message_notification_provider_confirmed_receipt_unavailable",
+            "provider_delivery_confirmed": True,
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_message_id": card_id,
+            "notification_message_id": notification_message_id,
+            "telegram_sends": 1, "telegram_edits": prior_edits}
     return {"success": True, "status": "family_message_card_updated_and_notified",
+        "provider_delivery_confirmed": True,
         "mission_id": mission_id, "card_mission_id": card_mission_id,
         "telegram_message_id": card_id, "notification_message_id": notification_message_id,
         "telegram_sends": 1, "telegram_edits": prior_edits}

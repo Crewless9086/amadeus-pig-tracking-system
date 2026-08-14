@@ -12,6 +12,7 @@ SAST = ZoneInfo("Africa/Johannesburg")
 MORNING_DUE = time(6, 45)
 PLAN_WINDOW_END = time(7, 0)
 POLL_SECONDS = 60
+from modules.oom_sakkie.bounded_postgres_read import OWNER_REQUEST_DEADLINE_SECONDS
 OWNER_ENV = "OOM_SAKKIE_DAILY_MANAGER_OWNER_USER_ID"
 ENABLED_ENV = "OOM_SAKKIE_DAILY_MANAGER_RUNTIME_ENABLED"
 _START_LOCK = threading.Lock()
@@ -110,7 +111,8 @@ def _load_inputs(owner, now, source, *, herd_loader, rootline_loader,
                    "rootline": executor.submit(rootline_loader),
                    "litters": executor.submit(litter_loader),
                    "sales": executor.submit(sales_loader)}
-        done, pending = wait(tuple(futures.values()), timeout=40)
+        done, pending = wait(tuple(futures.values()),
+                             timeout=OWNER_REQUEST_DEADLINE_SECONDS)
         if futures["herd"] not in done or futures["rootline"] not in done:
             raise TimeoutError("morning_runtime_specialist_deadline")
         results = [futures["herd"].result(), futures["rootline"].result()]
