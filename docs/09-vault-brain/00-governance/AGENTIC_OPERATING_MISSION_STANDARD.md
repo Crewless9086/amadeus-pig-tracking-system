@@ -199,6 +199,7 @@ Do not change governance merely to appear busy. One isolated wording preference 
 | Distinguish deployed agents, visible development terminals, and complete specialist roles in every status report | Adopted | Prevents cloud activity, terminal engineering, and full-role readiness from being conflated and makes clear what Charl can actually use | Verify later reports independently name live agent state, terminal state, and remaining role capability |
 | Reuse the existing CHARLIE CORE mission queue, local runner, execution bridge, review workflow and release bridge for development automation; never invent a second CORE or place CORE inside ordinary farm-message routing | Adopted | Preserves the system already built and keeps software engineering separate from Oom Sakkie's live operational specialist work | Verify one approved development mission is picked up by the existing CORE runner and one ordinary Oom Sakkie specialist request completes without CORE in its runtime path |
 | Keep one terminal outcome-bound until the genuine real-world loop passes; do not accept CI, replay, deployment or a newly sent owner question as completion | Adopted | Prevents repeated narrow repairs from returning Charl to the same failed operational step | Verify the same terminal observes one fresh post-deployment input through specialist action, external outcome, readback and visible closure without another development prompt |
+| After repeated owner-journey failure, require a systemic execution-family acceptance gate before another owner attempt | Adopted | Stops Charl becoming the production test harness that reveals one sequential internal defect at a time, and forces reusable configuration-driven capability instead of case-, message-, customer-, device- or valve-specific patches | After the threshold, verify a complete end-to-end trace, bounded failure matrix, non-actuating production proof and reusable-family coverage before asking for another genuine owner action |
 | Require every terminal to classify intermediate stops with the shared Hold taxonomy and reserve BUSINESS COMPLETE for fresh owner-visible proof | Adopted | Prevents a source slice, PR, CI run or deployment from sounding like the full job is finished, while preserving necessary safety and authority stops | Every terminal handover names one lifecycle state, the exact unblock condition and the remaining owner-visible acceptance journey; Control Tower rejects ambiguous `complete`, `done` or `ready` wording |
 | Verify the Mission Standard is Git-tracked and completely read in both Control Tower and target-terminal `HEAD` before claiming it was applied | Adopted | Prevents separate worktrees and CORE missions from silently operating with missing or stale governance | Every handoff reports standard path, target availability and exact blob/digest; missing governance blocks non-urgent implementation until reconciled |
 
@@ -227,6 +228,43 @@ For a live acceptance journey:
 - if the live proof exposes another internal defect, contain unsafe effects, repair the reusable boundary, redeploy and resume the same mission without asking Charl to restate known facts;
 - never declare a physical, customer, farm, financial or publication journey Operational until its intended real-world effect and required readback have occurred;
 - after three owner attempts without the intended outcome, stop requesting more owner input, classify the journey as a systemic incident, and require an end-to-end trace and correction before another live attempt.
+
+### Repeated Owner-Journey Systemic Acceptance Gate
+
+After three owner attempts fail to produce the intended outcome, the next task is
+not another narrow repair followed by another owner retry. The owning terminal
+must keep the same outcome mission, stop all requests for repeated owner input,
+and treat the complete reusable execution family as the correction boundary.
+The owner must not be used to discover the next sequential internal defect.
+
+Before another genuine owner action may be requested, the owning terminal must:
+
+1. trace the complete production journey from trigger and retained context through
+   every datastore, queue, worker, specialist decision, protected claim, provider
+   effect, authoritative readback, visible closure and follow-up;
+2. identify every blocking dependency and prove that its connection acquisition,
+   query, lock, provider and worker deadlines are bounded below the enclosing
+   request or job timeout;
+3. test the reusable failure family, including unavailable dependencies, exhausted
+   pools, DNS/socket/TLS/connect stalls, lock contention, provider ambiguity,
+   worker restart, concurrency and replay where applicable;
+4. prove the correction is configuration- or contract-driven across the supported
+   family rather than hard-coded for the latest message, customer, animal, device,
+   channel, valve or incident;
+5. cover at least one additional existing family member and one simulated future
+   member when the capability is intended to expand through configuration;
+6. integrate and deploy the complete correction, verify the exact loaded runtime,
+   and run a production-safe non-actuating or non-committing proof of the entire
+   corrected path before requesting the next protected owner action; and
+7. state the remaining single genuine journey, its authority boundary and the
+   real-world evidence that will make the mission Business-complete.
+
+A unit test, PR, deployment, replay, contained failure or proof of only the most
+recent exception cannot reopen owner testing. Control Tower must reject a
+continuation that scopes the correction to the latest evidence identity unless
+that identity is genuinely the whole reusable capability. Missing proof blocks
+only the protected retry; safe diagnosis, implementation, review and non-actuating
+verification must continue without Charl.
 
 Do not combine a failing P0 operational incident with a broad new capability mission. Close or precisely contain the incident first, release its runtime, then start the next goal under a separate mission identity. Larger prompts are not a substitute for stronger completion gates.
 
