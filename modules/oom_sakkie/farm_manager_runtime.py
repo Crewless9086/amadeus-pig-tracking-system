@@ -25,6 +25,7 @@ from modules.telemetry.rootline_specialist_result import build_current_rootline_
 from modules.pig_weights.herdmaster_daily_manager_evidence import load_daily_manager_evidence
 from modules.oom_sakkie.herdmaster_daily_manager_adapter import consume_daily_manager_evidence
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres, connect_bounded_read
+from modules.oom_sakkie.herdmaster_mortality_runtime import consume_current_mortality_packet
 from zoneinfo import ZoneInfo
 
 CONTRACT_VERSION = "oom_sakkie_farm_manager_round_v5"
@@ -195,6 +196,16 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
                 "mission_id": mission_id, **ZERO_AUTHORITY}, 409
         return {**(winner.get("result") or {}),
                 "status": "farm_manager_round_replay_suppressed"}, 200
+    mortality_packet = _mortality_packet(brief)
+    if mortality_packet:
+        # Secondary append-only specialist receipt follows the atomically
+        # persisted manager outcome; it never gates or duplicates delivery.
+        try:
+            consume_current_mortality_packet(packet=mortality_packet,
+                authority=authority, owner_user_id=owner, observed_at=composition_now,
+                active_lifecycles=(), language=str(semantic.get("language") or "en"))
+        except Exception:
+            pass
     return output, 200
 
 
@@ -285,6 +296,14 @@ def _mortality_fingerprints(brief):
             fingerprints.update({str(key): str(value) for key, value in values.items()
                                  if key and value})
     return dict(sorted(fingerprints.items()))
+
+
+def _mortality_packet(brief):
+    for item in brief.queue:
+        packet = item.metadata.get("mortality_packet") if item.metadata else None
+        if isinstance(packet, dict):
+            return packet
+    return None
     return herd
 
 

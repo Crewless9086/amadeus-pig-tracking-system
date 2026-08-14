@@ -131,6 +131,7 @@ class SpecialistWorkItem:
             "coordination_factors": tuple,
             "mortality_fingerprints": dict,
             "welfare_exception": bool,
+            "mortality_packet": dict,
         }
         unknown = set(self.metadata) - set(allowed_metadata)
         if unknown:

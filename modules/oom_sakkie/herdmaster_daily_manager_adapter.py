@@ -115,7 +115,8 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     provenance=provenance, business_value=1000,
                     metadata={"mortality_fingerprints": dict(
                         mortality["durable_death_event_fingerprints"]),
-                        "welfare_exception": True}))
+                        "welfare_exception": True,
+                        "mortality_packet": dict(packet.get("specialist_mortality_packet") or {})}))
             else:
                 identities = [_bounded_identity(row.get("tag") or row.get("pig_id") or row.get("event_id"))
                               for row in ordered]
@@ -128,12 +129,13 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     dedupe_key="herdmaster:mortality-cluster:"+_compact_identity(event_ids),
                     domain="herd", title=f"Mortality follow-ups — {len(ordered)} attributable deaths",
                     why="Changed canonical deaths: " + visible + ". Each identity remains separate; the grouping only keeps the morning brief bounded.",
-                    next_action="Review each attributable death once. Completion closes that identity; patterns remain associations, not diagnoses.",
+                    next_action="Review this bounded attributable group once; later new or unresolved individual evidence reopens separately. Patterns remain associations, not diagnoses.",
                     assignee="charl", state=WorkState.URGENT,
                     authority=Authority.ADVISORY, provenance=provenance, business_value=1000,
                     metadata={"mortality_fingerprints": dict(
                         mortality["durable_death_event_fingerprints"]),
-                        "welfare_exception": True}))
+                        "welfare_exception": True,
+                        "mortality_packet": dict(packet.get("specialist_mortality_packet") or {})}))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
     baseline = ({"mortality_fingerprints": mortality.get("durable_death_event_fingerprints") or {}}
                 if not any("mortality" in item.dedupe_key for item in items) else {})
