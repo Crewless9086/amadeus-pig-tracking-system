@@ -114,7 +114,7 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
                     provenance=provenance, business_value=125,
                     metadata={"mortality_fingerprints": dict(
-                        mortality["canonical_death_event_fingerprints"])}))
+                        mortality["durable_death_event_fingerprints"])}))
             else:
                 identities = [str(row.get("tag") or row.get("pig_id") or row.get("event_id"))
                               for row in ordered]
@@ -128,9 +128,9 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     assignee="charl", state=WorkState.WAITING_EVIDENCE,
                     authority=Authority.ADVISORY, provenance=provenance, business_value=125,
                     metadata={"mortality_fingerprints": dict(
-                        mortality["canonical_death_event_fingerprints"])}))
+                        mortality["durable_death_event_fingerprints"])}))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
-    baseline = ({"mortality_fingerprints": mortality.get("canonical_death_event_fingerprints") or {}}
+    baseline = ({"mortality_fingerprints": mortality.get("durable_death_event_fingerprints") or {}}
                 if not any("mortality" in item.dedupe_key for item in items) else {})
     rebound = tuple(replace(item, provenance=replace(provenance, result_id=result_id),
                       metadata={**dict(item.metadata), **baseline}) for item in items)

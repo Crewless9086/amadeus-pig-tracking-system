@@ -197,7 +197,8 @@ def _changed_daily_packet():
             "untagged_excluded":[],"inactive_off_farm":[],"unknown_eligibility":[],
             "conflicting_weight_evidence":[],"material_weight_findings":[]},
         "mortality":{"digest_changed":True,"candidate_deaths":[{"event_id":"D1","pig_id":"P1"}],
-            "canonical_death_event_fingerprints":{"D1":"F1"}},
+            "canonical_death_event_fingerprints":{"D1":"F1"},
+            "durable_death_event_fingerprints":{"D1":"F1"}},
         "specialist_mortality_packet":{"review_identity":"HERDMASTER-MORTALITY-CURRENT"},
         "authority":{"read_only":True,"writes_farm_data":False,
             "hardware_commands":0,"sends_messages":False}}

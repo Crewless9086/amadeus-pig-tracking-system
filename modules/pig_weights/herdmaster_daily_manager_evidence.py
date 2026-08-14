@@ -169,6 +169,7 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
         "rolling_counts": mortality_packet.get("rolling_counts") or {},
         "candidate_deaths": new_deaths,
         "canonical_death_event_fingerprints": current_fingerprints,
+        "durable_death_event_fingerprints": {**prior_fingerprints, **current_fingerprints},
         "association_boundary": "associations are not diagnoses or proof of causation",
     }
     material = {"weight": weight, "mortality": mortality}
