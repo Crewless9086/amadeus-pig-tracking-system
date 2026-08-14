@@ -25,6 +25,7 @@ from modules.beacon.post_composer import build_beacon_caption_suggestions
 from modules.pig_weights.pig_weights_service import get_pig_detail, get_sales_availability
 from modules.sales.conversation_learning import live_stock_learning_scorecard
 from modules.charlie.agent_runtime import delegate_to_agent
+from modules.charlie.shadow_control_tower_input import handle_shadow_control_tower_input
 
 
 TOOL_FOR_INTENT = {
@@ -40,6 +41,7 @@ TOOL_FOR_INTENT = {
     "read_order": "order", "prepare_order_pack": "order_pack",
     "prepare_beacon_draft": "beacon_draft", "read_trust": "trust",
     "read_sam_conversation": "sam_conversation",
+    "observe_shadow_control_tower": "shadow_control_tower_input",
 }
 
 
@@ -51,6 +53,8 @@ def execute_private_tool(intent_type, args, runtime_context=None):
         return _farm_status(args or {}, runtime_context=runtime_context)
     if tool == "pig":
         return _pig(args or {}, runtime_context=runtime_context)
+    if tool == "shadow_control_tower_input":
+        return handle_shadow_control_tower_input(args or {}, runtime_context=runtime_context)
     return globals()[f"_{tool}"](args or {})
 
 
