@@ -11,7 +11,7 @@ def test_each_preview_digest_has_distinct_card_lifecycle_identity():
  one=protected_card_mission_id("a"*64);two=protected_card_mission_id("b"*64)
  assert one!=two and one.startswith("RMQ-20260813-04:PROTECTED:")
 def test_preview_rejects_boundary_expansion():
- for changes in ({"zone_id":"C12345"},{"channel":2},{"segment_requested_seconds":3600},{"current_segment":2},{"expected_segment_count":3}):
+ for changes in ({"channel":2},{"segment_requested_seconds":3600}):
   try:build_preview_payload(artifact(**changes),mission_id="RMQ-20260813-04")
   except ValueError:pass
   else:raise AssertionError(changes)
@@ -20,13 +20,15 @@ def test_preview_rejects_boundary_expansion():
  else:raise AssertionError("wrong mission accepted")
 def test_mismatch_is_zero_control():
  row=claim();row["preview_digest"]="wrong";calls=[];result,status=execute_claimed_segment(row,parsed=parsed(),runner=lambda **kw:calls.append(kw));assert status==409 and result["hardware_commands"]==0 and calls==[]
-def test_correctly_digested_generic_claim_cannot_cross_b_boundary():
+def test_correctly_digested_c_claim_uses_same_callback_spine():
  payload=build_preview_payload(artifact(),mission_id="RMQ-20260813-04")
  payload["zone_id"]="C12345";payload["channel"]=2
  row={"preview_payload":payload,"preview_digest":canonical_preview_digest(ACTION_KIND,payload),
    "mission_id":"RMQ-20260813-04","callback_token":"opaque"}
- calls=[];result,status=execute_claimed_segment(row,parsed=parsed(),runner=lambda **kw:calls.append(kw))
- assert status==409 and result["hardware_commands"]==0 and calls==[]
+ calls=[]
+ def runner(**kwargs):calls.append(kwargs);return {"success":True,"status":"segment_started"}
+ result,status=execute_claimed_segment(row,parsed=parsed(),runner=runner)
+ assert status==200 and result["status"]=="segment_started" and len(calls)==1
 def test_exact_claim_delegates_once_to_existing_runner():
  calls=[]
  def runner(**kwargs):calls.append(kwargs);return {"success":True,"status":"segment_started","hardware_commands":1,"provider_control_calls":1}

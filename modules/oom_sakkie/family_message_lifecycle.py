@@ -399,8 +399,9 @@ def _validate_rootline_recovery_authority(authority, binding, mission_id, card_m
     if not mission_id or card_mission_id != mission_id or not str(os.environ.get("DATABASE_URL") or "").strip():
         return False
     try:
-        import psycopg
-        with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        with connect_bounded_rootline_postgres(
+                database_url=os.environ.get("DATABASE_URL")) as connection:
             connection.read_only = True
             with connection.cursor() as cursor:
                 cursor.execute("""select review_json->'rootline_operational_intake'
@@ -443,9 +444,10 @@ def _validate_rootline_recovery_authority(authority, binding, mission_id, card_m
 
 
 def _event_store(action, identity, payload):
-    import psycopg
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     if action == "load":
-        with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
+        with connect_bounded_rootline_postgres(
+                database_url=os.environ.get("DATABASE_URL")) as connection:
             connection.read_only = True
             with connection.cursor() as cursor:
                 cursor.execute("""select review_json->'family_message_lifecycle'
@@ -459,7 +461,9 @@ def _event_store(action, identity, payload):
     event["review_event_id"] = identity; event["chatwoot_conversation_id"] = payload["card_mission_id"]
     event["review_json"] = {"family_message_lifecycle": dict(payload)}
     event["decision_json"] = {}; event["facts_json"] = {}; event["customer_message_excerpt"] = ""; event["sam_reply_excerpt"] = ""
-    result, status = record_sam_live_stock_review_event(event)
+    result, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: connect_bounded_rootline_postgres(
+            database_url=os.environ.get("DATABASE_URL"), read_only=False))
     return {**result, "success": status < 400 and result.get("success") is True}
 
 

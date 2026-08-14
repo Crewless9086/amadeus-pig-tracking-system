@@ -12,22 +12,32 @@ BOUND_KEYS=("job_id","job_sha256","zone_id","channel","segment_identity",
  "governed_executable_duration_seconds","plan_generation",
  "controller_safety_generation","eligibility_sha256")
 
-def protected_card_mission_id(preview_digest):
+def protected_card_mission_id(preview_digest, mission_id=MISSION_ID):
     digest=str(preview_digest or "").lower()
     if len(digest)!=64 or any(ch not in "0123456789abcdef" for ch in digest):
         raise ValueError("protected_irrigation_preview_digest_invalid")
-    return MISSION_ID+":PROTECTED:"+digest[:24].upper()
+    mission=str(mission_id or "").strip()
+    if not mission.startswith("RMQ-"):
+        raise ValueError("protected_irrigation_mission_invalid")
+    return mission+":PROTECTED:"+digest[:24].upper()
 
 def build_preview_payload(artifact,*,mission_id):
-    if str(mission_id)!=MISSION_ID:
+    if not str(mission_id or "").startswith("RMQ-"):
         raise ValueError("protected_irrigation_mission_mismatch")
     payload={k:artifact.get(k) for k in BOUND_KEYS}
     payload.update({"mission_id":str(mission_id),"expected_segment_count":artifact.get("expected_segment_count"),
       "maximum_duration_seconds":artifact.get("maximum_duration_seconds"),
       "evidence_generation":artifact.get("plan_generation")})
-    if (payload["zone_id"]!="B12345" or payload["channel"]!=1 or payload["current_segment"]!=1
-        or payload["segment_requested_seconds"]!=3599 or payload["requested_total_duration_seconds"]!=7200
-        or payload["governed_executable_duration_seconds"]!=7198 or payload["expected_segment_count"]!=2):
+    from modules.telemetry.rootline_device_registry import commissioned_irrigation_contract
+    try:
+        output=commissioned_irrigation_contract(payload["zone_id"])
+    except ValueError as exc:
+        raise ValueError("protected_irrigation_preview_outside_boundary") from exc
+    if (payload["channel"]!=output["channel"] or int(payload["current_segment"] or 0)<1
+        or int(payload["segment_requested_seconds"] or 0) not in range(1,3600)
+        or int(payload["requested_total_duration_seconds"] or 0)<1
+        or int(payload["governed_executable_duration_seconds"] or 0)<1
+        or int(payload["expected_segment_count"] or 0)<1):
         raise ValueError("protected_irrigation_preview_outside_boundary")
     return payload
 
@@ -49,7 +59,7 @@ def execute_claimed_segment(claim,*,parsed,environ=None,database_url=None,runner
     except ValueError:
         return _safe("protected_irrigation_preview_binding_mismatch"),409
     if (canonical_preview_digest(ACTION_KIND,payload)!=claim.get("preview_digest")
-        or boundary!=payload or str(claim.get("mission_id"))!=MISSION_ID):
+        or boundary!=payload or str(claim.get("mission_id"))!=str(payload.get("mission_id"))):
         return _safe("protected_irrigation_preview_binding_mismatch"),409
     if runner is None:
         from modules.telemetry.rootline_execution_runtime import run_protected_rootline_segment

@@ -263,9 +263,9 @@ def test_protected_segment_rejects_changed_stable_job_identity_with_zero_control
     assert result["hardware_commands"]==0 and transport.calls==[]
 
 
-def test_protected_runner_rejects_cross_zone_artifact_before_provider_access():
+def test_protected_runner_rejects_registry_channel_mismatch_before_provider_access():
     store=Store();transport=Transport()
-    expected={"zone_id":"C12345","channel":2,"current_segment":1,
+    expected={"zone_id":"C12345","channel":4,"current_segment":1,
       "segment_requested_seconds":3599,"requested_total_duration_seconds":7200,
       "governed_executable_duration_seconds":7198,"expected_segment_count":2}
     result=run_protected_rootline_segment(expected_artifact=expected,notify=lambda *_:None,

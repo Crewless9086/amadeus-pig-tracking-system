@@ -12,15 +12,11 @@ import json
 from modules.telemetry.rootline_irrigation_job_contract import (
     build_irrigation_job, project_next_segment,
 )
+from modules.telemetry.rootline_device_registry import rootline_device_registry
 
-DEVICE_ID = "100204e9bc"
 MAX_SECONDS = 3599
-ZONE = {
-    "B12345": {"channel": 1, "on": "irrigation_1_ch1_on", "off": "irrigation_1_ch1_off"},
-    "C12345": {"channel": 2, "on": "irrigation_1_ch2_on", "off": "irrigation_1_ch2_off"},
-}
 CONTRACT_VERSION = "rootline_execution_eligibility.v2"
-STANDING_AUTHORITY = "owner_approved_routine_bc_irrigation_v1"
+STANDING_AUTHORITY = "owner_approved_routine_irrigation_v1"
 
 
 def build_execution_eligibility(*, plan, evidence, controller, now=None,
@@ -29,11 +25,12 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     if not isinstance(plan, dict) or not isinstance(evidence, dict):
         return _none("canonical_plan_unavailable")
     tasks = [item for item in plan.get("candidate_tasks") or [] if isinstance(item, dict)]
+    zones = _zone_contracts()
     candidates = []
     for task in tasks:
         task_id = str(task.get("task_id") or "")
         zone = task_id.removeprefix("irrigation_")
-        if (zone in ZONE and task.get("zone_decision") == "Run now"
+        if (zone in zones and task.get("zone_decision") == "Run now"
                 and task.get("recommendation") == "Recommend"
                 and int(task.get("planned_duration_minutes") or 0) in range(1, 61)):
             candidates.append((int(task.get("rank") or 999), zone, task))
@@ -74,7 +71,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "requested_total_duration_minutes": task.get("requested_total_duration_minutes"),
         "expected_segment_count": task.get("expected_segment_count"),
         "weekly_obligation": governed_obligation, "reason": task.get("reason")}
-    plan_generation = "ROOTLINE-BC-PLAN-" + _digest(irrigation_plan_material)[:24].upper()
+    plan_generation = "ROOTLINE-IRRIGATION-PLAN-" + _digest(irrigation_plan_material)[:24].upper()
     duration = min(60, int(task["planned_duration_minutes"]))
     requested_minutes = int(task.get("requested_total_duration_minutes") or 0)
     expected_segments = int(task.get("expected_segment_count") or 0)
@@ -93,7 +90,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         return _none("canonical_job_history_invalid")
     if segment.get("status") != "segment_ready":
         return _none(segment.get("status") or "canonical_job_not_dispatchable")
-    consumption_key = "ROOTLINE-BC-CONSUMPTION-" + _digest({
+    consumption_key = "ROOTLINE-IRRIGATION-CONSUMPTION-" + _digest({
         "source_plan_generation": source_plan_generation,
         "operating_date": operating_date,
         "irrigation_plan_generation": plan_generation,
@@ -111,7 +108,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "plan_generation": plan_generation,
         "plan_evidence_digest": _digest({"plan_generation": plan_generation,
             "irrigation_plan": irrigation_plan_material, "weather": weather, "tanks": tanks}),
-        "zone_id": zone, "channel": ZONE[zone]["channel"],
+        "zone_id": zone, "channel": zones[zone]["channel"],
         "maximum_duration_seconds": segment["segment_requested_seconds"],
         "job_id": job["job_id"], "job_sha256": job["job_sha256"],
         "requested_total_duration_seconds": job["requested_total_seconds"],
@@ -138,10 +135,10 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "controller_response_digest": controller_status["response_digest"],
         "decision_at": now.isoformat(), "evidence_cutoff": cutoff.isoformat(),
         "expires_at": (now + timedelta(minutes=15)).isoformat(),
-        "command_mapping": dict(ZONE[zone]),
+        "command_mapping": _command_mapping(zones[zone]),
         "notification_identity": notification,
         "consumption_key": consumption_key,
-        "single_use": True, "simultaneous_bc": False,
+        "single_use": True, "simultaneous_irrigation": False,
         "automatic_second_segment": False,
     }
     digest = _digest(material)
@@ -151,7 +148,7 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
             "eligibility_id": identity, "eligibility_sha256": digest,
             "execution_id": execution, **material,
             "command_authority": True, "hardware_control": True,
-            "authority_scope": "single_bounded_bc_segment"}
+            "authority_scope": "single_bounded_irrigation_segment"}
 
 
 def validate_execution_eligibility(value, *, now=None):
@@ -162,19 +159,21 @@ def validate_execution_eligibility(value, *, now=None):
         "success", "status", "eligible", "eligibility_id", "eligibility_sha256",
         "execution_id", "command_authority", "hardware_control", "authority_scope"}}
     digest = _digest(material)
+    zones = _zone_contracts()
     if (value.get("contract_version") != CONTRACT_VERSION
             or value.get("authority_source") != STANDING_AUTHORITY
             or value.get("eligibility_sha256") != digest
             or value.get("eligibility_id") != "ROOTLINE-ELIGIBILITY-" + digest[:24].upper()
             or value.get("execution_id") != "ROOTLINE-EXECUTION-" + digest[:24].upper()
-            or value.get("zone_id") not in ZONE
-            or value.get("channel") != ZONE[value["zone_id"]]["channel"]
-            or value.get("command_mapping") != ZONE[value["zone_id"]]
+            or value.get("zone_id") not in zones
+            or value.get("channel") != zones[value["zone_id"]]["channel"]
+            or value.get("command_mapping") != _command_mapping(zones[value["zone_id"]])
             or not str(value.get("source_plan_generation") or "")
             or not _valid_operating_date(value.get("operating_date"))
             or not str(value.get("consumption_key") or "").startswith(
-                "ROOTLINE-BC-CONSUMPTION-")
-            or value.get("single_use") is not True or value.get("simultaneous_bc") is not False
+                "ROOTLINE-IRRIGATION-CONSUMPTION-")
+            or value.get("single_use") is not True
+            or value.get("simultaneous_irrigation") is not False
             or value.get("automatic_second_segment") is not False
             or value.get("command_authority") is not True or value.get("hardware_control") is not True):
         return None
@@ -218,7 +217,9 @@ def _valid_operating_date(value):
 
 
 def _controller(value, zone, now):
-    if (not isinstance(value, dict) or value.get("device_id") != DEVICE_ID
+    contract = _zone_contracts().get(zone)
+    if (not contract or not isinstance(value, dict)
+            or value.get("device_id") != contract["device_id"]
             or value.get("online") is not True or value.get("firmware") != "3.8.2"
             or value.get("actuation_configuration_safe") is not True
             or value.get("timers_enabled") is not False
@@ -229,8 +230,10 @@ def _controller(value, zone, now):
     rows = value.get("channels") if isinstance(value.get("channels"), list) else []
     if sorted(row.get("channel") for row in rows if isinstance(row, dict)) != [1, 2, 3, 4]:
         return None
-    selected = next((row for row in rows if row.get("channel") == ZONE[zone]["channel"]), None)
-    relevant = [row for row in rows if row.get("channel") in (1, 2)]
+    selected = next((row for row in rows if row.get("channel") == contract["channel"]), None)
+    relevant_channels = {item["channel"] for item in _zone_contracts().values()
+                         if item["device_id"] == contract["device_id"]}
+    relevant = [row for row in rows if row.get("channel") in relevant_channels]
     if (not selected or any(row.get("output_state") != "OFF" for row in relevant)
             or selected.get("native_auto_off_enabled") is not True
             or int(selected.get("native_auto_off_seconds") or 0) not in range(1, MAX_SECONDS + 1)
@@ -246,6 +249,21 @@ def _controller(value, zone, now):
     return {"generation": generation, "retrieved_at": retrieved,
             "outputs": {str(row["channel"]): row["output_state"] for row in relevant},
             "response_digest": value["response_digest"]}
+
+
+def _zone_contracts(registry=None):
+    rows = registry if isinstance(registry, dict) else rootline_device_registry()
+    return {identity: row for identity, row in rows.items()
+            if row.get("collection") == "irrigation_zones"
+            and row.get("device_type") == "irrigation_zone_valve"
+            and row.get("commissioned") is True
+            and str(row.get("commissioning_id") or "")
+            and isinstance(row.get("commissioning_generation"), int)}
+
+
+def _command_mapping(contract):
+    return {"channel": contract["channel"], "on": contract["on_event"],
+            "off": contract["off_event"]}
 
 
 def _none(status):

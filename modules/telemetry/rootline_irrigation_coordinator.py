@@ -19,10 +19,10 @@ from modules.telemetry.rootline_auxiliary_management import (
 from modules.telemetry.rootline_irrigation_execution_store import (
     RootlineExecutionStoreUnavailable,
 )
+from modules.telemetry.rootline_device_registry import commissioned_irrigation_contract
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
-ZONES = {"B12345": 1, "C12345": 2}
 
 
 def advance_irrigation_execution(*, decision_id, commissioning_id,
@@ -53,8 +53,12 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         if _release_configuration_containment(contained, decision, store, transport):
             return _result("zone_containment_released_reassess", commands=0, messages=0)
         return _result("zone_contained", commands=0, messages=0)
+    try:
+        output = commissioned_irrigation_contract(decision["zone_id"])
+    except ValueError:
+        return _result("irrigation_output_not_commissioned", commands=0, messages=0)
     safety = transport.read_safety_configuration(
-        device_id="100204e9bc", channel=ZONES[decision["zone_id"]])
+        device_id=output["device_id"], channel=output["channel"])
     if not _safe_configuration(safety, decision["zone_id"]):
         return _result("provider_safety_readback_unavailable", commands=0, messages=0,
                        autonomous_on_enabled=False)
@@ -92,7 +96,8 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
             "predecessor_off_rearm_verified"],
         "operating_date": decision["execution_eligibility"]["operating_date"],
         "evidence_generation": decision["evidence_generation"], "zone_id": decision["zone_id"],
-        "channel": ZONES[decision["zone_id"]], "planned_runtime_minutes": decision["runtime_minutes"],
+        "device_id": output["device_id"], "channel": output["channel"],
+        "planned_runtime_minutes": decision["runtime_minutes"],
         "planned_runtime_seconds": decision["runtime_seconds"],
         "claimed_at": preclaim_now.isoformat(),
         "primary_stop_deadline": (preclaim_now + timedelta(seconds=decision["runtime_seconds"])).isoformat(),
@@ -107,7 +112,7 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         return _degraded_hold(consumption_unknown=True)
     if claim.get("created") is not True:
         return _result("execution_claim_conflict", commands=0, messages=0)
-    accepted = transport.set_state(device_id="100204e9bc", channel=execution["channel"], state="ON",
+    accepted = transport.set_state(device_id=execution["device_id"], channel=execution["channel"], state="ON",
                                    idempotency_key=execution["execution_id"] + ":ON")
     store("record_on_outcome", {**execution, "on_attempts": 1, "on_outcome": accepted})
     if accepted.get("accepted_unambiguous") is not True:
@@ -117,7 +122,7 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
               "transport_status": accepted.get("status")})
         recovery = _bounded_off(execution, store, transport)
         try:
-            shutdown = transport.read_output_state(device_id="100204e9bc", channel=execution["channel"])
+            shutdown = transport.read_output_state(device_id=execution["device_id"], channel=execution["channel"])
         except Exception:
             shutdown = {"authoritative": False, "state": "Unknown"}
         verified = shutdown.get("authoritative") is True and shutdown.get("state") == "OFF"
@@ -128,7 +133,7 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         return _result("ambiguous_on_contained" if verified else "ambiguous_on_shutdown_unverified",
                        commands=1 + recovery["commands"], messages=delivery["confirmed"],
                        notification=delivery)
-    started = transport.read_output_state(device_id="100204e9bc", channel=execution["channel"])
+    started = transport.read_output_state(device_id=execution["device_id"], channel=execution["channel"])
     if started.get("authoritative") is not True or started.get("state") != "ON":
         store("record_start_unverified", {**execution, "on_attempts": 1,
               "provider_acceptance": accepted, "output_readback": started})
@@ -303,7 +308,7 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
               "shutdown_verified": False, "reason": "restart_after_pre_on_claim"})
         recovery = _bounded_off(active, store, transport)
         try:
-            shutdown = transport.read_output_state(device_id="100204e9bc", channel=active["channel"])
+            shutdown = transport.read_output_state(device_id=_output_binding(active)["device_id"], channel=active["channel"])
         except Exception:
             shutdown = {"authoritative": False, "state": "Unknown"}
         verified = shutdown.get("authoritative") is True and shutdown.get("state") == "OFF"
@@ -325,7 +330,7 @@ def _recover_or_observe(active, store, transport, notify, outcome_reader, now):
     if now < primary_deadline:
         return _result("active_segment_owned", commands=0, messages=0, execution=active)
     recovery = _bounded_off(active, store, transport)
-    shutdown = transport.read_output_state(device_id="100204e9bc", channel=active["channel"])
+    shutdown = transport.read_output_state(device_id=_output_binding(active)["device_id"], channel=active["channel"])
     if shutdown.get("state") != "OFF" or shutdown.get("authoritative") is not True:
         store("contain_zone", {**active, "state": "ambiguous", "shutdown_verified": False})
         delivery = _notify(notify, store, "Intervention", {**active,
@@ -387,7 +392,7 @@ def _bounded_off(execution, store, transport):
                       "attempt": attempt, "idempotency_key": f"{execution['execution_id']}:OFF:{attempt}"})
         if not isinstance(claim, dict) or claim.get("created") is not True:
             continue
-        outcome = transport.set_state(device_id="100204e9bc", channel=execution["channel"],
+        outcome = transport.set_state(device_id=_output_binding(execution)["device_id"], channel=execution["channel"],
                                       state="OFF",
                                       idempotency_key=f"{execution['execution_id']}:OFF:{attempt}")
         commands += 1; outcomes.append(outcome)
@@ -410,16 +415,20 @@ def _eligible(decision, decision_id, commissioning, now):
     supplied = decision.get("decision_sha256")
     canonical = {key: value for key, value in decision.items() if key != "decision_sha256"}
     zone = decision.get("zone_id")
+    try:
+        output = commissioned_irrigation_contract(zone)
+    except ValueError:
+        return False
     assessed = _timestamp(decision.get("assessed_at"))
     artifact = validate_execution_eligibility(decision.get("execution_eligibility"), now=now)
     return (artifact is not None
             and decision.get("decision_id") == decision_id and supplied == _digest(canonical)
-            and zone in ZONES and decision.get("decision") == "Run now"
+            and decision.get("decision") == "Run now"
             and decision.get("standing_authority") is True
             and decision.get("runtime_minutes") in range(1, MAX_MINUTES + 1)
             and assessed is not None and timedelta(0) <= now - assessed <= timedelta(minutes=15)
             and commissioning.get("zone_id") == zone
-            and commissioning.get("channel") == ZONES[zone]
+            and commissioning.get("channel") == output["channel"]
             and commissioning.get("commissioned") is True
             and decision.get("commissioning_id") == commissioning.get("commissioning_id")
             and decision.get("commissioning_generation") == commissioning.get("configuration_generation")
@@ -428,7 +437,7 @@ def _eligible(decision, decision_id, commissioning, now):
             and artifact.get("eligibility_id") == decision.get("eligibility_id")
             and artifact.get("plan_generation") == decision.get("evidence_generation")
             and artifact.get("maximum_duration_seconds") == decision.get("runtime_seconds")
-            and artifact.get("channel") == ZONES[zone])
+            and artifact.get("channel") == output["channel"])
 
 
 def _canonical_commissioning(packet, commissioning_id, now):
@@ -437,15 +446,18 @@ def _canonical_commissioning(packet, commissioning_id, now):
     baseline = packet.get("accepted_controller_baseline")
     if isinstance(baseline, dict):
         zone = str(packet.get("zone_id") or "")
-        expected = (baseline.get("b_commissioning_id") if zone == "B12345"
-                    else baseline.get("c_commissioning_id") if zone == "C12345" else None)
-        validated = validate_commissioned_baseline(baseline, device_id="100204e9bc",
+        try:
+            output = commissioned_irrigation_contract(zone)
+        except ValueError:
+            return None
+        expected = (baseline.get("irrigation_commissioning_ids") or {}).get(zone)
+        validated = validate_commissioned_baseline(baseline, device_id=output["device_id"],
             firmware=str(packet.get("firmware") or ""), observed_at=now)
         if (validated and expected == commissioning_id
-                and packet.get("channel") == ZONES.get(zone)
+                and packet.get("channel") == output["channel"]
                 and int(packet.get("native_inching_seconds") or 0) in range(1, 3601)):
             return {"commissioning_id": expected, "zone_id": zone,
-                    "channel": ZONES[zone], "commissioned": True,
+                    "channel": output["channel"], "commissioned": True,
                     "configuration_generation": baseline["configuration_generation"],
                     "native_inching_seconds": int(packet["native_inching_seconds"])}
         return None
@@ -526,14 +538,25 @@ def _provider_bounded_outcome(execution, shutdown, now):
 
 
 def _safe_configuration(value, zone):
+    try:
+        output = commissioned_irrigation_contract(zone)
+    except ValueError:
+        return False
     return (isinstance(value, dict) and value.get("authoritative") is True
-            and value.get("zone_id") == zone and value.get("channel") == ZONES[zone]
+            and value.get("zone_id") == zone and value.get("channel") == output["channel"]
             and value.get("native_inching_enabled") is True
             and int(value.get("native_inching_seconds") or 0) == 3599
             and value.get("power_restoration_state") == "OFF"
             and value.get("schedules_enabled") is False
             and value.get("interlock_enabled") is False
             and value.get("scenes_enabled") is False)
+
+
+def _output_binding(execution):
+    output = commissioned_irrigation_contract(execution.get("zone_id"))
+    if int(execution.get("channel") or 0) != output["channel"]:
+        raise ValueError("rootline_execution_channel_binding_invalid")
+    return output
 
 
 def _release_configuration_containment(contained, decision, store, transport):
@@ -544,10 +567,11 @@ def _release_configuration_containment(contained, decision, store, transport):
             or evidence.get("shutdown_verified") is not True):
         return False
     try:
+        output = commissioned_irrigation_contract(decision["zone_id"])
         readiness = transport.configuration_status(
-            device_id="100204e9bc", channel=ZONES[decision["zone_id"]])
+            device_id=output["device_id"], channel=output["channel"])
         safety = transport.read_safety_configuration(
-            device_id="100204e9bc", channel=ZONES[decision["zone_id"]])
+            device_id=output["device_id"], channel=output["channel"])
     except Exception:
         return False
     if (not isinstance(readiness, dict) or readiness.get("configured") is not True
