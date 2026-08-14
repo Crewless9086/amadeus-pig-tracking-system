@@ -20,11 +20,13 @@ def weight(pid="P1", kg=10, day="2026-08-11", event="W1"):
 
 
 def build(*, pigs=None, weights=None, prior=(), lifecycle=(), mortality=None,
-          prior_mortality=""):
+          prior_mortality="", prior_mortality_event_ids=()):
     return build_daily_manager_evidence(pigs=pigs or [pig()],
         window_weights=weights or [], prior_weights=prior,
         lifecycle_events=lifecycle, mortality_packet=mortality,
-        prior_mortality_digest=prior_mortality, analysis_date=date(2026, 8, 14))
+        prior_mortality_digest=prior_mortality,
+        prior_mortality_event_ids=prior_mortality_event_ids,
+        analysis_date=date(2026, 8, 14))
 
 
 def test_complete_current_snapshot_is_not_historical_completion():
@@ -64,6 +66,15 @@ def test_breeding_animals_are_excluded_unless_individually_scheduled():
     assert scheduled["weight"]["current_snapshot"]["eligible_tagged"] == 1
 
 
+def test_breeder_weight_observation_or_cancelled_event_is_not_a_schedule():
+    sow = pig("S1", "Maya", animal_type="Sow", purpose="Breeding")
+    for event_type in ("weight_observed", "individual_weighing_cancelled"):
+        packet = build(pigs=[sow], lifecycle=[{
+            "pig_id": "S1", "event_type": event_type,
+            "effective_at": "2026-08-11T06:00:00+02:00"}])
+        assert packet["weight"]["current_snapshot"]["eligible_tagged"] == 0
+
+
 def test_scheduled_breeder_without_usable_tag_remains_untagged_excluded():
     packet = build(pigs=[pig("S1", "", animal_type="Sow", purpose="Breeding")],
         lifecycle=[{"pig_id": "S1", "event_type": "individual_weighing_due",
@@ -79,6 +90,21 @@ def test_untagged_inactive_and_unknown_remain_separate():
     assert [row["pig_id"] for row in evidence["untagged_excluded"]] == ["U1"]
     assert [row["pig_id"] for row in evidence["inactive_off_farm"]] == ["I1"]
     assert [row["pig_id"] for row in evidence["unknown_eligibility"]] == ["X1"]
+
+
+def test_inactive_with_missing_stage_remains_inactive_not_unknown():
+    packet = build(pigs=[pig("I1", "9", status="Inactive", animal_type=None)])
+    assert [row["pig_id"] for row in packet["weight"]["inactive_off_farm"]] == ["I1"]
+    assert packet["weight"]["unknown_eligibility"] == []
+
+
+def test_twelve_august_weight_is_inside_governed_window_and_wording_is_derived():
+    packet = build(weights=[weight(day="2026-08-12")])
+    assert packet["weight"]["window"] == {
+        "start": "2026-08-11", "end": "2026-08-12", "timezone": "Africa/Johannesburg"}
+    assert packet["weight"]["current_snapshot"]["status"] == "complete"
+    item = consume_daily_manager_evidence(packet, observed_at=NOW).work_items[0]
+    assert "2026-08-11 to 2026-08-12" in item.why
 
 
 def test_conflicting_same_day_values_fail_closed():
@@ -142,6 +168,15 @@ def test_completed_mortality_followup_stays_closed_even_when_digest_changed():
     result = consume_daily_manager_evidence(packet, observed_at=NOW,
         active_lifecycles=[{"pig_id": "P1", "state": "completed"}])
     assert all("mortality:" not in item.dedupe_key for item in result.work_items)
+
+
+def test_changed_digest_does_not_reopen_previously_consumed_death():
+    packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD",
+                   prior_mortality_event_ids=("D1",))
+    result = consume_daily_manager_evidence(packet, observed_at=NOW)
+    assert all(item.dedupe_key != "herdmaster:mortality:D1" for item in result.work_items)
+    assert any(item.dedupe_key == "herdmaster:mortality-material-change"
+               for item in result.work_items)
 
 
 def test_mortality_state_is_normalized_and_missing_state_fails_closed():

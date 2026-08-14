@@ -19,17 +19,22 @@ ELIGIBILITY_VERSION = "HERDMASTER_WEEKLY_WEIGHT_ELIGIBILITY_V1"
 MORTALITY_IDENTITY = "HERDMASTER-MORTALITY-CURRENT"
 YOUNG_STAGES = {"piglet", "weaner", "grower"}
 BREEDING_STAGES = {"sow", "boar"}
+INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS = {
+    "individual_weighing_due", "individual_weighing_scheduled",
+}
 
 
 def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
                                  lifecycle_events=(), mortality_packet=None,
-                                 prior_mortality_digest="", analysis_date):
+                                 prior_mortality_digest="", prior_mortality_event_ids=(),
+                                 analysis_date):
     """Build one deterministic zero-I/O specialist contract."""
     analysis_date = _day(analysis_date)
-    window_start = analysis_date - timedelta(days=analysis_date.weekday())
+    window_start = analysis_date - timedelta(days=analysis_date.weekday()) + timedelta(days=1)
     window_end = window_start + timedelta(days=1)
     scheduled = {str(row.get("pig_id") or "") for row in lifecycle_events
-                 if "weigh" in str(row.get("event_type") or "").casefold()
+                 if str(row.get("event_type") or "").strip().casefold()
+                    in INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS
                  and window_start <= _day(row.get("effective_at")) <= window_end}
     groups = defaultdict(list)
     pig_by_id = {}
@@ -43,12 +48,12 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
         stage = str(row.get("animal_type") or "").strip().casefold()
         purpose = str(row.get("purpose") or "").strip().casefold()
         item = _identity(row)
-        if not status or on_farm is None or not stage:
-            item["reason"] = "current eligibility evidence is incomplete"
-            groups["unknown"].append(item)
-        elif status != "active" or on_farm is not True:
+        if (status and status != "active") or on_farm is False:
             item["reason"] = "canonical pig is not both Active and on-farm"
             groups["inactive_off_farm"].append(item)
+        elif not status or on_farm is None or not stage:
+            item["reason"] = "current eligibility evidence is incomplete"
+            groups["unknown"].append(item)
         elif stage in BREEDING_STAGES or purpose == "breeding":
             if pig_id in scheduled:
                 if _usable_tag(row.get("tag_number")):
@@ -141,13 +146,19 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
     }
     mortality_packet = dict(mortality_packet or {})
     mortality_digest = str(mortality_packet.get("evidence_digest") or "")
+    prior_event_ids = {str(value) for value in prior_mortality_event_ids or () if value}
+    all_deaths = list(mortality_packet.get("proven_facts") or [])
+    new_deaths = [row for row in all_deaths
+                  if str(row.get("event_id") or "") not in prior_event_ids]
     mortality = {
         "review_identity": MORTALITY_IDENTITY,
         "evidence_digest": mortality_digest,
         "previous_consumed_digest": str(prior_mortality_digest or ""),
         "digest_changed": bool(mortality_digest and mortality_digest != prior_mortality_digest),
         "rolling_counts": mortality_packet.get("rolling_counts") or {},
-        "candidate_deaths": list(mortality_packet.get("proven_facts") or []),
+        "candidate_deaths": new_deaths,
+        "canonical_death_event_ids": sorted(
+            str(row.get("event_id")) for row in all_deaths if row.get("event_id")),
         "association_boundary": "associations are not diagnoses or proof of causation",
     }
     material = {"weight": weight, "mortality": mortality}
@@ -167,7 +178,7 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                                 mortality_packet_builder=None):
     """Load canonical Supabase truth through bounded read-only sessions."""
     analysis_date = _day(analysis_date)
-    window_start = analysis_date - timedelta(days=analysis_date.weekday())
+    window_start = analysis_date - timedelta(days=analysis_date.weekday()) + timedelta(days=1)
     window_end = window_start + timedelta(days=1)
     with connect_bounded_read(
             database_url=database_url or os.environ.get("DATABASE_URL"),
@@ -194,7 +205,9 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                   and review_json->'mortality_consumption'->>'review_identity'=%s
                 order by created_at desc,review_event_id desc limit 1""", (MORTALITY_IDENTITY,))
             row = cursor.fetchone()
-            prior_digest = str(((row[0] if row else {}) or {}).get("evidence_digest") or "")
+            prior_consumption = (row[0] if row else {}) or {}
+            prior_digest = str(prior_consumption.get("evidence_digest") or "")
+            prior_event_ids = tuple(prior_consumption.get("canonical_death_event_ids") or ())
     if mortality_evidence_loader is None:
         from modules.pig_weights.herdmaster_mortality_evidence import load_current_mortality_evidence
         mortality_evidence_loader = load_current_mortality_evidence
@@ -208,7 +221,8 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
     return build_daily_manager_evidence(pigs=pigs,
         window_weights=window_weights, prior_weights=prior_weights,
         lifecycle_events=lifecycle, mortality_packet=mortality,
-        prior_mortality_digest=prior_digest, analysis_date=analysis_date)
+        prior_mortality_digest=prior_digest,
+        prior_mortality_event_ids=prior_event_ids, analysis_date=analysis_date)
 
 
 def _rows(cursor, sql, params=()):

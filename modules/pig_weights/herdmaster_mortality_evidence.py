@@ -14,21 +14,26 @@ def load_current_mortality_evidence(*, analysis_end: date, database_url=None):
     with connect_bounded_read(database_url=url) as db:
         deaths = _rows(db.execute("""select pig_id,exit_date,exit_reason,litter_id,initial_pen_id,status
             from public.current_canonical_pigs
-            where lower(coalesce(status,'')) in ('dead','died','deceased')
+            where (lower(coalesce(status,'')) in ('dead','died','deceased')
                or lower(coalesce(exit_reason,'')) in
-                  ('died','dead','deceased','lost','stillborn','died_after_birth','crushed_by_sow','weak_piglet','unknown')
-            order by pig_id"""))
+                  ('died','dead','deceased','lost','stillborn','died_after_birth','crushed_by_sow','weak_piglet','unknown'))
+              and (exit_date is null or exit_date >= %s)
+            order by pig_id limit 5000""", (start,)))
         historical_deaths = _rows(db.execute("""select pig_id,exit_date,exit_reason,litter_id,initial_pen_id,status
-            from public.pigs where lower(coalesce(status,'')) in ('dead','died','deceased')
+            from public.pigs where (lower(coalesce(status,'')) in ('dead','died','deceased')
                or lower(coalesce(exit_reason,'')) in
-                  ('died','dead','deceased','lost','stillborn','died_after_birth','crushed_by_sow','weak_piglet','unknown')
-            order by pig_id"""))
+                  ('died','dead','deceased','lost','stillborn','died_after_birth','crushed_by_sow','weak_piglet','unknown'))
+              and (exit_date is null or exit_date >= %s)
+            order by pig_id limit 5000""", (start,)))
         litters = _rows(db.execute("""select litter_id,farrowing_date,sow_pig_id,boar_pig_id,born_alive,weaned_count
-            from public.current_canonical_litters order by litter_id"""))
+            from public.current_canonical_litters
+            where farrowing_date is null or farrowing_date >= %s
+            order by litter_id limit 5000""", (start,)))
         affected = sorted({str(row["pig_id"]) for row in deaths+historical_deaths})
         weights = (_rows(db.execute("""select weight_event_id,pig_id,weight_date,weight_kg
-            from public.pig_weight_events where pig_id=any(%s)
-            order by pig_id,weight_date,weight_event_id""", (affected,))) if affected else [])
+            from public.pig_weight_events where pig_id=any(%s) and weight_date >= %s
+            order by pig_id,weight_date,weight_event_id limit 10000""",
+            (affected, start))) if affected else [])
         weather = _rows(db.execute("""select rollup_date,temperature_min_c,coverage_pct
             from public.weather_daily_rollups where rollup_date between %s and %s
             order by rollup_date""", (analysis_end-timedelta(days=89), analysis_end)))

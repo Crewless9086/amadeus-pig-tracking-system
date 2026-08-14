@@ -54,10 +54,12 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
             provenance=provenance, business_value=110))
     elif snapshot["status"] == "complete":
         finding_text = _findings(findings)
+        window = weight.get("window") or {}
+        historical_window = f"{window.get('start', 'the window')} to {window.get('end', 'the window')}"
         items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":weight-covered",
             dedupe_key="herdmaster:weekly-weight-evidence", domain="herd",
             title=f"Weekly weighing covered: {snapshot['covered']}/{snapshot['eligible_tagged']} eligible tagged pigs",
-            why=("This is current-snapshot coverage; historical 11–12 August eligibility remains Unknown. "
+            why=(f"This is current-snapshot coverage; historical {historical_window} eligibility remains Unknown. "
                  + finding_text),
             next_action="No further cohort weighing instruction. Review only the descriptive changes shown.",
             assignee="charl", state=WorkState.PLANNED, authority=Authority.ADVISORY,
@@ -106,6 +108,15 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                 next_action="Review this individual once; completion closes it. Patterns remain associations, not diagnoses.",
                 assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
                 provenance=provenance, business_value=125))
+        elif not candidates and not materiality_state:
+            items.append(SpecialistWorkItem(
+                item_id=packet["material_digest"]+":mortality-material-change",
+                dedupe_key="herdmaster:mortality-material-change", domain="herd",
+                title="Mortality evidence materially changed",
+                why="HERDMASTER detected a normalized evidence change, but no new attributable canonical death.",
+                next_action="Review the changed evidence without reopening an unrelated individual case or inferring causation.",
+                assignee="charl", state=WorkState.PLANNED, authority=Authority.ADVISORY,
+                provenance=provenance, business_value=100))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
     rebound = tuple(replace(item, provenance=replace(provenance, result_id=result_id)) for item in items)
     return SpecialistResult("herdmaster", result_id, observed_at,

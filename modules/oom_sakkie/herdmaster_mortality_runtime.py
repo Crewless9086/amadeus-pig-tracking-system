@@ -33,6 +33,8 @@ def consume_current_mortality_packet(*,packet:Mapping,authority,owner_user_id:st
             "review_identity":identity,"evidence_digest":packet["evidence_digest"],"notify_owner":False}
     record={"review_identity":identity,"owner_identity_sha256":owner_hash,
         "evidence_digest":str(packet["evidence_digest"]),
+        "canonical_death_event_ids":sorted(str(row.get("event_id"))
+            for row in packet.get("proven_facts") or () if row.get("event_id")),
         "deduplication_key":str(packet["deduplication_key"]),"observed_at":observed_at.isoformat(),
         "prior_evidence_digest":str(prior.get("evidence_digest") or ""),
         "status":"material_refresh" if prior else "initial_assessment",**binding}
