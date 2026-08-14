@@ -88,7 +88,10 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                              str(row.get("state") or "").strip().casefold())
                             for row in active_lifecycles if str(row.get("pig_id") or "")]
         closed_ids = {pig_id for pig_id, state in lifecycle_states
-                      if state in {"completed", "closed", "handled"}}
+                      if state in {"completed", "closed", "handled"}
+                      and any(str(row.get("pig_id") or "") == pig_id
+                              and row.get("mortality_closed") is True
+                              for row in active_lifecycles)}
         open_ids = {pig_id for pig_id, state in lifecycle_states if state in {
                         "received", "assigned", "working", "waiting_for_input",
                         "preview_ready", "waiting_for_confirmation",
@@ -109,7 +112,11 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                          "One changed canonical death has an unresolved attributable individual lifecycle."),
                     next_action="Review this individual once; completion closes it. Patterns remain associations, not diagnoses.",
                     assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
-                    provenance=provenance, business_value=125))
+                    provenance=provenance, business_value=125,
+                    metadata={"mortality_fingerprints": {
+                        str(row.get("event_id") or row.get("pig_id")):
+                            mortality["canonical_death_event_fingerprints"].get(
+                                str(row.get("event_id") or row.get("pig_id")))}}))
             else:
                 identities = [str(row.get("tag") or row.get("pig_id") or row.get("event_id"))
                               for row in ordered]
@@ -121,9 +128,15 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     why="Changed canonical deaths: " + ", ".join(identities) + ". Each identity remains separate; the grouping only keeps the morning brief bounded.",
                     next_action="Review each attributable death once. Completion closes that identity; patterns remain associations, not diagnoses.",
                     assignee="charl", state=WorkState.WAITING_EVIDENCE,
-                    authority=Authority.ADVISORY, provenance=provenance, business_value=125))
+                    authority=Authority.ADVISORY, provenance=provenance, business_value=125,
+                    metadata={"mortality_fingerprints": {
+                        event_id: mortality["canonical_death_event_fingerprints"].get(event_id)
+                        for event_id in event_ids}}))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
-    rebound = tuple(replace(item, provenance=replace(provenance, result_id=result_id)) for item in items)
+    baseline = ({"mortality_fingerprints": mortality.get("canonical_death_event_fingerprints") or {}}
+                if not mortality.get("digest_changed") else {})
+    rebound = tuple(replace(item, provenance=replace(provenance, result_id=result_id),
+                      metadata={**dict(item.metadata), **baseline}) for item in items)
     return SpecialistResult("herdmaster", result_id, observed_at,
         SpecialistAvailability.AVAILABLE, work_items=rebound)
 

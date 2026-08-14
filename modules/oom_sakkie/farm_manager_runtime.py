@@ -24,7 +24,7 @@ from modules.pig_weights.mating_routes import load_current_breeding_operating_lo
 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
 from modules.pig_weights.herdmaster_daily_manager_evidence import load_daily_manager_evidence
 from modules.oom_sakkie.herdmaster_daily_manager_adapter import consume_daily_manager_evidence
-from modules.oom_sakkie.herdmaster_mortality_runtime import consume_current_mortality_packet
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres, connect_bounded_read
 from zoneinfo import ZoneInfo
 
 CONTRACT_VERSION = "oom_sakkie_farm_manager_round_v5"
@@ -179,6 +179,7 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
         "reassessment_triggers": [f.follow_up_id for f in brief.follow_ups],
         "weighing_worklist": weighing_worklist,
         "material_recomposition_authority": material_recomposition,
+        "herdmaster_mortality_fingerprints": _mortality_fingerprints(brief),
         **ZERO_AUTHORITY,
     }
     recorded = store("record", mission_id, {"binding": binding, "result": output})
@@ -231,20 +232,6 @@ def _load_herdmaster(authority, owner, now, language="en"):
             packet = futures["daily"].result() if futures["daily"] in done else None
         except Exception:
             packet = None
-        if packet and (packet.get("mortality") or {}).get("digest_changed"):
-            try:
-                _, mortality_meta = consume_current_mortality_packet(
-                    packet=packet.get("specialist_mortality_packet") or {},
-                    authority=authority, owner_user_id=owner, observed_at=now,
-                    active_lifecycles=active, language=language)
-            except Exception:
-                mortality_meta = {"success": False}
-            if mortality_meta.get("success") is not True:
-                # Do not present an unconsumed material change as durable. The
-                # next load retries the same digest and cannot create a duplicate.
-                packet = {**packet, "mortality": {
-                    **packet["mortality"],
-                    "materiality_state": "persistence_unavailable"}}
         daily = consume_daily_manager_evidence(packet, observed_at=now,
             active_lifecycles=active, language=language)
         combined_id = herd.result_id + ":" + daily.result_id
@@ -287,6 +274,16 @@ def _load_manager_lifecycles(owner):
         if "include_terminal" not in str(exc):
             raise
         return _load_active_lifecycles(owner)
+
+
+def _mortality_fingerprints(brief):
+    fingerprints = {}
+    for item in brief.queue:
+        values = item.metadata.get("mortality_fingerprints") if item.metadata else None
+        if isinstance(values, dict):
+            fingerprints.update({str(key): str(value) for key, value in values.items()
+                                 if key and value})
+    return dict(sorted(fingerprints.items()))
     return herd
 
 
@@ -602,9 +599,7 @@ def _event_store(action, identity, payload):
         build_sam_live_stock_review_event, record_sam_live_stock_review_event,
     )
     if action == "load":
-        import psycopg
-        with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-            connection.read_only = True
+        with connect_bounded_read() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""select review_json->'farm_manager_round'
                     from public.sam_live_stock_conversation_review_events
@@ -624,6 +619,7 @@ def _event_store(action, identity, payload):
     event.update({"review_event_id": revision_id, "chatwoot_conversation_id": identity,
         "review_json": {"farm_manager_round": payload}, "decision_json": {}, "facts_json": {},
         "customer_message_excerpt": "", "sam_reply_excerpt": ""})
-    saved, status = record_sam_live_stock_review_event(event)
+    saved, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: connect_bounded_postgres(read_only=False))
     return {"success": status < 400 and saved.get("success") is True,
             "created": saved.get("created")}

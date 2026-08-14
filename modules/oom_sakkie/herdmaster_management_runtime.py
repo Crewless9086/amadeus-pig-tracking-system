@@ -13,6 +13,7 @@ import hashlib
 import json
 from modules.oom_sakkie.farm_manager_loop import SpecialistResult
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 EVENT_SOURCE = "oom_sakkie_herdmaster_management_consumer"
 OBSERVATION_SOURCE = "oom_sakkie_owner_observation"
@@ -116,8 +117,7 @@ def _bind_legacy_observation_tasks(observations, canonical):
 
 
 def _connect():
-    import psycopg
-    return psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10)
+    return connect_bounded_read(database_url=os.environ.get("DATABASE_URL"))
 
 
 def _load_observations(owner_user_id):
@@ -160,14 +160,14 @@ def _load_active_lifecycles(owner_user_id, *, include_terminal=False):
         if not pig_id:
             continue
         lifecycle_id = str(row.get("mission_id") or "")
+        observations = (((row.get("preview") or {}).get("evaluator") or {}).get("observations") or [])
+        reported_dead = _retained_owner_reported_death(row, observations, owner_user_id)
         if pig_id in terminal_pigs:
             if not include_terminal:
                 active.pop(pig_id, None)
                 continue
         if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
                                   "preview_correction_pending"} and card_message_id:
-            observations = (((row.get("preview") or {}).get("evaluator") or {}).get("observations") or [])
-            reported_dead = _retained_owner_reported_death(row, observations, owner_user_id)
             projected = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
                 "state": str(row.get("status")), "card_message_id": card_message_id,
                 "tag_number": str(identity.get("tag_number") or identity.get("name") or pig_id),
@@ -181,7 +181,7 @@ def _load_active_lifecycles(owner_user_id, *, include_terminal=False):
             # supersedes stale earlier active projections for that animal.
             if include_terminal:
                 active[pig_id] = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
-                                  "state": "completed"}
+                                  "state": "completed", "mortality_closed": reported_dead}
             else:
                 active.pop(pig_id, None)
     return list(active.values())

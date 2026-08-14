@@ -129,6 +129,7 @@ class SpecialistWorkItem:
             "requests_media": bool,
             "depends_on": tuple,
             "coordination_factors": tuple,
+            "mortality_fingerprints": dict,
         }
         unknown = set(self.metadata) - set(allowed_metadata)
         if unknown:

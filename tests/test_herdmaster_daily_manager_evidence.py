@@ -173,7 +173,7 @@ def test_new_canonical_death_opens_one_followup_without_preexisting_lifecycle():
 def test_completed_mortality_followup_stays_closed_even_when_digest_changed():
     packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD")
     result = consume_daily_manager_evidence(packet, observed_at=NOW,
-        active_lifecycles=[{"pig_id": "P1", "state": "completed"}])
+        active_lifecycles=[{"pig_id": "P1", "state": "completed", "mortality_closed": True}])
     assert all("mortality:" not in item.dedupe_key for item in result.work_items)
 
 
@@ -203,7 +203,7 @@ def test_multiple_new_deaths_receive_one_bounded_attributable_cluster():
 def test_mortality_state_is_normalized_and_missing_state_fails_closed():
     packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD")
     result = consume_daily_manager_evidence(packet, observed_at=NOW,
-        active_lifecycles=[{"pig_id": "P1", "state": " Completed "},
+        active_lifecycles=[{"pig_id": "P1", "state": " Completed ", "mortality_closed": True},
                            {"pig_id": "P1"}])
     assert all("mortality:" not in item.dedupe_key for item in result.work_items)
 

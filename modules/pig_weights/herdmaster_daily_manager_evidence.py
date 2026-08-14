@@ -219,6 +219,16 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
             prior_digest = str(prior_consumption.get("evidence_digest") or "")
             prior_event_fingerprints = dict(
                 prior_consumption.get("canonical_death_event_fingerprints") or {})
+            cursor.execute("""select review_json->'farm_manager_round'->'result'
+                    ->'herdmaster_mortality_fingerprints'
+                from public.sam_live_stock_conversation_review_events
+                where event_source='oom_sakkie_farm_manager_round'
+                  and review_json->'farm_manager_round'->'result'
+                    ->'herdmaster_mortality_fingerprints' is not null
+                order by created_at desc,review_event_id desc limit 1""")
+            manager_row = cursor.fetchone()
+            if manager_row and isinstance(manager_row[0], dict):
+                prior_event_fingerprints = dict(manager_row[0])
     if mortality_evidence_loader is None:
         from modules.pig_weights.herdmaster_mortality_evidence import load_current_mortality_evidence
         mortality_evidence_loader = load_current_mortality_evidence
