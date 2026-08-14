@@ -27,7 +27,7 @@ def rootline_irrigation_execution_store(action, payload):
     if not execution_id:
         return {"success": False, "created": False}
     if action == "claim_before_on":
-        return _bounded_claim(action, _claim_single_controller, body)
+        return _bounded_claim(action, _claim_irrigation_output, body)
     if action == "claim_auxiliary_before_on":
         return _bounded_claim(action, _claim_single_auxiliary, body)
     history_created = None
@@ -214,8 +214,8 @@ def _bounded_claim(action, claim, body):
         raise
 
 
-def _claim_single_controller(body):
-    """Atomically serialize B/C and consume one zone/operating-day authority."""
+def _claim_irrigation_output(body):
+    """Atomically serialize irrigation and consume one governed output authority."""
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     execution_id = str(body["execution_id"])
     consumption_key = str(body.get("consumption_key") or "").strip()
@@ -223,8 +223,13 @@ def _claim_single_controller(body):
     operating_date = str(body.get("operating_date") or "").strip()
     eligibility_id = str(body.get("eligibility_id") or "").strip()
     eligibility_sha256 = str(body.get("eligibility_sha256") or "").strip()
-    if (not consumption_key or zone_id not in {"B12345", "C12345"}
-            or not _valid_iso_date(operating_date) or not eligibility_id
+    try:
+        from modules.telemetry.rootline_device_registry import commissioned_irrigation_contract
+        commissioned_irrigation_contract(zone_id)
+    except ValueError:
+        return {"success": False, "created": False,
+                "status": "irrigation_output_not_commissioned"}
+    if (not consumption_key or not _valid_iso_date(operating_date) or not eligibility_id
             or len(eligibility_sha256) != 64):
         return {"success": False, "created": False,
                 "status": "daily_dispatch_identity_incomplete"}
@@ -439,8 +444,9 @@ def _append_history(action, body):
         zone_id=str(body.get("zone_id") or ""),details=details,
         planned_minutes=body.get("planned_runtime_minutes"),actual_minutes=actual)
     try:
-        import psycopg
-        with psycopg.connect(os.environ["DATABASE_URL"],connect_timeout=10) as connection:
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        with connect_bounded_rootline_postgres(
+                database_url=os.environ.get("DATABASE_URL"), read_only=False) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""select public.rootline_append_typed_irrigation_event(
                     %s::text,%s::timestamptz,%s::text,%s::text,
