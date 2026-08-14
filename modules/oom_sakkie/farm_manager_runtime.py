@@ -228,31 +228,19 @@ def _load_herdmaster(authority, owner, now, language="en"):
         except Exception:
             packet = None
         if packet and (packet.get("mortality") or {}).get("digest_changed"):
-            open_states = {"received", "assigned", "working", "waiting_for_input",
-                           "preview_ready", "waiting_for_confirmation",
-                           "preview_correction_pending", "scheduled_reassessment"}
-            open_ids = {str(row.get("pig_id") or "") for row in active
-                        if str(row.get("state") or "").strip().casefold() in open_states}
-            candidates = {str(row.get("pig_id") or "") for row in
-                          packet["mortality"].get("candidate_deaths") or ()}
-            if not open_ids.intersection(candidates):
+            try:
+                _, mortality_meta = consume_current_mortality_packet(
+                    packet=packet.get("specialist_mortality_packet") or {},
+                    authority=authority, owner_user_id=owner, observed_at=now,
+                    active_lifecycles=active, language=language)
+            except Exception:
+                mortality_meta = {"success": False}
+            if mortality_meta.get("success") is not True:
+                # Do not present an unconsumed material change as durable. The
+                # next load retries the same digest and cannot create a duplicate.
                 packet = {**packet, "mortality": {
                     **packet["mortality"],
-                    "materiality_state": "attributable_lifecycle_unavailable"}}
-            else:
-                try:
-                    _, mortality_meta = consume_current_mortality_packet(
-                        packet=packet.get("specialist_mortality_packet") or {},
-                        authority=authority, owner_user_id=owner, observed_at=now,
-                        active_lifecycles=active, language=language)
-                except Exception:
-                    mortality_meta = {"success": False}
-                if mortality_meta.get("success") is not True:
-                    # Do not present an unconsumed material change as durable.
-                    # The next load may retry the same digest.
-                    packet = {**packet, "mortality": {
-                        **packet["mortality"],
-                        "materiality_state": "persistence_unavailable"}}
+                    "materiality_state": "persistence_unavailable"}}
         daily = consume_daily_manager_evidence(packet, observed_at=now,
             active_lifecycles=active, language=language)
         combined_id = herd.result_id + ":" + daily.result_id

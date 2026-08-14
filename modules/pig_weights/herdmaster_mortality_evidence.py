@@ -5,14 +5,13 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import os
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 
 def load_current_mortality_evidence(*, analysis_end: date, database_url=None):
-    import psycopg
     start = analysis_end - timedelta(days=179)
     url = database_url or os.environ["DATABASE_URL"]
-    with psycopg.connect(url, connect_timeout=10,
-                         options="-c default_transaction_read_only=on -c statement_timeout=30000") as db:
+    with connect_bounded_read(database_url=url) as db:
         deaths = _rows(db.execute("""select pig_id,exit_date,exit_reason,litter_id,initial_pen_id,status
             from public.current_canonical_pigs
             where lower(coalesce(status,'')) in ('dead','died','deceased')

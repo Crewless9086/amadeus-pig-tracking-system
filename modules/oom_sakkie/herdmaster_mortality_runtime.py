@@ -1,12 +1,13 @@
 """Existing-rail persistence for authenticated mortality specialist consumption."""
 from __future__ import annotations
 
-import hashlib,json,os
+import hashlib,json
 from datetime import datetime
 from typing import Mapping,Sequence
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_mortality_adapter import consume_mortality_packet
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 EVENT_SOURCE="oom_sakkie_herdmaster_mortality_consumption"
 
@@ -51,9 +52,7 @@ def consume_current_mortality_packet(*,packet:Mapping,authority,owner_user_id:st
 
 def mortality_consumption_store(action,identity,payload):
     if action=="load":
-        import psycopg
-        with psycopg.connect(os.environ["DATABASE_URL"],connect_timeout=10) as connection:
-            connection.read_only=True
+        with connect_bounded_read() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""select review_json->'mortality_consumption'
                   from public.sam_live_stock_conversation_review_events where event_source=%s

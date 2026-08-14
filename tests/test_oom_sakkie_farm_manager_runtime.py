@@ -202,18 +202,21 @@ def _changed_daily_packet():
             "hardware_commands":0,"sends_messages":False}}
 
 
-def test_changed_mortality_without_open_lifecycle_is_visible_and_not_consumed(monkeypatch):
+def test_changed_mortality_without_open_lifecycle_is_consumed_once_and_opens_followup(monkeypatch):
     base=specialist("herdmaster")
     monkeypatch.setattr(farm_manager_runtime,"load_current_breeding_operating_loop",lambda:{})
     monkeypatch.setattr(farm_manager_runtime,"_load_observations",lambda owner:())
     monkeypatch.setattr(farm_manager_runtime,"_load_active_lifecycles",lambda owner:())
     monkeypatch.setattr(farm_manager_runtime,"_whole_herd_specialist_result",lambda *args:base)
     monkeypatch.setattr(farm_manager_runtime,"load_daily_manager_evidence",lambda **kwargs:_changed_daily_packet())
+    consumed=[]
     monkeypatch.setattr(farm_manager_runtime,"consume_current_mortality_packet",
-        lambda **kwargs:(_ for _ in ()).throw(AssertionError("must not consume")))
+        lambda **kwargs:(consumed.append(kwargs) or (None,{"success":True,"notify_owner":True})))
     result=farm_manager_runtime._load_herdmaster(
         issue_gateway_owner_authority(OWNER,OWNER),OWNER,NOW)
-    assert any(item.title=="Mortality follow-up evidence unavailable" for item in result.work_items)
+    assert len(consumed)==1
+    assert any(item.title.startswith("Mortality follow-up —") for item in result.work_items)
+    assert all(item.title!="Mortality follow-up evidence unavailable" for item in result.work_items)
 
 
 def test_mortality_consumption_failure_is_visible_and_retriable(monkeypatch):

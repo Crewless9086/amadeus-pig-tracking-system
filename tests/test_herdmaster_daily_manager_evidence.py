@@ -129,6 +129,14 @@ def test_new_mortality_opens_one_attributable_active_followup():
     assert "associations, not diagnoses" in mortality_items[0].next_action
 
 
+def test_new_canonical_death_opens_one_followup_without_preexisting_lifecycle():
+    packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD")
+    result = consume_daily_manager_evidence(packet, observed_at=NOW, active_lifecycles=[])
+    mortality_items = [item for item in result.work_items if "mortality:" in item.dedupe_key]
+    assert len(mortality_items) == 1
+    assert "opened this attributable individual follow-up" in mortality_items[0].why
+
+
 def test_completed_mortality_followup_stays_closed_even_when_digest_changed():
     packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD")
     result = consume_daily_manager_evidence(packet, observed_at=NOW,

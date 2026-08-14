@@ -75,22 +75,24 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
     if mortality.get("digest_changed"):
         materiality_state = str(mortality.get("materiality_state") or "")
         if materiality_state:
-            reason = ("The changed canonical mortality evidence has no attributable open individual lifecycle."
-                      if materiality_state == "attributable_lifecycle_unavailable"
-                      else "The changed mortality digest could not be durably consumed within the bounded database window.")
+            reason = "The changed mortality digest could not be durably consumed within the bounded database window."
             items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":mortality-unavailable",
                 dedupe_key="herdmaster:mortality-materiality-unavailable", domain="herd",
                 title="Mortality follow-up evidence unavailable", why=reason,
                 next_action="Retain the changed evidence and retry its same durable identity; do not infer a cause or create a duplicate follow-up.",
                 assignee="charl", state=WorkState.WAITING_EVIDENCE,
                 authority=Authority.READ_ONLY, provenance=provenance, business_value=125))
-        open_ids = {str(row.get("pig_id") or "") for row in active_lifecycles
-                    if str(row.get("state") or "").strip().casefold() in {
+        lifecycle_states = [(str(row.get("pig_id") or ""),
+                             str(row.get("state") or "").strip().casefold())
+                            for row in active_lifecycles if str(row.get("pig_id") or "")]
+        closed_ids = {pig_id for pig_id, state in lifecycle_states
+                      if state in {"completed", "closed", "handled"}}
+        open_ids = {pig_id for pig_id, state in lifecycle_states if state in {
                         "received", "assigned", "working", "waiting_for_input",
                         "preview_ready", "waiting_for_confirmation",
-                        "preview_correction_pending", "scheduled_reassessment"}}
+                        "preview_correction_pending", "scheduled_reassessment"}} - closed_ids
         candidates = [row for row in mortality.get("candidate_deaths") or ()
-                      if str(row.get("pig_id") or "") in open_ids]
+                      if str(row.get("pig_id") or "") not in closed_ids]
         if candidates and not materiality_state:
             row = sorted(candidates, key=lambda value: (str(value.get("effective_date") or ""),
                                                         str(value.get("event_id") or "")))[-1]
@@ -98,8 +100,10 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
             items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":mortality:"+str(row.get("event_id") or tag),
                 dedupe_key="herdmaster:mortality:"+str(row.get("event_id") or row.get("pig_id")),
                 domain="herd", title=f"Mortality follow-up — {tag}",
-                why="One changed canonical death has an unresolved attributable individual lifecycle.",
-                next_action="Continue that existing individual follow-up; patterns remain associations, not diagnoses.",
+                why=("One changed canonical death opened this attributable individual follow-up."
+                     if str(row.get("pig_id") or "") not in open_ids else
+                     "One changed canonical death has an unresolved attributable individual lifecycle."),
+                next_action="Review this individual once; completion closes it. Patterns remain associations, not diagnoses.",
                 assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
                 provenance=provenance, business_value=125))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
