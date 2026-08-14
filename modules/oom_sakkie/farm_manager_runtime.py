@@ -204,7 +204,8 @@ def _load_herdmaster(authority, owner, now, language="en"):
         "observations": _HERD_EVIDENCE_EXECUTOR.submit(_load_observations, owner),
         "active": _HERD_EVIDENCE_EXECUTOR.submit(_load_manager_lifecycles, owner),
         "daily": _HERD_EVIDENCE_EXECUTOR.submit(load_daily_manager_evidence,
-            analysis_date=now.astimezone(ZoneInfo("Africa/Johannesburg")).date()),
+            analysis_date=now.astimezone(ZoneInfo("Africa/Johannesburg")).date(),
+            owner_user_id=owner),
     }
     base_names=("canonical","observations","active")
     done, pending = wait(tuple(futures.values()), timeout=9.0)

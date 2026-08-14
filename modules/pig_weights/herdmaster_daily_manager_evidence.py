@@ -185,6 +185,7 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
 
 
 def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=None,
+                                owner_user_id=None,
                                 mortality_evidence_loader=None,
                                 mortality_packet_builder=None):
     """Load canonical Supabase truth through bounded read-only sessions."""
@@ -210,11 +211,14 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
             lifecycle = _rows(cursor, """select pig_id,lifecycle_event_type as event_type,effective_at
                 from public.pig_lifecycle_events where effective_at::date between %s and %s
                 order by effective_at,lifecycle_event_id limit 5000""", (window_start, window_end))
+            owner_hash = hashlib.sha256(str(owner_user_id or "").encode()).hexdigest()
             cursor.execute("""select review_json->'mortality_consumption'
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_herdmaster_mortality_consumption'
                   and review_json->'mortality_consumption'->>'review_identity'=%s
-                order by created_at desc,review_event_id desc limit 1""", (MORTALITY_IDENTITY,))
+                  and review_json->'mortality_consumption'->>'owner_identity_sha256'=%s
+                order by created_at desc,review_event_id desc limit 1""",
+                (MORTALITY_IDENTITY, owner_hash))
             row = cursor.fetchone()
             prior_consumption = (row[0] if row else {}) or {}
             prior_digest = str(prior_consumption.get("evidence_digest") or "")
@@ -226,7 +230,9 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                 where event_source='oom_sakkie_farm_manager_round'
                   and review_json->'farm_manager_round'->'result'
                     ->'herdmaster_mortality_fingerprints' is not null
-                order by created_at desc,review_event_id desc limit 1""")
+                  and review_json->'farm_manager_round'->'binding'->>'owner'=%s
+                order by created_at desc,review_event_id desc limit 1""",
+                (str(owner_user_id or ""),))
             manager_row = cursor.fetchone()
             if manager_row and isinstance(manager_row[0], dict):
                 prior_event_fingerprints.update(dict(manager_row[0]))
