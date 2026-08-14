@@ -3,6 +3,7 @@ import threading
 from modules.oom_sakkie.beacon_request_runtime import (
     build_current_beacon_proposal, handle_beacon_request, render_beacon_packet)
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie.telegram_gateway import _delivery_disabled_internal_proof
 
 
 def opportunity(ready=True):
@@ -115,3 +116,10 @@ def test_concurrent_duplicate_requests_create_one_result_and_both_reach_delivery
     assert len(rows) == 1
     assert all(result.get("suppress_owner_delivery") is not True for result in results)
     assert {result["status"] for result in results} <= {"beacon_request_ready", "beacon_request_replay_recovered"}
+
+
+def test_delivery_disabled_proof_requires_both_authenticated_mode_shape_and_bmq_identity():
+    headers = {"X-Oom-Sakkie-Delivery-Mode": "disabled-internal-proof"}
+    assert _delivery_disabled_internal_proof({"internal_proof_identity": "BMQ-20260813-04-PROOF"}, headers)
+    assert not _delivery_disabled_internal_proof({}, headers)
+    assert not _delivery_disabled_internal_proof({"internal_proof_identity": "BMQ-20260813-04-PROOF"}, {})

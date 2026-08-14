@@ -196,6 +196,15 @@ def telegram_gateway_exposure_preflight(environ=None):
     }
 
 
+def _delivery_disabled_internal_proof(payload, headers):
+    return (
+        str((headers or {}).get("X-Oom-Sakkie-Delivery-Mode") or
+            (headers or {}).get("x-oom-sakkie-delivery-mode") or "").strip().casefold()
+        == "disabled-internal-proof"
+        and str((payload or {}).get("internal_proof_identity") or "").startswith("BMQ-")
+    )
+
+
 def handle_telegram_gateway_message(payload, headers=None, environ=None):
     policy = telegram_gateway_policy(environ=environ)
     if not policy["explicitly_enabled"]:
@@ -211,6 +220,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if not _token_matches(headers or {}, environ=environ):
         _record_auth_failure()
         return _gateway_result(False, "telegram_gateway_auth_denied", policy, 403)
+
+    delivery_disabled_proof = _delivery_disabled_internal_proof(payload, headers)
 
     source = environ if environ is not None else os.environ
     parsed = parse_telegram_gateway_payload(payload)
@@ -354,6 +365,10 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     beacon_result, beacon_status = handle_beacon_request(parsed, gateway_authority)
     if beacon_result.get("handled"):
         delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0,
+                     "status": "authenticated_internal_delivery_disabled",
+                     "provider_mutations": 0}
+                    if delivery_disabled_proof else
+                    {"success": True, "telegram_sends": 0, "telegram_edits": 0,
                      "status": "owner_delivery_suppressed_replay"}
                     if beacon_result.get("suppress_owner_delivery") else
                     deliver_family_result(parsed, beacon_result, specialist="BEACON",
@@ -367,6 +382,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "delivery": delivery, "records_audit_trace": True,
             "reply_transport": "backend_handles_owner_task_delivery",
             "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "delivery_disabled_internal_proof": delivery_disabled_proof,
             "writes": False})
         return body, beacon_status if delivery.get("success") else 202
 

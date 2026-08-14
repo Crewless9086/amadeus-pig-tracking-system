@@ -54,6 +54,12 @@ spend, media/public-use changes, farm writes or provider mutations. Publishing,
 spend, customer commitment and private-media public use remain protected owner
 boundaries.
 
+The reusable proof boundary is the already-authenticated gateway header
+`X-Oom-Sakkie-Delivery-Mode: disabled-internal-proof` plus a bounded `BMQ-...`
+internal proof identity. It is honored only for the semantic BEACON result and
+bypasses provider delivery while leaving canonical result persistence/replay
+active. It grants no publication, send, spend, media-use or farm authority.
+
 Technical stage reached: source implementation and focused/broader regressions
 green; independent reviews, PR/CI, exact-head integration, deployment and fresh
 authenticated production proof remain.
