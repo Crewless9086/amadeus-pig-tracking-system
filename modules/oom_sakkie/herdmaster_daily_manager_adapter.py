@@ -137,8 +137,12 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                         "welfare_exception": True,
                         "mortality_packet": dict(packet.get("specialist_mortality_packet") or {})}))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
-    baseline = ({"mortality_fingerprints": mortality.get("durable_death_event_fingerprints") or {}}
-                if not any("mortality" in item.dedupe_key for item in items) else {})
+    no_mortality_item = not any("mortality" in item.dedupe_key for item in items)
+    baseline = ({
+        "mortality_fingerprints": mortality.get("durable_death_event_fingerprints") or {},
+        **({"mortality_packet": dict(packet.get("specialist_mortality_packet") or {})}
+           if mortality.get("digest_changed") else {}),
+    } if no_mortality_item else {})
     rebound = tuple(replace(item, provenance=replace(provenance, result_id=result_id),
                       metadata={**dict(item.metadata), **baseline}) for item in items)
     return SpecialistResult("herdmaster", result_id, observed_at,
