@@ -27,11 +27,11 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
     now = _aware(now or datetime.now(timezone.utc))
     if connect is None:
         import os
-        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
         url = str(database_url or os.getenv("DATABASE_URL") or "").strip()
         if not url:
             return _unavailable("database_url_unavailable")
-        connect = lambda: connect_bounded_read(database_url=url)
+        connect = lambda: connect_bounded_rootline_postgres(database_url=url)
     try:
         with connect() as connection:
             connection.read_only = True

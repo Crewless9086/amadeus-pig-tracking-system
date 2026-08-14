@@ -233,7 +233,7 @@ def ingest_power_reading(payload, provided_api_key="", database_url=None):
 
 
 def get_current_power_state(database_url=None):
-    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
         return {
@@ -256,7 +256,7 @@ def get_current_power_state(database_url=None):
         }, 500
 
     try:
-        with connect_bounded_read(database_url=database_url) as connection:
+        with connect_bounded_rootline_postgres(database_url=database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -312,7 +312,7 @@ def get_current_power_state(database_url=None):
 
 
 def get_recent_power_profile(hours=24, database_url=None):
-    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     hours = _bounded_hours(hours)
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -336,7 +336,7 @@ def get_recent_power_profile(hours=24, database_url=None):
         }, 500
 
     try:
-        with connect_bounded_read(database_url=database_url) as connection:
+        with connect_bounded_rootline_postgres(database_url=database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
