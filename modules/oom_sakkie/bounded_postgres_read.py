@@ -23,13 +23,29 @@ def connect_bounded_postgres(*, database_url=None, connect=None, read_only=False
         import psycopg
         connect = psycopg.connect
     read_only_option = "-c default_transaction_read_only=on " if read_only else ""
-    return connect(
+    connection = connect(
         url,
         connect_timeout=CONNECT_TIMEOUT_SECONDS,
         options=(read_only_option +
                  f"-c statement_timeout={STATEMENT_TIMEOUT_MS} "
                  f"-c lock_timeout={LOCK_TIMEOUT_MS}"),
     )
+    try:
+        # Supabase transaction pooling may accept but not apply startup
+        # ``options``. Establish the same bounds inside this transaction.
+        # SET LOCAL cannot leak through a pooled server connection.
+        with connection.cursor() as cursor:
+            if read_only:
+                cursor.execute("set transaction read only")
+            cursor.execute(f"set local statement_timeout='{STATEMENT_TIMEOUT_MS}ms'")
+            cursor.execute(f"set local lock_timeout='{LOCK_TIMEOUT_MS}ms'")
+        return connection
+    except Exception:
+        try:
+            connection.rollback()
+        finally:
+            connection.close()
+        raise
 
 
 def is_database_unavailable(exc):
