@@ -46,6 +46,13 @@ Every proposed current mission must answer:
 8. What is the one next bounded action?
 9. What fresh real-world evidence proves completion?
 
+Every admitted mission must also carry the universal lifecycle state defined by
+the Mission Standard: `WORKING`, `REVIEW_HOLD`, `RELEASE_HOLD`, `OWNER_HOLD`,
+`EXTERNAL_HOLD`, `CONTAINED` or `BUSINESS_COMPLETE`. CORE must learn and compare
+these whole-outcome states during Shadow operation. It must not learn historical
+queue vocabulary that treats PR, merge, deployment, canary or terminal release
+as mission completion.
+
 A mission waiting for a genuine deployed-runtime event may have no active
 development terminal. Its terminal is released and the durable deployed agent
 owns the next event.
@@ -117,7 +124,11 @@ not infer that a Cursor terminal is alive or working.
 - No automatic reopening or merging of historical/old `pr_ready` records.
 - No global branch switching in a shared workspace.
 - No completion based on code, CI, deployment, replay or handover alone.
+- No unqualified `complete`, `done`, `ready` or `released` status without the
+  universal lifecycle state, remaining acceptance journey and exact unblock
+  condition.
+- No stopping at a safe intermediate technical stage when the same terminal has
+  standing authority to continue toward deployed user-like proof.
 - No more than one current mission per owner-visible outcome.
 - No n8n or Google Sheets business authority.
 - No CORE dispatch, release or production authority during Phase A.
-
