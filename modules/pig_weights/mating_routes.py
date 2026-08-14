@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from math import isfinite
 from time import monotonic
 
@@ -21,6 +21,7 @@ from modules.pig_weights.herdmaster_breeding_operating_loop import (
 from modules.pig_weights.farm_supabase_read_service import (
     build_breeding_analytics_from_evidence,
     get_breeding_attention_source_snapshot,
+    get_full_lifecycle_merit,
     project_mating_overview,
 )
 from modules.pig_weights.mating_service import (
@@ -273,6 +274,41 @@ def mating_list():
 @mating_bp.route("/breeding-analytics", methods=["GET"])
 def breeding_analytics():
     return jsonify(get_breeding_analytics())
+
+
+def _merit_cutoff():
+    supplied = str(request.args.get("cutoff") or "").strip()
+    if not supplied:
+        return date.today()
+    return date.fromisoformat(supplied)
+
+
+@mating_bp.route("/breeding-analytics/v1/full-lifecycle", methods=["GET"])
+def full_lifecycle_merit_herd():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    try:
+        result = get_full_lifecycle_merit(_merit_cutoff())
+    except ValueError:
+        return jsonify({"success": False, "reason": "invalid_cutoff", "writes_performed": False}), 400
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, private"
+    return response, 200 if result.get("success") else 503
+
+
+@mating_bp.route("/breeding-analytics/v1/full-lifecycle/<pig_id>", methods=["GET"])
+def full_lifecycle_merit_animal(pig_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    try:
+        result = get_full_lifecycle_merit(_merit_cutoff(), pig_id=pig_id)
+    except ValueError:
+        return jsonify({"success": False, "reason": "invalid_cutoff", "writes_performed": False}), 400
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, private"
+    return response, 200 if result.get("success") else 404
 
 
 def _build_breeding_attention_packets(proposed_observation=None):

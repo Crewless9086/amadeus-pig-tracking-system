@@ -4,6 +4,7 @@ from time import monotonic
 
 from services.database_service import DATABASE_URL_ENV
 from modules.pig_weights.herdmaster_weighing_batch_intelligence import build_weighing_batch_intelligence
+from modules.pig_weights.herdmaster_full_lifecycle_merit import compose_full_lifecycle_merit
 
 DEFAULT_LITTER_WEAN_AGE_DAYS = 30
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
@@ -16,6 +17,10 @@ BREEDING_ATTENTION_READ_STAGES = ALLOCATION_READ_STAGES + (
     "mating_chronology",
     "human_observations",
     "boar_exposures",
+)
+FULL_LIFECYCLE_MERIT_READ_STAGES = (
+    "canonical_animals", "effective_litters", "litter_correction_lineage", "mating_events",
+    "observations", "lifecycle", "offspring_weights", "medical_context",
 )
 ALLOCATION_TOTAL_DEADLINE_SECONDS = 20.0
 ALLOCATION_STATEMENT_TIMEOUT_SECONDS = 3.0
@@ -1050,6 +1055,87 @@ def get_breeding_attention_source_snapshot(
             "exposure_rows": exposure_rows,
             "read_progress": snapshot.progress(),
         }
+
+
+def load_full_lifecycle_merit_evidence(
+    cutoff, pig_id=None, connect_factory=None, *,
+    deadline_seconds=ALLOCATION_TOTAL_DEADLINE_SECONDS, now_fn=monotonic,
+):
+    """Load all merit inputs through one bounded repeatable-read transaction."""
+    started = now_fn()
+    with _connect(connect_factory=connect_factory) as connection:
+        snapshot = _AllocationSnapshot(
+            connection, now_fn() - started, deadline_seconds=deadline_seconds,
+            now_fn=now_fn, started_at=started, stages=FULL_LIFECYCLE_MERIT_READ_STAGES,
+        )
+        if snapshot.remaining_seconds() <= 0:
+            raise TimeoutError("full-lifecycle merit snapshot deadline exhausted")
+        if not getattr(connect_factory, "transaction_managed", False):
+            with connection.cursor() as cursor:
+                cursor.execute("set transaction isolation level repeatable read read only")
+        pigs = _fetch_all(
+            "select * from public.current_canonical_pigs order by pig_id",
+            connect_factory=snapshot,
+        )
+        litters = _fetch_all(
+            "select * from public.current_canonical_litters order by farrowing_date, litter_id",
+            connect_factory=snapshot,
+        )
+        litter_history = _fetch_all(
+            "select * from public.historical_litter_representations order by farrowing_date, litter_id",
+            connect_factory=snapshot,
+        )
+        matings = _fetch_all(
+            "select * from public.mating_events order by mating_date, mating_id",
+            connect_factory=snapshot,
+        )
+        observations = _fetch_all(
+            "select * from public.pig_observation_events order by observed_at, observation_event_id",
+            connect_factory=snapshot,
+        )
+        lifecycle = _fetch_all(
+            "select * from public.pig_lifecycle_events order by effective_at, lifecycle_event_id",
+            connect_factory=snapshot,
+        )
+        weights = _fetch_all(
+            "select * from public.pig_weight_events order by weight_date, weight_event_id",
+            connect_factory=snapshot,
+        )
+        medical = _fetch_all(
+            "select * from public.pig_medical_events order by treatment_date, medical_event_id",
+            connect_factory=snapshot,
+        )
+        if snapshot.remaining_seconds() < 0:
+            raise TimeoutError("full-lifecycle merit snapshot deadline exhausted during projection")
+        return {
+            "cutoff": cutoff, "pig_id": pig_id, "pigs": pigs, "litters": litters,
+            "litter_history": litter_history,
+            "matings": matings, "observations": observations, "lifecycle": lifecycle,
+            "weights": weights, "medical": medical, "read_progress": snapshot.progress(),
+            "writes_performed": False,
+        }
+
+
+def get_full_lifecycle_merit(cutoff, pig_id=None, connect_factory=None):
+    if _date_or_none(cutoff) != date.today():
+        return {
+            "success": False, "reason": "historical_cutoff_not_authoritative",
+            "evidence_cutoff": _date_text(cutoff) or None,
+            "writes_performed": False,
+        }
+    try:
+        evidence = load_full_lifecycle_merit_evidence(cutoff, pig_id, connect_factory)
+    except Exception:
+        return {
+            "success": False, "reason": "canonical_evidence_unavailable",
+            "evidence_cutoff": _date_text(cutoff) or None,
+            "writes_performed": False,
+        }
+    if evidence["read_progress"]["status"] != "complete":
+        return {"success": False, "reason": "incomplete_evidence_snapshot", "writes_performed": False}
+    result = compose_full_lifecycle_merit(evidence, pig_id=pig_id)
+    result["read_progress"] = evidence["read_progress"]
+    return result
 
 
 def _get_allocation_input_rows_queries(connect_factory):
