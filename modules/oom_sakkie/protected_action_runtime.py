@@ -30,7 +30,10 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
     if claimed.get("status")=="protected_callback_completed_delivery_retry":
         from modules.oom_sakkie.rootline_protected_irrigation import protected_card_mission_id
         result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
-        answer=("B irrigation segment 1 started. It is bounded to 59 minutes 59 seconds; "
+        answer=("ROOTLINE Hold: durable execution history is temporarily unavailable. "
+          "No controller command was issued and this confirmation has been contained."
+          if result.get("status")=="execution_store_degraded_hold" else
+          "B irrigation segment 1 started. It is bounded to 59 minutes 59 seconds; "
           "ROOTLINE will verify provider OFF before any later reassessment."
           if result.get("status")=="segment_started" else
           "B irrigation segment 1 remains owned by ROOTLINE; no duplicate command was issued.")
@@ -68,7 +71,10 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
             complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         elif int(result.get("hardware_commands") or 0)==0:
             contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
-        answer=("B irrigation segment 1 started. It is bounded to 59 minutes 59 seconds; "
+        answer=("ROOTLINE Hold: durable execution history is temporarily unavailable. "
+          "No controller command was issued and this confirmation has been contained."
+          if result.get("status")=="execution_store_degraded_hold" else
+          "B irrigation segment 1 started. It is bounded to 59 minutes 59 seconds; "
           "ROOTLINE will verify provider OFF before any later reassessment."
           if result.get("status")=="segment_started" else
           "B irrigation segment 1 remains owned by ROOTLINE; no duplicate command was issued.")

@@ -152,6 +152,25 @@ def test_stale_irrigation_confirmation_never_reaches_runner(monkeypatch):
     assert status==409 and result["status"]=="protected_callback_expired" and calls==[]
 
 
+def test_irrigation_database_degraded_hold_contains_claim_and_clears_card(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_claimed","callback_token":"opaque",
+      "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
+      "preview_digest":"d"*64,"preview_payload":{}},200))
+    contained=[]
+    monkeypatch.setattr(runtime,"contain_claim",lambda *args,**kwargs:contained.append(args))
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority(),
+      irrigation_handler=lambda *args,**kwargs:({"success":True,
+        "status":"execution_store_degraded_hold","hardware_commands":0,
+        "provider_control_calls":0,"writes_farm_data":False},200))
+    assert status==200 and len(contained)==1
+    assert result["status"]=="execution_store_degraded_hold"
+    assert result["reply_markup"]=={"inline_keyboard":[]}
+    assert result["hardware_commands"]==result["provider_control_calls"]==0
+    assert "No controller command" in result["answer"]
+
+
 def test_connection_failure_after_claim_is_retained_for_exact_recovery(monkeypatch):
     payload={"preview":{"row_count":7},"preview_sha256":"DIGEST"}
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({

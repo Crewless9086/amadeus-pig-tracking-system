@@ -2,6 +2,8 @@ import os,unittest,uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timezone
 import psycopg
+from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
 from modules.oom_sakkie.protected_action_claims import bind_claim_card,claim_callback,complete_claim,contain_unbound_preview_claim,create_claim
 URL=os.getenv("OOM_PROTECTED_ACTION_POSTGRES_URL","").strip()
 @unittest.skipUnless(URL,"disposable PostgreSQL URL is required")
@@ -45,3 +47,20 @@ class RootlineProtectedIrrigationPostgresTests(unittest.TestCase):
   bound=self.create()
   self.assertTrue(bind_claim_card(bound["callback_token"],"4002",connect_factory=self.connect))
   self.assertFalse(contain_unbound_preview_claim(bound["callback_token"],{"status":"delivery_failed"},connect_factory=self.connect))
+ def test_concurrent_degraded_callbacks_contain_once_with_zero_controls(self):
+  row=self.create();self.assertTrue(bind_claim_card(row["callback_token"],"4003",connect_factory=self.connect))
+  callback=f"oompa:{row['callback_token']}:confirm";calls=[]
+  def invoke(index):
+   return handle_protected_action_input({"telegram_user_id":"1","telegram_chat_id":"1",
+    "provider_message_id":f"DB-HOLD-{index}","provider_timestamp":datetime.now(timezone.utc).isoformat(),
+    "reply_to_message_id":"4003","callback_data":callback},issue_gateway_owner_authority("1","1"),
+    irrigation_handler=lambda *args,**kwargs:(calls.append(index) or ({"success":True,
+     "status":"execution_store_degraded_hold","hardware_commands":0,"provider_control_calls":0,
+     "writes_farm_data":False},200)),connect_factory=self.connect)
+  with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(invoke,(1,2)))
+  self.assertEqual(len(calls),1)
+  self.assertEqual(sum(result[0].get("status")=="execution_store_degraded_hold" for result in results),1)
+  self.assertTrue(all(int(result[0].get("hardware_commands") or 0)==0 for result in results))
+  with self.connect() as db:
+   status=db.execute("select status from app_private.oom_protected_action_claims where callback_token=%s",(row["callback_token"],)).fetchone()[0]
+  self.assertEqual(status,"contained")

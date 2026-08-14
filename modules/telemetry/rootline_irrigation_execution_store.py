@@ -8,6 +8,14 @@ import os
 EVENT_SOURCE = "rootline_irrigation_execution"
 
 
+class RootlineExecutionStoreUnavailable(RuntimeError):
+    """Durable execution truth could not be loaded within its read deadline."""
+
+    def __init__(self, action):
+        super().__init__("rootline_execution_store_unavailable:" + str(action))
+        self.action = str(action)
+
+
 def rootline_irrigation_execution_store(action, payload):
     if action in {"load_active", "load_off_attempts", "load_zone_containment",
                   "load_active_auxiliary", "load_auxiliary_off_attempts",
@@ -70,9 +78,11 @@ def _event_id(action, body):
 
 
 def _load(action, payload):
-    import psycopg
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-        connection.read_only = True
+    from modules.oom_sakkie.bounded_postgres_read import (
+        connect_bounded_read, is_database_unavailable,
+    )
+    try:
+      with connect_bounded_read(database_url=os.environ.get("DATABASE_URL")) as connection:
         with connection.cursor() as cursor:
             if action in {"load_active", "load_active_auxiliary"}:
                 auxiliary=action=="load_active_auxiliary"
@@ -175,6 +185,10 @@ def _load(action, payload):
                     evidence["shutdown_verified"] = detail.get("shutdown_verified") is True
                     evidence["shutdown_evidence"] = detail.get("shutdown_evidence")
             return {"contained": True, "evidence": evidence}
+    except Exception as exc:
+      if is_database_unavailable(exc):
+        raise RootlineExecutionStoreUnavailable(action) from exc
+      raise
 
 
 def _is_active_candidate(item, active_action, claim_action):

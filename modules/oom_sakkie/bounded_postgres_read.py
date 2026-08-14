@@ -30,4 +30,4 @@ def is_database_unavailable(exc):
     return (exc.__class__.__module__.split(".", 1)[0] == "psycopg"
             or exc.__class__.__name__ in {
                 "OperationalError", "ConnectionTimeout", "QueryCanceled",
-                "QueryCanceledError", "LockNotAvailable"})
+                "QueryCanceledError", "LockNotAvailable", "PoolTimeout"})

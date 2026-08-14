@@ -16,6 +16,9 @@ from modules.telemetry.rootline_ewelink_commissioned_baseline import validate_co
 from modules.telemetry.rootline_auxiliary_management import (
     revalidate_auxiliary_execution_edge, validate_auxiliary_eligibility,
 )
+from modules.telemetry.rootline_irrigation_execution_store import (
+    RootlineExecutionStoreUnavailable,
+)
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
@@ -29,7 +32,12 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
                                  clock=None):
     now = _aware(now or datetime.now(timezone.utc))
     clock = clock or (lambda: datetime.now(timezone.utc))
-    active = store("load_active", None)
+    try:
+        active = store("load_active", None)
+    except RootlineExecutionStoreUnavailable:
+        return _result("execution_store_degraded_hold", commands=0, messages=0,
+            autonomous_on_enabled=False, durable_execution_truth_loaded=False,
+            current_segment_consumed=False, degraded=True)
     if active:
         return _recover_or_observe(active, store, transport, notify, outcome_reader, now)
     decision = decision_reader(decision_id)

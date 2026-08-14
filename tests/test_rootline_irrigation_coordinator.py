@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from modules.telemetry.rootline_irrigation_coordinator import advance_irrigation_execution, _digest
 from modules.telemetry.rootline_execution_authority import build_execution_eligibility
+from modules.telemetry.rootline_irrigation_execution_store import RootlineExecutionStoreUnavailable
 from modules.telemetry.rootline_irrigation_execution_contract import validate_commissioning
 from tests.test_rootline_irrigation_execution_contract import evidence as commissioning_evidence
 
@@ -102,6 +103,18 @@ def test_missing_provider_safety_readback_disables_on():
     transport=Transport(safety=False); notices=[]
     result=run(Store(),transport,notices)
     assert result["status"]=="provider_safety_readback_unavailable"
+    assert result["hardware_commands"]==0 and transport.calls==[] and notices==[]
+
+
+def test_execution_store_timeout_is_degraded_hold_before_any_provider_authority():
+    class UnavailableStore:
+        def __call__(self, action, payload):
+            raise RootlineExecutionStoreUnavailable(action)
+    transport=Transport();notices=[]
+    result=run(UnavailableStore(),transport,notices)
+    assert result["status"]=="execution_store_degraded_hold"
+    assert result["durable_execution_truth_loaded"] is False
+    assert result["current_segment_consumed"] is False
     assert result["hardware_commands"]==0 and transport.calls==[] and notices==[]
 
 
