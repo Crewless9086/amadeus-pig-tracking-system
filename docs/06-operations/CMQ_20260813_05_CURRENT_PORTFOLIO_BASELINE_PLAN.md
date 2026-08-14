@@ -68,8 +68,10 @@ independently.
 
 ## No-write baseline manifest
 
-Before any bulk classification or normal Shadow scoring, CORE must produce a
-reviewable no-write manifest containing:
+After the separately owner-approved bootstrap admission of exactly one
+`CMQ-20260813-05`, but before any other current admission, bulk classification
+or normal Shadow scoring, CORE must produce a reviewable no-write manifest
+containing:
 
 - a summary reconciliation of all terminal-status legacy records;
 - every unresolved legacy record, including original identity/status/source;
@@ -82,9 +84,13 @@ reviewable no-write manifest containing:
 - proposed current Control Tower missions and their admission-test answers;
 - duplicates, recovery fragments and conflicts requiring owner judgment.
 
-No status, mission, event, process, scheduled task, worktree, branch, PR or
-production state may change while producing the manifest. Charl approves the
-manifest before classifications or admissions are written.
+No legacy status, legacy portfolio classification, additional current-mission
+admission, process, scheduled task, worktree, branch, PR or production state may
+change while producing the manifest. The sole bootstrap exception is the exact
+canonical creation/admission of existing owner-approved mission
+`CMQ-20260813-05` into `CORE-CURRENT-2026-08-14`, with `WORKING` lifecycle and
+human Control Tower as sole authority. Charl approves the manifest before any
+classification or admission proposed by the manifest is written.
 
 ## Canonical views
 
@@ -102,8 +108,11 @@ not infer that a Cursor terminal is alive or working.
 ## Revised sequence and gates
 
 1. Repair authenticated opaque mission-ID creation.
-2. Create exactly one canonical `CMQ-20260813-05`, admitted to
-   `CORE-CURRENT-2026-08-14`, with human Control Tower as sole authority.
+2. Provide and deploy one atomic canonical create-and-admit contract, then
+   create exactly one canonical `CMQ-20260813-05`, admitted to
+   `CORE-CURRENT-2026-08-14` with `WORKING` lifecycle and human Control Tower as
+   sole authority. Exact replay must be idempotent and conflicting replay must
+   fail closed; this bootstrap admission grants no scheduling or dispatch.
 3. Produce the no-write Portfolio Baseline Manifest.
 4. Obtain Charl's explicit manifest approval.
 5. Implement and review portfolio classification/admission enforcement across
