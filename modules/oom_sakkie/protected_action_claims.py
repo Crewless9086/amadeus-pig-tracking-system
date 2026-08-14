@@ -92,7 +92,9 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         row=cur.fetchone()
         if not row:return {"success":False,"status":"protected_callback_unknown"},404
         if str(row[1])!=str(owner_user_id) or str(row[2])!=str(private_chat_id):return {"success":False,"status":"protected_callback_unauthorized"},403
-        if row[10] and str(row[10])!=str(source_card_message_id or ""):
+        if not row[10]:
+            return {"success":False,"status":"protected_callback_card_unbound"},409
+        if str(row[10])!=str(source_card_message_id or ""):
             return {"success":False,"status":"protected_callback_card_mismatch"},409
         if row[7]=="completed":return {"success":True,"status":"protected_callback_replayed_noop","result":row[9],"telegram_sends":0,"telegram_edits":0},200
         if row[7]=="executing":

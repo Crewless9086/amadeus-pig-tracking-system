@@ -33,6 +33,9 @@ class RootlineProtectedIrrigationPostgresTests(unittest.TestCase):
   self.assertEqual((status,result["status"]),(409,"protected_callback_expired"))
  def test_unbound_preview_is_contained_but_bound_preview_is_not(self):
   unbound=self.create()
+  callback=f"oompa:{unbound['callback_token']}:confirm"
+  result,status=claim_callback(callback,owner_user_id="1",private_chat_id="1",provider_message_id="CB-RACE",provider_timestamp=datetime.now(timezone.utc).isoformat(),source_card_message_id="4002",connect_factory=self.connect)
+  self.assertEqual((status,result["status"]),(409,"protected_callback_card_unbound"))
   self.assertTrue(contain_unbound_preview_claim(unbound["callback_token"],{"status":"delivery_failed"},connect_factory=self.connect))
   self.suffix=uuid.uuid4().hex
   bound=self.create()

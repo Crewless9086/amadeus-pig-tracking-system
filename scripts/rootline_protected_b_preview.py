@@ -37,8 +37,14 @@ def prepare_and_deliver(*,owner_user_id,private_chat_id,provider_message_id,envi
       "callback_token":claim["callback_token"],"reply_markup":claim["reply_markup"],
       "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
     card_mission_id=protected_card_mission_id(claim["preview_digest"])
-    delivery=deliver(parsed,result,specialist="ROOTLINE",mission_id=MISSION_ID,
-      card_mission_id=card_mission_id)
+    try:
+      delivery=deliver(parsed,result,specialist="ROOTLINE",mission_id=MISSION_ID,
+        card_mission_id=card_mission_id)
+    except Exception:
+      contain_unbound_preview_claim(claim["callback_token"],{
+        "success":False,"status":"protected_irrigation_preview_delivery_failed",
+        "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False})
+      raise
     message_id=str(delivery.get("telegram_message_id") or "")
     if not delivery.get("success") or not message_id or not bind_claim_card(claim["callback_token"],message_id):
         contain_unbound_preview_claim(claim["callback_token"],{
