@@ -228,6 +228,7 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
         params = _mission_params(mission, source_context)
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
+                _lock_mission_intake_title(cursor, params)
                 exact_result = (_resolve_exact_identity_intake(cursor, params)
                     if exact_identity else None)
                 if exact_result:
@@ -237,10 +238,12 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
                 if duplicate:
                     duplicate_contract = _duplicate_contract_state(duplicate)
                     if duplicate_contract["status"] == "current_contract_reusable":
-                        _insert_event(cursor, duplicate["mission_id"], "created", "Duplicate mission intake suppressed.", {
-                            "source": params["source"],
-                            "duplicate_title": params["title"],
-                        })
+                        duplicate_metadata = duplicate.get("metadata") if isinstance(duplicate.get("metadata"), dict) else {}
+                        if not duplicate_metadata.get("opaque_identity_owner_approved"):
+                            _insert_event(cursor, duplicate["mission_id"], "created", "Duplicate mission intake suppressed.", {
+                                "source": params["source"],
+                                "duplicate_title": params["title"],
+                            })
                         return {
                             "stored": False,
                             "configured": True,
@@ -2669,12 +2672,10 @@ def _resolve_exact_identity_intake(cursor, params):
     """Serialize owner-approved identity/title and fail before unrelated writes."""
     mission_id = params["mission_id"]
     normalized_title = _normalize_mission_text(params.get("title", ""))
-    lock_keys = sorted({f"mission-id:{mission_id}", f"mission-title:{normalized_title}"})
-    for lock_key in lock_keys:
-        cursor.execute(
-            "select pg_advisory_xact_lock(hashtextextended(%(lock_key)s, 0))",
-            {"lock_key": lock_key},
-        )
+    cursor.execute(
+        "select pg_advisory_xact_lock(hashtextextended(%(lock_key)s, 0))",
+        {"lock_key": f"mission-id:{mission_id}"},
+    )
     cursor.execute(
         """select mission_id, status, title, raw_text
            from public.charlie_missions
@@ -2705,6 +2706,14 @@ def _resolve_exact_identity_intake(cursor, params):
                 "status": "exact_mission_title_conflict",
                 "mission_id": mission_id, "conflicting_mission_id": row[0]}, 409)
     return None
+
+
+def _lock_mission_intake_title(cursor, params):
+    normalized_title = _normalize_mission_text(params.get("title", ""))
+    cursor.execute(
+        "select pg_advisory_xact_lock(hashtextextended(%(lock_key)s, 0))",
+        {"lock_key": f"mission-title:{normalized_title}"},
+    )
 
 
 def _duplicate_row(row):
