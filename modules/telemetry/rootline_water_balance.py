@@ -117,6 +117,7 @@ def read_latest_zone_water_balances(database_url, *, now=None, freshness_minutes
     try:
         import psycopg
         with connect_bounded_read(database_url=database_url) as connection:
+            connection.read_only=True
             with connection.cursor() as cursor:
                 cursor.execute("""select distinct on (zone_id) balance_json,complete_through
                     from public.irrigation_water_balance_events
