@@ -6,6 +6,32 @@ import pytest
 from modules.oom_sakkie.family_message_lifecycle import bind_existing_card,bind_legacy_provider_request,deliver_family_result
 
 
+def test_postgres_lifecycle_load_uses_bounded_transaction_read_only(monkeypatch):
+    from modules.oom_sakkie import bounded_postgres_read, family_message_lifecycle
+
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, *_args): pass
+        def fetchall(self): return [({"event":"loaded"},)]
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+        @property
+        def read_only(self): return True
+        @read_only.setter
+        def read_only(self, _value):
+            raise AssertionError("must not change read_only after bounded setup starts a transaction")
+
+    calls=[]
+    monkeypatch.setattr(bounded_postgres_read,"connect_bounded_rootline_postgres",
+        lambda **kwargs:(calls.append(kwargs) or Connection()))
+    assert family_message_lifecycle._event_store("load","CARD",None)==[{"event":"loaded"}]
+    assert calls==[{"database_url":None}]
+
+
 PARSED={"telegram_user_id":"42","telegram_chat_id":"42",
         "provider_message_id":"500","provider_timestamp":"2026-08-02T10:00:00+00:00","text":"Pig 11 47 kg"}
 RESULT={"success":True,"status":"waiting_for_input","answer":"Check Pig 11 now."}
