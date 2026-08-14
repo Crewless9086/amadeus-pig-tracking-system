@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from modules.pig_weights.herdmaster_daily_manager_evidence import (
-    PACKET_TYPE, build_daily_manager_evidence)
+    PACKET_TYPE, build_daily_manager_evidence, load_daily_manager_evidence)
 from modules.oom_sakkie.herdmaster_daily_manager_adapter import consume_daily_manager_evidence
 
 NOW = datetime(2026, 8, 14, 4, 45, tzinfo=timezone.utc)
@@ -62,6 +62,14 @@ def test_breeding_animals_are_excluded_unless_individually_scheduled():
         "effective_at": "2026-08-11T06:00:00+02:00"}])
     assert scheduled["weight"]["breeding_excluded"] == []
     assert scheduled["weight"]["current_snapshot"]["eligible_tagged"] == 1
+
+
+def test_scheduled_breeder_without_usable_tag_remains_untagged_excluded():
+    packet = build(pigs=[pig("S1", "", animal_type="Sow", purpose="Breeding")],
+        lifecycle=[{"pig_id": "S1", "event_type": "individual_weighing_due",
+                    "effective_at": "2026-08-11T06:00:00+02:00"}])
+    assert packet["weight"]["current_snapshot"]["eligible_tagged"] == 0
+    assert [row["pig_id"] for row in packet["weight"]["untagged_excluded"]] == ["S1"]
 
 
 def test_untagged_inactive_and_unknown_remain_separate():
@@ -126,3 +134,74 @@ def test_completed_mortality_followup_stays_closed_even_when_digest_changed():
     result = consume_daily_manager_evidence(packet, observed_at=NOW,
         active_lifecycles=[{"pig_id": "P1", "state": "completed"}])
     assert all("mortality:" not in item.dedupe_key for item in result.work_items)
+
+
+def test_mortality_state_is_normalized_and_missing_state_fails_closed():
+    packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD")
+    result = consume_daily_manager_evidence(packet, observed_at=NOW,
+        active_lifecycles=[{"pig_id": "P1", "state": " Completed "},
+                           {"pig_id": "P1"}])
+    assert all("mortality:" not in item.dedupe_key for item in result.work_items)
+
+
+def test_mortality_persistence_unavailable_is_visible_and_bounded():
+    packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD")
+    packet["mortality"]["materiality_state"] = "persistence_unavailable"
+    result = consume_daily_manager_evidence(packet, observed_at=NOW,
+        active_lifecycles=[{"pig_id": "P1", "state": "working"}])
+    items = [item for item in result.work_items if "mortality" in item.dedupe_key]
+    assert len(items) == 1
+    assert items[0].title == "Mortality follow-up evidence unavailable"
+    assert "duplicate" in items[0].next_action
+
+
+def test_loader_uses_bounded_read_only_queries_and_latest_prior_day_only():
+    calls = {"queries": []}
+    class Column:
+        def __init__(self, name): self.name = name
+    class Cursor:
+        description = ()
+        current = []
+        one = None
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def execute(self, sql, params=()):
+            normalized = " ".join(sql.split()); calls["queries"].append((normalized, params))
+            if "from public.current_canonical_pigs" in normalized:
+                self.description = [Column(value) for value in
+                    ("pig_id", "tag_number", "pig_name", "status", "on_farm", "animal_type", "purpose")]
+                self.current = [("P1", "1", "1", "Active", True, "Grower", "Grow_Out")]
+            elif "weight_date between" in normalized:
+                self.description = [Column(value) for value in
+                    ("weight_event_id", "pig_id", "weight_date", "weight_kg")]
+                self.current = [("W1", "P1", date(2026, 8, 11), 12)]
+            elif "with latest_day" in normalized:
+                self.description = [Column(value) for value in
+                    ("weight_event_id", "pig_id", "weight_date", "weight_kg")]
+                self.current = [("W0", "P1", date(2026, 8, 3), 10)]
+            elif "from public.pig_lifecycle_events" in normalized:
+                self.description = [Column(value) for value in ("pig_id", "event_type", "effective_at")]
+                self.current = []
+            else:
+                self.current = []; self.one = ({"evidence_digest": "D"},)
+            return self
+        def fetchall(self): return self.current
+        def fetchone(self): return self.one
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def cursor(self): return Cursor()
+    def connect(url, **kwargs):
+        calls["url"] = url; calls["kwargs"] = kwargs; return Connection()
+    mortality_packet = mortality("D")
+    packet = load_daily_manager_evidence(analysis_date=date(2026, 8, 14),
+        database_url="postgres://example", connect=connect,
+        mortality_evidence_loader=lambda **kwargs: {},
+        mortality_packet_builder=lambda evidence, **kwargs: mortality_packet)
+    assert "default_transaction_read_only=on" in calls["kwargs"]["options"]
+    assert calls["kwargs"]["connect_timeout"] == 3
+    assert any("weight_date between" in sql for sql, _ in calls["queries"])
+    assert any("with latest_day" in sql for sql, _ in calls["queries"])
+    assert all(sql.lstrip().casefold().startswith(("select", "with")) for sql, _ in calls["queries"])
+    assert packet["weight"]["current_snapshot"]["status"] == "complete"
+    assert packet["mortality"]["digest_changed"] is False

@@ -51,8 +51,12 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
             groups["inactive_off_farm"].append(item)
         elif stage in BREEDING_STAGES or purpose == "breeding":
             if pig_id in scheduled:
-                item["reason"] = "canonical individual weighing schedule exists"
-                groups["eligible"].append(item)
+                if _usable_tag(row.get("tag_number")):
+                    item["reason"] = "canonical individual weighing schedule and usable visible tag exist"
+                    groups["eligible"].append(item)
+                else:
+                    item["reason"] = "individual weighing is scheduled but a usable visible tag is absent"
+                    groups["untagged"].append(item)
             else:
                 item["reason"] = "breeding animal without an individual weighing schedule"
                 groups["breeding_excluded"].append(item)
@@ -158,19 +162,29 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
                           "hardware_commands": 0, "sends_messages": False}}
 
 
-def load_daily_manager_evidence(*, analysis_date, database_url=None):
+def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=None,
+                                mortality_evidence_loader=None,
+                                mortality_packet_builder=None):
     """Load canonical Supabase truth through bounded read-only sessions."""
     analysis_date = _day(analysis_date)
     window_start = analysis_date - timedelta(days=analysis_date.weekday())
     window_end = window_start + timedelta(days=1)
     with connect_bounded_read(
-            database_url=database_url or os.environ.get("DATABASE_URL")) as connection:
+            database_url=database_url or os.environ.get("DATABASE_URL"),
+            connect=connect) as connection:
         with connection.cursor() as cursor:
             pigs = _rows(cursor, """select pig_id,tag_number,pig_name,status,on_farm,animal_type,purpose
                 from public.current_canonical_pigs order by pig_id""")
-            weights = _rows(cursor, """select weight_event_id,pig_id,weight_date,weight_kg
-                from public.pig_weight_events where weight_date<=%s
-                order by pig_id,weight_date,weight_event_id""", (window_end,))
+            window_weights = _rows(cursor, """select weight_event_id,pig_id,weight_date,weight_kg
+                from public.pig_weight_events where weight_date between %s and %s
+                order by pig_id,weight_date,weight_event_id""", (window_start, window_end))
+            prior_weights = _rows(cursor, """with latest_day as (
+                    select pig_id,max(weight_date) as weight_date
+                    from public.pig_weight_events where weight_date<%s group by pig_id)
+                select event.weight_event_id,event.pig_id,event.weight_date,event.weight_kg
+                from public.pig_weight_events event join latest_day
+                  on latest_day.pig_id=event.pig_id and latest_day.weight_date=event.weight_date
+                order by event.pig_id,event.weight_event_id""", (window_start,))
             lifecycle = _rows(cursor, """select pig_id,lifecycle_event_type as event_type,effective_at
                 from public.pig_lifecycle_events where effective_at::date between %s and %s
                 order by effective_at,lifecycle_event_id""", (window_start, window_end))
@@ -181,15 +195,18 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None):
                 order by created_at desc,review_event_id desc limit 1""", (MORTALITY_IDENTITY,))
             row = cursor.fetchone()
             prior_digest = str(((row[0] if row else {}) or {}).get("evidence_digest") or "")
-    from modules.pig_weights.herdmaster_mortality_evidence import load_current_mortality_evidence
-    from modules.pig_weights.herdmaster_mortality_intelligence import build_oom_sakkie_mortality_packet
-    mortality = build_oom_sakkie_mortality_packet(
-        load_current_mortality_evidence(analysis_end=analysis_date,
+    if mortality_evidence_loader is None:
+        from modules.pig_weights.herdmaster_mortality_evidence import load_current_mortality_evidence
+        mortality_evidence_loader = load_current_mortality_evidence
+    if mortality_packet_builder is None:
+        from modules.pig_weights.herdmaster_mortality_intelligence import build_oom_sakkie_mortality_packet
+        mortality_packet_builder = build_oom_sakkie_mortality_packet
+    mortality = mortality_packet_builder(
+        mortality_evidence_loader(analysis_end=analysis_date,
                                         database_url=database_url or os.environ.get("DATABASE_URL")),
         analysis_end=analysis_date)
     return build_daily_manager_evidence(pigs=pigs,
-        window_weights=[row for row in weights if _day(row["weight_date"]) >= window_start],
-        prior_weights=[row for row in weights if _day(row["weight_date"]) < window_start],
+        window_weights=window_weights, prior_weights=prior_weights,
         lifecycle_events=lifecycle, mortality_packet=mortality,
         prior_mortality_digest=prior_digest, analysis_date=analysis_date)
 

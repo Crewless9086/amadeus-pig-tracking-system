@@ -73,11 +73,25 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
 
     mortality = packet["mortality"]
     if mortality.get("digest_changed"):
+        materiality_state = str(mortality.get("materiality_state") or "")
+        if materiality_state:
+            reason = ("The changed canonical mortality evidence has no attributable open individual lifecycle."
+                      if materiality_state == "attributable_lifecycle_unavailable"
+                      else "The changed mortality digest could not be durably consumed within the bounded database window.")
+            items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":mortality-unavailable",
+                dedupe_key="herdmaster:mortality-materiality-unavailable", domain="herd",
+                title="Mortality follow-up evidence unavailable", why=reason,
+                next_action="Retain the changed evidence and retry its same durable identity; do not infer a cause or create a duplicate follow-up.",
+                assignee="charl", state=WorkState.WAITING_EVIDENCE,
+                authority=Authority.READ_ONLY, provenance=provenance, business_value=125))
         open_ids = {str(row.get("pig_id") or "") for row in active_lifecycles
-                    if str(row.get("state") or "") not in {"completed", "closed", "handled"}}
+                    if str(row.get("state") or "").strip().casefold() in {
+                        "received", "assigned", "working", "waiting_for_input",
+                        "preview_ready", "waiting_for_confirmation",
+                        "preview_correction_pending", "scheduled_reassessment"}}
         candidates = [row for row in mortality.get("candidate_deaths") or ()
                       if str(row.get("pig_id") or "") in open_ids]
-        if candidates:
+        if candidates and not materiality_state:
             row = sorted(candidates, key=lambda value: (str(value.get("effective_date") or ""),
                                                         str(value.get("event_id") or "")))[-1]
             tag = str(row.get("tag") or row.get("pig_id") or "the pig")
