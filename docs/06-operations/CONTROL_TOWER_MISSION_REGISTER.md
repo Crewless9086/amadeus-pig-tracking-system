@@ -194,7 +194,7 @@ Detailed HERDMASTER evidence remains in
 - `BMQ-20260813-01` — blocked existing-publication closeout.
 - `BMQ-20260813-02` — owner direction only for private media intake.
 - `BMQ-20260813-03` — queued library/public-use separation.
-- `BMQ-20260813-04` — queued evidence-backed proposal.
+- `BMQ-20260813-04` — source-active evidence-backed Oom Sakkie proposal/media-request adapter; preserved `f61cce0a` contract reconciled onto current main, focused and semantic/route regressions green, independent architecture/security/commercial reviews completed with corrections. Await reviewed PR/CI and serialized release-lane availability; no production or public effect yet.
 - `BMQ-20260813-05` — queued protected publication/performance loop.
 
 ### CODEX UI

@@ -843,12 +843,12 @@ class IntakeStore:
                               i.intake_item_id,m.album_position,b.binary_asset_id,b.content_sha256,
                               b.observed_mime_type,b.byte_size,b.width,b.height,
                               l.beacon_asset_id,l.exact_duplicate_of_item_id,b.thumbnail_storage_path,
+                              b.storage_readback_sha256,b.storage_path,
                               o.observation_json,o.confidence_state,
-                              le.event_type,
+                              le.event_type,le.library_event_id,
                               coalesce(pe.event_type='approved_public_use',false),
                               coalesce(a.campaign_usage_count,0),
-                              coalesce(cs.album_completed,false),
-                              ae.library_event_id
+                              coalesce(cs.album_completed,false)
                        from public.beacon_media_intake_groups g
                        join public.beacon_media_intake_items i using (intake_group_id)
                        left join public.beacon_media_intake_album_members m using (intake_group_id,intake_item_id)
@@ -862,11 +862,11 @@ class IntakeStore:
                          order by observed_at desc limit 1
                        ) o on true
                        left join lateral (
-                         select event_type,public_use_approved
+                         select event_type,public_use_approved,library_event_id
                          from public.beacon_media_library_events
                          where binary_asset_id=b.binary_asset_id
                            and event_type in ('library_accepted','library_rejected','archived')
-                         order by recorded_at desc limit 1
+                         order by recorded_at desc,library_event_id desc limit 1
                        ) le on true
                        left join lateral (
                          select event_type
@@ -882,12 +882,6 @@ class IntakeStore:
                            and event_type='album_completed'
                          limit 1
                        ) cs on true
-                       left join lateral (
-                         select library_event_id
-                         from public.beacon_media_library_events
-                         where binary_asset_id=b.binary_asset_id
-                         order by recorded_at desc,library_event_id desc limit 1
-                       ) ae on true
                        order by g.intake_at desc,i.source_order_key limit %s""",
                     (limit,),
                 )
@@ -903,13 +897,16 @@ class IntakeStore:
             "observed_mime_type": row[10] or "", "byte_size": row[11],
             "width": row[12], "height": row[13], "beacon_asset_id": row[14],
             "exact_duplicate": bool(row[15]), "thumbnail_available": bool(row[16]),
-            "observation": row[17] or {},
-            "observation_confidence": row[18] or "unavailable",
-            "latest_library_event": row[19] or "",
-            "effective_public_use_approved": bool(row[20]),
-            "prior_campaign_use_count": row[21] or 0,
-            "album_completed": bool(row[22]),
-            "latest_review_event_id": row[23] or "",
+            "private_storage_proof_id": (
+                f"{row[8]}:readback:{row[17]}" if row[17] and row[17] == row[9] and row[18] else ""),
+            "observation": row[19] or {},
+            "observation_confidence": row[20] or "unavailable",
+            "latest_library_event": row[21] or "",
+            "current_library_accept_event_id": row[22] or "",
+            "effective_public_use_approved": bool(row[23]),
+            "prior_campaign_use_count": row[24] or 0,
+            "album_completed": bool(row[25]),
+            "latest_review_event_id": row[22] or "",
             **AUTHORITY,
         } for row in rows]
         return {"success": True, "status": "media_intakes_listed", "items": items, **AUTHORITY}, 200

@@ -66,6 +66,12 @@ def prepare_marketing_proposal(objective, media, draft):
             "packet_type": "missing_media_request",
             "objective": objective["summary"],
             "business_reason": objective["business_reason"],
+            "expected_commercial_value": objective["expected_commercial_value"],
+            "performance_measurement": objective["performance_measurement"],
+            "audience": _required_text(draft, "audience"),
+            "intended_channel": _required_text(draft, "channel"),
+            "recommended_copy_after_media": _required_text(draft, "caption"),
+            "call_to_action": _required_text(draft, "call_to_action"),
             "evidence": list(evidence.values()),
             "request_via": "oom_sakkie",
             "family_message": _shot_request(objective),
@@ -85,6 +91,8 @@ def prepare_marketing_proposal(objective, media, draft):
         "status": status,
         "objective": objective["summary"],
         "business_reason": objective["business_reason"],
+        "expected_commercial_value": objective["expected_commercial_value"],
+        "performance_measurement": objective["performance_measurement"],
         "audience": _required_text(draft, "audience"),
         "intended_channel": _required_text(draft, "channel"),
         "media_strategy": (
@@ -99,32 +107,24 @@ def prepare_marketing_proposal(objective, media, draft):
         "media_rejections": media_rejections,
         "decision_options": (
             ["correct", "decline"] if missing_facts
-            else ["approve_proposal_only", "correct", "decline"]
+            else ["approve_exact_organic_campaign", "correct", "decline"]
         ),
         "proposal_decision_note": (
-            "Approving the proposal approves only the draft for later handling; "
-            "it grants no public-use, publication or spend authority."
+            "Approval may authorize only the exact asset public use and exact organic post "
+            "shown in this packet through the separate protected executor; it grants no spend authority."
         ),
         "approval_note": (
             "Keeping a photo in the private library does not approve public use "
             "or publication."
         ),
-        "protected_actions_requested": [] if missing_facts else [
-            {
-                "action": "public_use_approval",
-                "status": "separate_owner_decision_required",
-                "scope": [item["asset_id"] for item in selected],
-                "decision_options": ["approve_public_use", "decline_public_use"],
-            },
-            {
-                "action": "publication_approval",
-                "status": "separate_owner_decision_required",
-                "scope": "exact caption, channel, media order and future attempt",
-                "decision_options": [
-                    "approve_publication", "decline_publication"
-                ],
-            },
-        ],
+        "protected_actions_requested": [] if missing_facts else [{
+            "action": "exact_organic_campaign_approval",
+            "status": "single_owner_decision_required",
+            "scope": {"asset_ids": [item["asset_id"] for item in selected],
+                "caption": _required_text(draft, "caption"), "channel": _required_text(draft, "channel"),
+                "media_order": [item["asset_id"] for item in selected]},
+            "decision_options": ["approve_exact_organic_campaign", "correct", "decline"],
+        }],
         "paid_spend_approval": {
             "requested": False,
             "status": "not_requested",
@@ -142,6 +142,10 @@ def _objective(value):
         "objective_id": _required_text(value, "objective_id"),
         "summary": _required_text(value, "summary"),
         "business_reason": _required_text(value, "business_reason"),
+        "expected_commercial_value": str(value.get("expected_commercial_value") or
+            "Generate qualified demand without assuming a sale.").strip(),
+        "performance_measurement": str(value.get("performance_measurement") or
+            "Record verified reach, qualified enquiries, conversions and attributable sales after any approved publication.").strip(),
         "evidence": value.get("evidence"),
         "media_mode": value.get("media_mode", "single"),
         "media_tags": sorted(set(value.get("media_tags") or [])),

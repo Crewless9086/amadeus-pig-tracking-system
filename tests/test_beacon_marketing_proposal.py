@@ -94,7 +94,7 @@ class BeaconMarketingProposalTests(unittest.TestCase):
         self.assertFalse(packet["exact_media"][0]["public_use_approved"])
         self.assertEqual(
             [a["action"] for a in packet["protected_actions_requested"]],
-            ["public_use_approval", "publication_approval"],
+            ["exact_organic_campaign_approval"],
         )
         self.assertEqual(packet["paid_spend_approval"]["status"], "not_requested")
         self.assertIn("does not approve public use", packet["approval_note"])
@@ -229,20 +229,17 @@ class BeaconMarketingProposalTests(unittest.TestCase):
         ):
             prepare_marketing_proposal(objective(), [media()], value)
 
-    def test_proposal_and_protected_approvals_are_independently_decidable(self):
+    def test_exact_campaign_has_one_bound_protected_decision(self):
         packet = prepare_marketing_proposal(objective(), [media()], draft())
         self.assertEqual(
             packet["decision_options"],
-            ["approve_proposal_only", "correct", "decline"],
+            ["approve_exact_organic_campaign", "correct", "decline"],
         )
         self.assertEqual(
             packet["protected_actions_requested"][0]["decision_options"],
-            ["approve_public_use", "decline_public_use"],
+            ["approve_exact_organic_campaign", "correct", "decline"],
         )
-        self.assertEqual(
-            packet["protected_actions_requested"][1]["decision_options"],
-            ["approve_publication", "decline_publication"],
-        )
+        self.assertEqual(len(packet["protected_actions_requested"]), 1)
 
     def test_same_type_contradictory_evidence_cannot_support_copy(self):
         value = objective()
