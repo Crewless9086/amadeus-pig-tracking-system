@@ -126,6 +126,17 @@ def test_non_runnable_bootstrap_admission_cannot_enter_shadow_scoring():
     record.assert_not_called()
 
 
+def test_malformed_or_forged_runnable_admission_cannot_enter_shadow_scoring():
+    for value in ("corrupt", {"runnable": True}, {"runnable": False}):
+        reader = lambda mission_id, value=value: ({"mission": {"mission_id": mission_id,
+            "metadata": {"portfolio_admission": value}}}, 200)
+        with patch("modules.charlie.shadow_control_tower_input.record_shadow_proposal") as record:
+            result, status = handle_shadow_control_tower_input(action(), runtime_context=AUTH,
+                environ=ENV, mission_reader=reader)
+        assert status == 409 and result["status"] == "shadow_control_tower_mission_not_runnable"
+        record.assert_not_called()
+
+
 def test_existing_private_tool_spine_requires_authenticated_runtime_context():
     result, status = execute_private_tool("observe_shadow_control_tower", action(), {})
     assert status == 403 and result["status"] == "shadow_control_tower_disabled"

@@ -452,9 +452,11 @@ def mission_runtime_eligible(mission):
     """Fail closed for structured portfolio admissions not yet made runnable."""
     mission = mission if isinstance(mission, dict) else {}
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
-    admission = (metadata.get("portfolio_admission")
-        if isinstance(metadata.get("portfolio_admission"), dict) else {})
-    return not admission or admission.get("runnable") is True
+    # Phase A authorizes no runnable portfolio admission. Legacy rows without
+    # this key retain their established status-based behavior; any present,
+    # malformed, forged or future contract remains ineligible until a later
+    # reviewed enforcement stage explicitly validates and enables it.
+    return "portfolio_admission" not in metadata
 
 
 def list_missions(

@@ -45,6 +45,15 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         self.assertNotIn("CMQ-20260813-05",
             [item.get("mission_id") for item in cycle["queue_rank"]])
 
+    def test_malformed_or_forged_runnable_admission_is_fail_closed(self):
+        for value in ("corrupt", {"runnable": True}, {"runnable": False}):
+            mission = {"mission_id": "FORGED", "status": "approved",
+                "metadata": {"portfolio_admission": value}}
+            cycle = build_executive_cycle([mission], DELEGATED_POLICIES, runner={})
+            self.assertEqual(cycle["commands"], [])
+            self.assertEqual(cycle["queue_rank"], [])
+
+
     def test_durable_replacement_excludes_legacy_from_queue_and_ranking(self):
         legacy = {
             "mission_id": "CHARLIE-MISSION-7001CE3566B4A171",
