@@ -1,5 +1,19 @@
 # Vault Brain Changelog
 
+## 2026-08-14 - HERDMASTER daily cohort evidence prepared
+
+- Added a versioned read-only HERDMASTER producer for the eligible tagged
+  weekly cohort and mortality material-change signal; missing evidence remains
+  Unknown and historical 11–12 August completion is not inferred.
+- Changed Oom Sakkie's manager composition to consume the typed specialist
+  contract instead of rebuilding a weighing instruction from every active,
+  on-farm pig. Breeding, untagged, inactive/off-farm and Unknown cases remain
+  separate, and descriptive weight changes carry no diagnosis.
+- Suppressed unchanged mortality digests and completed individual follow-ups;
+  retained the existing durable mortality-consumption rail for changed
+  evidence. No route, message, farm write, hardware authority, n8n logic or
+  Google Sheets authority was added.
+
 ## 2026-08-14 - Phase A private observation input prepared
 
 - Added a disabled-by-default internal private CORE action for supplying one genuine Shadow proposal and its later human Control Tower decision to the existing operational-event fabric.
