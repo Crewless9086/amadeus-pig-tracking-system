@@ -104,10 +104,11 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
               confirmation_provider_timestamp from app_private.oom_protected_action_claims
               where callback_token=%s""",(token,))
             confirmation=cur.fetchone()
+            # Telegram callback-query IDs are the stable provider receipt across
+            # webhook retries; the gateway receipt timestamp is process-local.
             exact_confirmation=(confirmation and
               str(confirmation[0] or "")==str(provider_message_id) and
-              confirmation[1] is not None and
-              confirmation[1].astimezone(timezone.utc)==provider_time.astimezone(timezone.utc))
+              confirmation[1] is not None)
             if not exact_confirmation:
                 return {"success":False,"status":"protected_callback_stale"},409
             return {"success":True,"status":"protected_callback_recovered",

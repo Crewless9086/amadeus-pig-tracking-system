@@ -2,6 +2,7 @@ from modules.oom_sakkie import protected_action_runtime as runtime
 from modules.oom_sakkie.protected_action_claims import build_buttons, canonical_preview_digest, create_claim
 from datetime import datetime, timedelta, timezone
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie import telegram_direct
 from modules.oom_sakkie.telegram_direct import handle_telegram_direct_webhook
 import json
 
@@ -185,6 +186,25 @@ def test_allowed_family_reporter_cannot_use_protected_callback():
     result,status=handle_telegram_direct_webhook(payload,
       headers={"X-Telegram-Bot-Api-Secret-Token":secret},environ=env)
     assert status==403 and result["status"]=="telegram_protected_action_owner_required"
+
+
+def test_direct_callback_preserves_digest_scoped_card_lifecycle(monkeypatch):
+    owner="5721652188";secret="s"*48
+    env={"OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED":"1","OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED":"1",
+      "OOM_SAKKIE_TELEGRAM_BOT_TOKEN":"123456789:"+"A"*40,
+      "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET":secret,"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":owner,
+      "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID":owner}
+    card_id="RMQ-20260813-04:PROTECTED:"+"D"*24
+    monkeypatch.setattr(telegram_direct,"handle_protected_action_input",lambda *args,**kwargs:({
+      "success":True,"status":"segment_started","answer":"Started","specialist":"ROOTLINE",
+      "mission_id":"RMQ-20260813-04","card_mission_id":card_id},200))
+    delivered=[]
+    monkeypatch.setattr(telegram_direct,"deliver_family_result",lambda *args,**kwargs:delivered.append(kwargs) or {"success":True,"telegram_sends":0,"telegram_edits":1})
+    monkeypatch.setattr(telegram_direct,"acknowledge_telegram_callback",lambda *args,**kwargs:({"success":True},200))
+    payload={"callback_query":{"id":"cb-stable","data":"oompa:opaque:confirm","from":{"id":int(owner)},
+      "message":{"message_id":700,"chat":{"id":int(owner),"type":"private"}}}}
+    result,status=handle_telegram_direct_webhook(payload,headers={"X-Telegram-Bot-Api-Secret-Token":secret},environ=env)
+    assert status==200 and delivered==[{"specialist":"ROOTLINE","mission_id":"RMQ-20260813-04","card_mission_id":card_id}]
 
 
 class PriorClaimDb:

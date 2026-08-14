@@ -193,8 +193,10 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         action_result,action_status=handle_protected_action_input(parsed,authority,callback_data=callback["callback_data"])
         delivery=({"success":True,"telegram_sends":0,"telegram_edits":0}
           if action_result.get("suppress_owner_delivery") or not action_result.get("answer") else
-          deliver_family_result(parsed,action_result,specialist="HERDMASTER",
-            mission_id=str(action_result.get("mission_id") or ""),card_mission_id=str(action_result.get("mission_id") or "")))
+          deliver_family_result(parsed,action_result,
+            specialist=str(action_result.get("specialist") or "HERDMASTER"),
+            mission_id=str(action_result.get("mission_id") or ""),
+            card_mission_id=str(action_result.get("card_mission_id") or action_result.get("mission_id") or "")))
         ack_result,ack_status=acknowledge_telegram_callback(callback["callback_query_id"],environ=environ)
         body,_=_direct_result(action_result.get("success") is True and delivery.get("success") is True and ack_status<400,
           str(action_result.get("status") or "protected_callback_contained"),policy,action_status)
