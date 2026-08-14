@@ -199,6 +199,7 @@ Do not change governance merely to appear busy. One isolated wording preference 
 | Distinguish deployed agents, visible development terminals, and complete specialist roles in every status report | Adopted | Prevents cloud activity, terminal engineering, and full-role readiness from being conflated and makes clear what Charl can actually use | Verify later reports independently name live agent state, terminal state, and remaining role capability |
 | Reuse the existing CHARLIE CORE mission queue, local runner, execution bridge, review workflow and release bridge for development automation; never invent a second CORE or place CORE inside ordinary farm-message routing | Adopted | Preserves the system already built and keeps software engineering separate from Oom Sakkie's live operational specialist work | Verify one approved development mission is picked up by the existing CORE runner and one ordinary Oom Sakkie specialist request completes without CORE in its runtime path |
 | Keep one terminal outcome-bound until the genuine real-world loop passes; do not accept CI, replay, deployment or a newly sent owner question as completion | Adopted | Prevents repeated narrow repairs from returning Charl to the same failed operational step | Verify the same terminal observes one fresh post-deployment input through specialist action, external outcome, readback and visible closure without another development prompt |
+| Require every terminal to classify intermediate stops with the shared Hold taxonomy and reserve BUSINESS COMPLETE for fresh owner-visible proof | Adopted | Prevents a source slice, PR, CI run or deployment from sounding like the full job is finished, while preserving necessary safety and authority stops | Every terminal handover names one lifecycle state, the exact unblock condition and the remaining owner-visible acceptance journey; Control Tower rejects ambiguous `complete`, `done` or `ready` wording |
 | Verify the Mission Standard is Git-tracked and completely read in both Control Tower and target-terminal `HEAD` before claiming it was applied | Adopted | Prevents separate worktrees and CORE missions from silently operating with missing or stale governance | Every handoff reports standard path, target availability and exact blob/digest; missing governance blocks non-urgent implementation until reconciled |
 
 ## Outcome-Bound Terminal Missions And Real-World Proof
@@ -228,6 +229,72 @@ For a live acceptance journey:
 - after three owner attempts without the intended outcome, stop requesting more owner input, classify the journey as a systemic incident, and require an end-to-end trace and correction before another live attempt.
 
 Do not combine a failing P0 operational incident with a broad new capability mission. Close or precisely contain the incident first, release its runtime, then start the next goal under a separate mission identity. Larger prompts are not a substitute for stronger completion gates.
+
+### Universal Terminal Lifecycle And Hold Taxonomy
+
+Every visible development terminal must report exactly one of these lifecycle
+states. These states describe the whole owner-outcome mission, not merely the
+terminal's latest source slice:
+
+- `WORKING`: safe authorized work remains and the terminal must continue without
+  returning merely because investigation, implementation, tests, commit, PR,
+  review, merge, deployment or synthetic verification completed.
+- `REVIEW_HOLD`: an independent review, required CI gate or explicit Control
+  Tower decision is genuinely pending. The terminal must identify the exact
+  artifact and gate; source-ready is not business completion.
+- `RELEASE_HOLD`: reviewed work is ready but cannot enter the serialized release
+  lane, reconcile current main, merge or deploy yet. The exact collision or lane
+  owner must be named.
+- `OWNER_HOLD`: one fresh owner fact, strategic decision, physical presence or
+  protected authorization is genuinely required. All safe preparation and
+  deployment must already be complete before asking Charl.
+- `EXTERNAL_HOLD`: progress requires a genuine provider, customer, weather,
+  clock, biological or other external event that must not be fabricated. The
+  deployed agent owns passive receipt where available; a development terminal
+  must not remain occupied merely to wait.
+- `CONTAINED`: an unsafe or ambiguous attempt has been durably stopped. The
+  terminal must state whether systemic repair is still required and must not ask
+  Charl to repeat the same failed action until that repair is deployed and
+  proven end to end.
+- `BUSINESS_COMPLETE`: the fresh deployed owner journey succeeded, canonical and
+  provider evidence agree, the required physical or external effect is proven
+  where applicable, replay is safe and follow-up ownership is clear.
+
+`PR ready`, `source complete`, `implementation complete`, `CI green`, `merged`,
+`deployed`, `operational backend`, `canary passed` and `terminal released` are
+technical facts, not substitutes for one of the lifecycle states above. A
+terminal may report them as evidence but must not use unqualified `complete`,
+`done`, `finished`, `ready` or `released` to imply the owner outcome has occurred.
+
+A terminal may stop only at a genuine review, release, owner, external, safety,
+authority or conflicting-worktree boundary. Before stopping it must have
+exhausted all safe in-scope work that does not cross that boundary. When the
+boundary clears, the same mission resumes automatically through the remaining
+safe stages; it is not replaced by a new mission or declared complete at the
+latest technical layer.
+
+Every terminal feedback packet must include this compact block:
+
+```text
+Mission lifecycle state: WORKING | REVIEW_HOLD | RELEASE_HOLD | OWNER_HOLD |
+  EXTERNAL_HOLD | CONTAINED | BUSINESS_COMPLETE
+Owner-visible outcome: <the complete outcome still being pursued>
+Technical stage reached: <source/PR/CI/merge/deploy/runtime/live proof facts>
+Deployed-agent state: <runtime-loaded facts, separately from terminal activity>
+Provider/canonical/physical evidence: <separately classified>
+Remaining acceptance journey: <what must still happen before BUSINESS_COMPLETE>
+Exact hold and unblock condition: <required unless WORKING or BUSINESS_COMPLETE>
+Safe work exhausted before hold: yes/no, with evidence
+Owner repetition requested: no, unless a fresh action is both necessary and safe
+Terminal/worktree closeout: <active, released-retain, clean, dirty or unique>
+```
+
+Control Tower must normalize pasted feedback into this taxonomy even when an
+older terminal omits the block. It must challenge premature stopping, send a
+continuation when safe work remains, and accept a Hold without pressuring the
+terminal when its stated boundary is genuine. After three failed owner actions,
+the only valid state is `CONTAINED` until the systemic journey defect is repaired
+and non-actuating end-to-end proof permits one later fresh attempt.
 
 ## Workspace And Release Discipline
 
