@@ -27,9 +27,9 @@ def rootline_irrigation_execution_store(action, payload):
     if not execution_id:
         return {"success": False, "created": False}
     if action == "claim_before_on":
-        return _claim_single_controller(body)
+        return _bounded_claim(action, _claim_single_controller, body)
     if action == "claim_auxiliary_before_on":
-        return _claim_single_auxiliary(body)
+        return _bounded_claim(action, _claim_single_auxiliary, body)
     history_created = None
     if action == "record_completed":
         history_created = _append_history(action, body)
@@ -197,9 +197,19 @@ def _is_active_candidate(item, active_action, claim_action):
             or (action == active_action and item.get("state") == "Active"))
 
 
+def _bounded_claim(action, claim, body):
+    from modules.oom_sakkie.bounded_postgres_read import is_database_unavailable
+    try:
+        return claim(body)
+    except Exception as exc:
+        if is_database_unavailable(exc):
+            raise RootlineExecutionStoreUnavailable(action) from exc
+        raise
+
+
 def _claim_single_controller(body):
     """Atomically serialize B/C and consume one zone/operating-day authority."""
-    import psycopg
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
     execution_id = str(body["execution_id"])
     consumption_key = str(body.get("consumption_key") or "").strip()
     zone_id = str(body.get("zone_id") or "").strip()
@@ -212,7 +222,7 @@ def _claim_single_controller(body):
         return {"success": False, "created": False,
                 "status": "daily_dispatch_identity_incomplete"}
     event_id = _event_id("claim_before_on", body)
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
+    with connect_bounded_postgres(database_url=os.environ.get("DATABASE_URL")) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
@@ -347,13 +357,13 @@ def _valid_iso_date(value):
 
 def _claim_single_auxiliary(body):
     """Atomically consume one auxiliary artifact without blocking its B/C zone."""
-    import psycopg
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
     execution_id=str(body["execution_id"]);consumption_key=str(body.get("consumption_key") or "")
     auxiliary_id=str(body.get("auxiliary_device_id") or "")
     if not consumption_key or not auxiliary_id:
         return {"success":False,"created":False,"status":"auxiliary_claim_incomplete"}
     event_id=_event_id("claim_auxiliary_before_on",body)
-    with psycopg.connect(os.environ["DATABASE_URL"],connect_timeout=10) as connection:
+    with connect_bounded_postgres(database_url=os.environ.get("DATABASE_URL")) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events

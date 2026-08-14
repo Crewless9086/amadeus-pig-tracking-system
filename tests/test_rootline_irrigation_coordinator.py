@@ -118,6 +118,32 @@ def test_execution_store_timeout_is_degraded_hold_before_any_provider_authority(
     assert result["hardware_commands"]==0 and transport.calls==[] and notices==[]
 
 
+def test_containment_read_timeout_is_not_interpreted_as_uncontained():
+    class ContainmentUnavailable(Store):
+        def __call__(self, action, payload):
+            if action=="load_zone_containment":
+                raise RootlineExecutionStoreUnavailable(action)
+            return super().__call__(action,payload)
+    transport=Transport();notices=[]
+    result=run(ContainmentUnavailable(),transport,notices)
+    assert result["status"]=="execution_store_degraded_hold"
+    assert result["current_segment_consumed"] is False
+    assert result["hardware_commands"]==0 and transport.calls==[] and notices==[]
+
+
+def test_claim_database_timeout_never_reaches_on():
+    class ClaimUnavailable(Store):
+        def __call__(self, action, payload):
+            if action=="claim_before_on":
+                raise RootlineExecutionStoreUnavailable(action)
+            return super().__call__(action,payload)
+    transport=Transport();notices=[]
+    result=run(ClaimUnavailable(),transport,notices)
+    assert result["status"]=="execution_store_degraded_hold"
+    assert result["current_segment_consumed"] is False
+    assert result["hardware_commands"]==0 and transport.calls==[] and notices==[]
+
+
 def test_final_provider_readback_rejects_3600_second_fail_stop():
     class UnsafeDuration(Transport):
         def read_safety_configuration(self, **kwargs):

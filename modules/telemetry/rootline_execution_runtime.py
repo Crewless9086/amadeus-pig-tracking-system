@@ -11,7 +11,9 @@ from modules.telemetry.rootline_ewelink_oauth_store import PostgresOAuthTokenSto
 from modules.telemetry.rootline_ewelink_readback import read_current_device
 from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
 from modules.telemetry.rootline_irrigation_coordinator import advance_irrigation_execution, _digest
-from modules.telemetry.rootline_irrigation_execution_store import rootline_irrigation_execution_store
+from modules.telemetry.rootline_irrigation_execution_store import (
+    RootlineExecutionStoreUnavailable, rootline_irrigation_execution_store,
+)
 from modules.telemetry.rootline_water_energy_plan import (
     build_water_energy_plan, read_current_water_energy_evidence,
 )
@@ -33,7 +35,10 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     token_store = token_store or PostgresOAuthTokenStore(database_url)
     transport = transport or RootlineIFTTTTransport(
         token_store=token_store, environ=source, readback=readback)
-    active = store("load_active", None)
+    try:
+        active = store("load_active", None)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
     if active:
         return advance_irrigation_execution(decision_id="", commissioning_id="",
             decision_reader=lambda _identity: {}, commissioning_reader=lambda _identity: {},
@@ -113,7 +118,10 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
         or expected_artifact.get("expected_segment_count")!=2):
         return _safe("protected_irrigation_boundary_invalid")
     token_store=token_store or PostgresOAuthTokenStore(database_url)
-    active=store("load_active",None)
+    try:
+        active=store("load_active",None)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
     if active:
         active_binding={
           "job_id":active.get("job_id"),"job_sha256":active.get("job_sha256"),
@@ -132,7 +140,10 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
           decision_reader=lambda _identity:{},commissioning_reader=lambda _identity:{},
           store=store,transport=transport,notify=notify,outcome_reader=outcome_reader,
           now=now,clock=clock)
-    current=_current(evidence_loader,readback,token_store,source,database_url,now,store)
+    try:
+        current=_current(evidence_loader,readback,token_store,source,database_url,now,store)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
     artifact=current["artifact"]
     # A mandatory fresh provider read produces a new response/eligibility digest.
     # Bind the immutable governed job and segment here; the fresh artifact itself
@@ -189,6 +200,14 @@ def _safe(status):
     return {"success": True, "status": status, "hardware_commands": 0,
             "telegram_messages": 0, "writes_farm_data": False,
             "borehole_authority": False, "fertilizer_authority": False}
+
+
+def _execution_store_hold():
+    return {**_safe("execution_store_degraded_hold"),
+            "autonomous_on_enabled": False,
+            "durable_execution_truth_loaded": False,
+            "current_segment_consumed": False,
+            "degraded": True}
 
 
 def _planning_observation(initial, owner, chat, next_due):
