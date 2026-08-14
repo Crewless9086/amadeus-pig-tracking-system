@@ -25,6 +25,10 @@ _MATERIAL = {
     "simultaneous_bc_authority": False,
     "b_commissioning_id": "ROOTLINE-COMMISSION-D248A120ECE1961DB81B6C2E",
     "c_commissioning_id": "ROOTLINE-COMMISSION-70417672399B3525D658F6A2",
+    "irrigation_commissioning_ids": {
+        "B12345": "ROOTLINE-COMMISSION-D248A120ECE1961DB81B6C2E",
+        "C12345": "ROOTLINE-COMMISSION-70417672399B3525D658F6A2",
+    },
     "power_cycle_binding_sha256":
         "43fda51c1ecb3f638ef193a134551f5e802b3ffc1c236f46c561689ec69603ed",
     "commissioning_evidence_sha256":
@@ -54,6 +58,10 @@ _FERTILIZER_MATERIAL = {
     "configuration_readback_observed_at": "2026-08-10T09:29:59.974024+00:00",
     "evidence_source": "durable_owner_acceptance_and_authenticated_provider_readback",
 }
+_REGISTERED_BASELINES = {
+    _MATERIAL["device_id"]: _MATERIAL,
+    _FERTILIZER_MATERIAL["device_id"]: _FERTILIZER_MATERIAL,
+}
 INVALIDATION_TRIGGERS = (
     "explicit_owner_revocation", "provider_account_change", "device_identity_change",
     "firmware_change", "channel_mapping_change", "timer_change", "inching_change",
@@ -72,8 +80,7 @@ def commissioned_controller_baseline():
 
 def commissioned_registered_device_baseline(device_id):
     """Return only an exact, immutable configuration baseline for a known device."""
-    material = (_MATERIAL if str(device_id) == _MATERIAL["device_id"] else
-                _FERTILIZER_MATERIAL if str(device_id) == _FERTILIZER_MATERIAL["device_id"] else None)
+    material = _REGISTERED_BASELINES.get(str(device_id))
     if material is None:
         return None
     value = deepcopy(material)

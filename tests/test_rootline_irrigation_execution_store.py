@@ -8,7 +8,7 @@ import json
 import pytest
 
 from modules.telemetry.rootline_irrigation_execution_store import (
-    _claim_single_auxiliary, _claim_single_controller, _daily_dispatch_blocker,
+    _claim_single_auxiliary, _claim_irrigation_output, _daily_dispatch_blocker,
     _event_id, _stored_event_body,
     _is_active_candidate, RootlineExecutionStoreUnavailable, rootline_irrigation_execution_store,
 )
@@ -204,10 +204,10 @@ def test_persisted_second_segment_claim_is_concurrent_single_use(monkeypatch):
         "consumption_key":consumption,"zone_id":"B12345","operating_date":"2026-08-14",
         "job_id":job,"segment_number":2}
     with ThreadPoolExecutor(max_workers=2) as pool:
-        results=list(pool.map(lambda _:_claim_single_controller(body),(1,2)))
+        results=list(pool.map(lambda _:_claim_irrigation_output(body),(1,2)))
     assert sum(row.get("created") is True for row in results)==1
     assert rootline_irrigation_execution_store("load_job_events",job)[0]["segment_number"]==1
-    replay=_claim_single_controller(body)
+    replay=_claim_irrigation_output(body)
     assert replay["created"] is False and replay["status"]=="execution_replay"
     # Close this synthetic active claim so the shared disposable database does
     # not correctly block the next test as an already-owned controller.
@@ -271,7 +271,7 @@ def test_consumption_key_is_atomically_single_use_across_regenerated_executions(
                     "rootline_execution":{"action":"record_eligibility","execution_id":execution,
                     "eligibility_id":eligibility,"eligibility_sha256":digest,
                     "operating_date":"2026-08-12","zone_id":"B12345"}})))
-        return _claim_single_controller({"execution_id":execution,
+        return _claim_irrigation_output({"execution_id":execution,
             "eligibility_id":eligibility,"eligibility_sha256":digest,
             "consumption_key":key,"zone_id":"B12345","operating_date":"2026-08-12"})
     with ThreadPoolExecutor(max_workers=2) as pool:

@@ -6,7 +6,12 @@ import hashlib
 import os
 
 from modules.telemetry.rootline_execution_authority import build_execution_eligibility
-from modules.telemetry.rootline_ewelink_commissioned_baseline import commissioned_controller_baseline
+from modules.telemetry.rootline_ewelink_commissioned_baseline import (
+    commissioned_controller_baseline, commissioned_registered_device_baseline,
+)
+from modules.telemetry.rootline_device_registry import (
+    commissioned_irrigation_contract, rootline_device_registry,
+)
 from modules.telemetry.rootline_ewelink_oauth_store import PostgresOAuthTokenStore
 from modules.telemetry.rootline_ewelink_readback import read_current_device
 from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
@@ -67,10 +72,8 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
         return _execution_store_hold()
     if not isinstance(stored, dict) or stored.get("success") is not True:
         return {**_safe("eligibility_persistence_unproven"), "success": False}
-    baseline = commissioned_controller_baseline()
     zone = artifact["zone_id"]
-    commissioning_id = (baseline["b_commissioning_id"] if zone == "B12345"
-                        else baseline["c_commissioning_id"])
+    output, baseline, commissioning_id = _commissioned_output(zone)
     decision = {"decision_id": "ROOTLINE-DECISION-" + artifact["eligibility_sha256"][:24].upper(),
         "decision": "Run now", "standing_authority": True, "zone_id": zone,
         "runtime_minutes": max(1, (artifact["maximum_duration_seconds"] + 59) // 60),
@@ -112,13 +115,16 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
     clock=clock or (lambda: datetime.now(timezone.utc)); now=_aware(now or clock())
     if not owner_user_id or owner_user_id!=chat_id:
         return _safe("protected_owner_binding_invalid")
-    if (expected_artifact.get("zone_id")!="B12345"
-        or expected_artifact.get("channel")!=1
-        or expected_artifact.get("current_segment")!=1
-        or expected_artifact.get("segment_requested_seconds")!=3599
-        or expected_artifact.get("requested_total_duration_seconds")!=7200
-        or expected_artifact.get("governed_executable_duration_seconds")!=7198
-        or expected_artifact.get("expected_segment_count")!=2):
+    try:
+        expected_output = commissioned_irrigation_contract(expected_artifact.get("zone_id"))
+    except ValueError:
+        return _safe("protected_irrigation_boundary_invalid")
+    if (expected_artifact.get("channel") != expected_output["channel"]
+        or int(expected_artifact.get("current_segment") or 0) < 1
+        or int(expected_artifact.get("segment_requested_seconds") or 0) not in range(1, 3600)
+        or int(expected_artifact.get("requested_total_duration_seconds") or 0) < 1
+        or int(expected_artifact.get("governed_executable_duration_seconds") or 0) < 1
+        or int(expected_artifact.get("expected_segment_count") or 0) < 1):
         return _safe("protected_irrigation_boundary_invalid")
     token_store=token_store or PostgresOAuthTokenStore(database_url)
     try:
@@ -164,8 +170,8 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
         return _execution_store_hold()
     if not isinstance(stored,dict) or stored.get("success") is not True:
         return {**_safe("eligibility_persistence_unproven"),"success":False}
-    baseline=commissioned_controller_baseline(); zone=artifact["zone_id"]
-    commissioning_id=baseline["b_commissioning_id"]
+    zone=artifact["zone_id"]
+    _output,baseline,commissioning_id=_commissioned_output(zone)
     decision={"decision_id":"ROOTLINE-DECISION-"+artifact["eligibility_sha256"][:24].upper(),
       "decision":"Run now","standing_authority":True,"zone_id":zone,
       "runtime_minutes":60,"runtime_seconds":artifact["maximum_duration_seconds"],
@@ -206,6 +212,19 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
                 job_event_reader=lambda job_id: store("load_job_events", job_id))}
 
 
+def _commissioned_output(zone):
+    output = commissioned_irrigation_contract(zone)
+    baseline = commissioned_registered_device_baseline(output["device_id"])
+    identities = ((baseline or {}).get("irrigation_commissioning_ids") or {})
+    commissioning_id = identities.get(zone)
+    if (not baseline or baseline.get("revoked") is not False
+            or commissioning_id != output.get("commissioning_id")
+            or baseline.get("configuration_generation") !=
+               output.get("commissioning_generation")):
+        raise ValueError("rootline_irrigation_commissioning_binding_invalid")
+    return output, baseline, commissioning_id
+
+
 def _safe(status):
     return {"success": True, "status": status, "hardware_commands": 0,
             "telegram_messages": 0, "writes_farm_data": False,
@@ -231,7 +250,10 @@ def _planning_observation(initial, owner, chat, next_due):
     tasks = {str(row.get("task_id") or "").removeprefix("irrigation_"): row
              for row in plan.get("candidate_tasks") or [] if isinstance(row, dict)}
     zones = []
-    for zone in ("B12345", "C12345"):
+    zone_ids = sorted(identity for identity, row in rootline_device_registry().items()
+        if row.get("collection")=="irrigation_zones"
+        and row.get("commissioned") is True)
+    for zone in zone_ids:
         task = tasks.get(zone, {})
         raw = str(task.get("zone_decision") or "Needs Data")
         decision = raw if raw in {"Run now", "Run later", "Hold", "Needs Data", "Not Due"} else "Needs Data"

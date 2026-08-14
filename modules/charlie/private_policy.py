@@ -121,7 +121,7 @@ def authority_for_intent(intent_type, risk_flags=None, *, explicit_owner_command
         return {"allowed": True, "tier": "auto", "reason": "read_only"}
     if intent_type == "observe_shadow_control_tower":
         return {"allowed": True, "tier": "observe", "reason": "authenticated_observation_only"}
-    if intent_type in {"create_mission", "approve_mission", "pause_mission", "reject_mission", "send_back_mission", "remember_preference", "prepare_order_pack", "prepare_beacon_draft", "schedule_follow_up"}:
+    if intent_type in {"create_mission", "classify_portfolio_baseline", "approve_mission", "pause_mission", "reject_mission", "send_back_mission", "remember_preference", "prepare_order_pack", "prepare_beacon_draft", "schedule_follow_up"}:
         return {"allowed": bool(explicit_owner_command), "tier": "charlie_delegated", "reason": "explicit_owner_command" if explicit_owner_command else "approval_bundle_required"}
     return {"allowed": False, "tier": "charl_human", "reason": "capability_not_delegated"}
 

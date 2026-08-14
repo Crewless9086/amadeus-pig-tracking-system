@@ -41,16 +41,10 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
     if claimed.get("status")=="protected_callback_completed_delivery_retry":
         from modules.oom_sakkie.rootline_protected_irrigation import protected_card_mission_id
         result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
-        answer=("ROOTLINE Hold: durable execution history is temporarily unavailable. "
-          "No controller command was issued and this confirmation has been contained."
-          if result.get("status")=="execution_store_degraded_hold" else
-          "B irrigation segment 1 started. It is bounded to 59 minutes 59 seconds; "
-          "ROOTLINE will verify provider OFF before any later reassessment."
-          if result.get("status")=="segment_started" else
-          "B irrigation segment 1 remains owned by ROOTLINE; no duplicate command was issued.")
+        answer=_irrigation_answer(result,claimed)
         return {"handled":True,**result,"answer":answer,"specialist":"ROOTLINE",
           "mission_id":claimed["mission_id"],
-          "card_mission_id":protected_card_mission_id(claimed["preview_digest"]),
+          "card_mission_id":protected_card_mission_id(claimed["preview_digest"],claimed["mission_id"]),
           "reply_markup":{"inline_keyboard":[]},
           "owner_visible_completion_policy":"verified_edit_or_new_message",
           "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False},200
@@ -82,16 +76,10 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
             complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         elif int(result.get("hardware_commands") or 0)==0:
             contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
-        answer=("ROOTLINE Hold: durable execution history is temporarily unavailable. "
-          "No controller command was issued and this confirmation has been contained."
-          if result.get("status")=="execution_store_degraded_hold" else
-          "B irrigation segment 1 started. It is bounded to 59 minutes 59 seconds; "
-          "ROOTLINE will verify provider OFF before any later reassessment."
-          if result.get("status")=="segment_started" else
-          "B irrigation segment 1 remains owned by ROOTLINE; no duplicate command was issued.")
+        answer=_irrigation_answer(result,claimed)
         return {"handled":True,**result,"answer":answer,"specialist":"ROOTLINE",
           "mission_id":claimed["mission_id"],
-          "card_mission_id":protected_card_mission_id(claimed["preview_digest"]),
+          "card_mission_id":protected_card_mission_id(claimed["preview_digest"],claimed["mission_id"]),
           "reply_markup":{"inline_keyboard":[]},
           "owner_visible_completion_policy":"verified_edit_or_new_message"},result_status
     if claimed["action_kind"]=="grouped_weights":
@@ -143,3 +131,18 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
     elif result.get("success") is not True:
         contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
     return {"handled":True,**result},result_status
+
+
+def _irrigation_answer(result, claim):
+    preview=claim.get("preview_payload") if isinstance(claim.get("preview_payload"),dict) else {}
+    zone=str(preview.get("zone_id") or "the governed zone")
+    segment=int(preview.get("current_segment") or 0)
+    seconds=int(preview.get("segment_requested_seconds") or 0)
+    if result.get("status")=="execution_store_degraded_hold":
+        return ("ROOTLINE Hold: durable execution history is temporarily unavailable. "
+                "No controller command was issued and this confirmation has been contained.")
+    if result.get("status")=="segment_started":
+        return (f"{zone} irrigation segment {segment} started. It is bounded to {seconds} seconds; "
+                "ROOTLINE will verify provider OFF before any later reassessment.")
+    return (f"{zone} irrigation segment {segment} remains owned by ROOTLINE; "
+            "no duplicate command was issued.")

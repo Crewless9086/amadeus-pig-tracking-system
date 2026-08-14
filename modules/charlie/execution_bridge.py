@@ -25,6 +25,7 @@ from modules.charlie.mission_store import (
     all_agent_names,
     get_mission,
     list_missions,
+    mission_runtime_eligible,
     record_mission,
     consume_final_agent_artifact,
     finalize_owner_review_transaction,
@@ -8772,6 +8773,8 @@ def _load_execution_mission(mission_id="", status="in_progress", database_url=No
         if status_code >= 400:
             return None, status_code, loaded
         mission = loaded.get("mission") or {}
+        if not mission_runtime_eligible(mission):
+            return None, 409, {"success": False, "status": "portfolio_classified_mission_ineligible", "mission_id": mission_id}
         if mission.get("status") != "in_progress":
             return None, 409, {
                 "success": False,
@@ -8781,10 +8784,10 @@ def _load_execution_mission(mission_id="", status="in_progress", database_url=No
                 "required_status": "in_progress",
             }
         return mission, 200, {}
-    loaded, status_code = list_missions(status=status, limit=1, database_url=database_url, connect_factory=connect_factory)
+    loaded, status_code = list_missions(status=status, limit=50, database_url=database_url, connect_factory=connect_factory)
     if status_code >= 400:
         return None, status_code, loaded
-    missions = loaded.get("missions") or []
+    missions = [mission for mission in (loaded.get("missions") or []) if mission_runtime_eligible(mission)]
     if not missions:
         return None, 404, {"success": False, "status": "no_execution_mission_available", "missions": []}
     return missions[0], 200, {}
@@ -8797,6 +8800,8 @@ def _load_release_mission(mission_id="", database_url=None, connect_factory=None
         if status_code >= 400:
             return None, status_code, loaded
         mission = loaded.get("mission") or {}
+        if not mission_runtime_eligible(mission):
+            return None, 409, {"success": False, "status": "portfolio_classified_mission_ineligible", "mission_id": mission_id}
         if mission.get("status") != "release_approved":
             return None, 409, {
                 "success": False,
@@ -8806,10 +8811,10 @@ def _load_release_mission(mission_id="", database_url=None, connect_factory=None
                 "required_status": "release_approved",
             }
         return mission, 200, {}
-    loaded, status_code = list_missions(status="release_approved", limit=1, database_url=database_url, connect_factory=connect_factory)
+    loaded, status_code = list_missions(status="release_approved", limit=50, database_url=database_url, connect_factory=connect_factory)
     if status_code >= 400:
         return None, status_code, loaded
-    missions = loaded.get("missions") or []
+    missions = [mission for mission in (loaded.get("missions") or []) if mission_runtime_eligible(mission)]
     if not missions:
         return None, 404, {"success": False, "status": "no_release_approved_mission_available", "missions": []}
     return missions[0], 200, {}
