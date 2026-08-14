@@ -1023,3 +1023,16 @@
 - Cross-references the CMQ-20260813-02A opaque-identity repair. This source-only
   change creates no mission, Shadow event, route, scheduler, process, agent,
   queue, schema, provider action, n8n authority or Google Sheets authority.
+
+# 2026-08-14 - CMQ-20260813-05 atomic bootstrap admission contract
+
+- Extended only the sealed authenticated explicit-ID creator with the single
+  owner-approved CMQ-05 bootstrap admission contract: epoch
+  `CORE-CURRENT-2026-08-14`, classification `current`, lifecycle `WORKING`,
+  human Control Tower as sole decision/dispatch authority and `runnable:false`.
+- The existing canonical mission transaction persists a non-runnable `paused`
+  mission plus exactly one `portfolio_admitted` event. Exact replay verifies
+  structured admission truth and writes no second creation/admission event;
+  malformed, aliased, cross-mission and conflicting admission fails closed.
+- This source change admits no mission by itself and grants no runner,
+  recovery, dispatch, release, Shadow, provider, n8n or Google Sheets authority.

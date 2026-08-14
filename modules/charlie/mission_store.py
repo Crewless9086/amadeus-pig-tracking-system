@@ -201,6 +201,17 @@ SYSTEM_TEST_MISSION_MARKERS = (
     "no-op mission",
     "noop mission",
 )
+BOOTSTRAP_PORTFOLIO_MISSION_ID = "CMQ-20260813-05"
+BOOTSTRAP_PORTFOLIO_ADMISSION = {
+    "portfolio_epoch": "CORE-CURRENT-2026-08-14",
+    "classification": "current",
+    "lifecycle_state": "WORKING",
+    "admission_version": "portfolio_admission_v1",
+    "admission_evidence": "owner_approved_cmq_20260813_05_bootstrap",
+    "decision_authority": "human_control_tower",
+    "dispatch_authority": "human_control_tower",
+    "runnable": False,
+}
 
 
 def record_mission(mission, source_context=None, database_url=None, connect_factory=None,
@@ -219,6 +230,19 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
             "status": "mission_intake_too_vague",
             "reason": intake_quality["reason"],
         }, 400
+    admission = (mission.get("metadata") or {}).get("portfolio_admission") \
+        if isinstance(mission.get("metadata"), dict) else None
+    if (exact_identity and mission.get("mission_id") == BOOTSTRAP_PORTFOLIO_MISSION_ID
+            and admission is None):
+        return {"stored": False, "configured": True,
+            "status": "portfolio_admission_required"}, 409
+    if admission is not None and not (
+            exact_identity
+            and mission.get("mission_id") == BOOTSTRAP_PORTFOLIO_MISSION_ID
+            and mission.get("status") == "paused"
+            and admission == BOOTSTRAP_PORTFOLIO_ADMISSION):
+        return {"stored": False, "configured": True,
+            "status": "portfolio_admission_not_authorized"}, 409
 
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -397,6 +421,10 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
                         "replacement_identity": replacement["replacement_identity"],
                     } if replacement else {}),
                 })
+                admission = persisted_metadata.get("portfolio_admission")
+                if isinstance(admission, dict):
+                    _insert_event(cursor, params["mission_id"], "portfolio_admitted",
+                        "Owner-approved bootstrap portfolio admission recorded.", admission)
     except Exception as exc:
         return {
             "stored": False,
@@ -418,6 +446,17 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
             ).get("generation_identity"),
         } if replacement else {}),
     }, 201
+
+
+def mission_runtime_eligible(mission):
+    """Fail closed for structured portfolio admissions not yet made runnable."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    # Phase A authorizes no runnable portfolio admission. Legacy rows without
+    # this key retain their established status-based behavior; any present,
+    # malformed, forged or future contract remains ineligible until a later
+    # reviewed enforcement stage explicitly validates and enables it.
+    return "portfolio_admission" not in metadata
 
 
 def list_missions(
@@ -2677,7 +2716,7 @@ def _resolve_exact_identity_intake(cursor, params):
         {"lock_key": f"mission-id:{mission_id}"},
     )
     cursor.execute(
-        """select mission_id, status, title, raw_text
+        """select mission_id, status, title, raw_text, metadata_json
            from public.charlie_missions
            where mission_id = %(mission_id)s
            for update""",
@@ -2686,7 +2725,17 @@ def _resolve_exact_identity_intake(cursor, params):
     exact_rows = cursor.fetchall()
     if exact_rows:
         row = exact_rows[0]
-        if row[2] == params.get("title") and row[3] == params.get("raw_text"):
+        expected_metadata = json.loads(params.get("metadata_json") or "{}")
+        expected_admission = expected_metadata.get("portfolio_admission")
+        persisted_metadata = row[4] if isinstance(row[4], dict) else {}
+        persisted_admission = persisted_metadata.get("portfolio_admission")
+        admission_matches = (
+            expected_admission is None and persisted_admission is None
+            or expected_admission is not None and persisted_admission is not None
+            and row[1] == params.get("status")
+            and persisted_admission == expected_admission)
+        if (row[2] == params.get("title") and row[3] == params.get("raw_text")
+                and admission_matches):
             return ({"stored": False, "configured": True,
                 "status": "duplicate_exact_mission", "mission_id": mission_id,
                 "existing_status": row[1], "title": row[2]}, 200)

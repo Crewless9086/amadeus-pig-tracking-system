@@ -9,6 +9,18 @@
 - Default state: disabled unless `CHARLIE_SHADOW_CONTROL_TOWER_ENABLED` is explicitly true. Human Control Tower remains sole dispatcher and decision authority.
 - Private observation input: `modules/charlie/shadow_control_tower_input.py`, registered only as the internal `observe_shadow_control_tower` private tool. `modules/charlie/private_runtime.py` supplies it through the existing authenticated structured-action boundary, using the sealed context defined by `modules/charlie/private_policy.py`. See `docs/06-operations/CMQ_20260813_05_PHASE_A_PRIVATE_INPUT.md`; no parser, route, delivery or runtime enablement is added.
 - Input tests: `tests/test_shadow_control_tower_input.py` cover authentication, disabled state, mission binding, replay/conflict propagation and zero effects.
+- Bootstrap portfolio admission: the sealed authenticated `create_mission`
+  action in `modules/charlie/private_tools.py` accepts only the one
+  owner-approved `CMQ-20260813-05` admission contract. The canonical
+  `modules/charlie/mission_store.py` transaction persists the exact opaque ID,
+  non-runnable `paused` status, structured epoch/classification/lifecycle and
+  one `portfolio_admitted` event. Exact replay is no-write. This does not admit
+  any other mission or activate portfolio scheduling, recovery, dispatch,
+  release or Shadow scoring. Tests:
+  `tests/test_private_opaque_mission_creation.py` and
+  `tests/test_private_opaque_mission_creation_postgres.py`.
+- Bootstrap implementation handover:
+  `docs/06-operations/CMQ_20260813_05_ATOMIC_BOOTSTRAP_ADMISSION.md`.
 
 ## CMQ-20260813-03 grouped weights and movements
 
