@@ -40,3 +40,4 @@ jobs:
               echo "::endgroup::"
             )
           done < <(find tests -maxdepth 1 -name 'test_charlie_*.py' -print | sort)
+          python -m unittest tests.test_portfolio_classification

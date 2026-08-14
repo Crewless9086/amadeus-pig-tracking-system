@@ -21,6 +21,11 @@
   `tests/test_private_opaque_mission_creation_postgres.py`.
 - Bootstrap implementation handover:
   `docs/06-operations/CMQ_20260813_05_ATOMIC_BOOTSTRAP_ADMISSION.md`.
+- Legacy portfolio classification: `modules/charlie/portfolio_classification.py`
+  implements the sealed exact-baseline/exact-set atomic operation documented in
+  `docs/06-operations/CMQ_20260813_05_PORTFOLIO_CLASSIFICATION.md` and tested by
+  `tests/test_portfolio_classification.py`. It is a non-admission dimension;
+  generic events and all classified legacy runtime work remain fail closed.
 
 ## CMQ-20260813-03 grouped weights and movements
 

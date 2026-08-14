@@ -1036,3 +1036,9 @@
   malformed, aliased, cross-mission and conflicting admission fails closed.
 - This source change admits no mission by itself and grants no runner,
   recovery, dispatch, release, Shadow, provider, n8n or Google Sheets authority.
+# 2026-08-14 — CMQ-20260813-05 legacy portfolio classification contract
+
+- Added a sealed, exact-baseline and exact-approved-set Supabase transaction for the owner-approved 86-row legacy classification.
+- Classification is a separate evidence-preserving, non-admission dimension; original statuses, evidence and timestamps are not rewritten.
+- Exact replay is no-op, conflicting replay fails closed, generic APIs cannot forge classification events, and classified legacy rows are runtime-ineligible.
+- No classification has been applied by this source change; integration, deployment and one authenticated operation remain required.
