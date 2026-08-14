@@ -316,7 +316,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
           "text":parsed["text"],"answer":protected_result.get("answer","") ,"message":protected_result,
           "delivery":delivery,"records_audit_trace":True,"reply_transport":"backend_handles_owner_task_delivery",
           "sends_telegram":int(delivery.get("telegram_sends") or 0)>0,"writes":protected_result.get("writes_farm_data") is True})
-        return body,protected_status if delivery.get("success") else 202
+        return body,(protected_status if delivery.get("success") else
+          503 if protected_result.get("success") is True else 202)
 
     active_manager_question = (load_active_manager_question(parsed)
                                if gateway_authority is not None else None)
