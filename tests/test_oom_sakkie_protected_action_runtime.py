@@ -152,6 +152,20 @@ def test_stale_irrigation_confirmation_never_reaches_runner(monkeypatch):
     assert status==409 and result["status"]=="protected_callback_expired" and calls==[]
 
 
+def test_callback_claim_lock_timeout_returns_bounded_hold_without_dispatch(monkeypatch):
+    QueryCanceled=type("QueryCanceled",(Exception,),{"__module__":"psycopg.errors"})
+    monkeypatch.setattr(runtime,"claim_callback",
+      lambda *args,**kwargs:(_ for _ in ()).throw(QueryCanceled("statement timeout")))
+    calls=[]
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority(),
+      irrigation_handler=lambda *args,**kwargs:calls.append(args))
+    assert status==503 and result["status"]=="protected_claim_store_degraded_hold"
+    assert result["hardware_commands"]==result["provider_control_calls"]==0
+    assert result["current_segment_consumed"] is None
+    assert result["segment_consumption_proven"] is False and calls==[]
+
+
 def test_irrigation_database_degraded_hold_contains_claim_and_clears_card(monkeypatch):
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
       "success":True,"status":"protected_callback_claimed","callback_token":"opaque",

@@ -104,7 +104,7 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     try:
         claim = store("claim_before_on", execution)
     except RootlineExecutionStoreUnavailable:
-        return _degraded_hold()
+        return _degraded_hold(consumption_unknown=True)
     if claim.get("created") is not True:
         return _result("execution_claim_conflict", commands=0, messages=0)
     accepted = transport.set_state(device_id="100204e9bc", channel=execution["channel"], state="ON",
@@ -398,10 +398,11 @@ def _bounded_off(execution, store, transport):
     return {"commands": commands, "outcomes": outcomes}
 
 
-def _degraded_hold():
+def _degraded_hold(*, consumption_unknown=False):
     return _result("execution_store_degraded_hold", commands=0, messages=0,
         autonomous_on_enabled=False, durable_execution_truth_loaded=False,
-        current_segment_consumed=False, degraded=True)
+        current_segment_consumed=None if consumption_unknown else False,
+        segment_consumption_proven=not consumption_unknown, degraded=True)
 
 
 def _eligible(decision, decision_id, commissioning, now):

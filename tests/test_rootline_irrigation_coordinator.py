@@ -140,7 +140,8 @@ def test_claim_database_timeout_never_reaches_on():
     transport=Transport();notices=[]
     result=run(ClaimUnavailable(),transport,notices)
     assert result["status"]=="execution_store_degraded_hold"
-    assert result["current_segment_consumed"] is False
+    assert result["current_segment_consumed"] is None
+    assert result["segment_consumption_proven"] is False
     assert result["hardware_commands"]==0 and transport.calls==[] and notices==[]
 
 

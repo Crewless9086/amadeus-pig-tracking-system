@@ -23,10 +23,21 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
             reply_to_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory)
         if not active:return {"handled":False,"status":"protected_confirmation_not_unambiguous"},200
         data=f"{CALLBACK_PREFIX}{active['callback_token']}:confirm"
-    claimed,status=claim_callback(data,owner_user_id=owner,private_chat_id=chat,
-      provider_message_id=str(parsed.get("provider_message_id") or parsed.get("callback_query_id") or ""),
-      provider_timestamp=str(parsed.get("provider_timestamp") or ""),
-      source_card_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory)
+    try:
+        claimed,status=claim_callback(data,owner_user_id=owner,private_chat_id=chat,
+          provider_message_id=str(parsed.get("provider_message_id") or parsed.get("callback_query_id") or ""),
+          provider_timestamp=str(parsed.get("provider_timestamp") or ""),
+          source_card_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory)
+    except Exception as exc:
+        from modules.oom_sakkie.bounded_postgres_read import is_database_unavailable
+        if not is_database_unavailable(exc):
+            raise
+        return {"handled":True,"success":False,
+          "status":"protected_claim_store_degraded_hold",
+          "answer":"ROOTLINE Hold: protected confirmation storage is temporarily unavailable. No controller command was issued.",
+          "hardware_commands":0,"provider_control_calls":0,
+          "durable_claim_truth_loaded":False,"current_segment_consumed":None,
+          "segment_consumption_proven":False,"recovery_required":True},503
     if claimed.get("status")=="protected_callback_completed_delivery_retry":
         from modules.oom_sakkie.rootline_protected_irrigation import protected_card_mission_id
         result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}

@@ -273,5 +273,5 @@ def _movement_destination(row):
     return "" if value in (None,"","Unknown") else str(value)
 
 def _connect():
-    import psycopg
-    return psycopg.connect(os.environ["DATABASE_URL"],connect_timeout=10)
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
+    return connect_bounded_postgres(database_url=os.environ.get("DATABASE_URL"))
