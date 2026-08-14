@@ -197,20 +197,23 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
             connect=connect) as connection:
         with connection.cursor() as cursor:
             pigs = _rows(cursor, """select pig_id,tag_number,pig_name,status,on_farm,animal_type,purpose
-                from public.current_canonical_pigs order by pig_id limit 5000""")
+                from public.current_canonical_pigs order by pig_id limit 5001""")
             window_weights = _rows(cursor, """select weight_event_id,pig_id,weight_date,weight_kg
                 from public.pig_weight_events where weight_date between %s and %s
-                order by pig_id,weight_date,weight_event_id limit 10000""", (window_start, window_end))
+                order by pig_id,weight_date,weight_event_id limit 10001""", (window_start, window_end))
             prior_weights = _rows(cursor, """with latest_day as (
                     select pig_id,max(weight_date) as weight_date
                     from public.pig_weight_events where weight_date<%s group by pig_id)
                 select event.weight_event_id,event.pig_id,event.weight_date,event.weight_kg
                 from public.pig_weight_events event join latest_day
                   on latest_day.pig_id=event.pig_id and latest_day.weight_date=event.weight_date
-                order by event.pig_id,event.weight_event_id limit 10000""", (window_start,))
+                order by event.pig_id,event.weight_event_id limit 10001""", (window_start,))
             lifecycle = _rows(cursor, """select pig_id,lifecycle_event_type as event_type,effective_at
                 from public.pig_lifecycle_events where effective_at::date between %s and %s
-                order by effective_at,lifecycle_event_id limit 5000""", (window_start, window_end))
+                order by effective_at,lifecycle_event_id limit 5001""", (window_start, window_end))
+            if (len(pigs) > 5000 or len(window_weights) > 10000
+                    or len(prior_weights) > 10000 or len(lifecycle) > 5000):
+                raise RuntimeError("herdmaster_daily_evidence_row_bound_exceeded")
             owner_hash = hashlib.sha256(str(owner_user_id or "").encode()).hexdigest()
             cursor.execute("""select review_json->'mortality_consumption',created_at
                 from public.sam_live_stock_conversation_review_events
