@@ -2,6 +2,7 @@ from modules.oom_sakkie import protected_action_runtime as runtime
 from modules.oom_sakkie.protected_action_claims import build_buttons, canonical_preview_digest, create_claim
 from datetime import datetime, timedelta, timezone
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie import telegram_direct
 from modules.oom_sakkie.telegram_direct import handle_telegram_direct_webhook
 import json
 
@@ -78,7 +79,7 @@ def test_irrigation_confirmation_uses_existing_protected_callback_once(monkeypat
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
       "success":True,"status":"protected_callback_claimed","callback_token":"opaque",
       "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
-      "preview_digest":"DIGEST","preview_payload":payload},200))
+      "preview_digest":"d"*64,"preview_payload":payload},200))
     completed=[]
     monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:completed.append(args) or {
       "completed":True,"replayed":False,"result":args[1]})
@@ -90,13 +91,32 @@ def test_irrigation_confirmation_uses_existing_protected_callback_once(monkeypat
       {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority(),irrigation_handler=handler)
     assert status==200 and result["status"]=="segment_started"
     assert len(calls)==1 and len(completed)==1
+    assert result["mission_id"]=="RMQ-20260813-04"
+    assert result["card_mission_id"].startswith("RMQ-20260813-04:PROTECTED:")
+    assert result["reply_markup"]=={"inline_keyboard":[]}
+    assert result["owner_visible_completion_policy"]=="verified_edit_or_new_message"
+
+
+def test_completed_irrigation_callback_retries_delivery_without_execution(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_completed_delivery_retry",
+      "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
+      "preview_digest":"d"*64,"result":{"success":True,"status":"segment_started",
+        "hardware_commands":1,"provider_control_calls":1}},200))
+    calls=[]
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority(),
+      irrigation_handler=lambda *args,**kwargs:calls.append(args))
+    assert status==200 and calls==[]
+    assert result["hardware_commands"]==0 and result["provider_control_calls"]==0
+    assert result["reply_markup"]=={"inline_keyboard":[]}
 
 
 def test_irrigation_exception_retains_executing_claim_for_provider_retry(monkeypatch):
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
       "success":True,"status":"protected_callback_claimed","callback_token":"opaque",
       "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
-      "preview_digest":"DIGEST","preview_payload":{}},200))
+      "preview_digest":"d"*64,"preview_payload":{}},200))
     contained=[]
     monkeypatch.setattr(runtime,"contain_claim",lambda *args,**kwargs:contained.append(args))
     result,status=runtime.handle_protected_action_input(
@@ -111,7 +131,7 @@ def test_retried_provider_receipt_recovers_irrigation_after_restart(monkeypatch)
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
       "success":True,"status":"protected_callback_recovered","callback_token":"opaque",
       "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
-      "preview_digest":"DIGEST","preview_payload":{}},200))
+      "preview_digest":"d"*64,"preview_payload":{}},200))
     completed=[]
     monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:completed.append(args) or {
       "completed":True,"result":args[1]})
@@ -183,6 +203,42 @@ def test_allowed_family_reporter_cannot_use_protected_callback():
     result,status=handle_telegram_direct_webhook(payload,
       headers={"X-Telegram-Bot-Api-Secret-Token":secret},environ=env)
     assert status==403 and result["status"]=="telegram_protected_action_owner_required"
+
+
+def test_direct_callback_preserves_digest_scoped_card_lifecycle(monkeypatch):
+    owner="5721652188";secret="s"*48
+    env={"OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED":"1","OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED":"1",
+      "OOM_SAKKIE_TELEGRAM_BOT_TOKEN":"123456789:"+"A"*40,
+      "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET":secret,"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":owner,
+      "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID":owner}
+    card_id="RMQ-20260813-04:PROTECTED:"+"D"*24
+    monkeypatch.setattr(telegram_direct,"handle_protected_action_input",lambda *args,**kwargs:({
+      "success":True,"status":"segment_started","answer":"Started","specialist":"ROOTLINE",
+      "mission_id":"RMQ-20260813-04","card_mission_id":card_id},200))
+    delivered=[]
+    monkeypatch.setattr(telegram_direct,"deliver_family_result",lambda *args,**kwargs:delivered.append(kwargs) or {"success":True,"telegram_sends":0,"telegram_edits":1})
+    monkeypatch.setattr(telegram_direct,"acknowledge_telegram_callback",lambda *args,**kwargs:({"success":True},200))
+    payload={"callback_query":{"id":"cb-stable","data":"oompa:opaque:confirm","from":{"id":int(owner)},
+      "message":{"message_id":700,"chat":{"id":int(owner),"type":"private"}}}}
+    result,status=handle_telegram_direct_webhook(payload,headers={"X-Telegram-Bot-Api-Secret-Token":secret},environ=env)
+    assert status==200 and delivered==[{"specialist":"ROOTLINE","mission_id":"RMQ-20260813-04","card_mission_id":card_id}]
+
+
+def test_direct_callback_requests_provider_retry_when_completion_edit_fails(monkeypatch):
+    owner="5721652188";secret="s"*48
+    env={"OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED":"1","OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED":"1",
+      "OOM_SAKKIE_TELEGRAM_BOT_TOKEN":"123456789:"+"A"*40,
+      "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET":secret,"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":owner,
+      "OOM_SAKKIE_TELEGRAM_OWNER_USER_ID":owner}
+    monkeypatch.setattr(telegram_direct,"handle_protected_action_input",lambda *args,**kwargs:({
+      "success":True,"status":"segment_started","answer":"Started","specialist":"ROOTLINE",
+      "mission_id":"RMQ-20260813-04","card_mission_id":"CARD"},200))
+    monkeypatch.setattr(telegram_direct,"deliver_family_result",lambda *args,**kwargs:{"success":False,"telegram_sends":0,"telegram_edits":0})
+    monkeypatch.setattr(telegram_direct,"acknowledge_telegram_callback",lambda *args,**kwargs:({"success":True},200))
+    payload={"callback_query":{"id":"cb-retry","data":"oompa:opaque:confirm","from":{"id":int(owner)},
+      "message":{"message_id":700,"chat":{"id":int(owner),"type":"private"}}}}
+    result,status=handle_telegram_direct_webhook(payload,headers={"X-Telegram-Bot-Api-Secret-Token":secret},environ=env)
+    assert status==503 and result["success"] is False
 
 
 class PriorClaimDb:
