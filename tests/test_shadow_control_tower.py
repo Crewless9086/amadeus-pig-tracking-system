@@ -1,4 +1,5 @@
 from copy import deepcopy
+from unittest.mock import patch
 
 from modules.charlie import shadow_control_tower as shadow
 
@@ -69,10 +70,25 @@ def test_evidence_taxonomy_and_status_fail_closed():
 def test_duplicate_proposal_replay_is_one_operational_event():
     db=EventDb(); env={shadow.ENABLE_ENV:"yes"}
     first,status1=shadow.record_shadow_proposal(transaction(),environ=env,connect_factory=lambda _url:db)
-    second,status2=shadow.record_shadow_proposal(transaction(),environ=env,connect_factory=lambda _url:db)
+    proposal=shadow.propose_shadow_decision(transaction(),environ=env)["proposal"]
+    with patch.object(shadow,"_persisted_proposal_for_feedback",
+                      return_value=({"success":True,"proposal":proposal},200)):
+        second,status2=shadow.record_shadow_proposal(transaction(),environ=env,connect_factory=lambda _url:db)
     assert status1==201 and first["created"] is True
     assert status2==200 and second["created"] is False
     assert first["event_id"]==second["event_id"] and first["proposal_id"]==second["proposal_id"]
+
+
+def test_changed_proposal_for_same_feedback_transaction_fails_closed():
+    env={shadow.ENABLE_ENV:"yes"}
+    changed=transaction(); changed["business_status"]="changed"
+    durable=shadow.propose_shadow_decision(transaction(),environ=env)["proposal"]
+    with patch.object(shadow,"append_operational_event",
+                      return_value=({"success":True,"created":False},200)), \
+         patch.object(shadow,"_persisted_proposal_for_feedback",
+                      return_value=({"success":True,"proposal":durable},200)):
+        result,status=shadow.record_shadow_proposal(changed,environ=env)
+    assert status==409 and result["status"]=="shadow_feedback_transaction_replay_conflict"
 
 
 def test_comparison_is_deterministic_and_records_no_dispatch_effect(monkeypatch):

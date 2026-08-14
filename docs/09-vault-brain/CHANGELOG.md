@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-08-14 - Phase A private observation input prepared
+
+- Added a disabled-by-default internal private CORE action for supplying one genuine Shadow proposal and its later human Control Tower decision to the existing operational-event fabric.
+- Bound input to a sealed result from the existing private authentication boundary and the exact existing mission; malformed, cross-mission, cross-feedback, duplicate and conflicting records fail closed through stable feedback/proposal/decision identities.
+- Added no public route, parser, scheduler, process, mission, dispatch, provider, farm-write or release authority; no comparison was fabricated and the source remains undeployed and disabled.
+
 ## 2026-08-13 - Phase A Shadow Control Tower source prepared
 
 - Added a disabled-by-default, non-authoritative proposal/comparison contract for later genuine Control Tower feedback transactions.
