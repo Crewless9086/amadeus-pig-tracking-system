@@ -456,7 +456,7 @@ def mission_runtime_eligible(mission):
     # this key retain their established status-based behavior; any present,
     # malformed, forged or future contract remains ineligible until a later
     # reviewed enforcement stage explicitly validates and enables it.
-    return "portfolio_admission" not in metadata
+    return "portfolio_admission" not in metadata and "portfolio_classification" not in metadata
 
 
 def list_missions(
@@ -575,6 +575,7 @@ def list_owner_work_missions(status, limit=10, database_url=None, connect_factor
                     from public.charlie_missions
                     where status = %(status)s
                       and coalesce(nullif(metadata_json->'intake_quality'->>'queue_class', ''), 'owner_work') = 'owner_work'
+                      and metadata_json->'portfolio_classification' is null
                       and {_not_durably_superseded_sql()}
                       and {_not_execution_held_sql()}
                     {_mission_order_clause(clean_status)}
@@ -785,6 +786,7 @@ def update_mission_status(
     set_sql = ",\n                        ".join(set_lines)
     expected_clause = "and status = %(expected_status)s" if expected_status else ""
     hold_clause = f"and {_not_execution_held_sql()}"
+    portfolio_clause = "and metadata_json->'portfolio_classification' is null"
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -799,6 +801,7 @@ def update_mission_status(
                     where mission_id = %(mission_id)s
                     {expected_clause}
                     {hold_clause}
+                    {portfolio_clause}
                     returning mission_id
                     """,
                     {
@@ -887,6 +890,7 @@ def transition_mission_review_state(
                         updated_at = now()
                     where mission_id = %(mission_id)s
                     {expected_clause}
+                    and metadata_json->'portfolio_classification' is null
                     returning mission_id
                     """,
                     {
@@ -972,6 +976,8 @@ def finalize_owner_review_transaction(
                 if not row:
                     return {"success": False, "status": "not_found"}, 404
                 current_status, metadata = row[0], row[1] or {}
+                if "portfolio_classification" in metadata:
+                    return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
                 if current_status != expected_status:
                     return {
                         "success": False,
@@ -1047,6 +1053,7 @@ def _not_execution_held_sql():
                     and release_event.release_of_event_id = hold_event.event_id
               )
         )
+        and public.charlie_missions.metadata_json->'portfolio_classification' is null
     """
 
 
@@ -1511,6 +1518,8 @@ def consume_final_agent_artifact(
                 rows = cursor.fetchall()
                 if not rows:
                     return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                if "portfolio_classification" in dict(rows[0][0] or {}):
+                    return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
                 metadata = dict(rows[0][0] or {})
                 ingestion = dict(metadata.get("final_artifact_ingestion") or {})
                 claims = list(ingestion.get("claims") or [])
@@ -1699,6 +1708,8 @@ def record_final_artifact_rejection(
                 if not rows:
                     return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
                 metadata = dict(rows[0][0] or {})
+                if "portfolio_classification" in metadata:
+                    return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
                 review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
                 evidence_generation = _clean_text(
                     review_packet.get("review_generation")
@@ -2028,6 +2039,8 @@ def update_mission_workflow_step(
     if load_status >= 400:
         return loaded, load_status
     mission = loaded.get("mission") or {}
+    if not mission_runtime_eligible(mission):
+        return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     workflow = metadata.get("agent_workflow") if isinstance(metadata.get("agent_workflow"), list) else _default_agent_workflow(mission.get("mission_type", ""))
     updated_workflow = _update_workflow_items(workflow, agent, step_status, findings, next_agent)
