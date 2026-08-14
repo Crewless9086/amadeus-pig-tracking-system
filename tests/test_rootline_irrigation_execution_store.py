@@ -10,8 +10,64 @@ import pytest
 from modules.telemetry.rootline_irrigation_execution_store import (
     _claim_single_auxiliary, _claim_single_controller, _daily_dispatch_blocker,
     _event_id, _stored_event_body,
-    _is_active_candidate,
+    _is_active_candidate, RootlineExecutionStoreUnavailable, rootline_irrigation_execution_store,
 )
+
+
+class BoundedFailure(Exception):
+    __module__="psycopg.errors"
+
+
+class FailedConnection:
+    def __init__(self): self.closed=False
+    def __enter__(self): return self
+    def __exit__(self,*args): self.closed=True; return False
+    def cursor(self): raise BoundedFailure("statement timeout")
+
+
+def test_active_history_bounded_read_failure_is_not_interpreted_as_empty(monkeypatch):
+    calls=[];connection=FailedConnection()
+    monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_read",
+        lambda **kwargs:(calls.append(kwargs) or connection))
+    with pytest.raises(RootlineExecutionStoreUnavailable,match="load_active"):
+        rootline_irrigation_execution_store("load_active",None)
+    assert len(calls)==1 and connection.closed is True
+
+
+@pytest.mark.parametrize("failure_name",["OperationalError","ConnectionTimeout","PoolTimeout","QueryCanceled","LockNotAvailable"])
+def test_connection_pool_and_query_deadlines_fail_closed(monkeypatch,failure_name):
+    failure=type(failure_name,(Exception,),{"__module__":"psycopg.errors"})
+    monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_read",
+        lambda **kwargs:(_ for _ in ()).throw(failure(failure_name)))
+    with pytest.raises(RootlineExecutionStoreUnavailable,match="load_active"):
+        rootline_irrigation_execution_store("load_active",None)
+
+
+def test_store_recovers_cleanly_after_database_availability_returns(monkeypatch):
+    class EmptyCursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,*args):pass
+        def fetchall(self):return []
+    class EmptyConnection:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self):return EmptyCursor()
+    attempts=iter([FailedConnection(),EmptyConnection()])
+    monkeypatch.setattr("modules.oom_sakkie.bounded_postgres_read.connect_bounded_read",
+        lambda **kwargs:next(attempts))
+    with pytest.raises(RootlineExecutionStoreUnavailable):
+        rootline_irrigation_execution_store("load_active",None)
+    assert rootline_irrigation_execution_store("load_active",None) is None
+
+
+def test_mandatory_eligibility_write_timeout_becomes_typed_degraded_boundary(monkeypatch):
+    monkeypatch.setattr(
+        "modules.sales.sam_live_stock_launch_control.record_sam_live_stock_review_event",
+        lambda *args,**kwargs:({"success":False,"error_type":"QueryCanceled"},500))
+    with pytest.raises(RootlineExecutionStoreUnavailable,match="record_eligibility"):
+        rootline_irrigation_execution_store("record_eligibility",{
+            "execution_id":"EXEC-BOUNDED-WRITE"})
 
 
 def test_on_claim_identity_is_atomic_and_stable_across_replay():

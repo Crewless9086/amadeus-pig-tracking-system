@@ -409,7 +409,7 @@ def get_active_sam_live_stock_owner_card(conversation_id, database_url=None):
         return {"success": False, "status": "sam_live_stock_owner_card_load_failed", "error": _clean(str(exc), 240), "card": {}, **AUTHORITY_FLAGS}, 500
 
 
-def record_sam_live_stock_review_event(event, database_url=None):
+def record_sam_live_stock_review_event(event, database_url=None, *, connect_factory=None):
     event = event if isinstance(event, dict) else {}
     params = _review_event_params(event)
     if not params["review_event_id"]:
@@ -422,7 +422,8 @@ def record_sam_live_stock_review_event(event, database_url=None):
     except ImportError:
         return {"success": False, "status": "psycopg_dependency_missing", "event": params, **AUTHORITY_FLAGS}, 500
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        with (connect_factory() if connect_factory else
+              psycopg.connect(database_url, connect_timeout=10)) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """

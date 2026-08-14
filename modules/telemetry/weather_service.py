@@ -193,6 +193,7 @@ def ingest_weather_forecast(payload, provided_api_key="", database_url=None):
 
 
 def get_current_weather_state(database_url=None):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     database_url = _database_url(database_url)
     if not database_url:
         return _not_configured()
@@ -203,7 +204,7 @@ def get_current_weather_state(database_url=None):
         return _dependency_missing()
 
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        with connect_bounded_read(database_url=database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -236,6 +237,7 @@ def get_current_weather_state(database_url=None):
 
 
 def get_weather_forecast(days=3, database_url=None):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     days = _bounded_days(days)
     database_url = _database_url(database_url)
     if not database_url:
@@ -247,7 +249,7 @@ def get_weather_forecast(days=3, database_url=None):
         return _dependency_missing()
 
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        with connect_bounded_read(database_url=database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -293,6 +295,7 @@ def get_weather_forecast(days=3, database_url=None):
 
 
 def get_weather_today_summary(summary_date=None, database_url=None):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     selected_date = _parse_optional_summary_date(summary_date)
     database_url = _database_url(database_url)
     if not database_url:
@@ -309,7 +312,7 @@ def get_weather_today_summary(summary_date=None, database_url=None):
     end_utc_exclusive = (start_za.replace(hour=0) + _one_day()).astimezone(timezone.utc)
 
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        with connect_bounded_read(database_url=database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """

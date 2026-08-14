@@ -992,3 +992,20 @@
 - Authoritative readback proves Pig 127 is Dead and off-farm effective
   2026-08-03; no protected mortality decision remains. Pig 130's corrected
   2026-08-06 death and the four 11 August weight records remain unchanged.
+# 2026-08-14 — CMQ-20260813-05 authenticated opaque mission creation repair
+
+- Extended only the existing authenticated private `create_mission` action to
+  pass an explicitly owner-approved opaque `mission_id` unchanged into the
+  canonical Supabase `record_mission()` boundary and verify exact readback.
+- Explicit identity requires the sealed private-owner action context and exact
+  context binding. Malformed, aliased, multiple, substituted, conflicting and
+  title-colliding identities fail closed. Exact replay reuses the same mission;
+  legacy authenticated calls without an explicit ID retain generated IDs.
+- The canonical store serializes normalized titles for both exact and retained
+  legacy intake; exact mode additionally serializes the opaque ID before any
+  insert or event. It forbids legacy replacement/alias behavior for the
+  authenticated exact call and makes exact replay, competing-title creation and
+  exact-versus-legacy races converge without unrelated effects.
+- Cross-references the CMQ-20260813-02A opaque-identity repair. This source-only
+  change creates no mission, Shadow event, route, scheduler, process, agent,
+  queue, schema, provider action, n8n authority or Google Sheets authority.

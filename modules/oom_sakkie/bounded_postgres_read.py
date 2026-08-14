@@ -10,16 +10,23 @@ OWNER_REQUEST_DEADLINE_SECONDS = 12
 
 
 def connect_bounded_read(*, database_url=None, connect=None):
+    return connect_bounded_postgres(database_url=database_url, connect=connect,
+                                    read_only=True)
+
+
+def connect_bounded_postgres(*, database_url=None, connect=None, read_only=False):
+    """Acquire one bounded PostgreSQL session; context managers own cleanup."""
     url = str(database_url or os.environ.get("DATABASE_URL") or "").strip()
     if not url:
         raise RuntimeError("bounded_database_url_unavailable")
     if connect is None:
         import psycopg
         connect = psycopg.connect
+    read_only_option = "-c default_transaction_read_only=on " if read_only else ""
     return connect(
         url,
         connect_timeout=CONNECT_TIMEOUT_SECONDS,
-        options=("-c default_transaction_read_only=on "
+        options=(read_only_option +
                  f"-c statement_timeout={STATEMENT_TIMEOUT_MS} "
                  f"-c lock_timeout={LOCK_TIMEOUT_MS}"),
     )
@@ -30,4 +37,4 @@ def is_database_unavailable(exc):
     return (exc.__class__.__module__.split(".", 1)[0] == "psycopg"
             or exc.__class__.__name__ in {
                 "OperationalError", "ConnectionTimeout", "QueryCanceled",
-                "QueryCanceledError", "LockNotAvailable"})
+                "QueryCanceledError", "LockNotAvailable", "PoolTimeout"})
