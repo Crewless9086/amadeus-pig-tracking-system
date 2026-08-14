@@ -41,6 +41,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         result.get("owner_visible_completion_policy") == "verified_edit_or_new_message"
         and str(result.get("status") or "") in {
             "completed", "grouped_weights_completed", "mortality_lifecycle_recorded"
+            , "segment_started", "active_segment_owned"
         }
     )
     if exclusive_completion and reply_markup is None:
@@ -136,11 +137,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         ambiguous_edit = any(row.get("state") == "contained"
             and row.get("reason") == "telegram_edit_unconfirmed" for row in prior_update)
         if ambiguous_edit and exclusive_completion:
-            return {"success": False,
-                "status": "family_message_completion_delivery_ambiguous",
-                "mission_id": mission_id, "card_mission_id": card_mission_id,
-                "telegram_message_id": card_id, "telegram_sends": 0,
-                "telegram_edits": 0}
+            # Editing the same provider card to the same text with empty
+            # buttons is idempotent. Permit one separately claimed recovery
+            # attempt; never send a replacement card.
+            update_id += "-RECOVERY-2"
         if ambiguous_edit and result.get("requires_visible_notification") is True:
             # Never retry the ambiguous edit. A must-notice lifecycle question
             # gets one separately claimed provider notification instead.

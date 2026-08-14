@@ -7,6 +7,8 @@
 - Operating handover: `docs/06-operations/CMQ_20260813_05_PHASE_A_SHADOW_CONTROL_TOWER.md`.
 - Storage: existing Supabase `operational_events` fabric at authority tier `observe`; no new queue, scheduler, agent, terminal fleet, schema or ledger.
 - Default state: disabled unless `CHARLIE_SHADOW_CONTROL_TOWER_ENABLED` is explicitly true. Human Control Tower remains sole dispatcher and decision authority.
+- Private observation input: `modules/charlie/shadow_control_tower_input.py`, registered only as the internal `observe_shadow_control_tower` private tool. `modules/charlie/private_runtime.py` supplies it through the existing authenticated structured-action boundary, using the sealed context defined by `modules/charlie/private_policy.py`. See `docs/06-operations/CMQ_20260813_05_PHASE_A_PRIVATE_INPUT.md`; no parser, route, delivery or runtime enablement is added.
+- Input tests: `tests/test_shadow_control_tower_input.py` cover authentication, disabled state, mission binding, replay/conflict propagation and zero effects.
 
 ## CMQ-20260813-03 grouped weights and movements
 
