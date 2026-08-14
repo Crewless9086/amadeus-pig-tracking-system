@@ -61,7 +61,10 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
                                          next_reassessment_at)
         return {**_safe(artifact.get("status") or "not_eligible"),
                 "execution_eligibility": artifact, **blocked}
-    stored = store("record_eligibility", artifact)
+    try:
+        stored = store("record_eligibility", artifact)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
     if not isinstance(stored, dict) or stored.get("success") is not True:
         return {**_safe("eligibility_persistence_unproven"), "success": False}
     baseline = commissioned_controller_baseline()
@@ -155,7 +158,10 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
     if (artifact.get("eligible") is not True or artifact.get("current_segment")!=1
             or any(artifact.get(k)!=expected_artifact.get(k) for k in bound_keys)):
         return _safe("protected_irrigation_eligibility_changed")
-    stored=store("record_eligibility",artifact)
+    try:
+        stored=store("record_eligibility",artifact)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
     if not isinstance(stored,dict) or stored.get("success") is not True:
         return {**_safe("eligibility_persistence_unproven"),"success":False}
     baseline=commissioned_controller_baseline(); zone=artifact["zone_id"]
@@ -187,6 +193,9 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
              store=rootline_irrigation_execution_store):
     evidence, operating_date, generated_at = evidence_loader(
         database_url=database_url, now=now)
+    history = evidence.get("irrigation_history") if isinstance(evidence, dict) else None
+    if isinstance(history, dict) and history.get("status") == "Unavailable":
+        raise RootlineExecutionStoreUnavailable("load_canonical_irrigation_history")
     plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
     controller = readback(token_store=token_store, environ=source, now=now)
     return {"evidence": evidence, "plan": plan, "controller": controller,

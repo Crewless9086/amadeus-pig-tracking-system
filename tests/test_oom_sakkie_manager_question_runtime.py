@@ -129,6 +129,17 @@ def test_bounded_read_sets_acquisition_query_and_lock_deadlines():
     assert "lock_timeout=1000" in calls[0][1]["options"]
 
 
+def test_bounded_write_uses_same_deadlines_without_read_only_mode():
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
+    calls=[]
+    connect_bounded_postgres(database_url="postgresql://example",
+        connect=lambda *a,**kw:calls.append((a,kw)) or object())
+    assert calls[0][1]["connect_timeout"]==3
+    assert "statement_timeout=3000" in calls[0][1]["options"]
+    assert "lock_timeout=1000" in calls[0][1]["options"]
+    assert "default_transaction_read_only" not in calls[0][1]["options"]
+
+
 def test_only_database_failures_acquire_zero_downstream_classification():
     OperationalError = type("OperationalError", (Exception,), {})
     assert is_database_unavailable(OperationalError("database")) is True

@@ -61,6 +61,15 @@ def test_store_recovers_cleanly_after_database_availability_returns(monkeypatch)
     assert rootline_irrigation_execution_store("load_active",None) is None
 
 
+def test_mandatory_eligibility_write_timeout_becomes_typed_degraded_boundary(monkeypatch):
+    monkeypatch.setattr(
+        "modules.sales.sam_live_stock_launch_control.record_sam_live_stock_review_event",
+        lambda *args,**kwargs:({"success":False,"error_type":"QueryCanceled"},500))
+    with pytest.raises(RootlineExecutionStoreUnavailable,match="record_eligibility"):
+        rootline_irrigation_execution_store("record_eligibility",{
+            "execution_id":"EXEC-BOUNDED-WRITE"})
+
+
 def test_on_claim_identity_is_atomic_and_stable_across_replay():
     first = _event_id("claim_before_on", {"execution_id": "EXEC-1", "zone_id": "B12345"})
     replay = _event_id("claim_before_on", {"execution_id": "EXEC-1", "zone_id": "B12345",

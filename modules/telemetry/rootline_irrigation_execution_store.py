@@ -40,6 +40,7 @@ def rootline_irrigation_execution_store(action, payload):
     from modules.sales.sam_live_stock_launch_control import (
         build_sam_live_stock_review_event, record_sam_live_stock_review_event,
     )
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
     event = build_sam_live_stock_review_event(
         {"conversation_id": execution_id}, {}, {},
         {"score": 0, "safe_to_send": False, "recommended_action": action},
@@ -49,7 +50,13 @@ def rootline_irrigation_execution_store(action, payload):
         "review_json": {"rootline_execution": _stored_event_body(action, body, event_id)},
         "decision_json": {}, "facts_json": {},
         "customer_message_excerpt": "", "sam_reply_excerpt": ""})
-    result, status = record_sam_live_stock_review_event(event)
+    result, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: connect_bounded_postgres(
+            database_url=os.environ.get("DATABASE_URL")))
+    if status >= 500 and str(result.get("error_type") or "") in {
+            "OperationalError", "ConnectionTimeout", "PoolTimeout",
+            "QueryCanceled", "QueryCanceledError", "LockNotAvailable"}:
+        raise RootlineExecutionStoreUnavailable(action)
     success = status < 400 and result.get("success") is True
     if history_created is None:
         history_created = _append_history(action, body) if success else False
