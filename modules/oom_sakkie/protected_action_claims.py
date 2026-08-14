@@ -145,6 +145,17 @@ def contain_claim(token, result, *, connect_factory=None):
           where callback_token=%s and status='executing'""",
           (json.dumps(result,sort_keys=True,default=str),token))
 
+def contain_unbound_preview_claim(token, result, *, connect_factory=None):
+    """Contain a preview whose provider card was never durably bound."""
+    with (connect_factory() if connect_factory else _connect()) as db:
+      with db.cursor() as cur:
+        cur.execute("""update app_private.oom_protected_action_claims
+          set status='contained',result_payload=%s::jsonb,completed_at=now()
+          where callback_token=%s and status='active'
+          and preview_card_message_id is null""",
+          (json.dumps(result,sort_keys=True,default=str),token))
+        return cur.rowcount==1
+
 def execute_grouped_weight_claim(claim, *, actor_id, connect_factory=None):
     """Atomically apply exactly the rows and movements bound into one claim."""
     payload=claim.get("preview_payload") if isinstance(claim.get("preview_payload"),Mapping) else {}

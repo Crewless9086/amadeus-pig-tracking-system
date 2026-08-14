@@ -2,7 +2,7 @@ import os,unittest,uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timezone
 import psycopg
-from modules.oom_sakkie.protected_action_claims import bind_claim_card,claim_callback,complete_claim,create_claim
+from modules.oom_sakkie.protected_action_claims import bind_claim_card,claim_callback,complete_claim,contain_unbound_preview_claim,create_claim
 URL=os.getenv("OOM_PROTECTED_ACTION_POSTGRES_URL","").strip()
 @unittest.skipUnless(URL,"disposable PostgreSQL URL is required")
 class RootlineProtectedIrrigationPostgresTests(unittest.TestCase):
@@ -31,3 +31,10 @@ class RootlineProtectedIrrigationPostgresTests(unittest.TestCase):
    db.execute("update app_private.oom_protected_action_claims set expires_at=now()-interval '1 second' where callback_token=%s",(row["callback_token"],))
   result,status=claim_callback(callback,owner_user_id="1",private_chat_id="1",provider_message_id="CB-EXPIRED",provider_timestamp=stamp,source_card_message_id="4001",connect_factory=self.connect)
   self.assertEqual((status,result["status"]),(409,"protected_callback_expired"))
+ def test_unbound_preview_is_contained_but_bound_preview_is_not(self):
+  unbound=self.create()
+  self.assertTrue(contain_unbound_preview_claim(unbound["callback_token"],{"status":"delivery_failed"},connect_factory=self.connect))
+  self.suffix=uuid.uuid4().hex
+  bound=self.create()
+  self.assertTrue(bind_claim_card(bound["callback_token"],"4002",connect_factory=self.connect))
+  self.assertFalse(contain_unbound_preview_claim(bound["callback_token"],{"status":"delivery_failed"},connect_factory=self.connect))

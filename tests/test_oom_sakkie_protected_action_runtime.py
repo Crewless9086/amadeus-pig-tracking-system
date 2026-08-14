@@ -78,7 +78,7 @@ def test_irrigation_confirmation_uses_existing_protected_callback_once(monkeypat
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
       "success":True,"status":"protected_callback_claimed","callback_token":"opaque",
       "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
-      "preview_digest":"DIGEST","preview_payload":payload},200))
+      "preview_digest":"d"*64,"preview_payload":payload},200))
     completed=[]
     monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:completed.append(args) or {
       "completed":True,"replayed":False,"result":args[1]})
@@ -90,13 +90,15 @@ def test_irrigation_confirmation_uses_existing_protected_callback_once(monkeypat
       {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority(),irrigation_handler=handler)
     assert status==200 and result["status"]=="segment_started"
     assert len(calls)==1 and len(completed)==1
+    assert result["mission_id"]=="RMQ-20260813-04"
+    assert result["card_mission_id"].startswith("RMQ-20260813-04:PROTECTED:")
 
 
 def test_irrigation_exception_retains_executing_claim_for_provider_retry(monkeypatch):
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
       "success":True,"status":"protected_callback_claimed","callback_token":"opaque",
       "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
-      "preview_digest":"DIGEST","preview_payload":{}},200))
+      "preview_digest":"d"*64,"preview_payload":{}},200))
     contained=[]
     monkeypatch.setattr(runtime,"contain_claim",lambda *args,**kwargs:contained.append(args))
     result,status=runtime.handle_protected_action_input(
@@ -111,7 +113,7 @@ def test_retried_provider_receipt_recovers_irrigation_after_restart(monkeypatch)
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
       "success":True,"status":"protected_callback_recovered","callback_token":"opaque",
       "action_kind":"rootline_irrigation_segment","mission_id":"RMQ-20260813-04",
-      "preview_digest":"DIGEST","preview_payload":{}},200))
+      "preview_digest":"d"*64,"preview_payload":{}},200))
     completed=[]
     monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:completed.append(args) or {
       "completed":True,"result":args[1]})

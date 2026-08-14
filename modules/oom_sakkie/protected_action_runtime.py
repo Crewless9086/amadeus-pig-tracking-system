@@ -35,6 +35,7 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
         return {"handled":True,**claimed,"writes_farm_data":False,"suppress_owner_delivery":claimed.get("status")=="protected_callback_replayed_noop"},status
     claimed["callback_token"]=data.split(":")[1]
     if claimed["action_kind"]=="rootline_irrigation_segment":
+        from modules.oom_sakkie.rootline_protected_irrigation import protected_card_mission_id
         if irrigation_handler is None:
             from modules.oom_sakkie.rootline_protected_irrigation import execute_claimed_segment
             irrigation_handler=execute_claimed_segment
@@ -59,7 +60,8 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           if result.get("status")=="segment_started" else
           "B irrigation segment 1 remains owned by ROOTLINE; no duplicate command was issued.")
         return {"handled":True,**result,"answer":answer,"specialist":"ROOTLINE",
-          "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"]},result_status
+          "mission_id":claimed["mission_id"],
+          "card_mission_id":protected_card_mission_id(claimed["preview_digest"])},result_status
     if claimed["action_kind"]=="grouped_weights":
         result,result_status=execute_grouped_weight_claim(claimed,actor_id=owner,connect_factory=connect_factory)
         if not result.get("success"):return {"handled":True,**result},result_status

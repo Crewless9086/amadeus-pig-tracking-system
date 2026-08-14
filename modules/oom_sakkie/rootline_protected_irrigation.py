@@ -12,6 +12,12 @@ BOUND_KEYS=("job_id","job_sha256","zone_id","channel","segment_identity",
  "governed_executable_duration_seconds","plan_generation",
  "controller_safety_generation","eligibility_sha256")
 
+def protected_card_mission_id(preview_digest):
+    digest=str(preview_digest or "").lower()
+    if len(digest)!=64 or any(ch not in "0123456789abcdef" for ch in digest):
+        raise ValueError("protected_irrigation_preview_digest_invalid")
+    return MISSION_ID+":PROTECTED:"+digest[:24].upper()
+
 def build_preview_payload(artifact,*,mission_id):
     if str(mission_id)!=MISSION_ID:
         raise ValueError("protected_irrigation_mission_mismatch")
