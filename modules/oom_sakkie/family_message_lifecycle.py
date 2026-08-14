@@ -402,7 +402,6 @@ def _validate_rootline_recovery_authority(authority, binding, mission_id, card_m
         from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
         with connect_bounded_rootline_postgres(
                 database_url=os.environ.get("DATABASE_URL")) as connection:
-            connection.read_only = True
             with connection.cursor() as cursor:
                 cursor.execute("""select review_json->'rootline_operational_intake'
                     from public.sam_live_stock_conversation_review_events
@@ -448,7 +447,6 @@ def _event_store(action, identity, payload):
     if action == "load":
         with connect_bounded_rootline_postgres(
                 database_url=os.environ.get("DATABASE_URL")) as connection:
-            connection.read_only = True
             with connection.cursor() as cursor:
                 cursor.execute("""select review_json->'family_message_lifecycle'
                     from public.sam_live_stock_conversation_review_events
