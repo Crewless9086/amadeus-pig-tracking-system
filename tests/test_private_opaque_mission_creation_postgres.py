@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import psycopg
 
-from modules.charlie.mission_store import record_mission
+from modules.charlie.mission_store import record_mission, record_mission_event, update_mission_status
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -35,6 +35,8 @@ class PrivateOpaqueMissionCreationPostgresTests(unittest.TestCase):
             cursor.execute("delete from public.charlie_missions where title like %s", (TITLE_PREFIX + "%",))
             cursor.execute("delete from public.charlie_mission_events where mission_id like %s", (PREFIX + "%",))
             cursor.execute("delete from public.charlie_missions where mission_id like %s", (PREFIX + "%",))
+            cursor.execute("delete from public.charlie_mission_events where mission_id = %s", ("CMQ-20260813-05",))
+            cursor.execute("delete from public.charlie_missions where mission_id = %s", ("CMQ-20260813-05",))
 
     def _mission(self, mission_id, title):
         return {"mission_id": mission_id, "title": title, "raw_text": title,
@@ -126,7 +128,7 @@ class PrivateOpaqueMissionCreationPostgresTests(unittest.TestCase):
         self.assertEqual(sum(status == 201 for _result, status in results), 1)
 
     def test_atomic_bootstrap_admission_replay_is_one_mission_and_one_admission_event(self):
-        mission_id = PREFIX + "BOOTSTRAP"
+        mission_id = "CMQ-20260813-05"
         title = TITLE_PREFIX + " atomic bootstrap"
         mission = self._mission(mission_id, title)
         mission["status"] = "paused"
@@ -146,7 +148,7 @@ class PrivateOpaqueMissionCreationPostgresTests(unittest.TestCase):
         self.assertEqual(events, {"created": 1, "portfolio_admitted": 1})
 
     def test_concurrent_bootstrap_replay_has_no_duplicate_admission_event(self):
-        mission_id = PREFIX + "BOOTSTRAP-CONCURRENT"
+        mission_id = "CMQ-20260813-05"
         title = TITLE_PREFIX + " concurrent bootstrap"
         mission = self._mission(mission_id, title)
         mission["status"] = "paused"
@@ -161,6 +163,25 @@ class PrivateOpaqueMissionCreationPostgresTests(unittest.TestCase):
             self.assertEqual(cursor.fetchone()[0], 1)
             cursor.execute("select event_type,count(*) from public.charlie_mission_events where mission_id=%s group by event_type", (mission_id,))
             self.assertEqual(dict(cursor.fetchall()), {"created": 1, "portfolio_admitted": 1})
+
+    def test_store_rejects_arbitrary_or_legacy_admission_before_write(self):
+        for mission_id, exact in ((PREFIX + "UNAUTHORIZED", True), (PREFIX + "LEGACY", False)):
+            mission = self._mission(mission_id, TITLE_PREFIX + " unauthorized " + mission_id)
+            mission["status"] = "paused"
+            mission["metadata"]["portfolio_admission"] = ADMISSION
+            result, status = record_mission(mission,
+                source_context={"source": "charlie_private_executive"},
+                database_url=DATABASE_URL, exact_identity=exact)
+            self.assertEqual((status, result["status"]), (409, "portfolio_admission_not_authorized"))
+        self.assertEqual(self._counts(), (0, 0))
+
+    def test_generic_event_and_status_apis_cannot_emit_portfolio_admission(self):
+        event, event_status = record_mission_event("CMQ-20260813-05", "portfolio_admitted",
+            database_url=DATABASE_URL)
+        transition, transition_status = update_mission_status("CMQ-20260813-05", "paused",
+            event_type="portfolio_admitted", database_url=DATABASE_URL)
+        self.assertEqual((event_status, event["status"]), (400, "invalid_event_type"))
+        self.assertEqual((transition_status, transition["status"]), (400, "invalid_event_type"))
 
 
 if __name__ == "__main__":

@@ -29,6 +29,22 @@ def blocked(owner_required=False, block_class="implementation_fix_required"):
 
 
 class CharlieExecutiveControlTests(unittest.TestCase):
+    def test_non_runnable_bootstrap_is_excluded_from_recovery_dispatch_and_release(self):
+        admission = {"portfolio_epoch": "CORE-CURRENT-2026-08-14",
+            "classification": "current", "lifecycle_state": "WORKING",
+            "runnable": False}
+        parent = {"mission_id": "CMQ-20260813-05", "status": "paused",
+            "metadata": {"portfolio_admission": admission,
+                "mission_coordinator": {"child_mission_ids": ["CHILD"]}}}
+        child = {"mission_id": "CHILD", "status": "done",
+            "metadata": {"mission_family": {"parent_mission_id": "CMQ-20260813-05"}}}
+        cycle = build_executive_cycle([parent, child], DELEGATED_POLICIES,
+            runner={"active_mission_id": "ACTIVE"})
+        self.assertFalse(any(item.get("mission_id") == "CMQ-20260813-05"
+            for item in cycle["commands"] + cycle["escalations"]))
+        self.assertNotIn("CMQ-20260813-05",
+            [item.get("mission_id") for item in cycle["queue_rank"]])
+
     def test_durable_replacement_excludes_legacy_from_queue_and_ranking(self):
         legacy = {
             "mission_id": "CHARLIE-MISSION-7001CE3566B4A171",

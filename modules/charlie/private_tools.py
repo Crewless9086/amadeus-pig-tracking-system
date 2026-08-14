@@ -10,6 +10,7 @@ from modules.charlie.executive_store import executive_scorecard
 from modules.charlie.executive_store import list_capability_trust
 from modules.charlie.improvement_analyst import analyst_scorecard
 from modules.charlie.mission_store import (
+    BOOTSTRAP_PORTFOLIO_ADMISSION, BOOTSTRAP_PORTFOLIO_MISSION_ID,
     get_mission, list_missions, mission_status_summary, record_mission,
     transition_mission_review_state, update_mission_status,
 )
@@ -420,17 +421,8 @@ def _bootstrap_portfolio_admission(value, mission_id):
             if mission_id == "CMQ-20260813-05" else "")
     if not isinstance(value, dict):
         return None, "portfolio_admission_mapping_required"
-    expected = {
-        "portfolio_epoch": "CORE-CURRENT-2026-08-14",
-        "classification": "current",
-        "lifecycle_state": "WORKING",
-        "admission_version": "portfolio_admission_v1",
-        "admission_evidence": "owner_approved_cmq_20260813_05_bootstrap",
-        "decision_authority": "human_control_tower",
-        "dispatch_authority": "human_control_tower",
-        "runnable": False,
-    }
-    if mission_id != "CMQ-20260813-05" or value != expected:
+    expected = BOOTSTRAP_PORTFOLIO_ADMISSION
+    if mission_id != BOOTSTRAP_PORTFOLIO_MISSION_ID or value != expected:
         return None, "portfolio_admission_not_authorized"
     return dict(expected), ""
 
