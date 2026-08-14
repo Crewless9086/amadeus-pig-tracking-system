@@ -40,7 +40,7 @@ def rootline_irrigation_execution_store(action, payload):
     from modules.sales.sam_live_stock_launch_control import (
         build_sam_live_stock_review_event, record_sam_live_stock_review_event,
     )
-    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     event = build_sam_live_stock_review_event(
         {"conversation_id": execution_id}, {}, {},
         {"score": 0, "safe_to_send": False, "recommended_action": action},
@@ -51,8 +51,8 @@ def rootline_irrigation_execution_store(action, payload):
         "decision_json": {}, "facts_json": {},
         "customer_message_excerpt": "", "sam_reply_excerpt": ""})
     result, status = record_sam_live_stock_review_event(event,
-        connect_factory=lambda: connect_bounded_postgres(
-            database_url=os.environ.get("DATABASE_URL")))
+        connect_factory=lambda: connect_bounded_rootline_postgres(
+            database_url=os.environ.get("DATABASE_URL"), read_only=False))
     if status >= 500 and str(result.get("error_type") or "") in {
             "OperationalError", "ConnectionTimeout", "PoolTimeout",
             "QueryCanceled", "QueryCanceledError", "LockNotAvailable"}:
@@ -86,10 +86,10 @@ def _event_id(action, body):
 
 def _load(action, payload):
     from modules.oom_sakkie.bounded_postgres_read import (
-        connect_bounded_read, is_database_unavailable,
+        connect_bounded_rootline_postgres, is_database_unavailable,
     )
     try:
-      with connect_bounded_read(database_url=os.environ.get("DATABASE_URL")) as connection:
+      with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL")) as connection:
         with connection.cursor() as cursor:
             if action in {"load_active", "load_active_auxiliary"}:
                 auxiliary=action=="load_active_auxiliary"
@@ -216,7 +216,7 @@ def _bounded_claim(action, claim, body):
 
 def _claim_single_controller(body):
     """Atomically serialize B/C and consume one zone/operating-day authority."""
-    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     execution_id = str(body["execution_id"])
     consumption_key = str(body.get("consumption_key") or "").strip()
     zone_id = str(body.get("zone_id") or "").strip()
@@ -229,7 +229,8 @@ def _claim_single_controller(body):
         return {"success": False, "created": False,
                 "status": "daily_dispatch_identity_incomplete"}
     event_id = _event_id("claim_before_on", body)
-    with connect_bounded_postgres(database_url=os.environ.get("DATABASE_URL")) as connection:
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                                           read_only=False) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
@@ -364,13 +365,14 @@ def _valid_iso_date(value):
 
 def _claim_single_auxiliary(body):
     """Atomically consume one auxiliary artifact without blocking its B/C zone."""
-    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     execution_id=str(body["execution_id"]);consumption_key=str(body.get("consumption_key") or "")
     auxiliary_id=str(body.get("auxiliary_device_id") or "")
     if not consumption_key or not auxiliary_id:
         return {"success":False,"created":False,"status":"auxiliary_claim_incomplete"}
     event_id=_event_id("claim_auxiliary_before_on",body)
-    with connect_bounded_postgres(database_url=os.environ.get("DATABASE_URL")) as connection:
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                                           read_only=False) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events

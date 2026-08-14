@@ -119,7 +119,14 @@ def test_context_database_failure_is_explicit_not_silent_no_question():
 
 def test_bounded_read_sets_acquisition_query_and_lock_deadlines():
     calls = []
-    connection = object()
+    statements=[]
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,value,*_args):statements.append(value)
+    class Connection:
+        def cursor(self):return Cursor()
+    connection = Connection()
     result = connect_bounded_read(database_url="postgresql://example", connect=lambda *a, **kw:
                                   calls.append((a, kw)) or connection)
     assert result is connection
@@ -127,17 +134,62 @@ def test_bounded_read_sets_acquisition_query_and_lock_deadlines():
     assert "default_transaction_read_only=on" in calls[0][1]["options"]
     assert "statement_timeout=3000" in calls[0][1]["options"]
     assert "lock_timeout=1000" in calls[0][1]["options"]
+    assert statements==[]
 
 
 def test_bounded_write_uses_same_deadlines_without_read_only_mode():
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
     calls=[]
+    statements=[]
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,value,*_args):statements.append(value)
+    class Connection:
+        def cursor(self):return Cursor()
     connect_bounded_postgres(database_url="postgresql://example",
-        connect=lambda *a,**kw:calls.append((a,kw)) or object())
+        connect=lambda *a,**kw:calls.append((a,kw)) or Connection())
     assert calls[0][1]["connect_timeout"]==3
     assert "statement_timeout=3000" in calls[0][1]["options"]
     assert "lock_timeout=1000" in calls[0][1]["options"]
     assert "default_transaction_read_only" not in calls[0][1]["options"]
+    assert statements==[]
+
+
+def test_bounded_session_setup_failure_rolls_back_and_closes():
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,_value,*_args):raise RuntimeError("session setup failed")
+    class Connection:
+        rolled_back=False;closed=False
+        def cursor(self):return Cursor()
+        def rollback(self):self.rolled_back=True
+        def close(self):self.closed=True
+    connection=Connection()
+    try:
+        connect_bounded_rootline_postgres(database_url="postgresql://example",
+            connect=lambda *_args,**_kwargs:connection)
+        raise AssertionError("setup failure was not propagated")
+    except RuntimeError as exc:
+        assert str(exc)=="session setup failed"
+    assert connection.rolled_back is True and connection.closed is True
+
+
+def test_rootline_pooled_session_enforces_transaction_local_deadlines():
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    statements=[]
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,value,*_args):statements.append(value)
+    class Connection:
+        def cursor(self):return Cursor()
+    connect_bounded_rootline_postgres(database_url="postgresql://example",
+        connect=lambda *_args,**_kwargs:Connection())
+    assert statements==["set transaction read only",
+        "set local statement_timeout='3000ms'","set local lock_timeout='1000ms'"]
 
 
 def test_only_database_failures_acquire_zero_downstream_classification():
