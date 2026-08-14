@@ -117,7 +117,7 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                         mortality["durable_death_event_fingerprints"]),
                         "welfare_exception": True}))
             else:
-                identities = [str(row.get("tag") or row.get("pig_id") or row.get("event_id"))
+                identities = [_bounded_identity(row.get("tag") or row.get("pig_id") or row.get("event_id"))
                               for row in ordered]
                 event_ids = [str(row.get("event_id") or row.get("pig_id")) for row in ordered]
                 visible = ", ".join(identities[:6])
@@ -154,6 +154,11 @@ def _findings(rows):
 def _compact_identity(values):
     import hashlib
     return hashlib.sha256("|".join(sorted(values)).encode()).hexdigest()[:20]
+
+
+def _bounded_identity(value):
+    text = " ".join(str(value or "Unknown").split())
+    return text[:32]
 
 
 def _valid(packet):

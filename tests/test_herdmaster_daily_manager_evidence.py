@@ -218,6 +218,20 @@ def test_new_death_item_persists_full_prior_and_current_fingerprint_baseline():
         "AGED-OUT", "D1", "D2"}
 
 
+def test_cluster_bounds_each_display_identity():
+    packet_data = mortality()
+    packet_data["proven_facts"][0]["tag"] = "X" * 1000
+    packet_data["proven_facts"].append({"event_id": "D2", "pig_id": "P2",
+        "tag": "Y" * 1000, "effective_date": "2026-08-14",
+        "event_kind": "individual_death"})
+    result = consume_daily_manager_evidence(
+        build(weights=[weight()], mortality=packet_data, prior_mortality="OLD"),
+        observed_at=NOW)
+    item = next(item for item in result.work_items if "mortality-cluster" in item.dedupe_key)
+    assert "X" * 33 not in item.why and "Y" * 33 not in item.why
+    assert len(item.why) < 300
+
+
 def test_mortality_state_is_normalized_and_missing_state_fails_closed():
     packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD")
     result = consume_daily_manager_evidence(packet, observed_at=NOW,
