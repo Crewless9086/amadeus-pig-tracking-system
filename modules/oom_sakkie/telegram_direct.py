@@ -202,7 +202,9 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
           str(action_result.get("status") or "protected_callback_contained"),policy,action_status)
         body.update({"protected_action":action_result,"delivery":delivery,"callback_acknowledgement":ack_result,
           "sends_telegram":int(delivery.get("telegram_sends") or 0)>0,"writes":action_result.get("writes_farm_data") is True})
-        return body,ack_status if ack_status>=400 else action_status
+        return body,(ack_status if ack_status>=400 else
+          503 if action_result.get("success") is True and delivery.get("success") is not True
+          else action_status)
     if callback["callback_data"].startswith("sam_live_"):
         allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
         if callback["telegram_user_id"] not in allowed_ids:

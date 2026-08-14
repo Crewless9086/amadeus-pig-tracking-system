@@ -27,6 +27,19 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
       provider_message_id=str(parsed.get("provider_message_id") or parsed.get("callback_query_id") or ""),
       provider_timestamp=str(parsed.get("provider_timestamp") or ""),
       source_card_message_id=str(parsed.get("reply_to_message_id") or ""),connect_factory=connect_factory)
+    if claimed.get("status")=="protected_callback_completed_delivery_retry":
+        from modules.oom_sakkie.rootline_protected_irrigation import protected_card_mission_id
+        result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
+        answer=("B irrigation segment 1 started. It is bounded to 59 minutes 59 seconds; "
+          "ROOTLINE will verify provider OFF before any later reassessment."
+          if result.get("status")=="segment_started" else
+          "B irrigation segment 1 remains owned by ROOTLINE; no duplicate command was issued.")
+        return {"handled":True,**result,"answer":answer,"specialist":"ROOTLINE",
+          "mission_id":claimed["mission_id"],
+          "card_mission_id":protected_card_mission_id(claimed["preview_digest"]),
+          "reply_markup":{"inline_keyboard":[]},
+          "owner_visible_completion_policy":"verified_edit_or_new_message",
+          "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False},200
     if status>=400 or claimed.get("status") not in {"protected_callback_claimed","protected_callback_recovered"}:
         if claimed.get("status") in {"protected_preview_change_requested","protected_preview_cancelled"}:
             claimed["answer"]=("Send the corrected facts when ready; nothing was recorded."
@@ -61,7 +74,9 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "B irrigation segment 1 remains owned by ROOTLINE; no duplicate command was issued.")
         return {"handled":True,**result,"answer":answer,"specialist":"ROOTLINE",
           "mission_id":claimed["mission_id"],
-          "card_mission_id":protected_card_mission_id(claimed["preview_digest"])},result_status
+          "card_mission_id":protected_card_mission_id(claimed["preview_digest"]),
+          "reply_markup":{"inline_keyboard":[]},
+          "owner_visible_completion_policy":"verified_edit_or_new_message"},result_status
     if claimed["action_kind"]=="grouped_weights":
         result,result_status=execute_grouped_weight_claim(claimed,actor_id=owner,connect_factory=connect_factory)
         if not result.get("success"):return {"handled":True,**result},result_status

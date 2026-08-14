@@ -41,6 +41,7 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         result.get("owner_visible_completion_policy") == "verified_edit_or_new_message"
         and str(result.get("status") or "") in {
             "completed", "grouped_weights_completed", "mortality_lifecycle_recorded"
+            , "segment_started", "active_segment_owned"
         }
     )
     if exclusive_completion and reply_markup is None:

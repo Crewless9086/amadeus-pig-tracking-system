@@ -25,7 +25,8 @@ class RootlineProtectedIrrigationPostgresTests(unittest.TestCase):
   self.assertEqual((recovered_status,recovered["status"]),(200,"protected_callback_recovered"))
   complete_claim(row["callback_token"],{"success":True,"status":"segment_started"},connect_factory=self.connect)
   replay,status=claim_callback(callback,owner_user_id="1",private_chat_id="1",provider_message_id="CB-REPLAY",provider_timestamp=stamp,source_card_message_id="4000",connect_factory=self.connect)
-  self.assertEqual((status,replay["status"],replay["telegram_sends"]),(200,"protected_callback_replayed_noop",0))
+  self.assertEqual((status,replay["status"],replay["telegram_sends"]),(200,"protected_callback_completed_delivery_retry",0))
+  self.assertEqual((replay["action_kind"],replay["mission_id"]),("rootline_irrigation_segment",self.mission))
  def test_wrong_owner_card_and_expired_claim_fail_closed(self):
   row=self.create();self.assertTrue(bind_claim_card(row["callback_token"],"4001",connect_factory=self.connect));callback=f"oompa:{row['callback_token']}:confirm";stamp=datetime.now(timezone.utc).isoformat()
   for owner,card,expected in (("2","4001","protected_callback_unauthorized"),("1","wrong","protected_callback_card_mismatch")):

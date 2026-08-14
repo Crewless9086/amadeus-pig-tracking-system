@@ -96,7 +96,12 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
             return {"success":False,"status":"protected_callback_card_unbound"},409
         if str(row[10])!=str(source_card_message_id or ""):
             return {"success":False,"status":"protected_callback_card_mismatch"},409
-        if row[7]=="completed":return {"success":True,"status":"protected_callback_replayed_noop","result":row[9],"telegram_sends":0,"telegram_edits":0},200
+        if row[7]=="completed":
+            if row[0]=="rootline_irrigation_segment":
+                return {"success":True,"status":"protected_callback_completed_delivery_retry",
+                  "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
+                  "result":row[9],"telegram_sends":0,"telegram_edits":0},200
+            return {"success":True,"status":"protected_callback_replayed_noop","result":row[9],"telegram_sends":0,"telegram_edits":0},200
         if row[7]=="executing":
             if action!="confirm":
                 return {"success":False,"status":"protected_callback_stale"},409
