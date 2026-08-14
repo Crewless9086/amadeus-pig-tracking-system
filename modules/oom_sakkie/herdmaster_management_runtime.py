@@ -126,8 +126,10 @@ def _load_observations(owner_user_id):
         with connection.cursor() as cursor:
             cursor.execute("""select review_json->'owner_observation'
                 from public.sam_live_stock_conversation_review_events
-                where event_source=%s order by created_at,review_event_id""", (OBSERVATION_SOURCE,))
+                where event_source=%s order by created_at desc,review_event_id desc limit 5000""",
+                (OBSERVATION_SOURCE,))
             rows = [row[0] for row in cursor.fetchall() if isinstance(row[0], dict)]
+            rows.reverse()
     return [row for row in rows if row.get("authenticated_owner") is True
             and str(row.get("owner_user_id") or "") == str(owner_user_id)
             and row.get("provider_message_id") and row.get("provider_timestamp")]
@@ -150,8 +152,9 @@ def _load_active_lifecycles(owner_user_id, *, include_terminal=False):
                 ) f on true
                 where h.event_source='oom_sakkie_herdmaster_health_loss_runtime'
                   and h.review_json->'herdmaster_health_loss'->>'owner_user_id'=%s
-                order by h.created_at,h.review_event_id""", (str(owner_user_id),))
+                order by h.created_at desc,h.review_event_id desc limit 5000""", (str(owner_user_id),))
             rows = [(row[0], str(row[1] or "")) for row in cursor.fetchall() if isinstance(row[0], dict)]
+            rows.reverse()
     terminal_pigs = _load_terminal_pig_ids()
     active = {}
     for row, card_message_id in rows:
@@ -193,7 +196,8 @@ def _load_terminal_pig_ids():
         connection.read_only = True
         with connection.cursor() as cursor:
             cursor.execute("""select pig_id from public.current_canonical_pig_state
-                where lower(status) in ('dead','sold') or on_farm is false""")
+                where lower(status) in ('dead','sold') or on_farm is false
+                order by pig_id limit 5000""")
             return {str(row[0]) for row in cursor.fetchall() if row and row[0]}
 
 
@@ -262,8 +266,10 @@ def _load_prior_consumptions(owner_user_id, invocation_context_digest):
                 from public.sam_live_stock_conversation_review_events where event_source=%s
                   and review_json->'herdmaster_management_consumption'->'binding'->>'authenticated_owner_identity_sha256'=%s
                   and review_json->'herdmaster_management_consumption'->'binding'->'invocation_context'->>'digest'=%s
-                order by created_at,review_event_id""", (EVENT_SOURCE, owner_hash, invocation_context_digest))
+                order by created_at desc,review_event_id desc limit 5000""",
+                (EVENT_SOURCE, owner_hash, invocation_context_digest))
             bindings = [row[0] for row in cursor.fetchall() if isinstance(row[0], dict)]
+            bindings.reverse()
     return [{"management_round_identity": row.get("management_round_identity"),
         "deduplication_key": row.get("deduplication_key"), "result_digest": row.get("result_digest"),
         "result_digest_version": row.get("result_digest_version"),

@@ -134,7 +134,7 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                         for event_id in event_ids}}))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
     baseline = ({"mortality_fingerprints": mortality.get("canonical_death_event_fingerprints") or {}}
-                if not mortality.get("digest_changed") else {})
+                if not any("mortality" in item.dedupe_key for item in items) else {})
     rebound = tuple(replace(item, provenance=replace(provenance, result_id=result_id),
                       metadata={**dict(item.metadata), **baseline}) for item in items)
     return SpecialistResult("herdmaster", result_id, observed_at,

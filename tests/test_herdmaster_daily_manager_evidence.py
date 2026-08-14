@@ -185,6 +185,7 @@ def test_changed_digest_does_not_reopen_previously_consumed_death():
     result = consume_daily_manager_evidence(packet, observed_at=NOW)
     assert all(item.dedupe_key != "herdmaster:mortality:D1" for item in result.work_items)
     assert all("mortality" not in item.dedupe_key for item in result.work_items)
+    assert result.work_items[0].metadata["mortality_fingerprints"] == fingerprints
 
 
 def test_multiple_new_deaths_receive_one_bounded_attributable_cluster():
