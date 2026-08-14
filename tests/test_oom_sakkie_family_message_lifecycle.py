@@ -303,6 +303,42 @@ def test_process_interruption_does_not_blindly_resend():
     assert memory.sent==[]
 
 
+def test_provider_acceptance_with_failed_delivered_receipt_reports_physical_truth_and_replay_noop():
+    memory=Memory(); mission="OOM-PROVIDER-ACCEPTED-RECEIPT-DOWN"
+    def store(action, identity, payload):
+        if action == "record" and identity.endswith("-DELIVERED"):
+            return {"success": False, "created": False}
+        return memory.store(action, identity, payload)
+    first=deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=store,sender=memory.send,editor=memory.edit)
+    assert first["status"]=="family_message_provider_confirmed_receipt_unavailable"
+    assert first["provider_delivery_confirmed"] is True
+    assert first["telegram_message_id"]=="700" and first["telegram_sends"]==1
+    assert replay["status"]=="family_message_delivery_ambiguous"
+    assert replay["telegram_sends"]==0 and len(memory.sent)==1
+
+
+def test_visible_notification_provider_truth_survives_failed_receipt_and_replay_is_silent():
+    memory=Memory(); mission="OOM-VISIBLE-RECEIPT-DOWN"
+    deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    follow={**RESULT,"answer":"One bounded follow-up", "requires_visible_notification":True}
+    inbound={**PARSED,"provider_message_id":"501"}
+    def store(action, identity, payload):
+        if action=="record" and "-VISIBLE-WAIT-" in identity and identity.endswith("-DELIVERED"):
+            return {"success":False,"created":False}
+        return memory.store(action,identity,payload)
+    first=deliver_family_result(inbound,follow,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(inbound,follow,specialist="HERDMASTER",mission_id=mission,
+        card_mission_id=mission,event_store=store,sender=memory.send,editor=memory.edit)
+    assert first["status"]=="family_message_notification_provider_confirmed_receipt_unavailable"
+    assert first["provider_delivery_confirmed"] is True and first["telegram_sends"]==1
+    assert replay["telegram_sends"]==0 and len(memory.sent)==2
+
+
 def test_protected_completion_uses_verified_card_edit_without_second_message():
     memory=Memory();mission="OOM-PROTECTED-COMPLETE"
     deliver_family_result(PARSED,RESULT,specialist="HERDMASTER",mission_id=mission,

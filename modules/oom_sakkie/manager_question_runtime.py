@@ -11,6 +11,7 @@ import json
 import os
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 EVENT_SOURCE = "oom_sakkie_manager_question_reply"
 MAX_AGE_SECONDS = 24 * 60 * 60
@@ -26,8 +27,9 @@ def load_active_manager_question(parsed, *, loader=None):
         return None
     try:
         rows = (loader or _load_questions)(owner, chat)
-    except Exception:
-        return None
+    except Exception as exc:
+        return {"load_unavailable": True,
+                "load_failure_class": exc.__class__.__name__}
     reply_to = str(parsed.get("reply_to_message_id") or "").strip()
     candidates = []
     for row in rows or ():
@@ -169,7 +171,8 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
     if not isinstance(stored, dict) or stored.get("success") is not True:
         return {"handled": True, "success": False,
             "status": "manager_question_receipt_unavailable",
-            "answer": "I retained your reply, but could not prove its durable receipt yet.",
+            "answer": ("I received the reply, but could not prove its durable receipt. "
+                       "Nothing was applied; recovery must use this same provider message identity."),
             "requires_visible_notification": True, **ZERO}, 503
     if stored.get("created") is False:
         existing = stored.get("record") if isinstance(stored.get("record"), dict) else {}
@@ -217,9 +220,7 @@ def manager_question_event_store(event_id, record):
 def _load_manager_question_record(event_id):
     if not str(os.environ.get("DATABASE_URL") or "").strip():
         return {}
-    import psycopg
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=5) as connection:
-        connection.read_only = True
+    with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select review_json->'manager_question_reply'
                 from public.sam_live_stock_conversation_review_events
@@ -231,41 +232,44 @@ def _load_manager_question_record(event_id):
 def _load_questions(owner, chat):
     if not str(os.environ.get("DATABASE_URL") or "").strip():
         return []
-    import psycopg
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=5) as connection:
-        connection.read_only = True
+    with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
-            cursor.execute("""select review_json->'daily_farm_manager'
-                from public.sam_live_stock_conversation_review_events
-                where event_source='oom_sakkie_daily_farm_manager'
-                  and review_json->'daily_farm_manager'->>'status'='presented'
-                  and review_json->'daily_farm_manager'->>'owner_user_id'=%s
-                  and review_json->'daily_farm_manager'->>'chat_id'=%s
-                  and coalesce(review_json->'daily_farm_manager'->>'question','')<>''
-                  and not exists (
-                    select 1 from public.sam_live_stock_conversation_review_events answered
-                    where answered.event_source='oom_sakkie_manager_question_reply'
-                      and answered.review_json->'manager_question_reply'->>'status'='recorded'
-                      and answered.review_json->'manager_question_reply'->>'owner_user_id'=%s
-                      and answered.review_json->'manager_question_reply'->>'chat_id'=%s
-                      and answered.review_json->'manager_question_reply'->>'task_id'=
-                          review_json->'daily_farm_manager'->'question_binding'->>'task_id')
-                order by created_at desc, review_event_id desc limit 8""",
-                (owner, chat, owner, chat))
-            questions = [dict(row[0]) for row in cursor.fetchall()]
-            for question in questions:
-                cursor.execute("""select review_json->'manager_question_reply'
+            cursor.execute("""select q.body, coalesce(p.partials, '[]'::jsonb)
+                from (select review_json->'daily_farm_manager' as body, created_at, review_event_id
                     from public.sam_live_stock_conversation_review_events
-                    where event_source='oom_sakkie_manager_question_reply'
-                      and review_json->'manager_question_reply'->>'status'='partial'
-                      and review_json->'manager_question_reply'->>'owner_user_id'=%s
-                      and review_json->'manager_question_reply'->>'chat_id'=%s
-                      and review_json->'manager_question_reply'->>'task_id'=%s
-                      and review_json->'manager_question_reply'->>'daily_identity'=%s
-                    order by created_at, review_event_id""", (owner, chat,
-                    str((question.get("question_binding") or {}).get("task_id") or ""),
-                    str(question.get("daily_identity") or "")))
-                question["partial_replies"] = [row[0] for row in cursor.fetchall()]
+                    where event_source='oom_sakkie_daily_farm_manager'
+                      and review_json->'daily_farm_manager'->>'status'='presented'
+                      and review_json->'daily_farm_manager'->>'owner_user_id'=%s
+                      and review_json->'daily_farm_manager'->>'chat_id'=%s
+                      and coalesce(review_json->'daily_farm_manager'->>'question','')<>''
+                      and not exists (select 1
+                        from public.sam_live_stock_conversation_review_events answered
+                        where answered.event_source='oom_sakkie_manager_question_reply'
+                          and answered.review_json->'manager_question_reply'->>'status'='recorded'
+                          and answered.review_json->'manager_question_reply'->>'owner_user_id'=%s
+                          and answered.review_json->'manager_question_reply'->>'chat_id'=%s
+                          and answered.review_json->'manager_question_reply'->>'task_id'=
+                              review_json->'daily_farm_manager'->'question_binding'->>'task_id')
+                    order by created_at desc, review_event_id desc limit 8) q
+                left join lateral (select jsonb_agg(
+                        partial.review_json->'manager_question_reply'
+                        order by partial.created_at, partial.review_event_id) as partials
+                    from public.sam_live_stock_conversation_review_events partial
+                    where partial.event_source='oom_sakkie_manager_question_reply'
+                      and partial.review_json->'manager_question_reply'->>'status'='partial'
+                      and partial.review_json->'manager_question_reply'->>'owner_user_id'=%s
+                      and partial.review_json->'manager_question_reply'->>'chat_id'=%s
+                      and partial.review_json->'manager_question_reply'->>'task_id'=
+                          q.body->'question_binding'->>'task_id'
+                      and partial.review_json->'manager_question_reply'->>'daily_identity'=
+                          q.body->>'daily_identity') p on true
+                order by q.created_at desc, q.review_event_id desc""",
+                (owner, chat, owner, chat, owner, chat))
+            questions = []
+            for body, partials in cursor.fetchall():
+                question = dict(body)
+                question["partial_replies"] = list(partials or [])
+                questions.append(question)
             return questions
 
 

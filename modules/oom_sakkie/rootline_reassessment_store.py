@@ -1,6 +1,6 @@
 """Append-only persistence for ROOTLINE reassessment notification state."""
 from __future__ import annotations
-import os
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 EVENT_SOURCE = "oom_sakkie_rootline_reassessment"
 
@@ -24,9 +24,7 @@ def rootline_reassessment_state_store(action, identity, payload):
 
 
 def _load(action, identity):
-    import psycopg
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-        connection.read_only = True
+    with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
             if action == "load_identity":
                 cursor.execute("""select review_json->'rootline_reassessment'

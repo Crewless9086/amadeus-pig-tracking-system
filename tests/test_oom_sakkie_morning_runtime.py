@@ -1,9 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from threading import Lock
+from unittest.mock import patch
 
 from modules.oom_sakkie.farm_manager_loop import SpecialistAvailability, SpecialistResult
-from modules.oom_sakkie.morning_runtime import run_morning_cycle, start_production_morning_runtime
+from modules.oom_sakkie.morning_runtime import (
+    _load_inputs, run_morning_cycle, start_production_morning_runtime)
 
 
 NOW = datetime(2026, 8, 13, 4, 50, tzinfo=timezone.utc)  # 06:50 SAST
@@ -12,6 +14,20 @@ ENV = {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42"}
 
 def _specialist(name):
     return SpecialistResult(name, name + "-result", NOW, SpecialistAvailability.AVAILABLE)
+
+
+@patch("modules.oom_sakkie.morning_runtime.wait", return_value=(set(), set()))
+def test_synchronous_morning_input_wait_is_below_worker_timeout(waiter):
+    try:
+        _load_inputs("42", NOW, ENV, herd_loader=lambda: _specialist("herdmaster"),
+            rootline_loader=lambda: _specialist("rootline"),
+            litter_loader=lambda: {"allocation_inputs": {"litter_rows": []}},
+            sales_loader=lambda: ({"success": True, "sales_transactions": []}, 200))
+    except TimeoutError as exc:
+        assert str(exc) == "morning_runtime_specialist_deadline"
+    else:
+        raise AssertionError("deadline must contain incomplete specialist reads")
+    assert waiter.call_args.kwargs["timeout"] == 12
 
 
 def test_backend_owned_cycle_delivers_once_and_replay_is_silent():

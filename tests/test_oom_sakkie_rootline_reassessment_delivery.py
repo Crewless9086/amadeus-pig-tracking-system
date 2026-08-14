@@ -56,6 +56,21 @@ def test_ambiguous_delivery_is_contained_and_never_blind_retried():
     assert status==202 and replay_status==202 and replay["status"]=="rootline_reassessment_delivery_ambiguous"
     assert len(calls)==1 and replay["telegram_sends"]==0
 
+def test_provider_confirmed_family_receipt_failure_keeps_physical_delivery_truth():
+    rows,store=memory_store(); calls=[]
+    def confirmed_receipt_down(*args,**kwargs):
+        calls.append(1);return {"success":False,
+            "status":"family_message_provider_confirmed_receipt_unavailable",
+            "provider_delivery_confirmed":True,"telegram_message_id":"8002",
+            "telegram_sends":1,"telegram_edits":0}
+    first,status=handle_rootline_reassessment_trigger(payload(),HEADERS,ENV,
+        specialist_loader=current,state_store=store,family_delivery=confirmed_receipt_down)
+    replay,replay_status=handle_rootline_reassessment_trigger(payload(),HEADERS,ENV,
+        specialist_loader=current,state_store=store,family_delivery=confirmed_receipt_down)
+    assert status==200 and first["delivery_record"]["success"] is True
+    assert first["telegram_sends"]==1 and replay_status==200
+    assert replay["telegram_sends"]==0 and len(calls)==1
+
 def test_reassessment_denies_unbound_owner_and_unsafe_authority():
     _,status=handle_rootline_reassessment_trigger({**payload(),"chat_id":"99"},HEADERS,ENV,
         specialist_loader=current,state_store=memory_store()[1])
