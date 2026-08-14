@@ -8,6 +8,14 @@ import os
 EVENT_SOURCE = "rootline_irrigation_execution"
 
 
+class RootlineExecutionStoreUnavailable(RuntimeError):
+    """Durable execution truth could not be loaded within its read deadline."""
+
+    def __init__(self, action):
+        super().__init__("rootline_execution_store_unavailable:" + str(action))
+        self.action = str(action)
+
+
 def rootline_irrigation_execution_store(action, payload):
     if action in {"load_active", "load_off_attempts", "load_zone_containment",
                   "load_active_auxiliary", "load_auxiliary_off_attempts",
@@ -19,9 +27,9 @@ def rootline_irrigation_execution_store(action, payload):
     if not execution_id:
         return {"success": False, "created": False}
     if action == "claim_before_on":
-        return _claim_single_controller(body)
+        return _bounded_claim(action, _claim_single_controller, body)
     if action == "claim_auxiliary_before_on":
-        return _claim_single_auxiliary(body)
+        return _bounded_claim(action, _claim_single_auxiliary, body)
     history_created = None
     if action == "record_completed":
         history_created = _append_history(action, body)
@@ -32,6 +40,7 @@ def rootline_irrigation_execution_store(action, payload):
     from modules.sales.sam_live_stock_launch_control import (
         build_sam_live_stock_review_event, record_sam_live_stock_review_event,
     )
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
     event = build_sam_live_stock_review_event(
         {"conversation_id": execution_id}, {}, {},
         {"score": 0, "safe_to_send": False, "recommended_action": action},
@@ -41,7 +50,13 @@ def rootline_irrigation_execution_store(action, payload):
         "review_json": {"rootline_execution": _stored_event_body(action, body, event_id)},
         "decision_json": {}, "facts_json": {},
         "customer_message_excerpt": "", "sam_reply_excerpt": ""})
-    result, status = record_sam_live_stock_review_event(event)
+    result, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: connect_bounded_postgres(
+            database_url=os.environ.get("DATABASE_URL")))
+    if status >= 500 and str(result.get("error_type") or "") in {
+            "OperationalError", "ConnectionTimeout", "PoolTimeout",
+            "QueryCanceled", "QueryCanceledError", "LockNotAvailable"}:
+        raise RootlineExecutionStoreUnavailable(action)
     success = status < 400 and result.get("success") is True
     if history_created is None:
         history_created = _append_history(action, body) if success else False
@@ -70,9 +85,11 @@ def _event_id(action, body):
 
 
 def _load(action, payload):
-    import psycopg
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-        connection.read_only = True
+    from modules.oom_sakkie.bounded_postgres_read import (
+        connect_bounded_read, is_database_unavailable,
+    )
+    try:
+      with connect_bounded_read(database_url=os.environ.get("DATABASE_URL")) as connection:
         with connection.cursor() as cursor:
             if action in {"load_active", "load_active_auxiliary"}:
                 auxiliary=action=="load_active_auxiliary"
@@ -175,6 +192,10 @@ def _load(action, payload):
                     evidence["shutdown_verified"] = detail.get("shutdown_verified") is True
                     evidence["shutdown_evidence"] = detail.get("shutdown_evidence")
             return {"contained": True, "evidence": evidence}
+    except Exception as exc:
+      if is_database_unavailable(exc):
+        raise RootlineExecutionStoreUnavailable(action) from exc
+      raise
 
 
 def _is_active_candidate(item, active_action, claim_action):
@@ -183,9 +204,19 @@ def _is_active_candidate(item, active_action, claim_action):
             or (action == active_action and item.get("state") == "Active"))
 
 
+def _bounded_claim(action, claim, body):
+    from modules.oom_sakkie.bounded_postgres_read import is_database_unavailable
+    try:
+        return claim(body)
+    except Exception as exc:
+        if is_database_unavailable(exc):
+            raise RootlineExecutionStoreUnavailable(action) from exc
+        raise
+
+
 def _claim_single_controller(body):
     """Atomically serialize B/C and consume one zone/operating-day authority."""
-    import psycopg
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
     execution_id = str(body["execution_id"])
     consumption_key = str(body.get("consumption_key") or "").strip()
     zone_id = str(body.get("zone_id") or "").strip()
@@ -198,7 +229,7 @@ def _claim_single_controller(body):
         return {"success": False, "created": False,
                 "status": "daily_dispatch_identity_incomplete"}
     event_id = _event_id("claim_before_on", body)
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
+    with connect_bounded_postgres(database_url=os.environ.get("DATABASE_URL")) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)", (1874320911,))
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events
@@ -333,13 +364,13 @@ def _valid_iso_date(value):
 
 def _claim_single_auxiliary(body):
     """Atomically consume one auxiliary artifact without blocking its B/C zone."""
-    import psycopg
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
     execution_id=str(body["execution_id"]);consumption_key=str(body.get("consumption_key") or "")
     auxiliary_id=str(body.get("auxiliary_device_id") or "")
     if not consumption_key or not auxiliary_id:
         return {"success":False,"created":False,"status":"auxiliary_claim_incomplete"}
     event_id=_event_id("claim_auxiliary_before_on",body)
-    with psycopg.connect(os.environ["DATABASE_URL"],connect_timeout=10) as connection:
+    with connect_bounded_postgres(database_url=os.environ.get("DATABASE_URL")) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select pg_advisory_xact_lock(%s)",(1874320912,))
             cursor.execute("""select 1 from public.sam_live_stock_conversation_review_events

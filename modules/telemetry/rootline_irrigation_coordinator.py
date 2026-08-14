@@ -16,6 +16,9 @@ from modules.telemetry.rootline_ewelink_commissioned_baseline import validate_co
 from modules.telemetry.rootline_auxiliary_management import (
     revalidate_auxiliary_execution_edge, validate_auxiliary_eligibility,
 )
+from modules.telemetry.rootline_irrigation_execution_store import (
+    RootlineExecutionStoreUnavailable,
+)
 
 MAX_MINUTES = 60
 MAX_OFF_ATTEMPTS = 3
@@ -29,7 +32,12 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
                                  clock=None):
     now = _aware(now or datetime.now(timezone.utc))
     clock = clock or (lambda: datetime.now(timezone.utc))
-    active = store("load_active", None)
+    try:
+        active = store("load_active", None)
+    except RootlineExecutionStoreUnavailable:
+        return _result("execution_store_degraded_hold", commands=0, messages=0,
+            autonomous_on_enabled=False, durable_execution_truth_loaded=False,
+            current_segment_consumed=False, degraded=True)
     if active:
         return _recover_or_observe(active, store, transport, notify, outcome_reader, now)
     decision = decision_reader(decision_id)
@@ -37,7 +45,10 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
     commissioning = _canonical_commissioning(commissioning_packet, commissioning_id, now)
     if not _eligible(decision, decision_id, commissioning, now):
         return _result("not_eligible", commands=0, messages=0)
-    contained = store("load_zone_containment", decision["zone_id"]) or {}
+    try:
+        contained = store("load_zone_containment", decision["zone_id"]) or {}
+    except RootlineExecutionStoreUnavailable:
+        return _degraded_hold()
     if contained.get("contained") is True:
         if _release_configuration_containment(contained, decision, store, transport):
             return _result("zone_containment_released_reassess", commands=0, messages=0)
@@ -90,7 +101,10 @@ def advance_irrigation_execution(*, decision_id, commissioning_id,
         "commissioning_id": commissioning_id,
         "state": "claimed", "on_attempts": 0, "off_attempts": 0,
     }
-    claim = store("claim_before_on", execution)
+    try:
+        claim = store("claim_before_on", execution)
+    except RootlineExecutionStoreUnavailable:
+        return _degraded_hold(consumption_unknown=True)
     if claim.get("created") is not True:
         return _result("execution_claim_conflict", commands=0, messages=0)
     accepted = transport.set_state(device_id="100204e9bc", channel=execution["channel"], state="ON",
@@ -382,6 +396,13 @@ def _bounded_off(execution, store, transport):
         if outcome.get("accepted_unambiguous") is True:
             break
     return {"commands": commands, "outcomes": outcomes}
+
+
+def _degraded_hold(*, consumption_unknown=False):
+    return _result("execution_store_degraded_hold", commands=0, messages=0,
+        autonomous_on_enabled=False, durable_execution_truth_loaded=False,
+        current_segment_consumed=None if consumption_unknown else False,
+        segment_consumption_proven=not consumption_unknown, degraded=True)
 
 
 def _eligible(decision, decision_id, commissioning, now):

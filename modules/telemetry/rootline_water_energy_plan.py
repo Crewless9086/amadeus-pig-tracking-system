@@ -382,6 +382,12 @@ def read_current_water_energy_evidence(
         if isinstance(zone,dict):
             zone["water_balance"]=_dict(balances.get("zones")).get(
                 str(zone.get("zone_id")),{"status":UNAVAILABLE})
+    history = _read_historical_context(database_url)
+    irrigation_history = _read_recent_irrigation_history(database_url, now)
+    tanks = _read_latest_tank_observation(database_url)
+    database_failures = [str(packet.get("error_type")) for packet in (
+        power_packet, weather_packet, forecast_packet, history, tanks, balances)
+        if isinstance(packet, dict) and packet.get("error_type")]
     evidence = {
         "power": _normalize_power(power_packet),
         "weather": _normalize_weather(weather_packet),
@@ -405,9 +411,10 @@ def read_current_water_energy_evidence(
                 "source": "owner_confirmed_ROOTLINE_policy_20260801",
             },
         },
-        "history": _read_historical_context(database_url),
-        "irrigation_history": _read_recent_irrigation_history(database_url, now),
-        "tanks": _read_latest_tank_observation(database_url),
+        "history": history,
+        "irrigation_history": irrigation_history,
+        "tanks": tanks,
+        "database_read_failures": database_failures,
         "water_demand": {
             "status": "standing_essential",
             "owner_reclassification_required": False,
@@ -713,12 +720,13 @@ def _normalize_forecast(packet):
 
 
 def _read_historical_context(database_url):
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
         return {"status": UNAVAILABLE}
     try:
         import psycopg
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        with connect_bounded_read(database_url=database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -758,8 +766,8 @@ def _read_latest_tank_observation(database_url):
     if not database_url:
         return {}
     try:
-        import psycopg
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+        with connect_bounded_read(database_url=database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -813,8 +821,8 @@ def _read_latest_tank_observation(database_url):
             "reporter": newest[5],
             "source": newest[6],
         }
-    except Exception:
-        return {}
+    except Exception as exc:
+        return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
 
 
 def read_tank_observation(observation_id, database_url=None):

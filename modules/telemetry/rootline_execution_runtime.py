@@ -11,7 +11,9 @@ from modules.telemetry.rootline_ewelink_oauth_store import PostgresOAuthTokenSto
 from modules.telemetry.rootline_ewelink_readback import read_current_device
 from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
 from modules.telemetry.rootline_irrigation_coordinator import advance_irrigation_execution, _digest
-from modules.telemetry.rootline_irrigation_execution_store import rootline_irrigation_execution_store
+from modules.telemetry.rootline_irrigation_execution_store import (
+    RootlineExecutionStoreUnavailable, rootline_irrigation_execution_store,
+)
 from modules.telemetry.rootline_water_energy_plan import (
     build_water_energy_plan, read_current_water_energy_evidence,
 )
@@ -33,7 +35,10 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     token_store = token_store or PostgresOAuthTokenStore(database_url)
     transport = transport or RootlineIFTTTTransport(
         token_store=token_store, environ=source, readback=readback)
-    active = store("load_active", None)
+    try:
+        active = store("load_active", None)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
     if active:
         return advance_irrigation_execution(decision_id="", commissioning_id="",
             decision_reader=lambda _identity: {}, commissioning_reader=lambda _identity: {},
@@ -56,7 +61,10 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
                                          next_reassessment_at)
         return {**_safe(artifact.get("status") or "not_eligible"),
                 "execution_eligibility": artifact, **blocked}
-    stored = store("record_eligibility", artifact)
+    try:
+        stored = store("record_eligibility", artifact)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
     if not isinstance(stored, dict) or stored.get("success") is not True:
         return {**_safe("eligibility_persistence_unproven"), "success": False}
     baseline = commissioned_controller_baseline()
@@ -113,7 +121,10 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
         or expected_artifact.get("expected_segment_count")!=2):
         return _safe("protected_irrigation_boundary_invalid")
     token_store=token_store or PostgresOAuthTokenStore(database_url)
-    active=store("load_active",None)
+    try:
+        active=store("load_active",None)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
     if active:
         active_binding={
           "job_id":active.get("job_id"),"job_sha256":active.get("job_sha256"),
@@ -132,7 +143,10 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
           decision_reader=lambda _identity:{},commissioning_reader=lambda _identity:{},
           store=store,transport=transport,notify=notify,outcome_reader=outcome_reader,
           now=now,clock=clock)
-    current=_current(evidence_loader,readback,token_store,source,database_url,now,store)
+    try:
+        current=_current(evidence_loader,readback,token_store,source,database_url,now,store)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
     artifact=current["artifact"]
     # A mandatory fresh provider read produces a new response/eligibility digest.
     # Bind the immutable governed job and segment here; the fresh artifact itself
@@ -144,7 +158,10 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
     if (artifact.get("eligible") is not True or artifact.get("current_segment")!=1
             or any(artifact.get(k)!=expected_artifact.get(k) for k in bound_keys)):
         return _safe("protected_irrigation_eligibility_changed")
-    stored=store("record_eligibility",artifact)
+    try:
+        stored=store("record_eligibility",artifact)
+    except RootlineExecutionStoreUnavailable:
+        return _execution_store_hold()
     if not isinstance(stored,dict) or stored.get("success") is not True:
         return {**_safe("eligibility_persistence_unproven"),"success":False}
     baseline=commissioned_controller_baseline(); zone=artifact["zone_id"]
@@ -176,6 +193,10 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
              store=rootline_irrigation_execution_store):
     evidence, operating_date, generated_at = evidence_loader(
         database_url=database_url, now=now)
+    history = evidence.get("irrigation_history") if isinstance(evidence, dict) else None
+    if ((isinstance(history, dict) and history.get("status") == "Unavailable")
+            or (isinstance(evidence, dict) and evidence.get("database_read_failures"))):
+        raise RootlineExecutionStoreUnavailable("load_canonical_irrigation_history")
     plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
     controller = readback(token_store=token_store, environ=source, now=now)
     return {"evidence": evidence, "plan": plan, "controller": controller,
@@ -189,6 +210,14 @@ def _safe(status):
     return {"success": True, "status": status, "hardware_commands": 0,
             "telegram_messages": 0, "writes_farm_data": False,
             "borehole_authority": False, "fertilizer_authority": False}
+
+
+def _execution_store_hold():
+    return {**_safe("execution_store_degraded_hold"),
+            "autonomous_on_enabled": False,
+            "durable_execution_truth_loaded": False,
+            "current_segment_consumed": False,
+            "degraded": True}
 
 
 def _planning_observation(initial, owner, chat, next_due):
