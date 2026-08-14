@@ -1809,6 +1809,25 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('record.breeding_cycle_state === "Exposure Active"', js)
         self.assertIn('title: "Tans by beer"', js)
         self.assertGreaterEqual(js.count('record.breeding_cycle_state === "Exposure Active"'), 4)
+
+    def test_mating_cards_link_to_the_existing_printable_begin_record(self):
+        js = Path("static/js/matings.js").read_text(encoding="utf-8")
+        self.assertIn("Druk beginrekord", js)
+        self.assertIn("/paring-werpselrekord?mating_id=", js)
+
+    def test_printable_mating_litter_record_preserves_blank_mode_and_read_only_prefill(self):
+        template = Path("templates/paring-werpselrekord.html").read_text(encoding="utf-8")
+        js = Path("static/js/paringWerpselrekord.js").read_text(encoding="utf-8")
+        self.assertIn("const PWR_ROW_COUNT = 16", js)
+        self.assertIn("if(!matingId&&!litterId)return", js)
+        self.assertIn('fetchJson("/api/pig-weights/matings")', js)
+        self.assertIn("linked_litter_id", js)
+        self.assertIn("Huidige hok ·", js)
+        self.assertNotIn("method:\"POST\"", js)
+        self.assertNotIn("MAT-2026-8EFC7F", template + js)
+        self.assertNotIn("Bonnie", template + js)
+        self.assertIn('id="pwr_farrowing_pen"', template)
+        self.assertIn("Druk A4-vorm", template)
         attention_js = Path("static/js/breedingAttention.js").read_text(encoding="utf-8")
         self.assertIn('current_state:current.state', attention_js)
         self.assertIn('schedule.current_exposures || []', attention_js)
