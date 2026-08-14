@@ -229,7 +229,7 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                 order by created_at desc,review_event_id desc limit 1""")
             manager_row = cursor.fetchone()
             if manager_row and isinstance(manager_row[0], dict):
-                prior_event_fingerprints = dict(manager_row[0])
+                prior_event_fingerprints.update(dict(manager_row[0]))
     if mortality_evidence_loader is None:
         from modules.pig_weights.herdmaster_mortality_evidence import load_current_mortality_evidence
         mortality_evidence_loader = load_current_mortality_evidence
