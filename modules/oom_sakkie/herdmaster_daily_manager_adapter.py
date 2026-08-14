@@ -96,27 +96,18 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
         candidates = [row for row in mortality.get("candidate_deaths") or ()
                       if str(row.get("pig_id") or "") not in closed_ids]
         if candidates and not materiality_state:
-            row = sorted(candidates, key=lambda value: (str(value.get("effective_date") or ""),
-                                                        str(value.get("event_id") or "")))[-1]
-            tag = str(row.get("tag") or row.get("pig_id") or "the pig")
-            items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":mortality:"+str(row.get("event_id") or tag),
-                dedupe_key="herdmaster:mortality:"+str(row.get("event_id") or row.get("pig_id")),
-                domain="herd", title=f"Mortality follow-up — {tag}",
-                why=("One changed canonical death opened this attributable individual follow-up."
-                     if str(row.get("pig_id") or "") not in open_ids else
-                     "One changed canonical death has an unresolved attributable individual lifecycle."),
-                next_action="Review this individual once; completion closes it. Patterns remain associations, not diagnoses.",
-                assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
-                provenance=provenance, business_value=125))
-        elif not candidates and not materiality_state:
-            items.append(SpecialistWorkItem(
-                item_id=packet["material_digest"]+":mortality-material-change",
-                dedupe_key="herdmaster:mortality-material-change", domain="herd",
-                title="Mortality evidence materially changed",
-                why="HERDMASTER detected a normalized evidence change, but no new attributable canonical death.",
-                next_action="Review the changed evidence without reopening an unrelated individual case or inferring causation.",
-                assignee="charl", state=WorkState.PLANNED, authority=Authority.ADVISORY,
-                provenance=provenance, business_value=100))
+            for row in sorted(candidates, key=lambda value: (
+                    str(value.get("effective_date") or ""), str(value.get("event_id") or ""))):
+                tag = str(row.get("tag") or row.get("pig_id") or "the pig")
+                items.append(SpecialistWorkItem(item_id=packet["material_digest"]+":mortality:"+str(row.get("event_id") or tag),
+                    dedupe_key="herdmaster:mortality:"+str(row.get("event_id") or row.get("pig_id")),
+                    domain="herd", title=f"Mortality follow-up — {tag}",
+                    why=("One changed canonical death opened this attributable individual follow-up."
+                         if str(row.get("pig_id") or "") not in open_ids else
+                         "One changed canonical death has an unresolved attributable individual lifecycle."),
+                    next_action="Review this individual once; completion closes it. Patterns remain associations, not diagnoses.",
+                    assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
+                    provenance=provenance, business_value=125))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
     rebound = tuple(replace(item, provenance=replace(provenance, result_id=result_id)) for item in items)
     return SpecialistResult("herdmaster", result_id, observed_at,

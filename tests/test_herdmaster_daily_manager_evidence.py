@@ -20,12 +20,12 @@ def weight(pid="P1", kg=10, day="2026-08-11", event="W1"):
 
 
 def build(*, pigs=None, weights=None, prior=(), lifecycle=(), mortality=None,
-          prior_mortality="", prior_mortality_event_ids=()):
+          prior_mortality="", prior_mortality_event_fingerprints=None):
     return build_daily_manager_evidence(pigs=pigs or [pig()],
         window_weights=weights or [], prior_weights=prior,
         lifecycle_events=lifecycle, mortality_packet=mortality,
         prior_mortality_digest=prior_mortality,
-        prior_mortality_event_ids=prior_mortality_event_ids,
+        prior_mortality_event_fingerprints=prior_mortality_event_fingerprints,
         analysis_date=date(2026, 8, 14))
 
 
@@ -73,6 +73,13 @@ def test_breeder_weight_observation_or_cancelled_event_is_not_a_schedule():
             "pig_id": "S1", "event_type": event_type,
             "effective_at": "2026-08-11T06:00:00+02:00"}])
         assert packet["weight"]["current_snapshot"]["eligible_tagged"] == 0
+
+    packet = build(pigs=[sow], lifecycle=[
+        {"pig_id": "S1", "event_type": "individual_weighing_scheduled",
+         "effective_at": "2026-08-11T06:00:00+02:00"},
+        {"pig_id": "S1", "event_type": "individual_weighing_cancelled",
+         "effective_at": "2026-08-11T07:00:00+02:00"}])
+    assert packet["weight"]["current_snapshot"]["eligible_tagged"] == 0
 
 
 def test_scheduled_breeder_without_usable_tag_remains_untagged_excluded():
@@ -171,12 +178,23 @@ def test_completed_mortality_followup_stays_closed_even_when_digest_changed():
 
 
 def test_changed_digest_does_not_reopen_previously_consumed_death():
+    first = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD")
+    fingerprints = first["mortality"]["canonical_death_event_fingerprints"]
     packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD",
-                   prior_mortality_event_ids=("D1",))
+                   prior_mortality_event_fingerprints=fingerprints)
     result = consume_daily_manager_evidence(packet, observed_at=NOW)
     assert all(item.dedupe_key != "herdmaster:mortality:D1" for item in result.work_items)
-    assert any(item.dedupe_key == "herdmaster:mortality-material-change"
-               for item in result.work_items)
+    assert all("mortality" not in item.dedupe_key for item in result.work_items)
+
+
+def test_multiple_new_deaths_each_receive_an_attributable_followup():
+    packet_data = mortality()
+    packet_data["proven_facts"].append({"event_id": "D2", "pig_id": "P2",
+        "effective_date": "2026-08-14", "event_kind": "individual_death"})
+    packet = build(weights=[weight()], mortality=packet_data, prior_mortality="OLD")
+    result = consume_daily_manager_evidence(packet, observed_at=NOW)
+    assert {item.dedupe_key for item in result.work_items if "mortality:" in item.dedupe_key} == {
+        "herdmaster:mortality:D1", "herdmaster:mortality:D2"}
 
 
 def test_mortality_state_is_normalized_and_missing_state_fails_closed():

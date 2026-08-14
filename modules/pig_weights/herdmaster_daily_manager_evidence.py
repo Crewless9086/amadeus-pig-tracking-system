@@ -22,20 +22,29 @@ BREEDING_STAGES = {"sow", "boar"}
 INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS = {
     "individual_weighing_due", "individual_weighing_scheduled",
 }
+INDIVIDUAL_WEIGHING_CANCEL_EVENTS = {
+    "individual_weighing_cancelled", "individual_weighing_completed",
+}
 
 
 def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
                                  lifecycle_events=(), mortality_packet=None,
-                                 prior_mortality_digest="", prior_mortality_event_ids=(),
+                                 prior_mortality_digest="", prior_mortality_event_fingerprints=None,
                                  analysis_date):
     """Build one deterministic zero-I/O specialist contract."""
     analysis_date = _day(analysis_date)
     window_start = analysis_date - timedelta(days=analysis_date.weekday()) + timedelta(days=1)
     window_end = window_start + timedelta(days=1)
-    scheduled = {str(row.get("pig_id") or "") for row in lifecycle_events
-                 if str(row.get("event_type") or "").strip().casefold()
-                    in INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS
-                 and window_start <= _day(row.get("effective_at")) <= window_end}
+    schedule_state = {}
+    for row in sorted(lifecycle_events or (), key=lambda value: (
+            _day(value.get("effective_at")), str(value.get("effective_at") or ""))):
+        event_type = str(row.get("event_type") or "").strip().casefold()
+        if (event_type in INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS
+                or event_type in INDIVIDUAL_WEIGHING_CANCEL_EVENTS) \
+                and window_start <= _day(row.get("effective_at")) <= window_end:
+            schedule_state[str(row.get("pig_id") or "")] = event_type
+    scheduled = {pig_id for pig_id, event_type in schedule_state.items()
+                 if event_type in INDIVIDUAL_WEIGHING_SCHEDULE_EVENTS}
     groups = defaultdict(list)
     pig_by_id = {}
     for raw in pigs or ():
@@ -146,10 +155,12 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
     }
     mortality_packet = dict(mortality_packet or {})
     mortality_digest = str(mortality_packet.get("evidence_digest") or "")
-    prior_event_ids = {str(value) for value in prior_mortality_event_ids or () if value}
+    prior_fingerprints = dict(prior_mortality_event_fingerprints or {})
     all_deaths = list(mortality_packet.get("proven_facts") or [])
+    current_fingerprints = {_death_identity(row): _death_fingerprint(row)
+                            for row in all_deaths if _death_identity(row)}
     new_deaths = [row for row in all_deaths
-                  if str(row.get("event_id") or "") not in prior_event_ids]
+                  if prior_fingerprints.get(_death_identity(row)) != _death_fingerprint(row)]
     mortality = {
         "review_identity": MORTALITY_IDENTITY,
         "evidence_digest": mortality_digest,
@@ -157,8 +168,7 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
         "digest_changed": bool(mortality_digest and mortality_digest != prior_mortality_digest),
         "rolling_counts": mortality_packet.get("rolling_counts") or {},
         "candidate_deaths": new_deaths,
-        "canonical_death_event_ids": sorted(
-            str(row.get("event_id")) for row in all_deaths if row.get("event_id")),
+        "canonical_death_event_fingerprints": current_fingerprints,
         "association_boundary": "associations are not diagnoses or proof of causation",
     }
     material = {"weight": weight, "mortality": mortality}
@@ -185,20 +195,20 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
             connect=connect) as connection:
         with connection.cursor() as cursor:
             pigs = _rows(cursor, """select pig_id,tag_number,pig_name,status,on_farm,animal_type,purpose
-                from public.current_canonical_pigs order by pig_id""")
+                from public.current_canonical_pigs order by pig_id limit 5000""")
             window_weights = _rows(cursor, """select weight_event_id,pig_id,weight_date,weight_kg
                 from public.pig_weight_events where weight_date between %s and %s
-                order by pig_id,weight_date,weight_event_id""", (window_start, window_end))
+                order by pig_id,weight_date,weight_event_id limit 10000""", (window_start, window_end))
             prior_weights = _rows(cursor, """with latest_day as (
                     select pig_id,max(weight_date) as weight_date
                     from public.pig_weight_events where weight_date<%s group by pig_id)
                 select event.weight_event_id,event.pig_id,event.weight_date,event.weight_kg
                 from public.pig_weight_events event join latest_day
                   on latest_day.pig_id=event.pig_id and latest_day.weight_date=event.weight_date
-                order by event.pig_id,event.weight_event_id""", (window_start,))
+                order by event.pig_id,event.weight_event_id limit 10000""", (window_start,))
             lifecycle = _rows(cursor, """select pig_id,lifecycle_event_type as event_type,effective_at
                 from public.pig_lifecycle_events where effective_at::date between %s and %s
-                order by effective_at,lifecycle_event_id""", (window_start, window_end))
+                order by effective_at,lifecycle_event_id limit 5000""", (window_start, window_end))
             cursor.execute("""select review_json->'mortality_consumption'
                 from public.sam_live_stock_conversation_review_events
                 where event_source='oom_sakkie_herdmaster_mortality_consumption'
@@ -207,7 +217,8 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
             row = cursor.fetchone()
             prior_consumption = (row[0] if row else {}) or {}
             prior_digest = str(prior_consumption.get("evidence_digest") or "")
-            prior_event_ids = tuple(prior_consumption.get("canonical_death_event_ids") or ())
+            prior_event_fingerprints = dict(
+                prior_consumption.get("canonical_death_event_fingerprints") or {})
     if mortality_evidence_loader is None:
         from modules.pig_weights.herdmaster_mortality_evidence import load_current_mortality_evidence
         mortality_evidence_loader = load_current_mortality_evidence
@@ -222,7 +233,8 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
         window_weights=window_weights, prior_weights=prior_weights,
         lifecycle_events=lifecycle, mortality_packet=mortality,
         prior_mortality_digest=prior_digest,
-        prior_mortality_event_ids=prior_event_ids, analysis_date=analysis_date)
+        prior_mortality_event_fingerprints=prior_event_fingerprints,
+        analysis_date=analysis_date)
 
 
 def _rows(cursor, sql, params=()):
@@ -262,3 +274,12 @@ def _day(value):
 def _digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
         default=str).encode()).hexdigest().upper()
+
+
+def _death_identity(row):
+    return str(row.get("event_id") or row.get("pig_id") or "")
+
+
+def _death_fingerprint(row):
+    return _digest({key: row.get(key) for key in (
+        "event_id", "pig_id", "effective_date", "event_kind", "confirmation")})

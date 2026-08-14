@@ -7,7 +7,7 @@ from typing import Mapping,Sequence
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_mortality_adapter import consume_mortality_packet
-from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres, connect_bounded_read
 
 EVENT_SOURCE="oom_sakkie_herdmaster_mortality_consumption"
 
@@ -33,8 +33,13 @@ def consume_current_mortality_packet(*,packet:Mapping,authority,owner_user_id:st
             "review_identity":identity,"evidence_digest":packet["evidence_digest"],"notify_owner":False}
     record={"review_identity":identity,"owner_identity_sha256":owner_hash,
         "evidence_digest":str(packet["evidence_digest"]),
-        "canonical_death_event_ids":sorted(str(row.get("event_id"))
-            for row in packet.get("proven_facts") or () if row.get("event_id")),
+        "canonical_death_event_fingerprints":{
+            str(row.get("event_id") or row.get("pig_id")): hashlib.sha256(json.dumps({
+                key:row.get(key) for key in
+                ("event_id","pig_id","effective_date","event_kind","confirmation")
+            },sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest().upper()
+            for row in packet.get("proven_facts") or ()
+            if row.get("event_id") or row.get("pig_id")},
         "deduplication_key":str(packet["deduplication_key"]),"observed_at":observed_at.isoformat(),
         "prior_evidence_digest":str(prior.get("evidence_digest") or ""),
         "status":"material_refresh" if prior else "initial_assessment",**binding}
@@ -69,6 +74,7 @@ def mortality_consumption_store(action,identity,payload):
     event.update({"review_event_id":event_id,"chatwoot_conversation_id":identity,
         "review_json":{"mortality_consumption":dict(payload)},"decision_json":{},"facts_json":{},
         "customer_message_excerpt":"","sam_reply_excerpt":""})
-    saved,status=record_sam_live_stock_review_event(event)
+    saved,status=record_sam_live_stock_review_event(event,
+        connect_factory=lambda:connect_bounded_postgres(read_only=False))
     return {**saved,"success":status<400 and saved.get("success") is True,
             "created":saved.get("created",status<300)}
