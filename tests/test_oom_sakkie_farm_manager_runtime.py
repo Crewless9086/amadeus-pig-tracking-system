@@ -58,10 +58,10 @@ def test_consolidates_max_three_actions_one_question_and_partial_failure():
     assert result["specialist_gaps"] == {"beacon": "missing"}
     assert "BEACON" not in result["answer"] and "missing" not in result["answer"].lower()
     assert "Irrigation status could not be read" not in result["answer"]
-    assert "weighing, breeding and welfare" in result["answer"]
-    assert "Weigh all 2 current active/on-farm pigs" in result["answer"]
+    assert "Weigh all" not in result["answer"]
+    assert "active/on-farm pigs" not in result["answer"]
     assert "ROOTLINE priority" in result["answer"]
-    assert result["weighing_worklist"] == ({"pig_id":"PIG-1","tag_number":"1"}, {"pig_id":"PIG-2","tag_number":"2"})
+    assert result["weighing_worklist"] == ()
     assert all(result[key] is False for key in ("writes_farm_data", "writes_weights", "writes_mating", "hardware_commands", "publishes"))
 
 
@@ -114,7 +114,7 @@ def test_completed_pig125_is_suppressed_and_active_pig11_appears_once():
         loaders=loaders, event_store=memory_store(), weighing_loader=lambda:())
     assert "Pig 125" not in result["answer"]
     assert result["answer"].count("Pig 11") == 1
-    assert "No current active/on-farm pigs" in result["answer"]
+    assert "active/on-farm pigs" not in result["answer"]
 
 
 def test_owner_reported_dead_pig127_keeps_mortality_lifecycle_without_obsolete_breathing_question():
@@ -128,72 +128,107 @@ def test_owner_reported_dead_pig127_keeps_mortality_lifecycle_without_obsolete_b
     assert "breathing" not in item.next_action.lower() and item.genuine_question==""
 
 
-def test_weighing_loader_failure_is_a_bounded_visible_gap():
+def test_retired_broad_weighing_loader_is_never_consulted():
     loaders = {name:(lambda n=name:specialist(n)) for name in ("herdmaster","rootline","sam","beacon")}
     result, _ = handle_farm_manager_round(parsed(), issue_gateway_owner_authority(OWNER, OWNER), now=NOW,
         loaders=loaders, event_store=memory_store(),
         weighing_loader=lambda:(_ for _ in ()).throw(RuntimeError("down")))
-    assert result["specialist_gaps"]["herdmaster_weighing"] == "contained"
-    assert "contained" not in result["answer"].lower()
-    assert "weighing evidence unavailable" in result["answer"].lower()
+    assert "herdmaster_weighing" not in result["specialist_gaps"]
+    assert result["weighing_worklist"] == ()
+    assert "weigh all" not in result["answer"].lower()
 
 
-def test_optional_mortality_failure_does_not_hide_supported_herd_work(monkeypatch):
+def test_daily_evidence_failure_does_not_hide_supported_herd_work(monkeypatch):
     base=specialist("herdmaster")
     monkeypatch.setattr(farm_manager_runtime,"load_current_breeding_operating_loop",lambda:{})
     monkeypatch.setattr(farm_manager_runtime,"_load_observations",lambda owner:())
     monkeypatch.setattr(farm_manager_runtime,"_load_active_lifecycles",lambda owner:())
-    monkeypatch.setattr(farm_manager_runtime,"_load_weighing_worklist",lambda:())
     monkeypatch.setattr(farm_manager_runtime,"_whole_herd_specialist_result",lambda *args:base)
-    monkeypatch.setattr(farm_manager_runtime,"load_current_mortality_evidence",
+    monkeypatch.setattr(farm_manager_runtime,"load_daily_manager_evidence",
         lambda **kwargs:(_ for _ in ()).throw(RuntimeError("optional unavailable")))
     result=farm_manager_runtime._load_herdmaster(
         issue_gateway_owner_authority(OWNER,OWNER),OWNER,NOW)
-    assert result==base
+    assert any(item.title=="Weekly weighing evidence unavailable" for item in result.work_items)
+    assert any(item.dedupe_key==base.work_items[0].dedupe_key for item in result.work_items)
 
 
-def test_unchanged_mortality_consumption_remains_available_to_a_new_manager_round(monkeypatch):
+def test_versioned_daily_evidence_is_combined_with_supported_herd_work(monkeypatch):
     base=specialist("herdmaster")
-    mortality=specialist("herdmaster",value=125)
+    daily=specialist("herdmaster",value=125)
     monkeypatch.setattr(farm_manager_runtime,"load_current_breeding_operating_loop",lambda:{})
     monkeypatch.setattr(farm_manager_runtime,"_load_observations",lambda owner:())
     monkeypatch.setattr(farm_manager_runtime,"_load_active_lifecycles",lambda owner:())
-    monkeypatch.setattr(farm_manager_runtime,"_load_weighing_worklist",lambda:())
     monkeypatch.setattr(farm_manager_runtime,"_whole_herd_specialist_result",lambda *args:base)
-    monkeypatch.setattr(farm_manager_runtime,"load_current_mortality_evidence",lambda **kwargs:{})
-    monkeypatch.setattr(farm_manager_runtime,"build_oom_sakkie_mortality_packet",lambda *args,**kwargs:{})
-    monkeypatch.setattr(farm_manager_runtime,"consume_current_mortality_packet",
-        lambda **kwargs:(mortality,{"notify_owner":False}))
+    monkeypatch.setattr(farm_manager_runtime,"load_daily_manager_evidence",lambda **kwargs:{})
+    monkeypatch.setattr(farm_manager_runtime,"consume_daily_manager_evidence",
+        lambda *args,**kwargs:daily)
     result=farm_manager_runtime._load_herdmaster(
         issue_gateway_owner_authority(OWNER,OWNER),OWNER,NOW)
-    assert result.result_id==base.result_id+":"+mortality.result_id
-    assert result.work_items[0].dedupe_key==mortality.work_items[0].dedupe_key
+    assert result.result_id==base.result_id+":"+daily.result_id
+    assert result.work_items[0].dedupe_key==daily.work_items[0].dedupe_key
 
 
-def test_two_distinct_manager_rounds_share_one_consumption_but_both_receive_current_mortality(monkeypatch):
-    from modules.oom_sakkie.herdmaster_mortality_runtime import consume_current_mortality_packet as consume_runtime
+def test_two_distinct_manager_rounds_reuse_same_versioned_daily_evidence(monkeypatch):
     base=specialist("herdmaster")
-    rows={}
-    def mortality_store(action,identity,payload):
-        if action=="load": return rows.get(identity)
-        if identity in rows: return {"success":True,"created":False}
-        rows[identity]=payload; return {"success":True,"created":True}
     monkeypatch.setattr(farm_manager_runtime,"load_current_breeding_operating_loop",lambda:{})
     monkeypatch.setattr(farm_manager_runtime,"_load_observations",lambda owner:())
     monkeypatch.setattr(farm_manager_runtime,"_load_active_lifecycles",lambda owner:())
-    monkeypatch.setattr(farm_manager_runtime,"_load_weighing_worklist",lambda:())
     monkeypatch.setattr(farm_manager_runtime,"_whole_herd_specialist_result",lambda *args:base)
-    monkeypatch.setattr(farm_manager_runtime,"load_current_mortality_evidence",lambda **kwargs:{
-        "mortality_events":[{"event_id":"E1","pig_id":"P1","effective_date":"2026-08-02",
-            "event_kind":"individual_death","confirmation":"confirmed","canonical_status":"current"}]})
-    monkeypatch.setattr(farm_manager_runtime,"consume_current_mortality_packet",
-        lambda **kwargs:consume_runtime(**kwargs,state_store=mortality_store))
+    packet={"material_digest":"D1"}
+    daily=specialist("herdmaster",value=125)
+    monkeypatch.setattr(farm_manager_runtime,"load_daily_manager_evidence",lambda **kwargs:packet)
+    monkeypatch.setattr(farm_manager_runtime,"consume_daily_manager_evidence",
+        lambda value,**kwargs:daily if value is packet else None)
     authority=issue_gateway_owner_authority(OWNER,OWNER)
     first=farm_manager_runtime._load_herdmaster(authority,OWNER,NOW)
     second=farm_manager_runtime._load_herdmaster(authority,OWNER,NOW)
-    assert len(rows)==1
-    assert any(item.dedupe_key=="herdmaster:mortality-current-assessment" for item in first.work_items)
-    assert any(item.dedupe_key=="herdmaster:mortality-current-assessment" for item in second.work_items)
+    assert first.result_id==second.result_id
+    assert first.work_items[0].dedupe_key==daily.work_items[0].dedupe_key
+    assert second.work_items[0].dedupe_key==daily.work_items[0].dedupe_key
+
+
+def _changed_daily_packet():
+    return {"packet_type":"herdmaster.daily_manager_evidence.v1",
+        "material_digest":"A"*64,
+        "weight":{"historical_completion_percentage":None,
+            "current_snapshot":{"eligible_tagged":1,"covered":1,
+                "coverage_percentage":100.0,"status":"complete"},
+            "missing_eligible_tagged":[],"breeding_excluded":[],
+            "untagged_excluded":[],"inactive_off_farm":[],"unknown_eligibility":[],
+            "conflicting_weight_evidence":[],"material_weight_findings":[]},
+        "mortality":{"digest_changed":True,"candidate_deaths":[{"event_id":"D1","pig_id":"P1"}],
+            "canonical_death_event_fingerprints":{"D1":"F1"},
+            "durable_death_event_fingerprints":{"D1":"F1"}},
+        "specialist_mortality_packet":{"review_identity":"HERDMASTER-MORTALITY-CURRENT"},
+        "authority":{"read_only":True,"writes_farm_data":False,
+            "hardware_commands":0,"sends_messages":False}}
+
+
+def test_changed_mortality_without_open_lifecycle_opens_followup_without_precomposition_write(monkeypatch):
+    base=specialist("herdmaster")
+    monkeypatch.setattr(farm_manager_runtime,"load_current_breeding_operating_loop",lambda:{})
+    monkeypatch.setattr(farm_manager_runtime,"_load_observations",lambda owner:())
+    monkeypatch.setattr(farm_manager_runtime,"_load_active_lifecycles",lambda owner:())
+    monkeypatch.setattr(farm_manager_runtime,"_whole_herd_specialist_result",lambda *args:base)
+    monkeypatch.setattr(farm_manager_runtime,"load_daily_manager_evidence",lambda **kwargs:_changed_daily_packet())
+    result=farm_manager_runtime._load_herdmaster(
+        issue_gateway_owner_authority(OWNER,OWNER),OWNER,NOW)
+    assert any("Mortality follow-up" in item.title for item in result.work_items)
+    assert farm_manager_runtime._mortality_fingerprints(
+        type("Brief",(),{"queue":result.work_items})())=={"D1":"F1"}
+
+
+def test_completed_nonmortality_lifecycle_does_not_suppress_new_death(monkeypatch):
+    base=specialist("herdmaster")
+    monkeypatch.setattr(farm_manager_runtime,"load_current_breeding_operating_loop",lambda:{})
+    monkeypatch.setattr(farm_manager_runtime,"_load_observations",lambda owner:())
+    monkeypatch.setattr(farm_manager_runtime,"_load_active_lifecycles",
+        lambda owner:({"pig_id":"P1","state":"completed","mortality_closed":False},))
+    monkeypatch.setattr(farm_manager_runtime,"_whole_herd_specialist_result",lambda *args:base)
+    monkeypatch.setattr(farm_manager_runtime,"load_daily_manager_evidence",lambda **kwargs:_changed_daily_packet())
+    result=farm_manager_runtime._load_herdmaster(
+        issue_gateway_owner_authority(OWNER,OWNER),OWNER,NOW)
+    assert any("Mortality follow-up" in item.title for item in result.work_items)
 
 
 def test_independent_specialists_share_one_bounded_delivery_budget_and_text_is_telegram_safe():

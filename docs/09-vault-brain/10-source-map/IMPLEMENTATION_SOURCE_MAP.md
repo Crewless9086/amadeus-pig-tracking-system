@@ -677,6 +677,19 @@ Current Stage 4 surface:
 - Human daily rendering: `modules/oom_sakkie/rootline_daily_presentation.py`
 # Oom Sakkie daily farm management
 
+- `modules/pig_weights/herdmaster_daily_manager_evidence.py` — versioned,
+  read-only HERDMASTER producer for weekly tagged-cohort coverage, separate
+  breeding/untagged/inactive/Unknown classifications, descriptive material
+  weight changes and mortality digest materiality from canonical Supabase
+  truth. Historical eligibility remains Unknown when effective-dated state is
+  unavailable.
+- `modules/oom_sakkie/herdmaster_daily_manager_adapter.py` — zero-authority
+  presentation adapter. Oom Sakkie consumes the typed specialist result and
+  never recalculates cohort biology from a broad active/on-farm list.
+- `tests/test_herdmaster_daily_manager_evidence.py` — complete, partial,
+  breeding-excluded, untagged, inactive, Unknown, unavailable, conflicting,
+  descriptive-change and mortality materiality/closure regressions.
+
 - `modules/oom_sakkie/daily_farm_manager.py` — scheduler-owned whole-farm task
   packet, constrained semantic prioritization, presentation and durable replay.
 - `modules/oom_sakkie/morning_runtime.py` — production-Render-owned 06:45 SAST

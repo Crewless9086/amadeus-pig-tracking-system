@@ -129,6 +129,9 @@ class SpecialistWorkItem:
             "requests_media": bool,
             "depends_on": tuple,
             "coordination_factors": tuple,
+            "mortality_fingerprints": dict,
+            "welfare_exception": bool,
+            "mortality_packet": dict,
         }
         unknown = set(self.metadata) - set(allowed_metadata)
         if unknown:
@@ -1222,9 +1225,11 @@ def _prefer(
 
 
 def _priority_key(item: SpecialistWorkItem) -> tuple[Any, ...]:
+    welfare_exception = 0 if item.metadata.get("welfare_exception") else 1
     customer_or_exception = 0 if item.metadata.get("customer_or_exception") else 1
     internal_housekeeping = 1 if item.metadata.get("internal_housekeeping") else 0
     return (
+        welfare_exception,
         customer_or_exception,
         internal_housekeeping,
         _STATE_RANK[item.state],

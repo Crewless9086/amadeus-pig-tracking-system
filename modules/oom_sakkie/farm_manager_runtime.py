@@ -22,9 +22,9 @@ from modules.oom_sakkie.herdmaster_management_runtime import _load_active_lifecy
 from modules.pig_weights.herdmaster_whole_herd_packet import build_whole_herd_packet
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
-from modules.pig_weights.herdmaster_mortality_evidence import load_current_mortality_evidence
-from modules.pig_weights.herdmaster_mortality_intelligence import build_oom_sakkie_mortality_packet
-from modules.oom_sakkie.herdmaster_mortality_adapter import consume_mortality_packet
+from modules.pig_weights.herdmaster_daily_manager_evidence import load_daily_manager_evidence
+from modules.oom_sakkie.herdmaster_daily_manager_adapter import consume_daily_manager_evidence
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres, connect_bounded_read
 from modules.oom_sakkie.herdmaster_mortality_runtime import consume_current_mortality_packet
 from zoneinfo import ZoneInfo
 
@@ -113,6 +113,12 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
             }
         if prior_binding == binding:
             preserved = prior.get("result") or {}
+            if prior.get("mortality_packet") and not _append_mortality_receipt(
+                    prior["mortality_packet"], authority, owner, now,
+                    str(semantic.get("language") or "en")):
+                return {"handled": True, "success": False,
+                    "status": "farm_manager_mortality_receipt_unavailable",
+                    "mission_id": mission_id, **ZERO_AUTHORITY}, 503
             return {**preserved, "status": "farm_manager_round_replay_suppressed"}, 200
     providers = loaders or {
         "herdmaster": lambda: _load_herdmaster(authority, owner, now,
@@ -151,17 +157,9 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
         return {"handled": True, "success": False,
             "status": "farm_manager_material_recomposition_evidence_unavailable",
             "mission_id": mission_id, **ZERO_AUTHORITY}, 409
-    if str(results[0].result_id).startswith("HERD-NEXT-"):
-        weighing_worklist = ()
-    else:
-        try:
-            weighing_worklist = tuple((weighing_loader or _load_weighing_worklist)())
-            results[0] = _consolidate_herdmaster(results[0], weighing_worklist, weighing_available=True)
-        except Exception:
-            weighing_worklist = ()
-            exceptions["herdmaster_weighing"] = "current_active_on_farm_worklist_unavailable"
-            results.append(_missing("herdmaster_weighing", now, SpecialistAvailability.CONTAINED))
-            results[0] = _consolidate_herdmaster(results[0], weighing_worklist, weighing_available=False)
+    # HERDMASTER's typed daily evidence owns production cohort eligibility.
+    # The retired argument remains API-compatible but is never consulted.
+    weighing_worklist = ()
     # A live specialist result is normally generated after manager invocation.
     # Validate freshness against composition time, not the earlier inbound or
     # invocation instant. Explicit test/replay clocks remain deterministic.
@@ -188,9 +186,12 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
         "reassessment_triggers": [f.follow_up_id for f in brief.follow_ups],
         "weighing_worklist": weighing_worklist,
         "material_recomposition_authority": material_recomposition,
+        "herdmaster_mortality_fingerprints": _mortality_fingerprints(brief),
         **ZERO_AUTHORITY,
     }
-    recorded = store("record", mission_id, {"binding": binding, "result": output})
+    mortality_packet = _mortality_packet(brief)
+    recorded = store("record", mission_id, {"binding": binding, "result": output,
+        "mortality_packet": mortality_packet})
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
         return {"handled": True, "success": False,
             "status": "farm_manager_round_persistence_unproven",
@@ -201,8 +202,19 @@ def handle_farm_manager_round(parsed: dict[str, Any], authority: Any, *, now=Non
             return {"handled": True, "success": False,
                 "status": "farm_manager_provider_binding_conflict",
                 "mission_id": mission_id, **ZERO_AUTHORITY}, 409
+        if winner.get("mortality_packet") and not _append_mortality_receipt(
+                winner["mortality_packet"], authority, owner, composition_now,
+                str(semantic.get("language") or "en")):
+            return {"handled": True, "success": False,
+                "status": "farm_manager_mortality_receipt_unavailable",
+                "mission_id": mission_id, **ZERO_AUTHORITY}, 503
         return {**(winner.get("result") or {}),
                 "status": "farm_manager_round_replay_suppressed"}, 200
+    if mortality_packet and not _append_mortality_receipt(mortality_packet,
+            authority, owner, composition_now, str(semantic.get("language") or "en")):
+        return {"handled": True, "success": False,
+            "status": "farm_manager_mortality_receipt_unavailable",
+            "mission_id": mission_id, **ZERO_AUTHORITY}, 503
     return output, 200
 
 
@@ -210,12 +222,12 @@ def _load_herdmaster(authority, owner, now, language="en"):
     futures = {
         "canonical": _HERD_EVIDENCE_EXECUTOR.submit(load_current_breeding_operating_loop),
         "observations": _HERD_EVIDENCE_EXECUTOR.submit(_load_observations, owner),
-        "active": _HERD_EVIDENCE_EXECUTOR.submit(_load_active_lifecycles, owner),
-        "weights": _HERD_EVIDENCE_EXECUTOR.submit(_load_weighing_worklist),
-        "mortality": _HERD_EVIDENCE_EXECUTOR.submit(load_current_mortality_evidence,
-            analysis_end=now.astimezone(ZoneInfo("Africa/Johannesburg")).date()),
+        "active": _HERD_EVIDENCE_EXECUTOR.submit(_load_manager_lifecycles, owner),
+        "daily": _HERD_EVIDENCE_EXECUTOR.submit(load_daily_manager_evidence,
+            analysis_date=now.astimezone(ZoneInfo("Africa/Johannesburg")).date(),
+            owner_user_id=owner),
     }
-    base_names=("canonical","observations","active","weights")
+    base_names=("canonical","observations","active")
     done, pending = wait(tuple(futures.values()), timeout=9.0)
     try:
         if any(futures[name] not in done for name in base_names):
@@ -223,18 +235,31 @@ def _load_herdmaster(authority, owner, now, language="en"):
         canonical = futures["canonical"].result()
         observations = futures["observations"].result()
         active = futures["active"].result()
-        weights = futures["weights"].result()
-        herd = _whole_herd_specialist_result(canonical, observations, active, weights, now)
+        active_current = tuple(row for row in active if str(row.get("state") or "").casefold()
+            not in {"completed", "closed", "handled"})
+        # Reproductive and welfare evidence remains in the existing whole-herd
+        # result. Weekly cohort biology comes only from the versioned producer.
+        herd = _whole_herd_specialist_result(canonical, observations, active_current, now)
     except Exception:
         try:
             active = futures["active"].result(timeout=0) if futures["active"] in done else ()
         except Exception:
             active = ()
-        return _active_welfare_result(active, now)
+        active_current = tuple(row for row in active if str(row.get("state") or "").casefold()
+            not in {"completed", "closed", "handled"})
+        return _active_welfare_result(active_current, now)
     else:
-        return _augment_herd_with_mortality(herd=herd,mortality_future=futures["mortality"],
-            mortality_done=futures["mortality"] in done,authority=authority,owner=owner,
-            now=now,active=active,language=language)
+        try:
+            packet = futures["daily"].result() if futures["daily"] in done else None
+        except Exception:
+            packet = None
+        daily = consume_daily_manager_evidence(packet, observed_at=now,
+            active_lifecycles=active, language=language)
+        combined_id = herd.result_id + ":" + daily.result_id
+        items = tuple(replace(item, provenance=replace(item.provenance,
+                      result_id=combined_id))
+                      for item in tuple(daily.work_items) + tuple(herd.work_items))
+        return replace(herd, work_items=items, result_id=combined_id)
     finally:
         for future in pending:
             future.cancel()
@@ -259,7 +284,45 @@ def _augment_herd_with_mortality(*,herd,mortality_future,mortality_done,authorit
         combined_id=herd.result_id+":"+mortality.result_id
         items=tuple(replace(item,provenance=replace(item.provenance,result_id=combined_id))
                     for item in tuple(mortality.work_items)+tuple(herd.work_items))
-        return replace(herd,work_items=items,result_id=combined_id)
+    return replace(herd,work_items=items,result_id=combined_id)
+
+
+def _load_manager_lifecycles(owner):
+    """Retain terminal closure evidence without breaking injected legacy loaders."""
+    try:
+        return _load_active_lifecycles(owner, include_terminal=True)
+    except TypeError as exc:
+        if "include_terminal" not in str(exc):
+            raise
+        return _load_active_lifecycles(owner)
+
+
+def _mortality_fingerprints(brief):
+    fingerprints = {}
+    for item in brief.queue:
+        values = item.metadata.get("mortality_fingerprints") if item.metadata else None
+        if isinstance(values, dict):
+            fingerprints.update({str(key): str(value) for key, value in values.items()
+                                 if key and value})
+    return dict(sorted(fingerprints.items()))
+
+
+def _mortality_packet(brief):
+    for item in brief.queue:
+        packet = item.metadata.get("mortality_packet") if item.metadata else None
+        if isinstance(packet, dict):
+            return packet
+    return None
+
+
+def _append_mortality_receipt(packet, authority, owner, observed_at, language):
+    try:
+        _, meta = consume_current_mortality_packet(packet=packet,
+            authority=authority, owner_user_id=owner, observed_at=observed_at,
+            active_lifecycles=(), language=language)
+        return meta.get("success") is True
+    except Exception:
+        return False
     return herd
 
 
@@ -299,7 +362,7 @@ def _active_welfare_result(active, now):
         work_items=rebound)
 
 
-def _whole_herd_specialist_result(canonical, observations, active, weights, now):
+def _whole_herd_specialist_result(canonical, observations, active, now):
     tasks = _canonical_tasks_with_current_mating(canonical)
     observations = _current_cycle_observations(
         tasks, observations, _time(canonical.get("generated_at"), now))
@@ -337,23 +400,9 @@ def _whole_herd_specialist_result(canonical, observations, active, weights, now)
                 "change_triggers": ["return to heat", "illness", "early labour", "farrowing"],
                 "prohibited_without_more_evidence": ["clinical-confirmation claim", "mating", "movement", "farm write"]})
         reproductive.append(row)
-    active_ids = {row["pig_id"] for row in active_packet}
-    weighing = []
-    unidentified_weighing_count = 0
-    for row in weights:
-        if row["pig_id"] in active_ids:
-            continue
-        tag_number = str(row.get("tag_number") or "").strip()
-        if not tag_number or tag_number.casefold() == "none":
-            unidentified_weighing_count += 1
-            continue
-        weighing.append({"pig_id": row["pig_id"], "tag_number": row["tag_number"],
-            "why_now": "Monday whole-herd weighing supports current welfare, breeding and sale decisions.",
-            "latest_weight_kg": None, "latest_weight_date": None,
-            "source_identity": "canonical-active-on-farm:" + row["pig_id"]})
     packet = build_whole_herd_packet({"success": True, "writes_performed": False,
         "evidence_generation": canonical["generated_at"], "evidence_identity": canonical["worklist_id"]},
-        active_lifecycles=active_packet, monday_weighing_candidates=weighing,
+        active_lifecycles=active_packet, monday_weighing_candidates=(),
         reproductive_reviews=reproductive)
     result_id = packet["packet_identity"]
     observed = _time(packet["evidence_generation"], now)
@@ -362,57 +411,21 @@ def _whole_herd_specialist_result(canonical, observations, active, weights, now)
     items = list(_active_welfare_result(active, now).work_items)
     assumed = [row for row in packet["reproductive_reviews"]
                if row["operational_status"] == "Assumed Pregnant"]
-    journey = packet["monday_weighing_journey"]
-    if assumed or journey["candidate_count"] or unidentified_weighing_count:
-        weighing_instruction = _weighing_instruction(journey, unidentified_weighing_count)
-        weighing_reply = ("Send one natural message with each listed tag and measured kg, "
-            "the weighing date once, and observation time only if known. Oom Sakkie will preview every mapping before any write."
-            if journey["candidate_count"] else "")
-        title = "Complete Monday weighing"
-        why = "Fresh weights will support the next welfare, breeding and sales reassessment."
-        preparation = ""
-        state = WorkState.DUE_TODAY
-        if not assumed and not journey["candidate_count"]:
-            title = "Identify unlabelled pigs before weighing"
-            why = (f"All {unidentified_weighing_count} current weighing candidates lack a proven visible tag or name, "
-                   "so Oom Sakkie cannot safely map their weights yet.")
-            state = WorkState.WAITING_EVIDENCE
+    if assumed:
         labels = " and ".join(str(row["tag_number"]) for row in assumed)
-        if assumed:
-            window = assumed[0]["projected_farrowing_range"]
-            prep = assumed[0]["preparation_window"]
-            title = f"Prepare {labels}" + (" and complete Monday weighing"
-                if journey["candidate_count"] else "")
-            why = (f"{labels} remain operationally Assumed Pregnant, not clinically confirmed; farrowing is approximately "
-                 f"{window['start']} to {window['end']}, with proportional preparation {prep['start']} to {prep['end']}. "
-                 + why)
-            preparation = "Prepare their farrowing areas proportionally. "
+        window = assumed[0]["projected_farrowing_range"]
+        prep = assumed[0]["preparation_window"]
         items.append(SpecialistWorkItem(
-            item_id=result_id + ":herd-round", dedupe_key="herdmaster:farrowing-and-monday-weighing",
-            domain="herd", title=title, why=why,
-            next_action=(preparation + weighing_instruction
-                         + weighing_reply),
-            assignee="charl", state=state, authority=Authority.ADVISORY,
+            item_id=result_id + ":farrowing-round", dedupe_key="herdmaster:farrowing-preparation",
+            domain="herd", title=f"Prepare {labels}",
+            why=(f"{labels} remain operationally Assumed Pregnant, not clinically confirmed; farrowing is approximately "
+                 f"{window['start']} to {window['end']}, with proportional preparation {prep['start']} to {prep['end']}."),
+            next_action="Prepare their farrowing areas proportionally.",
+            assignee="charl", state=WorkState.DUE_TODAY, authority=Authority.ADVISORY,
             provenance=provenance, business_value=110))
     rebound = tuple(replace(item, provenance=provenance) for item in items)
     return SpecialistResult("herdmaster", result_id, observed,
         SpecialistAvailability.AVAILABLE, work_items=rebound)
-
-
-def _weighing_instruction(journey, unidentified_count):
-    count = int(journey.get("candidate_count") or 0)
-    candidates = journey.get("candidates") or ()
-    if not count:
-        instruction = "No identified Monday reweigh is currently required. "
-    elif count <= 20:
-        tags = ", ".join(str(row["tag_number"]) for row in candidates)
-        instruction = f"Weigh these {count} pigs: {tags}. "
-    else:
-        instruction = (f"Weigh the {count} identified active/on-farm pigs on Oom Sakkie's canonical worklist, "
-            "using each visible tag or name with its measured kg. ")
-    if unidentified_count:
-        instruction += (f"Keep {unidentified_count} unlabelled pigs out of the recording preview until their identities are proven. ")
-    return instruction
 
 
 def _canonical_tasks_with_current_mating(canonical):
@@ -468,54 +481,6 @@ def _current_cycle_observations(tasks, observations, generated_at):
         elif observed_at == prior[0] and _digest(observation) != _digest(prior[1]):
             conflicted.add(pig_id)
     return [row for pig_id, (_, row) in sorted(candidates.items()) if pig_id not in conflicted]
-
-
-def _load_weighing_worklist():
-    import psycopg
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-        connection.read_only = True
-        with connection.cursor() as cursor:
-            cursor.execute("""select pig_id,tag_number from public.current_canonical_pig_state
-                where lower(status)='active' and on_farm is true
-                order by nullif(regexp_replace(coalesce(tag_number,''),'[^0-9]','','g'),'')::int nulls last,
-                         tag_number,pig_id""")
-            rows = cursor.fetchall()
-    return tuple({"pig_id": str(pig_id), "tag_number": str(tag)} for pig_id, tag in rows)
-
-
-def _consolidate_herdmaster(result, worklist, *, weighing_available):
-    if str(result.result_id).startswith("HERD-NEXT-"):
-        return result
-    if result.availability is not SpecialistAvailability.AVAILABLE:
-        return result
-    mortality_items = tuple(item for item in result.work_items
-                            if item.dedupe_key == "herdmaster:mortality-current-assessment")
-    source_items = tuple(item for item in result.work_items
-                         if item.dedupe_key != "herdmaster:mortality-current-assessment"
-                         if item.state not in {WorkState.COMPLETED, WorkState.HANDLED})
-    provenance = (source_items[0].provenance if source_items else
-        Provenance("herdmaster", result.result_id, ("canonical_herdmaster_result",), result.observed_at, 1.0))
-    if not weighing_available and not source_items:
-        return replace(result, work_items=mortality_items)
-    weighing = (f"Weigh all {len(worklist)} current active/on-farm pigs; capture each tag and kg through the "
-        "existing governed bulk-weight flow, then review the exact tag/Pig ID/weight preview and confirm before any write."
-        if worklist else ("No current active/on-farm pigs are in today's canonical weighing worklist."
-            if weighing_available else "The current active/on-farm weighing list is waiting for canonical evidence."))
-    herd_actions = "; ".join(item.next_action for item in source_items)
-    item = SpecialistWorkItem(
-        item_id=result.result_id + ":daily-herd-round", dedupe_key="herdmaster:daily-herd-round",
-        domain="herd", title=(f"Today's weighing, breeding and welfare round ({len(worklist)} pigs to weigh)"
-            if weighing_available else "Today's breeding and welfare round; weighing evidence unavailable"),
-        why="Fresh weights improve welfare, breeding and supported sales decisions. " +
-            "; ".join(item.title + ": " + item.why for item in source_items),
-        next_action=weighing + (" Breeding/welfare: " + herd_actions if herd_actions else ""),
-        assignee="charl", state=(WorkState.WAITING_EVIDENCE
-            if any(item.genuine_question for item in source_items) else WorkState.DUE_TODAY),
-        authority=Authority.ADVISORY,
-        provenance=provenance, business_value=100,
-        genuine_question=next((item.genuine_question for item in source_items if item.genuine_question), ""),
-        question_for="charl" if any(item.genuine_question for item in source_items) else "")
-    return replace(result, work_items=mortality_items+(item,))
 
 
 def _load_rootline(now):
@@ -673,9 +638,7 @@ def _event_store(action, identity, payload):
         build_sam_live_stock_review_event, record_sam_live_stock_review_event,
     )
     if action == "load":
-        import psycopg
-        with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-            connection.read_only = True
+        with connect_bounded_read() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""select review_json->'farm_manager_round'
                     from public.sam_live_stock_conversation_review_events
@@ -695,6 +658,7 @@ def _event_store(action, identity, payload):
     event.update({"review_event_id": revision_id, "chatwoot_conversation_id": identity,
         "review_json": {"farm_manager_round": payload}, "decision_json": {}, "facts_json": {},
         "customer_message_excerpt": "", "sam_reply_excerpt": ""})
-    saved, status = record_sam_live_stock_review_event(event)
+    saved, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: connect_bounded_postgres(read_only=False))
     return {"success": status < 400 and saved.get("success") is True,
             "created": saved.get("created")}

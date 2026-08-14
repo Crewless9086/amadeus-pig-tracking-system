@@ -13,6 +13,7 @@ import hashlib
 import json
 from modules.oom_sakkie.farm_manager_loop import SpecialistResult
 from modules.pig_weights.mating_routes import load_current_breeding_operating_loop
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
 EVENT_SOURCE = "oom_sakkie_herdmaster_management_consumer"
 OBSERVATION_SOURCE = "oom_sakkie_owner_observation"
@@ -116,8 +117,7 @@ def _bind_legacy_observation_tasks(observations, canonical):
 
 
 def _connect():
-    import psycopg
-    return psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10)
+    return connect_bounded_read(database_url=os.environ.get("DATABASE_URL"))
 
 
 def _load_observations(owner_user_id):
@@ -126,14 +126,19 @@ def _load_observations(owner_user_id):
         with connection.cursor() as cursor:
             cursor.execute("""select review_json->'owner_observation'
                 from public.sam_live_stock_conversation_review_events
-                where event_source=%s order by created_at,review_event_id""", (OBSERVATION_SOURCE,))
-            rows = [row[0] for row in cursor.fetchall() if isinstance(row[0], dict)]
+                where event_source=%s order by created_at desc,review_event_id desc limit 5001""",
+                (OBSERVATION_SOURCE,))
+            fetched = cursor.fetchall()
+            if len(fetched) > 5000:
+                raise RuntimeError("herdmaster_observation_row_bound_exceeded")
+            rows = [row[0] for row in fetched if isinstance(row[0], dict)]
+            rows.reverse()
     return [row for row in rows if row.get("authenticated_owner") is True
             and str(row.get("owner_user_id") or "") == str(owner_user_id)
             and row.get("provider_message_id") and row.get("provider_timestamp")]
 
 
-def _load_active_lifecycles(owner_user_id):
+def _load_active_lifecycles(owner_user_id, *, include_terminal=False):
     with _connect() as connection:
         connection.read_only = True
         with connection.cursor() as cursor:
@@ -150,8 +155,12 @@ def _load_active_lifecycles(owner_user_id):
                 ) f on true
                 where h.event_source='oom_sakkie_herdmaster_health_loss_runtime'
                   and h.review_json->'herdmaster_health_loss'->>'owner_user_id'=%s
-                order by h.created_at,h.review_event_id""", (str(owner_user_id),))
-            rows = [(row[0], str(row[1] or "")) for row in cursor.fetchall() if isinstance(row[0], dict)]
+                order by h.created_at desc,h.review_event_id desc limit 5001""", (str(owner_user_id),))
+            fetched = cursor.fetchall()
+            if len(fetched) > 5000:
+                raise RuntimeError("herdmaster_lifecycle_row_bound_exceeded")
+            rows = [(row[0], str(row[1] or "")) for row in fetched if isinstance(row[0], dict)]
+            rows.reverse()
     terminal_pigs = _load_terminal_pig_ids()
     active = {}
     for row, card_message_id in rows:
@@ -159,14 +168,15 @@ def _load_active_lifecycles(owner_user_id):
         pig_id = str(identity.get("pig_id") or "")
         if not pig_id:
             continue
-        if pig_id in terminal_pigs:
-            active.pop(pig_id, None)
-            continue
         lifecycle_id = str(row.get("mission_id") or "")
+        observations = (((row.get("preview") or {}).get("evaluator") or {}).get("observations") or [])
+        reported_dead = _retained_owner_reported_death(row, observations, owner_user_id)
+        if pig_id in terminal_pigs:
+            if not include_terminal:
+                active.pop(pig_id, None)
+                continue
         if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
                                   "preview_correction_pending"} and card_message_id:
-            observations = (((row.get("preview") or {}).get("evaluator") or {}).get("observations") or [])
-            reported_dead = _retained_owner_reported_death(row, observations, owner_user_id)
             projected = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
                 "state": str(row.get("status")), "card_message_id": card_message_id,
                 "tag_number": str(identity.get("tag_number") or identity.get("name") or pig_id),
@@ -178,7 +188,11 @@ def _load_active_lifecycles(owner_user_id):
         else:
             # Chronology is ordered. A later terminal lifecycle for an animal
             # supersedes stale earlier active projections for that animal.
-            active.pop(pig_id, None)
+            if include_terminal:
+                active[pig_id] = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
+                                  "state": "completed", "mortality_closed": reported_dead}
+            else:
+                active.pop(pig_id, None)
     return list(active.values())
 
 
@@ -188,8 +202,12 @@ def _load_terminal_pig_ids():
         connection.read_only = True
         with connection.cursor() as cursor:
             cursor.execute("""select pig_id from public.current_canonical_pig_state
-                where lower(status) in ('dead','sold') or on_farm is false""")
-            return {str(row[0]) for row in cursor.fetchall() if row and row[0]}
+                where lower(status) in ('dead','sold') or on_farm is false
+                order by pig_id limit 5001""")
+            rows = cursor.fetchall()
+            if len(rows) > 5000:
+                raise RuntimeError("herdmaster_terminal_pig_row_bound_exceeded")
+            return {str(row[0]) for row in rows if row and row[0]}
 
 
 def _retain_active_mortality_context(previous, current):
@@ -257,8 +275,13 @@ def _load_prior_consumptions(owner_user_id, invocation_context_digest):
                 from public.sam_live_stock_conversation_review_events where event_source=%s
                   and review_json->'herdmaster_management_consumption'->'binding'->>'authenticated_owner_identity_sha256'=%s
                   and review_json->'herdmaster_management_consumption'->'binding'->'invocation_context'->>'digest'=%s
-                order by created_at,review_event_id""", (EVENT_SOURCE, owner_hash, invocation_context_digest))
-            bindings = [row[0] for row in cursor.fetchall() if isinstance(row[0], dict)]
+                order by created_at desc,review_event_id desc limit 5001""",
+                (EVENT_SOURCE, owner_hash, invocation_context_digest))
+            fetched = cursor.fetchall()
+            if len(fetched) > 5000:
+                raise RuntimeError("herdmaster_consumption_row_bound_exceeded")
+            bindings = [row[0] for row in fetched if isinstance(row[0], dict)]
+            bindings.reverse()
     return [{"management_round_identity": row.get("management_round_identity"),
         "deduplication_key": row.get("deduplication_key"), "result_digest": row.get("result_digest"),
         "result_digest_version": row.get("result_digest_version"),

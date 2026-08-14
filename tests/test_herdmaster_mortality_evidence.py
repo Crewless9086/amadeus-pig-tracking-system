@@ -59,5 +59,8 @@ def test_sql_loader_is_read_only_and_historical_query_accepts_mortality_exit_rea
     historical_sql=next(sql for sql,_ in calls if "from public.pigs" in sql)
     assert "exit_reason" in historical_sql and "stillborn" in historical_sql
     assert "default_transaction_read_only=on" in connect_args["options"]
+    assert connect_args["connect_timeout"]==3
+    assert "statement_timeout=3000" in connect_args["options"]
+    assert "lock_timeout=1000" in connect_args["options"]
     assert result["mortality_events"][0]["pig_id"]=="P9"
     assert result["mortality_events"][0]["canonical_status"]=="superseded"
