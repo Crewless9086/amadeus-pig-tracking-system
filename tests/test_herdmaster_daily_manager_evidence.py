@@ -201,6 +201,20 @@ def test_multiple_new_deaths_receive_one_bounded_attributable_cluster():
     assert "Each identity remains separate" in mortality_items[0].why
 
 
+def test_new_death_item_persists_full_prior_and_current_fingerprint_baseline():
+    prior_packet = mortality("OLD")
+    prior = build(weights=[weight()], mortality=prior_packet)["mortality"][
+        "canonical_death_event_fingerprints"]
+    current = mortality("NEW")
+    current["proven_facts"].append({"event_id": "D2", "pig_id": "P2",
+        "effective_date": "2026-08-14", "event_kind": "individual_death"})
+    packet = build(weights=[weight()], mortality=current, prior_mortality="OLD",
+                   prior_mortality_event_fingerprints=prior)
+    result = consume_daily_manager_evidence(packet, observed_at=NOW)
+    mortality_item = next(item for item in result.work_items if "mortality" in item.dedupe_key)
+    assert set(mortality_item.metadata["mortality_fingerprints"]) == {"D1", "D2"}
+
+
 def test_mortality_state_is_normalized_and_missing_state_fails_closed():
     packet = build(weights=[weight()], mortality=mortality(), prior_mortality="OLD")
     result = consume_daily_manager_evidence(packet, observed_at=NOW,

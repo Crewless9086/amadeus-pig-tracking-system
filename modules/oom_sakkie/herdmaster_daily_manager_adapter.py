@@ -113,10 +113,8 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     next_action="Review this individual once; completion closes it. Patterns remain associations, not diagnoses.",
                     assignee="charl", state=WorkState.WAITING_EVIDENCE, authority=Authority.ADVISORY,
                     provenance=provenance, business_value=125,
-                    metadata={"mortality_fingerprints": {
-                        str(row.get("event_id") or row.get("pig_id")):
-                            mortality["canonical_death_event_fingerprints"].get(
-                                str(row.get("event_id") or row.get("pig_id")))}}))
+                    metadata={"mortality_fingerprints": dict(
+                        mortality["canonical_death_event_fingerprints"])}))
             else:
                 identities = [str(row.get("tag") or row.get("pig_id") or row.get("event_id"))
                               for row in ordered]
@@ -129,9 +127,8 @@ def consume_daily_manager_evidence(packet, *, observed_at: datetime,
                     next_action="Review each attributable death once. Completion closes that identity; patterns remain associations, not diagnoses.",
                     assignee="charl", state=WorkState.WAITING_EVIDENCE,
                     authority=Authority.ADVISORY, provenance=provenance, business_value=125,
-                    metadata={"mortality_fingerprints": {
-                        event_id: mortality["canonical_death_event_fingerprints"].get(event_id)
-                        for event_id in event_ids}}))
+                    metadata={"mortality_fingerprints": dict(
+                        mortality["canonical_death_event_fingerprints"])}))
     result_id = "HERD-DAILY-EVIDENCE-" + packet["material_digest"][:24]
     baseline = ({"mortality_fingerprints": mortality.get("canonical_death_event_fingerprints") or {}}
                 if not any("mortality" in item.dedupe_key for item in items) else {})
