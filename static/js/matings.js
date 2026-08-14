@@ -701,6 +701,10 @@ function renderMatingCard(record) {
               </div>
             ` : ""}
 
+            <div class="history-notes" style="margin-top: 8px;">
+              <a class="button-link button-link-secondary" href="/paring-werpselrekord?mating_id=${encodeURIComponent(record.mating_id || "")}&return_to=${encodeURIComponent("/matings")}">Druk beginrekord</a>
+            </div>
+
             ${showMarkNotPregnantButton ? `
               <div class="history-notes" style="margin-top: 8px;">
                 ${markNotPregnantButtonHtml}
