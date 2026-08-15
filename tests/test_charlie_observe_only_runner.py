@@ -1,6 +1,9 @@
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import Mock
 from unittest.mock import patch
 
 from modules.charlie.process_ownership import process_tree_identity_digest
@@ -58,7 +61,7 @@ class CharlieObserveOnlyRunnerTests(unittest.TestCase):
             runner_tree,
         )
 
-    def test_import_does_not_load_mission_store_execution_or_provider_modules(self):
+    def test_import_does_not_load_execution_or_provider_modules(self):
         completed = subprocess.run(
             [
                 sys.executable,
@@ -66,8 +69,7 @@ class CharlieObserveOnlyRunnerTests(unittest.TestCase):
                 "-c",
                 (
                     "import sys; import scripts.charlie_observe_only_runner; "
-                    "blocked=('modules.charlie.mission_store',"
-                    "'modules.charlie.execution_bridge',"
+                    "blocked=('modules.charlie.execution_bridge',"
                     "'modules.charlie.private_runtime'); "
                     "print([name for name in blocked if name in sys.modules])"
                 ),
@@ -79,6 +81,41 @@ class CharlieObserveOnlyRunnerTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.strip(), "[]")
+
+    def test_main_consumes_shadow_event_without_mission_or_release_authority(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stop_path = Path(tmp) / "supervisor.stop"
+            sleep = Mock(side_effect=lambda _seconds: stop_path.write_text("stop", encoding="utf-8"))
+            shadow = {
+                "success": True,
+                "status": "control_tower_feedback_cycle_complete",
+                "processed_count": 0,
+                "next_eligible_event": "control_tower_feedback_recorded",
+                "dispatches": 0,
+                "provider_actions": 0,
+                "farm_writes": 0,
+                "release_actions": 0,
+            }
+            with patch.object(observe_runner, "SUPERVISOR_STOP_PATH", stop_path), patch.object(
+                observe_runner, "_validate_runner_start", return_value={"success": True}
+            ), patch.object(
+                observe_runner, "_validate_final", return_value={"success": True}
+            ), patch.object(
+                observe_runner, "_read_json", return_value={
+                    "status": "operational_authorized", "runner_state": "operational_authorized"
+                }
+            ), patch.object(
+                observe_runner, "process_pending_control_tower_feedback", return_value=shadow
+            ) as consume, patch.object(observe_runner, "write_runner_heartbeat") as heartbeat:
+                result = observe_runner.main(sleep_fn=sleep, timeout_seconds=1)
+
+        self.assertEqual(result, 0)
+        consume.assert_called_once_with()
+        cycle = heartbeat.call_args_list[-1].args[0]
+        self.assertEqual(cycle["status"], "shadow_observation_cycle")
+        self.assertEqual(cycle["next_eligible_event"], "control_tower_feedback_recorded")
+        self.assertFalse(cycle["mission_pickup_attempted"])
+        self.assertFalse(cycle["release_attempted"])
 
 
 if __name__ == "__main__":

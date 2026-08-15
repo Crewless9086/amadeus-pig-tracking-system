@@ -24,6 +24,10 @@ from modules.charlie.runner_control import (
     validate_supervisor_packet,
     write_runner_heartbeat,
 )
+from modules.charlie.control_tower_feedback import (
+    FEEDBACK_EVENT,
+    process_pending_control_tower_feedback,
+)
 
 
 def _identity():
@@ -193,16 +197,37 @@ def main(sleep_fn=time.sleep, timeout_seconds=30):
     else:
         write_runner_heartbeat({"status": "observe_only_authorization_timeout"})
         return 1
+    checks = 0
+    interval_seconds = max(5, int(os.getenv("CHARLIE_SHADOW_POLL_SECONDS") or "30"))
     while not SUPERVISOR_STOP_PATH.exists():
+        checks += 1
+        try:
+            shadow = process_pending_control_tower_feedback()
+        except Exception:
+            shadow = {
+                "success": False,
+                "status": "control_tower_feedback_cycle_failed",
+                "processed_count": 0,
+                "next_eligible_event": FEEDBACK_EVENT,
+                "dispatches": 0,
+                "provider_actions": 0,
+                "farm_writes": 0,
+                "release_actions": 0,
+            }
         write_runner_heartbeat(
             {
-                "status": "observe_only_ready",
+                "status": "shadow_observation_cycle",
                 "active_status": "observe_only",
-                "current_action": "ownership_handshake_only",
+                "current_action": "control_tower_feedback_observation",
                 "execution_mode": EXECUTION_MODE_OBSERVE_ONLY,
+                "checks": checks,
+                "shadow": shadow,
+                "next_eligible_event": shadow.get("next_eligible_event") or FEEDBACK_EVENT,
+                "mission_pickup_attempted": False,
+                "release_attempted": False,
             }
         )
-        sleep_fn(0.25)
+        sleep_fn(interval_seconds)
     return 0
 
 
