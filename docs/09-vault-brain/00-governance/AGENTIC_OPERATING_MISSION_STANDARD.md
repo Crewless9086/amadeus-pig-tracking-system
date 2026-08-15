@@ -277,6 +277,43 @@ When Charl asks to keep multiple idle terminals moving and concrete disjoint wor
 
 The short standard invocation still returns one decisive next-terminal prompt. A multi-terminal parallel bundle is used only when Charl explicitly asks for parallel utilization or when a separate planning response is requested; it must not blur which mission owns production priority.
 
+### Mandatory All-Terminal Response Closure Gate
+
+After every owner message, terminal report, mission completion, deployment,
+dependency change or Control Tower status request, Control Tower must refresh
+the durable dispatch ledger and account for every visible development terminal:
+CORE, OOM SAKKIE, ROOTLINE, HERDMASTER, SAM, BEACON and CODEX UI. Conversation
+memory and an earlier terminal classification are context only; they are not
+current dispatch truth.
+
+Before ending the response, each terminal must have a current classification:
+
+1. **ACTIVE — DO NOT INTERRUPT:** name its existing mission and latest proven
+   activity;
+2. **SEND NOW:** name the highest-value eligible existing mission and provide a
+   prompt when direct delivery is not proven;
+3. **DEPENDENCY IDLE:** name the exact external mission, event or authority
+   dependency and the automatic trigger that requires immediate reassessment;
+4. **NO SAFE WORK:** cite the inspected queue/overlap evidence; or
+5. **UNKNOWN — VERIFY:** state what current terminal feedback is missing and do
+   not invent or deliver overlapping work.
+
+A terminal may not retain `DEPENDENCY IDLE` merely because an older register or
+conversation said so. Every merge, deployment, mission release, owner decision,
+genuine provider event or dependency completion invalidates affected idle
+classifications and triggers an immediate eligibility sweep. Work owned by the
+same specialist is not an external dependency: the terminal must repair or
+enable that specialist's deployed runtime when this can be done within existing
+mission scope and standing authority.
+
+The Control Tower response is incomplete if it silently leaves an eligible
+terminal idle, omits a named terminal, reports a prepared prompt as delivered,
+or asks Charl to notice that a dependency cleared. No safe prompt should be
+manufactured merely to fill a terminal, and active terminals must not be
+interrupted to maximize utilization. The compact all-terminal closure receipt
+must remain visible in Control Tower status and reconciliation responses so
+Charl can verify enforcement without maintaining the register himself.
+
 ## Control Tower Self-Audit And Improvement Loop
 
 The Control Tower is part of the agentic system and must monitor its own decisions. It must not wait for Charl to become frustrated before correcting repeated drift, duplicated work, avoidable owner effort, misleading progress, or weak terminal coordination.
