@@ -638,3 +638,13 @@ complete.
   provider clock. The reviewed follow-up adds one Render UTC cron at 04:45,
   targeting the authenticated deployed entry point while retaining Supabase as
   the one daily claim and the in-process loop only as restart-safe redundancy.
+# BMQ-20260813-03 owner-visible Library decision — 2026-08-15
+
+- The canonical Bella contact-sheet packet is child evidence only; no Telegram
+  Library card was previously delivered. Keep the mission WORKING.
+- Review, integrate and deploy the production-owned pending-album worker. It
+  must edit the proven existing album card with one exact owner/digest-bound
+  Library choice and record provider-confirmed message identity.
+- Do not press either button. After delivery, move to OWNER_HOLD on Charl's
+  natural decision; Business completion requires exactly-once decision and
+  visible acknowledgement readback.
