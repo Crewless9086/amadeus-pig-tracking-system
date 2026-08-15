@@ -943,7 +943,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
         "provider_message_id": str(delivery.get("telegram_message_id") or ""),
         "provider_timestamp": str(delivery.get("provider_timestamp") or "")}
     recorded = record_reassessment_delivery(identity=result["notification_identity"], owner_user_id=owner,
-        chat_id=chat, material_digest=result["material_digest"], delivery=delivery_proof, state_store=state_store)
+        chat_id=chat, material_digest=result["material_digest"],
+        operating_date=str(result.get("operating_date") or ""),
+        delivery=delivery_proof, state_store=state_store)
     return {**result, "delivery": delivery, "delivery_record": recorded,
             "telegram_sends": int(delivery.get("telegram_sends") or 0)}, 200 if delivery_proof["provider_delivery_confirmed"] else 202
 
