@@ -237,7 +237,7 @@ def build_sale_watch_result(rows, *, now=None, language="en"):
             amount = row.get("net_total")
             amount_kind = "amount due"
         amount_text = _money(amount)
-        action_url = "/sales/slaughter?update_sale=" + sale_id + "&payment_only=1"
+        action_url = "/sales/transactions/" + sale_id
         result_id = "SALE-WATCH-" + sha256(f"{sale_id}|{sale_status}|{payment}|{amount}|{'|'.join(missing)}".encode()).hexdigest()[:20]
         provenance = Provenance("sam", result_id, ("canonical_sale:" + sale_id,), now, 1.0)
         due = "today" if sale_date == today else f"since {sale_date.isoformat()}"

@@ -648,8 +648,11 @@ Current built Supabase-backed surface:
   lock. `modules/sales/sales_transaction_routes.py` requires strict owner-admin
   access and a 15-minute server-signed sale/actor/digest token from preview.
   `templates/slaughter-sale.html` and `static/js/slaughterSale.js` expose
-  no direct-save payment path. Oom Sakkie presents review/preview only until
-  canonical confirmation exists.
+  no direct-save payment path. The sale-neutral `/sales/transactions/<sale_id>`
+  surface uses `templates/slaughter-sale-detail.html` and
+  `static/js/slaughterSaleDetail.js`; auctions render as `Livestock — Auction`
+  and use that same protected service. Oom Sakkie links to this canonical
+  surface and presents review/preview only until canonical confirmation exists.
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 

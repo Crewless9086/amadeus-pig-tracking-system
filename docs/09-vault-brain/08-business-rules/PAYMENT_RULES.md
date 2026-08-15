@@ -13,3 +13,9 @@ link to review but must not claim recording before canonical readback.
 New sales start `Unpaid`; they cannot smuggle receipt state through creation.
 A later partial receipt may advance only to a greater cumulative received
 amount, and settlement becomes `Paid` only when that total equals amount due.
+
+The owner surface is sale-type neutral. Auction transactions are labelled
+`Livestock — Auction`, never Slaughter. Completed sale/auction state and
+settlement receipt are separate canonical facts; `Fully reconciled` is true
+only when both are true. Application, Telegram links and voice-assisted browser
+use the same sale-payment preview/confirmation service and identical readback.

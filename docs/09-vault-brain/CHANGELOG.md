@@ -1,5 +1,17 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - BKB settlement journey made sale-type neutral
+
+- Continued `SMQ-20260813-05`; no second writer, database, workflow or mission
+  was created.
+- Replaced the BKB daily-manager slaughter link with the canonical transaction
+  surface and labelled auction payment as `Livestock — Auction`.
+- Kept completed-auction truth separate from settlement receipt, exposed one
+  shared human-readable protected preview and identical recorded/replay
+  readback, and left bank receipt date as the only missing owner fact.
+- Source and regression evidence only at this point; no payment, Telegram,
+  customer, n8n or Google Sheets effect occurred.
+
 ## 2026-08-15 - Standing authority and minimum-owner operation enforced
 
 - Clarified that an approved policy, device, channel, cap or safety envelope is
