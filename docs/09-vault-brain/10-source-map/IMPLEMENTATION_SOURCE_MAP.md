@@ -18,7 +18,8 @@
   `observe_only` mode without reaching mission pickup, recovery or release.
   Only the exact paused/non-runnable CMQ bootstrap has observation eligibility;
   it gains no execution eligibility. Focused tests:
-  `tests/test_control_tower_feedback.py`.
+  `tests/test_control_tower_feedback.py`; disposable concurrency, proposal-before-
+  decision and exact replay coverage: `tests/test_control_tower_feedback_postgres.py`.
 - Bootstrap portfolio admission: the sealed authenticated `create_mission`
   action in `modules/charlie/private_tools.py` accepts only the one
   owner-approved `CMQ-20260813-05` admission contract. The canonical

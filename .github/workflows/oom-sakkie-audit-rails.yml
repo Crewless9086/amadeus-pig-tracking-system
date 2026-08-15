@@ -171,7 +171,7 @@ jobs:
         run: python -m unittest tests.test_charlie_callback_postgres
 
       - name: Run CHARLIE exact identity and bootstrap admission transaction tests
-        run: python -m unittest tests.test_private_opaque_mission_creation_postgres tests.test_portfolio_classification_postgres
+        run: python -m unittest tests.test_private_opaque_mission_creation_postgres tests.test_portfolio_classification_postgres tests.test_control_tower_feedback_postgres
 
       - name: Run CHARLIE adaptive orchestration durable canary tests
         run: python -m unittest tests.test_charlie_adaptive_orchestration_postgres tests.test_charlie_owner_execution_hold_postgres
