@@ -12,7 +12,14 @@ processes Charl's genuine bound decision.
 The development terminal may deploy and observe, but may not press a button or
 create an owner decision.
 
-## Implemented candidate
+## Deployed boundary
+
+PR #979 exact reconciled head `70864a95` merged as
+`ed8cb1b225531b9169a5cd89abbc5e0319384bb9`. All required CI and independent
+architecture/governance, security/data-integrity and owner/Meta UX reviews
+passed. Render deployment `dep-da08ei8u01pc73eveds0` is live at that exact
+merge. Production migration-log and schema readback proves both BMQ-03
+migrations, both named checks and all seven album-envelope columns.
 
 - The Farm App loads one exact completed-album packet with retained context,
   ordered thumbnails and simple Library Accept/Reject and Public Use
@@ -42,8 +49,12 @@ spend, farm write, hardware command, n8n mutation or Google Sheets mutation.
 
 ## Acceptance still required
 
-Integrate and deploy through the serialized release lane, then have the
-deployed runtime present Bella's genuine review. BMQ-20260813-03 remains
-WORKING until Charl makes a real button decision and canonical readback proves
-that exact decision once. Synthetic or terminal-created decisions are not
-business evidence. BMQ-20260813-05 follows only after this boundary completes.
+Authenticated production readback proves the deployed Farm App resolves
+Bella's genuine packet: eight ordered members, eight valid content hashes,
+eight retrievable private thumbnails, retained Bella context, Library pending,
+Public Use not approved/ineligible, and Campaign Review/Publication false.
+The terminal performed zero writes, Telegram sends or edits and did not create
+an owner choice. BMQ-20260813-03 remains WORKING until Charl naturally opens
+the review and makes a real bound button decision whose canonical readback is
+proved exactly once. Synthetic or terminal-created decisions are not business
+evidence. BMQ-20260813-05 follows only after this boundary completes.
