@@ -73,10 +73,18 @@ def _delivery_result(packet, event_store, sender, *, replay):
             "delivery_state": "ambiguous",
         })
         return _safe("physical_acceptance_delivery_ambiguous"), 502
-    event_store("record_delivery_confirmed", acceptance_id, {
+    confirmed_result = event_store("record_delivery_confirmed", acceptance_id, {
         "acceptance_id": acceptance_id, "acceptance_sha256": packet["acceptance_sha256"],
         "delivery_state": "confirmed", "provider_message_id": message_id,
     })
+    confirmed = event_store("load_delivery", acceptance_id, None)
+    if (not confirmed_result.get("success") or not confirmed
+            or confirmed.get("delivery_state") != "confirmed"
+            or confirmed.get("acceptance_sha256") != packet["acceptance_sha256"]
+            or str(confirmed.get("provider_message_id") or "") != message_id):
+        return {**_safe("physical_acceptance_delivery_confirmation_persistence_unproven"),
+                "provider_delivery_confirmed": True, "provider_message_id": message_id,
+                "telegram_sends": 1, "acceptance_persisted": True}, 503
     return _result(packet, "physical_acceptance_recorded_and_delivered", replay=replay,
                    telegram_sends=1, provider_message_id=message_id), 201
 

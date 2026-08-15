@@ -125,3 +125,19 @@ def test_ambiguous_delivery_is_never_retried():
         now=NOW, allowed_owner_ids={"7"})
     assert status == 502 and replay_status == 409
     assert len(sends) == 1 and replay["telegram_sends"] == 0
+
+
+def test_confirmed_provider_send_without_durable_marker_is_not_reported_complete():
+    store = Store()
+    def failing_store(action, identity, packet):
+        if action == "record_delivery_confirmed":
+            return {"success": False, "created": False}
+        return store(action, identity, packet)
+    result, status = attach_physical_acceptance(payload(), owner_principal="owner:abc",
+        execution_loader=execution_loader, event_store=failing_store,
+        sender=lambda *_: {"success": True, "telegram_message_id": "11"},
+        now=NOW, allowed_owner_ids={"7"})
+    assert status == 503
+    assert result["status"] == "physical_acceptance_delivery_confirmation_persistence_unproven"
+    assert result["provider_delivery_confirmed"] is True
+    assert result["telegram_sends"] == 1 and result["hardware_commands"] == 0
