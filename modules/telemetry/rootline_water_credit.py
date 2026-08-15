@@ -9,6 +9,9 @@ import os
 CONTRACT = "rootline_water_credit.v1"
 ZONES = {"B12345", "C12345"}
 METHODS = {"measured_volume", "governed_calibration"}
+EVIDENCE_CONTRACT = "rootline_water_volume_evidence.v1"
+EVIDENCE_SOURCES = {"verified_flow_meter", "verified_volume_measurement",
+                    "commissioned_zone_calibration"}
 
 
 def build_water_credit(*, execution, physical_acceptance, measurement=None,
@@ -22,22 +25,25 @@ def build_water_credit(*, execution, physical_acceptance, measurement=None,
         return _unknown(execution_id, zone, "canonical_execution_or_physical_acceptance_unproven")
     litres = None; method = None; evidence_id = None; calibration_id = None
     measured = dict(measurement or {}); calibrated = dict(calibration or {})
-    if _positive(measured.get("measured_volume_litres")) and measured.get("verified") is True:
+    if (_valid_volume_evidence(measured, "measured_volume", zone)
+            and _positive(measured.get("measured_volume_litres"))):
         litres = float(measured["measured_volume_litres"]); method = "measured_volume"
-        evidence_id = str(measured.get("measurement_id") or measured.get("evidence_id") or "")
-    elif (_positive(calibrated.get("litres_per_minute")) and calibrated.get("verified") is True
-          and str(calibrated.get("zone_id") or "") == zone):
+        evidence_id = str(measured["evidence_id"])
+    elif (_valid_volume_evidence(calibrated, "governed_calibration", zone)
+          and _positive(calibrated.get("litres_per_minute"))):
         litres = float(calibrated["litres_per_minute"]) * float(execution["verified_runtime_seconds"]) / 60
         method = "governed_calibration"
-        calibration_id = str(calibrated.get("calibration_id") or calibrated.get("evidence_id") or "")
-        evidence_id = str(calibrated.get("evidence_digest") or calibrated.get("evidence_sha256") or "")
-    if (not litres or not evidence_id or (method == "governed_calibration"
-            and (not calibration_id or len(evidence_id) != 64))):
+        calibration_id = str(calibrated["evidence_id"]); evidence_id = calibration_id
+    evidence = measured if method == "measured_volume" else calibrated
+    if not litres or not evidence_id:
         return _unknown(execution_id, zone, "measured_volume_or_supported_calibration_required")
     material = {"contract_version": CONTRACT, "execution_id": execution_id, "zone_id": zone,
         "verified_runtime_seconds": int(execution["verified_runtime_seconds"]),
         "physical_acceptance_sha256": acceptance_digest, "credit_method": method,
-        "measurement_evidence_id": evidence_id, "calibration_id": calibration_id,
+        "volume_evidence_id": evidence_id,
+        "volume_evidence_sha256": str(evidence["evidence_sha256"]),
+        "measurement_evidence_id": evidence_id if method == "measured_volume" else None,
+        "calibration_id": calibration_id,
         "delivered_volume_litres": round(litres, 3),
         "provider_evidence": {"start_state": "ON", "shutdown_state": "OFF",
             "shutdown_verified": True},
@@ -48,7 +54,7 @@ def build_water_credit(*, execution, physical_acceptance, measurement=None,
         "hardware_control": False, "provider_control": False}
     identity_material = {key: material[key] for key in (
         "contract_version", "execution_id", "zone_id", "physical_acceptance_sha256",
-        "credit_method", "measurement_evidence_id", "calibration_id")}
+        "credit_method", "volume_evidence_id", "volume_evidence_sha256")}
     material["credit_id"] = "ROOTLINE-WATER-CREDIT-" + _digest(identity_material)[:24].upper()
     material["credit_sha256"] = _digest(material)
     return {"status": "Available", **material}
@@ -57,9 +63,9 @@ def build_water_credit(*, execution, physical_acceptance, measurement=None,
 def append_water_credit(value, database_url=None):
     if not validate_water_credit(value):
         return {"success": False, "created": False, "status": "invalid_water_credit"}
-    import psycopg
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     url = str(database_url or os.getenv("DATABASE_URL") or "").strip()
-    with psycopg.connect(url, connect_timeout=8) as connection:
+    with connect_bounded_rootline_postgres(database_url=url, read_only=False) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select public.rootline_append_water_credit_event(%s,%s,%s,%s,%s,%s::jsonb)",
                 (value["credit_id"], value["execution_id"], value["zone_id"],
@@ -102,7 +108,8 @@ def record_water_credit(*, execution_id, physical_acceptance_sha256, volume_evid
     value = build_water_credit(execution=execution, physical_acceptance=acceptance,
         measurement=evidence if evidence.get("evidence_type") == "measured_volume" else None,
         calibration=evidence if evidence.get("evidence_type") == "governed_calibration" else None,
-        recorded_at=recorded_at)
+        recorded_at=recorded_at or _timestamp(evidence.get("observed_at") or
+            evidence.get("calibrated_at") or evidence.get("recorded_at")))
     if value.get("status") != "Available":
         return {"success": False, "created": False, **value,
             "hardware_commands": 0, "provider_control_calls": 0}
@@ -152,9 +159,11 @@ def validate_water_credit(value):
     material = {key: item for key, item in value.items() if key not in {"status", "credit_sha256"}}
     identity = {key: material.get(key) for key in (
         "contract_version", "execution_id", "zone_id", "physical_acceptance_sha256",
-        "credit_method", "measurement_evidence_id", "calibration_id")}
+        "credit_method", "volume_evidence_id", "volume_evidence_sha256")}
     return (material.get("zone_id") in ZONES and material.get("credit_method") in METHODS
         and _positive(material.get("delivered_volume_litres"))
+        and bool(str(material.get("volume_evidence_id") or ""))
+        and len(str(material.get("volume_evidence_sha256") or "")) == 64
         and material.get("credit_id") == "ROOTLINE-WATER-CREDIT-" + _digest(identity)[:24].upper()
         and supplied == _digest(material))
 
@@ -170,6 +179,17 @@ def _accepts(row, execution_id, zone):
     return any(item.get("execution_id") == execution_id and item.get("zone_id") == zone
         and item.get("water_flow") == "normal" and item.get("stopped_flow") == "normal"
         and item.get("physically_off_now") is True for item in row.get("observations") or [])
+
+
+def _valid_volume_evidence(row, kind, zone):
+    if (not isinstance(row, dict) or row.get("contract_version") != EVIDENCE_CONTRACT
+            or row.get("evidence_type") != kind or row.get("zone_id") != zone
+            or row.get("verified") is not True or row.get("source") not in EVIDENCE_SOURCES
+            or not str(row.get("evidence_id") or "") or len(str(row.get("evidence_sha256") or "")) != 64
+            or _timestamp(row.get("observed_at") or row.get("calibrated_at") or row.get("recorded_at")) is None):
+        return False
+    material = {key: value for key, value in row.items() if key != "evidence_sha256"}
+    return row["evidence_sha256"] == _digest(material)
 
 
 def _unknown(execution_id, zone, reason):
@@ -189,3 +209,8 @@ def _digest(value):
 
 def _aware(value):
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _timestamp(value):
+    try: return _aware(datetime.fromisoformat(str(value).replace("Z", "+00:00")))
+    except (TypeError, ValueError): return None

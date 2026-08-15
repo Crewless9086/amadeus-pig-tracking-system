@@ -12,6 +12,7 @@ create table if not exists public.irrigation_water_volume_evidence (
   check (evidence_json->>'zone_id' = zone_id),
   check (evidence_json->>'evidence_sha256' = evidence_sha256),
   check ((evidence_json->>'verified')::boolean is true),
+  check (coalesce(evidence_json->>'observed_at',evidence_json->>'calibrated_at',evidence_json->>'recorded_at') is not null),
   check (evidence_json->>'source' in ('verified_flow_meter','verified_volume_measurement','commissioned_zone_calibration'))
 );
 
@@ -20,6 +21,8 @@ create table if not exists public.irrigation_water_credit_events (
   execution_id text not null unique,
   zone_id text not null check (zone_id in ('B12345','C12345')),
   physical_acceptance_sha256 text not null check (physical_acceptance_sha256 ~ '^[0-9a-f]{64}$'),
+  volume_evidence_id text not null references public.irrigation_water_volume_evidence(evidence_id),
+  volume_evidence_sha256 text not null check (volume_evidence_sha256 ~ '^[0-9a-f]{64}$'),
   credit_sha256 text not null check (credit_sha256 ~ '^[0-9a-f]{64}$'),
   credit_json jsonb not null,
   created_at timestamptz not null default now(),
@@ -28,6 +31,8 @@ create table if not exists public.irrigation_water_credit_events (
   check (credit_json->>'execution_id' = execution_id),
   check (credit_json->>'zone_id' = zone_id),
   check (credit_json->>'physical_acceptance_sha256' = physical_acceptance_sha256),
+  check (credit_json->>'volume_evidence_id' = volume_evidence_id),
+  check (credit_json->>'volume_evidence_sha256' = volume_evidence_sha256),
   check (credit_json->>'credit_sha256' = credit_sha256),
   check ((credit_json->>'delivered_volume_litres')::numeric > 0),
   check (credit_json->>'credit_method' in ('measured_volume','governed_calibration'))
@@ -50,6 +55,14 @@ create or replace function public.rootline_append_water_volume_evidence(
 ) returns boolean language plpgsql security definer set search_path=public,pg_temp as $$
 declare stored public.irrigation_water_volume_evidence%rowtype;
 begin
+  if not exists(select 1 from public.irrigation_water_volume_evidence e
+      where e.evidence_id=p_credit->>'volume_evidence_id'
+        and e.zone_id=p_zone_id
+        and e.evidence_type=p_credit->>'credit_method'
+        and e.evidence_sha256=p_credit->>'volume_evidence_sha256'
+        and (e.evidence_json->>'verified')::boolean is true) then
+    raise exception 'canonical ROOTLINE volume evidence missing or mismatched';
+  end if;
   insert into public.irrigation_water_volume_evidence(
     evidence_id,evidence_type,zone_id,evidence_sha256,evidence_json)
   values(p_evidence_id,p_evidence_type,p_zone_id,p_evidence_sha256,p_evidence)
@@ -77,8 +90,10 @@ begin
     raise exception 'invalid ROOTLINE water credit';
   end if;
   insert into public.irrigation_water_credit_events(
-    credit_id,execution_id,zone_id,physical_acceptance_sha256,credit_sha256,credit_json)
-  values(p_credit_id,p_execution_id,p_zone_id,p_acceptance_sha256,p_credit_sha256,p_credit)
+    credit_id,execution_id,zone_id,physical_acceptance_sha256,volume_evidence_id,
+    volume_evidence_sha256,credit_sha256,credit_json)
+  values(p_credit_id,p_execution_id,p_zone_id,p_acceptance_sha256,
+    p_credit->>'volume_evidence_id',p_credit->>'volume_evidence_sha256',p_credit_sha256,p_credit)
   on conflict (credit_id) do nothing;
   if found then return true; end if;
   select * into stored from public.irrigation_water_credit_events where credit_id=p_credit_id;
