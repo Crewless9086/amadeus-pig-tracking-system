@@ -42,7 +42,7 @@ def _canonicalize(value: Any) -> Any:
 
 
 def _public_event(event: dict[str, Any]) -> dict[str, Any]:
-    allowed = ("event_id", "pig_id", "effective_date", "event_kind", "confirmation", "canonical_status", "litter_id", "pen_id", "exclusion_reasons")
+    allowed = ("event_id", "pig_id", "effective_date", "recorded_at", "event_kind", "confirmation", "canonical_status", "litter_id", "pen_id", "exclusion_reasons")
     return {key: event.get(key) for key in allowed if event.get(key) is not None}
 
 

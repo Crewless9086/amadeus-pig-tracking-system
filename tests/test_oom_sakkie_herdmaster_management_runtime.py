@@ -2,7 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_management_runtime import (consume_current_herdmaster_management,
-    _consumption_claim_identity, _retain_active_mortality_context, _retained_owner_reported_death)
+    _consumption_claim_identity, _load_active_lifecycles,
+    _retain_active_mortality_context, _retained_owner_reported_death)
 from tests.test_oom_sakkie_herdmaster_management_adapter import canonical, observations, active, NOW, OWNER
 
 
@@ -38,6 +39,33 @@ def test_different_entity_does_not_inherit_old_mortality():
     current={"pig_id":"PIG-2","lifecycle_id":"CASE-2","reported_dead":False,
              "current_question":"Is Pig 2 eating?"}
     assert _retain_active_mortality_context(previous,current)==current
+
+
+def test_canonical_dead_off_farm_state_retires_obsolete_waiting_lifecycle(monkeypatch):
+    import modules.oom_sakkie.herdmaster_management_runtime as runtime
+    health = {"owner_user_id": OWNER, "status": "waiting_for_input",
+        "mission_id": "PIG127-CASE", "provider_timestamp": "2026-08-03T05:00:00+00:00",
+        "preview": {"evaluator": {"identity": {"pig_id": "PIG-2026-D13C", "tag_number": "127"},
+            "smallest_missing_follow_up_question": "Is Pig 127 breathing?"}}}
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self,*_): return False
+        def execute(self,sql,params=()):
+            self.values = ([(health,"3203")] if "herdmaster_health_loss" in sql
+                           else [("PIG-2026-D13C","Dead",False)])
+        def fetchall(self): return self.values
+    class Connection:
+        read_only = True
+        def __enter__(self): return self
+        def __exit__(self,*_): return False
+        def cursor(self): return Cursor()
+    monkeypatch.setattr(runtime,"_connect",lambda:Connection())
+    projected = _load_active_lifecycles(OWNER,include_terminal=True)
+    assert projected == [{"pig_id":"PIG-2026-D13C","lifecycle_id":"PIG127-CASE",
+        "state":"completed","mortality_closed":True,
+        "closure_reason":"canonical_terminal_pig_state","canonical_status":"Dead",
+        "canonical_on_farm":False}]
+    assert _load_active_lifecycles(OWNER,include_terminal=False) == []
 
 def test_authenticated_runtime_consumes_and_records_existing_store_binding_once():
     recorded=[]

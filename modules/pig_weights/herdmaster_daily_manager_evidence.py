@@ -30,6 +30,7 @@ INDIVIDUAL_WEIGHING_CANCEL_EVENTS = {
 def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
                                  lifecycle_events=(), mortality_packet=None,
                                  prior_mortality_digest="", prior_mortality_event_fingerprints=None,
+                                 prior_mortality_consumed_at=None,
                                  analysis_date):
     """Build one deterministic zero-I/O specialist contract."""
     analysis_date = _day(analysis_date)
@@ -159,6 +160,20 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
     all_deaths = list(mortality_packet.get("proven_facts") or [])
     current_fingerprints = {_death_identity(row): _death_fingerprint(row)
                             for row in all_deaths if _death_identity(row)}
+    migration_baseline = {}
+    consumed_at = _instant(prior_mortality_consumed_at)
+    if prior_mortality_digest and not prior_fingerprints and consumed_at:
+        # Consumption rows created before fingerprint persistence prove that a
+        # mortality assessment existed, but not which later/backdated records
+        # it contained. Seed only facts whose attributable recording timestamp
+        # is no later than that consumption. Missing/later timestamps remain
+        # candidates, preserving genuine new or changed death follow-ups.
+        migration_baseline = {
+            _death_identity(row): _death_fingerprint(row) for row in all_deaths
+            if _death_identity(row) and _instant(row.get("recorded_at"))
+            and _instant(row.get("recorded_at")) <= consumed_at
+        }
+        prior_fingerprints.update(migration_baseline)
     new_deaths = [row for row in all_deaths
                   if prior_fingerprints.get(_death_identity(row)) != _death_fingerprint(row)]
     mortality = {
@@ -170,6 +185,11 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
         "candidate_deaths": new_deaths,
         "canonical_death_event_fingerprints": current_fingerprints,
         "durable_death_event_fingerprints": {**prior_fingerprints, **current_fingerprints},
+        "fingerprint_migration": {
+            "state": "legacy_baseline_seeded" if migration_baseline else "not_required",
+            "seeded_event_count": len(migration_baseline),
+            "legacy_consumed_at": consumed_at.isoformat() if consumed_at else None,
+        },
         "association_boundary": "associations are not diagnoses or proof of causation",
     }
     material = {"weight": weight, "mortality": mortality}
@@ -261,6 +281,7 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
         lifecycle_events=lifecycle, mortality_packet=mortality,
         prior_mortality_digest=prior_digest,
         prior_mortality_event_fingerprints=prior_event_fingerprints,
+        prior_mortality_consumed_at=prior_consumption_at,
         analysis_date=analysis_date)
 
 
@@ -296,6 +317,17 @@ def _day(value):
     if isinstance(value, date):
         return value
     return date.fromisoformat(str(value)[:10])
+
+
+def _instant(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
 
 
 def _digest(value):
