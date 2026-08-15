@@ -27,7 +27,8 @@ from modules.oom_sakkie.manager_question_runtime import (
     handle_manager_question_reply, load_active_manager_question,
     semantic_context_with_manager_question)
 from modules.beacon.media_intake import (
-    complete_telegram_album, handle_telegram_media_intake, telegram_media_envelope)
+    IntakeStore, handle_telegram_media_intake, telegram_media_envelope)
+from modules.oom_sakkie.protected_action_claims import CALLBACK_PREFIX, create_claim
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -61,6 +62,23 @@ AUTH_FAILURE_WINDOW_SECONDS = 60
 AUTH_LOCKOUT_SECONDS = 300
 _AUTH_FAILURE_TIMES = []
 _AUTH_LOCKED_UNTIL = 0.0
+
+
+def _create_album_finish_claim(preview, parsed):
+    """Never let an older concurrent progress snapshot supersede a newer claim."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+            read_only=False) as connection, connection.cursor() as cursor:
+        cursor.execute("select pg_advisory_lock(hashtextextended(%s,0))",
+            ("beacon-album-claim:"+preview["intake_group_id"],))
+        current,status=IntakeStore().album_progress({"group_id":preview["intake_group_id"]})
+        if status>=400 or current.get("canonical_digest")!=preview["canonical_digest"]:
+            return None
+        return create_claim(action_kind="beacon_private_album_finish",
+            owner_user_id=parsed["telegram_user_id"], private_chat_id=parsed["telegram_chat_id"],
+            mission_id=preview["intake_group_id"], provider_message_id=parsed["provider_message_id"],
+            evidence_generation=preview["canonical_digest"], preview_payload=preview,
+            ttl_minutes=1440)
 
 
 def telegram_gateway_policy(environ=None):
@@ -240,93 +258,62 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if media is not None:
         intake, intake_status = handle_telegram_media_intake(payload, environ=source)
         receipt_text = str(intake.get("receipt_text") or "")
+        claim = None
+        claim_store_unavailable = False
+        stored_count = int(intake.get("stored_count") or 0)
+        if (intake.get("album_progress_verified") is True
+                and (stored_count < 1 or len(str(intake.get("canonical_digest") or "")) != 64)):
+            claim_store_unavailable = True
+        if intake_status < 400 and receipt_text and stored_count:
+            preview = {"contract_version": "beacon_private_album_finish_v1",
+                "intake_group_id": str(intake.get("receipt_mission_id") or ""),
+                "canonical_digest": str(intake.get("canonical_digest") or ""),
+                "stored_count": stored_count,
+                "owner_context": str(intake.get("owner_context") or ""),
+                "contact_sheet_available": intake.get("contact_sheet_available") is True}
+            try:
+                claim = _create_album_finish_claim(preview,parsed)
+            except RuntimeError:
+                # A completed or superseded claim is durable authority to avoid
+                # minting another action. The lifecycle below remains fail-closed.
+                claim = None
+            except Exception:
+                claim_store_unavailable = True
+                claim = None
+            if intake.get("album_progress_verified") is True and claim is None:
+                claim_store_unavailable = True
+            receipt_text = (f"BEACON has stored {stored_count} photograph"
+                f"{'s' if stored_count != 1 else ''} privately in this album. "
+                "Add any remaining photographs, then tap Finish Album. "
+                "Library acceptance, public-use approval, campaign review and publication are separate later actions.")
         delivery = {"success": True, "status": "media_receipt_not_required",
                     "telegram_sends": 0, "telegram_edits": 0}
-        if receipt_text:
+        if receipt_text and not claim_store_unavailable:
             receipt_mission = str(intake.get("receipt_mission_id") or "")
             delivery = deliver_family_result(
                 parsed, {"answer": receipt_text, "status": "media_album_received",
-                         "owner_visible_card_policy": "immutable_initial_card",
+                         "owner_visible_card_policy": "album_progress_card",
+                         "album_progress_serialization_required": True,
+                         "album_progress_verified": intake.get("album_progress_verified") is True,
+                         "album_stored_count": stored_count,
+                         "album_canonical_digest": str(intake.get("canonical_digest") or ""),
+                         "reply_markup": {"inline_keyboard": [[{"text": "Finish Album",
+                             "callback_data": f"{CALLBACK_PREFIX}{claim['callback_token']}:confirm"}]]}
+                             if claim else {"inline_keyboard": []},
                          "writes_farm_data": False, "hardware_commands": 0},
                 specialist="BEACON_MEDIA", mission_id=receipt_mission,
                 card_mission_id=receipt_mission,
                 sender=lambda chat_id, text: _send_owner_task_telegram(chat_id, text, source),
             )
-        recovery = payload.get("beacon_media_recovery")
-        recovery_completed = None
-        completion_delivery = None
-        if (
-            intake_status < 400 and isinstance(recovery, dict)
-            and recovery.get("complete_album") is True
-            and str(intake.get("completion_code") or "")
-            and delivery.get("success") is True
-            and str(delivery.get("telegram_message_id") or "")
-        ):
-            recovery_completed, recovery_status = complete_telegram_album({
-                "chat_id": parsed["telegram_chat_id"],
-                "owner_user_id": parsed["telegram_user_id"],
-                "completion_code": intake["completion_code"],
-            }, environ=source)
-            group_id = str(recovery_completed.get("intake_group_id") or "")
-            if recovery_status < 400 and group_id:
-                answer = (
-                    f"BEACON received {recovery_completed['received_count']} album items. "
-                    f"{recovery_completed['attention_count']} failed or quarantined. "
-                    "Review status: pending Library Accept. No public-use or publication "
-                    "approval was granted."
-                )
-                completion_delivery = deliver_family_result(
-                    parsed, {"answer": answer, "status": "completed",
-                             "owner_visible_completion_policy":
-                                 "verified_edit_or_new_message",
-                             "writes_farm_data": False, "hardware_commands": 0},
-                    specialist="BEACON_MEDIA", mission_id=group_id,
-                    card_mission_id=group_id,
-                    sender=lambda chat_id, text: _send_owner_task_telegram(chat_id, text, source),
-                )
-            if recovery_status >= 400 or not completion_delivery or not completion_delivery.get("success"):
-                intake.update({"recovery_album_completion": recovery_completed,
-                               "recovery_album_completion_delivery": completion_delivery})
-                return intake, 202
-            intake.update({"recovery_album_completion": recovery_completed,
-                           "recovery_album_completion_delivery": completion_delivery})
-            delivery = {**completion_delivery,
-                        "telegram_sends": int(delivery.get("telegram_sends") or 0)
-                                          + int(completion_delivery.get("telegram_sends") or 0),
-                        "telegram_edits": int(delivery.get("telegram_edits") or 0)
-                                          + int(completion_delivery.get("telegram_edits") or 0)}
+            if claim:
+                delivery = _bind_protected_preview_card(claim, delivery)
+        if claim_store_unavailable:
+            delivery = {"success": False, "status": "media_album_finish_claim_unavailable",
+                "telegram_sends": 0, "telegram_edits": 0}
         intake.update({"handled": True, "delivery": delivery,
                        "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
                        "reply_transport": "family_message_lifecycle"})
         return intake, intake_status if delivery.get("success") else 202
-
-    if parsed["text"].strip().lower().startswith("/beacon-complete "):
-        completion_code = parsed["text"].strip().split(maxsplit=1)[1].strip()
-        completed, completion_status = complete_telegram_album({
-            "chat_id": parsed["telegram_chat_id"],
-            "owner_user_id": parsed["telegram_user_id"],
-            "completion_code": completion_code,
-        }, environ=source)
-        delivery = {"success": True, "status": "album_completion_not_recorded",
-                    "telegram_sends": 0, "telegram_edits": 0}
-        group_id = str(completed.get("intake_group_id") or "")
-        if completion_status < 400 and group_id:
-            answer = (
-                f"BEACON received {completed['received_count']} album items. "
-                f"{completed['attention_count']} failed or quarantined. Review status: "
-                "pending Library Accept. No public-use or publication approval was granted."
-            )
-            delivery = deliver_family_result(
-                parsed, {"answer": answer, "status": "media_album_completed",
-                         "writes_farm_data": False, "hardware_commands": 0},
-                specialist="BEACON_MEDIA", mission_id=group_id,
-                card_mission_id=group_id,
-                sender=lambda chat_id, text: _send_owner_task_telegram(chat_id, text, source),
-            )
-        completed.update({"handled": True, "delivery": delivery,
-                          "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
-                          "reply_transport": "family_message_lifecycle"})
-        return completed, completion_status if delivery.get("success") else 202
 
     owner_task, owner_task_status = handle_owner_task_input(
         payload,
