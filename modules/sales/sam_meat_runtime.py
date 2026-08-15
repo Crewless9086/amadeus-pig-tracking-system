@@ -8,6 +8,7 @@ from urllib import request as urllib_request
 
 from modules.oom_sakkie.sales_campaign_store import (
     get_active_sales_lead_by_conversation,
+    get_active_sales_lead_by_customer_identity,
     get_sales_lead_preorder_contract,
     record_customer_booking_confirmation,
     record_sales_lead_event,
@@ -55,6 +56,7 @@ from modules.sales.sam_farm_knowledge import (
     public_profile,
 )
 from modules.sales.sam_shared_context import build_sam_v3_context_packet
+from modules.sales.sam_customer_context import canonical_customer_identity
 from modules.sales.sam_sales_router import LANE_LIVE_STOCK, LANE_MEAT, classify_sam_sales_lane
 from modules.sales.sam_sales_autonomy import (
     bind_authoritative_conversation_evidence,
@@ -197,6 +199,7 @@ def handle_sam_meat_chatwoot_inbound(
     routine_delivery_claim=None,
     routine_delivery_evidence_recorder=None,
     conversation_history_loader=None,
+    retained_context_loader=None,
 ):
     source = environ if environ is not None else os.environ
     control_policy = sam_meat_control_policy()
@@ -212,8 +215,30 @@ def handle_sam_meat_chatwoot_inbound(
             **_authority_flags(False, False),
         }, 200
 
+    context_errors = []
+    try:
+        lead_context = _conversation_lead_context(inbound.get("conversation_id"))
+    except Exception as exc:
+        lead_context = {}
+        context_errors.append(_integration_failure("conversation_lead_context_failed", exc))
+    canonical_identity = canonical_customer_identity(inbound)
+    try:
+        retained_context = (
+            retained_context_loader(inbound, canonical_identity)
+            if retained_context_loader
+            else _canonical_meat_lead_context(inbound, canonical_identity)
+        )
+    except Exception as exc:
+        retained_context = {}
+        context_errors.append(_integration_failure("canonical_meat_context_failed", exc))
+    lead_context = _merge_lead_contexts(lead_context, retained_context)
+
     lane_route = classify_sam_sales_lane(inbound["content"])
-    if lane_route.get("lane") not in {LANE_MEAT, LANE_LIVE_STOCK} and _is_low_risk_general_current_message(inbound["content"]):
+    if (
+        lane_route.get("lane") not in {LANE_MEAT, LANE_LIVE_STOCK}
+        and _is_low_risk_general_current_message(inbound["content"])
+        and not lead_context.get("lead_id")
+    ):
         return {
             "success": True,
             "status": "sam_meat_general_first_withheld",
@@ -246,18 +271,13 @@ def handle_sam_meat_chatwoot_inbound(
         }, 200
 
     facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
+    current_message_facts = dict(facts)
     definitive_meat = lane_route.get("lane") == LANE_MEAT and float(lane_route.get("confidence") or 0) >= 0.9
     live_stock_context = (
         {"active": False, "status": "not_read_definitive_current_meat"}
         if definitive_meat
         else _conversation_live_stock_context(inbound.get("conversation_id"))
     )
-    context_errors = []
-    try:
-        lead_context = _conversation_lead_context(inbound.get("conversation_id"))
-    except Exception as exc:
-        lead_context = {}
-        context_errors.append(_integration_failure("conversation_lead_context_failed", exc))
     explicit_live_stock = lane_route.get("lane") == LANE_LIVE_STOCK and (
         not lead_context.get("lead_id") or _message_explicitly_requests_live_stock(inbound.get("content"))
     )
@@ -331,6 +351,7 @@ def handle_sam_meat_chatwoot_inbound(
         }, 200
     prior_context = _merge_inbound_attribute_context(lead_context, inbound)
     facts = _merge_prior_context(facts, prior_context)
+    prior_context = _with_fact_provenance(prior_context, current_message_facts, facts, inbound.get("content"))
     try:
         context_packet = build_sam_v3_context_packet(inbound, prior_context, environ=source)
     except Exception as exc:
@@ -366,6 +387,7 @@ def handle_sam_meat_chatwoot_inbound(
     if agent_decision.get("used"):
         facts = _merge_agent_fact_patch(facts, agent_decision)
     lead_payload = build_sam_meat_lead_payload_from_inbound(inbound, facts)
+    lead_payload["canonical_customer_id"] = canonical_identity.get("canonical_customer_id", "")
     if prior_context.get("lead_id"):
         lead_payload["lead_id"] = prior_context["lead_id"]
     else:
@@ -829,6 +851,7 @@ def classify_sam_meat_lead(inbound, facts):
 
 def build_sam_meat_lead_payload_from_inbound(inbound, facts):
     product_type = facts.get("product_type") or "unknown"
+    attrs = inbound.get("conversation_custom_attributes") if isinstance(inbound.get("conversation_custom_attributes"), dict) else {}
     qualification = classify_sam_meat_lead(inbound, facts)
     product_label = {
         "half_carcass": "Half Carcass",
@@ -840,6 +863,13 @@ def build_sam_meat_lead_payload_from_inbound(inbound, facts):
         "customer_name": inbound.get("customer_name") or facts.get("customer_name") or "Chatwoot customer",
         "conversation_id": inbound.get("conversation_id") or facts.get("conversation_id"),
         "contact_id": inbound.get("contact_id") or facts.get("contact_id"),
+        "account_id": inbound.get("account_id") or "",
+        "customer_language": facts.get("customer_language") or attrs.get("customer_language") or attrs.get("language") or "",
+        "campaign_id": facts.get("campaign_id") or attrs.get("meat_source_campaign_id") or attrs.get("source_campaign_id") or "",
+        "campaign_source": facts.get("campaign_source") or attrs.get("campaign_source") or "",
+        "source_context": facts.get("source_context") or attrs.get("source_context") or "",
+        "current_conversation_goal": facts.get("current_conversation_goal") or attrs.get("current_conversation_goal") or "",
+        "last_unanswered_question": facts.get("last_unanswered_question") or attrs.get("last_unanswered_question") or "",
         "channel": inbound.get("channel") or facts.get("channel") or "chatwoot_whatsapp",
         "whatsapp_window_state": inbound.get("whatsapp_window_state") or "open",
         "product": product_label,
@@ -2428,6 +2458,133 @@ def _conversation_lead_context(conversation_id):
     }
 
 
+def _canonical_meat_lead_context(inbound, identity):
+    identity = identity if isinstance(identity, dict) else {}
+    if not identity.get("resolved"):
+        return {}
+    result, status_code = get_active_sales_lead_by_customer_identity(
+        identity.get("canonical_customer_id", ""),
+        identity.get("account_id", ""),
+        inbound.get("contact_id", ""),
+    )
+    if status_code != 200 or not isinstance(result, dict):
+        return {}
+    lead = result.get("lead") if isinstance(result.get("lead"), dict) else {}
+    if not lead:
+        return {}
+    return {
+        "lead_id": _clean(lead.get("lead_id"), 100),
+        "interest": lead.get("interest") if isinstance(lead.get("interest"), dict) else {},
+        "latest_event": _latest_event_type(lead),
+        "linked_preorder_id": _clean(lead.get("linked_preorder_id"), 100),
+        "linked_order_id": _clean(lead.get("linked_order_id"), 100),
+        "retained_from_conversation_id": _clean(lead.get("chatwoot_conversation_id"), 100),
+        "canonical_identity": identity,
+        "source": "supabase.oom_sakkie_sales_leads_and_events",
+    }
+
+
+def _merge_lead_contexts(current_conversation, retained):
+    """Prefer current-conversation evidence and retain explicit conflict provenance."""
+    current_conversation = dict(current_conversation or {})
+    retained = dict(retained or {})
+    if not current_conversation:
+        retained["provenance"] = {
+            "status": "retained",
+            "retained_source": retained.get("source", ""),
+            "current_source": "current_chatwoot_message",
+            "conflicts": [],
+        }
+        return retained
+    if not retained:
+        current_conversation["provenance"] = {
+            "status": "current_conversation",
+            "retained_source": "",
+            "current_source": "current_chatwoot_conversation",
+            "conflicts": [],
+        }
+        return current_conversation
+    current_interest = dict(current_conversation.get("interest") or {})
+    retained_interest = dict(retained.get("interest") or {})
+    merged_interest = dict(retained_interest)
+    conflicts = []
+    for key, value in current_interest.items():
+        current_value = _clean(value, 700)
+        retained_value = _clean(retained_interest.get(key), 700)
+        if current_value and retained_value and current_value != retained_value:
+            conflicts.append({
+                "field": key,
+                "retained_value": retained_value,
+                "current_value": current_value,
+                "resolution": "current_conversation_evidence",
+            })
+        if current_value:
+            merged_interest[key] = value
+    merged = {**retained, **current_conversation, "interest": merged_interest}
+    merged["provenance"] = {
+        "status": "supplied_and_retained" if current_interest and retained_interest else "retained",
+        "retained_source": retained.get("source", ""),
+        "current_source": "current_chatwoot_conversation",
+        "conflicts": conflicts,
+    }
+    return merged
+
+
+_MEAT_RETAINED_FACT_FIELDS = (
+    "customer_language", "product_type", "cut_set", "location", "delivery_town",
+    "delivery_or_collection", "delivery_address_line_1", "delivery_area", "delivery_notes",
+    "timing", "campaign_id", "campaign_source", "source_context", "budget_amount",
+    "target_packed_kg", "match_preference", "payment_method", "current_conversation_goal",
+    "last_unanswered_question",
+)
+
+
+def _with_fact_provenance(prior_context, current_facts, merged_facts, current_message=""):
+    """Attach field-level supplied/retained/derived/unknown evidence without changing authority."""
+    context = dict(prior_context or {})
+    retained_interest = dict(context.get("interest") or {})
+    current_facts = dict(current_facts or {})
+    merged_facts = dict(merged_facts or {})
+    provenance = dict(context.get("provenance") or {})
+    conflicts = list(provenance.get("conflicts") or [])
+    field_evidence = {}
+    message = str(current_message or "").lower()
+    for field in _MEAT_RETAINED_FACT_FIELDS:
+        current = _clean(current_facts.get(field), 700)
+        retained = _clean(retained_interest.get(field), 700)
+        resolved = _clean(merged_facts.get(field), 700)
+        if current and retained and current != retained:
+            conflict = {
+                "field": field, "retained_value": retained, "current_value": current,
+                "resolution": "current_message_evidence",
+            }
+            if conflict not in conflicts:
+                conflicts.append(conflict)
+        if current:
+            status = "supplied"
+            source = "current_message"
+            if field == "payment_method" and not re.search(r"\b(eft|cash)\b", message):
+                status, source = "derived", "current_meat_policy_default"
+        elif retained:
+            status, source = "retained", "supabase_meat_lead_chronology"
+        elif resolved:
+            status, source = "derived", "deterministic_runtime"
+        else:
+            status, source = "unknown", "none"
+        field_evidence[field] = {"status": status, "source": source}
+    context["interest"] = {**retained_interest, **{
+        key: merged_facts[key] for key in _MEAT_RETAINED_FACT_FIELDS if _clean(merged_facts.get(key), 700)
+    }}
+    context["provenance"] = {
+        **provenance,
+        "status": "current_and_retained_evidence",
+        "current_source": "current_chatwoot_message",
+        "field_evidence": field_evidence,
+        "conflicts": conflicts,
+    }
+    return context
+
+
 def _message_explicitly_requests_live_stock(message):
     text = str(message or "").strip().lower()
     if not text:
@@ -2554,6 +2711,12 @@ def _merge_prior_context(facts, prior_context):
         "delivery_location_longitude",
         "delivery_maps_url",
         "payment_method",
+        "customer_language",
+        "campaign_id",
+        "campaign_source",
+        "source_context",
+        "current_conversation_goal",
+        "last_unanswered_question",
         "budget_amount",
         "target_packed_kg",
         "match_preference",
