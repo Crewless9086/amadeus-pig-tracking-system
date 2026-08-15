@@ -39,7 +39,6 @@ function fillMating(mating) {
   if(!mating)return;
   const sow=valueFor(mating.sow_name,mating.sow_canonical_tag_number,mating.sow_tag_number,mating.sow_pig_id),boar=valueFor(mating.boar_name,mating.boar_canonical_tag_number,mating.boar_tag_number,mating.boar_pig_id);
   setValue("pwr_mating_id",mating.mating_id);setValue("pwr_sow",sow);setValue("pwr_header_sow",sow);setValue("pwr_boar",boar);setValue("pwr_header_boar",boar);setValue("pwr_mating_pen",valueFor(mating.mating_pen_name,mating.mating_pen_id));setValue("pwr_mating_date",mating.mating_date);setValue("pwr_mating_method",mating.mating_method);setValue("pwr_expected_from",valueFor(mating.expected_farrowing_window_start,mating.expected_farrowing_date));setValue("pwr_expected_to",mating.expected_farrowing_window_end);
-  const currentPen=valueFor(mating.sow_current_pen_name,mating.sow_current_pen_id);setValue("pwr_current_pen",currentPen);if(currentPen)document.getElementById("pwr_current_pen_label").textContent=`Huidige hok · ${informationDate}`;
 }
 function fillLitter(litter) {
   if(!litter)return;const counts=litter.reconciliation||{};
