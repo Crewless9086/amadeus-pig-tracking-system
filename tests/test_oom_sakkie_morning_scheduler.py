@@ -69,3 +69,22 @@ def test_scheduler_route_requires_strong_bearer_and_dispatches_synthetic(monkeyp
     assert denied.get_json()["telegram_sends"] == 0
     assert accepted.status_code == 200
     assert accepted.get_json()["identity_seen"] == IDENTITY
+
+
+def test_payment_recovery_route_uses_same_strong_scheduler_authority(monkeypatch):
+    import modules.oom_sakkie.routes as routes
+    from flask import Flask
+    app = Flask(__name__)
+    app.register_blueprint(routes.oom_sakkie_bp, url_prefix="/api")
+    monkeypatch.setenv("OOM_SAKKIE_MORNING_SCHEDULER_TOKEN", "r" * 32)
+    monkeypatch.setattr(routes, "run_payment_recovery_cycle", lambda: {
+        "success": True, "status": "payment_recovery_idle",
+        "worker_id": "oom-sakkie-protected-payment-recovery-v1",
+        "telegram_sends": 0, "telegram_edits": 0})
+    client = app.test_client()
+    denied = client.post("/api/oom-sakkie/management/protected-payment-recovery")
+    accepted = client.post("/api/oom-sakkie/management/protected-payment-recovery",
+        headers={"Authorization": "Bearer " + "r" * 32})
+    assert denied.status_code == 403
+    assert accepted.status_code == 200
+    assert accepted.get_json()["status"] == "payment_recovery_idle"

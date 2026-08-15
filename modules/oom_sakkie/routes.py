@@ -122,6 +122,7 @@ from modules.oom_sakkie.morning_scheduler import (
     run_provider_schedule,
     run_synthetic_acceptance,
 )
+from modules.oom_sakkie.protected_payment_recovery import run_payment_recovery_cycle
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
 from modules.oom_sakkie.telegram_gateway import (
@@ -258,6 +259,19 @@ def oom_sakkie_morning_schedule():
     result = (run_synthetic_acceptance(synthetic) if synthetic
               else run_provider_schedule())
     return jsonify(result), 200 if result.get("success") else 503
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/protected-payment-recovery", methods=["POST"])
+def oom_sakkie_protected_payment_recovery():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success": False, "status": "payment_recovery_auth_denied",
+                        "telegram_sends": 0, "telegram_edits": 0,
+                        "writes_to_supabase": False}), 403
+    result = run_payment_recovery_cycle()
+    status = 200 if result.get("success") else 503
+    return jsonify(result), status
 
 
 @oom_sakkie_bp.route("/oom-sakkie/message", methods=["POST"])
