@@ -252,6 +252,17 @@ work with queue evidence, or unknown pending current feedback. This coordination
 mechanism may activate engineering work, but it does not substitute a terminal
 for the deployed specialist that must perform the genuine operational journey.
 
+The dispatch ledger also carries one forward mission pipeline per specialist.
+It maps the complete documented agent role to proven capabilities, the active
+mission, the next eligible mission, later sequenced outcomes, dependencies and
+owner reprioritizations. Release, Business completion or a genuine event wait
+automatically promotes the next safe non-colliding development outcome; Charl
+does not manually keep terminals supplied with work. Terminals build and prove
+these capabilities, while the deployed agents inherit and operate them through
+the canonical action spine. CORE and CHARLIE may automate this planning and
+dispatch only after their durable producer, queue, worker, collision and
+outcome-verification evidence proves equivalent Control Tower behavior.
+
 ## Programme order
 
 1. CORE completes Phase 0 inventory and publishes the dependency/retirement

@@ -134,6 +134,36 @@ say the register was not updated. Conversation memory alone is not tracking.
 Use `docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md` for every
 new terminal feedback packet and every Control Tower continuation prompt.
 
+## Mandatory forward mission pipeline
+
+The control board and each specialist queue must be maintained as a forward
+development pipeline toward the specialist's complete authoritative scope.
+Each terminal entry must record:
+
+1. intended complete specialist role and owner-visible result;
+2. capabilities already operationally proven by the deployed agent;
+3. current outcome-bound mission and terminal/worktree owner;
+4. next highest-value eligible mission after the current mission;
+5. later sequenced missions required to complete the documented role;
+6. file, runtime, authority and serialized-lane collision boundaries;
+7. exact dependency and automatic promotion trigger for every deferred mission;
+8. latest owner observation or decision that changed priority; and
+9. prompt delivery truth separately from selection and preparation.
+
+After a terminal reports Business completion, releases its worktree or enters a
+genuine clock/provider/owner/physical wait, Control Tower must immediately
+promote another eligible non-colliding mission from this pipeline. If none is
+registered, Control Tower must inspect the authoritative specialist scope,
+business rules, roadmap and proven operating gaps, register the best bounded
+outcome, and dispatch it without waiting for Charl to ask. It must not create
+busywork, duplicate an active mission or make a development terminal perform
+the deployed agent's recurring operational work.
+
+Owner observations may reprioritize this pipeline at any time. Reprioritization
+preserves active, completed, dirty and unique work unless a real collision
+requires an explicit Hold. Conversation memory is context only and never
+replaces this register.
+
 ## Current control board
 
 Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
