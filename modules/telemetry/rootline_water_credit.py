@@ -42,6 +42,7 @@ def build_water_credit(*, execution, physical_acceptance, measurement=None,
         "physical_acceptance_sha256": acceptance_digest, "credit_method": method,
         "volume_evidence_id": evidence_id,
         "volume_evidence_sha256": str(evidence["evidence_sha256"]),
+        "volume_evidence": evidence,
         "measurement_evidence_id": evidence_id if method == "measured_volume" else None,
         "calibration_id": calibration_id,
         "delivered_volume_litres": round(litres, 3),
@@ -160,10 +161,15 @@ def validate_water_credit(value):
     identity = {key: material.get(key) for key in (
         "contract_version", "execution_id", "zone_id", "physical_acceptance_sha256",
         "credit_method", "volume_evidence_id", "volume_evidence_sha256")}
+    evidence = material.get("volume_evidence")
     return (material.get("zone_id") in ZONES and material.get("credit_method") in METHODS
         and _positive(material.get("delivered_volume_litres"))
         and bool(str(material.get("volume_evidence_id") or ""))
         and len(str(material.get("volume_evidence_sha256") or "")) == 64
+        and _valid_volume_evidence(evidence, material.get("credit_method"), material.get("zone_id"))
+        and evidence.get("evidence_id") == material.get("volume_evidence_id")
+        and evidence.get("evidence_sha256") == material.get("volume_evidence_sha256")
+        and _quantity_matches(material, evidence)
         and material.get("credit_id") == "ROOTLINE-WATER-CREDIT-" + _digest(identity)[:24].upper()
         and supplied == _digest(material))
 
@@ -190,6 +196,13 @@ def _valid_volume_evidence(row, kind, zone):
         return False
     material = {key: value for key, value in row.items() if key != "evidence_sha256"}
     return row["evidence_sha256"] == _digest(material)
+
+
+def _quantity_matches(credit, evidence):
+    expected = (float(evidence["measured_volume_litres"])
+        if credit.get("credit_method") == "measured_volume"
+        else float(evidence["litres_per_minute"]) * float(credit.get("verified_runtime_seconds") or 0) / 60)
+    return round(float(credit.get("delivered_volume_litres") or 0), 3) == round(expected, 3)
 
 
 def _unknown(execution_id, zone, reason):

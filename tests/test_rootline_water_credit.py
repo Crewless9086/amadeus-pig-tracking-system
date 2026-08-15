@@ -78,6 +78,16 @@ def test_conflicting_or_unproven_identity_is_unknown():
     assert wrong_zone["status"] == "Unknown"
 
 
+def test_rehashed_tampered_quantity_is_rejected():
+    value = build_water_credit(execution=EXECUTION, physical_acceptance=ACCEPTANCE,
+        measurement=volume_evidence(measured_volume_litres=100), recorded_at=NOW)
+    value["delivered_volume_litres"] = 999999
+    material = {key: item for key, item in value.items() if key not in {"status", "credit_sha256"}}
+    value["credit_sha256"] = sha256(json.dumps(material, sort_keys=True,
+        separators=(",", ":"), default=str).encode()).hexdigest()
+    assert validate_water_credit(value) is False
+
+
 class FakeDatabase:
     def __enter__(self): return self
     def __exit__(self, *_args): return False
@@ -144,13 +154,17 @@ def test_migration_is_append_only_and_has_no_control_authority():
 def test_disposable_postgres_one_credit_per_execution_and_conflict():
     import psycopg
     url = os.environ["ROOTLINE_DISPOSABLE_POSTGRES_URL"]
-    execution = {**EXECUTION, "execution_id": "ROOTLINE-EXECUTION-" + uuid.uuid4().hex.upper()}
+    execution = {**EXECUTION, "action": "record_completed",
+                 "execution_id": "ROOTLINE-EXECUTION-" + uuid.uuid4().hex.upper()}
     acceptance = {"acceptance_sha256": uuid.uuid4().hex + uuid.uuid4().hex,
         "observations": [{**ACCEPTANCE["observations"][0], "execution_id": execution["execution_id"]}]}
     evidence = volume_evidence(evidence_id="VOLUME-" + uuid.uuid4().hex,
                                measured_volume_litres=100)
     with psycopg.connect(url, connect_timeout=10) as connection:
         with connection.cursor() as cursor:
+            cursor.execute("""insert into public.sam_live_stock_conversation_review_events(event_source,review_json)
+                values('rootline_irrigation_execution',%s::jsonb)""",
+                (json.dumps({"rootline_execution": execution}, sort_keys=True),))
             cursor.execute("select public.rootline_append_water_volume_evidence(%s,%s,%s,%s,%s::jsonb)",
                 (evidence["evidence_id"], evidence["evidence_type"], evidence["zone_id"],
                  evidence["evidence_sha256"], json.dumps(evidence, sort_keys=True,

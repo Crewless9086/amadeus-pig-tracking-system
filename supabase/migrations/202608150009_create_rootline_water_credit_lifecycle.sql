@@ -86,8 +86,30 @@ begin
         and e.zone_id=p_zone_id
         and e.evidence_type=p_credit->>'credit_method'
         and e.evidence_sha256=p_credit->>'volume_evidence_sha256'
+        and e.evidence_json=p_credit->'volume_evidence'
         and (e.evidence_json->>'verified')::boolean is true) then
     raise exception 'canonical ROOTLINE volume evidence missing or mismatched';
+  end if;
+  if not exists(select 1 from public.sam_live_stock_conversation_review_events x
+      where x.event_source='rootline_irrigation_execution'
+        and x.review_json->'rootline_execution'->>'action'='record_completed'
+        and x.review_json->'rootline_execution'->>'execution_id'=p_execution_id
+        and x.review_json->'rootline_execution'->>'zone_id'=p_zone_id
+        and (x.review_json->'rootline_execution'->>'verified_runtime_seconds')::numeric
+            =(p_credit->>'verified_runtime_seconds')::numeric
+        and (x.review_json->'rootline_execution'->>'shutdown_verified')::boolean is true
+        and x.review_json->'rootline_execution'->'start_evidence'->>'state'='ON'
+        and x.review_json->'rootline_execution'->'shutdown_evidence'->>'state'='OFF') then
+    raise exception 'canonical ROOTLINE completed execution missing or mismatched';
+  end if;
+  if not ((p_credit->>'credit_method'='measured_volume'
+      and round((p_credit->>'delivered_volume_litres')::numeric,3)
+          =round((p_credit->'volume_evidence'->>'measured_volume_litres')::numeric,3))
+    or (p_credit->>'credit_method'='governed_calibration'
+      and round((p_credit->>'delivered_volume_litres')::numeric,3)
+          =round((p_credit->'volume_evidence'->>'litres_per_minute')::numeric
+             *(p_credit->>'verified_runtime_seconds')::numeric/60,3))) then
+    raise exception 'ROOTLINE water credit quantity mismatch';
   end if;
   insert into public.irrigation_water_credit_events(
     credit_id,execution_id,zone_id,physical_acceptance_sha256,volume_evidence_id,
