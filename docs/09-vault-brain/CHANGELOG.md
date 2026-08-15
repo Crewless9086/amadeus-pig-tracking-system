@@ -6,6 +6,8 @@
   exact next eligible event in the existing governed runner heartbeat.
 - Connected the signed minimal observation child to the existing durable Shadow
   event consumer instead of an ownership-heartbeat-only loop.
+- Passed only transaction-pooled canonical database access and the Shadow flag
+  into that child; provider and execution credentials remain excluded.
 - Kept observation mode unable to pick missions, dispatch, release or execute;
   only a genuine canonical Control Tower feedback event can advance Phase A.
 
