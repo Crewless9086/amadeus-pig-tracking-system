@@ -3,10 +3,11 @@ const fs = require("fs");
 const assert = require("assert");
 const root=process.cwd();
 const template=fs.readFileSync(`${root}/templates/paring-werpselrekord.html`,"utf8").replace(/\{\{ url_for\('static', filename='([^']+)'\) \}\}/g,"/static/$1");
-const script=fs.readFileSync(`${root}/static/js/paringWerpselrekord.js`,"utf8"),css=fs.readFileSync(`${root}/static/css/paringWerpselrekord.css`,"utf8");
+const script=fs.readFileSync(`${root}/static/js/paringWerpselrekord.js`,"utf8"),css=fs.readFileSync(`${root}/static/css/paringWerpselrekord.css`,"utf8")+fs.readFileSync(`${root}/static/css/paringWerpselrekordFollowup.css`,"utf8");
 const html=template.replace(/<link[^>]+>/g,"").replace("</head>",`<style>${css}</style></head>`).replace(/<script[^>]+><\/script>/,`<script>${script}</script>`);
 const mating={mating_id:"MAT-1",linked_litter_id:"LIT-1",sow_name:"Bonnie",boar_name:"Tyson",mating_date:"2026-03-13",mating_method:"Natuurlik",expected_farrowing_window_start:"2026-07-05",sow_current_pen_name:"D3"};
 const litter={litter_id:"LIT-1",mating_id:"MAT-1",farrowing_date:"2026-07-08",born_alive:9,weaned_count:8,weaned_male_count:8,weaned_female_count:0,piglets:[{tag_number:"259A",sex:"Male",wean_weight_kg:12.4}]};
+const olive={mating_id:"MAT-OLIVE",sow_name:"Olive",boar_name:"Tyson",sow_current_pen_name:"Kraam Saal 04",mating_date:"2026-08-12"};
 (async()=>{
   const browser=await chromium.launch({headless:true});let apiCalls=[],methods=[];const context=await browser.newContext();
   await context.route("**/*",async route=>{const request=route.request(),url=new URL(request.url());methods.push(request.method());if(url.pathname==="/api/pig-weights/matings"){apiCalls.push(url.pathname);return route.fulfill({contentType:"application/json",body:JSON.stringify({success:true,records:[mating]})});}if(url.pathname==="/api/pig-weights/litter/LIT-1"){apiCalls.push(url.pathname);return route.fulfill({contentType:"application/json",body:JSON.stringify({success:true,litter})});}if(url.pathname==="/api/pig-weights/litter/LIT-OTHER"){apiCalls.push(url.pathname);return route.fulfill({contentType:"application/json",body:JSON.stringify({success:true,litter:{...litter,litter_id:"LIT-OTHER",mating_id:"MAT-OTHER"}})});}return route.fulfill({contentType:"text/html",body:html});});
