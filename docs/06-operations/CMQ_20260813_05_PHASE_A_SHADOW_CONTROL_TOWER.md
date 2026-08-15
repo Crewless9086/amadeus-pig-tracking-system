@@ -65,3 +65,7 @@ poll count and exact next eligible event in its governed heartbeat. This is
 observability only: observation mode still cannot pick missions, dispatch,
 release, execute or create feedback. A genuine Control Tower producer event
 remains the only way to advance the comparison sequence.
+
+The signed `--observe-only` entry point runs that durable Shadow polling loop;
+it no longer stops at the ownership-handshake heartbeat. The loop hard-disables
+notifications, mission pickup, release watching, Codex execution and PR merge.
