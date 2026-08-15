@@ -4,7 +4,7 @@ Date: 2026-08-13
 
 Mission: `HMQ-20260813-04`
 
-Status: proposed authoritative documentation/data contract; no source or UI implementation
+Status: authoritative contract; backend deployed and production-proven; CODEX UI rendering pending
 
 Surfaces: herd `/breeding-analytics`; named animal `/breeding-analytics/<pig_id>`
 
@@ -19,8 +19,8 @@ over canonical Supabase facts.
 This mission does **not** create a mating recommendation score, genetic ledger,
 animal classification, movement, exposure, mating, service, conception,
 pregnancy, treatment, sale, financial allocation or other farm fact. It does
-not implement either UI. A later HERDMASTER data slice may implement the
-read-model packet; a separately assigned CODEX UI slice may render that packet.
+not implement either UI. HERDMASTER's versioned read-model packet is deployed;
+a separately assigned CODEX UI slice must render it without recalculating biology.
 
 ## 2. Reconciled historical evidence
 
@@ -280,9 +280,11 @@ No chart is implemented by this contract PR.
 All charts require accessible tabular equivalents, keyboard focus, text summary,
 units, cutoff, sample size, missing count and source limitation.
 
-## 8. Proposed backend read-model additions
+## 8. Deployed backend read model
 
-HERDMASTER data implementation owns:
+HERDMASTER owns this capability list. The deployed v1 provides items 1-5, 7
+and 9 within the explicit evidence limitations below; items 6 and 8 remain
+pending backend capabilities and must stay nullable until implemented:
 
 1. `load_full_lifecycle_merit_evidence(cutoff, pig_id=None)` using one bounded,
    read-only, repeatable snapshot over current canonical sources.
@@ -292,19 +294,23 @@ HERDMASTER data implementation owns:
    include only complete-through attributable opportunities.
 4. Exact offspring cohort binding from canonical parent/litter identities.
 5. Nullable survival/weaning aggregation and coverage disclosures.
-6. Comparable-age/days-since-weaning growth projection with configurable,
-   versioned tolerances.
+6. **Pending:** comparable-age/days-since-weaning growth projection with
+   configurable, versioned tolerances.
 7. Pair, parent-across-partner and herd benchmark projections with context
    qualifiers; no automatic merit score.
-8. Exact financial attribution adapter that preserves item versus lot scope and
-   declares cost coverage.
+8. **Pending:** exact financial attribution adapter that preserves item versus
+   lot scope and declares cost coverage.
 9. Versioned pure composer for herd rows and named profiles, deterministic from
    the same evidence cutoff.
 
-Prefer service composition over a new table. Add a database view only if query
-correctness/performance requires it, and never a writable ledger. Reuse existing
-owner-read access and `/api/pig-weights/breeding-analytics*` routes or introduce
-an explicitly versioned read endpoint without changing mutation authority.
+The deployed implementation uses service composition, not a new table or
+writable ledger: `herdmaster_full_lifecycle_merit.py`, the bounded snapshot in
+`farm_supabase_read_service.py`, and owner-read
+`/api/pig-weights/breeding-analytics/v1/full-lifecycle*` routes. PR #905 merged
+as `1e6846d7...`. Repeated authenticated production reads returned stable herd
+and Tyson-profile semantics with `writes_performed:false`; eight canonical
+table counts remained unchanged. Unsupported comparable growth and exact
+financial attribution remained null with explicit limitations.
 
 ## 9. CODEX UI handover boundary
 
@@ -364,10 +370,11 @@ completion claim.
 - partner comparison never says a parent caused the outcome;
 - mobile and desktop regressions for herd and named profile.
 
-## 11. Stop and later completion boundary
+## 11. Current completion boundary
 
-This documentation PR stops before backend or UI implementation. Prepared means
-the evidence contract is reviewed and merged. It is not Integrated,
-Operational, Business-complete or Closed. Later business completion remains one
-fresh material canonical event causing a useful, name-led, fully qualified
-read-only reassessment without farm mutation or duplicate delivery.
+The backend is Integrated and its authenticated read contract is operationally
+proven. HMQ-20260813-04 remains `WORKING` because the owner-facing herd and named
+animal pages still consume the legacy aggregate. The next sequenced mission is
+the bounded CODEX UI presentation slice. CODEX may render only backend-owned
+fields and must not recalculate biology. Business completion requires fresh
+owner-visible production proof of both pages with no farm mutation.
