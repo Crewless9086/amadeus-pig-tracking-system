@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - SAM and BEACON protected claim schema reconciled
+
+- Preserved both independently reviewed protected action kinds in the final
+  database constraint after serialized deployment exposed their migration-order
+  collision. The failed SAM activation created no provider message or payment.
+
 ## 2026-08-15 - Sale-payment confirmation joined the deployed Telegram rail
 
 - Continued `SMQ-20260813-05` and retained the earlier terminal-created preview
