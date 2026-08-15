@@ -12,6 +12,7 @@ def test_direct_cron_entrypoint_imports_application_outside_repository(tmp_path)
     environment.pop("ROOTLINE_REASSESSMENT_SCHEDULER_URL", None)
     environment.pop("OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN", None)
     environment.pop("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", None)
+    environment.pop("ROOTLINE_REASSESSMENT_OWNER_USER_ID", None)
 
     completed = subprocess.run(
         [sys.executable, str(script)],
