@@ -4,10 +4,11 @@ import os
 from modules.oom_sakkie.protected_action_claims import (
     build_buttons, canonical_preview_digest, create_claim,
 )
+from modules.telemetry.rootline_execution_authority import CONTRACT_VERSION
 
 ACTION_KIND="rootline_irrigation_segment"
 MISSION_ID="RMQ-20260813-04"
-BOUND_KEYS=("job_id","job_sha256","zone_id","channel","segment_identity",
+BOUND_KEYS=("contract_version","job_id","job_sha256","zone_id","channel","segment_identity",
  "current_segment","segment_requested_seconds","requested_total_duration_seconds",
  "governed_executable_duration_seconds","plan_generation",
  "controller_safety_generation","eligibility_sha256")
@@ -33,7 +34,8 @@ def build_preview_payload(artifact,*,mission_id):
         output=commissioned_irrigation_contract(payload["zone_id"])
     except ValueError as exc:
         raise ValueError("protected_irrigation_preview_outside_boundary") from exc
-    if (payload["channel"]!=output["channel"] or int(payload["current_segment"] or 0)<1
+    if (payload["contract_version"]!=CONTRACT_VERSION
+        or payload["channel"]!=output["channel"] or int(payload["current_segment"] or 0)<1
         or int(payload["segment_requested_seconds"] or 0) not in range(1,3600)
         or int(payload["requested_total_duration_seconds"] or 0)<1
         or int(payload["governed_executable_duration_seconds"] or 0)<1

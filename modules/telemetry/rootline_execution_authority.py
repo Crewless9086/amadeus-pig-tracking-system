@@ -15,7 +15,7 @@ from modules.telemetry.rootline_irrigation_job_contract import (
 from modules.telemetry.rootline_device_registry import rootline_device_registry
 
 MAX_SECONDS = 3599
-CONTRACT_VERSION = "rootline_execution_eligibility.v3"
+CONTRACT_VERSION = "rootline_execution_eligibility.v4"
 STANDING_AUTHORITY = "owner_approved_routine_irrigation_v1"
 
 
@@ -141,7 +141,9 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "live_rain_release": {"source": "rootline_daily_advisor",
             "advisor_generated_at": advisor_at.isoformat(),
             "advisor_operating_date": irrigation["advisor_operating_date"],
-            "zone_id": zone, "proven": True},
+            "zone_id": zone, "proven": True,
+            "forecast_planning_quality": advisor_zone.get("forecast_planning_quality"),
+            "planning_warnings": list(advisor_zone.get("planning_warnings") or [])},
         "water_evidence": {"observed_at": water_time.isoformat(),
             "reservoir_state": tanks.get("reservoir_state"),
             "reservoir_fraction": tanks.get("reservoir_fraction"),

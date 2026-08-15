@@ -82,14 +82,19 @@ Forecast rain, locally observed rain, and captured useful water are different ev
 - A local rain reading can prove detected rainfall under the active freshness rules.
 - It still does not prove how much useful water entered the tanks.
 - Routine autonomous B/C dry release is machine-evidenced. It requires the
-  governed local station to be healthy and fresh, a fresh forecast, an
-  automatically calculated continuous zero-rain interval of at least 30
+  governed local station to be healthy and fresh, an automatically calculated
+  continuous zero-rain interval of at least 30
   minutes, at least two durable boundary readings, and no missing or
   conflicting reading in that interval. Owner review, manual visible-rain
   confirmation, and per-cycle approval are not routine execution gates.
-- Rain above the active threshold produces Hold. Stale, unhealthy, missing or
-  conflicting local/forecast evidence also fails closed; standing authority
-  does not bypass these weather gates.
+- Rain above the active current-rain threshold produces Hold. Stale, unhealthy,
+  missing or conflicting local-station evidence also fails closed; standing
+  authority does not bypass these current-weather gates. Forecast freshness is
+  planning quality: stale or unavailable forecast evidence must be reported as
+  degraded confidence, but it is not by itself a B/C execution prohibition.
+  Forecast rain may change planning, prioritisation, duration or future-window
+  selection only through an explicit active governed forecast threshold;
+  `Unknown` forecast-threshold policy grants no invented execution Hold.
 
 ### Captured Water
 

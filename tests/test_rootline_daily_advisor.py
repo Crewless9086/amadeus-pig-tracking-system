@@ -217,7 +217,7 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
         self.assertTrue(all(zone["eligibility_today"] == "Hold" for zone in result["zones"]))
 
-    def test_stale_weather_and_forecast_fail_closed(self):
+    def test_stale_local_weather_fails_closed_while_forecast_is_a_warning(self):
         brief = daily_brief()
         brief["current_conditions"]["freshness"] = "stale"
         brief["current_conditions"]["rain_rate_mm_h"] = 2
@@ -228,7 +228,21 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         for zone in result["zones"]:
             self.assertEqual(zone["recommendation"], "Hold")
             self.assertTrue(any("Fresh current weather" in reason for reason in zone["reasoning"]))
-            self.assertTrue(any("fresh forecast" in reason for reason in zone["reasoning"]))
+            self.assertEqual(zone["forecast_planning_quality"], "degraded")
+            self.assertEqual(zone["planning_warnings"], ["forecast_stale_or_unavailable"])
+
+    def test_stale_forecast_does_not_block_automatic_dry_release(self):
+        brief = daily_brief()
+        brief["forecast"]["freshness"] = "stale"
+        brief["rain_release_evidence"] = complete_dry_release_evidence()
+        result = build_rootline_daily_advisor(
+            brief, "2026-07-27", active_policy=active_policy_v2()
+        )
+        for zone in result["zones"]:
+            self.assertTrue(zone["live_rain_release_proven"])
+            self.assertEqual(zone["forecast_planning_quality"], "degraded")
+            self.assertEqual(zone["planning_warnings"], ["forecast_stale_or_unavailable"])
+            self.assertTrue(any("planning confidence" in reason for reason in zone["reasoning"]))
 
     def test_strict_threshold_and_release_evidence_matrix(self):
         for rain_rate in (0.21, 0.4):

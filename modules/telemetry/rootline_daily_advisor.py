@@ -576,15 +576,18 @@ def _advise_zone(
     if not weather_fresh:
         reasons.append("Fresh current weather is required.")
     if not forecast_fresh:
-        reasons.append("A fresh forecast is required.")
+        reasons.append(
+            "Forecast evidence is stale or unavailable; planning confidence is "
+            "degraded, but forecast freshness is not a current-rain execution gate."
+        )
     if live_rain_rule is None:
         recommendation = "Hold"
         eligibility = "Hold"
         reasons.append("An active authoritative live-rain policy is required.")
-    elif not weather_fresh or rain_rate is None or not forecast_fresh:
+    elif not weather_fresh or rain_rate is None:
         recommendation = "Hold"
         eligibility = "Hold"
-        reasons.append("Local weather or forecast evidence is missing or stale; Hold remains fail-closed.")
+        reasons.append("Local weather evidence is missing or stale; Hold remains fail-closed.")
     elif rain_rate > live_rain_rule["threshold_mm_per_hour"]:
         recommendation = "Hold"
         eligibility = "Hold"
@@ -639,6 +642,8 @@ def _advise_zone(
         "eligibility_today": eligibility,
         "recommendation": recommendation,
         "live_rain_release_proven": dry_release_proven,
+        "forecast_planning_quality": "fresh" if forecast_fresh else "degraded",
+        "planning_warnings": [] if forecast_fresh else ["forecast_stale_or_unavailable"],
         "proposed_runtime_minutes": None,
         "proposed_runtime_status": UNAVAILABLE,
         "runtime_suppressed_by": [
