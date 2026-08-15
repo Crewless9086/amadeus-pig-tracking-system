@@ -1471,6 +1471,7 @@ def _album_receipt(identity):
     completion_code = _album_completion_code(identity["group_id"])
     return {
         "receipt_mission_id": identity["group_id"],
+        "completion_code": completion_code,
         "receipt_text": (
             "BEACON started this private album. When every photo has been sent, "
             f"reply /beacon-complete {completion_code}. No library acceptance, "
