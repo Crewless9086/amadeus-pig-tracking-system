@@ -139,11 +139,6 @@
             "node": "Code - Build Evaluate Request",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Code - Build Oom Sakkie Reassessment",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -158,9 +153,6 @@
           }
         ]
       ]
-    },
-    "Code - Build Oom Sakkie Reassessment": {
-      "main": [[{"node": "HTTP - Run Oom Sakkie Reassessment", "type": "main", "index": 0}]]
     },
     "HTTP - Evaluate Power Alerts": {
       "main": [

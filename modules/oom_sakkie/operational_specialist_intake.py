@@ -136,7 +136,7 @@ _ROOTLINE_OPERATIONAL = re.compile(
     r"\b(reservoir|storage tanks?|water level|[BC]\s*camps?|irrigat(?:e|ion)|needs?\s+(?:water|irrigation))\b",
     re.I,
 )
-_FRACTION = re.compile(r"\b(reservoir|storage tanks?)\s+(?:is|are)?\s*(\d+)\s*/\s*(\d+)\b", re.I)
+_FRACTION = re.compile(r"\b(reservoir|storage(?:\s+tanks?)?)\s+(?:is|are)?\s*(\d+)\s*/\s*(\d+)\b", re.I)
 _C_NEED = re.compile(r"\bC\s*camps?\b.{0,40}\bneed(?:s|ed)?\s+(?:irrigation|water)\b", re.I)
 _C_NO_NEED = re.compile(r"\bC\s*camps?\b.{0,40}\b(?:do(?:es)?\s+not|doesn't|don't|no longer)\s+need", re.I)
 ZERO_AUTHORITY = {"writes_farm_data": False, "hardware_commands": 0,
@@ -259,8 +259,14 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
     visible_need = "C12345" if _C_NEED.search(raw_text) and not _C_NO_NEED.search(raw_text) else None
     semantic_observation = str(semantic.get("observation") or "").strip()
     semantic_facts = semantic.get("observation_facts") if isinstance(semantic.get("observation_facts"), (list, tuple)) else ()
-    if not observations:
-        observations = _typed_water_observations(semantic_facts, provider_id, provider_at.isoformat())
+    # The authenticated semantic front door may carry a second level expressed
+    # as a state (for example, "reservoir full") beside a literal fraction.
+    # Retain each independently evidenced kind exactly once.
+    typed_observations = _typed_water_observations(
+        semantic_facts, provider_id, provider_at.isoformat())
+    observed_kinds = {item["kind"] for item in observations}
+    observations.extend(item for item in typed_observations
+                        if item["kind"] not in observed_kinds)
     if not observations and not visible_need and not semantic_observation:
         return {"handled": False, "status": "operational_specialist_intake_not_applicable"}, 200
     mission = _mission(parsed)
