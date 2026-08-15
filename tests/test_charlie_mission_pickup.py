@@ -71,8 +71,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             result = charlie_mission_pickup.main()
         self.assertEqual(result, 1)
 
-    def test_observe_only_main_runs_shadow_loop_without_mission_or_recovery_access(self):
-        watch = Mock(return_value=({"success": True, "status": "observe_only_cycle_complete"}, 200))
+    def test_observe_only_main_exits_without_mission_or_recovery_access(self):
         with tempfile.TemporaryDirectory() as tmp:
             stop_path = Path(tmp) / "supervisor.stop"
             stop_path.write_text("stop", encoding="utf-8")
@@ -92,9 +91,6 @@ class CharlieMissionPickupTests(unittest.TestCase):
         ), patch.object(
             charlie_mission_pickup, "write_runner_heartbeat",
         ), patch.object(
-            charlie_mission_pickup, "watch_for_mission",
-            watch,
-        ), patch.object(
             charlie_mission_pickup, "list_missions",
             side_effect=AssertionError("mission discovery must be unreachable"),
         ), patch.object(
@@ -103,19 +99,6 @@ class CharlieMissionPickupTests(unittest.TestCase):
         ):
                 result = charlie_mission_pickup.main()
         self.assertEqual(result, 0)
-        watch.assert_called_once_with(
-            status="approved",
-            limit=10,
-            dry_run=False,
-            notify=False,
-            interval_seconds=60,
-            continuous=True,
-            execute_codex=False,
-            watch_release=False,
-            auto_close_no_release=False,
-            auto_merge_pr=False,
-            release_verify_url="",
-        )
     def test_direct_pickup_without_supervisor_generation_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(
             os.environ, {}, clear=True

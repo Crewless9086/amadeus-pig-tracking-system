@@ -4,8 +4,8 @@
 
 - Preserved the deployed observation worker's last Shadow cycle, poll count and
   exact next eligible event in the existing governed runner heartbeat.
-- Connected the signed observation-only CLI entry point to the existing durable
-  Shadow event consumer instead of an ownership-heartbeat-only loop.
+- Connected the signed minimal observation child to the existing durable Shadow
+  event consumer instead of an ownership-heartbeat-only loop.
 - Kept observation mode unable to pick missions, dispatch, release or execute;
   only a genuine canonical Control Tower feedback event can advance Phase A.
 

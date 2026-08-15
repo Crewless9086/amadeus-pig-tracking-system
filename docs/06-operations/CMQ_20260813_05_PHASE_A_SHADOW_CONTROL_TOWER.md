@@ -66,6 +66,7 @@ observability only: observation mode still cannot pick missions, dispatch,
 release, execute or create feedback. A genuine Control Tower producer event
 remains the only way to advance the comparison sequence.
 
-The signed `--observe-only` entry point runs that durable Shadow polling loop;
-it no longer stops at the ownership-handshake heartbeat. The loop hard-disables
-notifications, mission pickup, release watching, Codex execution and PR merge.
+The signed minimal observation child runs that durable Shadow polling loop; it
+no longer stops at the ownership-handshake heartbeat. The child imports no
+execution bridge or provider runtime and exposes no mission-pickup, notification,
+release-watching, Codex-execution or PR-merge path.
