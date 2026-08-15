@@ -30,6 +30,7 @@ from modules.charlie.shadow_control_tower_input import handle_shadow_control_tow
 from modules.charlie.mission_identity import extract_mission_ids, has_malformed_mission_id
 from modules.charlie.private_policy import is_authenticated_private_action_context
 from modules.charlie.portfolio_classification import classify_legacy_portfolio
+from modules.charlie.control_tower_feedback import handle_control_tower_feedback
 
 
 TOOL_FOR_INTENT = {
@@ -46,6 +47,7 @@ TOOL_FOR_INTENT = {
     "prepare_beacon_draft": "beacon_draft", "read_trust": "trust",
     "read_sam_conversation": "sam_conversation",
     "observe_shadow_control_tower": "shadow_control_tower_input",
+    "reconcile_control_tower_feedback": "control_tower_feedback",
     "classify_portfolio_baseline": "portfolio_classification",
 }
 
@@ -60,6 +62,8 @@ def execute_private_tool(intent_type, args, runtime_context=None):
         return _pig(args or {}, runtime_context=runtime_context)
     if tool == "shadow_control_tower_input":
         return handle_shadow_control_tower_input(args or {}, runtime_context=runtime_context)
+    if tool == "control_tower_feedback":
+        return handle_control_tower_feedback(args or {}, runtime_context=runtime_context)
     if tool == "create_mission":
         return _create_mission(args or {}, runtime_context=runtime_context)
     if tool == "portfolio_classification":

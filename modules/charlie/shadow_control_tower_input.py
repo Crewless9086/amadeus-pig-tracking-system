@@ -6,7 +6,8 @@ import os
 from typing import Mapping
 
 from modules.charlie.environment import alias_environment
-from modules.charlie.mission_store import get_mission, mission_runtime_eligible
+from modules.charlie.mission_store import get_mission
+from modules.charlie.control_tower_feedback import shadow_observation_eligible
 from modules.charlie.private_policy import is_authenticated_private_action_context
 from modules.charlie.shadow_control_tower import (
     ENABLE_ENV,
@@ -68,8 +69,8 @@ def handle_shadow_control_tower_input(
     exact = mission.get("mission_id")
     if loaded_status >= 400 or not hmac.compare_digest(str(exact or ""), mission_id):
         return _failure("shadow_control_tower_existing_mission_not_found", 404)
-    if not mission_runtime_eligible(mission):
-        return _failure("shadow_control_tower_mission_not_runnable", 409)
+    if not shadow_observation_eligible(mission):
+        return _failure("shadow_control_tower_mission_not_observation_eligible", 409)
     if record_type == "proposal":
         prepared = propose_shadow_decision(transaction, environ=environ)
         if not prepared.get("success"):

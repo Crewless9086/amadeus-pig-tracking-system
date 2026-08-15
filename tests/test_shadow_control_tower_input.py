@@ -8,6 +8,7 @@ from modules.charlie.shadow_control_tower_input import (
 from modules.charlie.private_tools import execute_private_tool
 from modules.charlie.private_policy import authenticate_private_action_context
 from modules.charlie.private_runtime import handle_authenticated_private_action
+from modules.charlie.mission_store import BOOTSTRAP_PORTFOLIO_ADMISSION
 
 
 ENV = {
@@ -50,7 +51,8 @@ def action(record_type="proposal"):
 
 
 def mission_reader(mission_id):
-    return {"success": True, "mission": {"mission_id": mission_id}}, 200
+    return {"success": True, "mission": {"mission_id": mission_id, "status": "paused",
+        "metadata": {"portfolio_admission": BOOTSTRAP_PORTFOLIO_ADMISSION}}}, 200
 
 
 def test_disabled_readback_and_input_fail_closed_without_effects():
@@ -112,18 +114,16 @@ def test_malformed_action_and_missing_existing_mission_fail_closed():
     assert status == 404 and missing["status"] == "shadow_control_tower_existing_mission_not_found"
 
 
-def test_non_runnable_bootstrap_admission_cannot_enter_shadow_scoring():
+def test_non_runnable_bootstrap_admission_has_observation_only_eligibility():
     reader = lambda mission_id: ({"mission": {"mission_id": mission_id,
-        "status": "paused", "metadata": {"portfolio_admission": {
-            "portfolio_epoch": "CORE-CURRENT-2026-08-14",
-            "classification": "current", "lifecycle_state": "WORKING",
-            "runnable": False}}}}, 200)
-    with patch("modules.charlie.shadow_control_tower_input.record_shadow_proposal") as record:
+        "status": "paused", "metadata": {"portfolio_admission": BOOTSTRAP_PORTFOLIO_ADMISSION}}}, 200)
+    with patch("modules.charlie.shadow_control_tower_input.record_shadow_proposal",
+               return_value=({"success": True, "created": True}, 201)) as record:
         result, status = handle_shadow_control_tower_input(action(), runtime_context=AUTH,
             environ=ENV, mission_reader=reader)
-    assert status == 409 and result["status"] == "shadow_control_tower_mission_not_runnable"
+    assert status == 201 and result["created"] is True
     assert result["dispatches"] == result["missions_created"] == result["farm_writes"] == 0
-    record.assert_not_called()
+    record.assert_called_once()
 
 
 def test_malformed_or_forged_runnable_admission_cannot_enter_shadow_scoring():
@@ -133,7 +133,7 @@ def test_malformed_or_forged_runnable_admission_cannot_enter_shadow_scoring():
         with patch("modules.charlie.shadow_control_tower_input.record_shadow_proposal") as record:
             result, status = handle_shadow_control_tower_input(action(), runtime_context=AUTH,
                 environ=ENV, mission_reader=reader)
-        assert status == 409 and result["status"] == "shadow_control_tower_mission_not_runnable"
+        assert status == 409 and result["status"] == "shadow_control_tower_mission_not_observation_eligible"
         record.assert_not_called()
 
 
@@ -143,7 +143,7 @@ def test_existing_private_tool_spine_requires_authenticated_runtime_context():
     with patch.dict("os.environ", ENV, clear=True), \
          patch("modules.charlie.shadow_control_tower_input.get_mission") as reader, \
          patch("modules.charlie.shadow_control_tower_input.record_shadow_proposal") as record:
-        reader.return_value = ({"mission": {"mission_id": "CMQ-20260813-05"}}, 200)
+        reader.return_value = mission_reader("CMQ-20260813-05")
         record.return_value = ({"success": True, "created": True}, 201)
         result, status = execute_private_tool("observe_shadow_control_tower", action(), AUTH)
     assert status == 201 and result["created"] is True
@@ -154,7 +154,7 @@ def test_real_private_authentication_boundary_reaches_action_without_delivery():
     with patch.dict("os.environ", AUTH_ENV, clear=True), \
          patch("modules.charlie.shadow_control_tower_input.get_mission") as reader, \
          patch("modules.charlie.shadow_control_tower_input.record_shadow_proposal") as record:
-        reader.return_value = ({"mission": {"mission_id": "CMQ-20260813-05"}}, 200)
+        reader.return_value = mission_reader("CMQ-20260813-05")
         record.return_value = ({"success": True, "created": True}, 201)
         result, status = handle_authenticated_private_action(
             action(), AUTH_PAYLOAD, AUTH_HEADERS, existing_mission_id="CMQ-20260813-05",

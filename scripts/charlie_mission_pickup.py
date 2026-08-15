@@ -54,6 +54,7 @@ from modules.charlie.executive_store import claim_pending_outbox, complete_outbo
 from modules.charlie.domain_observers import run_observer_cycle
 from modules.charlie.domain_observer_readers import observer_readers
 from modules.charlie.domain_observer_store import observer_last_runs, record_observer_run
+from modules.charlie.control_tower_feedback import process_pending_control_tower_feedback
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
@@ -384,6 +385,21 @@ def _runtime_pickup_authorized():
         return False, "execution_mode_invalid"
     if _TEST_PICKUP_AUTHORIZED:
         return True, "test_isolation_authorized"
+    return _current_generation_authorized()
+
+
+def _runtime_observer_authorized():
+    if SUPERVISOR_STOP_PATH.exists():
+        return False, "governed_stop_active"
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY)
+    if execution_mode != EXECUTION_MODE_OBSERVE_ONLY:
+        return False, "observe_only_mode_required"
+    if _TEST_PICKUP_AUTHORIZED:
+        return True, "test_isolation_authorized"
+    return _current_generation_authorized()
+
+
+def _current_generation_authorized():
     packet = _read_json(SUPERVISOR_PATH)
     generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
     supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
@@ -508,7 +524,10 @@ def watch_for_mission(
     auto_merge_pr=False,
     release_verify_url="",
 ):
-    authorized, reason = _runtime_pickup_authorized()
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY)
+    authorization = (_runtime_observer_authorized if execution_mode == EXECUTION_MODE_OBSERVE_ONLY
+                     else _runtime_pickup_authorized)
+    authorized, reason = authorization()
     if not authorized:
         return {"success": False, "status": "runner_contained", "reason": reason}, 423
     interval_seconds = max(5, int(interval_seconds or 60))
@@ -525,10 +544,32 @@ def watch_for_mission(
     checks = 0
     write_runner_heartbeat({"status": "watch_started"})
     while True:
-        authorized, reason = _runtime_pickup_authorized()
+        authorized, reason = authorization()
         if not authorized:
             return {"success": False, "status": "runner_contained", "reason": reason}, 423
         checks += 1
+        shadow_cycle = process_pending_control_tower_feedback()
+        write_runner_heartbeat({
+            "status": "shadow_observation_cycle",
+            "shadow": shadow_cycle,
+            "checks": checks,
+            "execution_mode": execution_mode,
+            "next_eligible_event": shadow_cycle.get("next_eligible_event", ""),
+        })
+        if execution_mode == EXECUTION_MODE_OBSERVE_ONLY:
+            result = {
+                "success": shadow_cycle.get("success") is not False,
+                "status": "observe_only_cycle_complete",
+                "shadow": shadow_cycle,
+                "checks": checks,
+                "mission_pickup_attempted": False,
+                "release_attempted": False,
+                "next_eligible_event": shadow_cycle.get("next_eligible_event", ""),
+            }
+            if max_checks is not None and checks >= max_checks:
+                return result, 200 if result["success"] else 503
+            time.sleep(interval_seconds)
+            continue
         if continuous:
             recovery = recover_stranded_missions(notify=notify)
             if recovery.get("recovered_count"):

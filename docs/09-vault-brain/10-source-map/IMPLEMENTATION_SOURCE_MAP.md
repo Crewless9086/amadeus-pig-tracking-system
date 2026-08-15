@@ -9,6 +9,16 @@
 - Default state: disabled unless `CHARLIE_SHADOW_CONTROL_TOWER_ENABLED` is explicitly true. Human Control Tower remains sole dispatcher and decision authority.
 - Private observation input: `modules/charlie/shadow_control_tower_input.py`, registered only as the internal `observe_shadow_control_tower` private tool. `modules/charlie/private_runtime.py` supplies it through the existing authenticated structured-action boundary, using the sealed context defined by `modules/charlie/private_policy.py`. See `docs/06-operations/CMQ_20260813_05_PHASE_A_PRIVATE_INPUT.md`; no parser, route, delivery or runtime enablement is added.
 - Input tests: `tests/test_shadow_control_tower_input.py` cover authentication, disabled state, mission binding, replay/conflict propagation and zero effects.
+- Canonical feedback ingress and subscription: `modules/charlie/control_tower_feedback.py`
+  accepts only sealed owner-private `reconcile_control_tower_feedback` actions,
+  persists genuine owner-pasted terminal feedback and later canonical human
+  decisions in the existing `operational_events` fabric, and rejects memory,
+  historical-register and terminal-generated substitutes. The existing
+  `scripts/charlie_mission_pickup.py` loop consumes those events in supervised
+  `observe_only` mode without reaching mission pickup, recovery or release.
+  Only the exact paused/non-runnable CMQ bootstrap has observation eligibility;
+  it gains no execution eligibility. Focused tests:
+  `tests/test_control_tower_feedback.py`.
 - Bootstrap portfolio admission: the sealed authenticated `create_mission`
   action in `modules/charlie/private_tools.py` accepts only the one
   owner-approved `CMQ-20260813-05` admission contract. The canonical
