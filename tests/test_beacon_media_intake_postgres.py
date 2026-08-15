@@ -180,7 +180,8 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
             cursor.execute(
                 """select evidence_json->>'owner_context'
                    from public.beacon_media_intake_events
-                   where intake_group_id=%s and event_type='owner_context_supplied'""",
+                   where intake_group_id=%s and event_type='pending'
+                     and evidence_json ? 'owner_context'""",
                 (group_id,),
             )
             self.assertEqual(

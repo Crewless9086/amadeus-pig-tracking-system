@@ -558,14 +558,14 @@ class IntakeStore:
                 )
                 self._event_cursor(cursor, identity, "pending", {"source_evidence_sha256": evidence})
                 if envelope["owner_explanation"]:
-                    self._event_cursor(cursor, identity, "owner_context_supplied", {
+                    self._event_cursor(cursor, identity, "pending", {
                         "owner_context": envelope["owner_explanation"],
                         "provider_message_id": envelope["message_id"],
                         "provenance": "telegram_album_caption",
                     })
                 supplement = envelope.get("owner_context_supplement")
                 if supplement:
-                    self._event_cursor(cursor, identity, "owner_context_supplied", {
+                    self._event_cursor(cursor, identity, "pending", {
                         "owner_context": supplement,
                         "provider_message_id": envelope["message_id"],
                         "provenance": "owner_directed_incident_recovery",
@@ -888,7 +888,8 @@ class IntakeStore:
                          join public.beacon_media_intake_items ci
                            on ci.intake_item_id=e.intake_item_id
                          where e.intake_group_id=g.intake_group_id
-                           and e.event_type='owner_context_supplied'
+                           and e.event_type='pending'
+                           and e.evidence_json ? 'owner_context'
                          order by
                            (e.evidence_json->>'provenance'=
                               'owner_directed_incident_recovery') desc,
