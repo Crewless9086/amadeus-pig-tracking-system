@@ -207,6 +207,10 @@ def _active_case_state(rows):
         pig_id = str(raw.get("pig_id") or "").strip()
         lifecycle_id = str(raw.get("lifecycle_id") or "").strip()
         state = str(raw.get("state") or "").strip()
+        if state in {"completed", "closed", "handled"} and raw.get("mortality_closed") is True:
+            if not pig_id or not lifecycle_id:
+                raise ValueError("active_lifecycle_binding_invalid")
+            continue
         if not pig_id or not lifecycle_id or state not in _ACTIVE_STATES or pig_id in active:
             raise ValueError("active_lifecycle_binding_invalid")
         active[pig_id] = {

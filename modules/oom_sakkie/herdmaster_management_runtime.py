@@ -30,7 +30,17 @@ def consume_current_herdmaster_management(*, authority: Any, owner_user_id: str,
         return _contained("authenticated_manager_context_denied", now)
     try:
         observations = (observation_loader or _load_observations)(str(owner_user_id))
-        active = (active_loader or _load_active_lifecycles)(str(owner_user_id))
+        if active_loader is not None:
+            active = active_loader(str(owner_user_id))
+        else:
+            projected = _load_active_lifecycles(str(owner_user_id), include_terminal=True)
+            # This consumer needs canonical death closures to suppress stale
+            # mortality work. Other terminal dispositions remain retired but
+            # are not reinterpreted as mortality closure evidence.
+            active = [row for row in projected if
+                str(row.get("state") or "").strip().casefold()
+                    not in {"completed", "closed", "handled"}
+                or row.get("mortality_closed") is True]
         prior = (prior_loader or _load_prior_consumptions)(
             str(owner_user_id), str(auth["context"].get("digest") or ""))
         canonical = canonical_loader()
@@ -161,7 +171,7 @@ def _load_active_lifecycles(owner_user_id, *, include_terminal=False):
                 raise RuntimeError("herdmaster_lifecycle_row_bound_exceeded")
             rows = [(row[0], str(row[1] or "")) for row in fetched if isinstance(row[0], dict)]
             rows.reverse()
-    terminal_pigs = _load_terminal_pig_ids()
+    terminal_pigs = _load_terminal_pig_states()
     active = {}
     for row, card_message_id in rows:
         identity = ((row.get("preview") or {}).get("evaluator") or {}).get("identity") or {}
@@ -171,10 +181,17 @@ def _load_active_lifecycles(owner_user_id, *, include_terminal=False):
         lifecycle_id = str(row.get("mission_id") or "")
         observations = (((row.get("preview") or {}).get("evaluator") or {}).get("observations") or [])
         reported_dead = _retained_owner_reported_death(row, observations, owner_user_id)
-        if pig_id in terminal_pigs:
+        terminal = terminal_pigs.get(pig_id)
+        if terminal:
             if not include_terminal:
                 active.pop(pig_id, None)
                 continue
+            active[pig_id] = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
+                "state": "completed", "mortality_closed": terminal["mortality_closed"],
+                "closure_reason": "canonical_terminal_pig_state",
+                "canonical_status": terminal["status"],
+                "canonical_on_farm": terminal["on_farm"]}
+            continue
         if row.get("status") in {"waiting_for_input", "preview_ready", "waiting_for_confirmation",
                                   "preview_correction_pending"} and card_message_id:
             projected = {"pig_id": pig_id, "lifecycle_id": lifecycle_id,
@@ -196,18 +213,26 @@ def _load_active_lifecycles(owner_user_id, *, include_terminal=False):
     return list(active.values())
 
 
-def _load_terminal_pig_ids():
+def _load_terminal_pig_states():
     """Canonical terminal state retires stale open specialist projections."""
     with _connect() as connection:
         connection.read_only = True
         with connection.cursor() as cursor:
-            cursor.execute("""select pig_id from public.current_canonical_pig_state
+            cursor.execute("""select pig_id,status,on_farm from public.current_canonical_pig_state
                 where lower(status) in ('dead','sold') or on_farm is false
                 order by pig_id limit 5001""")
             rows = cursor.fetchall()
             if len(rows) > 5000:
                 raise RuntimeError("herdmaster_terminal_pig_row_bound_exceeded")
-            return {str(row[0]) for row in rows if row and row[0]}
+            return {str(row[0]): {"status": str(row[1] or ""), "on_farm": row[2],
+                    "mortality_closed": str(row[1] or "").casefold() in
+                        {"dead", "died", "deceased"}}
+                    for row in rows if row and row[0]}
+
+
+def _load_terminal_pig_ids():
+    """Compatibility projection for callers/tests that need identities only."""
+    return set(_load_terminal_pig_states())
 
 
 def _retain_active_mortality_context(previous, current):

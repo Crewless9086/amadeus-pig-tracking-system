@@ -20,12 +20,14 @@ def weight(pid="P1", kg=10, day="2026-08-11", event="W1"):
 
 
 def build(*, pigs=None, weights=None, prior=(), lifecycle=(), mortality=None,
-          prior_mortality="", prior_mortality_event_fingerprints=None):
+          prior_mortality="", prior_mortality_event_fingerprints=None,
+          prior_mortality_consumed_at=None):
     return build_daily_manager_evidence(pigs=pigs or [pig()],
         window_weights=weights or [], prior_weights=prior,
         lifecycle_events=lifecycle, mortality_packet=mortality,
         prior_mortality_digest=prior_mortality,
         prior_mortality_event_fingerprints=prior_mortality_event_fingerprints,
+        prior_mortality_consumed_at=prior_mortality_consumed_at,
         analysis_date=date(2026, 8, 14))
 
 
@@ -160,6 +162,31 @@ def test_new_mortality_opens_one_attributable_active_followup():
     mortality_items = [item for item in result.work_items if "mortality:" in item.dedupe_key]
     assert len(mortality_items) == 1
     assert "associations, not diagnoses" in mortality_items[0].next_action
+
+
+def test_legacy_fingerprint_migration_suppresses_only_deaths_recorded_before_consumption():
+    packet_data = mortality("NEW")
+    packet_data["proven_facts"] = [
+        {"event_id": "OLD", "pig_id": "P-OLD", "effective_date": "2026-08-01",
+         "recorded_at": "2026-08-02T08:00:00+00:00", "event_kind": "individual_death",
+         "confirmation": "confirmed"},
+        {"event_id": "BACKDATED-NEW", "pig_id": "P-NEW", "effective_date": "2026-08-01",
+         "recorded_at": "2026-08-14T08:00:00+00:00", "event_kind": "individual_death",
+         "confirmation": "confirmed"},
+    ]
+    packet = build(mortality=packet_data, prior_mortality="LEGACY",
+        prior_mortality_consumed_at="2026-08-13T22:15:58+00:00")
+    assert packet["mortality"]["fingerprint_migration"]["state"] == "legacy_baseline_seeded"
+    assert packet["mortality"]["fingerprint_migration"]["seeded_event_count"] == 1
+    assert [row["event_id"] for row in packet["mortality"]["candidate_deaths"]] == ["BACKDATED-NEW"]
+
+
+def test_legacy_fingerprint_migration_keeps_missing_recording_time_material():
+    packet_data = mortality("NEW")
+    packet_data["proven_facts"][0]["recorded_at"] = None
+    packet = build(mortality=packet_data, prior_mortality="LEGACY",
+        prior_mortality_consumed_at="2026-08-13T22:15:58+00:00")
+    assert [row["event_id"] for row in packet["mortality"]["candidate_deaths"]] == ["D1"]
 
 
 def test_new_canonical_death_opens_one_followup_without_preexisting_lifecycle():
