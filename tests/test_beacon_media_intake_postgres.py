@@ -116,6 +116,7 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
                             (role, qualified, privilege),
                         )
                         self.assertFalse(cursor.fetchone()[0], (role, table, privilege))
+
                 cursor.execute(
                     """select count(*) from information_schema.table_privileges
                        where grantee='PUBLIC' and table_schema='public' and table_name=%s""",
@@ -152,6 +153,40 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
                 )
                 self.assertFalse(cursor.fetchone()[0], role)
             connection.rollback()
+
+    def test_later_album_caption_is_preserved_as_append_only_group_context(self):
+        store = IntakeStore(DATABASE_URL)
+        group_id = "BEACON-INTAKE-GROUP-CONTEXT"
+        first, first_status = store.prepare(
+            self.envelope(media_group_id="album", owner_explanation=""),
+            self.identity(group_id=group_id),
+        )
+        second, second_status = store.prepare(
+            self.envelope(
+                update_id=101, message_id=201, media_group_id="album",
+                file_id="telegram-file-2", file_unique_id="telegram-unique-2",
+                owner_explanation="Molly, litter size eight, born 11 August 2026",
+            ),
+            self.identity(
+                group_id=group_id, item_id="BEACON-INTAKE-ITEM-CONTEXT-2",
+                source_sha256="d" * 64,
+            ),
+        )
+
+        self.assertEqual((first_status, second_status), (201, 201))
+        self.assertFalse(first["replayed"])
+        self.assertFalse(second["replayed"])
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """select evidence_json->>'owner_context'
+                   from public.beacon_media_intake_events
+                   where intake_group_id=%s and event_type='owner_context_supplied'""",
+                (group_id,),
+            )
+            self.assertEqual(
+                cursor.fetchone()[0],
+                "Molly, litter size eight, born 11 August 2026",
+            )
 
     def test_identical_bytes_keep_two_sources_and_one_binary(self):
         store = IntakeStore(DATABASE_URL)

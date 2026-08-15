@@ -26,6 +26,8 @@ from modules.oom_sakkie.beacon_request_runtime import handle_beacon_request
 from modules.oom_sakkie.manager_question_runtime import (
     handle_manager_question_reply, load_active_manager_question,
     semantic_context_with_manager_question)
+from modules.beacon.media_intake import (
+    complete_telegram_album, handle_telegram_media_intake, telegram_media_envelope)
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -233,6 +235,54 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         return _gateway_result(False, "telegram_family_identity_not_authorized", policy, 403)
     if family_principal.role is not FamilyRole.OWNER:
         return _gateway_result(False, "telegram_family_lifecycle_not_enabled", policy, 503)
+
+    media = telegram_media_envelope(payload)
+    if media is not None:
+        intake, intake_status = handle_telegram_media_intake(payload, environ=source)
+        receipt_text = str(intake.get("receipt_text") or "")
+        delivery = {"success": True, "status": "media_receipt_not_required",
+                    "telegram_sends": 0, "telegram_edits": 0}
+        if receipt_text:
+            receipt_mission = str(intake.get("receipt_mission_id") or "")
+            delivery = deliver_family_result(
+                parsed, {"answer": receipt_text, "status": "media_album_received",
+                         "writes_farm_data": False, "hardware_commands": 0},
+                specialist="BEACON_MEDIA", mission_id=receipt_mission,
+                card_mission_id=receipt_mission,
+                sender=lambda chat_id, text: _send_owner_task_telegram(chat_id, text, source),
+            )
+        intake.update({"handled": True, "delivery": delivery,
+                       "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+                       "reply_transport": "family_message_lifecycle"})
+        return intake, intake_status if delivery.get("success") else 202
+
+    if parsed["text"].strip().lower().startswith("/beacon-complete "):
+        completion_code = parsed["text"].strip().split(maxsplit=1)[1].strip()
+        completed, completion_status = complete_telegram_album({
+            "chat_id": parsed["telegram_chat_id"],
+            "owner_user_id": parsed["telegram_user_id"],
+            "completion_code": completion_code,
+        }, environ=source)
+        delivery = {"success": True, "status": "album_completion_not_recorded",
+                    "telegram_sends": 0, "telegram_edits": 0}
+        group_id = str(completed.get("intake_group_id") or "")
+        if completion_status < 400 and group_id:
+            answer = (
+                f"BEACON received {completed['received_count']} album items. "
+                f"{completed['attention_count']} failed or quarantined. Review status: "
+                "pending Library Accept. No public-use or publication approval was granted."
+            )
+            delivery = deliver_family_result(
+                parsed, {"answer": answer, "status": "media_album_completed",
+                         "writes_farm_data": False, "hardware_commands": 0},
+                specialist="BEACON_MEDIA", mission_id=group_id,
+                card_mission_id=group_id,
+                sender=lambda chat_id, text: _send_owner_task_telegram(chat_id, text, source),
+            )
+        completed.update({"handled": True, "delivery": delivery,
+                          "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+                          "reply_transport": "family_message_lifecycle"})
+        return completed, completion_status if delivery.get("success") else 202
 
     owner_task, owner_task_status = handle_owner_task_input(
         payload,

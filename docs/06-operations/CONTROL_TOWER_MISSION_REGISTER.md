@@ -247,9 +247,17 @@ Detailed HERDMASTER evidence remains in
 
 - `BMQ-20260813-00` — queued read-only current-truth reconciliation.
 - `BMQ-20260813-01` — blocked existing-publication closeout.
-- `BMQ-20260813-02` — owner direction only for private media intake.
+- `BMQ-20260813-02` — `source-active` private album intake recovery,
+  cross-referenced to completed BMQ-20260813-04. The 15 August four-photo
+  provider album is recoverable and immutable incident evidence; GateKeeper
+  routed it correctly, but Render lacked the BEACON activation configuration
+  and the shared gateway let generic owner context run before typed media.
+  Repair, reviewed release, bounded recovery and fresh deployed proof remain.
 - `BMQ-20260813-03` — queued library/public-use separation.
-- `BMQ-20260813-04` — source-active evidence-backed Oom Sakkie proposal/media-request adapter; preserved `f61cce0a` contract reconciled onto current main, focused and semantic/route regressions green, independent architecture/security/commercial reviews completed with corrections. Await reviewed PR/CI and serialized release-lane availability; no production or public effect yet.
+- `BMQ-20260813-04` — `business-complete`; deployed Oom Sakkie returned one
+  current text-only awareness proposal exactly once with zero publication,
+  spend, customer, farm, hardware, n8n or Sheets effect. Retain its identities
+  as regression evidence; current private-media work belongs to BMQ-20260813-02.
 - `BMQ-20260813-05` — queued protected publication/performance loop.
 
 ### CODEX UI

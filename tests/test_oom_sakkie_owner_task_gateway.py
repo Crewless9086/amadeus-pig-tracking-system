@@ -1,5 +1,7 @@
 import unittest
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -23,16 +25,63 @@ PHOTO={"update_id":1,"message":{"message_id":3157,"date":1785603680,
 
 
 class OwnerTaskGatewayTests(unittest.TestCase):
+    class EventStore:
+        def __init__(self):
+            self.rows=[]; self.lock=threading.Lock()
+        def __call__(self, action, mission_id, payload):
+            with self.lock:
+                if action == "load":
+                    return [row for row in self.rows if row.get("card_mission_id") == mission_id]
+                if any(row.get("event_id") == payload.get("event_id") for row in self.rows):
+                    return {"success":True,"created":False}
+                self.rows.append(dict(payload)); return {"success":True,"created":True}
+
     @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
+    @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+    @patch("modules.oom_sakkie.telegram_gateway.handle_telegram_media_intake")
     @patch("modules.oom_sakkie.telegram_gateway.handle_message")
-    def test_authenticated_owner_media_uses_existing_gateway_without_ordinary_reply(self,mock_message,mock_task):
-        mock_task.return_value=({"handled":True,"success":True,"status":"owner_task_album_receiving",
-            "acknowledgements":0,"results":0},202)
+    def test_authenticated_owner_media_uses_typed_intake_before_generic_context(
+            self,mock_message,mock_media,mock_delivery,mock_task):
+        mock_media.side_effect=lambda *args,**kwargs: ({"success":True,
+            "status":"media_intake_stored_private_review_pending",
+            "receipt_text":"BEACON started this private album. Reply /beacon-complete ABC.",
+            "receipt_mission_id":"BEACON-INTAKE-GROUP-ONE"},201)
+        mock_delivery.return_value={"success":True,"status":"family_message_delivered",
+            "telegram_sends":1,"telegram_edits":0,"telegram_message_id":"4001"}
         result,status=handle_telegram_gateway_message(PHOTO,headers=HEADERS,environ=ENV)
-        self.assertEqual((status,result["mode"]),(202,"authenticated_gateway_owner_task"))
-        self.assertEqual(result["reply_transport"],"backend_handles_owner_task_delivery")
-        self.assertFalse(result["sends_telegram"]);self.assertFalse(result["writes"])
-        mock_task.assert_called_once();mock_message.assert_not_called()
+        self.assertEqual((status,result["status"]),(201,"media_intake_stored_private_review_pending"))
+        self.assertEqual(result["reply_transport"],"family_message_lifecycle")
+        self.assertTrue(result["sends_telegram"])
+        mock_media.assert_called_once();mock_delivery.assert_called_once()
+        mock_task.assert_not_called();mock_message.assert_not_called()
+
+    @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
+    @patch("modules.oom_sakkie.telegram_gateway.handle_telegram_media_intake")
+    def test_concurrent_album_members_create_one_provider_receipt(
+            self,mock_media,mock_task):
+        mock_media.side_effect=lambda *args,**kwargs: ({"success":True,
+            "status":"media_intake_stored_private_review_pending",
+            "receipt_text":"BEACON started this private album. Reply /beacon-complete ABC.",
+            "receipt_mission_id":"BEACON-INTAKE-GROUP-ONE"},201)
+        store=self.EventStore(); sends=[]; send_lock=threading.Lock()
+        def sender(chat_id,text,source):
+            with send_lock:
+                sends.append((chat_id,text))
+            return {"success":True,"telegram_message_id":"4001",
+                    "provider_timestamp":"2026-08-15T09:30:00+00:00"}
+        second=json.loads(json.dumps(PHOTO)); second["update_id"]=2
+        second["message"]["message_id"]=3158
+        second["message"]["photo"][0]["file_unique_id"]="u2"
+        with patch("modules.oom_sakkie.family_message_lifecycle._event_store",store), \
+             patch("modules.oom_sakkie.telegram_gateway._send_owner_task_telegram",sender):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results=list(pool.map(lambda payload: handle_telegram_gateway_message(
+                    payload,headers=HEADERS,environ=ENV),(PHOTO,second)))
+            replay=handle_telegram_gateway_message(PHOTO,headers=HEADERS,environ=ENV)
+        self.assertEqual(len(sends),1)
+        self.assertEqual(sum(result[0]["delivery"]["telegram_sends"] for result in results),1)
+        self.assertEqual(replay[0]["delivery"]["telegram_sends"],0)
+        mock_task.assert_not_called()
 
     @patch("modules.sales.sam_live_stock_launch_control._telegram_api")
     def test_owner_task_sender_reuses_existing_bot_and_requires_provider_identity(self,mock_api):

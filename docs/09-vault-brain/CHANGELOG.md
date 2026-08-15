@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - BEACON four-photo intake incident reconciled
+
+- Correlated n8n executions 64570-64573 to one Telegram media group and proved
+  all four provider files remain retrievable with distinct server hashes.
+- Identified two causes: missing fail-closed Render media policy variables and
+  generic owner-context handling preceding typed media on the shared gateway.
+- Routed media and album completion through canonical BEACON intake first,
+  preserved later album captions as append-only evidence, and bound one receipt
+  to the existing durable family-message lifecycle. Integration, deployment,
+  bounded recovery and fresh end-to-end proof remain BMQ-20260813-02 work.
+
 ## 2026-08-15 - BEACON awareness proposal proven in deployed runtime
 
 - Merged PR #942 and verified the exact Render merge before invoking one fresh

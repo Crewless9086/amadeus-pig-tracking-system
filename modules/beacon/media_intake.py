@@ -33,6 +33,7 @@ BOT_TOKEN_ENV = "OOM_SAKKIE_TELEGRAM_BOT_TOKEN"
 ALLOWED_USER_IDS_ENV = "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS"
 REQUEST_NOT_BEFORE_ENV = "BEACON_TELEGRAM_MEDIA_REQUEST_NOT_BEFORE_UTC"
 RETIRED_SHA256_ENV = "BEACON_TELEGRAM_MEDIA_RETIRED_SHA256"
+RECOVERY_CONTEXT_TOKEN_ENV = "BEACON_TELEGRAM_MEDIA_RECOVERY_CONTEXT_TOKEN"
 SIGNING_SECRET_ENVS = ("OWNER_SESSION_SECRET", "SECRET_KEY")
 CONTRACT_VERSION = "beacon_media_intake_v1"
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -176,6 +177,12 @@ def handle_telegram_media_intake(
         return _result(False, "telegram_private_chat_not_allowed", policy), 403
     if envelope["owner_user_id"] not in _csv(source.get(ALLOWED_USER_IDS_ENV)):
         return _result(False, "telegram_owner_user_not_allowed", policy), 403
+    recovery_requested = isinstance(payload.get("beacon_media_recovery"), dict)
+    recovery_context = _validated_recovery_context(payload, envelope, source)
+    if recovery_requested and not recovery_context:
+        return _result(False, "beacon_media_recovery_context_invalid", policy), 403
+    if recovery_context:
+        envelope["owner_context_supplement"] = recovery_context
     if not envelope["update_id"] or not envelope["message_id"] or not envelope["owner_user_id"]:
         return _result(False, "telegram_source_identity_incomplete", policy), 400
     if not envelope["source_message_at"]:
@@ -200,10 +207,13 @@ def handle_telegram_media_intake(
     store = IntakeStore(database_url)
     source_state, source_status = store.source_status(envelope, identity)
     if source_status >= 400 or source_state.get("replayed"):
-        return {
+        result = {
             **_result(source_status < 400, source_state["status"], policy),
             **source_state,
-        }, source_status
+        }
+        if envelope["media_group_id"] and source_state.get("replayed"):
+            result.update(_album_receipt(identity))
+        return result, source_status
 
     fetch_fn = fetcher or _download_telegram_file
     storage_adapter = storage or SupabasePrivateStorage(source)
@@ -306,7 +316,7 @@ def handle_telegram_media_intake(
             if completion.get("created_count"):
                 receipt = receipt_sender(
                     envelope["chat_id"],
-                    "BEACON stored the first item in this private album. When every "
+                    "BEACON started this private album. When every "
                     "photo has been sent, reply /beacon-complete "
                     f"{completion['completion_code']}. No public-use or publication "
                     "approval was granted.",
@@ -325,6 +335,7 @@ def handle_telegram_media_intake(
                 "awaiting_explicit_owner_completion"
                 if envelope["media_group_id"] else "single_item_complete"
             ),
+            **(_album_receipt(identity) if envelope["media_group_id"] else {}),
         }, 201
     except IntakeFailure as exc:
         cleanup = (
@@ -546,6 +557,19 @@ class IntakeStore:
                     ),
                 )
                 self._event_cursor(cursor, identity, "pending", {"source_evidence_sha256": evidence})
+                if envelope["owner_explanation"]:
+                    self._event_cursor(cursor, identity, "owner_context_supplied", {
+                        "owner_context": envelope["owner_explanation"],
+                        "provider_message_id": envelope["message_id"],
+                        "provenance": "telegram_album_caption",
+                    })
+                supplement = envelope.get("owner_context_supplement")
+                if supplement:
+                    self._event_cursor(cursor, identity, "owner_context_supplied", {
+                        "owner_context": supplement,
+                        "provider_message_id": envelope["message_id"],
+                        "provenance": "owner_directed_incident_recovery",
+                    })
             return {"status": "media_intake_pending_created", "replayed": False}, 201
         except IntakeFailure:
             raise
@@ -826,7 +850,8 @@ class IntakeStore:
                 row = cursor.fetchone()
             if not row:
                 return {"status": "album_completion_identity_not_found"}, 404
-            return self.complete_album({**identity, "group_id": row[0]})
+            completed, status = self.complete_album({**identity, "group_id": row[0]})
+            return {**completed, "intake_group_id": row[0]}, status
         except Exception as exc:
             return {
                 "status": "album_completion_lookup_failed",
@@ -838,7 +863,9 @@ class IntakeStore:
             limit = max(1, min(int(limit), 100))
             with self._connect() as connection, connection.cursor() as cursor:
                 cursor.execute(
-                    """select g.intake_group_id,g.owner_explanation,g.source_message_at,
+                    """select g.intake_group_id,
+                              coalesce(nullif(g.owner_explanation,''),oc.owner_context,''),
+                              g.source_message_at,
                               g.capture_time,g.capture_time_state,g.intake_at,
                               i.intake_item_id,m.album_position,b.binary_asset_id,b.content_sha256,
                               b.observed_mime_type,b.byte_size,b.width,b.height,
@@ -855,6 +882,18 @@ class IntakeStore:
                        left join public.beacon_media_source_links l using (intake_item_id)
                        left join public.beacon_media_binaries b using (binary_asset_id)
                        left join public.beacon_media_assets a on a.asset_id=l.beacon_asset_id
+                       left join lateral (
+                         select e.evidence_json->>'owner_context' as owner_context
+                         from public.beacon_media_intake_events e
+                         join public.beacon_media_intake_items ci
+                           on ci.intake_item_id=e.intake_item_id
+                         where e.intake_group_id=g.intake_group_id
+                           and e.event_type='owner_context_supplied'
+                         order by
+                           (e.evidence_json->>'provenance'=
+                              'owner_directed_incident_recovery') desc,
+                           ci.source_order_key desc,e.event_id desc limit 1
+                       ) oc on true
                        left join lateral (
                          select observation_json,confidence_state
                          from public.beacon_media_understanding_events
@@ -1425,6 +1464,34 @@ def _album_completion_code(group_id):
     return hashlib.sha256(
         f"beacon-album-completion:v1\0{group_id}".encode("utf-8")
     ).hexdigest().upper()[:20]
+
+
+def _album_receipt(identity):
+    completion_code = _album_completion_code(identity["group_id"])
+    return {
+        "receipt_mission_id": identity["group_id"],
+        "receipt_text": (
+            "BEACON started this private album. When every photo has been sent, "
+            f"reply /beacon-complete {completion_code}. No library acceptance, "
+            "public-use or publication approval was granted."
+        ),
+    }
+
+
+def _validated_recovery_context(payload, envelope, source):
+    recovery = payload.get("beacon_media_recovery") if isinstance(payload, dict) else None
+    if not isinstance(recovery, dict):
+        return ""
+    expected = str(source.get(RECOVERY_CONTEXT_TOKEN_ENV) or "").strip()
+    supplied = str(recovery.get("token") or "").strip()
+    context = str(recovery.get("owner_context") or "").strip()[:2000]
+    group_id = str(recovery.get("media_group_id") or "").strip()
+    if (
+        len(expected) < 32 or not hmac.compare_digest(supplied, expected)
+        or not context or group_id != envelope.get("media_group_id")
+    ):
+        return ""
+    return context
 
 
 def _storage_config(source):
