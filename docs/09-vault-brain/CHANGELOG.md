@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - Idle-terminal dispatch made a response closure gate
+
+- Recorded the Control Tower failure that left eligible HERDMASTER and SAM
+  terminals idle until Charl explicitly asked about utilization, despite an
+  existing mandatory all-terminal sweep.
+- Required every Control Tower response to account for all seven visible
+  terminals and classify each idle/released terminal as `SEND NOW`,
+  `DEPENDENCY IDLE` or `NO SAFE WORK` before closing.
+- Preserved the prohibition on interrupting active terminals, inventing work,
+  overlapping implementation or confusing prepared prompts with started work.
+
 ## 2026-08-15 - BEACON farm-awareness direction approved
 
 - Recorded Charl's decision to prepare a non-availability farm-awareness
