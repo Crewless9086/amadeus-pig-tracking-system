@@ -251,6 +251,47 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                 card_mission_id=receipt_mission,
                 sender=lambda chat_id, text: _send_owner_task_telegram(chat_id, text, source),
             )
+        recovery = payload.get("beacon_media_recovery")
+        recovery_completed = None
+        completion_delivery = None
+        if (
+            intake_status < 400 and isinstance(recovery, dict)
+            and recovery.get("complete_album") is True
+            and str(intake.get("completion_code") or "")
+        ):
+            recovery_completed, recovery_status = complete_telegram_album({
+                "chat_id": parsed["telegram_chat_id"],
+                "owner_user_id": parsed["telegram_user_id"],
+                "completion_code": intake["completion_code"],
+            }, environ=source)
+            group_id = str(recovery_completed.get("intake_group_id") or "")
+            if recovery_status < 400 and group_id:
+                answer = (
+                    f"BEACON received {recovery_completed['received_count']} album items. "
+                    f"{recovery_completed['attention_count']} failed or quarantined. "
+                    "Review status: pending Library Accept. No public-use or publication "
+                    "approval was granted."
+                )
+                completion_delivery = deliver_family_result(
+                    parsed, {"answer": answer, "status": "completed",
+                             "owner_visible_completion_policy":
+                                 "verified_edit_or_new_message",
+                             "writes_farm_data": False, "hardware_commands": 0},
+                    specialist="BEACON_MEDIA", mission_id=group_id,
+                    card_mission_id=group_id,
+                    sender=lambda chat_id, text: _send_owner_task_telegram(chat_id, text, source),
+                )
+            if recovery_status >= 400 or not completion_delivery or not completion_delivery.get("success"):
+                intake.update({"recovery_album_completion": recovery_completed,
+                               "recovery_album_completion_delivery": completion_delivery})
+                return intake, 202
+            intake.update({"recovery_album_completion": recovery_completed,
+                           "recovery_album_completion_delivery": completion_delivery})
+            delivery = {**completion_delivery,
+                        "telegram_sends": int(delivery.get("telegram_sends") or 0)
+                                          + int(completion_delivery.get("telegram_sends") or 0),
+                        "telegram_edits": int(delivery.get("telegram_edits") or 0)
+                                          + int(completion_delivery.get("telegram_edits") or 0)}
         intake.update({"handled": True, "delivery": delivery,
                        "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
                        "reply_transport": "family_message_lifecycle"})
