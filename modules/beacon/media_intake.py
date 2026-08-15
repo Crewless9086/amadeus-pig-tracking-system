@@ -212,7 +212,12 @@ def handle_telegram_media_intake(
             **source_state,
         }
         if envelope["media_group_id"] and source_state.get("replayed"):
+            progress, progress_status = (store.album_progress(identity) if hasattr(store, "album_progress")
+                else ({"stored_count": 1, "canonical_digest": _canonical_sha(identity)}, 200))
+            progress.pop("status", None)
+            progress["album_progress_verified"] = hasattr(store, "album_progress") and progress_status < 400
             result.update(_album_receipt(identity))
+            result.update(progress)
         return result, source_status
 
     fetch_fn = fetcher or _download_telegram_file
@@ -316,9 +321,8 @@ def handle_telegram_media_intake(
             if completion.get("created_count"):
                 receipt = receipt_sender(
                     envelope["chat_id"],
-                    "BEACON started this private album. When every "
-                    "photo has been sent, reply /beacon-complete "
-                    f"{completion['completion_code']}. No public-use or publication "
+                    "BEACON started this private album. Use Finish Album when every "
+                    "photo has been sent. No public-use or publication "
                     "approval was granted.",
                 )
         elif receipt_sender:
@@ -336,6 +340,8 @@ def handle_telegram_media_intake(
                 if envelope["media_group_id"] else "single_item_complete"
             ),
             **(_album_receipt(identity) if envelope["media_group_id"] else {}),
+            **((_progress_payload(store, identity))
+               if envelope["media_group_id"] else {}),
         }, 201
     except IntakeFailure as exc:
         cleanup = (
@@ -358,6 +364,15 @@ def handle_telegram_media_intake(
                 Path(temp_path).unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+def _progress_payload(store, identity):
+    if not hasattr(store, "album_progress"):
+        return {"stored_count": 1, "canonical_digest": _canonical_sha(identity),
+            "album_progress_verified": False}
+    progress, status = store.album_progress(identity)
+    progress.pop("status", None)
+    return {**progress, "album_progress_verified": status < 400}
 
 
 def complete_telegram_album(payload, *, environ=None, database_url=None, receipt_sender=None):
@@ -390,6 +405,17 @@ def complete_telegram_album(payload, *, environ=None, database_url=None, receipt
             "No public-use or publication approval was granted.",
         )
     return {**_result(status < 400, completed["status"], policy), **completed}, status
+
+
+def complete_claimed_telegram_album(preview, *, owner_user_id, private_chat_id,
+                                    environ=None, database_url=None):
+    """Complete an album only while the button's canonical snapshot is current."""
+    source = environ if environ is not None else os.environ
+    identity={"group_id":str((preview or {}).get("intake_group_id") or ""),
+        "chat_hmac":_keyed(source,"chat",private_chat_id),
+        "owner_principal":f"telegram-owner:{_keyed(source,'owner',owner_user_id)}"}
+    return IntakeStore(database_url).complete_album_claimed(
+        identity, str((preview or {}).get("canonical_digest") or ""))
 
 
 def list_media_intakes(*, database_url=None, limit=50, environ=None):
@@ -498,6 +524,13 @@ class IntakeStore:
         })
         try:
             with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    ("beacon-album:"+identity["group_id"],))
+                cursor.execute("""select 1 from public.beacon_media_intake_events
+                    where intake_group_id=%s and event_type='album_completed' limit 1""",
+                    (identity["group_id"],))
+                if cursor.fetchone():
+                    return {"status":"album_already_completed","replayed":False},409
                 cursor.execute(
                     """select intake_item_id,source_identity_sha256,telegram_file_id,
                               coalesce(telegram_file_unique_id,'')
@@ -641,6 +674,13 @@ class IntakeStore:
         link_id = _stable_id("BEACON-SOURCE-LINK", identity["item_id"])
         try:
             with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    ("beacon-album:"+identity["group_id"],))
+                cursor.execute("""select 1 from public.beacon_media_intake_events
+                    where intake_group_id=%s and event_type='album_completed' limit 1""",
+                    (identity["group_id"],))
+                if cursor.fetchone():
+                    return {"status":"album_already_completed"},409
                 cursor.execute(
                     """insert into public.beacon_media_binaries
                        (binary_asset_id,content_sha256,observed_mime_type,byte_size,width,height,
@@ -833,6 +873,49 @@ class IntakeStore:
         except Exception:
             return {"created_count": 0, "completion_code": ""}
 
+    def album_progress(self, identity):
+        """Return one canonical, private album snapshot for the owner card."""
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute(
+                    """select count(*), coalesce(nullif(g.owner_explanation,''),oc.owner_context,''),
+                              count(*) filter (where b.thumbnail_storage_path is not null),
+                              array_agg(i.intake_item_id order by i.source_order_key),
+                              array_agg(b.content_sha256 order by i.source_order_key)
+                       from public.beacon_media_intake_groups g
+                       join public.beacon_media_intake_items i using (intake_group_id)
+                       join public.beacon_media_source_links l using (intake_item_id)
+                       join public.beacon_media_binaries b using (binary_asset_id)
+                       left join lateral (
+                         select e.evidence_json->>'owner_context' as owner_context
+                         from public.beacon_media_intake_events e
+                         join public.beacon_media_intake_items ci
+                           on ci.intake_item_id=e.intake_item_id
+                         where e.intake_group_id=g.intake_group_id
+                           and e.event_type='pending' and e.evidence_json ? 'owner_context'
+                         order by (e.evidence_json->>'provenance'=
+                           'owner_directed_incident_recovery') desc,
+                           ci.source_order_key desc,e.event_id desc limit 1
+                       ) oc on true
+                       where g.intake_group_id=%s
+                       group by g.owner_explanation,oc.owner_context""",
+                    (identity["group_id"],),
+                )
+                row = cursor.fetchone()
+            if not row:
+                return {"status": "album_progress_not_found"}, 404
+            count = int(row[0])
+            context = str(row[1] or "")
+            digest = _canonical_sha({"group_id": identity["group_id"],
+                "stored_count": count, "owner_context": context,
+                "ordered_intake_item_ids": list(row[3] or []),
+                "ordered_content_sha256": list(row[4] or [])})
+            return {"status": "album_progress_loaded", "stored_count": count,
+                "owner_context": context, "contact_sheet_available": int(row[2]) == count,
+                "canonical_digest": digest}, 200
+        except Exception as exc:
+            return {"status": "album_progress_failed", "error_type": exc.__class__.__name__}, 500
+
     def complete_album_by_code(self, identity, completion_code):
         try:
             with self._connect() as connection, connection.cursor() as cursor:
@@ -857,6 +940,68 @@ class IntakeStore:
                 "status": "album_completion_lookup_failed",
                 "error_type": exc.__class__.__name__,
             }, 500
+
+    def complete_album_claimed(self, identity, expected_digest):
+        """Compare and complete one exact album generation under one DB lock."""
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    ("beacon-album:"+identity["group_id"],))
+                cursor.execute("""select 1 from public.beacon_media_intake_groups
+                    where intake_group_id=%s and private_chat_identity_hmac=%s
+                      and owner_principal=%s for update""",
+                    (identity["group_id"],identity["chat_hmac"],identity["owner_principal"]))
+                if not cursor.fetchone():
+                    return {"success":False,"status":"album_completion_identity_not_found"},404
+                cursor.execute("""select i.intake_item_id,b.content_sha256,b.thumbnail_storage_path,
+                    coalesce(nullif(g.owner_explanation,''),oc.owner_context,'')
+                    from public.beacon_media_intake_groups g
+                    join public.beacon_media_intake_items i using(intake_group_id)
+                    join public.beacon_media_source_links l using(intake_item_id)
+                    join public.beacon_media_binaries b using(binary_asset_id)
+                    left join lateral (select e.evidence_json->>'owner_context' owner_context
+                      from public.beacon_media_intake_events e
+                      join public.beacon_media_intake_items ci on ci.intake_item_id=e.intake_item_id
+                      where e.intake_group_id=g.intake_group_id and e.event_type='pending'
+                        and e.evidence_json ? 'owner_context'
+                      order by (e.evidence_json->>'provenance'=
+                        'owner_directed_incident_recovery') desc,
+                        ci.source_order_key desc,e.event_id desc limit 1) oc on true
+                    where g.intake_group_id=%s order by i.source_order_key""",(identity["group_id"],))
+                rows=cursor.fetchall();items=[r[0] for r in rows]
+                cursor.execute("select count(*) from public.beacon_media_intake_items where intake_group_id=%s",
+                    (identity["group_id"],))
+                total_items=int(cursor.fetchone()[0])
+                if total_items!=len(rows):
+                    return {"success":False,"status":"album_contains_unresolved_items",
+                        "telegram_sends":0,"telegram_edits":0},409
+                context=str(rows[-1][3] or "") if rows else ""
+                digest=_canonical_sha({"group_id":identity["group_id"],"stored_count":len(rows),
+                    "owner_context":context,"ordered_intake_item_ids":items,
+                    "ordered_content_sha256":[r[1] for r in rows]})
+                if not rows or not expected_digest or digest!=expected_digest:
+                    return {"success":False,"status":"album_finish_button_stale",
+                        "telegram_sends":0,"telegram_edits":0},409
+                for position,item_id in enumerate(items,1):
+                    cursor.execute("""insert into public.beacon_media_intake_album_members
+                      (intake_group_id,intake_item_id,album_position) values(%s,%s,%s)
+                      on conflict do nothing""",(identity["group_id"],item_id,position))
+                evidence={"ordered_intake_item_ids":items,"received_count":len(items),
+                    "canonical_digest":digest}
+                event_id=_stable_id("BEACON-INTAKE-EVENT",
+                    _canonical_sha([identity["group_id"],"album_completed",evidence]))
+                cursor.execute("""insert into public.beacon_media_intake_events
+                  (event_id,intake_group_id,event_type,evidence_sha256,evidence_json)
+                  values(%s,%s,'album_completed',%s,%s::jsonb) on conflict(event_id) do nothing""",
+                  (event_id,identity["group_id"],_canonical_sha(evidence),json.dumps(evidence,sort_keys=True)))
+                created=cursor.rowcount
+            return {"success":True,"status":"album_completed" if created else "album_completion_replay_withheld",
+                "created_count":created,"received_count":len(items),"attention_count":0,
+                "ordered_intake_item_ids":items,"owner_context":context,
+                "contact_sheet_available":all(bool(r[2]) for r in rows)},201 if created else 200
+        except Exception as exc:
+            return {"success":False,"status":"album_completion_failed",
+                "error_type":exc.__class__.__name__},500
 
     def list(self, limit):
         try:
@@ -1468,13 +1613,11 @@ def _album_completion_code(group_id):
 
 
 def _album_receipt(identity):
-    completion_code = _album_completion_code(identity["group_id"])
     return {
         "receipt_mission_id": identity["group_id"],
-        "completion_code": completion_code,
         "receipt_text": (
-            "BEACON started this private album. When every photo has been sent, "
-            f"reply /beacon-complete {completion_code}. No library acceptance, "
+            "BEACON started this private album. Use Finish Album when every photo "
+            "has been sent. No library acceptance, "
             "public-use or publication approval was granted."
         ),
     }

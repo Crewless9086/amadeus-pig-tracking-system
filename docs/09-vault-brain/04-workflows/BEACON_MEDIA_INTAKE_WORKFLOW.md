@@ -71,7 +71,8 @@ The `BEACON-MEDIA-INTAKE-1` candidate:
 - never uses perceptual similarity to merge assets;
 - exposes partial storage/metadata outcomes as failed, quarantined or
   reconciliation-required rather than claiming cross-service atomicity;
-- sends one bounded, opaque `/beacon-complete` action for a Telegram album,
+- sends one opaque, owner/chat/card/album/digest-bound Finish Album callback
+  button for a Telegram album; the legacy typed completion route is disabled,
   never exposes the provider media-group identifier, and derives immutable
   final order from Telegram message order only after every item is durable;
 - supports owner-authenticated private thumbnail/contact-sheet review without

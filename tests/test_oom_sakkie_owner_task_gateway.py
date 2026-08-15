@@ -55,6 +55,27 @@ class OwnerTaskGatewayTests(unittest.TestCase):
         mock_media.assert_called_once();mock_delivery.assert_called_once()
         mock_task.assert_not_called();mock_message.assert_not_called()
 
+    @patch("modules.oom_sakkie.telegram_gateway._bind_protected_preview_card")
+    @patch("modules.oom_sakkie.telegram_gateway._create_album_finish_claim")
+    @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+    @patch("modules.oom_sakkie.telegram_gateway.handle_telegram_media_intake")
+    def test_verified_album_progress_uses_finish_button_without_completion_code(
+            self,mock_media,mock_delivery,mock_claim,mock_bind):
+        mock_media.return_value=({"success":True,"status":"media_intake_stored_private_review_pending",
+            "receipt_text":"internal","receipt_mission_id":"BEACON-INTAKE-GROUP-ONE",
+            "stored_count":4,"canonical_digest":"d"*64,"album_progress_verified":True,
+            "owner_context":"Molly","contact_sheet_available":True},201)
+        mock_claim.return_value={"callback_token":"opaque"}
+        mock_delivery.return_value={"success":True,"telegram_message_id":"4001",
+            "telegram_sends":1,"telegram_edits":0}
+        mock_bind.side_effect=lambda claim,delivery:delivery
+        result,status=handle_telegram_gateway_message(PHOTO,headers=HEADERS,environ=ENV)
+        visible=mock_delivery.call_args.args[1]
+        self.assertEqual((status,visible["album_stored_count"]),(201,4))
+        self.assertEqual(visible["reply_markup"]["inline_keyboard"][0][0],{
+            "text":"Finish Album","callback_data":"oompa:opaque:confirm"})
+        self.assertNotIn("completion_code",json.dumps(result))
+
     @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
     @patch("modules.oom_sakkie.telegram_gateway.handle_telegram_media_intake")
     def test_concurrent_album_members_create_one_provider_receipt(
@@ -84,10 +105,9 @@ class OwnerTaskGatewayTests(unittest.TestCase):
         mock_task.assert_not_called()
 
     @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
-    @patch("modules.oom_sakkie.telegram_gateway.complete_telegram_album")
     @patch("modules.oom_sakkie.telegram_gateway.handle_telegram_media_intake")
-    def test_bound_recovery_completes_by_editing_receipt_once_and_replay_is_silent(
-            self,mock_media,mock_complete,mock_task):
+    def test_sealed_recovery_payload_cannot_auto_complete_album(
+            self,mock_media,mock_task):
         seen_updates=set()
         def media_result(payload,*args,**kwargs):
             update_id=payload["update_id"];replayed=update_id in seen_updates
@@ -99,9 +119,6 @@ class OwnerTaskGatewayTests(unittest.TestCase):
             "receipt_mission_id":"BEACON-INTAKE-GROUP-ONE",
             "completion_code":"ABC"},201)
         mock_media.side_effect=media_result
-        mock_complete.return_value=({"success":True,"status":"media_group_completed",
-            "intake_group_id":"BEACON-INTAKE-GROUP-ONE",
-            "received_count":4,"attention_count":0},200)
         recovery=json.loads(json.dumps(PHOTO))
         recovery["update_id"]=4
         recovery["message"]["message_id"]=3160
@@ -130,27 +147,21 @@ class OwnerTaskGatewayTests(unittest.TestCase):
             prior_member_replay=handle_telegram_gateway_message(
                 second,headers=HEADERS,environ=ENV)
         self.assertEqual((receipt[1],middle[1],first[1],len(sends),len(edits)),
-                         (201,201,201,1,1))
+                         (201,201,201,1,0))
         self.assertEqual(receipt[0]["delivery"]["telegram_sends"],1)
         self.assertEqual(first[0]["delivery"]["telegram_sends"],0)
-        self.assertEqual(first[0]["delivery"]["telegram_edits"],1)
+        self.assertEqual(first[0]["delivery"]["telegram_edits"],0)
         self.assertEqual(replay[0]["delivery"]["telegram_sends"],0)
         self.assertEqual(replay[0]["delivery"]["telegram_edits"],0)
         self.assertEqual(prior_member_replay[0]["delivery"]["telegram_sends"],0)
         self.assertEqual(prior_member_replay[0]["delivery"]["telegram_edits"],0)
-        self.assertEqual(prior_member_replay[0]["delivery"]["status"],
-                         "family_message_immutable_card_replayed_noop")
-        self.assertEqual(edits[0][1],"4001")
-        self.assertEqual(edits[0][3],{"inline_keyboard":[]})
-        self.assertEqual(mock_complete.call_count,2)
         mock_task.assert_not_called()
 
     @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input")
-    @patch("modules.oom_sakkie.telegram_gateway.complete_telegram_album")
     @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
     @patch("modules.oom_sakkie.telegram_gateway.handle_telegram_media_intake")
     def test_recovery_never_completes_album_before_receipt_card_is_proven(
-            self,mock_media,mock_delivery,mock_complete,mock_task):
+            self,mock_media,mock_delivery,mock_task):
         mock_media.return_value=({"success":True,
             "status":"media_intake_stored_private_review_pending",
             "receipt_text":"BEACON started this private album. Reply /beacon-complete ABC.",
@@ -167,7 +178,6 @@ class OwnerTaskGatewayTests(unittest.TestCase):
             recovery,headers=HEADERS,environ=ENV)
         self.assertEqual(status,202)
         self.assertFalse(result["sends_telegram"])
-        mock_complete.assert_not_called()
         mock_task.assert_not_called()
 
     @patch("modules.sales.sam_live_stock_launch_control._telegram_api")

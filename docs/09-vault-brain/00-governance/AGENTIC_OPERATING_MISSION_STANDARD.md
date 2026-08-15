@@ -104,6 +104,41 @@ not operationally ready when ordinary work still depends on a terminal, owner
 observation, recurring approval or manually manufactured evidence that its
 approved runtime should obtain itself.
 
+## Agent Execution Ownership Gate
+
+The deployed named agent must produce every operational owner, customer, farm,
+provider or hardware result. A development terminal may inspect, design, edit,
+test, review, deploy, invoke an explicitly labelled synthetic canary and observe
+evidence. It must not substitute its own output for the deployed agent's work.
+
+Every operational continuation prompt and feedback packet must name:
+
+1. `operational_actor`: the exact deployed agent/runtime that must act;
+2. `genuine_trigger`: the owner, provider, schedule, canonical event or sensor
+   event that starts the normal runtime journey;
+3. `owner_channel`: the real Telegram, Application, voice, customer, provider or
+   physical surface where the result must appear;
+4. `terminal_permitted_actions`: bounded engineering, deployment and observation;
+5. `terminal_forbidden_substitutions`: owner-facing preview generation, provider
+   delivery, confirmation, canonical business write, customer response, physical
+   operation or trigger manufacture that belongs to the deployed agent; and
+6. `agent_origin_proof`: runtime worker/trigger identity, canonical correlation,
+   provider or physical readback and terminal-independent continuation.
+
+A terminal-rendered preview, terminal-created card, terminal-issued provider
+message, terminal-confirmed action, terminal-performed business write or
+terminal-operated device is `terminal_invoked_test_evidence`. It cannot satisfy
+the operational acceptance journey, owner-visible outcome or
+`BUSINESS_COMPLETE`, even when its content and side effects are correct. Any
+token, card or confirmation created only for terminal testing must be clearly
+labelled, delivery-disabled where practical and contained before genuine use.
+
+Control Tower must reject prompts whose actor is ambiguous. Verbs such as
+"produce", "send", "record", "confirm", "operate" or "complete" must identify
+the deployed actor when they describe operational work. If the runtime cannot
+perform the journey, the mission remains `WORKING` and the terminal repairs that
+capability; it does not perform the journey on the agent's behalf.
+
 ## Semantic-First Agentic Operation
 
 Authenticated natural conversation must be understood semantically by the approved LLM front door with bounded current context. Keyword, regex, menu, sheet-era or intent-table classifiers must not override, reinterpret or silently replace a valid semantic decision. Deterministic code remains authoritative for identity, canonical evidence, typed specialist dispatch, calculations, protected confirmation, replay protection, writes, provider delivery and physical safety; it is not the owner-language brain.

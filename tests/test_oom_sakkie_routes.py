@@ -546,12 +546,11 @@ class OomSakkieRouteTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
     }, clear=True)
     @patch("modules.oom_sakkie.telegram_direct.handle_owner_task_input")
-    @patch("modules.oom_sakkie.telegram_direct.complete_telegram_album")
-    def test_album_completion_command_bypasses_generic_owner_context(
-            self, complete_album, owner_task):
-        complete_album.return_value = ({
-            "success": True, "status": "album_completed", "received_count": 4
-        }, 201)
+    def test_legacy_album_completion_command_has_no_completion_authority(
+            self, owner_task):
+        owner_task.return_value=({"handled":True,"success":False,
+            "status":"legacy_album_completion_command_disabled",
+            "sends_telegram":False,"writes":False},409)
         payload = {"update_id": 11, "message": {
             "message_id": 21, "date": 1786785540,
             "from": {"id": 12345}, "chat": {"id": 12345, "type": "private"},
@@ -563,9 +562,9 @@ class OomSakkieRouteTests(unittest.TestCase):
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
         )
 
-        self.assertEqual(response.status_code, 201)
-        complete_album.assert_called_once()
-        owner_task.assert_not_called()
+        self.assertEqual(response.status_code, 409)
+        owner_task.assert_called_once()
+        self.assertEqual(response.get_json()["status"],"legacy_album_completion_command_disabled")
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",

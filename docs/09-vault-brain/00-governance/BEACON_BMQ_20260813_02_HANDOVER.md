@@ -37,7 +37,8 @@ groups/items, none from this four-photo incident.
 ## Correction boundary
 
 `modules/oom_sakkie/telegram_gateway.py` and the retained direct path now admit
-typed media and `/beacon-complete` before generic context. `media_intake.py`
+typed media before generic context and route completion only through the bound
+Finish Album callback; the legacy typed command is disabled. `media_intake.py`
 projects captions from append-only evidence regardless of concurrent arrival,
 supports one temporary token-bound exact-group recovery context supplement,
 and returns a group-stable receipt identity. The existing family-message
@@ -66,18 +67,21 @@ Subsequent direct and concurrent replay produced zero sends, edits, media,
 records or protected effects. No Library Accept, public-use, campaign,
 publication, customer, spend, farm, n8n or Sheets effect occurred.
 
-This is historical terminal-invoked recovery evidence, not a fresh autonomous
-acceptance epoch. BMQ-20260813-02 remains WORKING until Charl sends one genuinely
-new four-photo album in the existing private Oom Sakkie Telegram conversation.
-The normal GateKeeper event trigger must independently create one new immutable
-group, preserve order/context, store four private objects and thumbnails,
-present the contact sheet, deliver one completion receipt and make exact replay
-silent without a development-terminal invocation.
+This is sealed historical terminal-invoked recovery evidence, not a fresh
+autonomous acceptance epoch. It must not be replayed and Charl must not be asked
+to manufacture another album for testing. BMQ-20260813-02 remains WORKING until
+Charl naturally supplies an album he actually wants retained. The normal
+GateKeeper event trigger must independently create one immutable group, preserve
+order/context, store the private objects and thumbnails, present the contact
+sheet, expose a digest-bound Finish Album button, complete once, and make stale,
+sequential, concurrent and repeated callbacks silent without terminal invocation.
 
 Standing authority ID: `BMQ-20260813-02-OWNER-DIRECTION-20260815`. Scope:
 private original-owner photo intake, hashing, private storage, one receipt and
-owner review presentation. Limits: no Library Accept, public-use, campaign,
-publication, customer contact, spend or farm write. The historical recovery
-used zero new owner interactions. One fresh four-photo album is now the single
-irreducible owner interaction because terminal-created or historical input
-cannot prove the normal provider event journey.
+owner review presentation. The completion code remains internal; the visible
+card displays canonical stored count and one owner/chat/card/album/digest-bound
+Finish Album button. The weaker typed completion route is disabled.
+Library Accept, Public Use, Campaign Review and publication remain separate.
+Limits: no Library Accept, public-use, campaign, publication, customer contact,
+spend or farm write. The runtime now waits for naturally desired media; no fresh
+test album is an acceptable owner burden.

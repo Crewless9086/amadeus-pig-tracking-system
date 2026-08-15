@@ -179,6 +179,27 @@ ordinary cycles require no owner approval; exceptions identify the exact new
 authority or unavailable physical fact; and replay cannot create another owner
 request or effect.
 
+### Deployed-agent execution ownership
+
+The canonical action spine must record which deployed runtime received the
+genuine trigger and produced each operational effect. Development tools and
+terminals are engineering principals, never operational substitutes.
+
+Every protected journey must retain:
+
+- genuine trigger identity and source;
+- deployed worker/runtime identity and loaded revision;
+- owner/customer/provider channel identity;
+- canonical action and result correlation;
+- provider, customer-visible or physical readback where applicable; and
+- proof that the journey continues after the development terminal closes.
+
+Terminal-created previews, cards, messages, writes and device operations are
+synthetic or recovery evidence only and must be labelled separately. They cannot
+promote a capability to operating, autonomous or Business-complete. If the
+deployed agent cannot perform the same journey through its normal trigger and
+channel, implementation remains incomplete.
+
 ### Phase 6 — Controlled learning and optimisation (ongoing after reliable spine)
 
 - Bind recommendations to outcome chains and financial results.

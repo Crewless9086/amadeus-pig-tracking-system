@@ -69,6 +69,36 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
                   "owner_visible_completion_policy":"verified_edit_or_new_message"})
         return {"handled":True,**claimed,"writes_farm_data":False,"suppress_owner_delivery":claimed.get("status")=="protected_callback_replayed_noop"},status
     claimed["callback_token"]=data.split(":")[1]
+    if claimed["action_kind"]=="beacon_private_album_finish":
+        preview=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
+        if (preview.get("contract_version")!="beacon_private_album_finish_v1"
+                or str(preview.get("intake_group_id") or "")!=str(claimed.get("mission_id") or "")):
+            result={"success":False,"status":"album_finish_claim_binding_mismatch",
+                "telegram_sends":0,"telegram_edits":0,"writes_farm_data":False}
+            contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            return {"handled":True,**result,"suppress_owner_delivery":True},409
+        from modules.beacon.media_intake import complete_claimed_telegram_album
+        result,result_status=complete_claimed_telegram_album(preview,
+            owner_user_id=owner,private_chat_id=chat)
+        if result.get("success") is True:
+            completed=complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            canonical=completed.get("result") if isinstance(completed.get("result"),dict) else result
+            if completed.get("replayed"):
+                return {"handled":True,**canonical,"answer":"","suppress_owner_delivery":True,
+                    "telegram_sends":0,"telegram_edits":0,"writes_farm_data":False},200
+            context=str(canonical.get("owner_context") or "").strip() or "No additional caption was supplied."
+            sheet=("available for private owner review" if canonical.get("contact_sheet_available")
+                else "not yet available; the originals remain private and retained")
+            answer=(f"BEACON completed this private album with {canonical['received_count']} stored photographs. "
+                f"Retained context: {context} Private contact sheet: {sheet}. "
+                "Next actions remain separate: Accept to Library; Approve Public Use; Review Campaign; Publish later.")
+            return {"handled":True,**canonical,"answer":answer,"specialist":"BEACON_MEDIA",
+                "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"],
+                "reply_markup":{"inline_keyboard":[]},
+                "owner_visible_completion_policy":"verified_edit_or_new_message",
+                "writes_farm_data":False,"hardware_commands":0},result_status
+        contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        return {"handled":True,**result,"writes_farm_data":False,"suppress_owner_delivery":True},result_status
     if claimed["action_kind"]=="rootline_irrigation_segment":
         from modules.oom_sakkie.rootline_protected_irrigation import protected_card_mission_id
         if irrigation_handler is None:

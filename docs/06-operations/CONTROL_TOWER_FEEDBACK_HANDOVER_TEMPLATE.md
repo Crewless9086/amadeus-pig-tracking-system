@@ -49,6 +49,17 @@ than inferring evidence.
 - Honest classification: autonomous / event-waiting / invocation-only /
   deployed-dormant / scheduler-degraded / authority-disabled / Unknown
 
+## Agent execution ownership
+
+- Operational actor (exact deployed agent/runtime):
+- Genuine trigger and provider/canonical identity:
+- Owner-facing or customer-facing channel:
+- Terminal-permitted actions:
+- Terminal-forbidden substitutions:
+- Agent-origin proof:
+- Terminal-created output present: no / classify exact test or recovery evidence
+- What would have happened if the development terminal were closed:
+
 HTTP health, deployed source, CI, a route, a terminal-created card, a manual
 script or a synthetic canary cannot by itself establish autonomous operation.
 
@@ -152,3 +163,12 @@ It must also say:
 > collector into owner labour. Classify any avoidable or repeated approval as an
 > owner-burden systemic defect and repair the reusable journey before requesting
 > another owner action.
+
+For any operational outcome it must additionally say:
+
+> The deployed named agent is the operational actor. The terminal may implement,
+> deploy and observe only; it must not generate the owner-facing result, send the
+> provider message, confirm the action, perform the canonical business write or
+> operate hardware on the agent's behalf. Classify terminal-created output only
+> as terminal-invoked test evidence and require a fresh genuine trigger through
+> the real owner/provider channel before Business completion.

@@ -29,6 +29,23 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     """Persist and visibly deliver one result; duplicate input is a no-op."""
     mission_id = mission_id or mission_identity(parsed, specialist)
     card_mission_id = card_mission_id or mission_id
+    if (result.get("album_progress_serialization_required") is True
+            and result.get("album_progress_verified") is True
+            and result.get("_album_progress_lock_held") is not True):
+        try:
+            from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+            with connect_bounded_rootline_postgres(database_url=os.environ.get("DATABASE_URL"),
+                    read_only=False) as connection, connection.cursor() as cursor:
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    ("beacon-album-card:"+card_mission_id,))
+                return deliver_family_result(parsed,{**result,"_album_progress_lock_held":True},
+                    specialist=specialist,mission_id=mission_id,card_mission_id=card_mission_id,
+                    event_store=event_store,sender=sender,editor=editor,
+                    delivery_retry_authority=delivery_retry_authority)
+        except Exception:
+            return {"success":False,"status":"family_message_album_progress_lock_unavailable",
+                "mission_id":mission_id,"card_mission_id":card_mission_id,
+                "telegram_sends":0,"telegram_edits":0}
     store = event_store or _event_store
     events = list(store("load", card_mission_id, None) or [])
     text = str(result.get("answer") or "").strip()
@@ -56,6 +73,28 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
         and result.get("status") == "media_album_received"
         and result.get("owner_visible_card_policy") == "immutable_initial_card"
     )
+    album_progress_card = (specialist == "BEACON_MEDIA"
+        and result.get("status") == "media_album_received"
+        and result.get("owner_visible_card_policy") == "album_progress_card")
+    if album_progress_card and latest:
+        exact_card_binding=(str(latest.get("mission_id") or "")==mission_id
+            and str(latest.get("card_mission_id") or "")==card_mission_id
+            and str(latest.get("specialist_identity") or "")==specialist
+            and str(latest.get("owner_user_id") or "")==str(parsed.get("telegram_user_id") or "")
+            and str(latest.get("chat_id") or "")==str(parsed.get("telegram_chat_id") or "")
+            and bool(card_id))
+        if not exact_card_binding:
+            return {"success":False,"status":"family_message_album_progress_binding_conflict",
+                "mission_id":mission_id,"card_mission_id":card_mission_id,
+                "telegram_sends":0,"telegram_edits":0}
+        if str(latest.get("task_state") or "") == "completed":
+            return {"success": True, "status": "family_message_completed_album_progress_noop",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 0}
+        if int(latest.get("album_stored_count") or 0)>=int(result.get("album_stored_count") or 0):
+            return {"success":True,"status":"family_message_album_progress_stale_noop",
+                "mission_id":mission_id,"card_mission_id":card_mission_id,
+                "telegram_message_id":card_id,"telegram_sends":0,"telegram_edits":0}
     if immutable_initial_card and latest:
         exact_card_binding = (
             str(latest.get("mission_id") or "") == mission_id
@@ -105,6 +144,9 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "confirmation_text_sha256"):
         if str(result.get(key) or "").strip():
             payload[key] = str(result.get(key))
+    if album_progress_card:
+        payload["album_stored_count"]=int(result.get("album_stored_count") or 0)
+        payload["album_canonical_digest"]=str(result.get("album_canonical_digest") or "")
     if isinstance(result.get("required_owner_confirmations"), (list, tuple)):
         payload["required_owner_confirmations"] = list(result["required_owner_confirmations"])
     if isinstance(result.get("accepted_owner_confirmation_binding"), Mapping):
