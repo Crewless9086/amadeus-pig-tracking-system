@@ -9,8 +9,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import os
+from pathlib import Path
 import sys
 import urllib.request
+
+# Render and other schedulers execute this file directly, which otherwise puts
+# only ``scripts/`` on sys.path instead of the repository root.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from modules.oom_sakkie.automatic_reassessment_scheduler import (
     CADENCE_MINUTES, SCHEDULER_IDENTITY,
