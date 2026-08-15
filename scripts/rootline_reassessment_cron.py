@@ -25,9 +25,13 @@ from modules.oom_sakkie.automatic_reassessment_scheduler import (
 
 
 def build_payload(now: datetime, owner_id: str) -> dict:
-    current = now.astimezone(timezone.utc).replace(second=0, microsecond=0)
+    # The schedule identity is bucketed, but the evidence boundary is the
+    # actual invocation instant.  Truncating both to the minute made valid
+    # readings collected between the bucket edge and process start appear to
+    # come from the future, so the gateway correctly failed closed forever.
+    current = now.astimezone(timezone.utc).replace(microsecond=0)
     minute = current.minute - current.minute % CADENCE_MINUTES
-    due = current.replace(minute=minute)
+    due = current.replace(minute=minute, second=0)
     identity = due.strftime("%Y%m%dT%H%M%SZ")
     return {
         "scheduler_identity": SCHEDULER_IDENTITY,
