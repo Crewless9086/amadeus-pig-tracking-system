@@ -343,6 +343,14 @@ def supervise_runner(
                 )
                 if os.environ.get(key)
             }
+            if os.environ.get("DATABASE_URL"):
+                child_env["DATABASE_URL"] = _transaction_pool_url(
+                    os.environ.get("DATABASE_URL")
+                )
+            if os.environ.get("CHARLIE_SHADOW_CONTROL_TOWER_ENABLED"):
+                child_env["CHARLIE_SHADOW_CONTROL_TOWER_ENABLED"] = os.environ[
+                    "CHARLIE_SHADOW_CONTROL_TOWER_ENABLED"
+                ]
         else:
             child_env = dict(os.environ)
             child_env["DATABASE_URL"] = _transaction_pool_url(
