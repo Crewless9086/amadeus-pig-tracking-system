@@ -88,9 +88,8 @@ def recover_contextual_specialist_replay(parsed, *, replay_loader=None, delivery
 
 
 def _load_contextual_provider_replay(provider_message_id):
-    import psycopg
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-        connection.read_only = True
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+    with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select review_json->'rootline_operational_intake'
                 from public.sam_live_stock_conversation_review_events
@@ -106,7 +105,7 @@ def _load_contextual_provider_replay(provider_message_id):
 
 
 def _contextual_delivery_terminal(outcome):
-    import psycopg
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     mission_id = str((outcome or {}).get("mission_id") or "")
     card_id = str((outcome or {}).get("card_mission_id") or "")
     provider_id = str((outcome or {}).get("provider_message_id") or "")
@@ -115,8 +114,7 @@ def _contextual_delivery_terminal(outcome):
         return False
     terminal_states = (("notification_delivered",) if outcome.get("requires_visible_notification") is True
                        else ("delivered", "updated"))
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-        connection.read_only = True
+    with connect_bounded_read() as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select count(*)
                 from public.sam_live_stock_conversation_review_events
@@ -689,11 +687,12 @@ def _apply_write_truth(result, observation_result, write_truth):
 def _operation_event_store(action, identity, payload):
     if not str(os.environ.get("DATABASE_URL") or "").strip():
         raise RuntimeError("durable_rootline_operational_store_required")
-    import psycopg
+    from modules.oom_sakkie.bounded_postgres_read import (
+        connect_bounded_postgres, connect_bounded_read,
+    )
     event_source = "oom_sakkie_rootline_operational_intake"
     if action == "load":
-        with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-            connection.read_only = True
+        with connect_bounded_read() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""select review_json->'rootline_operational_intake'
                     from public.sam_live_stock_conversation_review_events
@@ -709,7 +708,9 @@ def _operation_event_store(action, identity, payload):
     event["review_json"] = {"rootline_operational_intake": dict(payload)}
     event["decision_json"] = {}; event["facts_json"] = {}
     event["customer_message_excerpt"] = ""; event["sam_reply_excerpt"] = ""
-    result, status = record_sam_live_stock_review_event(event)
+    result, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: connect_bounded_postgres(
+            read_only=False, connect_deadline_seconds=3))
     return {**result, "success": status < 400 and result.get("success") is True,
             "created": result.get("created", result.get("success") is True)}
 

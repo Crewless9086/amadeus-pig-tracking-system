@@ -17,9 +17,11 @@ class RootlineConnectionDeadlineExceeded(TimeoutError):
     """Hard wall-clock connection boundary reached before PostgreSQL was usable."""
 
 
-def connect_bounded_read(*, database_url=None, connect=None):
+def connect_bounded_read(*, database_url=None, connect=None,
+                         connect_deadline_seconds=3):
     return connect_bounded_postgres(database_url=database_url, connect=connect,
-                                    read_only=True)
+                                    read_only=True,
+                                    connect_deadline_seconds=connect_deadline_seconds)
 
 
 def connect_bounded_rootline_postgres(*, database_url=None, connect=None, read_only=True,
@@ -48,7 +50,10 @@ def connect_bounded_postgres(*, database_url=None, connect=None, read_only=False
                     f"-c lock_timeout={LOCK_TIMEOUT_MS}"),
     }
     if not enforce_transaction_local:
-        return connect(url, **connect_kwargs)
+        if connect_deadline_seconds is None:
+            return connect(url, **connect_kwargs)
+        return _connect_with_wall_clock_deadline(
+            connect, url, connect_kwargs, float(connect_deadline_seconds))
 
     def acquire_and_configure(target_url, **target_kwargs):
         connection = connect(target_url, **target_kwargs)
