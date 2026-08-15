@@ -12,14 +12,16 @@ def load_current_mortality_evidence(*, analysis_end: date, database_url=None):
     start = analysis_end - timedelta(days=179)
     url = database_url or os.environ["DATABASE_URL"]
     with connect_bounded_read(database_url=url) as db:
-        deaths = _rows(db.execute("""select pig_id,exit_date,exit_reason,litter_id,initial_pen_id,status
+        deaths = _rows(db.execute("""select pig_id,exit_date,exit_reason,litter_id,initial_pen_id,status,
+                   updated_at as recorded_at
             from public.current_canonical_pigs
             where (lower(coalesce(status,'')) in ('dead','died','deceased')
                or lower(coalesce(exit_reason,'')) in
                   ('died','dead','deceased','lost','stillborn','died_after_birth','crushed_by_sow','weak_piglet','unknown'))
               and (exit_date is null or exit_date >= %s)
             order by pig_id limit 5001""", (start,)))
-        historical_deaths = _rows(db.execute("""select pig_id,exit_date,exit_reason,litter_id,initial_pen_id,status
+        historical_deaths = _rows(db.execute("""select pig_id,exit_date,exit_reason,litter_id,initial_pen_id,status,
+                   updated_at as recorded_at
             from public.pigs where (lower(coalesce(status,'')) in ('dead','died','deceased')
                or lower(coalesce(exit_reason,'')) in
                   ('died','dead','deceased','lost','stillborn','died_after_birth','crushed_by_sow','weak_piglet','unknown'))
@@ -68,6 +70,7 @@ def normalize_current_mortality_evidence(*, deaths, historical_deaths, litters, 
                            "effective_date": None} for pig_id in pig_ids)
     events = [{"event_id": "LOSS-"+str(row["pig_id"]), "pig_id": str(row["pig_id"]),
         "effective_date": _value(row.get("exit_date")), "event_kind": _kind(row.get("exit_reason")),
+        "recorded_at": _value(row.get("recorded_at")),
         "confirmation": ("conflicting" if str(row.get("litter_id") or "") in unresolved_duplicate_litters
                          else "confirmed"), "canonical_status": "current",
         "litter_id": row.get("litter_id"), "initial_pen_id": row.get("initial_pen_id")}
@@ -75,6 +78,7 @@ def normalize_current_mortality_evidence(*, deaths, historical_deaths, litters, 
     current_ids={str(row["pig_id"]) for row in deaths}
     events.extend({"event_id":"HISTORY-"+str(row["pig_id"]),"pig_id":str(row["pig_id"]),
         "effective_date":_value(row.get("exit_date")),"event_kind":_kind(row.get("exit_reason")),
+        "recorded_at":_value(row.get("recorded_at")),
         "confirmation":"confirmed","canonical_status":"superseded",
         "litter_id":row.get("litter_id"),"initial_pen_id":row.get("initial_pen_id")}
         for row in historical_deaths if str(row["pig_id"]) not in current_ids and row.get("exit_date"))

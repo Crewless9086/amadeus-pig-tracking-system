@@ -2,7 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_management_runtime import (consume_current_herdmaster_management,
-    _consumption_claim_identity, _retain_active_mortality_context, _retained_owner_reported_death)
+    _consumption_claim_identity, _load_active_lifecycles,
+    _retain_active_mortality_context, _retained_owner_reported_death)
 from tests.test_oom_sakkie_herdmaster_management_adapter import canonical, observations, active, NOW, OWNER
 
 
@@ -38,6 +39,68 @@ def test_different_entity_does_not_inherit_old_mortality():
     current={"pig_id":"PIG-2","lifecycle_id":"CASE-2","reported_dead":False,
              "current_question":"Is Pig 2 eating?"}
     assert _retain_active_mortality_context(previous,current)==current
+
+
+def test_canonical_dead_off_farm_state_retires_obsolete_waiting_lifecycle(monkeypatch):
+    import modules.oom_sakkie.herdmaster_management_runtime as runtime
+    health = {"owner_user_id": OWNER, "status": "waiting_for_input",
+        "mission_id": "PIG127-CASE", "provider_timestamp": "2026-08-03T05:00:00+00:00",
+        "preview": {"evaluator": {"identity": {"pig_id": "PIG-2026-D13C", "tag_number": "127"},
+            "smallest_missing_follow_up_question": "Is Pig 127 breathing?"}}}
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self,*_): return False
+        def execute(self,sql,params=()):
+            self.values = ([(health,"3203")] if "herdmaster_health_loss" in sql
+                           else [("PIG-2026-D13C","Dead",False)])
+        def fetchall(self): return self.values
+    class Connection:
+        read_only = True
+        def __enter__(self): return self
+        def __exit__(self,*_): return False
+        def cursor(self): return Cursor()
+    monkeypatch.setattr(runtime,"_connect",lambda:Connection())
+    projected = _load_active_lifecycles(OWNER,include_terminal=True)
+    assert projected == [{"pig_id":"PIG-2026-D13C","lifecycle_id":"PIG127-CASE",
+        "state":"completed","mortality_closed":True,
+        "closure_reason":"canonical_terminal_pig_state","canonical_status":"Dead",
+        "canonical_on_farm":False}]
+    assert _load_active_lifecycles(OWNER,include_terminal=False) == []
+
+
+def test_default_management_runtime_loads_terminal_closure_projection(monkeypatch):
+    import modules.oom_sakkie.herdmaster_management_runtime as runtime
+    calls=[]
+    closed=[{"pig_id":"PIG-2026-D13C","lifecycle_id":"PIG127-CASE",
+        "state":"completed","mortality_closed":True}]
+    def load_active(owner,*,include_terminal=False):
+        calls.append((owner,include_terminal)); return closed
+    monkeypatch.setattr(runtime,"_load_active_lifecycles",load_active)
+    result=consume_current_herdmaster_management(
+        authority=issue_gateway_owner_authority(OWNER,OWNER),owner_user_id=OWNER,now=NOW,
+        canonical_loader=canonical,observation_loader=lambda _owner:observations(),
+        prior_loader=lambda _owner,_context:[],
+        recorder=lambda _value:{"success":True,"created":True})
+    assert calls==[(OWNER,True)]
+    assert result["status"]=="herdmaster_management_round_consumed", result
+    assert result["binding"]["active_case_deduplication_state"]["active_pig_ids"]==()
+
+
+def test_default_management_runtime_retires_nonmortality_terminal_projection(monkeypatch):
+    import modules.oom_sakkie.herdmaster_management_runtime as runtime
+    projected=[{"pig_id":"PIG-SOLD","lifecycle_id":"SOLD-CASE",
+        "state":"completed","mortality_closed":False,
+        "closure_reason":"canonical_terminal_pig_state","canonical_status":"Sold",
+        "canonical_on_farm":False}]
+    monkeypatch.setattr(runtime,"_load_active_lifecycles",
+        lambda owner,include_terminal=False: projected)
+    result=consume_current_herdmaster_management(
+        authority=issue_gateway_owner_authority(OWNER,OWNER),owner_user_id=OWNER,now=NOW,
+        canonical_loader=canonical,observation_loader=lambda _owner:observations(),
+        prior_loader=lambda _owner,_context:[],
+        recorder=lambda _value:{"success":True,"created":True})
+    assert result["status"]=="herdmaster_management_round_consumed", result
+    assert result["binding"]["active_case_deduplication_state"]["active_pig_ids"]==()
 
 def test_authenticated_runtime_consumes_and_records_existing_store_binding_once():
     recorded=[]

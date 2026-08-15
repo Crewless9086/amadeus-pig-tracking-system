@@ -81,6 +81,8 @@ def test_sale_watcher_surfaces_today_readiness_and_suppresses_closed_settled_sal
     assert task.dedupe_key=="sale:SALE-TODAY" and task.title=="Payment — Farm sale"
     assert "/sales/slaughter?update_sale=SALE-TODAY&amp;payment_only=1" in build_daily_management_packet(
         [value],now=NOW)["answer"]
+    assert "Review payment evidence; preview only first" in task.next_action
+    assert "Record" not in task.next_action
     assert task.authority is Authority.OWNER_DECISION
 
 
