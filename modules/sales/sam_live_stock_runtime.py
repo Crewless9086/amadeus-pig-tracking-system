@@ -451,6 +451,7 @@ def handle_sam_live_stock_chatwoot_inbound(
             decision["reply_source"] = "natural_close_no_reply_guard"
         front_door = front_door_packet
         decision["customer_front_door"] = front_door
+        decision["canonical_customer_context"] = canonical_customer_context
         decision["canonical_composition_authorized"] = bool(
             front_door.get("should_reply") is True
             and not front_door.get("identity_errors")
@@ -550,6 +551,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     decision["sales_autonomy_level1_inbound_evidence"] = level1_inbound
     decision["contextual_sales_route"] = contextual_route
     decision["customer_front_door"] = front_door_packet
+    decision["canonical_customer_context"] = canonical_customer_context
     decision["conversation_ownership"] = AUTO_SPECIALIST
     decision["specialist_lane_selected"] = True
     delivery_owner_exception = build_delivery_owner_exception(
