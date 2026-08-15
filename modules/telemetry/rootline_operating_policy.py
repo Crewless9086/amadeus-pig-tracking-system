@@ -68,13 +68,13 @@ DECISION_GUIDANCE = [
         "question": "At what current rain rate must ROOTLINE place advice on Hold?",
         "recommendation": (
             "Use Charl's confirmed greater-than 0.2 mm/hour threshold and the "
-            "owner-approved evidence-gated 30-minute dry-release rule."
+            "governed evidence-gated 30-minute automatic dry-release rule."
         ),
         "consequence": (
             "Fresh current rain above 0.2 mm/hour produces Hold. Exactly "
             "0.2 mm/hour does not exceed the threshold, but release still "
-            "requires 30 continuous minutes at 0.0, two fresh readings, no "
-            "visible rain and explicit owner review."
+            "requires 30 continuous minutes at 0.0 and two fresh durable "
+            "boundary readings from the governed local station."
         ),
         "applies_to": "both zones",
     },
@@ -771,16 +771,16 @@ def _live_rain_release_policy(value):
         raise PolicyValidationError("dry_release_requires_exact_zero_rain")
     if value["minimum_fresh_station_readings"] != 2:
         raise PolicyValidationError("dry_release_reading_count_not_owner_confirmed")
-    if value["visible_rain_confirmation_required"] is not True:
-        raise PolicyValidationError("dry_release_visible_confirmation_required")
-    if value["owner_review_required"] is not True:
-        raise PolicyValidationError("dry_release_owner_review_required")
+    if not isinstance(value["visible_rain_confirmation_required"], bool):
+        raise PolicyValidationError("invalid_dry_release_visible_confirmation_flag")
+    if not isinstance(value["owner_review_required"], bool):
+        raise PolicyValidationError("invalid_dry_release_owner_review_flag")
     return {
         "dry_interval_minutes": 30,
         "dry_rain_rate_mm_per_hour": 0.0,
         "minimum_fresh_station_readings": 2,
-        "visible_rain_confirmation_required": True,
-        "owner_review_required": True,
+        "visible_rain_confirmation_required": False,
+        "owner_review_required": False,
     }
 
 

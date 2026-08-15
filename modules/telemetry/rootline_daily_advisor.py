@@ -581,10 +581,10 @@ def _advise_zone(
         recommendation = "Hold"
         eligibility = "Hold"
         reasons.append("An active authoritative live-rain policy is required.")
-    elif not weather_fresh or rain_rate is None:
+    elif not weather_fresh or rain_rate is None or not forecast_fresh:
         recommendation = "Hold"
         eligibility = "Hold"
-        reasons.append("Live-rain evidence is missing or stale; Hold remains fail-closed.")
+        reasons.append("Local weather or forecast evidence is missing or stale; Hold remains fail-closed.")
     elif rain_rate > live_rain_rule["threshold_mm_per_hour"]:
         recommendation = "Hold"
         eligibility = "Hold"
@@ -608,8 +608,8 @@ def _advise_zone(
         reasons.append(
             "The live-rain threshold is not exceeded. Release requires the current "
             "reading and every reading across 30 continuous minutes to be exactly "
-            "0.0 mm/hour, at least two fresh boundary readings, confirmed absence "
-            "of visible rain, and explicit owner review; that evidence is not proven."
+            "0.0 mm/hour with at least two fresh durable boundary readings from "
+            "the governed local station; that automatic evidence is not proven."
         )
     else:
         time_gate, time_reason = _daylight_gate(
@@ -853,9 +853,9 @@ def _dry_release_proven(
         return False
     if evidence.get("continuous_zero_rain_confirmed") is not True:
         return False
-    if evidence.get("no_visible_rain_confirmed") is not True:
+    if evidence.get("source") != "governed_local_weather_station":
         return False
-    if evidence.get("owner_review_confirmed") is not True:
+    if evidence.get("source_healthy") is not True:
         return False
     start = _aware_datetime(evidence.get("interval_start_at"))
     end = _aware_datetime(evidence.get("interval_end_at"))
@@ -867,18 +867,8 @@ def _dry_release_proven(
     if (
         current_observed is None
         or current_observed != end
+        or end > evaluated_at
         or end.astimezone(ZA_TZ).date().isoformat() != advisor_date
-    ):
-        return False
-    visible_confirmed_at = _aware_datetime(evidence.get("visible_rain_confirmed_at"))
-    owner_reviewed_at = _aware_datetime(evidence.get("owner_reviewed_at"))
-    if (
-        visible_confirmed_at is None
-        or owner_reviewed_at is None
-        or visible_confirmed_at < end
-        or owner_reviewed_at < end
-        or visible_confirmed_at > evaluated_at
-        or owner_reviewed_at > evaluated_at
     ):
         return False
     readings = evidence.get("station_readings")
