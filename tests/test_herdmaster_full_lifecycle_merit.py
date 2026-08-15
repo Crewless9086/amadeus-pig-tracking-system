@@ -1,7 +1,10 @@
 from copy import deepcopy
 from datetime import date
 
-from modules.pig_weights.herdmaster_full_lifecycle_merit import compose_full_lifecycle_merit
+from modules.pig_weights.herdmaster_full_lifecycle_merit import (
+    _safe_route_segment,
+    compose_full_lifecycle_merit,
+)
 
 
 def evidence():
@@ -184,8 +187,8 @@ def test_human_identity_relationships_are_names_first_and_route_safe():
     assert unknown["display_name"] == "Unknown"
     assert unknown["presentation_state"] == "unknown"
     assert unknown["technical_identity"]["pig_id"].startswith("PIG/unsafe")
-    assert "https://evil.example" not in unknown["destination"]["href"]
-    assert "%2Funsafe%3Fnext%3Dhttps%3A%2F%2Fevil.example" in unknown["destination"]["href"]
+    assert unknown["destination"]["href"] is None
+    assert unknown["destination"]["unavailable_reason"] == "unsafe_route_identity"
 
 
 def test_unresolved_partner_identity_fails_closed_without_a_destination():
@@ -196,3 +199,24 @@ def test_unresolved_partner_identity_fails_closed_without_a_destination():
     assert partner["partner_identity"]["technical_identity"] == {"pig_id": "B1"}
     assert partner["destination"]["href"] is None
     assert partner["destination"]["unavailable_reason"] == "canonical_animal_identity_unresolved"
+
+
+def test_dot_encoded_separator_and_control_route_segments_fail_closed():
+    for value in (".", "..", "%2e%2e", "%252e%252e", "pig/child", "pig\\child", "pig\nchild"):
+        assert _safe_route_segment(value) is None
+
+    data = evidence()
+    data["pigs"][0]["pig_id"] = ".."
+    for litter in data["litters"]:
+        litter["sow_pig_id"] = ".."
+    row = compose_full_lifecycle_merit(data, pig_id="..")["rows"][0]
+    assert row["identity"]["destination"]["href"] is None
+    assert row["identity"]["destination"]["unavailable_reason"] == "unsafe_route_identity"
+    assert all(item["destination"]["href"] is None for item in row["time_trend"])
+
+    data = evidence()
+    data["litters"][1]["litter_id"] = "."
+    data["litters"][1].pop("supersedes_litter_id")
+    row = compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]
+    unsafe_litter = next(item for item in row["time_trend"] if item["litter_id"] == ".")
+    assert unsafe_litter["destination"]["href"] is None

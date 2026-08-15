@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime
 from statistics import median
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, unquote, urlencode
 
 
 CONTRACT_VERSION = "herdmaster_full_lifecycle_merit_v1"
@@ -48,9 +48,27 @@ def _safe_internal_path(path):
     return value
 
 
+def _safe_route_segment(value):
+    raw = _text(value)
+    if not raw:
+        return None
+    decoded = raw
+    for _ in range(3):
+        next_value = unquote(decoded)
+        if next_value == decoded:
+            break
+        decoded = next_value
+    if (decoded in {".", ".."} or "/" in decoded or "\\" in decoded
+            or any(ord(character) < 32 or ord(character) == 127 for character in decoded)):
+        return None
+    return raw
+
+
 def _destination(route_identity, path, accessible_label, *, return_path=None):
     safe_path = _safe_internal_path(path)
     safe_return = _safe_internal_path(return_path) if return_path else None
+    if return_path is not None and safe_return is None:
+        safe_path = None
     if safe_path and safe_return:
         safe_path = safe_path + "?" + urlencode({
             "return_to": safe_return,
@@ -74,13 +92,17 @@ def _identity(row=None, *, pig_id=None, role=None, canonical_resolved=True):
     presentation_state = "named" if name else ("tag_fallback" if tag else "unknown")
     animal_type = _text(row.get("animal_type")) or None
     resolved_role = _text(role) or animal_type or None
+    route_segment = _safe_route_segment(pig_id)
     destination = _destination(
         "breeding_animal_detail",
-        f"/breeding-analytics/{quote(pig_id, safe='')}" if pig_id and canonical_resolved else "",
+        f"/breeding-analytics/{quote(route_segment, safe='')}"
+        if route_segment and canonical_resolved else "",
         f"Open {primary} animal analytics",
     )
     if pig_id and not canonical_resolved:
         destination["unavailable_reason"] = "canonical_animal_identity_unresolved"
+    elif pig_id and not route_segment:
+        destination["unavailable_reason"] = "unsafe_route_identity"
     return {
         "name": name or None,
         "tag_number": tag or None,
@@ -197,14 +219,16 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
 
     def resolved_litter_identity(litter, *, return_pig_id):
         litter_id = _text(litter.get("litter_id"))
+        litter_segment = _safe_route_segment(litter_id)
+        return_segment = _safe_route_segment(return_pig_id)
         sow_identity = resolved_identity(litter.get("sow_pig_id"), role="sow")
         destination = _destination(
             "litter_detail",
-            f"/litter/{quote(litter_id, safe='')}" if litter_id else "",
+            f"/litter/{quote(litter_segment, safe='')}" if litter_segment else "",
             f"Open litter {litter_id}" if litter_id else "Litter detail unavailable",
             return_path=(
-                f"/breeding-analytics/{quote(_text(return_pig_id), safe='')}"
-                if _text(return_pig_id) else None
+                f"/breeding-analytics/{quote(return_segment, safe='')}"
+                if return_segment else ("" if return_pig_id is not None else None)
             ),
         )
         return {
