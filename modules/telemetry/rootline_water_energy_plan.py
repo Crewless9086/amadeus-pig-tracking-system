@@ -395,13 +395,23 @@ def read_current_water_energy_evidence(
     forecast_packet, _ = loaded["forecast"]
     advisor, _ = loaded["advisor"]
     balances = loaded["balances"]
+    irrigation_history = loaded["irrigation_history"]
+    water_credits = irrigation_history.get("water_credits") or {
+        "status": "Unavailable", "credits": [], "by_execution": {}}
     advisor_zones=deepcopy(advisor.get("zones", []))
     for zone in advisor_zones:
         if isinstance(zone,dict):
             zone["water_balance"]=_dict(balances.get("zones")).get(
                 str(zone.get("zone_id")),{"status":UNAVAILABLE})
+            zone_id = str(zone.get("zone_id"))
+            zone_credits = [row for row in water_credits.get("credits", [])
+                            if row.get("zone_id") == zone_id]
+            zone["water_credit"] = {"status": "Available" if zone_credits else "Unknown",
+                "delivered_volume_litres": round(sum(float(row["delivered_volume_litres"])
+                    for row in zone_credits), 3) if zone_credits else "Unknown",
+                "credits": zone_credits,
+                "dependency": None if zone_credits else "measured_volume_or_supported_calibration_required"}
     history = loaded["history"]
-    irrigation_history = loaded["irrigation_history"]
     tanks = loaded["tanks"]
     owner_zone_need = loaded["owner_zone_need"]
     if isinstance(owner_zone_need, dict) and owner_zone_need.get("status") == "Available":
@@ -448,6 +458,7 @@ def read_current_water_energy_evidence(
             "owner_reclassification_required": False,
         },
         "water_balance":balances,
+        "water_credits":water_credits,
     }
     return evidence, selected, now
 

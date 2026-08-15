@@ -172,6 +172,23 @@ Irrigation eligibility, runtime, weather, available water, and energy must be re
   water-balance contract in `docs/06-operations/ROOTLINE_EFFECTIVE_RAINFALL_WATER_BALANCE_PLAN.md`.
   Forecast rain receives zero delivered-water credit. Until that contract is operational,
   rain may Hold/reassess irrigation but must not silently erase or manufacture debt.
+
+### Water-credit lifecycle
+
+- Canonical completed runtime, provider ON/OFF receipts and an authenticated
+  normal-flow observation remain separate evidence. None independently proves
+  delivered litres.
+- A delivered-volume credit is append-only and binds one immutable ROOTLINE
+  execution identity to the accepted physical-evidence digest and either a
+  verified volume measurement or a governed, zone-specific calibration record.
+- Runtime-derived or owner-confirmed flow without measurement/calibration keeps
+  delivered volume `Unknown`. It may prove execution and physical outcome, but
+  it must not manufacture litres.
+- One execution may receive at most one exact credit. Exact replay is a no-op;
+  changed volume, evidence, calibration or zone is a conflict and must fail
+  closed without rewriting irrigation history, schedule debt or earlier credit.
+- Supabase `irrigation_water_credit_events` is canonical. n8n and Google Sheets
+  have no credit, accounting or policy authority.
 - Energy policy is device-class specific. It governs material electrical loads such as the Borehole 1 pump and fertilizer mixer, not passive water delivery through the B/C gravity-fed valves. ROOTLINE must never apply a generic farm-energy gate to every registered device.
 - Before direct control, each valve identity, ON/OFF behavior, deterministic OFF, water flow, manual isolation, and safe failure must be physically proven.
 - A stable per-zone, per-Johannesburg-operating-date consumption key must be

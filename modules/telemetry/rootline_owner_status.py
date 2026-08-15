@@ -23,6 +23,8 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
         evidence["water_balance"] = read_latest_zone_water_balances(database_url, now=now)
         specialist = _specialist_projection(evidence, operating_date, now)
         history = read_canonical_irrigation_history(database_url, now=now)
+        evidence["water_credits"] = history.get("water_credits") or {
+            "status": "Unavailable", "credits": []}
         runtime, latest_outcome, notification = _runtime_and_notification(database_url)
     except Exception as exc:
         return _failure("canonical_status_read_failed", exc), 503
@@ -34,6 +36,8 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
         zone_history = (history.get("zones") or {}).get(zone_id, {})
         balance = ((evidence.get("water_balance") or {}).get("zones") or {}).get(zone_id, {})
         active = runtime if runtime.get("zone_id") == zone_id else {}
+        credits = [row for row in (evidence.get("water_credits") or {}).get("credits", [])
+                   if row.get("zone_id") == zone_id]
         decision = _decision(recommendation.get("status"))
         blocker = _blocker(recommendation)
         zones.append({
@@ -54,6 +58,11 @@ def get_rootline_owner_status(operating_date=None, database_url=None, now=None):
             "shutdown_verified": active.get("shutdown_verified"),
             "verified_completed_days": zone_history.get("verified_completed_days", []),
             "history_complete_through": zone_history.get("complete_through"),
+            "water_credit": {"status": "Available" if credits else "Unknown",
+                "delivered_volume_litres": round(sum(float(row["delivered_volume_litres"])
+                    for row in credits), 3) if credits else "Unknown",
+                "credit_ids": [row["credit_id"] for row in credits],
+                "dependency": None if credits else "measured_volume_or_supported_calibration_required"},
         })
     current = _current(runtime)
     plan = [{"plan_id": specialist.get("result_id"), "zone_id": zone["zone_id"],
