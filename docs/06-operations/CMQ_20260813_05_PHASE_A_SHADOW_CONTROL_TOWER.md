@@ -57,3 +57,11 @@ write farm data or grant release authority. It exposes no route or scheduler.
 The human Control Tower remains the sole dispatcher and decision authority.
 This source preparation did not fabricate any of the ten comparison events and
 does not authorize deployment or Phase A learning claims.
+
+# Runtime observation heartbeat reconciliation — 2026-08-15
+
+The retained CORE worker now preserves the last Shadow observation-cycle result,
+poll count and exact next eligible event in its governed heartbeat. This is
+observability only: observation mode still cannot pick missions, dispatch,
+release, execute or create feedback. A genuine Control Tower producer event
+remains the only way to advance the comparison sequence.
