@@ -9,6 +9,8 @@ presents its contact sheet, and gives one provider-confirmed completion receipt.
 Cross-reference: BMQ-20260813-04 is BUSINESS_COMPLETE and remains awareness
 proposal evidence. This mission reuses the same shared Oom Sakkie gateway and
 does not create another bot, worktree, n8n authority or storage ledger.
+BMQ-20260813-03 provides the retained operational trigger cross-reference for
+the eight-photo Bella album recovery below.
 
 ## 15 August incident evidence
 
@@ -85,3 +87,36 @@ Library Accept, Public Use, Campaign Review and publication remain separate.
 Limits: no Library Accept, public-use, campaign, publication, customer contact,
 spend or farm write. The runtime now waits for naturally desired media; no fresh
 test album is an acceptable owner burden.
+
+## 15 August Bella album retained-event recovery
+
+Failed n8n execution `64605` retained Telegram update `549158294`, message
+`3635`, unique file `AQADbw9rG7LkCFB-`, in provider album
+`14294356506266156`. Readback showed it was the only missing provider source:
+the open canonical group already held messages 3629-3634 and 3636, retained
+owner context `Bellas litter growing fast and coming along well`, and exposed
+receipt card 3637 with a seven-photo Finish Album claim.
+
+At deployed revision `6271c01ae63f364c5e84169c944a1cbeb5b2aea6`, the
+terminal invoked only the reviewed, exact-group recovery boundary. The deployed
+Oom Sakkie/BEACON runtime downloaded and validated message 3635, stored its
+original and thumbnail privately, and edited existing receipt 3637 once with
+zero new Telegram messages. Canonical order is now messages 3629-3636; counts
+are eight intake items, eight originals with matching storage-readback SHA-256,
+and eight thumbnails with matching physical SHA-256. The active protected
+Finish Album claim is bound to receipt 3637, count eight, retained context, and
+canonical digest `7ddbbd95ab14d8eac5a8f7008c1fbba7da6585f11aa47d38137416e4f8e4d00a`.
+No album member or completion event exists because Charl has not pressed Finish.
+
+One sequential and four concurrent exact-provider replays all returned
+`exact_intake_replay_withheld`. Counts, intake events, lifecycle events,
+protected claims, Telegram sends and Telegram edits remained unchanged. The
+temporary recovery credential was removed, unrelated Render configuration was
+unchanged, and the same exact revision was redeployed. A post-removal probe was
+contained as `beacon_media_recovery_context_invalid` with zero effects.
+
+This is terminal-assisted recovery evidence, not terminal-independent family
+acceptance. BMQ-20260813-02 remains WORKING. Charl may naturally press the bound
+Finish Album button; the deployed runtime owns that callback. The next naturally
+desired album must still establish complete event-driven intake without a
+development-terminal recovery invocation.
