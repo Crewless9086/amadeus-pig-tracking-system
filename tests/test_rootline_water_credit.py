@@ -86,6 +86,10 @@ def test_rehashed_tampered_quantity_is_rejected():
     value["credit_sha256"] = sha256(json.dumps(material, sort_keys=True,
         separators=(",", ":"), default=str).encode()).hexdigest()
     assert validate_water_credit(value) is False
+    missing = {**value, "volume_evidence": {
+        key: item for key, item in value["volume_evidence"].items()
+        if key != "measured_volume_litres"}}
+    assert validate_water_credit(missing) is False
 
 
 class FakeDatabase:

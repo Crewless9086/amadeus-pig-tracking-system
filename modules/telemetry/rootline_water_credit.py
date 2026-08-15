@@ -199,10 +199,14 @@ def _valid_volume_evidence(row, kind, zone):
 
 
 def _quantity_matches(credit, evidence):
-    expected = (float(evidence["measured_volume_litres"])
-        if credit.get("credit_method") == "measured_volume"
-        else float(evidence["litres_per_minute"]) * float(credit.get("verified_runtime_seconds") or 0) / 60)
-    return round(float(credit.get("delivered_volume_litres") or 0), 3) == round(expected, 3)
+    try:
+        expected = (float(evidence["measured_volume_litres"])
+            if credit.get("credit_method") == "measured_volume"
+            else float(evidence["litres_per_minute"]) * float(credit.get("verified_runtime_seconds") or 0) / 60)
+        return (expected > 0 and round(float(credit.get("delivered_volume_litres") or 0), 3)
+                == round(expected, 3))
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def _unknown(execution_id, zone, reason):

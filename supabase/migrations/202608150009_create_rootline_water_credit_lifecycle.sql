@@ -13,7 +13,11 @@ create table if not exists public.irrigation_water_volume_evidence (
   check (evidence_json->>'evidence_sha256' = evidence_sha256),
   check ((evidence_json->>'verified')::boolean is true),
   check (coalesce(evidence_json->>'observed_at',evidence_json->>'calibrated_at',evidence_json->>'recorded_at') is not null),
-  check (evidence_json->>'source' in ('verified_flow_meter','verified_volume_measurement','commissioned_zone_calibration'))
+  check (evidence_json->>'source' in ('verified_flow_meter','verified_volume_measurement','commissioned_zone_calibration')),
+  check ((evidence_type='measured_volume'
+      and (evidence_json->>'measured_volume_litres')::numeric > 0)
+    or (evidence_type='governed_calibration'
+      and (evidence_json->>'litres_per_minute')::numeric > 0))
 );
 
 create table if not exists public.irrigation_water_credit_events (
@@ -102,14 +106,23 @@ begin
         and x.review_json->'rootline_execution'->'shutdown_evidence'->>'state'='OFF') then
     raise exception 'canonical ROOTLINE completed execution missing or mismatched';
   end if;
-  if not ((p_credit->>'credit_method'='measured_volume'
-      and round((p_credit->>'delivered_volume_litres')::numeric,3)
-          =round((p_credit->'volume_evidence'->>'measured_volume_litres')::numeric,3))
-    or (p_credit->>'credit_method'='governed_calibration'
-      and round((p_credit->>'delivered_volume_litres')::numeric,3)
-          =round((p_credit->'volume_evidence'->>'litres_per_minute')::numeric
-             *(p_credit->>'verified_runtime_seconds')::numeric/60,3))) then
-    raise exception 'ROOTLINE water credit quantity mismatch';
+  if p_credit->>'credit_method'='measured_volume' then
+    if (p_credit->'volume_evidence'->>'measured_volume_litres')::numeric is null
+      or (p_credit->'volume_evidence'->>'measured_volume_litres')::numeric <= 0
+      or round((p_credit->>'delivered_volume_litres')::numeric,3) is distinct from
+         round((p_credit->'volume_evidence'->>'measured_volume_litres')::numeric,3) then
+      raise exception 'ROOTLINE water credit quantity mismatch';
+    end if;
+  elsif p_credit->>'credit_method'='governed_calibration' then
+    if (p_credit->'volume_evidence'->>'litres_per_minute')::numeric is null
+      or (p_credit->'volume_evidence'->>'litres_per_minute')::numeric <= 0
+      or round((p_credit->>'delivered_volume_litres')::numeric,3) is distinct from
+         round((p_credit->'volume_evidence'->>'litres_per_minute')::numeric
+             *(p_credit->>'verified_runtime_seconds')::numeric/60,3) then
+      raise exception 'ROOTLINE water credit quantity mismatch';
+    end if;
+  else
+    raise exception 'ROOTLINE water credit method invalid';
   end if;
   insert into public.irrigation_water_credit_events(
     credit_id,execution_id,zone_id,physical_acceptance_sha256,volume_evidence_id,
