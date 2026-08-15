@@ -141,3 +141,58 @@ def test_conflicting_exact_parent_roles_fail_closed():
     row = compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]
     assert row["breeding_role"] == "Unknown-conflicting"
     assert row["litter_outcomes"]["observed_litter_count"] == 0
+
+
+def test_human_identity_relationships_are_names_first_and_route_safe():
+    contexts = {f"{name}_context": "same governed cohort" for name in (
+        "management", "season", "environment", "feed", "health")}
+    data = {
+        "cutoff": date(2026, 8, 13),
+        "pigs": [
+            {"pig_id": "PIG-2026-TYSON", "name": "Tyson", "tag_number": "T-014", "animal_type": "Boar"},
+            {"pig_id": "PIG-2026-MOLLY", "name": "Molly", "tag_number": "M-027", "animal_type": "Sow"},
+            {"pig_id": "PIG-2026-PRINCE", "name": "Prince", "tag_number": "P-009", "animal_type": "Boar"},
+            {"pig_id": "PIG-2026-0632", "name": "Bella", "tag_number": "0632", "litter_id": "LIT-2026-5C36"},
+            {"pig_id": "PIG/unsafe?next=https://evil.example", "name": None, "tag_number": None,
+             "litter_id": "LIT-2026-5C36"},
+        ],
+        "litters": [{
+            "litter_id": "LIT-2026-5C36", "sow_pig_id": "PIG-2026-MOLLY",
+            "boar_pig_id": "PIG-2026-TYSON", "farrowing_date": "2026-05-20",
+            "litter_status": "Weaned", "born_alive": 8, "weaned_count": 7, **contexts,
+        }],
+        "observations": [], "lifecycle": [], "matings": [], "weights": [], "medical": [],
+    }
+    result = compose_full_lifecycle_merit(data, pig_id="PIG-2026-TYSON")
+    row = result["rows"][0]
+
+    assert result["identity_contract_version"] == "herdmaster_human_identity_v1"
+    assert row["identity"]["display_name"] == "Tyson"
+    assert row["identity"]["secondary_identity"] == "T-014"
+    assert row["identity"]["technical_identity"] == {"pig_id": "PIG-2026-TYSON"}
+    assert row["partner_comparisons"][0]["partner_identity"]["display_name"] == "Molly"
+    assert row["partner_comparisons"][0]["destination"]["href"] == "/breeding-analytics/PIG-2026-MOLLY"
+
+    litter = row["time_trend"][0]["litter_identity"]
+    assert litter["sow_identity"]["display_name"] == "Molly"
+    assert litter["destination"]["href"].startswith("/litter/LIT-2026-5C36?")
+    assert "return_to=%2Fbreeding-analytics%2FPIG-2026-TYSON" in litter["destination"]["href"]
+
+    offspring = row["family_relationships"]["offspring_identities"]
+    assert offspring[0]["display_name"] == "Bella"
+    unknown = next(item for item in offspring if item["pig_id"].startswith("PIG/unsafe"))
+    assert unknown["display_name"] == "Unknown"
+    assert unknown["presentation_state"] == "unknown"
+    assert unknown["technical_identity"]["pig_id"].startswith("PIG/unsafe")
+    assert "https://evil.example" not in unknown["destination"]["href"]
+    assert "%2Funsafe%3Fnext%3Dhttps%3A%2F%2Fevil.example" in unknown["destination"]["href"]
+
+
+def test_unresolved_partner_identity_fails_closed_without_a_destination():
+    data = evidence()
+    data["pigs"] = [row for row in data["pigs"] if row["pig_id"] != "B1"]
+    partner = compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]["partner_comparisons"][0]
+    assert partner["partner_identity"]["display_name"] == "Unknown"
+    assert partner["partner_identity"]["technical_identity"] == {"pig_id": "B1"}
+    assert partner["destination"]["href"] is None
+    assert partner["destination"]["unavailable_reason"] == "canonical_animal_identity_unresolved"

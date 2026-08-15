@@ -31,16 +31,22 @@ class FullLifecycleMeritPostgresTests(unittest.TestCase):
 
     def setUp(self):
         self.suffix = uuid.uuid4().hex[:10]
-        self.pig = f"MERIT-{self.suffix}"
+        self.pig = f"PIG-2026-TYSON-{self.suffix}"
+        self.partner = f"PIG-2026-MOLLY-{self.suffix}"
+        self.offspring = f"PIG-2026-BELLA-{self.suffix}"
         with psycopg.connect(self.url) as c:
-            c.execute("insert into public.merit_test_pigs values(%s,'Bonnie','TAG-1','Female',null)", (self.pig,))
+            c.execute("insert into public.merit_test_pigs values(%s,'Tyson','T-014','Male',null)", (self.pig,))
+            c.execute("insert into public.merit_test_pigs values(%s,'Molly','M-027','Female',null)", (self.partner,))
             for i in range(1, 4):
-                c.execute("insert into public.merit_test_litters values(%s,null,%s,'BOAR','2026-0" + str(i) + "-01','Weaned',8,7,'same','same','same','same','same')", (f"L-{self.suffix}-{i}", self.pig))
+                c.execute("insert into public.merit_test_litters values(%s,null,%s,%s,'2026-0" + str(i) + "-01','Weaned',8,7,'same','same','same','same','same')", (f"LIT-2026-{self.suffix}-{i}", self.partner, self.pig))
+            c.execute("insert into public.merit_test_pigs values(%s,'Bella','0632','Female',%s)",
+                      (self.offspring, f"LIT-2026-{self.suffix}-1"))
 
     def tearDown(self):
         with psycopg.connect(self.url) as c:
-            c.execute("delete from public.merit_test_litters where sow_pig_id=%s", (self.pig,))
-            c.execute("delete from public.merit_test_pigs where pig_id=%s", (self.pig,))
+            c.execute("delete from public.merit_test_litters where sow_pig_id=%s or boar_pig_id=%s", (self.partner, self.pig))
+            c.execute("delete from public.merit_test_pigs where pig_id=any(%s)",
+                      ([self.pig, self.partner, self.offspring],))
 
     def _counts(self):
         with psycopg.connect(self.url) as c:
@@ -57,7 +63,11 @@ class FullLifecycleMeritPostgresTests(unittest.TestCase):
         self.assertFalse(result["writes_performed"])
         self.assertEqual(result["read_progress"]["connection_count"], 1)
         self.assertEqual(result["read_progress"]["query_count"], 8)
-        self.assertEqual(result["rows"][0]["identity"]["display_name"], "Bonnie")
+        self.assertEqual(result["rows"][0]["identity"]["display_name"], "Tyson")
+        self.assertEqual(result["rows"][0]["identity"]["secondary_identity"], "T-014")
+        self.assertEqual(result["rows"][0]["partner_comparisons"][0]["partner_identity"]["display_name"], "Molly")
+        self.assertEqual(result["rows"][0]["time_trend"][0]["litter_identity"]["sow_identity"]["display_name"], "Molly")
+        self.assertEqual(result["rows"][0]["family_relationships"]["offspring_identities"][0]["display_name"], "Bella")
         self.assertEqual(result["rows"][0]["confidence"]["label"], "High")
 
     def test_concurrent_append_is_not_mixed_into_established_snapshot(self):
@@ -72,7 +82,7 @@ class FullLifecycleMeritPostgresTests(unittest.TestCase):
                 )
                 time.sleep(0.2)
                 with psycopg.connect(self.url) as writer:
-                    writer.execute("insert into public.merit_test_litters values(%s,null,%s,'BOAR','2026-04-01','Weaned',8,7,'same','same','same','same','same')", (late_id, self.pig))
+                    writer.execute("insert into public.merit_test_litters values(%s,null,%s,%s,'2026-04-01','Weaned',8,7,'same','same','same','same','same')", (late_id, self.partner, self.pig))
                 result = future.result(timeout=10)
             self.assertNotIn(late_id, result["rows"][0]["evidence_lineage"]["litter_ids"])
         finally:

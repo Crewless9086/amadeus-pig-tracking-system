@@ -43,8 +43,11 @@ target is superseded by the owner's page-specific direction here.
 
 ## 3. Non-negotiable interpretation rules
 
-1. Display authoritative animal name first. Show tag and Pig ID as secondary
-   identity. If the name is genuinely Unknown, use the tag, then Pig ID.
+1. Display authoritative animal name first and tag as secondary identity. If
+   the name is genuinely Unknown, use the tag as the primary fallback. If both
+   are unavailable, display an explicit `Unknown` presentation state; retain
+   Pig ID only as muted technical evidence and never promote it to the human
+   identity label.
 2. Missing, unresolved or incomplete evidence stays `Unknown`; it is never
    converted to zero, failure, clearance or poor merit.
 3. Every rate shows numerator, denominator, eligible/missing counts, cutoff and
@@ -226,6 +229,20 @@ Return:
 - route-safe navigation objects for every displayed parent, sibling, partner,
   offspring and litter, plus the current animal's Breeding Attention target.
   Missing/unavailable targets render as non-link text with the supplied reason.
+
+The compatible identity enrichment is identified by
+`identity_contract_version: herdmaster_human_identity_v1` while the biological
+packet remains `herdmaster_full_lifecycle_merit_v1`. Each animal identity
+contains `{display_name, name, tag_number, presentation_state,
+technical_identity, role, animal_type, canonical_identity_resolved,
+destination}`. `technical_identity.pig_id` is evidence, not display fallback.
+`partner_comparisons` contains `partner_identity`; `time_trend` contains
+`litter_identity`, its resolved `sow_identity`, and the validated litter
+destination; `family_relationships` contains structured dam, sire and offspring
+identities while retaining the v1 ID fields for compatibility. Destinations are
+backend-generated internal application paths. Litter destinations carry only a
+backend-generated return to the current animal profile; request-supplied return
+URLs are not accepted by this composer.
 
 ## 6. Plain-language interpretation contract
 

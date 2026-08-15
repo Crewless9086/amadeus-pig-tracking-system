@@ -100,12 +100,20 @@ class MatingRoutesTests(unittest.TestCase):
     @patch("modules.pig_weights.mating_routes.require_owner_read_access", return_value=None)
     @patch("modules.pig_weights.mating_routes.get_full_lifecycle_merit")
     def test_full_lifecycle_owner_read_is_private_and_write_free(self, merit, _guard):
-        merit.return_value = {"success": True, "contract_version": "herdmaster_full_lifecycle_merit_v1", "writes_performed": False}
-        response = self.client.get("/api/pig-weights/breeding-analytics/v1/full-lifecycle/SOW-1?cutoff=2026-08-13")
+        merit.return_value = {
+            "success": True,
+            "contract_version": "herdmaster_full_lifecycle_merit_v1",
+            "identity_contract_version": "herdmaster_human_identity_v1",
+            "rows": [{"identity": {"display_name": "Tyson", "tag_number": "T-014",
+                                     "technical_identity": {"pig_id": "PIG-2026-TYSON"}}}],
+            "writes_performed": False,
+        }
+        response = self.client.get("/api/pig-weights/breeding-analytics/v1/full-lifecycle/PIG-2026-TYSON?cutoff=2026-08-13")
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.get_json()["writes_performed"])
+        self.assertEqual(response.get_json()["rows"][0]["identity"]["display_name"], "Tyson")
         self.assertEqual(response.headers["Cache-Control"], "no-store, private")
-        merit.assert_called_once_with(date(2026, 8, 13), pig_id="SOW-1")
+        merit.assert_called_once_with(date(2026, 8, 13), pig_id="PIG-2026-TYSON")
 
     @patch("modules.pig_weights.mating_routes.require_owner_read_access", return_value=None)
     @patch("modules.pig_weights.mating_routes.get_full_lifecycle_merit")
