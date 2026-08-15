@@ -236,6 +236,82 @@ def get_current_weather_state(database_url=None):
     return _format_current_weather_response(row), 200
 
 
+def get_weather_dry_release_evidence(database_url=None, *, now=None):
+    """Prove the governed dry interval from durable local-station readings."""
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+    database_url = _database_url(database_url)
+    if not database_url:
+        return _not_configured()
+    evaluated_at = now or datetime.now(timezone.utc)
+    try:
+        with connect_bounded_read(database_url=database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select ts.stale_after_minutes, wls.flags, wls.summary_status
+                      from public.telemetry_sources ts
+                      left join public.weather_latest_state wls using (source_id)
+                     where ts.source_id = %s
+                    """,
+                    (DEFAULT_WEATHER_SOURCE_ID,),
+                )
+                source = cursor.fetchone()
+                cursor.execute(
+                    """
+                    with latest as (
+                        select max(reading_at) as reading_at
+                          from public.weather_readings where source_id = %s
+                    )
+                    select wr.reading_at, wr.rain_rate_mm_h
+                      from public.weather_readings wr, latest
+                     where wr.source_id = %s
+                       and wr.reading_at between latest.reading_at - interval '35 minutes'
+                                             and latest.reading_at
+                     order by wr.reading_at
+                    """,
+                    (DEFAULT_WEATHER_SOURCE_ID, DEFAULT_WEATHER_SOURCE_ID),
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return _service_failed("weather_dry_release_read_failed",
+            "Local weather dry-interval evidence read failed.", exc)
+    stale_after = int(source[0]) if source and source[0] is not None else ALERT_STALE_MINUTES
+    flags = dict(source[1] or {}) if source else {}
+    status = str(source[2] or "").lower() if source else "unavailable"
+    provider_healthy = status not in {"offline", "error", "critical", "unavailable"}
+    provider_healthy = provider_healthy and not any(flags.get(key) is True for key in (
+        "station_stale", "telemetry_conflict", "provider_error", "source_unhealthy"))
+    return build_weather_dry_release_evidence(
+        rows, evaluated_at=evaluated_at, stale_after_minutes=stale_after,
+        provider_healthy=provider_healthy), 200
+
+
+def build_weather_dry_release_evidence(rows, *, evaluated_at, stale_after_minutes,
+                                       provider_healthy=True):
+    readings = [{"observed_at": row[0].isoformat(),
+        "rain_rate_mm_h": _json_value(row[1]), "freshness": "fresh"}
+        for row in rows or () if row and row[0] is not None]
+    start = rows[0][0] if rows else None
+    end = rows[-1][0] if rows else None
+    source_fresh = bool(provider_healthy and end is not None and end <= evaluated_at
+        and evaluated_at - end <= timedelta(minutes=stale_after_minutes))
+    rates = [_number_or_none(row[1]) for row in rows or ()]
+    conflicting = any(rate is None for rate in rates)
+    interval_complete = bool(source_fresh and start is not None
+        and end - start >= timedelta(minutes=30) and len(readings) >= 2
+        and not conflicting and all(rate == 0 for rate in rates))
+    return {"success": True,
+        "availability": "Available" if source_fresh else "Unavailable",
+        "source": "governed_local_weather_station",
+        "source_id": DEFAULT_WEATHER_SOURCE_ID,
+        "source_healthy": source_fresh, "conflicting": conflicting,
+        "continuous_zero_rain_confirmed": interval_complete,
+        "interval_start_at": start.isoformat() if start else None,
+        "interval_end_at": end.isoformat() if end else None,
+        "station_readings": readings,
+        "writes_to_supabase": False, "writes_to_sheets": False}
+
+
 def get_weather_forecast(days=3, database_url=None):
     from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
     days = _bounded_days(days)

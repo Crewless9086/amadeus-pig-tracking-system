@@ -140,8 +140,8 @@ class WaterEnergyPlanTests(unittest.TestCase):
         complete = incomplete | {
             "dry_interval_minutes": 30,
             "fresh_readings_during_dry_interval": 2,
-            "no_visible_rain_confirmed": True,
-            "owner_review_confirmed": True,
+            "source_healthy": True,
+            "conflicting": False,
         }
         released = self.build(weather=complete, water_demand={"status": "normal"})
         self.assertTrue(released["rain_capture"]["dry_release_proven"])

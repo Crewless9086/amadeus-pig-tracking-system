@@ -1,10 +1,12 @@
 import unittest
 import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 from app import app
 from modules.telemetry.rootline_daily_brief import build_rootline_daily_brief,get_rootline_daily_brief
+from modules.telemetry.weather_service import build_weather_dry_release_evidence
 
 
 def evidence(**overrides):
@@ -24,6 +26,33 @@ def evidence(**overrides):
 
 
 class RootlineDailyBriefTests(unittest.TestCase):
+    def test_durable_local_weather_proves_automatic_dry_interval(self):
+        end = datetime(2026, 8, 15, 10, 0, tzinfo=timezone.utc)
+        packet = build_weather_dry_release_evidence(
+            [(end - timedelta(minutes=30), 0.0), (end, 0.0)],
+            evaluated_at=end + timedelta(minutes=2), stale_after_minutes=30)
+        self.assertTrue(packet["source_healthy"])
+        self.assertTrue(packet["continuous_zero_rain_confirmed"])
+        self.assertEqual(packet["source"], "governed_local_weather_station")
+
+    def test_dry_interval_fails_closed_for_rain_stale_or_missing_boundary(self):
+        end = datetime(2026, 8, 15, 10, 0, tzinfo=timezone.utc)
+        cases = (
+            ([(end - timedelta(minutes=30), 0.0), (end, 0.1)], end),
+            ([(end - timedelta(minutes=20), 0.0), (end, 0.0)], end),
+            ([(end - timedelta(minutes=30), 0.0), (end, 0.0)], end + timedelta(minutes=31)),
+        )
+        for rows, evaluated_at in cases:
+            with self.subTest(rows=rows, evaluated_at=evaluated_at):
+                packet = build_weather_dry_release_evidence(
+                    rows, evaluated_at=evaluated_at, stale_after_minutes=30)
+                self.assertFalse(packet["continuous_zero_rain_confirmed"])
+        unhealthy = build_weather_dry_release_evidence(
+            [(end - timedelta(minutes=30), 0.0), (end, 0.0)],
+            evaluated_at=end, stale_after_minutes=30, provider_healthy=False)
+        self.assertFalse(unhealthy["source_healthy"])
+        self.assertFalse(unhealthy["continuous_zero_rain_confirmed"])
+
     def test_independent_readers_start_concurrently(self):
         barrier=threading.Barrier(4);threads=set();guard=threading.Lock()
         def reader():

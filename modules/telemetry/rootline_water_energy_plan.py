@@ -967,8 +967,8 @@ def _rain_effect(weather, weather_state, forecast, forecast_state):
         weather_state == "fresh" and current == 0
         and weather.get("dry_interval_minutes", 0) >= 30
         and weather.get("fresh_readings_during_dry_interval", 0) >= 2
-        and weather.get("no_visible_rain_confirmed") is True
-        and weather.get("owner_review_confirmed") is True
+        and weather.get("source_healthy") is True
+        and weather.get("conflicting") is False
     )
     rain_hold_state = (
         "active" if live else "released" if dry_release_proven else UNKNOWN

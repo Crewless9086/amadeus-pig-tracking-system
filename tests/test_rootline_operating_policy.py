@@ -62,8 +62,8 @@ def approved_dry_release():
         "dry_interval_minutes": 30,
         "dry_rain_rate_mm_per_hour": 0.0,
         "minimum_fresh_station_readings": 2,
-        "visible_rain_confirmation_required": True,
-        "owner_review_required": True,
+        "visible_rain_confirmation_required": False,
+        "owner_review_required": False,
     }
 
 
@@ -117,7 +117,7 @@ class RootlineOperatingPolicyTests(unittest.TestCase):
         self.assertFalse(0.2 > rule["threshold_mm_per_hour"])
         self.assertTrue(0.21 > rule["threshold_mm_per_hour"])
 
-    def test_owner_confirmed_dry_release_contract_is_exact(self):
+    def test_automatic_dry_release_contract_is_exact(self):
         payload = unknown_policy()
         payload["live_rain_hold"] = {
             "evidence_field": "current_rain_rate_mm_per_hour",
@@ -141,8 +141,8 @@ class RootlineOperatingPolicyTests(unittest.TestCase):
             ("dry_interval_minutes", 29),
             ("dry_rain_rate_mm_per_hour", 0.1),
             ("minimum_fresh_station_readings", 1),
-            ("visible_rain_confirmation_required", False),
-            ("owner_review_required", False),
+            ("visible_rain_confirmation_required", "yes"),
+            ("owner_review_required", 1),
         )
         for key, value in mutations:
             with self.subTest(key=key, value=value):
