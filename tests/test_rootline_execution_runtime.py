@@ -20,6 +20,10 @@ def plan():
 
 def evidence(rain=0):
     return {"weather":{"observed_at":NOW.isoformat(),"rain_rate_mm_h":rain,"rain_today_mm":rain},
+            "irrigation":{"source":"rootline_daily_advisor",
+                "advisor_generated_at":NOW.isoformat(),
+                "advisor_operating_date":"2026-08-08",
+                "zones":[{"zone_id":"B12345","live_rain_release_proven":True}]},
             "tanks":{"observed_at":NOW.isoformat(),"reservoir_state":"FULL","reservoir_fraction":1.0}}
 
 
