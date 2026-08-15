@@ -90,6 +90,22 @@ script or a synthetic canary cannot by itself establish autonomous operation.
 - Exact next terminal:
 - Expected owner-visible result:
 
+## Mandatory all-terminal closure gate
+
+Before Control Tower may end its response, list CORE, OOM SAKKIE, ROOTLINE,
+HERDMASTER, SAM, BEACON and CODEX UI with a fresh terminal state. Every
+`idle` or `released` terminal must have exactly one of:
+
+- `SEND NOW` with its highest-priority eligible existing mission;
+- `DEPENDENCY IDLE` with the exact mission/event/authority dependency and the
+  trigger that makes it eligible; or
+- `NO SAFE WORK` with the inspected queue evidence.
+
+Silently leaving an eligible terminal idle is a failed Control Tower
+transaction. Completing the named terminal assessment does not waive this
+gate. Prepared prompts must still be distinguished from delivered and started
+work, and no active terminal may be interrupted merely to maximize utilization.
+
 ## Mandatory owner-facing prompt rule
 
 The dispatch banner controls whether Charl receives prompt text:
