@@ -2475,10 +2475,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(packet["physical_controls_enabled"])
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
-        self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
+        self.assertIn("canonical CORE mission review readback", packet["claude_prompt"])
         self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EE")
         self.assertIn("10.9EE", packet["current_review"]["scope"])
-        self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
+        self.assertEqual(packet["current_review"]["review_source"], "supabase:charlie_missions.metadata.review_packet")
+        self.assertNotIn("handoff_file", packet["current_review"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
         self.assertFalse(packet["current_review"]["changes_prompt_now"])
@@ -3056,7 +3057,7 @@ def literal_false_is_allowed():
         self.assertFalse(packet["physical_controls_enabled"])
         self.assertEqual(packet["payloads"]["dispatch_blueprint"]["summary_status"], "blueprint_only_no_dispatch")
         self.assertIn("dispatch decision rail blueprint remains blueprint-only", packet["review_focus"])
-        self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
+        self.assertIn("canonical CORE mission review readback", packet["claude_prompt"])
 
     def test_agent_runtime_inspection_surfaces_keep_authority_flags_false(self):
         surfaces = {
@@ -3318,7 +3319,7 @@ def literal_false_is_allowed():
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
-        self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
+        self.assertIn("canonical CORE mission review readback", result["llm_context"]["claude_prompt"])
         self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EE")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])

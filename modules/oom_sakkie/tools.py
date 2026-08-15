@@ -2224,7 +2224,7 @@ def jarvis_owner_review_packet_handler(_args):
         "success": True,
         "status": "ok",
         "summary": summary,
-        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "links": [{"label": "Canonical CORE Review Queue", "href": "/charlie"}],
         "stale_warnings": [
             "Owner review packet is assembled locally. It does not call Claude, GitHub, or any external review service."
         ],
@@ -2263,7 +2263,7 @@ def learning_influence_consumption_readiness_handler(_args):
         "success": True,
         "status": "ok",
         "summary": summary,
-        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "links": [{"label": "Canonical CORE Review Queue", "href": "/charlie"}],
         "stale_warnings": [],
         "safety_notes": [
             "Learning consumption readiness is read-only. It does not consume proposals, apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
@@ -2298,7 +2298,7 @@ def learning_influence_consumption_audit_rail_blueprint_handler(_args):
         "success": True,
         "status": "ok",
         "summary": summary,
-        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "links": [{"label": "Canonical CORE Review Queue", "href": "/charlie"}],
         "stale_warnings": [],
         "safety_notes": [
             "Learning consumption audit rail status is read-only. It does not consume proposals, apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
@@ -2333,7 +2333,7 @@ def learning_influence_consumer_design_packet_handler(_args):
         "success": True,
         "status": "ok",
         "summary": summary,
-        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "links": [{"label": "Canonical CORE Review Queue", "href": "/charlie"}],
         "stale_warnings": [],
         "safety_notes": [
             "Learning influence consumer design packet is read-only. The reviewed consumer can produce a review-note artifact only; it does not apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
@@ -2467,7 +2467,7 @@ def agent_activation_preflight_handler(_args):
         "links": [
             {
                 "label": "Claude Review Handoff",
-                "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
+                "href": "/charlie",
             }
         ],
         "stale_warnings": [],
