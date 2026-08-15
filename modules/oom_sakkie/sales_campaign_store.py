@@ -952,6 +952,14 @@ def build_sam_meat_intake_lead_payload(payload):
         "notes": notes,
         "conversation_id": conversation_id,
         "contact_id": contact_id,
+        "account_id": _clean_text(payload.get("account_id"), 100),
+        "canonical_customer_id": _clean_text(payload.get("canonical_customer_id"), 100),
+        "customer_language": _clean_text(payload.get("customer_language"), 40),
+        "campaign_id": _clean_text(payload.get("campaign_id"), 100),
+        "campaign_source": _clean_text(payload.get("campaign_source"), 120),
+        "source_context": _clean_text(payload.get("source_context"), 700),
+        "current_conversation_goal": _clean_text(payload.get("current_conversation_goal"), 240),
+        "last_unanswered_question": _clean_text(payload.get("last_unanswered_question"), 500),
         "sam_intake_lane": "meat_preorder",
         "lead_qualification_status": qualification_status,
         "lead_qualification_reason": qualification_reason,
@@ -1264,6 +1272,103 @@ def get_active_sales_lead_by_conversation(conversation_id, database_url=None):
         "lead_id": lead.get("lead_id", ""),
         "lead": lead,
         **_false_flags(),
+    }, 200
+
+
+def get_active_sales_lead_by_customer_identity(canonical_customer_id, account_id="", contact_id="", database_url=None):
+    """Read one active Meat lead across provider conversations; never writes."""
+    canonical_customer_id = _clean_text(canonical_customer_id, 100)
+    account_id = _clean_text(account_id, 100)
+    contact_id = _clean_text(contact_id, 100)
+    if not canonical_customer_id and not (account_id and contact_id):
+        return {"success": False, "status": "customer_identity_required", **_false_flags()}, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "configured": False, "status": "not_configured", **_false_flags()}, 503
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing", **_false_flags()}, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select l.lead_id, l.campaign_id, l.draft_id, l.send_design_id,
+                           l.status, l.mode, l.campaign_source, l.lead_label,
+                           l.contact_label, l.channel, l.chatwoot_conversation_id,
+                           l.whatsapp_window_state, l.last_inbound_at, l.opt_in_state,
+                           l.interest_json, l.next_owner_action, l.linked_order_id,
+                           l.linked_preorder_id, l.created_by,
+                           l.sends_customer_message, l.calls_chatwoot, l.calls_n8n,
+                           l.creates_quote, l.creates_order, l.changes_stock,
+                           l.dispatch_enabled, l.changes_runtime_now, l.changes_prompt_now,
+                           l.physical_controls_enabled, l.customer_public_output_enabled,
+                           l.writes_farm_data, l.created_at,
+                           ev.event_type, ev.notes, ev.recorded_by, ev.created_at
+                    from public.oom_sakkie_sales_leads l
+                    left join lateral (
+                        select event_type, notes, recorded_by, created_at
+                        from public.oom_sakkie_sales_lead_events e
+                        where e.lead_id = l.lead_id
+                        order by created_at desc
+                        limit 1
+                    ) ev on true
+                    where l.status in ('new', 'interested', 'asked_price', 'needs_callback', 'deposit_pending', 'order_ready_for_approval')
+                      and coalesce(ev.event_type, '') <> 'closed'
+                      and (
+                        (%(canonical_customer_id)s <> '' and
+                         (coalesce(l.interest_json->>'canonical_customer_id', '') = %(canonical_customer_id)s
+                          or exists (
+                            select 1 from public.oom_sakkie_sales_lead_events identity_event
+                            where identity_event.lead_id = l.lead_id
+                              and identity_event.recorded_by = 'sam_meat_intake'
+                              and position(%(canonical_customer_id)s in coalesce(identity_event.notes, '')) > 0
+                          )))
+                        or
+                        (%(account_id)s <> '' and %(contact_id)s <> '' and
+                         coalesce(l.interest_json->>'account_id', '') = %(account_id)s and
+                         coalesce(l.interest_json->>'contact_id', '') = %(contact_id)s)
+                      )
+                    order by coalesce(ev.created_at, l.created_at) desc, l.created_at desc
+                    limit 1
+                    """,
+                    {"canonical_customer_id": canonical_customer_id, "account_id": account_id, "contact_id": contact_id},
+                )
+                row = cursor.fetchone()
+                event_rows = []
+                if row:
+                    cursor.execute(
+                        """
+                        select event_type, notes, recorded_by, status_observed, created_at
+                        from public.oom_sakkie_sales_lead_events
+                        where lead_id = %(lead_id)s
+                        order by created_at asc
+                        limit 100
+                        """,
+                        {"lead_id": row[0]},
+                    )
+                    event_rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False, "configured": True,
+            "status": "active_sales_lead_by_customer_identity_read_failed",
+            "error_type": exc.__class__.__name__, **_false_flags(),
+        }, 503
+    if not row:
+        return {
+            "success": False, "configured": True,
+            "status": "active_sales_lead_by_customer_identity_not_found", **_false_flags(),
+        }, 404
+    lead = _sales_lead_row(row)
+    lead["events"] = [_sales_lead_event_row(event_row) for event_row in event_rows]
+    lead["interest"] = _merged_sales_lead_interest(lead)
+    return {
+        "success": True, "configured": True, "status": "ok",
+        "mode": "active_sales_lead_by_customer_identity", "lead_id": lead.get("lead_id", ""),
+        "lead": lead, **_false_flags(),
     }, 200
 
 
