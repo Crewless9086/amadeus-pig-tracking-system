@@ -123,6 +123,7 @@ from modules.oom_sakkie.morning_scheduler import (
     run_synthetic_acceptance,
 )
 from modules.oom_sakkie.protected_payment_recovery import run_payment_recovery_cycle
+from modules.oom_sakkie.rootline_physical_acceptance import attach_physical_acceptance
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
 from modules.oom_sakkie.telegram_gateway import (
@@ -304,6 +305,19 @@ def oom_sakkie_sale_payment_preview():
 def oom_sakkie_rootline_reassess():
     result, status_code = handle_rootline_reassessment_trigger(
         request.get_json(silent=True) or {}, headers=request.headers)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/rootline/physical-acceptance", methods=["POST"])
+def oom_sakkie_rootline_physical_acceptance():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    from modules.auth.owner_access import strict_owner_admin_principal
+    result, status_code = attach_physical_acceptance(
+        request.get_json(silent=True) or {},
+        owner_principal=strict_owner_admin_principal(),
+    )
     return jsonify(result), status_code
 
 
