@@ -35,6 +35,22 @@ Control Tower must:
    `NEW_MISSION`, `WAIT_FOR_INPUT` or `CLOSE`;
 9. only then return the assessment and continuation prompt to Charl.
 
+Before displaying any prompt text, Control Tower must also emit exactly one
+owner-facing dispatch banner:
+
+- `DO NOT SEND — TERMINAL ACTIVE` when the exact terminal is already executing
+  the correct mission. No sendable prompt text may follow.
+- `SEND NOW — TERMINAL IDLE OR RELEASED` only when fresh evidence proves the
+  terminal can accept the named mission now.
+- `HOLD — VERIFY TERMINAL STATE` when current terminal state is Unknown or
+  contradictory. No sendable prompt text may follow.
+
+This presentation rule is mandatory even when an assessment request asks for a
+continuation prompt. A queued addendum remains in this register until the next
+safe terminal feedback boundary unless immediate delivery is genuinely needed
+and explicitly classified. Control Tower must not rely on conversation memory
+as the dispatch record.
+
 Before assigning or reporting any autonomous specialist mission, Control Tower
 must also apply the Agent Operational Reality Gate. Record web/API state,
 background-worker state, autonomous trigger, heartbeat, last independent cycle,
