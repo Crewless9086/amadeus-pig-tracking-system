@@ -1,461 +1,175 @@
-const dashboardMessage = document.getElementById("dashboard_message");
-const dashboardTimestamp = document.getElementById("dashboard_timestamp");
+const dashboardState = { attention: new Map(), priorities: new Map(), loaded: 0 };
+const byId = id => document.getElementById(id);
+const setText = (id, value) => { const el = byId(id); if (el) el.textContent = value ?? "--"; };
+const number = (value, suffix = "") => Number.isFinite(Number(value)) ? `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}${suffix}` : "--";
+const money = value => Number.isFinite(Number(value)) ? `R${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "--";
+const label = (value, fallback = "--") => value ? String(value).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : fallback;
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+const escapeHtml = value => String(value ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
 
-const state = {
-  weatherCurrent: null,
-  weatherToday: null,
-  forecast: null,
-  powerCurrent: null,
-  irrigation: null,
-  rollup: null,
-    rootline: null,
-    rootlineAdvisor: null,
-    rootlineDailyPlan: null,
-    rootlinePolicy: null,
-    rootlineWaterEnergy: null,
-  farm: null,
-  orders: null,
-};
-
-function byId(id) {
-  return document.getElementById(id);
+async function fetchJson(url, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
+    const data = await response.json();
+    if (!response.ok || data.success === false) throw new Error(data.message || data.status || `HTTP ${response.status}`);
+    return data;
+  } finally { clearTimeout(timer); }
 }
 
-function setText(id, value) {
-  const element = byId(id);
-  if (element) {
-    element.textContent = value ?? "--";
-  }
-}
-
-function showDashboardMessage(message, type = "error") {
-  dashboardMessage.classList.remove("hidden", "message-success", "message-error");
-  dashboardMessage.classList.add(type === "success" ? "message-success" : "message-error");
-  dashboardMessage.textContent = message;
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function numberOrDash(value, suffix = "") {
-  if (value === null || value === undefined || value === "") return "--";
-  const number = Number(value);
-  if (!Number.isFinite(number)) return escapeHtml(value);
-  return `${number.toLocaleString(undefined, { maximumFractionDigits: 2 })}${suffix}`;
-}
-
-function money(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "R0";
-  return `R${number.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-}
-
-function displayLabel(value, fallback = "--") {
-  if (value === null || value === undefined || value === "") return fallback;
-  return String(value)
-    .replace(/_/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, char => char.toUpperCase());
-}
-
-function kw(value) {
-  if (value === null || value === undefined || value === "") return "--";
-  return `${(Number(value) / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} kW`;
-}
-
-function pct(value) {
-  return numberOrDash(value, "%");
-}
-
-function mm(value) {
-  return numberOrDash(value, " mm");
-}
-
-function kmh(value) {
-  return numberOrDash(value, " km/h");
-}
-
-function minutesAge(value) {
-  const minutes = Number(value);
-  if (!Number.isFinite(minutes)) return "No age";
-  if (minutes < 1) return "Now";
-  if (minutes === 1) return "1 min";
-  return `${minutes} min`;
-}
-
-function localISODate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function todayISO() {
-  return localISODate(new Date());
-}
-
-function yesterdayISO() {
-  const date = new Date();
-  date.setDate(date.getDate() - 1);
-  return localISODate(date);
-}
-
-function formatDateLabel(value) {
-  if (!value) return "--";
-  const date = new Date(`${value}T00:00:00`);
-  return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
-
-async function fetchJson(url) {
-  const response = await fetch(url);
-  const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    throw new Error(`Expected JSON from ${url}, got HTTP ${response.status}. Restart the local Flask server if this is a local review.`);
-  }
-  const data = await response.json();
-  if (!response.ok || data.success === false) {
-    const message = data.message || data.errors?.[0] || `Request failed: ${url}`;
-    throw new Error(message);
-  }
-  return data;
-}
-
-function renderError(panelId, message) {
+function finish(panelId, ok = true) {
   const panel = byId(panelId);
   if (!panel) return;
-  panel.classList.add("ops-panel-warning");
-  const warning = document.createElement("p");
-  warning.className = "ops-error-text";
-  warning.textContent = message;
-  panel.appendChild(warning);
+  panel.classList.remove("is-loading");
+  panel.classList.toggle("is-unavailable", !ok);
+}
+function addAttention(key, title, detail, href, priority = 20) { dashboardState.attention.set(key, { title, detail, href, priority }); renderAttention(); }
+function removeAttention(key) { dashboardState.attention.delete(key); renderAttention(); }
+function addPriority(key, text) { dashboardState.priorities.set(key, text); renderPriorities(); }
+function removePriority(key) { dashboardState.priorities.delete(key); renderPriorities(); }
+function renderAttention() {
+  const items = [...dashboardState.attention.values()].sort((a,b) => a.priority - b.priority).slice(0, 3);
+  setText("status_attention", items.length ? `${items.length} item${items.length === 1 ? "" : "s"}` : dashboardState.loaded ? "Clear" : "Checking");
+  setText("attention_state", items.length ? "Act on the important work first" : dashboardState.loaded ? "No urgent item found" : "Checking the farm");
+  const list = byId("attention_list");
+  if (list) list.innerHTML = items.length ? items.map(item => `<a class="attention-item" href="${item.href}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></a>`).join("") : `<div class="attention-placeholder">${dashboardState.loaded ? "No urgent item is supported by the available farm evidence." : "Current priorities will appear independently as each farm source responds."}</div>`;
+}
+function renderPriorities() {
+  const items = [...dashboardState.priorities.values()].slice(0, 3);
+  byId("manager_priorities").innerHTML = items.length ? items.map(item => `<li>${escapeHtml(item)}</li>`).join("") : "<li>No supported priority has loaded yet.</li>";
+}
+function weatherSymbol(current) {
+  if (Number(current?.rain_rate_mm_h || 0) > 0) return "Rain";
+  if (Number(current?.temperature_c) >= 26) return "Sun";
+  return "Cloud";
+}
+function planState(item) {
+  if (!item) return "No plan";
+  const status = label(item.status, "Hold");
+  return item.planned_minutes ? `${status} · ${number(item.planned_minutes, " min")}` : status;
 }
 
-function renderWeather() {
-  const current = state.weatherCurrent || {};
-  const weather = current.current || {};
-  const source = current.source || {};
-  const summary = current.summary || {};
-
-  setText("weather_temperature", `${numberOrDash(weather.temperature_c)} C`);
-  setText("weather_headline", summary.headline || "Current weather loaded.");
-  setText("weather_age", minutesAge(source.data_age_minutes));
-  setText("weather_humidity", pct(weather.humidity_pct));
-  setText("weather_wind", `${kmh(weather.wind_speed_kmh)} / gust ${kmh(weather.wind_gust_kmh)}`);
-  setText("weather_rain", mm(weather.rain_today_mm));
-  setText("weather_pressure", `${numberOrDash(weather.pressure_hpa)} hPa`);
-  setText("alert_weather", summary.status === "ok" ? "Clear" : (summary.status || "Review"));
-
-  const today = state.weatherToday || {};
-  setText("today_temperature", `${numberOrDash(today.temperature?.min_c)} - ${numberOrDash(today.temperature?.max_c)} C`);
-  setText("today_rain", mm(today.rain?.total_mm));
-  setText("today_wind", kmh(today.wind?.max_speed_kmh));
-  setText("today_coverage", pct(today.window?.coverage_pct));
-
-  const forecast = state.forecast?.days || [];
-  const forecastStrip = byId("forecast_strip");
-  forecastStrip.innerHTML = forecast.length
-    ? forecast.map(day => `
-      <div class="forecast-day">
-        <span>${escapeHtml(formatDateLabel(day.forecast_date))}</span>
-        <strong>${numberOrDash(day.temp_min_c)} - ${numberOrDash(day.temp_max_c)} C</strong>
-        <small>${mm(day.rain_sum_mm)} rain</small>
-      </div>
-    `).join("")
-    : `<div class="ops-empty-inline">No forecast loaded.</div>`;
+async function loadWeather() {
+  try {
+    const data = await fetchJson("/api/telemetry/weather/current");
+    const current = data.current || {};
+    const icon = weatherSymbol(current);
+    setText("weather_symbol", icon); setText("status_weather_icon", icon);
+    setText("weather_temperature", `${number(current.temperature_c)} °C`);
+    setText("weather_headline", data.summary?.headline || "Current local conditions available.");
+    setText("weather_rain", number(current.rain_today_mm, " mm"));
+    setText("weather_humidity", number(current.humidity_pct, "%"));
+    setText("weather_wind", number(current.wind_speed_kmh, " km/h"));
+    setText("weather_age", Number.isFinite(Number(data.source?.data_age_minutes)) ? `${number(data.source.data_age_minutes)} min old` : "Live station");
+    setText("status_weather", Number(current.rain_rate_mm_h) > 0 ? `Rain ${number(current.rain_rate_mm_h, " mm/h")}` : `${number(current.temperature_c)} °C · ${current.rain_today_mm ? number(current.rain_today_mm, " mm today") : "Dry"}`);
+    if (data.flags?.irrigation_caution) addPriority("weather", `Weather caution: ${number(current.rain_today_mm, " mm")} rain today and ${number(current.wind_speed_kmh, " km/h")} wind.`); else removePriority("weather");
+    finish("weather_panel");
+  } catch (_) { setText("weather_headline", "Weather is temporarily unavailable."); setText("weather_age", "Unavailable"); setText("status_weather", "Unavailable"); finish("weather_panel", false); }
 }
-
-function renderPower() {
-  const current = state.powerCurrent || {};
-  const power = current.current || {};
-  const source = current.source || {};
-  const summary = current.summary || {};
-  const rollup = state.rollup?.stored_rollups?.power || {};
-
-  setText("power_battery", pct(power.battery_soc_pct));
-  setText("power_headline", summary.headline || "Power data loaded.");
-  setText("power_age", minutesAge(source.data_age_minutes));
-  setText("power_solar", kw(power.solar_power_w));
-  setText("power_load", kw(power.load_power_w));
-  setText("power_grid", power.grid_state ? displayLabel(power.grid_state) : kw(power.grid_power_w));
-  setText("power_generator", power.generator_state ? displayLabel(power.generator_state) : kw(power.generator_power_w));
-  setText("alert_power", summary.status === "ok" ? "Normal" : (summary.status || "Review"));
-
-  setText("rollup_load_kwh", numberOrDash(rollup.estimated_load_kwh, " kWh"));
-  setText("rollup_solar_kwh", numberOrDash(rollup.estimated_solar_kwh, " kWh"));
-  setText("rollup_value", rollup.estimated_value_zar === undefined ? "--" : `R${numberOrDash(rollup.estimated_value_zar)}`);
-  setText("rollup_power_quality", displayLabel(rollup.quality));
+async function loadForecast() {
+  try {
+    const data = await fetchJson("/api/telemetry/weather/forecast?days=3");
+    const next = (data.days || []).find(day => Number(day.offset_days) === 1) || (data.days || [])[0];
+    setText("weather_next", next ? `${number(next.temp_min_c)}-${number(next.temp_max_c)} °C · ${number(next.rain_sum_mm, " mm")}` : "No forecast");
+    if (next?.flags?.work_caution) addPriority("forecast", `Tomorrow: ${number(next.rain_sum_mm, " mm")} rain and ${number(next.wind_max_kmh, " km/h")} wind forecast.`); else removePriority("forecast");
+  } catch (_) { setText("weather_next", "Unavailable"); }
 }
-
-function renderIrrigation() {
-  const irrigation = state.irrigation || {};
-  const current = irrigation.current || {};
-  const today = irrigation.today || {};
-  const notes = irrigation.operator_summary?.notes || [];
-
-  setText("irrigation_status", current.status || "--");
-  setText("irrigation_note", notes[0] || "Read-only irrigation status loaded.");
-  setText("irrigation_source", displayLabel(irrigation.source?.source, "source"));
-  setText("irrigation_current_zone", current.zone_name || current.zone_id || "--");
-  setText("irrigation_next_zone", today.next_zone_name || today.next_zone_id || "--");
-  setText("irrigation_planned", numberOrDash(today.planned_count));
-  setText("irrigation_completed", numberOrDash(today.done_count));
-  setText("alert_irrigation", displayLabel(current.status, "Review"));
-
-  const plan = today.plan || [];
-  byId("irrigation_plan_list").innerHTML = plan.length
-    ? plan.slice(0, 4).map(item => `
-      <div class="ops-list-row">
-        <strong>${escapeHtml(item.zone_name || item.zone_id || "Zone")}</strong>
-        <span>${escapeHtml(displayLabel(item.status))} - ${numberOrDash(item.planned_minutes, " min")}</span>
-      </div>
-    `).join("")
-    : `<div class="ops-empty-inline">No plan rows for today.</div>`;
+async function loadPower() {
+  try {
+    const data = await fetchJson("/api/telemetry/power/current");
+    const current = data.current || {};
+    setText("power_battery", number(current.battery_soc_pct, "%"));
+    setText("power_solar", number(Number(current.solar_power_w) / 1000, " kW"));
+    setText("power_load", number(Number(current.load_power_w) / 1000, " kW"));
+    setText("power_grid", number(Number(current.grid_power_w) / 1000, " kW"));
+    setText("power_state", label(current.battery_state, "Unknown"));
+    setText("power_headline", (data.summary?.operator_notes || []).join(" ") || data.summary?.headline || "Current electrical state available.");
+    setText("power_age", Number.isFinite(Number(data.source?.data_age_minutes)) ? `${number(data.source.data_age_minutes)} min old` : "Current");
+    setText("status_power", `${number(current.battery_soc_pct, "%")} · ${number(Number(current.load_power_w) / 1000, " kW load")}`);
+    if (data.flags?.low_battery || data.flags?.high_load) addAttention("power", "Power needs attention", data.summary?.headline || "Review power state", "/power", 7); else removeAttention("power");
+    finish("power_panel");
+  } catch (_) { setText("power_headline", "Power is temporarily unavailable."); setText("power_age", "Unavailable"); setText("status_power", "Unavailable"); finish("power_panel", false); }
 }
-
-function renderRootline() {
-  const brief = state.rootline || {};
-  const advisor = state.rootlineAdvisor || {};
-  setText("rootline_status", displayLabel(brief.status, "Unavailable"));
-  setText("rootline_summary", brief.executive_summary || "Rootline daily brief is unavailable.");
-  const conditions = brief.current_conditions || {};
-  setText(
-    "rootline_conditions",
-    conditions.availability === "Available"
-      ? `${numberOrDash(conditions.temperature_c)} °C · ${numberOrDash(conditions.rain_today_mm)} mm · ${numberOrDash(conditions.wind_speed_kmh)} km/h · ${numberOrDash(conditions.pressure_hpa)} hPa`
-      : "Current conditions Unavailable"
-  );
-    setText(
-      "rootline_advisor_summary",
-      advisor.executive_summary || "Owner-only advice Unavailable."
-    );
-    const advisorZones = advisor.zones || [];
-    byId("rootline_advisor_zones").innerHTML = advisorZones.length
-      ? advisorZones.map(zone => `
-        <div class="ops-list-row">
-          <strong>${escapeHtml(zone.zone_name || zone.zone_id || "Zone")} · ${escapeHtml(zone.recommendation || "Needs Data")}</strong>
-          <span>Eligible: ${escapeHtml(zone.eligibility_today || "Needs Data")} · Runtime: ${escapeHtml(zone.proposed_runtime_status || "Unavailable")} · ${escapeHtml((zone.reasoning || []).join(" "))}</span>
-        </div>
-      `).join("")
-      : `<div class="ops-empty-inline">Zone advice Unavailable.</div>`;
-    const advisorDecisions = advisor.unresolved_owner_decisions || [];
-    byId("rootline_advisor_decisions").innerHTML = advisorDecisions.length
-      ? advisorDecisions.map(item => `
-        <div class="ops-list-row">
-          <strong>${escapeHtml(displayLabel(item.decision, "Decision"))}</strong>
-          <span>${escapeHtml(item.current_value || "Unknown")}</span>
-        </div>
-      `).join("")
-      : `<div class="ops-empty-inline">No unresolved decisions reported.</div>`;
-    renderRootlinePolicy();
-    renderRootlineWaterEnergy();
-    const zones = brief.irrigation?.zones || [];
-    const planPacket = state.rootlineDailyPlan || {};
-    const plan = planPacket.daily_plan;
-    byId("rootline_daily_plan").innerHTML = plan
-      ? `<div class="ops-list-row">
-          <strong>${escapeHtml(plan.operating_date)} · Generation ${escapeHtml(plan.generation)}</strong>
-          <span>${escapeHtml(displayLabel(plan.status, "Unavailable"))} · Evidence ${escapeHtml(plan.evidence_observed_at || "Unavailable")} · ${escapeHtml(plan.replacement_reason || "Replacement reason Unavailable")}</span>
-        </div>`
-      : `<div class="ops-empty-inline">${escapeHtml(planPacket.owner_message || "Daily irrigation plan Unavailable.")}</div>`;
-  byId("rootline_zone_list").innerHTML = zones.length
-    ? zones.map(zone => `
-      <div class="ops-list-row">
-        <strong>${escapeHtml(zone.zone_name || zone.zone_id || "Zone")}</strong>
-        <span>${escapeHtml(displayLabel(zone.recommendation))} - ${escapeHtml((zone.reasoning || []).join(" "))}</span>
-      </div>
-    `).join("")
-    : `<div class="ops-empty-inline">Zone recommendations unavailable.</div>`;
-  const decisions = brief.owner_decisions_needed || [];
-  byId("rootline_decisions").innerHTML = decisions.length
-    ? decisions.map(item => `<div class="ops-list-row"><span>${escapeHtml(item)}</span></div>`).join("")
-    : `<div class="ops-empty-inline">No owner decision is currently supported.</div>`;
+async function loadIrrigation() {
+  try {
+    const data = await fetchJson(`/api/telemetry/irrigation/status?date=${today()}`, 30000);
+    const current = data.current || {}; const day = data.today || {}; const plan = day.plan || [];
+    const status = label(current.status, "No active run");
+    const b = plan.find(item => item.zone_id === "B12345"); const c = plan.find(item => item.zone_id === "C12345");
+    setText("irrigation_status", status);
+    setText("irrigation_source", label(data.source?.source, "Canonical"));
+    const bz=(data.zones||[]).find(item=>item.zone_id==="B12345"); const cz=(data.zones||[]).find(item=>item.zone_id==="C12345");
+    setText("irrigation_b_status", bz?.operational_state||planState(b)); setText("irrigation_c_status", cz?.operational_state||planState(c));
+    setText("irrigation_done", `${number(day.done_count || 0)} · ${number(day.completed_minutes || 0, " min")}`);
+    setText("irrigation_held", number((day.skipped_count || 0) + (day.paused_count || 0)));
+    const sharedReason = b?.reason && b.reason === c?.reason ? b.reason : [b?.reason, c?.reason].filter(Boolean).join(" · ");
+    setText("irrigation_note", sharedReason || (data.operator_summary?.notes || [])[0] || data.operator_summary?.headline || "Current irrigation position available.");
+    setText("status_irrigation", current.status === "RUNNING" ? `${current.zone_name || current.zone_id} · Running` : `${status} · ${day.skipped_count || 0} held`);
+    if (["needs data", "recovery required"].includes(status.toLowerCase())) addAttention("irrigation", "Irrigation needs evidence", data.operator_summary?.notes?.[0] || status, "/irrigation", 10); else removeAttention("irrigation");
+    finish("irrigation_panel");
+  } catch (_) { setText("irrigation_note", "Irrigation is temporarily unavailable."); setText("irrigation_source", "Unavailable"); setText("status_irrigation", "Unavailable"); finish("irrigation_panel", false); }
 }
-
-function renderRootlineWaterEnergy() {
-  const plan = state.rootlineWaterEnergy || {};
-  const reserve = plan.battery_reserve || {};
-  setText(
-    "rootline_water_energy_status",
-    plan.success === true
-      ? `${plan.plan_id} · Generation ${plan.generation ?? "Unavailable"} · Reserve ${reserve.governing_reserve_soc_pct ?? "Unavailable"}% · ${plan.executive_summary || ""}`
-      : plan.owner_message || "Current advisory plan Unavailable."
-  );
-  const power = plan.current_power || {};
-  const forecast = plan.forecast || {};
-  const rain = plan.rain_capture || {};
-  const tanks = plan.tank_evidence || {};
-  const grid = plan.estimated_grid_exposure || {};
-  byId("rootline_water_energy_evidence").innerHTML = `
-    <div class="ops-list-row"><strong>Power: ${escapeHtml(power.status || "Unavailable")}</strong><span>SOC ${escapeHtml(power.battery_soc_pct ?? "Unavailable")}%; ${escapeHtml(power.age_minutes ?? "Unavailable")} min old</span></div>
-    <div class="ops-list-row"><strong>Forecast: ${escapeHtml(forecast.status || "Unavailable")}</strong><span>${escapeHtml(forecast.solar_profile || "uncertain")}; confidence ${escapeHtml(forecast.confidence || "Unavailable")}</span></div>
-    <div class="ops-list-row"><strong>Rain: ${escapeHtml(rain.current_rain_status || "Needs Data")}</strong><span>${escapeHtml(rain.fresh_rain_rate_mm_h ?? "Unavailable")} mm/h; forecast ${escapeHtml(rain.forecast_replenishment_effect || "Unavailable")}</span></div>
-    <div class="ops-list-row"><strong>Tanks: ${escapeHtml(tanks.status || "Unavailable")}</strong><span>Storage ${escapeHtml(tanks.storage_reported_count ?? "Unavailable")}/5 (${escapeHtml(tanks.storage_state || "Unknown")}); reservoir ${escapeHtml(tanks.reservoir_reported_count ?? "Unavailable")}/12 (${escapeHtml(tanks.reservoir_state || "Unknown")}); ${escapeHtml(tanks.age_minutes ?? "Unavailable")} min old</span></div>
-    <div class="ops-list-row"><strong>Grid exposure: ${escapeHtml(grid.status || "Unavailable")}</strong><span>${escapeHtml(grid.estimated_kwh ?? "Unavailable")} kWh; R${escapeHtml(grid.estimated_cost_zar ?? "Unavailable")} at provisional R${escapeHtml(grid.tariff_zar_per_kwh ?? "Unavailable")}/kWh</span></div>
-    <div class="ops-list-row"><strong>Evidence outcomes remain separate</strong><span>Plan is not command acceptance, electrical operation, water flow or measured volume.</span></div>`;
-  const tasks = Array.isArray(plan.candidate_tasks) ? plan.candidate_tasks : [];
-  byId("rootline_water_energy_tasks").innerHTML = tasks.length
-    ? tasks.map(task => `
-      <div class="ops-list-row">
-        <strong>${escapeHtml(displayLabel(task.task_id, "Task"))} · ${escapeHtml(task.recommendation || "Needs Data")}</strong>
-        <span>${escapeHtml(task.reason || "Evidence unavailable.")} · Window ${escapeHtml(task.preferred_window || "Unavailable")}</span>
-      </div>
-    `).join("")
-    : `<div class="ops-empty-inline">Task recommendations Unavailable.</div>`;
-  const gaps = Array.isArray(plan.evidence_gaps) ? plan.evidence_gaps : [];
-  byId("rootline_water_energy_gaps").innerHTML = gaps.length
-    ? gaps.map(gap => `<div class="ops-list-row"><strong>Needs evidence</strong><span>${escapeHtml(gap)}</span></div>`).join("")
-    : `<div class="ops-empty-inline">No additional evidence gap reported.</div>`;
-  const authority = plan.authority || {};
-  setText(
-    "rootline_water_energy_authority",
-    authority.controls_hardware === false && authority.creates_command === false
-      ? "Advice only · no command, schedule, workflow, retry or hardware authority."
-      : "Authority evidence Unavailable."
-  );
-}
-
-function renderRootlinePolicy() {
-  const packet = state.rootlinePolicy || {};
-  const active = packet.active_policy;
-  setText(
-    "rootline_policy_status",
-    active
-      ? `Active advice policy version ${active.version}.`
-      : packet.status === "rootline_policy_schema_unavailable"
-        ? "Policy schema is not applied; active advice policy is Unavailable."
-        : "No policy version is active for advice."
-  );
-}
-
-function renderFarmSummary() {
-  const summary = state.farm?.summary || {};
-  const salesMetrics = summary.sales_metrics || state.farm?.sales_metrics || {};
-  const salesMetricsReady = salesMetrics.status === "ok" || salesMetrics.status === "configured";
-  setText("herd_total", numberOrDash(summary.on_farm_pigs));
-  setText("herd_sows", numberOrDash(summary.sows));
-  setText("herd_boars", numberOrDash(summary.boars));
-  setText("herd_gilts", numberOrDash(summary.gilts));
-  setText("herd_piglets", numberOrDash(summary.piglets));
-  setText("herd_weaners", numberOrDash(summary.weaners));
-  setText("herd_growers", numberOrDash(summary.growers));
-  setText("herd_finishers", numberOrDash(summary.finishers));
-  setText("outcome_sold", numberOrDash(summary.lifecycle_sold_this_month));
-  setText("outcome_slaughtered", numberOrDash(summary.lifecycle_slaughtered_this_month));
-  setText("outcome_dead", numberOrDash(summary.lifecycle_dead_this_month));
-  setText("outcome_removed", numberOrDash(summary.lifecycle_removed_this_month));
-  const metricText = (key) => salesMetricsReady ? numberOrDash(salesMetrics[key]) : "Unavailable";
-  setText("sales_open_reserved_orders", metricText("open_reserved_orders"));
-  setText("sales_open_reserved_pigs", metricText("open_reserved_pigs"));
-  setText("sales_live_ready", metricText("live_sale_ready"));
-  setText("sales_meat_window", metricText("meat_window"));
-  setText("sales_slaughter_cull_ready", metricText("slaughter_cull_ready"));
-  setText("sales_recent_value", salesMetricsReady ? money(salesMetrics.recent_sales_value) : "Unavailable");
-  setText(
-    "sales_source_note",
-    salesMetricsReady
-      ? `${salesMetrics.report_month || "Current month"} · ${salesMetrics.source || "Backend source truth"}`
-      : "Sales readiness source is unavailable; no stock or reservation zero is assumed."
-  );
-
-  const litterItems = state.farm?.litter_attention?.items || [];
-  byId("litter_attention_list").innerHTML = litterItems.length
-    ? litterItems.slice(0, 4).map(item => `
-      <a class="ops-list-row ops-list-link" href="${litterAttentionHref(item)}">
-        <strong>${escapeHtml(item.litter_id)}</strong>
-        <span>${escapeHtml(item.reason || "Review")} - Sow ${escapeHtml(item.sow_tag_number || "--")}</span>
-      </a>
-    `).join("")
-    : `<div class="ops-empty-inline">No litter reminders.</div>`;
-}
-
 function litterAttentionHref(item) {
-  const litterId = encodeURIComponent(item.litter_id || "");
-  if (item.action_type === "review_purpose") {
-    return `/purpose-review?litter_id=${litterId}`;
-  }
-  if (item.action_type === "record_post_wean_weight") {
-    return `/bulk-weights?return_to=${encodeURIComponent(`/purpose-review?litter_id=${item.litter_id || ""}`)}&return_label=${encodeURIComponent("Back to Purpose Review")}`;
-  }
-  return `/litter/${litterId}`;
+  const id = encodeURIComponent(item.litter_id || "");
+  if (item.action_type === "review_purpose") return `/purpose-review?litter_id=${id}`;
+  if (item.action_type === "record_post_wean_weight") return `/bulk-weights?return_to=${encodeURIComponent(`/purpose-review?litter_id=${item.litter_id || ""}`)}&return_label=${encodeURIComponent("Back to Purpose Review")}`;
+  return `/litter/${id}`;
 }
-
-function renderOrders() {
-  const counts = state.orders?.counts || {};
-  const items = state.orders?.sections?.orders_needing_attention || [];
-
-  setText("orders_attention", numberOrDash(counts.orders_needing_attention || 0));
-  setText("orders_pending", numberOrDash(counts.pending_approval || 0));
-  setText("orders_approved", numberOrDash(counts.approved || 0));
-  setText("orders_drafts", numberOrDash(counts.new_drafts || 0));
-  setText("alert_orders", (counts.orders_needing_attention || 0) > 0 ? `${counts.orders_needing_attention} review` : "Clear");
-
-  byId("orders_attention_list").innerHTML = items.length
-    ? items.slice(0, 4).map(item => `
-      <a class="ops-list-row ops-list-link" href="/orders/${encodeURIComponent(item.order_id)}">
-        <strong>${escapeHtml(item.order_id)}</strong>
-        <span>${escapeHtml(item.customer_name || "Customer")} - ${escapeHtml((item.reasons || []).join(", ") || "Review")}</span>
-      </a>
-    `).join("")
-    : `<div class="ops-empty-inline">No order attention items.</div>`;
+function litterAttentionIdentity(item) {
+  const sowName = item.sow_name || item.sow_tag_number || "";
+  return {
+    headline: sowName || item.litter_id || "Litter",
+    context: sowName && item.litter_id ? ` · ${item.litter_id}` : "",
+  };
 }
-
-function renderTimestamp() {
-  dashboardTimestamp.textContent = `Updated ${new Date().toLocaleString()}`;
+async function loadFarm() {
+  try {
+    const data = await fetchJson("/api/pig-weights/dashboard", 45000);
+    const summary = data.summary || {}; const litters = data.litter_attention?.items || [];
+    setText("herd_total", number(summary.on_farm_pigs)); setText("herd_sows", number(summary.sows)); setText("herd_piglets", number(summary.piglets)); setText("herd_boars", number(summary.boars));
+    setText("herd_available", number(summary.available_for_sale_pigs)); setText("herd_reserved", number(summary.reserved_pigs));
+    setText("breeding_litters", number(litters.length));
+    if (litters.length) {
+      const first = litters[0];
+      const {headline, context: litterContext} = litterAttentionIdentity(first);
+      addAttention("litter", `${headline} needs attention`, `${first.reason || "Review current litter work"}${litterContext}`, litterAttentionHref(first), 5);
+      addPriority("litter", `${headline}${litterContext}: ${first.reason || "review current work"}.`);
+    } else { removeAttention("litter"); removePriority("litter"); }
+    finish("herd_panel");
+  } catch (_) { finish("herd_panel", false); setText("herd_total", "Unavailable"); }
 }
-
-async function loadDashboard() {
-  const yesterday = yesterdayISO();
-  const today = todayISO();
-  const requests = [
-    ["weatherCurrent", "/api/telemetry/weather/current", "weather_panel"],
-    ["weatherToday", `/api/telemetry/weather/today?date=${today}`, "weather_panel"],
-    ["forecast", "/api/telemetry/weather/forecast?days=3", "weather_panel"],
-    ["powerCurrent", "/api/telemetry/power/current", "power_panel"],
-    ["irrigation", `/api/telemetry/irrigation/status?date=${today}`, "irrigation_panel"],
-    ["rollup", `/api/telemetry/rollups/daily?date=${yesterday}`, "power_panel"],
-      ["rootline", `/api/telemetry/rootline/daily-brief?date=${today}`, "rootline_panel"],
-      ["rootlineAdvisor", `/api/telemetry/rootline/daily-advisor?date=${today}`, "rootline_panel"],
-      ["rootlineDailyPlan", `/api/telemetry/rootline/daily-irrigation-plan?date=${today}`, "rootline_panel"],
-      ["rootlinePolicy", "/api/telemetry/rootline/operating-policy", "rootline_panel"],
-      ["rootlineWaterEnergy", `/api/telemetry/rootline/water-energy-plan?date=${today}`, "rootline_panel"],
-    ["farm", "/api/pig-weights/dashboard", "herd_panel"],
-    ["orders", `/api/reports/daily-summary?date=${today}`, "orders_panel"],
-  ];
-
-  const results = await Promise.allSettled(requests.map(([key, url]) => fetchJson(url).then(data => [key, data])));
-  let failures = 0;
-
-  results.forEach((result, index) => {
-    const [key, , panelId] = requests[index];
-    if (result.status === "fulfilled") {
-      state[result.value[0]] = result.value[1];
-    } else {
-      failures += 1;
-      renderError(panelId, result.reason.message);
-      state[key] = null;
-    }
-  });
-
-  renderTimestamp();
-  renderWeather();
-  renderPower();
-  renderIrrigation();
-  renderRootline();
-  renderFarmSummary();
-  renderOrders();
-
-  if (failures) {
-    showDashboardMessage(`${failures} dashboard section(s) could not load.`, "error");
-  }
+async function loadBreeding() {
+  try {
+    const data = await fetchJson("/api/pig-weights/matings", 30000);
+    const open = (data.records || []).filter(item => item.is_open === "Yes");
+    const overdue = open.filter(item => item.is_overdue_farrowing === "Yes");
+    const due = open.filter(item => { if (!item.expected_farrowing_date) return false; const days = Math.ceil((new Date(`${item.expected_farrowing_date}T12:00:00`) - new Date(`${today()}T12:00:00`)) / 86400000); return days >= 0 && days <= 14; });
+    const next = [...due].sort((a,b) => String(a.expected_farrowing_date).localeCompare(String(b.expected_farrowing_date)))[0];
+    setText("breeding_open", number(open.length)); setText("breeding_due", number(due.length)); setText("breeding_overdue", number(overdue.length));
+    setText("breeding_attention", number(overdue.length + due.length));
+    setText("breeding_headline", overdue.length ? `${overdue.length} mating record${overdue.length === 1 ? "" : "s"} show overdue farrowing evidence.` : next ? `${next.sow_tag_number || "Sow"} is next around ${next.expected_farrowing_date}.` : `${open.length} open mating${open.length === 1 ? "" : "s"} under monitoring.`);
+    if (overdue.length) addAttention("breeding", "Breeding chronology needs review", `${overdue.map(item => item.sow_tag_number).filter(Boolean).join(", ")} show overdue farrowing evidence.`, "/matings", 6); else removeAttention("breeding");
+    if (next) addPriority("breeding", `${next.sow_tag_number || "Sow"}: expected farrowing around ${next.expected_farrowing_date}.`); else removePriority("breeding");
+    finish("breeding_panel");
+  } catch (_) { setText("breeding_headline", "Breeding chronology is temporarily unavailable."); finish("breeding_panel", false); }
 }
-
-loadDashboard().catch(() => {
-  showDashboardMessage("Something went wrong while loading the dashboard.", "error");
-});
+async function loadSales() {
+  try {
+    const data = await fetchJson("/api/pig-weights/sales-dashboard", 40000); const summary = data.summary || {}; const sales = data.sales_metrics || summary.sales_metrics || {};
+    setText("sales_recent_value", money(sales.recent_sales_value)); setText("sales_ready", number(sales.live_sale_ready));
+  } catch (_) { setText("sales_recent_value", "Unavailable"); setText("sales_ready", "--"); }
+}
+async function loadOrders() {
+  try {
+    const data = await fetchJson(`/api/reports/daily-summary?date=${today()}`, 30000);
+    const counts = data.counts || {}; const items = data.sections?.orders_needing_attention || []; const needing = Number(counts.orders_needing_attention || items.length || 0);
+    setText("orders_attention", number(needing)); setText("orders_pending", number(counts.pending_approval || 0)); setText("orders_completed", number(counts.completed_today || 0));
+    setText("orders_headline", needing ? `${needing} order${needing === 1 ? "" : "s"} need a decision.` : `${number(counts.completed_today || 0)} completed today · no order currently needs attention.`);
+    if (needing) { const first = items[0] || {}; addAttention("orders", "Sales decision needed", first.customer_name ? `${first.customer_name} · ${(first.reasons || []).join(", ") || "Review order"}` : `${needing} order review`, first.order_id ? `/orders/${encodeURIComponent(first.order_id)}` : "/orders", 8); addPriority("orders", `${needing} sales order${needing === 1 ? "" : "s"} need review.`); } else { removeAttention("orders"); removePriority("orders"); }
+    finish("orders_panel");
+  } catch (_) { setText("orders_headline", "Sales evidence is temporarily unavailable."); finish("orders_panel", false); }
+}
+function start(job) { job().finally(() => { dashboardState.loaded += 1; renderAttention(); setText("dashboard_timestamp", `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · sections refresh independently`); }); }
+renderAttention(); renderPriorities();
+[loadWeather, loadForecast, loadPower, loadIrrigation, loadFarm, loadBreeding, loadSales, loadOrders].forEach(start);

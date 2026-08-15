@@ -19,6 +19,318 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.owner_money_path_guard.start()
         self.addCleanup(self.owner_money_path_guard.stop)
 
+    def test_inbox_operator_admits_only_provider_current_backlog_path(self):
+        history = {"success": True, "messages": [{"id": "INBOUND"}]}
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=({"processed": False}, 200),
+        ) as handle:
+            result = (
+                sales_transaction_routes
+                ._operate_sam_live_stock_exact_payload({
+                    "id": "INBOUND",
+                    "_sam_authoritative_history": history,
+                })
+            )
+        self.assertEqual(result["_operation_status_code"], 200)
+        self.assertTrue(
+            handle.call_args.kwargs["allow_provider_current_backlog"]
+        )
+        self.assertIs(
+            handle.call_args.kwargs["conversation_history_loader"](),
+            history,
+        )
+        self.assertIs(
+            handle.call_args.kwargs["preclaim_chronology_verifier"],
+            sales_transaction_routes.verify_chatwoot_current_inbound,
+        )
+
+    def test_reconcile_budget_omits_optional_llm_when_claim_reserve_would_be_lost(self):
+        payload = {"_sam_reconcile_deadline_monotonic": 112.0}
+        with patch("time.monotonic", return_value=100.0), patch.dict(
+            sales_transaction_routes.os.environ,
+            {"SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1"},
+            clear=False,
+        ):
+            source = (
+                sales_transaction_routes
+                ._sam_reconcile_composition_environ(payload)
+            )
+        self.assertEqual(
+            source["SAM_LIVE_STOCK_BACKEND_LLM_ENABLED"], "0"
+        )
+
+    def test_reconcile_budget_caps_optional_llm_and_reserves_effect_boundary(self):
+        payload = {"_sam_reconcile_deadline_monotonic": 130.0}
+        with patch("time.monotonic", return_value=100.0), patch.dict(
+            sales_transaction_routes.os.environ,
+            {"SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1"},
+            clear=False,
+        ):
+            source = (
+                sales_transaction_routes
+                ._sam_reconcile_composition_environ(payload)
+            )
+        self.assertEqual(
+            source["SAM_LIVE_STOCK_BACKEND_LLM_ENABLED"], "1"
+        )
+        self.assertEqual(
+            source["SAM_LIVE_STOCK_BACKEND_LLM_TIMEOUT_SECONDS"], "4"
+        )
+
+    def test_exact_payload_reuses_prefetched_canonical_inventory_and_pricing(self):
+        availability = [{"pig_id": "PIG-1"}]
+        pricing = {"success": True, "price_entries": []}
+        payload = {
+            "_sam_authoritative_history": {"success": True, "messages": []},
+            "_sam_prefetched_canonical_evidence": {
+                "availability_rows": availability,
+                "availability_evidence": {
+                    "provenance": "get_sales_availability"
+                },
+                "pricing_projection": pricing,
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=({"processed": False}, 200),
+        ) as handle:
+            sales_transaction_routes._operate_sam_live_stock_exact_payload(
+                payload
+            )
+        kwargs = handle.call_args.kwargs
+        self.assertEqual(kwargs["availability_loader"](), availability)
+        self.assertIs(kwargs["pricing_projection"], pricing)
+
+    def test_prefetch_isolates_one_unavailable_canonical_dependency(self):
+        pricing = {"success": True, "price_entries": [{"category": "weaned"}]}
+        with patch.object(
+            sales_transaction_routes,
+            "get_sales_availability",
+            side_effect=TimeoutError("slow inventory"),
+        ), patch.object(
+            sales_transaction_routes,
+            "list_live_stock_price_entries",
+            return_value=(pricing, 200),
+        ):
+            packet = sales_transaction_routes._prefetch_sam_canonical_sales_evidence({})
+        self.assertEqual(packet["availability_error_type"], "TimeoutError")
+        self.assertIs(packet["pricing_projection"], pricing)
+
+    def test_failed_prefetch_never_falls_back_to_request_critical_reads(self):
+        payload = {
+            "_sam_authoritative_history": {"success": True, "messages": []},
+            "_sam_prefetched_canonical_evidence": {
+                "version": "sam_canonical_sales_evidence_prefetch_v1",
+                "status": "canonical_evidence_prefetch_unavailable",
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=({"processed": False}, 200),
+        ) as handle:
+            sales_transaction_routes._operate_sam_live_stock_exact_payload(
+                payload
+            )
+        kwargs = handle.call_args.kwargs
+        with self.assertRaises(RuntimeError):
+            kwargs["availability_loader"]()
+        self.assertFalse(kwargs["pricing_projection"]["success"])
+
+    def test_operator_isolates_post_send_review_adjunct_failure(self):
+        result = {
+            "processed": True,
+            "sent": True,
+            "sam_decision": {
+                "sales_lane": "live_stock_sales",
+                "specialist_lane_selected": True,
+                "routine_reply_delivery": {
+                    "claim": {
+                        "success": True,
+                        "created": True,
+                        "delivery_attempt_id": "ATTEMPT-EXACT",
+                    },
+                    "delivery_outcome": {
+                        "delivery_state": "provider_delivered",
+                    },
+                },
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=(result, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "_attach_sam_live_stock_review_event",
+            side_effect=RuntimeError("post-send observer failed"),
+        ), patch.object(
+            sales_transaction_routes,
+            "_apply_sam_live_stock_operational_state",
+            return_value={
+                "applied": True,
+                "status": "awaiting_customer",
+            },
+        ) as apply_state:
+            operated = (
+                sales_transaction_routes
+                ._operate_sam_live_stock_exact_payload({
+                    "id": "INBOUND-EXACT",
+                    "_sam_authoritative_history": {
+                        "success": True,
+                        "messages": [{"id": "INBOUND-EXACT"}],
+                    },
+                })
+            )
+        self.assertEqual(operated["_operation_status_code"], 200)
+        self.assertTrue(operated["sent"])
+        self.assertEqual(
+            operated["conversation_review_event"]["status"],
+            "post_send_review_adjunct_failed_isolated",
+        )
+        self.assertFalse(
+            operated["conversation_review_event"][
+                "automatic_retry_authorized"
+            ]
+        )
+        self.assertFalse(
+            operated["conversation_review_event"][
+                "adjunct_side_effects_known"
+            ]
+        )
+        self.assertEqual(
+            operated["conversation_review_event"][
+                "telegram_notification_state"
+            ],
+            "unknown_after_exception",
+        )
+        self.assertTrue(operated["chatwoot_operational_state"]["applied"])
+        apply_state.assert_called_once()
+
+    def test_post_send_adjunct_failure_without_durable_outcome_fails_closed(
+        self,
+    ):
+        result = {
+            "processed": True,
+            "sent": False,
+            "sam_decision": {
+                "routine_reply_delivery": {
+                    "status": "routine_reply_review_blocked",
+                },
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "_attach_sam_live_stock_review_event",
+            side_effect=RuntimeError("audit unavailable"),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "audit unavailable"
+            ):
+                (
+                    sales_transaction_routes
+                    ._attach_sam_live_stock_review_event_safely(
+                        result,
+                        {"id": "INBOUND-NO-SEND"},
+                    )
+                )
+
+    def test_accepted_send_adjunct_failure_preserves_exact_no_retry_attempt(self):
+        result = {
+            "processed": True,
+            "sent": False,
+            "sam_decision": {
+                "routine_reply_delivery": {
+                    "claim": {
+                        "success": True,
+                        "created": True,
+                        "conversation_id": "2100",
+                        "delivery_attempt_id": "ATTEMPT-2100",
+                    },
+                    "delivery_outcome": {
+                        "delivery_state": "chatwoot_accepted_unverified",
+                        "customer_send_confirmed": False,
+                    },
+                },
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "_attach_sam_live_stock_review_event",
+            side_effect=RuntimeError("adjunct unavailable"),
+        ):
+            packet = (
+                sales_transaction_routes
+                ._attach_sam_live_stock_review_event_safely(
+                    result,
+                    {"id": "INBOUND-EXACT"},
+                )
+            )
+        self.assertFalse(packet["success"])
+        self.assertFalse(result["sent"])
+        self.assertEqual(
+            result["conversation_review_event"]["status"],
+            "post_send_review_adjunct_failed_isolated",
+        )
+        self.assertTrue(
+            result["conversation_review_event"][
+                "durable_exact_attempt_preserved"
+            ]
+        )
+        self.assertFalse(
+            result["conversation_review_event"][
+                "durable_customer_outcome_preserved"
+            ]
+        )
+
+    def test_post_send_adjunct_partial_effects_are_reported_unknown(self):
+        result = {
+            "processed": True,
+            "sent": True,
+            "sam_decision": {
+                "routine_reply_delivery": {
+                    "claim": {
+                        "success": True,
+                        "created": True,
+                        "delivery_attempt_id": "ATTEMPT-PARTIAL",
+                    },
+                    "delivery_outcome": {
+                        "delivery_state": "provider_delivered",
+                    },
+                },
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "_attach_sam_live_stock_review_event",
+            side_effect=RuntimeError("telegram outcome unknown"),
+        ):
+            isolated = (
+                sales_transaction_routes
+                ._attach_sam_live_stock_review_event_safely(
+                    result,
+                    {"id": "INBOUND-PARTIAL"},
+                )
+            )
+        self.assertFalse(isolated["success"])
+        packet = result["conversation_review_event"]
+        self.assertFalse(packet["adjunct_side_effects_known"])
+        self.assertEqual(
+            packet["review_recording_state"],
+            "unknown_after_exception",
+        )
+        self.assertEqual(
+            packet["owner_work_state"],
+            "unknown_after_exception",
+        )
+        self.assertEqual(
+            packet["telegram_notification_state"],
+            "unknown_after_exception",
+        )
+
     def test_sam_owner_inbox_read_and_reconciliation_authorities_are_separate(self):
         loaded = {
             "success": True, "status": "owner_work_items_loaded", "items": [],
@@ -389,30 +701,57 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         cancel_transaction.assert_called_once()
 
     def test_sales_transaction_payment_update_route_calls_update_service(self):
-        service_result = {
-            "success": True,
-            "status": "updated",
-            "sale_id": "SALE-1",
-            "source": {
-                "source": "supabase",
-                "writes_to_sheets": False,
-                "writes_to_supabase": True,
-            },
-        }
+        response = self.client.patch("/api/sales-transactions/SALE-1/payment", json={
+            "updated_by": "Charl", "line_total": 1500})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"],
+                         "payment_state_requires_preview_confirmation")
+        self.assertFalse(response.get_json()["writes_to_supabase"])
 
-        with patch.object(
-            sales_transaction_routes,
-            "update_slaughter_sale_payment",
-            return_value=(service_result, 200),
-        ) as update_transaction:
-            response = self.client.patch("/api/sales-transactions/SALE-1/payment", json={
-                "updated_by": "Charl",
-                "line_total": 1500,
-            })
-
+    def test_sales_transaction_payment_state_route_is_owner_governed(self):
+        service_result = {"success": True, "status": "payment_state_recorded"}
+        with patch.object(sales_transaction_routes, "require_strict_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "strict_owner_admin_principal", return_value="owner:charl"), patch.object(
+            sales_transaction_routes, "_validate_payment_confirmation_token", return_value="valid"), patch.object(
+            sales_transaction_routes, "record_sale_payment_state",
+            return_value=(service_result, 200)) as service:
+            response = self.client.post(
+                "/api/sales-transactions/SALE-1/payment-state/confirm",
+                json={"payment_status": "Paid", "confirmed_preview_digest": "a" * 64,
+                      "confirmation_token": "signed-preview"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
-        update_transaction.assert_called_once()
+        service.assert_called_once_with("SALE-1", {
+            "payment_status": "Paid", "confirmed_preview_digest": "a" * 64}, actor_id="owner:charl")
+
+    def test_sales_transaction_payment_preview_is_owner_governed_and_read_only(self):
+        service_result = {"success": True, "status": "payment_state_preview_ready",
+                          "confirmation_required": True, "preview_digest": "a" * 64,
+                          "writes_to_supabase": False}
+        with patch.object(sales_transaction_routes, "require_strict_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "strict_owner_admin_principal", return_value="owner:charl"), patch.object(
+            sales_transaction_routes, "preview_sale_payment_state",
+            return_value=(service_result, 200)) as service:
+            response = self.client.post(
+                "/api/sales-transactions/SALE-1/payment-state/preview",
+                json={"payment_status": "Part_Paid", "received_amount": "1000.00"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["writes_to_supabase"])
+        self.assertTrue(response.get_json()["confirmation_token"])
+        service.assert_called_once_with("SALE-1", {
+            "payment_status": "Part_Paid", "received_amount": "1000.00"}, actor_id="owner:charl")
+
+    def test_payment_confirm_rejects_missing_preview_token_before_service(self):
+        with patch.object(sales_transaction_routes, "require_strict_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "strict_owner_admin_principal", return_value="owner:charl"), patch.object(
+            sales_transaction_routes, "record_sale_payment_state") as service:
+            response = self.client.post(
+                "/api/sales-transactions/SALE-1/payment-state/confirm",
+                json={"payment_status": "Paid", "confirmed_preview_digest": "a" * 64})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"],
+                         "payment_confirmation_token_required")
+        service.assert_not_called()
 
     def test_sales_transaction_confirm_pig_exits_route_calls_lifecycle_service(self):
         service_result = {
@@ -640,6 +979,55 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), sam_result)
         sam_handler.assert_called_once_with(payload)
         meat_handler.assert_not_called()
+
+    def test_delivery_webhook_applies_exact_provider_confirmed_state(self):
+        sam_result = {
+            "success": True,
+            "status": "sam_delivery_non_owner_attempt_reconciled",
+            "processed": True,
+            "operational_state": {
+                "inbound": {
+                    "account_id": "147387",
+                    "conversation_id": "2100",
+                    "contact_id": "CONTACT",
+                    "inbox_id": "96568",
+                    "message_id": "INBOUND",
+                },
+                "decision": {
+                    "sales_lane": "live_stock_sales",
+                    "specialist_lane_selected": True,
+                    "missing_fields": ["location"],
+                },
+                "provider_state": "provider_delivered",
+            },
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_meat_document_delivery_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_delivery_status_webhook",
+            return_value=(sam_result, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "apply_sam_chatwoot_delivery_state",
+            return_value={"applied": True, "status": "awaiting_customer"},
+        ) as apply_state:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/meat-documents/delivery-status",
+                json={"event": "message_updated", "message": {"id": 902}},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            response.get_json()["chatwoot_operational_state"]["applied"]
+        )
+        apply_state.assert_called_once_with(
+            sam_result["operational_state"]["inbound"],
+            sam_result["operational_state"]["decision"],
+            "provider_delivered",
+            authoritative_latest_inbound_id="INBOUND",
+        )
 
     def test_meat_whatsapp_templates_route_returns_pack(self):
         with patch.object(
@@ -2311,6 +2699,47 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertTrue(notification["sent"])
         owner_review.assert_called_once()
         new_lead.assert_not_called()
+
+    def test_safe_non_protected_first_event_never_uses_triage_only_card(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-FIRST-SAFE",
+            "chatwoot_conversation_id": "2402",
+            "safe_to_send": True,
+            "escalation_required": False,
+            "owner_send_required": False,
+            "sam_reply_excerpt": "How many slaughter-size pigs would you like?",
+            "review_json": {
+                "safe_to_send": True,
+                "escalation_required": False,
+                "owner_authority_required": False,
+            },
+            "decision_json": {
+                "should_reply": True,
+                "suggested_reply_text": "How many slaughter-size pigs would you like?",
+                "protected_owner_exception_required": False,
+                "routine_reply_delivery": {"sent": False, "attempted": False},
+            },
+        }
+        learning = {
+            "success": True,
+            "created": True,
+            "review_event_id": "SAM-LIVE-REVIEW-FIRST-SAFE",
+            "conversation_event_count": 1,
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_new_lead_telegram",
+        ) as new_lead, patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_owner_review_telegram",
+        ) as owner_review:
+            notification = sales_transaction_routes._send_sam_live_stock_owner_notification_if_needed(
+                event, learning
+            )
+        self.assertFalse(notification["attempted"])
+        self.assertEqual(notification["status"], "safe_first_event_withheld_no_triage_card")
+        new_lead.assert_not_called()
+        owner_review.assert_not_called()
 
     def test_sam_live_stock_duplicate_review_event_does_not_send_duplicate_telegram(self):
         event = {

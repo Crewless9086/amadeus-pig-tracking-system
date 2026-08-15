@@ -312,8 +312,15 @@ def evaluate_level1_authority(
             and _canonical_instant(inbound.get("latest_observed_at")) is not None
         ),
         "channel_authorized": (
-            inbound.get("whatsapp_window_state") == "open"
-            and inbound.get("whatsapp_window_evidence_authoritative") is True
+            inbound.get("whatsapp_window_evidence_authoritative") is True
+            and (
+                inbound.get("reply_authority_state") == "ordinary_reply_allowed"
+                or (
+                    inbound.get("reply_authority_state") in {None, ""}
+                    and inbound.get("whatsapp_window_state")
+                    in {"open", "approaching_expiry"}
+                )
+            )
         ),
         "specialist_lane": lane in {"meat", "live_stock"},
         "reply_recommended": decision.get("should_reply") is True and bool(reply),
@@ -404,16 +411,35 @@ def bind_authoritative_conversation_evidence(
 ) -> dict:
     """Bind current public chronology and provider-window evidence fail closed."""
     row = dict(inbound or {})
+    identity = {
+        key: row.get(key)
+        for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
+    }
+    provenance = (
+        row.get("identity_provenance")
+        if isinstance(row.get("identity_provenance"), Mapping)
+        else {}
+    )
+    bound_provider = dict(provider_evidence or {})
+    if bound_provider:
+        bound_provider["expected_identity"] = identity
+        bound_provider.setdefault("identity_binding", {})
+    else:
+        bound_provider = {
+            "provider_identity_class": provenance.get("provider_identity_class")
+            or row.get("channel"),
+            "latest_inbound_message_id": row.get("message_id")
+            or row.get("inbound_message_id"),
+            "latest_inbound_at_utc": row.get("last_inbound_at"),
+        }
+        if provenance:
+            bound_provider["identity_binding"] = provenance.get("normalized") or {}
+            bound_provider["expected_identity"] = identity
     try:
         window = evaluate_reply_window(
             messages or [],
-            conversation_identity={
-                key: row.get(key)
-                for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
-            } | {"channel": row.get("channel")},
-            provider_evidence=provider_evidence or {
-                "provider_identity_class": row.get("channel"),
-            },
+            conversation_identity=identity | {"channel": row.get("channel")},
+            provider_evidence=bound_provider,
             now=now,
         )
     except (ReplyWindowEvidenceError, TypeError, ValueError):
@@ -437,6 +463,8 @@ def bind_authoritative_conversation_evidence(
         **row,
         "chronology_current": current,
         "whatsapp_window_state": window.get("window_state", "unavailable"),
+        "reply_authority_state": window.get("reply_authority_state", "unavailable"),
+        "provider_identity_class": window.get("provider_identity_class", "unavailable"),
         "whatsapp_window_evidence_authoritative": True,
         "latest_observed_at": window.get("latest_inbound_at_utc") or "",
         "reply_window_evidence": window,
@@ -602,19 +630,78 @@ def _is_canonical_claim_free_customer_guidance(
 
 
 def normalize_customer_display_name(value, limit=MAX_DISPLAY_NAME_CHARS) -> str:
-    """Normalize untrusted presentation text without deriving identity from it."""
+    """Return a greeting name only when the untrusted label is name-like."""
     if not isinstance(value, str):
         return ""
     normalized = unicodedata.normalize("NFKC", value)
     safe = []
     for character in normalized:
-        if unicodedata.category(character).startswith("C"):
-            continue
-        if character in "<>&`":
-            continue
+        category = unicodedata.category(character)
+        if category.startswith("C"):
+            return ""
+        if character in "<>&`@" or category.startswith(("S", "N")):
+            return ""
+        if not (
+            character.isspace()
+            or category.startswith(("L", "M"))
+            or character in {"'", "’", "-", "."}
+        ):
+            return ""
         safe.append(" " if character.isspace() else character)
     text = " ".join("".join(safe).split())
     if not text or len(text) > int(limit):
+        return ""
+    tokens = text.split()
+    if len(tokens) > 4:
+        return ""
+    for token in tokens:
+        stem = token
+        if token.endswith("."):
+            stem = token[:-1]
+            if not (
+                len(stem) == 1
+                or stem.casefold() in {"mr", "mrs", "ms", "dr", "prof"}
+            ):
+                return ""
+        if not stem:
+            return ""
+        if not (
+            unicodedata.category(stem[0]).startswith("L")
+            and unicodedata.category(stem[-1]).startswith("L")
+        ):
+            return ""
+        punctuation_seen = False
+        for character in stem[1:-1]:
+            category = unicodedata.category(character)
+            if category.startswith(("L", "M")):
+                punctuation_seen = False
+                continue
+            if character not in {"'", "’", "-"} or punctuation_seen:
+                return ""
+            punctuation_seen = True
+    if any(
+        not any(
+            unicodedata.category(character).startswith("L")
+            for character in token
+        )
+        for token in tokens
+    ):
+        return ""
+    words = {
+        "".join(
+            character.lower()
+            for character in token
+            if unicodedata.category(character).startswith("L")
+        )
+        for token in tokens
+    }
+    if words & {
+        "amadeus", "available", "best", "business", "buy", "click",
+        "company", "customer", "deal", "deals", "delivery", "farm", "free",
+        "here", "livestock", "ltd", "market", "meat", "now", "official",
+        "pig", "piglets", "pigs", "pork", "premium", "price", "prices",
+        "pty", "sale", "sales", "services", "shipping", "shop", "whatsapp",
+    }:
         return ""
     return text
 

@@ -327,6 +327,9 @@ def handle_message(payload):
     )
     llm_allowed = channel not in DETERMINISTIC_ONLY_CHANNELS
     trace_id = build_trace_id()
+    semantic = (payload or {}).get("semantic")
+    semantic = semantic if isinstance(semantic, dict) else {}
+    semantic_authoritative = bool((payload or {}).get("semantic_authoritative"))
 
     if not text:
         return {
@@ -347,8 +350,13 @@ def handle_message(payload):
             "trace_store": {"stored": False, "status": "not_written_empty_text"},
         }, 400
 
-    match = classify_intent(text)
-    if not match and is_unsupported_action_request(text):
+    # Authenticated owner Telegram has already passed through the semantic
+    # front door. Never let the legacy keyword classifier reinterpret it.
+    # Deterministic code still owns tools, authority and side-effect safety.
+    match = semantic_intent_match(semantic)
+    if not match and not semantic_authoritative:
+        match = classify_intent(text)
+    if not match and not semantic_authoritative and is_unsupported_action_request(text):
         answer = (
             "This Oom Sakkie kiosk is read-only right now. "
             "Ask me to check farm attention, power, weather, irrigation status, pig readiness, meat planning, or sales stock."
@@ -388,7 +396,7 @@ def handle_message(payload):
             "trace_store": trace_status,
         }, 200
 
-    if not match and is_capability_request(text):
+    if not match and not semantic_authoritative and is_capability_request(text):
         answer = (
             "I can do read-only farm checks right now: farm attention, current or recent power, "
             "weather now/today/forecast, irrigation status, farm dashboard, pig allocation, meat planning, and sales stock. "
@@ -434,7 +442,7 @@ def handle_message(payload):
             },
         }, 200
 
-    if not match and llm_allowed:
+    if not match and llm_allowed and not semantic_authoritative:
         llm_match = route_with_llm(text)
         if llm_match:
             if llm_match.needs_clarification:
@@ -555,6 +563,7 @@ def handle_message(payload):
         "allow_specialist_llm": allow_specialist_llm,
         "authenticated_owner": legacy_authenticated_owner,
         "gateway_authority": bound_gateway_authority,
+        "semantic_language": str(semantic.get("language") or "en"),
     })
     stale_warnings = list(tool_result.get("stale_warnings") or [])
     safety_notes = list(tool_result.get("safety_notes") or [])
@@ -641,6 +650,39 @@ def classify_intent(text):
     for pattern, match in RULES:
         if pattern.search(text or ""):
             return match
+    return None
+
+
+def semantic_intent_match(semantic):
+    """Convert validated semantic meaning into an allowlisted read tool.
+
+    This is intentionally small: operational observations and protected work
+    are consumed by their specialist lifecycles before ``handle_message``.
+    A remaining ROOTLINE message is therefore a read/advice request and must
+    never fall back to the obsolete irrigation-sheet status tool.
+    """
+    if not isinstance(semantic, dict) or semantic.get("needs_clarification") is True:
+        return None
+    try:
+        confidence = float(semantic.get("confidence") or 0)
+    except (TypeError, ValueError):
+        return None
+    if confidence < CONFIDENCE_FLOOR:
+        return None
+    if semantic.get("domain") == "rootline":
+        return IntentMatch(
+            str(semantic.get("intent") or "rootline_advice")[:80],
+            "rootline_water_energy_plan",
+            confidence,
+            "semantic:rootline_read_plan",
+        )
+    if semantic.get("domain") == "sam":
+        return IntentMatch(
+            str(semantic.get("intent") or "sales_status")[:80],
+            "sales_dashboard",
+            confidence,
+            "semantic:sales_read_status",
+        )
     return None
 
 

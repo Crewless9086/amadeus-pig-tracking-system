@@ -86,6 +86,10 @@ Herdmaster may rank evidence-qualified pairings using:
 
 Each recommendation must name supporting evidence, exclusions, uncertainty, and the owner decision required. Herdmaster must not infer heat, pregnancy, fertility, soundness, genetics, or physical suitability from missing evidence.
 
+The current foundation breeding population follows Charl's bounded unrelated-owner baseline in `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md`. Rank exact combination merit before applying physical capacity. Do not equate low service workload with genetic superiority. Classify each choice as Proven repeat, Supported cross, Corrective cross, Controlled trial, or Limited evidence. Prince and every future new boar must receive a purposeful bounded trial rather than automatic preference or blanket exclusion.
+
+After individual pair assessment, create one whole-round allocation grouped by boar. The normal initial physical limit is two or three females per immediate boar group, but equal distribution is not required and capacity may not override known relationship or production evidence. Females outside the immediate group remain sequenced and visible until an attributable mating or genuine hold is recorded.
+
 ## Agentic operating loop — primary owner workflow
 
 OOM SAKKIE is the primary owner interface for ordinary breeding work.
@@ -113,6 +117,12 @@ exact owner approval bound to the female, male, evidence generation and mating
 date. CORE may later provide scheduling and delivery, but is not the owner of
 breeding reasoning and is not a prerequisite for the HERDMASTER workflow.
 
+The ordinary Oom Sakkie journey must reuse the append-only observation rail for
+grouped natural reports while binding every fact to its exact female and
+observation time. The Breeding Attention/mating board remains the owner recovery
+surface. Do not create a second observation store or require Charl to repeat a
+fact already captured through either governed entry point.
+
 ## Authority and safety
 
 Herdmaster remains advisory. No observation or recommendation may automatically:
@@ -124,6 +134,35 @@ Herdmaster remains advisory. No observation or recommendation may automatically:
 - schedule recurring work or grant CORE execution authority.
 
 Actual farm-record changes require a separately reviewed backend action and explicit owner approval.
+
+## Exposure, recovery hold, and unknown-parent boundary
+
+Physical boar exposure is not an exact service, mating, conception, or
+pregnancy date. HERDMASTER records an actual exposure start and later removal
+as separate immutable events under one exposure identity; the planned removal
+date belongs to the start event. These events must never populate
+`mating_events.mating_date` or generate pregnancy/farrowing dates.
+
+Body-condition and near-farrowing facts continue to use the canonical
+append-only `pig_observation_events` rail. A BCS 2-or-lower observation may be
+bound to an explicit recovery hold. Clearance requires a fresh attributable
+BCS 3-or-higher observation plus a separate exact owner confirmation; elapsed
+time and a newer score alone never clear a hold. A current near-farrowing
+observation excludes the sow from placement without manufacturing a father or
+historical mating date.
+
+The existing litter workflow accepts a canonical mother with `boar_pig_id`
+and historical `mating_id` absent. Unknown parentage remains visible as
+Unknown and does not degrade or duplicate the litter.
+
+Natural exposure capture through the application, typed Oom Sakkie, Telegram
+and voice follows
+`../../07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md` and
+`../../../06-operations/HERDMASTER_UNIFIED_BREEDING_CAPTURE_PLAN_20260812.md`.
+Every channel normalizes into the grouped exposure preview/execution contract.
+Normal 17-day exposure is not an exact mating/service date. Pen movement is an
+optional separately visible effect, and individual sow records retain a shared
+group identity for later capacity and outcome analysis.
 
 ## Delivery order and acceptance
 

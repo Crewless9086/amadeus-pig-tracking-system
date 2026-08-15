@@ -201,14 +201,28 @@ SYSTEM_TEST_MISSION_MARKERS = (
     "no-op mission",
     "noop mission",
 )
+BOOTSTRAP_PORTFOLIO_MISSION_ID = "CMQ-20260813-05"
+BOOTSTRAP_PORTFOLIO_ADMISSION = {
+    "portfolio_epoch": "CORE-CURRENT-2026-08-14",
+    "classification": "current",
+    "lifecycle_state": "WORKING",
+    "admission_version": "portfolio_admission_v1",
+    "admission_evidence": "owner_approved_cmq_20260813_05_bootstrap",
+    "decision_authority": "human_control_tower",
+    "dispatch_authority": "human_control_tower",
+    "runnable": False,
+}
 
 
-def record_mission(mission, source_context=None, database_url=None, connect_factory=None):
+def record_mission(mission, source_context=None, database_url=None, connect_factory=None,
+                   exact_identity=False):
     mission = mission if isinstance(mission, dict) else {}
     source_context = source_context if isinstance(source_context, dict) else {}
     raw_text = _clean_text(mission.get("raw_text", ""), 3000)
     if not raw_text:
         return {"stored": False, "status": "mission_text_required"}, 400
+    if exact_identity and not _clean_text(mission.get("mission_id", ""), 90):
+        return {"stored": False, "status": "exact_mission_identity_required"}, 400
     intake_quality = _mission_intake_quality(mission, raw_text)
     if intake_quality["blocked"]:
         return {
@@ -216,6 +230,19 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
             "status": "mission_intake_too_vague",
             "reason": intake_quality["reason"],
         }, 400
+    admission = (mission.get("metadata") or {}).get("portfolio_admission") \
+        if isinstance(mission.get("metadata"), dict) else None
+    if (exact_identity and mission.get("mission_id") == BOOTSTRAP_PORTFOLIO_MISSION_ID
+            and admission is None):
+        return {"stored": False, "configured": True,
+            "status": "portfolio_admission_required"}, 409
+    if admission is not None and not (
+            exact_identity
+            and mission.get("mission_id") == BOOTSTRAP_PORTFOLIO_MISSION_ID
+            and mission.get("status") == "paused"
+            and admission == BOOTSTRAP_PORTFOLIO_ADMISSION):
+        return {"stored": False, "configured": True,
+            "status": "portfolio_admission_not_authorized"}, 409
 
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -225,15 +252,22 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
         params = _mission_params(mission, source_context)
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
-                duplicate = _find_open_duplicate_mission(cursor, params)
+                _lock_mission_intake_title(cursor, params)
+                exact_result = (_resolve_exact_identity_intake(cursor, params)
+                    if exact_identity else None)
+                if exact_result:
+                    return exact_result
+                duplicate = None if exact_identity else _find_open_duplicate_mission(cursor, params)
                 replacement = None
                 if duplicate:
                     duplicate_contract = _duplicate_contract_state(duplicate)
                     if duplicate_contract["status"] == "current_contract_reusable":
-                        _insert_event(cursor, duplicate["mission_id"], "created", "Duplicate mission intake suppressed.", {
-                            "source": params["source"],
-                            "duplicate_title": params["title"],
-                        })
+                        duplicate_metadata = duplicate.get("metadata") if isinstance(duplicate.get("metadata"), dict) else {}
+                        if not duplicate_metadata.get("opaque_identity_owner_approved"):
+                            _insert_event(cursor, duplicate["mission_id"], "created", "Duplicate mission intake suppressed.", {
+                                "source": params["source"],
+                                "duplicate_title": params["title"],
+                            })
                         return {
                             "stored": False,
                             "configured": True,
@@ -387,6 +421,10 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
                         "replacement_identity": replacement["replacement_identity"],
                     } if replacement else {}),
                 })
+                admission = persisted_metadata.get("portfolio_admission")
+                if isinstance(admission, dict):
+                    _insert_event(cursor, params["mission_id"], "portfolio_admitted",
+                        "Owner-approved bootstrap portfolio admission recorded.", admission)
     except Exception as exc:
         return {
             "stored": False,
@@ -408,6 +446,17 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
             ).get("generation_identity"),
         } if replacement else {}),
     }, 201
+
+
+def mission_runtime_eligible(mission):
+    """Fail closed for structured portfolio admissions not yet made runnable."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    # Phase A authorizes no runnable portfolio admission. Legacy rows without
+    # this key retain their established status-based behavior; any present,
+    # malformed, forged or future contract remains ineligible until a later
+    # reviewed enforcement stage explicitly validates and enables it.
+    return "portfolio_admission" not in metadata and "portfolio_classification" not in metadata
 
 
 def list_missions(
@@ -526,6 +575,7 @@ def list_owner_work_missions(status, limit=10, database_url=None, connect_factor
                     from public.charlie_missions
                     where status = %(status)s
                       and coalesce(nullif(metadata_json->'intake_quality'->>'queue_class', ''), 'owner_work') = 'owner_work'
+                      and metadata_json->'portfolio_classification' is null
                       and {_not_durably_superseded_sql()}
                       and {_not_execution_held_sql()}
                     {_mission_order_clause(clean_status)}
@@ -736,6 +786,7 @@ def update_mission_status(
     set_sql = ",\n                        ".join(set_lines)
     expected_clause = "and status = %(expected_status)s" if expected_status else ""
     hold_clause = f"and {_not_execution_held_sql()}"
+    portfolio_clause = "and metadata_json->'portfolio_classification' is null"
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -750,6 +801,7 @@ def update_mission_status(
                     where mission_id = %(mission_id)s
                     {expected_clause}
                     {hold_clause}
+                    {portfolio_clause}
                     returning mission_id
                     """,
                     {
@@ -838,6 +890,7 @@ def transition_mission_review_state(
                         updated_at = now()
                     where mission_id = %(mission_id)s
                     {expected_clause}
+                    and metadata_json->'portfolio_classification' is null
                     returning mission_id
                     """,
                     {
@@ -923,6 +976,8 @@ def finalize_owner_review_transaction(
                 if not row:
                     return {"success": False, "status": "not_found"}, 404
                 current_status, metadata = row[0], row[1] or {}
+                if "portfolio_classification" in metadata:
+                    return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
                 if current_status != expected_status:
                     return {
                         "success": False,
@@ -998,6 +1053,7 @@ def _not_execution_held_sql():
                     and release_event.release_of_event_id = hold_event.event_id
               )
         )
+        and public.charlie_missions.metadata_json->'portfolio_classification' is null
     """
 
 
@@ -1462,6 +1518,8 @@ def consume_final_agent_artifact(
                 rows = cursor.fetchall()
                 if not rows:
                     return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                if "portfolio_classification" in dict(rows[0][0] or {}):
+                    return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
                 metadata = dict(rows[0][0] or {})
                 ingestion = dict(metadata.get("final_artifact_ingestion") or {})
                 claims = list(ingestion.get("claims") or [])
@@ -1650,6 +1708,8 @@ def record_final_artifact_rejection(
                 if not rows:
                     return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
                 metadata = dict(rows[0][0] or {})
+                if "portfolio_classification" in metadata:
+                    return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
                 review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
                 evidence_generation = _clean_text(
                     review_packet.get("review_generation")
@@ -1979,6 +2039,8 @@ def update_mission_workflow_step(
     if load_status >= 400:
         return loaded, load_status
     mission = loaded.get("mission") or {}
+    if not mission_runtime_eligible(mission):
+        return {"success": False, "status": "portfolio_classified_mission_ineligible"}, 409
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     workflow = metadata.get("agent_workflow") if isinstance(metadata.get("agent_workflow"), list) else _default_agent_workflow(mission.get("mission_type", ""))
     updated_workflow = _update_workflow_items(workflow, agent, step_status, findings, next_agent)
@@ -2656,6 +2718,64 @@ def _find_open_duplicate_mission(cursor, params):
         if new_family_key and _mission_family_scope_key(existing_metadata) == new_family_key:
             return _duplicate_row(row)
     return None
+
+
+def _resolve_exact_identity_intake(cursor, params):
+    """Serialize owner-approved identity/title and fail before unrelated writes."""
+    mission_id = params["mission_id"]
+    normalized_title = _normalize_mission_text(params.get("title", ""))
+    cursor.execute(
+        "select pg_advisory_xact_lock(hashtextextended(%(lock_key)s, 0))",
+        {"lock_key": f"mission-id:{mission_id}"},
+    )
+    cursor.execute(
+        """select mission_id, status, title, raw_text, metadata_json
+           from public.charlie_missions
+           where mission_id = %(mission_id)s
+           for update""",
+        {"mission_id": mission_id},
+    )
+    exact_rows = cursor.fetchall()
+    if exact_rows:
+        row = exact_rows[0]
+        expected_metadata = json.loads(params.get("metadata_json") or "{}")
+        expected_admission = expected_metadata.get("portfolio_admission")
+        persisted_metadata = row[4] if isinstance(row[4], dict) else {}
+        persisted_admission = persisted_metadata.get("portfolio_admission")
+        admission_matches = (
+            expected_admission is None and persisted_admission is None
+            or expected_admission is not None and persisted_admission is not None
+            and row[1] == params.get("status")
+            and persisted_admission == expected_admission)
+        if (row[2] == params.get("title") and row[3] == params.get("raw_text")
+                and admission_matches):
+            return ({"stored": False, "configured": True,
+                "status": "duplicate_exact_mission", "mission_id": mission_id,
+                "existing_status": row[1], "title": row[2]}, 200)
+        return ({"stored": False, "configured": True,
+            "status": "exact_mission_identity_conflict", "mission_id": mission_id}, 409)
+    cursor.execute(
+        """select mission_id, status, title
+           from public.charlie_missions
+           where status = any(%(statuses)s)
+           order by updated_at desc""",
+        {"statuses": sorted(OPEN_DUPLICATE_STATUSES)},
+    )
+    for row in cursor.fetchall():
+        if (_normalize_mission_text(row[2]) == normalized_title
+                and row[0] != mission_id):
+            return ({"stored": False, "configured": True,
+                "status": "exact_mission_title_conflict",
+                "mission_id": mission_id, "conflicting_mission_id": row[0]}, 409)
+    return None
+
+
+def _lock_mission_intake_title(cursor, params):
+    normalized_title = _normalize_mission_text(params.get("title", ""))
+    cursor.execute(
+        "select pg_advisory_xact_lock(hashtextextended(%(lock_key)s, 0))",
+        {"lock_key": f"mission-title:{normalized_title}"},
+    )
 
 
 def _duplicate_row(row):

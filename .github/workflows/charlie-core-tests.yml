@@ -40,3 +40,5 @@ jobs:
               echo "::endgroup::"
             )
           done < <(find tests -maxdepth 1 -name 'test_charlie_*.py' -print | sort)
+          python -m unittest tests.test_control_tower_feedback tests.test_shadow_control_tower tests.test_shadow_control_tower_input
+          python -m unittest tests.test_portfolio_classification

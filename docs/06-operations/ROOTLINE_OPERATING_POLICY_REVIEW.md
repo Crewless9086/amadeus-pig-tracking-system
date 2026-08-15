@@ -162,3 +162,24 @@ Desktop and mobile owner-only verification showed the proposal, deliberate
 and Activate lifecycle steps. No policy review or activation, plan, command,
 schedule, workflow, transport, retry, IFTTT/n8n call, telemetry/farm-data
 write, irrigation action or hardware authority occurred.
+
+## Routine autonomous dry-release correction
+
+The later immutable release-policy row contained compatibility fields named
+`visible_rain_confirmation_required` and `owner_review_required`. Those fields
+normalize to `false` for routine autonomous B/C irrigation. They do not create
+a recurring human authority boundary, and historical `true` values are not
+interpreted as current execution prerequisites.
+
+Dry release remains fail-closed and automatic: the governed local weather
+source must be healthy and fresh; every durable reading across the configured
+30-minute interval must be exactly 0.0 mm/hour; at least two boundary readings
+must exist; and missing, conflicting, future or stale local evidence blocks
+release. Forecast evidence informs planning quality, prioritisation, duration
+and future-window selection. A stale or unavailable forecast is an explicit
+planning warning, not an independent execution Hold. Forecast rain can defer a
+plan only through an active governed forecast threshold; an `Unknown` threshold
+cannot invent execution authority or prohibition. This correction changes no
+controller, fail-stop, water, accounting, shutdown, fertilizer, borehole or
+future-device authority. Execution eligibility artifacts use a new contract
+version so older forecast-blocked artifacts cannot cross this boundary.

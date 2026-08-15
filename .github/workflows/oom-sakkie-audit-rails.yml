@@ -93,6 +93,10 @@ jobs:
       - name: Apply Oom Sakkie audit migrations
         run: |
           python scripts/apply_supabase_migration.py supabase/migrations/202605210001_foundation_migration_log.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607190001_create_operational_event_fabric.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202605210005_create_telemetry_power_tables.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202605220001_create_telemetry_weather_tables.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202605230001_create_irrigation_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606280001_create_bulk_weight_batch_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606290001_create_farm_canonical_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606290003_add_litter_lifecycle_fields.sql
@@ -139,6 +143,18 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202607270002_create_rootline_operating_policies.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606300001_create_charlie_mission_queue.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607270003_create_charlie_owner_execution_holds.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608090001_create_rootline_water_balance_ledger.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608090002_fix_rootline_water_balance_pgcrypto_search_path.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607210001_create_pig_lifecycle_events.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608110001_create_oom_protected_action_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608120001_create_breeding_exposure_events.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608120002_allow_breeding_protected_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608120003_add_breeding_exposure_group_identity.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608120004_add_exposure_breeding_cycle_windows.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608120005_add_active_exposure_cycle_state.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608060001_create_rootline_ewelink_oauth_vault.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608130001_serialize_rootline_ewelink_refresh.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608130002_allow_rootline_irrigation_protected_claims.sql
 
       - name: Run Beacon weekly owner-decision permission gates
         env:
@@ -155,6 +171,9 @@ jobs:
       - name: Run CHARLIE callback durability integration tests
         run: python -m unittest tests.test_charlie_callback_postgres
 
+      - name: Run CHARLIE exact identity and bootstrap admission transaction tests
+        run: python -m unittest tests.test_private_opaque_mission_creation_postgres tests.test_portfolio_classification_postgres tests.test_control_tower_feedback_postgres
+
       - name: Run CHARLIE adaptive orchestration durable canary tests
         run: python -m unittest tests.test_charlie_adaptive_orchestration_postgres tests.test_charlie_owner_execution_hold_postgres
 
@@ -164,20 +183,37 @@ jobs:
       - name: Run Herdmaster Weaning Day atomic transaction gates
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_litter_weaning_atomic_postgres
 
+      - name: Run Oom Sakkie protected breeding claim persistence gates
+        run: OOM_PROTECTED_ACTION_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_oom_sakkie_protected_breeding_claim_postgres tests.test_rootline_protected_irrigation_postgres
+
       - name: Run Riversdale auction disposable-Postgres integration tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_riversdale_auction_postgres
 
       - name: Run pig lifecycle audit disposable-Postgres tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_lifecycle_event_postgres
 
+      - name: Run HERDMASTER grouped breeding exposure transaction gates
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_herdmaster_breeding_exposure_postgres tests.test_breeding_exposure_group_migration_postgres
+
       - name: Run ROOTLINE plan-only ledger disposable-Postgres tests
         run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_irrigation_command_ledger_postgres tests.test_irrigation_daily_plan_postgres
+
+      - name: Run ROOTLINE eWeLink refresh durability gates
+        run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_ewelink_oauth_postgres
 
       - name: Run ROOTLINE Operating Knowledge policy-review permission gates
         run: ROOTLINE_POLICY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_operating_policy_postgres
 
       - name: Run ROOTLINE Water and Energy Plan permission gates
         run: ROOTLINE_WATER_ENERGY_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_rootline_water_energy_plan_postgres
+
+      - name: Run ROOTLINE effective-rainfall append and replay gates
+        run: |
+          python -m pip install pytest
+          ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m pytest tests/test_rootline_water_balance.py -q
+
+      - name: Run ROOTLINE irrigation job persistence and concurrency gates
+        run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m pytest tests/test_rootline_irrigation_execution_store.py -q
 
       - name: Run HERDMASTER breeding operating-loop gates
         run: |

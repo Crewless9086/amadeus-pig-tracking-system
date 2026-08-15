@@ -164,6 +164,12 @@ def _transaction_pool_url(value):
 
 
 def _python_executable(repo_root=REPO_ROOT):
+    if (
+        os.name == "nt"
+        and Path(repo_root).resolve() == REPO_ROOT.resolve()
+        and str(getattr(sys, "_base_executable", "") or "")
+    ):
+        return str(Path(sys._base_executable))
     candidates = [
         Path(repo_root) / "venv" / "Scripts" / "python.exe",
         Path(repo_root).parents[1] / "venv" / "Scripts" / "python.exe",
@@ -230,7 +236,11 @@ def supervise_runner(
         execution_revision,
         controller_public_key=controller_public_key,
         execution_mode=execution_mode,
-        live_validate=not test_mode,
+        # The controller acknowledgement is signed only after the controller
+        # has freshly validated this exact tree.  Re-running the same Windows
+        # CIM inspection here creates a competing snapshot at the startup
+        # boundary without adding a second authority decision.
+        live_validate=False,
         sleep_fn=sleep_fn,
     )
     if not controller.get("success"):
@@ -294,7 +304,11 @@ def supervise_runner(
                 "failure_status": bootstrap.get("status", "execution_bootstrap_failed"),
                 "bootstrap": bootstrap,
             }
-        scrub_results = [
+        # Observe-only receives a stripped, credential-free environment and
+        # cannot open the mission queue.  Recursively scanning the historical
+        # execution archive here delayed a harmless ownership probe by
+        # minutes.  Ordinary execution retains the complete preflight scrub.
+        scrub_results = [] if execution_mode == "observe_only" else [
             redact_tree_in_place(RUNNER_HEARTBEAT_PATH),
             redact_tree_in_place(RUNNER_DIR / "runner.log"),
             redact_tree_in_place(EXECUTION_ROOT / ".charlie_runner" / "executions"),
@@ -338,6 +352,9 @@ def supervise_runner(
             "CHARLIE_SUPERVISOR_GENERATION": generation,
             "CHARLIE_STARTUP_NONCE": startup_nonce,
             "CHARLIE_CORE_EXECUTION_MODE": execution_mode,
+            "CHARLIE_INTENDED_RUNTIME_REVISION": runtime_revision,
+            "CHARLIE_INTENDED_EXECUTION_REVISION": execution_revision,
+            "CHARLIE_CONTROLLER_PUBLIC_KEY": controller_public_key,
             "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
         })
         # The legacy alias can still be present in the scheduled-task
@@ -378,6 +395,7 @@ def supervise_runner(
                     getattr(sys, "_base_executable", "") or sys.executable
                 ),
                 process_role_prefix="runner",
+                timeout_seconds=45,
             )
         if not runner_observation.get("success"):
             STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
@@ -614,7 +632,7 @@ def _wait_for_controller_ack(
     execution_mode="ordinary",
     live_validate=True,
     sleep_fn=time.sleep,
-    timeout_seconds=15,
+    timeout_seconds=30,
 ):
     deadline = time.monotonic() + max(0, float(timeout_seconds))
     last_reason = "controller_ownership_packet_missing"
@@ -823,7 +841,11 @@ def _wait_for_runner_ack(
     while time.monotonic() <= deadline:
         heartbeat = _read_json(RUNNER_HEARTBEAT_PATH)
         if (
-            str(heartbeat.get("status") or "") == "ownership_ready"
+            str(
+                heartbeat.get("last_result_status")
+                or heartbeat.get("status")
+                or ""
+            ) == "ownership_ready"
             and
             str(heartbeat.get("supervisor_generation") or "") == generation
             and str(heartbeat.get("runner_source_commit") or "") == execution_revision
@@ -1381,6 +1403,7 @@ def _write_status(status, **extra):
             "created_at",
             "startup_nonce",
             "controller_acknowledgement",
+            "child_pid",
             "child_identity",
             "process_tree_identity",
             "stop_evidence",
@@ -1389,6 +1412,9 @@ def _write_status(status, **extra):
             "runner_startup_nonce",
             "runner_controller_acknowledgement",
             "controller_final_acknowledgement",
+            "controller_public_key",
+            "intended_runtime_revision",
+            "intended_execution_revision",
             "execution_mode",
         ):
             if key not in payload and key in previous:

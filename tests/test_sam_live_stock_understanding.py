@@ -17,6 +17,9 @@ class SamLiveStockUnderstandingTests(unittest.TestCase):
             "Ek is gereed om voort te gaan.",
             "Ja, gaan voort.",
             "Ek wil daarmee voortgaan.",
+            "Hi we will take the quote",
+            "We accept the quotation.",
+            "Ons aanvaar die kwotasie.",
         )
         for text in confirmations:
             with self.subTest(text=text):

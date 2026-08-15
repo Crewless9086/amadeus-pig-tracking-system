@@ -85,8 +85,8 @@ def active_policy_v2():
                     "dry_interval_minutes": 30,
                     "dry_rain_rate_mm_per_hour": 0.0,
                     "minimum_fresh_station_readings": 2,
-                    "visible_rain_confirmation_required": True,
-                    "owner_review_required": True,
+                    "visible_rain_confirmation_required": False,
+                    "owner_review_required": False,
                 },
             },
             "temperature_limits": "Unknown",
@@ -113,6 +113,8 @@ def active_policy_v3():
 def complete_dry_release_evidence():
     return {
         "availability": "Available",
+        "source": "governed_local_weather_station",
+        "source_healthy": True,
         "conflicting": False,
         "continuous_zero_rain_confirmed": True,
         "interval_start_at": "2026-07-27T14:00:18+00:00",
@@ -129,10 +131,6 @@ def complete_dry_release_evidence():
                 "freshness": "fresh",
             },
         ],
-        "no_visible_rain_confirmed": True,
-        "visible_rain_confirmed_at": "2026-07-27T14:30:18+00:00",
-        "owner_review_confirmed": True,
-        "owner_reviewed_at": "2026-07-27T14:30:18+00:00",
     }
 
 
@@ -144,6 +142,8 @@ def dry_brief_at(local_time):
     brief["current_conditions"]["last_reading_at"] = observed_at.isoformat()
     brief["rain_release_evidence"] = {
         "availability": "Available",
+        "source": "governed_local_weather_station",
+        "source_healthy": True,
         "conflicting": False,
         "continuous_zero_rain_confirmed": True,
         "interval_start_at": interval_start.isoformat(),
@@ -160,10 +160,6 @@ def dry_brief_at(local_time):
                 "freshness": "fresh",
             },
         ],
-        "no_visible_rain_confirmed": True,
-        "visible_rain_confirmed_at": observed_at.isoformat(),
-        "owner_review_confirmed": True,
-        "owner_reviewed_at": observed_at.isoformat(),
     }
     return brief
 
@@ -221,7 +217,7 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
         self.assertTrue(all(zone["eligibility_today"] == "Hold" for zone in result["zones"]))
 
-    def test_stale_weather_and_forecast_fail_closed(self):
+    def test_stale_local_weather_fails_closed_while_forecast_is_a_warning(self):
         brief = daily_brief()
         brief["current_conditions"]["freshness"] = "stale"
         brief["current_conditions"]["rain_rate_mm_h"] = 2
@@ -232,7 +228,21 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         for zone in result["zones"]:
             self.assertEqual(zone["recommendation"], "Hold")
             self.assertTrue(any("Fresh current weather" in reason for reason in zone["reasoning"]))
-            self.assertTrue(any("fresh forecast" in reason for reason in zone["reasoning"]))
+            self.assertEqual(zone["forecast_planning_quality"], "degraded")
+            self.assertEqual(zone["planning_warnings"], ["forecast_stale_or_unavailable"])
+
+    def test_stale_forecast_does_not_block_automatic_dry_release(self):
+        brief = daily_brief()
+        brief["forecast"]["freshness"] = "stale"
+        brief["rain_release_evidence"] = complete_dry_release_evidence()
+        result = build_rootline_daily_advisor(
+            brief, "2026-07-27", active_policy=active_policy_v2()
+        )
+        for zone in result["zones"]:
+            self.assertTrue(zone["live_rain_release_proven"])
+            self.assertEqual(zone["forecast_planning_quality"], "degraded")
+            self.assertEqual(zone["planning_warnings"], ["forecast_stale_or_unavailable"])
+            self.assertTrue(any("planning confidence" in reason for reason in zone["reasoning"]))
 
     def test_strict_threshold_and_release_evidence_matrix(self):
         for rain_rate in (0.21, 0.4):
@@ -265,6 +275,7 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         )
         self.assertTrue(all(zone["recommendation"] == "Needs Data" for zone in result["zones"]))
         self.assertTrue(all(zone["eligibility_today"] == "Needs Data" for zone in result["zones"]))
+        self.assertTrue(all(zone["live_rain_release_proven"] is True for zone in result["zones"]))
         self.assertTrue(
             all(zone["proposed_runtime_status"] == "Unavailable" for zone in result["zones"])
         )
@@ -393,15 +404,9 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         boolean_reading = complete_dry_release_evidence()
         boolean_reading["station_readings"][0]["rain_rate_mm_h"] = False
         cases.append(boolean_reading)
-        no_visual = complete_dry_release_evidence()
-        no_visual["no_visible_rain_confirmed"] = False
-        cases.append(no_visual)
         not_continuous = complete_dry_release_evidence()
         not_continuous["continuous_zero_rain_confirmed"] = False
         cases.append(not_continuous)
-        no_owner_review = complete_dry_release_evidence()
-        no_owner_review["owner_review_confirmed"] = False
-        cases.append(no_owner_review)
         conflicting = complete_dry_release_evidence()
         conflicting["conflicting"] = True
         cases.append(conflicting)
@@ -414,6 +419,18 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
                 brief, "2026-07-27", active_policy=active_policy_v2()
             )
             self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
+            self.assertTrue(all(zone["live_rain_release_proven"] is False for zone in result["zones"]))
+
+    def test_human_rain_confirmation_fields_are_not_routine_gates(self):
+        brief = daily_brief()
+        brief["current_conditions"]["rain_rate_mm_h"] = 0.0
+        evidence = complete_dry_release_evidence()
+        evidence.update({"no_visible_rain_confirmed": False,
+            "owner_review_confirmed": False})
+        brief["rain_release_evidence"] = evidence
+        result = build_rootline_daily_advisor(
+            brief, "2026-07-27", active_policy=active_policy_v2())
+        self.assertTrue(all(zone["live_rain_release_proven"] for zone in result["zones"]))
 
     def test_release_evidence_is_bound_to_current_observation_date_and_time(self):
         brief = daily_brief()
@@ -725,10 +742,11 @@ class RootlineDailyAdvisorRouteTests(unittest.TestCase):
     def test_existing_dashboard_has_one_panel_and_no_embedded_evidence(self):
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")
         javascript = Path("static/js/dashboard.js").read_text(encoding="utf-8")
-        self.assertEqual(template.count('id="rootline_panel"'), 1)
-        self.assertEqual(template.count('id="rootline_advisor_zones"'), 1)
+        self.assertEqual(template.count('id="irrigation_panel"'), 1)
+        self.assertEqual(template.count('id="irrigation_b_status"'), 1)
+        self.assertEqual(template.count('id="irrigation_c_status"'), 1)
         self.assertEqual(
-            javascript.count("/api/telemetry/rootline/daily-advisor?date="), 1
+            javascript.count("/api/telemetry/irrigation/status?date="), 1
         )
         self.assertNotIn(C12345_CANARY_SHA256, template)
         self.assertNotIn("irrigation_1_ch2_on", template)

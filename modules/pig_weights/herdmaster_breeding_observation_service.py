@@ -338,6 +338,10 @@ def record_observation(
                     where pig.pig_id=%s and pig.status='Active'
                       and pig.on_farm is true and pig.sex='Female'
                       and pig.animal_type in ('Sow','Gilt')
+                      and exists (
+                        select 1 from public.current_canonical_pigs current_pig
+                        where current_pig.pig_id=pig.pig_id
+                      )
                     for share of pig
                 """, (clean["pig_id"],))
                 if not cursor.fetchone():

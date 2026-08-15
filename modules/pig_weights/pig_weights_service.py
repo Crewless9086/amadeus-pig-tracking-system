@@ -1,4 +1,9 @@
+import logging
 import math
+import hashlib
+import hmac
+import json
+import os
 from datetime import datetime, timedelta
 
 from services.google_sheets_service import (
@@ -27,6 +32,7 @@ from modules.pig_weights.pig_weights_utils import (
 from modules.pig_weights.mating_service import get_breeding_analytics, link_litter_to_mating
 from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights import farm_supabase_write_service
+from modules.pig_weights.herdmaster_piglet_observation_action import preview_action as preview_piglet_observation_action
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
 from modules.sales.riversdale_auction import (
     build_riversdale_auction_packet,
@@ -43,6 +49,7 @@ from modules.sales.riversdale_auction_list import (
 )
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
+LOGGER = logging.getLogger(__name__)
 LIFECYCLE_REMOVAL_REASONS = {
     "Died": "Dead",
     "Culled": "Dead",
@@ -64,9 +71,10 @@ LITTER_PIGLET_DEATH_REASONS = {
 }
 STILLBORN_RECLASSIFY_CANDIDATE_REASONS = {"Died", "Died after birth", "Unknown", ""}
 LITTER_HEALTH_EARMARK_FIELDS = ("Earmarked", "Earmark_Date")
-DEFAULT_LITTER_WEAN_AGE_DAYS = 35
+DEFAULT_LITTER_WEAN_AGE_DAYS = 30
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
 POST_WEAN_PURPOSE_REVIEW_DAYS = 14
+WEANING_PREVIEW_TTL_SECONDS = 30 * 60
 LIVE_SALE_TARGET_KG = 60
 MEAT_TARGET_MIN_KG = 60
 MEAT_TARGET_MAX_KG = 80
@@ -683,6 +691,8 @@ def get_litter_attention_summary(limit: int = 5, today=None):
             pig_master_rows,
             medical_rows,
             newborn_products,
+            farrowing_date_value=summary_timing_row["Farrowing_Date"],
+            today=today,
         )
         if newborn_attention:
             reason = newborn_attention["reason"]
@@ -1832,8 +1842,16 @@ def _newborn_health_product_ids(products=None):
     return result
 
 
-def _litter_newborn_health_attention(litter_id, litter_status, wean_date_value, pig_master_rows, medical_rows, newborn_products):
+def _litter_newborn_health_attention(
+    litter_id, litter_status, wean_date_value, pig_master_rows, medical_rows, newborn_products,
+    farrowing_date_value=None, today=None,
+):
     if to_clean_string(litter_status) == "Weaned" or parse_sheet_date(wean_date_value):
+        return None
+
+    farrowing_date = parse_sheet_date(farrowing_date_value)
+    today = today or datetime.now().date()
+    if farrowing_date and today < farrowing_date + timedelta(days=4):
         return None
 
     active_piglets = [
@@ -1895,6 +1913,8 @@ def _build_litter_attention(row, pig_rows=None, pig_master_rows=None, medical_ro
             pig_master_rows,
             medical_rows,
             newborn_products or _newborn_health_product_ids(),
+            farrowing_date_value=row.get("Farrowing_Date", ""),
+            today=today,
         )
 
     if newborn_attention:
@@ -2209,6 +2229,42 @@ def mark_litter_weaned(
     }, 200
 
 
+def _weaning_confirmation_secret():
+    return str(os.getenv("OWNER_SESSION_SECRET") or os.getenv("SECRET_KEY") or "").encode()
+
+
+def _weaning_confirmation_binding(preview_digest, actor_id, *, now=None):
+    now = now or datetime.now()
+    issued_at = int(now.timestamp())
+    material = f"herdmaster_weaning_day_v2|{preview_digest}|{actor_id}|{issued_at}"
+    secret = _weaning_confirmation_secret()
+    signature = hmac.new(secret, material.encode(), hashlib.sha256).hexdigest() if secret else ""
+    return {"contract_version": "herdmaster_weaning_day_confirmation_v1",
+            "preview_digest": preview_digest, "actor_id": actor_id,
+            "issued_at": issued_at, "signature": signature}
+
+
+def _valid_weaning_confirmation(binding, preview_digest, actor_id, *, now=None):
+    if not isinstance(binding, dict):
+        return False
+    now = now or datetime.now()
+    try:
+        issued_at = int(binding.get("issued_at"))
+    except (TypeError, ValueError):
+        return False
+    if issued_at > int(now.timestamp()) or int(now.timestamp()) - issued_at > WEANING_PREVIEW_TTL_SECONDS:
+        return False
+    if (str(binding.get("preview_digest") or "") != preview_digest
+            or str(binding.get("actor_id") or "") != actor_id):
+        return False
+    expected = _weaning_confirmation_binding(
+        preview_digest, actor_id, now=datetime.fromtimestamp(issued_at)
+    )
+    return bool(expected["signature"] and hmac.compare_digest(
+        str(binding.get("signature") or ""), expected["signature"]
+    ))
+
+
 def process_litter_weaning_day(
     litter_id: str,
     payload=None,
@@ -2222,6 +2278,13 @@ def process_litter_weaning_day(
     target_pen_id = to_clean_string(payload.get("target_pen_id", ""))
     notes = to_clean_string(payload.get("notes", ""))
     medicine = payload.get("medicine", {}) if isinstance(payload.get("medicine", {}), dict) else {}
+    confirmation_material = {key: value for key, value in payload.items()
+                             if key not in {"dry_run", "confirmed_preview_digest", "confirmation_binding", "changed_by"}}
+    confirmation_material["changed_by"] = changed_by
+    preview_digest = hashlib.sha256(json.dumps(
+        confirmation_material, sort_keys=True, separators=(",", ":"), default=str
+    ).encode()).hexdigest()
+    confirmation_binding = _weaning_confirmation_binding(preview_digest, changed_by)
 
     if not to_clean_string(litter_id):
         return {"success": False, "errors": ["Litter ID is required."]}, 400
@@ -2238,12 +2301,63 @@ def process_litter_weaning_day(
         to_clean_string(row.get(columns["pig_id"], "")): row
         for row in active_rows
     }
+    observation_items = [dict(row.get("observation") or {}, pig_id=to_clean_string(row.get("pig_id")))
+                         for row in assignments if isinstance(row, dict) and isinstance(row.get("observation"), dict)
+                         and (to_clean_string(row.get("observation", {}).get("factual_note"))
+                              or row.get("observation", {}).get("traits"))]
+    observation_preview = {"success": True, "observation_count": 0, "observation_effects": []}
+    observation_action = None
+    if observation_items:
+        observation_payload = {
+            "litter_id": litter_id, "observed_on": action_date.isoformat(),
+            "source_context": "weaning", "source_reference": "litter_weaning_day",
+            "idempotency_key": f"weaning-observations:{litter_id}:{action_date.isoformat()}",
+            "observations": observation_items,
+        }
+        requested_observation_ids = {item["pig_id"] for item in observation_items}
+        identity_rows = [{"pig_id": pig_id, "litter_id": litter_id,
+                          "tag_number": to_clean_string(row.get("Tag_Number", ""))}
+                         for pig_id, row in current_by_id.items() if pig_id in requested_observation_ids]
+        observation_preview, observation_status = preview_piglet_observation_action(
+            observation_payload, channel="application", identity_rows=identity_rows)
+        if observation_status != 200:
+            validation_errors.extend(observation_preview.get("errors", [observation_preview.get("status")]))
+        else:
+            observation_action = observation_preview["action"]
     requested_tags = {
         to_clean_string(row.get("pig_id")): to_clean_string(row.get("tag_number"))
         for row in assignments if isinstance(row, dict)
         and to_clean_string(row.get("pig_id"))
         and to_clean_string(row.get("tag_number"))
     }
+    requested_sexes = {
+        to_clean_string(row.get("pig_id")): to_clean_string(row.get("sex"))
+        for row in assignments if isinstance(row, dict)
+        and to_clean_string(row.get("pig_id"))
+        and to_clean_string(row.get("sex"))
+    }
+    sex_updates = {}
+    for pig_id, requested_sex in requested_sexes.items():
+        if requested_sex not in {"Male", "Female", "Castrated_Male"}:
+            validation_errors.append(f"Piglet {pig_id} has an invalid sex value.")
+            continue
+        current_sex = to_clean_string((current_by_id.get(pig_id) or {}).get(columns["sex"], ""))
+        current_tag = to_clean_string((current_by_id.get(pig_id) or {}).get("Tag_Number", ""))
+        if current_sex and current_sex != requested_sex and current_tag:
+            validation_errors.append(f"Piglet {pig_id} already has conflicting sex {current_sex}.")
+        elif current_sex != requested_sex:
+            sex_updates[pig_id] = {
+                "Sex": requested_sex,
+                "Updated_At": format_date_for_sheet(datetime.now().date()),
+            }
+    missing_sex_ids = [
+        pig_id for pig_id, row in current_by_id.items()
+        if not to_clean_string(row.get(columns["sex"], "")) and pig_id not in requested_sexes
+    ]
+    if missing_sex_ids:
+        validation_errors.append(
+            f"Choose a sex for all piglets at weaning; {len(missing_sex_ids)} still blank."
+        )
     new_tag_assignments = []
     for pig_id, requested_tag in requested_tags.items():
         current_tag = to_clean_string(
@@ -2296,6 +2410,7 @@ def process_litter_weaning_day(
             batch_lot_number=medicine.get("batch_lot_number", ""),
             notes=notes or medicine.get("notes", "Weaning day treatment."),
             dry_run=True,
+            treatment_context="weaning_day",
         )
         if health_status != 200 or not health_preview.get("success"):
             validation_errors.extend(health_preview.get("errors", ["Could not preview medicine."]))
@@ -2324,7 +2439,7 @@ def process_litter_weaning_day(
                 "writes_to_sheets": False,
                 "writes_to_supabase": False,
             }, 409
-        return _weaning_day_result(
+        preview_result = _weaning_day_result(
             litter_id=litter_id,
             dry_run=True,
             action_date=action_date,
@@ -2335,7 +2450,23 @@ def process_litter_weaning_day(
             wean_result=wean_preview,
             weight_result=weight_preview,
             changed_by=changed_by,
-        ), 200
+        )
+        preview_result["sex_count"] = len(requested_sexes)
+        preview_result["observation_result"] = observation_preview
+        preview_result["observation_count"] = observation_preview.get("observation_count", 0)
+        preview_result["preview_digest"] = preview_digest
+        preview_result["confirmation_binding"] = confirmation_binding
+        return preview_result, 200
+
+    if not _valid_weaning_confirmation(
+        payload.get("confirmation_binding"), preview_digest, changed_by
+    ):
+        return {
+            "success": False, "status": "exact_weaning_preview_confirmation_required",
+            "errors": ["Preview this exact Weaning Day packet before saving."],
+            "dry_run": False, "litter_id": litter_id,
+            "operation_committed": False, "writes_to_sheets": False, "writes_to_supabase": False,
+        }, 409
 
     if farm_supabase_write_service.farm_supabase_writes_available():
         assignment_by_id = {
@@ -2361,6 +2492,10 @@ def process_litter_weaning_day(
                     or to_clean_string(row.get("Tag_Number", ""))
                 ),
                 "weight_kg": wean_weights[pig_id],
+                "sex": (
+                    to_clean_string(assignment.get("sex"))
+                    or to_clean_string(row.get(columns["sex"], ""))
+                ),
                 "from_pen_id": movement.get("from_pen_id", current_pen),
                 "to_pen_id": movement.get(
                     "to_pen_id", target_pen_id or current_pen
@@ -2376,8 +2511,13 @@ def process_litter_weaning_day(
                 "treatment_rows": health_preview.get(
                     "planned_treatment_rows", []
                 ),
+                "observation_action": observation_action,
             })
         except Exception as exc:
+            LOGGER.exception(
+                "Canonical Weaning Day transaction rejected for litter %s",
+                litter_id,
+            )
             return {
                 "success": False,
                 "status": "weaning_day_transaction_failed",
@@ -2430,6 +2570,8 @@ def process_litter_weaning_day(
                 atomic["status"] == "weaning_day_replayed_withheld"
             ),
             "atomic_counts": atomic,
+            "observation_result": atomic.get("observation_readback", []),
+            "observation_count": atomic.get("observations_created", 0),
         })
         result["source"] = {
             "writes_to_sheets": False,
@@ -2437,9 +2579,25 @@ def process_litter_weaning_day(
         }
         return result, 200
 
+    if observation_action:
+        return {
+            "success": False,
+            "status": "atomic_observation_store_required",
+            "errors": ["Weaning Day observations require the canonical atomic observation store; nothing was saved."],
+            "dry_run": False,
+            "litter_id": litter_id,
+            "operation_committed": False,
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
+        }, 503
+
     # Preserve the established Google Sheets fallback when canonical
     # Supabase writes are unavailable.
     applied = {}
+    if sex_updates:
+        batch_update_rows_by_id(
+            PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"], sex_updates
+        )
     if tag_plan["assignments"]:
         applied["tags"], tag_status = assign_litter_piglet_tag_numbers(
             litter_id=litter_id,
@@ -2467,6 +2625,7 @@ def process_litter_weaning_day(
             batch_lot_number=medicine.get("batch_lot_number", ""),
             notes=notes or medicine.get("notes", "Weaning day treatment."),
             dry_run=False,
+            treatment_context="weaning_day",
         )
         if health_status != 200 or not applied["medicine"].get("success"):
             return {"success": False, "errors": applied["medicine"].get("errors", ["Could not save medicine."])}, health_status
@@ -3375,7 +3534,10 @@ def record_litter_newborn_health(
     route: str = "",
     batch_lot_number: str = "",
     notes: str = "",
+    male_count=None,
+    female_count=None,
     dry_run: bool = True,
+    treatment_context: str = "first_treatment",
 ):
     litter_id = to_clean_string(litter_id)
     action_date = parse_sheet_date(action_date_value)
@@ -3388,15 +3550,26 @@ def record_litter_newborn_health(
     notes = to_clean_string(notes)
     dose_value = to_float(dose)
     dry_run = dry_run is True
+    treatment_context = to_clean_string(treatment_context) or "first_treatment"
 
     errors = []
+    if treatment_context not in {"first_treatment", "weaning_day"}:
+        errors.append("Unsupported litter treatment context.")
     if not litter_id:
         errors.append("Litter ID is required.")
     if not action_date:
         errors.append("A valid action date is required.")
     if not changed_by:
         errors.append("changed_by is required.")
-    if not earmarked and not antiparasitic_product_id and not deworming_product_id and not vaccination_product_id:
+    sex_count_requested = male_count not in (None, "") or female_count not in (None, "")
+    male_count_value = to_float(male_count) if male_count not in (None, "") else None
+    female_count_value = to_float(female_count) if female_count not in (None, "") else None
+    if sex_count_requested:
+        if male_count_value is None or female_count_value is None:
+            errors.append("Enter both the male and female litter tally.")
+        elif male_count_value < 0 or female_count_value < 0 or not male_count_value.is_integer() or not female_count_value.is_integer():
+            errors.append("Male and female litter tallies must be whole numbers of zero or more.")
+    if not earmarked and not antiparasitic_product_id and not deworming_product_id and not vaccination_product_id and not sex_count_requested:
         errors.append("Select earmarking, antiparasitic/deworming product, or vaccination product before saving.")
     if errors:
         return {"success": False, "errors": errors}, 400
@@ -3432,6 +3605,33 @@ def record_litter_newborn_health(
             "litter_id": litter_id,
         }, 409
 
+    existing_detail = _try_supabase_read(farm_supabase_read_service.get_litter_detail, litter_id)
+    if treatment_context == "first_treatment" and isinstance(existing_detail, dict) and (
+        existing_detail.get("first_treatment_complete") is True
+        or existing_detail.get("first_treatment_partial") is True
+    ):
+        return {
+            "success": False,
+            "status": "first_treatment_already_closed",
+            "errors": [
+                "First treatment already has canonical medical evidence. Use the correction history instead of recording the whole-litter action again."
+            ],
+            "litter_id": litter_id,
+            "first_treatment_complete": existing_detail.get("first_treatment_complete") is True,
+            "first_treatment_partial": existing_detail.get("first_treatment_partial") is True,
+        }, 409
+
+    male_count_int = int(male_count_value) if male_count_value is not None else None
+    female_count_int = int(female_count_value) if female_count_value is not None else None
+    if sex_count_requested and male_count_int + female_count_int != len(active_piglets):
+        return {
+            "success": False,
+            "errors": [
+                f"The first-treatment tally must account for all {len(active_piglets)} active piglets."
+            ],
+            "active_piglet_count": len(active_piglets),
+        }, 409
+
     if earmarked:
         headers = set()
         for row in pig_rows:
@@ -3453,16 +3653,23 @@ def record_litter_newborn_health(
     action_date_sheet = format_date_for_sheet(action_date)
     today = format_date_for_sheet(datetime.now().date())
     pig_updates = {}
+    litter_tally_updates = {}
+    if sex_count_requested:
+        litter_tally_updates = {
+            "Male_Count": male_count_int,
+            "Female_Count": female_count_int,
+            "Unknown_Sex_Count": 0,
+        }
     treatment_rows = []
 
     for row in active_piglets:
         pig_id = to_clean_string(row.get(columns["pig_id"], ""))
         if earmarked:
-            pig_updates[pig_id] = {
+            pig_updates.setdefault(pig_id, {}).update({
                 "Earmarked": "Yes",
                 "Earmark_Date": action_date_sheet,
                 "Updated_At": today,
-            }
+            })
 
         if antiparasitic_product_id:
             antiparasitic_product = products[antiparasitic_product_id]
@@ -3477,6 +3684,7 @@ def record_litter_newborn_health(
                 given_by=changed_by,
                 notes=notes,
                 litter_id=litter_id,
+                treatment_context=treatment_context,
             ))
         if deworming_product_id:
             deworming_product = products[deworming_product_id]
@@ -3491,6 +3699,7 @@ def record_litter_newborn_health(
                 given_by=changed_by,
                 notes=notes,
                 litter_id=litter_id,
+                treatment_context=treatment_context,
             ))
         if vaccination_product_id:
             treatment_rows.append(_build_litter_health_treatment_row(
@@ -3504,11 +3713,13 @@ def record_litter_newborn_health(
                 given_by=changed_by,
                 notes=notes,
                 litter_id=litter_id,
+                treatment_context=treatment_context,
             ))
 
     pig_rows_updated = 0
     treatment_rows_created = 0
     writes_to_supabase = False
+    litter_rows_updated = 0
     if not dry_run:
         supabase_available = farm_supabase_write_service.farm_supabase_writes_available()
         if supabase_available:
@@ -3519,35 +3730,96 @@ def record_litter_newborn_health(
                 treatment_rows
             )
             treatment_rows_created = treatment_result["created"]
+            if litter_tally_updates:
+                litter_rows_updated = _try_supabase_litter_update(litter_id, litter_tally_updates) or 0
             writes_to_supabase = True
         else:
             pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
+            if litter_tally_updates:
+                litter_rows_updated = batch_update_rows_by_id(
+                    PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"],
+                    {litter_id: litter_tally_updates},
+                )
             for row_values in treatment_rows:
                 append_row(medical_log_sheet, row_values)
                 treatment_rows_created += 1
 
     return {
         "success": True,
-        "action": "record_litter_newborn_health",
+        "action": (
+            "record_litter_weaning_treatment"
+            if treatment_context == "weaning_day"
+            else "record_litter_newborn_health"
+        ),
+        "treatment_context": treatment_context,
         "dry_run": dry_run,
         "litter_id": litter_id,
         "piglet_count": len(active_piglets),
         "pig_ids": [to_clean_string(row.get(columns["pig_id"], "")) for row in active_piglets],
         "earmarked": earmarked,
         "treatment_rows_planned": len(treatment_rows),
+        "sex_count_recorded": sex_count_requested,
+        "sex_count_scope": "litter_tally_only",
+        "individual_piglet_sexes_assigned": False,
+        "male_count": male_count_int,
+        "female_count": female_count_int,
+        "litter_rows_updated": litter_rows_updated,
         "pig_rows_updated": pig_rows_updated,
         "treatment_rows_created": treatment_rows_created,
         "planned_pig_updates": pig_updates,
+        "planned_litter_updates": litter_tally_updates,
         "planned_treatment_rows": treatment_rows,
         "source": {
             "writes_to_sheets": (not dry_run) and not writes_to_supabase,
             "writes_to_supabase": writes_to_supabase,
         },
         "message": (
-            f"Litter {litter_id} newborn health action previewed for {len(active_piglets)} piglet(s)."
+            f"Litter {litter_id} weaning-day treatment previewed for {len(active_piglets)} piglet(s)."
+            if dry_run and treatment_context == "weaning_day"
+            else f"Litter {litter_id} weaning-day treatment saved for {len(active_piglets)} piglet(s)."
+            if treatment_context == "weaning_day"
+            else f"Litter {litter_id} newborn health action previewed for {len(active_piglets)} piglet(s)."
             if dry_run
             else f"Litter {litter_id} newborn health action saved for {len(active_piglets)} piglet(s)."
         ),
+    }, 200
+
+
+def skip_litter_first_treatment(litter_id: str, changed_by: str = "web_app", reason: str = ""):
+    litter_id = to_clean_string(litter_id)
+    changed_by = to_clean_string(changed_by) or "web_app"
+    reason = to_clean_string(reason) or "Owner marked the optional first treatment as skipped."
+    if not litter_id:
+        return {"success": False, "errors": ["Litter ID is required."]}, 400
+
+    detail = _try_supabase_read(farm_supabase_read_service.get_litter_detail, litter_id)
+    if not isinstance(detail, dict):
+        return {"success": False, "errors": ["Litter was not found in canonical readback."]}, 404
+    if detail.get("first_treatment_complete") is True or detail.get("first_treatment_partial") is True:
+        return {
+            "success": False,
+            "status": "first_treatment_has_medical_evidence",
+            "errors": ["First treatment has canonical medical evidence and cannot be marked as skipped."],
+        }, 409
+    if detail.get("first_treatment_skipped") is True:
+        return {"success": True, "status": "already_skipped", "litter_id": litter_id}, 200
+    if not farm_supabase_write_service.farm_supabase_writes_available():
+        return {"success": False, "errors": ["Canonical litter writes are unavailable."]}, 503
+
+    skipped_at = datetime.now().astimezone()
+    updated = farm_supabase_write_service.update_litter_by_id(litter_id, {
+        "First_Treatment_Skipped_At": skipped_at,
+        "First_Treatment_Skipped_By": changed_by,
+        "First_Treatment_Skip_Reason": reason,
+    })
+    if updated != 1:
+        return {"success": False, "errors": ["The skip decision was not recorded."]}, 409
+    return {
+        "success": True,
+        "status": "first_treatment_skipped",
+        "litter_id": litter_id,
+        "first_treatment_skipped": True,
+        "message": "Eerste behandeling is as oorgeslaan gemerk en die stap is gesluit.",
     }, 200
 
 
@@ -3562,6 +3834,7 @@ def _build_litter_health_treatment_row(
     given_by,
     notes,
     litter_id,
+    treatment_context="first_treatment",
 ):
     withdrawal_days = product.get("default_withdrawal_days")
     withdrawal_days_int = int(withdrawal_days) if withdrawal_days not in (None, "") else ""
@@ -3570,7 +3843,12 @@ def _build_litter_health_treatment_row(
         withdrawal_end_date = action_date.fromordinal(action_date.toordinal() + withdrawal_days_int)
 
     dose = dose_value if dose_value is not None else product.get("default_dose")
-    medical_notes = f"Litter {litter_id} newborn health action."
+    action_label = (
+        "weaning day treatment"
+        if treatment_context == "weaning_day"
+        else "newborn health action"
+    )
+    medical_notes = f"Litter {litter_id} {action_label}."
     if notes:
         medical_notes = f"{medical_notes} Notes: {notes}"
 
@@ -3584,7 +3862,7 @@ def _build_litter_health_treatment_row(
         dose if dose is not None else "",
         product.get("dose_unit", ""),
         route,
-        f"{treatment_type} during litter newborn health action",
+        f"{treatment_type} during litter {action_label}",
         batch_lot_number,
         withdrawal_days_int,
         format_date_for_sheet(withdrawal_end_date),
@@ -6339,7 +6617,7 @@ def _is_active_on_farm_pig(pig_meta):
     )
 
 
-def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
+def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = "", batch_id: str = ""):
     parsed_from = parse_sheet_date(date_from) if date_from else datetime.now().date()
     parsed_to = parse_sheet_date(date_to) if date_to else parsed_from
 
@@ -6355,6 +6633,8 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
         parsed_from,
         parsed_to,
         selected_pen_id,
+        None,
+        to_clean_string(batch_id),
     )
     if supabase_result is not None:
         return supabase_result

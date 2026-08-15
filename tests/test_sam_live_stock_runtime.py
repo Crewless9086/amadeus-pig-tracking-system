@@ -1,10 +1,11 @@
 import json
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from modules.sales import sam_live_stock_runtime
+from modules.sales import sam_owner_example_projection
 
 
 def inbound_payload(**overrides):
@@ -48,7 +49,7 @@ def exact_eligible_row(**overrides):
         "calculated_stage": "Weaner",
         "sale_category": "Weaner",
         "current_weight_kg": 12,
-        "latest_weight_date": "2026-07-24",
+        "latest_weight_date": datetime.now(timezone.utc).date().isoformat(),
         "days_since_weight": 0,
     }
     row.update(overrides)
@@ -78,6 +79,875 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_accepted_complete_request_prepares_one_quote_without_reservation_or_send(self):
+        calls = []
+        decision = {
+            "sales_lane": "live_stock_sales",
+            "conversation_plan": {"order_state": {"draft_order_id": "ORD-1"}},
+            "sales_lifecycle": {"accepted": True, "evidence_errors": [], "missing_qualification": [], "stock_ready": True, "price_ready": True, "handover_state": "normal_handover"},
+        }
+        result = sam_live_stock_runtime.prepare_live_stock_quote_if_enabled(
+            {"conversation_id": "1490"},
+            {"order_commitment": True},
+            decision,
+            {"SAM_LIVE_STOCK_BACKEND_QUOTE_PREPARE_ENABLED": "1"},
+            isolated_runtime={"allowed": True},
+            quote_preparer=lambda order_id, created_by="": calls.append((order_id, created_by)) or {
+                "success": True,
+                "document_id": "DOC-1",
+            },
+        )
+        self.assertEqual(calls, [("ORD-1", "Sam Live Stock")])
+        self.assertTrue(result["success"])
+        self.assertFalse(result["reserves_stock"])
+        self.assertFalse(result["sends_customer_message"])
+
+    def test_quote_prepare_waits_for_only_missing_payment_without_effect(self):
+        calls = []
+        result = sam_live_stock_runtime.prepare_live_stock_quote_if_enabled(
+            {"conversation_id": "1490"},
+            {"order_commitment": True},
+            {
+                "sales_lane": "live_stock_sales",
+                "conversation_plan": {"order_state": {"draft_order_id": "ORD-1"}},
+                "sales_lifecycle": {"accepted": True, "evidence_errors": [], "missing_qualification": ["payment_method"], "stock_ready": True, "price_ready": True, "handover_state": "normal_handover"},
+            },
+            {"SAM_LIVE_STOCK_BACKEND_QUOTE_PREPARE_ENABLED": "1"},
+            isolated_runtime={"allowed": True},
+            quote_preparer=lambda *_args, **_kwargs: calls.append("quote"),
+        )
+        self.assertEqual(result["status"], "sam_live_stock_quote_qualification_incomplete")
+        self.assertEqual(calls, [])
+
+    def test_complete_eligible_projection_is_not_truncated_before_composition(self):
+        fresh_weight_date = (
+            datetime.now(timezone.utc).date() - timedelta(days=3)
+        ).isoformat()
+        rows = [
+            exact_eligible_row(
+                pig_id=f"PIG-{index:02d}",
+                sex="Female" if index % 2 else "Male",
+                current_weight_kg=2 + index,
+                latest_weight_date=fresh_weight_date,
+                days_since_weight=3,
+            )
+            for index in range(38)
+        ]
+        rows.extend(
+            {
+                **exact_eligible_row(pig_id=f"WITHDRAWAL-UNKNOWN-{index:02d}"),
+                "live_stock_sale_eligible": False,
+                "available_for_sale": "No",
+                "withdrawal_evidence_state": "unknown",
+                "withdrawal_clear": "",
+                "evidence_complete": False,
+                "live_stock_sale_reason": "withdrawal evidence unknown",
+            }
+            for index in range(12)
+        )
+        rows.extend([
+            {
+                **exact_eligible_row(pig_id="UNKNOWN-INACTIVE"),
+                "status": "Inactive",
+                "live_stock_sale_eligible": False,
+                "withdrawal_evidence_state": "unknown",
+            },
+            {
+                **exact_eligible_row(pig_id="UNKNOWN-OFF-FARM"),
+                "on_farm": "No",
+                "live_stock_sale_eligible": False,
+                "withdrawal_evidence_state": "unknown",
+            },
+            {
+                **exact_eligible_row(pig_id="UNKNOWN-NON-SALE"),
+                "purpose": "Breeding",
+                "live_stock_sale_eligible": False,
+                "withdrawal_evidence_state": "unknown",
+            },
+        ])
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            rows,
+            {
+                "sales_lane": "live_stock_sales",
+                "category": "weaner",
+                "quantity": 5,
+                "sex": "split",
+                "weight_range": "around 19 kg",
+            },
+        )
+
+        self.assertEqual(summary["eligible_projection_count"], 38)
+        self.assertEqual(len(summary["eligible_projection"]), 38)
+        self.assertEqual(
+            {row["pig_id"] for row in summary["eligible_projection"]},
+            {f"PIG-{index:02d}" for index in range(38)},
+        )
+        self.assertEqual(summary["latest_weight_date"], fresh_weight_date)
+        self.assertEqual(summary["oldest_weight_age_days"], 3)
+        self.assertEqual(len(summary["withdrawal_unknown_exclusions"]), 12)
+        self.assertTrue(
+            all(
+                row["withdrawal_evidence_state"] == "unknown"
+                for row in summary["withdrawal_unknown_exclusions"]
+            )
+        )
+        excluded_ids = {
+            row["pig_id"] for row in summary["withdrawal_unknown_exclusions"]
+        }
+        self.assertTrue(
+            {
+                "UNKNOWN-INACTIVE",
+                "UNKNOWN-OFF-FARM",
+                "UNKNOWN-NON-SALE",
+            }.isdisjoint(excluded_ids)
+        )
+
+    def test_explicit_sex_split_is_retained_as_structured_customer_fact(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I need four females and one male around 19 kg."
+        )
+
+        self.assertEqual(facts["quantity"], 5)
+        self.assertEqual(facts["sex"], "split")
+        self.assertEqual(facts["sex_split"], {"female": 4, "male": 1})
+
+    def test_malformed_projection_weight_freshness_fails_closed_without_raising(self):
+        row = exact_eligible_row(
+            days_since_weight="unknown",
+            latest_weight_date="2026-07-27",
+        )
+
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            [row],
+            {
+                "sales_lane": "live_stock_sales",
+                "category": "weaner",
+                "quantity": 1,
+                "sex": "female",
+                "weight_range": "10-14 kg",
+            },
+        )
+
+        self.assertFalse(summary["eligible_evidence_complete"])
+        self.assertIsNone(summary["oldest_weight_age_days"])
+        self.assertEqual(summary["eligible_projection_count"], 1)
+
+    def test_weight_date_and_reported_age_must_be_consistent_and_nonfuture(self):
+        cases = (
+            ("2020-01-01", 3),
+            ("2099-01-01", 0),
+            ("not-a-date", 3),
+        )
+        for weight_date, reported_age in cases:
+            with self.subTest(weight_date=weight_date):
+                summary = sam_live_stock_runtime.summarize_live_stock_availability(
+                    [exact_eligible_row(
+                        latest_weight_date=weight_date,
+                        days_since_weight=reported_age,
+                    )],
+                    {
+                        "sales_lane": "live_stock_sales",
+                        "category": "weaner",
+                        "quantity": 1,
+                        "sex": "female",
+                        "weight_range": "10-14 kg",
+                    },
+                )
+                self.assertFalse(summary["eligible_evidence_complete"])
+                self.assertFalse(summary["weight_freshness_consistent"])
+                self.assertIsNone(summary["oldest_weight_age_days"])
+
+    def test_formal_quote_tokens_remain_distinct_from_price_only_questions(self):
+        self.assertTrue(
+            sam_live_stock_runtime._asks_formal_quote(
+                "Please quote the price for five piglets."
+            )
+        )
+        self.assertTrue(
+            sam_live_stock_runtime._asks_formal_quote(
+                "Can I get a quotation of the cost?"
+            )
+        )
+        self.assertFalse(
+            sam_live_stock_runtime._asks_formal_quote(
+                "How much are the 6 kg piglets?"
+            )
+        )
+
+    def test_excluded_row_without_observation_does_not_erase_exact_match_freshness(self):
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [
+            exact_eligible_row(
+                pig_id="MATCHED",
+                eligibility_observed_at=now,
+                sex="Male",
+                current_weight_kg=27,
+                sale_category="Grower",
+                calculated_stage="Grower",
+            ),
+            {
+                **exact_eligible_row(pig_id="EXCLUDED"),
+                "sex": "Female",
+                "eligibility_observed_at": "",
+            },
+        ]
+        facts = {
+            "sales_lane": "live_stock_sales",
+            "category": "grower",
+            "quantity": 1,
+            "sex": "male",
+            "weight_range": "25-29 kg",
+        }
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            rows, facts
+        )
+        self.assertTrue(summary["evidence_complete"])
+        self.assertEqual(summary["matched_count"], 1)
+        self.assertEqual(summary["observation_timestamp"], now)
+
+    def test_partial_match_cannot_hide_missing_alternative_observation(self):
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [
+            exact_eligible_row(
+                pig_id="ONE-EXACT",
+                eligibility_observed_at=now,
+                sex="Male",
+                current_weight_kg=27,
+                sale_category="Grower",
+                calculated_stage="Grower",
+            ),
+            {
+                **exact_eligible_row(
+                    pig_id="ALTERNATIVE",
+                    sex="Female",
+                    current_weight_kg=32,
+                    sale_category="Grower",
+                    calculated_stage="Grower",
+                ),
+                "eligibility_observed_at": "",
+            },
+        ]
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            rows,
+            {
+                "sales_lane": "live_stock_sales",
+                "category": "grower",
+                "quantity": 2,
+                "sex": "male",
+                "weight_range": "25-29 kg",
+            },
+        )
+        self.assertEqual(summary["matched_count"], 1)
+        self.assertEqual(summary["observation_timestamp"], "")
+
+    def test_runtime_alternatives_are_ranked_and_bind_active_price_provenance(self):
+        facts = {
+            "sales_lane": "live_stock_sales",
+            "quantity": 2,
+            "category": "grower",
+            "weight_range": "35-39 kg",
+            "sex": "female",
+        }
+        availability = {
+            "success": True,
+            "matched_count": 0,
+            "considered_count": 2,
+            "considered_sample": [
+                {
+                    "pig_id": "FAR",
+                    "sex": "Female",
+                    "current_weight_kg": 49,
+                    "days_since_weight": 1,
+                    "sale_category": "Grower",
+                    "weight_band": "45-49 kg",
+                    "live_stock_sale_eligible": True,
+                },
+                {
+                    "pig_id": "CLOSE",
+                    "sex": "Female",
+                    "current_weight_kg": 38,
+                    "days_since_weight": 2,
+                    "sale_category": "Grower",
+                    "weight_band": "35-39 kg",
+                    "live_stock_sale_eligible": True,
+                },
+            ],
+        }
+        with patch.object(
+            sam_live_stock_runtime,
+            "resolve_live_stock_price_rule",
+            side_effect=lambda category, band, sex: {
+                "found": True,
+                "pricing_id": f"PRICE-{band}",
+                "source": "active_price_ledger",
+                "unit_price": 1400 if band == "35-39 kg" else 1800,
+            },
+        ):
+            packet = sam_live_stock_runtime.build_live_stock_match_packet(
+                facts, availability
+            )
+        rows = packet["considered_sample"]
+        self.assertEqual([row["pig_id"] for row in rows], ["CLOSE", "FAR"])
+        self.assertEqual([row["alternative_rank"] for row in rows], [1, 2])
+        self.assertEqual(rows[0]["pricing"]["pricing_id"], "PRICE-35-39 kg")
+        self.assertEqual(rows[0]["pricing"]["source"], "active_price_ledger")
+
+    def test_absolute_weight_distance_ranks_before_requested_band_membership(self):
+        facts = {
+            "sales_lane": "live_stock_sales",
+            "quantity": 1,
+            "category": "weaner",
+            "weight_range": "around 19 kg",
+            "sex": "male",
+        }
+        availability = {
+            "success": True,
+            "matched_count": 0,
+            "considered_sample": [
+                {
+                    **exact_eligible_row(
+                        pig_id="OUT-OF-BAND",
+                        sex="Male",
+                        current_weight_kg=20,
+                        weight_band="20_to_24_Kg",
+                    ),
+                },
+                {
+                    **exact_eligible_row(
+                        pig_id="IN-BAND",
+                        sex="Male",
+                        current_weight_kg=17,
+                        weight_band="15_to_19_Kg",
+                    ),
+                },
+            ],
+        }
+        with patch.object(
+            sam_live_stock_runtime,
+            "resolve_live_stock_price_rule",
+            return_value={
+                "found": True,
+                "pricing_id": "PRICE",
+                "source": "supabase",
+                "unit_price": 600,
+            },
+        ):
+            packet = sam_live_stock_runtime.build_live_stock_match_packet(
+                facts, availability
+            )
+
+        self.assertEqual(packet["considered_sample"][0]["pig_id"], "OUT-OF-BAND")
+        self.assertEqual(packet["considered_sample"][0]["weight_distance_kg"], 1.0)
+        self.assertEqual(packet["considered_sample"][1]["weight_distance_kg"], 2.0)
+
+    def test_alternative_ranking_changes_with_current_inventory_and_not_a_golden_total(self):
+        facts = {
+            "sales_lane": "live_stock_sales",
+            "quantity": 1,
+            "category": "weaner",
+            "weight_range": "around 19 kg",
+            "sex": "female",
+        }
+
+        def packet_for(rows):
+            with patch.object(
+                sam_live_stock_runtime,
+                "resolve_live_stock_price_rule",
+                side_effect=lambda _category, band, _sex: {
+                    "found": True,
+                    "pricing_id": f"PRICE-{band}",
+                    "source": "supabase",
+                    "unit_price": 500,
+                },
+            ):
+                return sam_live_stock_runtime.build_live_stock_match_packet(
+                    facts,
+                    {
+                        "success": True,
+                        "matched_count": 0,
+                        "eligible_projection": rows,
+                    },
+                )
+
+        farther = exact_eligible_row(
+            pig_id="F-14.8",
+            sex="Female",
+            current_weight_kg=14.8,
+            weight_band="10_to_14_Kg",
+        )
+        closer = exact_eligible_row(
+            pig_id="F-18.2",
+            sex="Female",
+            current_weight_kg=18.2,
+            weight_band="15_to_19_Kg",
+        )
+        first = packet_for([farther])
+        changed = packet_for([farther, closer])
+
+        self.assertEqual(first["considered_sample"][0]["pig_id"], "F-14.8")
+        self.assertEqual(changed["considered_sample"][0]["pig_id"], "F-18.2")
+        self.assertEqual(changed["considered_sample"][0]["weight_distance_kg"], 0.8)
+        self.assertEqual(
+            changed["considered_sample"][0]["pricing"]["source"], "supabase"
+        )
+
+    def test_canonical_availability_question_uses_retained_constraints(self):
+        question = sam_live_stock_runtime._canonical_availability_question(
+            {
+                "category": "weaner",
+                "weight_range": "around 19 kg",
+                "quantity": 5,
+                "sex": "split",
+                "sex_split": {"female": 4, "male": 1},
+                "timing": "10th",
+                "location": "Riversdale",
+            },
+            "If we can have the piglets on the 10th please",
+        )
+
+        self.assertIn("weight: around 19 kg", question)
+        self.assertIn("quantity: 5", question)
+        self.assertIn("sex split: 4 female, 1 male", question)
+        self.assertIn("location: Riversdale", question)
+
+    def test_empty_agent_snapshot_reconciles_once_from_same_canonical_reader(self):
+        row = exact_eligible_row()
+        with (
+            patch.object(
+                sam_live_stock_runtime,
+                "delegate_to_agent",
+                return_value=({
+                    "success": True,
+                    "status": "agent_evidence_ready",
+                    "availability_rows": [],
+                }, 200),
+            ),
+            patch.object(
+                sam_live_stock_runtime,
+                "get_sales_availability",
+                return_value=[row],
+            ) as canonical_reader,
+        ):
+            packet = sam_live_stock_runtime.load_live_stock_read_context(
+                {},
+                {
+                    "sales_lane": "live_stock_sales",
+                    "category": "weaner",
+                    "quantity": 1,
+                    "sex": "female",
+                    "weight_range": "10-14 kg",
+                },
+                environ={},
+            )
+
+        canonical_reader.assert_called_once_with()
+        self.assertEqual(packet["availability"]["eligible_projection_count"], 1)
+        self.assertEqual(
+            packet["agent_evidence"]["herdmaster"]["status"],
+            "canonical_sales_availability_reader",
+        )
+        self.assertNotIn(
+            "availability_rows",
+            packet["agent_evidence"]["herdmaster"],
+        )
+        self.assertEqual(
+            packet["agent_evidence"]["herdmaster"]["canonical_row_count"],
+            1,
+        )
+        self.assertNotIn(
+            "tag_number",
+            json.dumps(packet["agent_evidence"]["herdmaster"]),
+        )
+
+    def test_decision_retains_exact_operational_identity_for_post_send_state(
+        self,
+    ):
+        result, status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(
+                    id="INBOUND-EXACT",
+                    conversation={
+                        "id": 2401,
+                        "inbox": {
+                            "id": 96568,
+                            "channel_type": "Channel::Whatsapp",
+                        },
+                    },
+                ),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {
+                        "category": "piglet",
+                        "weight_range": "around 6 kg",
+                    },
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [],
+                },
+                availability_loader=lambda: [],
+            )
+        )
+        self.assertEqual(status, 200)
+        operational = result["sam_decision"]["inbound"]
+        self.assertEqual(
+            {
+                key: str(operational.get(key) or "")
+                for key in (
+                    "account_id",
+                    "conversation_id",
+                    "contact_id",
+                    "inbox_id",
+                    "message_id",
+                )
+            },
+            {
+                "account_id": "147387",
+                "conversation_id": "2401",
+                "contact_id": "99",
+                "inbox_id": "96568",
+                "message_id": "INBOUND-EXACT",
+            },
+        )
+        self.assertTrue(operational.get("identity_provenance"))
+
+    @patch.object(
+        sam_live_stock_runtime,
+        "load_chatwoot_conversation_identity",
+    )
+    def test_preclaim_provider_recheck_binds_exact_latest_inbound(
+        self, load_identity
+    ):
+        load_identity.return_value = {
+            "success": True,
+            "account_id": "147387",
+            "conversation_id": "2074",
+            "contact_id": "CONTACT",
+            "inbox_id": "96568",
+            "can_reply": True,
+            "latest_message_id": "INBOUND-A",
+            "latest_message_type": 0,
+        }
+        inbound = {
+            "account_id": "147387",
+            "conversation_id": "2074",
+            "contact_id": "CONTACT",
+            "inbox_id": "96568",
+            "message_id": "INBOUND-A",
+        }
+        self.assertTrue(
+            sam_live_stock_runtime.verify_chatwoot_current_inbound(
+                inbound
+            )["allowed"]
+        )
+        load_identity.return_value["latest_message_id"] = "INBOUND-B"
+        self.assertFalse(
+            sam_live_stock_runtime.verify_chatwoot_current_inbound(
+                inbound
+            )["allowed"]
+        )
+        load_identity.return_value["latest_message_id"] = "INBOUND-A"
+        load_identity.return_value["latest_message_type"] = 1
+        self.assertFalse(
+            sam_live_stock_runtime.verify_chatwoot_current_inbound(
+                inbound
+            )["allowed"]
+        )
+
+    def test_weight_after_want_is_not_misread_as_quantity(self):
+        for message in (
+            "I want 19 kg ones",
+            "I want 19kg ones",
+            "I want 19 kilogram ones",
+            "I want 19 kilograms ones",
+        ):
+            with self.subTest(message=message):
+                facts = sam_live_stock_runtime.extract_live_stock_facts(
+                    message
+                )
+                self.assertEqual(facts["quantity"], "")
+                self.assertEqual(facts["weight_range"], "around 19 kg")
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I want 19 kg ones"
+        )
+        guidance = sam_live_stock_runtime.build_live_stock_customer_guidance(
+            {"content": "I want 19 kg ones"},
+            facts,
+        )
+        self.assertEqual(guidance["questions_asked"], ["how many do you need"])
+        self.assertNotIn("male, female", guidance["reply_text"])
+
+    def test_quantity_guidance_does_not_suppress_availability_request(self):
+        base = {
+            "customer_guidance": {
+                "applicable": True,
+                "guidance_scope": "qualification_only",
+                "questions_asked": ["how many do you need"],
+                "canonical_mapping": {},
+            },
+            "contextual_sales": {
+                "status": "commercial_evidence_unavailable"
+            },
+            "price_answer_packet": {"can_answer_price": False},
+            "information_scope": "",
+            "sales_lane": "live_stock_sales",
+            "latest_customer_text": (
+                "I want 19 kg ones. Are they available?"
+            ),
+        }
+        self.assertFalse(
+            sam_live_stock_runtime._prefer_customer_size_guidance(
+                **base,
+                information_reply={
+                    "status": "availability_and_pricing_verified"
+                },
+            )
+        )
+        self.assertTrue(
+            sam_live_stock_runtime._prefer_customer_size_guidance(
+                **base,
+                information_reply={
+                    "status": "authoritative_category_evidence_unavailable"
+                },
+            )
+        )
+
+    def test_quantity_only_is_preferred_when_it_is_the_sole_missing_field(self):
+        self.assertTrue(
+            sam_live_stock_runtime._prefer_customer_size_guidance(
+                customer_guidance={
+                    "applicable": True,
+                    "guidance_scope": "qualification_only",
+                    "questions_asked": ["how many do you need"],
+                    "canonical_mapping": {},
+                },
+                contextual_sales={"status": "commercial_evidence_unavailable"},
+                information_reply={"status": "not_requested"},
+                price_answer_packet={"can_answer_price": False},
+                information_scope="",
+                sales_lane="live_stock_sales",
+                latest_customer_text="I want 19 kg ones",
+            )
+        )
+
+    def test_quantity_only_never_suppresses_a_supported_price_answer(self):
+        self.assertFalse(
+            sam_live_stock_runtime._prefer_customer_size_guidance(
+                customer_guidance={
+                    "applicable": True,
+                    "guidance_scope": "qualification_only",
+                    "questions_asked": ["how many do you need"],
+                    "canonical_mapping": {},
+                },
+                contextual_sales={"status": "commercial_evidence_unavailable"},
+                information_reply={"status": "price_only_verified"},
+                price_answer_packet={"can_answer_price": True},
+                information_scope="price",
+                sales_lane="live_stock_sales",
+                latest_customer_text="How much are they?",
+            )
+        )
+
+    def test_unpriced_known_size_price_followup_asks_quantity_only(self):
+        followup = (
+            sam_live_stock_runtime
+            .build_live_stock_qualification_followup(
+                {
+                    "content": "How much are the roughly 6 kg piglets?",
+                    "customer_name": "Customer",
+                },
+                {
+                    "category": "piglet",
+                    "weight_range": "around 6 kg",
+                    "quantity": "",
+                    "location": "",
+                    "timing": "",
+                },
+                ["quantity", "location", "order_commitment"],
+                conversation_plan={"next_action": "answer_price"},
+                protected_price_unanswered=True,
+            )
+        )
+        self.assertTrue(followup["applicable"])
+        self.assertEqual(
+            followup["questions_asked"], ["how many do you need"]
+        )
+        self.assertNotIn("town", followup["reply_text"].lower())
+        self.assertIn(
+            "price and current availability still need to be confirmed",
+            followup["reply_text"].lower(),
+        )
+
+    @patch(
+        "modules.sales.sam_live_stock_runtime."
+        "build_contextual_sales_recommendation"
+    )
+    def test_supported_contextual_price_answer_precedes_quantity_followup(
+        self, contextual
+    ):
+        contextual.return_value = {
+            "applicable": True,
+            "status": "commercial_recommendation_ready",
+            "recommendation": "Supported price and eligible-count answer.",
+        }
+        result, _status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="What is the price?"),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {
+                        "category": "piglet",
+                        "weight_range": "around 6 kg",
+                    },
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [{
+                        "id": "PRIOR",
+                        "message_type": 0,
+                        "content": "I need around 6 kg piglets",
+                    }],
+                },
+                availability_loader=lambda: [],
+            )
+        )
+        decision = result["sam_decision"]
+        self.assertFalse(decision["qualification_followup"]["applicable"])
+        self.assertEqual(
+            decision["suggested_reply_text"],
+            "Supported price and eligible-count answer.",
+        )
+
+    @patch(
+        "modules.sales.sam_live_stock_runtime."
+        "build_contextual_sales_recommendation"
+    )
+    def test_seller_owner_handoff_precedes_buyer_quantity_followup(
+        self, contextual
+    ):
+        contextual.return_value = {
+            "applicable": True,
+            "status": "seller_enquiry_owner_handoff",
+            "recommendation": (
+                "Thanks — someone from the farm needs to review this."
+            ),
+        }
+        result, _status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="What will you pay for my piglets?"),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {
+                        "category": "piglet",
+                        "weight_range": "around 6 kg",
+                    },
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [],
+                },
+                availability_loader=lambda: [],
+            )
+        )
+        decision = result["sam_decision"]
+        self.assertFalse(decision["qualification_followup"]["applicable"])
+        self.assertEqual(
+            decision["suggested_reply_text"],
+            "Thanks — someone from the farm needs to review this.",
+        )
+
+    @patch(
+        "modules.sales.sam_live_stock_runtime."
+        "build_contextual_sales_recommendation"
+    )
+    def test_unanswered_price_composed_path_asks_quantity_only(
+        self, contextual
+    ):
+        contextual.return_value = {
+            "applicable": False,
+            "status": "commercial_evidence_unavailable",
+            "recommendation": "",
+        }
+        known_facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I want piglets around 6 kg"
+        )
+        known_facts.update({
+            "information_scope": "price",
+            "sales_lane": "live_stock_sales",
+            "quantity": "",
+        })
+        with patch.object(
+            sam_live_stock_runtime,
+            "extract_live_stock_facts",
+            return_value=known_facts,
+        ), patch.object(
+            sam_live_stock_runtime,
+            "plan_live_stock_next_action",
+            return_value={
+                "next_action": "answer_price",
+                "missing_fields": [
+                    "quantity",
+                    "location",
+                    "order_commitment",
+                ],
+                "stage": "qualifying",
+                "goal": "qualify",
+            },
+        ), patch.object(
+            sam_live_stock_runtime,
+            "build_live_stock_price_answer_packet",
+            return_value={
+                "can_answer_price": False,
+                "customer_send_allowed": False,
+            },
+        ):
+            result, _status = (
+                sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="What is the price?"),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {
+                        "category": "piglet",
+                        "weight_range": "around 6 kg",
+                    },
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [{
+                        "id": "PRIOR",
+                        "message_type": 0,
+                        "content": "I need around 6 kg piglets",
+                    }],
+                },
+                availability_loader=lambda: [],
+            )
+            )
+        followup = result["sam_decision"]["qualification_followup"]
+        self.assertTrue(
+            followup["applicable"],
+            msg={
+                key: result["sam_decision"].get(key)
+                for key in (
+                    "facts",
+                    "missing_fields",
+                    "information_response",
+                    "price_answer_packet",
+                    "contextual_sales",
+                )
+            },
+        )
+        self.assertEqual(
+            followup["questions_asked"], ["how many do you need"]
+        )
+
     def test_availability_observation_uses_oldest_counted_row_and_rejects_malformed(self):
         fresh = exact_eligible_row(
             pig_id="FRESH", eligibility_observed_at="2026-07-27T11:00:00Z"
@@ -371,10 +1241,15 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(interpretation["sex"], "female")
         self.assertEqual(interpretation["category"], "")
         reply = result["sam_decision"]["suggested_reply_text"]
-        self.assertIn("no single category currently has all 10", reply)
-        self.assertNotIn("split across categories", reply)
-        self.assertIn("check again when more eligible animals become available", reply)
-        self.assertIn("does not reserve the animals", reply)
+        self.assertFalse(
+            result["sam_decision"]["canonical_composition_authorized"]
+        )
+        self.assertIn(
+            "latest_inbound_not_bound_to_packet",
+            result["sam_decision"]["canonical_evidence_offer"][
+                "evidence_errors"
+            ],
+        )
         self.assertFalse(result["sent"])
 
     @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
@@ -435,11 +1310,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["sales_lane"], "live_stock_sales")
         self.assertEqual(decision["facts"]["information_scope"], "grower_finisher")
         self.assertEqual(decision["information_response"]["status"], "availability_and_pricing_verified")
-        self.assertIn("Growers: 2 currently eligible", reply)
-        self.assertIn("Finishers: 1 currently eligible", reply)
-        self.assertNotIn("Piglet", reply)
-        self.assertNotIn("9,999", reply)
-        self.assertEqual(reply.count("?"), 1)
+        self.assertFalse(decision["canonical_composition_authorized"])
+        self.assertIn(
+            "latest_inbound_not_bound_to_packet",
+            decision["canonical_evidence_offer"]["evidence_errors"],
+        )
         self.assertEqual(calls, {"availability": 1, "send": 0})
         self.assertFalse(result["sends_customer_message"])
         self.assertFalse(result["creates_order"])
@@ -464,6 +1339,131 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["sales_lane"], "live_stock_sales")
         self.assertIn("Finishers: 1 currently eligible", decision["suggested_reply_text"])
         self.assertEqual(decision["suggested_reply_text"].count("?"), 1)
+        price_list.assert_called_once()
+
+    @patch("modules.sales.sam_live_stock_runtime.delegate_to_agent")
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_composed_request_uses_one_price_projection_and_no_agent_round_trip(
+        self, price_list, delegate
+    ):
+        price_list.return_value = (self._active_big_pig_prices(), 200)
+        rows = [
+            exact_eligible_row(
+                pig_id=f"G-{index}",
+                sale_category="Grower Pigs",
+                calculated_stage="Grower",
+                current_weight_kg=20 + index,
+                weight_band="20_to_24_Kg",
+            )
+            for index in range(1, 51)
+        ]
+
+        result, status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="I need five growing pigs"),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {},
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [],
+                },
+                availability_loader=lambda: rows,
+            )
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            result["sam_decision"]["sales_lane"], "live_stock_sales"
+        )
+        price_list.assert_called_once()
+        delegate.assert_not_called()
+
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_price_projection_failure_omits_price_but_keeps_useful_guidance(
+        self, price_list
+    ):
+        price_list.side_effect = RuntimeError("database unavailable")
+
+        result, status = (
+            sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="I need piglets"),
+                environ={},
+                intake_context_loader=lambda *_args: {
+                    "success": True,
+                    "known_fields": {},
+                    "items": [],
+                },
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [],
+                },
+                availability_loader=lambda: [
+                    exact_eligible_row(
+                        sale_category="Young Piglets",
+                        calculated_stage="Piglet",
+                        current_weight_kg=5,
+                        weight_band="5_to_6_Kg",
+                    )
+                ],
+            )
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status, 200)
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertNotIn("R400", decision["suggested_reply_text"])
+        self.assertIn(
+            "small piglets", decision["suggested_reply_text"].lower()
+        )
+        self.assertEqual(decision["suggested_reply_text"].count("?"), 1)
+        self.assertEqual(
+            decision["agent_evidence"]["ledger"]["status"],
+            "canonical_price_projection_unavailable",
+        )
+        price_list.assert_called_once()
+
+    def test_untrusted_display_label_is_not_used_in_customer_guidance(self):
+        for display_label in (
+            "...",
+            "Zingce@10",
+            "Stanton😎",
+            "+27821234567",
+            "Free Shipping Nationwide",
+            "Best Deals",
+            "Buy Now",
+            "Amadeus Pork",
+            "ABC Pty Ltd",
+            "Premium Meat Market",
+            "Click Here",
+            "---Anne---",
+            ".John.",
+        ):
+            with self.subTest(display_label=display_label):
+                guidance = (
+                    sam_live_stock_runtime.build_live_stock_customer_guidance(
+                        {
+                            "customer_name": display_label,
+                            "content": "I need piglets",
+                        },
+                        {
+                            "category": "piglet",
+                            "quantity": "",
+                            "sex": "",
+                        },
+                    )
+                )
+                self.assertTrue(guidance["applicable"])
+                self.assertTrue(
+                    guidance["reply_text"].startswith(
+                        "Hi, thanks for your message."
+                    )
+                )
+                self.assertNotIn(display_label, guidance["reply_text"])
+                self.assertEqual(guidance["reply_text"].count("?"), 1)
 
     @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
     def test_big_pig_information_falls_back_to_price_only_when_availability_unavailable(self, price_list):
@@ -487,6 +1487,69 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
         self.assertNotIn("currently eligible", decision["suggested_reply_text"])
         self.assertFalse(result["sent"])
+
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_prefetched_pricing_preserves_exact_response_and_avoids_repeat_read(self, price_list):
+        projection = self._active_big_pig_prices()
+        price_list.return_value = (projection, 200)
+        kwargs = {
+            "environ": {},
+            "intake_context_loader": lambda *_args: {
+                "success": True,
+                "known_fields": {},
+                "items": [],
+            },
+            "conversation_history_loader": lambda *_args: {
+                "success": True,
+                "messages": [],
+            },
+            "availability_loader": lambda: [],
+        }
+        baseline, _ = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="big ones pricce"), **kwargs
+        )
+        price_list.reset_mock()
+        prefetched, _ = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="big ones pricce"),
+            pricing_projection=projection,
+            **kwargs,
+        )
+        self.assertEqual(
+            prefetched["sam_decision"]["suggested_reply_text"],
+            baseline["sam_decision"]["suggested_reply_text"],
+        )
+        price_list.assert_not_called()
+
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_unavailable_prefetch_keeps_useful_claim_free_qualification(self, price_list):
+        result, _ = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="I am interested in piglets"),
+            environ={},
+            intake_context_loader=lambda *_args: {
+                "success": True,
+                "known_fields": {},
+                "items": [],
+            },
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [],
+            },
+            availability_loader=lambda: (_ for _ in ()).throw(
+                RuntimeError("inventory unavailable")
+            ),
+            pricing_projection={
+                "success": False,
+                "status": "canonical_price_projection_unavailable",
+                "price_entries": [],
+            },
+        )
+        reply = result["sam_decision"]["suggested_reply_text"]
+        self.assertTrue(reply)
+        self.assertEqual(reply.count("?"), 1)
+        self.assertNotIn("available", reply.lower())
+        self.assertNotIn("R", reply)
+        self.assertFalse(result["sent"])
+        price_list.assert_not_called()
 
     def test_pricce_spelling_is_a_livestock_price_signal_with_current_context(self):
         facts = sam_live_stock_runtime.extract_live_stock_facts("pricce")
@@ -689,15 +1752,23 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 self.assertFalse(decision["reserves_stock"])
                 self.assertFalse(decision["changes_stock"])
 
+    @patch("modules.sales.sam_live_stock_runtime.get_sales_availability")
     @patch("modules.sales.sam_live_stock_runtime.delegate_to_agent")
-    def test_production_availability_path_delegates_to_herdmaster(self, delegate):
-        delegate.return_value = ({
-            "success": True, "availability_rows": [{"pig_id": "P1", "available_for_sale": True}],
-            "agent": {"agent_id": "herdmaster"}, "sources": [{"name": "sales_availability"}],
-        }, 200)
-        context = sam_live_stock_runtime.load_live_stock_read_context({}, {"category": "piglet"}, environ={})
-        self.assertEqual(delegate.call_args.args[0], "herdmaster")
-        self.assertEqual(context["agent_evidence"]["herdmaster"]["agent"]["agent_id"], "herdmaster")
+    def test_production_availability_path_uses_canonical_reader_without_delegate(
+        self, delegate, availability
+    ):
+        availability.return_value = [
+            {"pig_id": "P1", "available_for_sale": True}
+        ]
+        context = sam_live_stock_runtime.load_live_stock_read_context(
+            {}, {"category": "piglet"}, environ={}
+        )
+        delegate.assert_not_called()
+        availability.assert_called_once_with()
+        self.assertEqual(
+            context["agent_evidence"]["herdmaster"]["status"],
+            "canonical_sales_availability_reader",
+        )
 
     def test_afrikaans_location_question_gets_afrikaans_farm_answer(self):
         result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
@@ -711,7 +1782,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         decision = result["sam_decision"]
         self.assertEqual(decision["facts"]["customer_language"], "afrikaans")
         self.assertIn("Riversdal", decision["suggested_reply_text"])
-        self.assertIn("Afhaal", decision["suggested_reply_text"])
+        self.assertIn("Riversdal of Albertinia", decision["suggested_reply_text"])
+        self.assertNotIn("Afhaal", decision["suggested_reply_text"])
 
     def test_voice_note_transcript_drives_live_stock_understanding(self):
         payload = inbound_payload(content="", attachments=[{
@@ -848,6 +1920,57 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["location"], "Riversdale")
         self.assertFalse(facts["llm_used"])
 
+    def test_extract_live_stock_facts_retains_requested_calendar_day(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "If we can have the piglets on the 10th please",
+            {"conversation_id": "1338"},
+        )
+
+        self.assertEqual(facts["timing"], "10th")
+
+    def test_extract_live_stock_facts_does_not_treat_quantity_or_weight_as_timing(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I need 5 pigs around 10 kg",
+            {"conversation_id": "date-retention-negative"},
+        )
+
+        self.assertEqual(facts["timing"], "")
+
+    def test_extract_live_stock_facts_separates_dates_from_quantity(self):
+        for message in ("For 10th August please", "I need 10 August"):
+            with self.subTest(message=message):
+                facts = sam_live_stock_runtime.extract_live_stock_facts(
+                    message,
+                    {"conversation_id": "date-retention-quantity"},
+                )
+                self.assertIn("10", facts["timing"])
+                self.assertEqual(facts["quantity"], "")
+                self.assertEqual(facts["weight_range"], "")
+
+        quantity = sam_live_stock_runtime.extract_live_stock_facts(
+            "I need 10 piglets",
+            {"conversation_id": "quantity-control"},
+        )
+        self.assertEqual(quantity["quantity"], 10)
+
+    def test_extract_live_stock_facts_rejects_ambiguous_or_invalid_date_tokens(self):
+        for message in (
+            "I want the 2nd option",
+            "the 3rd female",
+            "details on the 20 growers",
+            "I will go for the 2nd option",
+            "I am asking for the 3rd female",
+            "Please quote for the 2nd group",
+            "on the 99th",
+            "before the 32nd",
+        ):
+            with self.subTest(message=message):
+                facts = sam_live_stock_runtime.extract_live_stock_facts(
+                    message,
+                    {"conversation_id": "date-retention-negative"},
+                )
+                self.assertEqual(facts["timing"], "")
+
     def test_extract_live_stock_facts_infers_category_from_weight_band(self):
         facts = sam_live_stock_runtime.extract_live_stock_facts(
             "Can you send pics of the 7-9kg ones, I will take 3 female 1 male",
@@ -859,6 +1982,63 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["weight_range"], "7-9 kg")
         self.assertEqual(facts["quantity"], 3)
         self.assertEqual(facts["sex"], "split")
+
+    def test_generic_piglets_followup_retains_established_weaner_weight(self):
+        current = sam_live_stock_runtime.extract_live_stock_facts(
+            "If we can have the piglets on the 10th please",
+            {"conversation_id": "1338"},
+        )
+        merged = sam_live_stock_runtime.merge_prior_live_stock_context(
+            current,
+            {
+                "interest": {
+                    "sales_lane": "live_stock_sales",
+                    "category": "weaner",
+                    "weight_range": "around 19 kg",
+                    "quantity": 5,
+                    "sex": "split",
+                    "location": "Riversdale",
+                }
+            },
+        )
+
+        self.assertEqual(merged["category"], "weaner")
+        self.assertEqual(merged["weight_range"], "around 19 kg")
+        self.assertEqual(merged["timing"], "10th")
+
+    def test_explicit_piglet_change_does_not_inherit_prior_weaner_weight(self):
+        prior = {
+            "interest": {
+                "sales_lane": "live_stock_sales",
+                "category": "weaner",
+                "weight_range": "around 19 kg",
+            }
+        }
+        for message in (
+            "Actually I want small piglets instead",
+            "I want the 6 weeks old piglets",
+            "Now I need small piglets",
+            "Can I get 6 week old piglets instead?",
+            "Can we have the piglets at 6 weeks of age on the 10th?",
+            "Can we have the piglets at two months old on the 10th?",
+            "Can we have the piglets at 6-week-old on the 10th?",
+            "Can we have the piglets at six-weeks-old on the 10th?",
+            "Can we have the piglets at six-week-of-age on the 10th?",
+            "I want the piglets, not the weaners, on the 10th",
+            "The piglets, not weaners please, on the 10th",
+            "Do you have the piglets as well as weaners on the 10th?",
+        ):
+            with self.subTest(message=message):
+                current = sam_live_stock_runtime.extract_live_stock_facts(
+                    message,
+                    {"conversation_id": "category-change"},
+                )
+                merged = sam_live_stock_runtime.merge_prior_live_stock_context(
+                    current,
+                    prior,
+                )
+                self.assertEqual(merged["category"], "piglet")
+                self.assertEqual(merged["weight_range"], "")
 
     def test_extract_live_stock_facts_treats_six_week_old_pics_as_piglet_interest(self):
         facts = sam_live_stock_runtime.extract_live_stock_facts(
@@ -1792,6 +2972,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
             {"conversation_id": "1826", "contact_id": "99", "inbox_id": "77"},
             {
+                "canonical_composition_authorized": True,
                 "should_reply": True,
                 "suggested_reply_text": "I can check the price and stock facts.",
                 "reply_source": "deterministic_read_only_guard",
@@ -1811,6 +2992,144 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(delivery["status"], "routine_reply_requires_llm_draft")
         self.assertFalse(delivery["sent"])
         self.assertEqual(sends, [])
+
+    def test_livestock_delivery_requires_exact_canonical_offer_payload(self):
+        sends = []
+        canonical = {
+            "should_reply": True,
+            "customer_reply": (
+                "The price depends on the pig's size or weight category. "
+                "Which size would suit you?"
+            ),
+            "evidence_errors": [],
+            "authority": {"allowed": True},
+        }
+        base = {
+            "canonical_composition_authorized": True,
+            "canonical_evidence_offer": canonical,
+            "conversation_ownership": "AUTO_SPECIALIST",
+            "specialist_lane_selected": True,
+            "sales_lane": "live_stock_sales",
+            "should_reply": True,
+            "reply_source": "canonical_evidence_to_offer_loop",
+            "suggested_reply_text": canonical["customer_reply"],
+        }
+
+        mismatch = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            {"conversation_id": "2117", "contact_id": "99", "inbox_id": "77"},
+            {**base, "suggested_reply_text": "Which size would suit you?"},
+            {"safe_to_send": True, "escalation_required": False},
+            {},
+            chatwoot_sender=lambda *_args: sends.append(True),
+        )
+
+        self.assertEqual(
+            mismatch["status"],
+            "routine_reply_canonical_payload_mismatch",
+        )
+        self.assertEqual(sends, [])
+
+    def test_canonical_payload_rejects_whitespace_and_truncation_collisions(self):
+        canonical_text = "Which size would suit you?"
+        base = {
+            "canonical_composition_authorized": True,
+            "canonical_evidence_offer": {
+                "should_reply": True,
+                "customer_reply": canonical_text,
+                "evidence_errors": [],
+                "authority": {"allowed": True},
+            },
+            "conversation_ownership": "AUTO_SPECIALIST",
+            "specialist_lane_selected": True,
+            "sales_lane": "live_stock_sales",
+            "should_reply": True,
+            "reply_source": "canonical_evidence_to_offer_loop",
+        }
+        for altered in (
+            " Which size would suit you? ",
+            ("A" * 1800) + " protected tail",
+        ):
+            offer_text = altered if len(altered) > 1800 else canonical_text
+            decision = {
+                **base,
+                "canonical_evidence_offer": {
+                    **base["canonical_evidence_offer"],
+                    "customer_reply": offer_text,
+                },
+                "suggested_reply_text": altered,
+            }
+            with self.subTest(altered_length=len(altered)):
+                delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+                    {
+                        "conversation_id": "2117",
+                        "contact_id": "99",
+                        "inbox_id": "77",
+                    },
+                    decision,
+                    {"safe_to_send": True, "escalation_required": False},
+                    {},
+                )
+                self.assertEqual(
+                    delivery["status"],
+                    "routine_reply_canonical_payload_mismatch",
+                )
+
+    def test_level1_created_claim_with_wrong_reply_hash_never_sends(self):
+        sends = []
+        reply = "Which size would suit you?"
+        inbound = {
+            "account_id": "147387",
+            "conversation_id": "2117",
+            "contact_id": "99",
+            "inbox_id": "77",
+            "message_id": "767390473",
+        }
+        decision = {
+            "canonical_composition_authorized": True,
+            "canonical_evidence_offer": {
+                "should_reply": True,
+                "customer_reply": reply,
+                "evidence_errors": [],
+                "authority": {"allowed": True},
+            },
+            "conversation_ownership": "AUTO_SPECIALIST",
+            "specialist_lane_selected": True,
+            "sales_lane": "live_stock_sales",
+            "should_reply": True,
+            "reply_source": "canonical_evidence_to_offer_loop",
+            "suggested_reply_text": reply,
+        }
+        wrong_claim = {
+            "success": True,
+            "created": True,
+            **inbound,
+            "inbound_message_id": inbound["message_id"],
+            "reply_hash": "0" * 64,
+        }
+        with patch.object(
+            sam_live_stock_runtime,
+            "evaluate_level1_authority",
+            return_value={"dispatch_authorized": True, "checks": {}},
+        ):
+            delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+                inbound,
+                decision,
+                {"safe_to_send": True, "escalation_required": False},
+                {},
+                delivery_claim=lambda *_args: wrong_claim,
+                delivery_evidence_recorder=lambda *_args: {
+                    "success": True,
+                },
+                chatwoot_sender=lambda *_args: sends.append(True),
+                isolated_runtime={"allowed": True},
+            )
+
+        self.assertEqual(
+            delivery["status"],
+            "routine_reply_claim_payload_mismatch",
+        )
+        self.assertEqual(sends, [])
+        self.assertTrue(delivery["automatic_retry_prohibited"])
 
     def test_reservation_request_keeps_conversation_with_sam_but_requests_owner_authority(self):
         sends = []
@@ -1845,7 +3164,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(review["owner_authority_required"])
         self.assertIn("reservation_owner_authority", review["protected_action_reasons"])
         self.assertEqual(review["recommended_action"], "owner_authority_decision")
-        self.assertTrue(result["sent"])
+        self.assertFalse(result["sent"])
+        self.assertEqual(
+            decision["routine_reply_delivery"]["status"],
+            "routine_reply_canonical_composition_not_authorized",
+        )
         self.assertTrue(decision["owner_gate_required"])
         self.assertFalse(result["reserves_stock"])
         self.assertFalse(result["creates_order"])
@@ -1860,6 +3183,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         }
         base_inbound = {"conversation_id": "1826", "contact_id": "99", "inbox_id": "77"}
         base_decision = {
+            "canonical_composition_authorized": True,
             "should_reply": True,
             "suggested_reply_text": "How many growers do you need?",
             "reply_source": "llm_live_stock_reply_draft",
@@ -1923,7 +3247,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         calls = []
         owner_example_calls = []
 
-        def owner_example_loader(conversation_id="", limit=3, customer_message=""):
+        def owner_example_loader(conversation_id="", limit=3, customer_message="", **_kwargs):
             owner_example_calls.append({
                 "conversation_id": conversation_id,
                 "limit": limit,
@@ -1940,6 +3264,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 }],
             }, 200
 
+        sam_owner_example_projection._reset_owner_example_projection_for_tests()
+        preload = sam_owner_example_projection.refresh_owner_example_projection(
+            owner_example_loader
+        )
+        self.assertTrue(preload["success"])
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(content="How much for 1 piglet?"),
             environ={
@@ -1970,7 +3299,15 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             result["sam_decision"]["contextual_sales"]["status"],
             "commercial_evidence_unavailable",
         )
-        self.assertEqual(owner_example_calls[0]["customer_message"], "How much for 1 piglet?")
+        self.assertEqual(owner_example_calls, [{
+            "conversation_id": "",
+            "limit": 30,
+            "customer_message": "",
+        }])
+        self.assertTrue(
+            result["sam_decision"]["owner_example_projection"]["fresh"]
+        )
+        sam_owner_example_projection._reset_owner_example_projection_for_tests()
 
     def test_llm_payload_long_history_remains_valid_json_with_rules(self):
         context = {
@@ -2136,6 +3473,40 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 "SAM_LIVE_STOCK_BACKEND_LLM_TIMEOUT_SECONDS": "30",
             }),
             15,
+        )
+
+    def test_chatwoot_read_timeout_is_proportionally_bounded(self):
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_read_timeout({}), 5.0
+        )
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_read_timeout({
+                "SAM_CHATWOOT_READ_TIMEOUT_SECONDS": "0.1"
+            }),
+            1.0,
+        )
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_read_timeout({
+                "SAM_CHATWOOT_READ_TIMEOUT_SECONDS": "30"
+            }),
+            10.0,
+        )
+
+    def test_chatwoot_write_timeout_is_proportionally_bounded(self):
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_write_timeout({}), 5.0
+        )
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_write_timeout({
+                "SAM_CHATWOOT_WRITE_TIMEOUT_SECONDS": "0"
+            }),
+            1.0,
+        )
+        self.assertEqual(
+            sam_live_stock_runtime._chatwoot_write_timeout({
+                "SAM_CHATWOOT_WRITE_TIMEOUT_SECONDS": "60"
+            }),
+            10.0,
         )
 
     def test_availability_summary_filters_unsafe_and_matches_category_sex(self):
@@ -2883,7 +4254,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["lane_decision"]["cross_lane_handoff_allowed"])
         self.assertFalse(result["sent"])
 
-    def test_context_read_failure_fails_closed_without_write_authority(self):
+    def test_optional_intake_failure_keeps_canonical_reply_without_write_authority(self):
         def failing_intake(_conversation_id):
             raise RuntimeError("database offline")
 
@@ -2894,8 +4265,15 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
 
         decision = result["sam_decision"]
-        self.assertIn("read_context_error", decision["blockers"])
-        self.assertTrue(decision["owner_gate_required"])
+        self.assertNotIn("read_context_error", decision["blockers"])
+        self.assertIn(
+            "order_intake_context_read_failed",
+            [
+                error.get("status")
+                for error in decision["read_context"]["context_errors"]
+            ],
+        )
+        self.assertTrue(decision["suggested_reply_text"])
         self.assertFalse(decision["writes_allowed"])
         self.assertFalse(decision["customer_send_allowed"])
 
@@ -3156,6 +4534,50 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(body["content_attributes"]["amadeus_source"], "sam_live_stock_routine_reply")
         self.assertEqual(response["body"]["status"], "sent")
 
+    def test_chatwoot_payload_preserves_transport_safe_weight_ranges_exactly(self):
+        captured = []
+
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"id":12,"status":"sent"}'
+
+        message = (
+            "The current recorded list does not contain the exact requested group. "
+            "The proposed 15-19 kg, 10-14 kg and 7-9 kg combination is lighter "
+            "than the requested approximately-19 kg group; total R2,500.00. "
+            "Would this lighter option work for you?"
+        )
+        with patch.object(
+            sam_live_stock_runtime.urllib_request,
+            "urlopen",
+            side_effect=lambda request, timeout=0: captured.append(request) or Response(),
+        ):
+            sam_live_stock_runtime._send_chatwoot_message(
+                "2013",
+                message,
+                {
+                    "CHATWOOT_BASE_URL": "https://chatwoot.test",
+                    "CHATWOOT_ACCOUNT_ID": "147387",
+                    "CHATWOOT_API_ACCESS_TOKEN": "secret-token",
+                },
+                amadeus_source="sam_live_stock_routine_reply",
+            )
+
+        serialized = captured[0].data.decode("utf-8")
+        body = json.loads(serialized)
+        self.assertEqual(body["content"], message)
+        self.assertNotIn("\\u2013", serialized)
+        self.assertNotIn("owner review", body["content"].lower())
+        self.assertEqual(body["content"].count("?"), 1)
+
     def test_takeover_and_cleanup_packets_are_auditable(self):
         takeover = sam_live_stock_runtime.build_sam_live_stock_chatwoot_takeover_payload(
             "2401",
@@ -3199,7 +4621,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["creates_order"])
         self.assertFalse(result["reserves_stock"])
 
-    def test_conversation_1994_shape_recovers_referral_and_uses_zero_specialist_tools(self):
+    def test_conversation_1994_shape_transfers_campaign_context_to_livestock(self):
         calls = {"intake": 0, "availability": 0, "send": 0}
 
         def intake_loader(_conversation_id):
@@ -3234,36 +4656,122 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             ),
             environ={},
             intake_context_loader=intake_loader,
-            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [{
+                    "id": 759168596,
+                    "message_type": 0,
+                    "created_at": 1785313934,
+                    "content": "Hello! Can I get more info on this?",
+                }],
+            },
             availability_loader=availability_loader,
             chatwoot_sender=sender,
         )
 
         decision = result["sam_decision"]
         self.assertEqual(status_code, 200)
-        self.assertEqual(result["status"], "sam_auto_general_conversation_processed")
-        self.assertEqual(decision["conversation_ownership"], "AUTO_GENERAL")
-        self.assertEqual(decision["sales_lane"], "unclear")
-        self.assertEqual(decision["specialist_tools_called"], [])
-        self.assertEqual(decision["availability"]["matched_count"], 0)
-        self.assertEqual(decision["match_packet"], {})
-        self.assertEqual(calls, {"intake": 0, "availability": 0, "send": 0})
-        self.assertIn("Ms. Piggy", decision["suggested_reply_text"])
-        self.assertIn("litter of piglets", decision["suggested_reply_text"])
-        self.assertFalse(decision["handled_autonomously"])
-        self.assertFalse(decision["clarification_asked"])
-        self.assertFalse(decision["specialist_lane_selected"])
-        self.assertFalse(decision["owner_escalation_required"])
-        self.assertTrue(decision["owner_action_required"])
-        self.assertEqual(decision["reason"], "routine_reply_waiting_for_owner")
         self.assertEqual(
-            decision["transition_visibility"]["notification_class"],
-            "owner_review",
+            result["status"],
+            "sam_live_stock_conversation_processed",
+            decision.get("customer_front_door"),
         )
+        self.assertEqual(decision["conversation_ownership"], "AUTO_SPECIALIST")
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertTrue(decision["specialist_lane_selected"])
+        self.assertEqual(calls, {"intake": 1, "availability": 1, "send": 0})
+        self.assertTrue(decision["facts"]["front_door_context_transfer"])
+        self.assertTrue(
+            decision["customer_front_door"]["specialist_response_required"]
+        )
+        self.assertEqual(
+            decision["customer_front_door"]["next_specialist_recommendation"],
+            "livestock",
+        )
+        self.assertEqual(decision["facts"]["category"], "piglet")
+        self.assertIn(
+            "Piglets are usually discussed as small piglets",
+            decision["suggested_reply_text"],
+        )
+        self.assertIn(
+            "Would you prefer small piglets (about 2-6 kg) or weaned piglets "
+            "(about 7-19 kg)?",
+            decision["suggested_reply_text"],
+        )
+        self.assertNotIn("How many", decision["suggested_reply_text"])
         self.assertFalse(decision["customer_send_authorized"])
         self.assertFalse(result["sent"])
         self.assertFalse(result["creates_order"])
         self.assertFalse(result["reserves_stock"])
+
+    def test_authoritative_chronology_excludes_later_activity_and_private_rows(self):
+        history = {
+            "messages": [
+                {
+                    "id": "100",
+                    "message_type": 1,
+                    "created_at": 100,
+                    "content": "Earlier public reply",
+                    "private": False,
+                },
+                {
+                    "id": "101",
+                    "message_type": 0,
+                    "created_at": 101,
+                    "content": "How much each",
+                    "private": False,
+                },
+                {
+                    "id": "102",
+                    "message_type": 2,
+                    "created_at": 102,
+                    "content": "Conversation assigned",
+                    "private": False,
+                },
+                {
+                    "id": "103",
+                    "message_type": 1,
+                    "created_at": 103,
+                    "content": "Internal note",
+                    "private": True,
+                },
+            ]
+        }
+
+        authority = sam_live_stock_runtime._authority_chatwoot_messages(
+            history
+        )
+
+        self.assertEqual([row["id"] for row in authority], ["100", "101"])
+        self.assertEqual(authority[-1]["message_type"], 0)
+        self.assertEqual(authority[-1]["content"], "How much each")
+
+    def test_authoritative_chronology_preserves_later_public_outgoing_row(self):
+        history = {
+            "messages": [
+                {
+                    "id": "101",
+                    "message_type": 0,
+                    "created_at": 101,
+                    "content": "How much each",
+                    "private": False,
+                },
+                {
+                    "id": "104",
+                    "message_type": 1,
+                    "created_at": 104,
+                    "content": "A later public reply",
+                    "private": False,
+                },
+            ]
+        }
+
+        authority = sam_live_stock_runtime._authority_chatwoot_messages(
+            history
+        )
+
+        self.assertEqual([row["id"] for row in authority], ["101", "104"])
+        self.assertEqual(authority[-1]["message_type"], 1)
 
     def test_context_resolved_livestock_terse_followup_stays_specialist(self):
         current_at = 1785313934
@@ -3419,17 +4927,16 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 self.assertTrue(decision["specialist_lane_selected"])
                 self.assertEqual(
                     decision["reply_source"],
-                    "deterministic_customer_size_guidance",
+                    "canonical_evidence_to_offer_loop",
                 )
+                self.assertTrue(decision["canonical_composition_authorized"])
                 reply = decision["suggested_reply_text"].lower()
                 self.assertNotIn("we don\u2019t offer pork", reply)
                 self.assertNotIn("we do have piglets", reply)
                 self.assertNotIn("we offer pigs", reply)
-                self.assertIn("approximately", reply)
-                self.assertIn(
-                    "current availability still need to be confirmed",
-                    reply,
-                )
+                self.assertIn("about", reply)
+                self.assertNotIn("available", reply)
+                self.assertNotIn("in stock", reply)
 
     def test_contextual_route_preserves_terse_followup_but_not_lane_change_or_mixed(self):
         inbound = {
@@ -3761,6 +5268,54 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(prior["latest_context_at"], 1785313800)
 
+    def test_long_returning_customer_history_retains_original_order_facts(self):
+        inbound = {
+            "message_id": "current",
+            "account_id": "147387",
+            "conversation_id": "1490",
+            "contact_id": "781066279",
+            "inbox_id": "90568",
+            "content": "Hi we will take the quote",
+        }
+        texts = [
+            "19kg 4 females and 1 male please",
+            "Thank you",
+            "Is there below 15 KG",
+            "Good day",
+            "May I please have an update on my request",
+            "Anyone available",
+            "The 10th please",
+            "Its Monday coming",
+            "Collection in Riversdale",
+        ]
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": str(index),
+                    "message_type": 0,
+                    "created_at": 1785313600 + index,
+                    "content": text,
+                }
+                for index, text in enumerate(texts, start=1)
+            ],
+        }
+        prior = sam_live_stock_runtime._prior_context_from_chatwoot_history(
+            history, inbound
+        )
+        current = sam_live_stock_runtime.extract_live_stock_facts(
+            inbound["content"], inbound
+        )
+        merged = sam_live_stock_runtime.merge_prior_live_stock_context(
+            current, prior
+        )
+        self.assertEqual(merged["quantity"], 5)
+        self.assertEqual(merged["sex"], "split")
+        self.assertEqual(merged["sex_split"], {"female": 4, "male": 1})
+        self.assertEqual(merged["location"], "Riversdale")
+        self.assertTrue(merged["order_commitment"])
+        self.assertEqual(merged["sales_lane"], "live_stock_sales")
+
     def test_auto_general_unsupported_availability_wording_is_never_authorized(self):
         inbound = {
             "content": "Both",
@@ -3878,7 +5433,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             decision["contextual_sales_route"]["status"],
             "mixed_intent_requires_clarification",
         )
-        self.assertIn("live pigs, pork or meat, or both", decision[
+        self.assertIn("live pigs, pork, or both", decision[
             "suggested_reply_text"
         ])
         self.assertFalse(
@@ -3908,6 +5463,65 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(reply.count("?"), 1)
         self.assertTrue(result["sam_decision"]["clarification_asked"])
+
+    def test_returning_more_information_preserves_livestock_context_without_regreeting(self):
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                id=767530354,
+                content="Hello! Can I get more info on this?",
+                conversation={
+                    "id": 1399,
+                    "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"},
+                },
+                sender={"id": 699, "name": "Returning Customer"},
+            ),
+            environ={},
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [
+                    {
+                        "id": 767500000,
+                        "message_type": 0,
+                        "created_at": 1785313000,
+                        "content": "I am interested in weaned piglets around 12 kg.",
+                    },
+                    {
+                        "id": 767530354,
+                        "message_type": 0,
+                        "created_at": 1785313934,
+                        "content": "Hello! Can I get more info on this?",
+                    },
+                ],
+            },
+            intake_context_loader=lambda *_args: {
+                "success": True,
+                "known_fields": {},
+                "items": [],
+            },
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status, 200)
+        self.assertEqual(decision["conversation_ownership"], "AUTO_SPECIALIST")
+        self.assertEqual(decision["facts"]["weight_range"], "around 12 kg")
+        self.assertIn("weaned piglets", decision["suggested_reply_text"])
+        self.assertNotIn("Good day", decision["suggested_reply_text"])
+        self.assertNotIn("How can I help", decision["suggested_reply_text"])
+        self.assertTrue(decision["canonical_composition_authorized"])
+        self.assertEqual(
+            decision["reply_source"],
+            "canonical_evidence_to_offer_loop",
+        )
+        self.assertEqual(
+            decision["suggested_reply_text"],
+            decision["canonical_evidence_offer"]["customer_reply"],
+        )
+        self.assertTrue(decision["conversation_review"]["safe_to_send"])
+        self.assertNotEqual(
+            decision["routine_reply_delivery"]["status"],
+            "routine_reply_canonical_composition_not_authorized",
+        )
 
     def test_routine_majority_multiturn_states_do_not_force_a_lane(self):
         general_turns = [
@@ -4045,6 +5659,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         }
         decision = {
             "conversation_ownership": "AUTO_GENERAL",
+            "canonical_composition_authorized": True,
             "suggested_reply_text": "Hi! How can I help you today?",
             "reply_source": "llm_auto_general_reply_draft",
             "should_reply": True,
@@ -4105,6 +5720,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             },
             {
                 "conversation_ownership": "AUTO_GENERAL",
+                "canonical_composition_authorized": True,
                 "suggested_reply_text": "Hi Charl! How can I help you today?",
                 "reply_source": "llm_auto_general_reply_draft",
                 "should_reply": True,
@@ -4126,6 +5742,133 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(delivery["status"], "routine_reply_idempotency_claim_failed")
         self.assertEqual(calls, [])
+
+    def test_preclaim_chronology_change_blocks_claim_and_send(self):
+        calls = []
+        delivery = (
+            sam_live_stock_runtime
+            .deliver_sam_live_stock_routine_reply_if_enabled(
+                {
+                    "account_id": "147387",
+                    "conversation_id": "2013",
+                    "contact_id": "699428938",
+                    "inbox_id": "96568",
+                    "message_id": "INBOUND-A",
+                    "content": "Hi",
+                    "identity_provenance": verified_identity(
+                        "2013", "699428938", "96568"
+                    ),
+                },
+                {
+                    "conversation_ownership": "AUTO_GENERAL",
+                    "canonical_composition_authorized": True,
+                    "suggested_reply_text": "Hi! How can I help?",
+                    "reply_source": "llm_auto_general_reply_draft",
+                    "should_reply": True,
+                    "llm_draft": {"used": True, "confidence": 0.99},
+                    "specialist_lane_selected": False,
+                    "specialist_tools_called": [],
+                    "owner_escalation_required": False,
+                },
+                {"safe_to_send": True, "escalation_required": False},
+                {
+                    "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+                    "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+                    "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "2013",
+                    "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "699428938",
+                    "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "96568",
+                },
+                preclaim_chronology_verifier=(
+                    lambda *_args: {"allowed": False}
+                ),
+                delivery_claim=lambda *_args: calls.append("claim"),
+                chatwoot_sender=lambda *_args: calls.append("send"),
+            )
+        )
+        self.assertEqual(
+            delivery["status"],
+            "routine_reply_preclaim_chronology_changed",
+        )
+        self.assertEqual(calls, [])
+
+    def test_optional_context_failures_do_not_block_supported_claim_boundary(self):
+        calls = []
+        delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            {
+                "conversation_id": "2013",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+                "content": "Hi",
+                "identity_provenance": verified_identity(
+                    "2013", "699428938", "96568"
+                ),
+            },
+            {
+                "conversation_ownership": "AUTO_GENERAL",
+                "canonical_composition_authorized": True,
+                "suggested_reply_text": "Hi! How can I help?",
+                "reply_source": "llm_auto_general_reply_draft",
+                "should_reply": True,
+                "llm_draft": {"used": True, "confidence": 0.99},
+                "specialist_lane_selected": False,
+                "specialist_tools_called": [],
+                "owner_escalation_required": False,
+                "read_context": {
+                    "chatwoot_history": {
+                        "chronology_evidence_complete": True,
+                    },
+                    "context_errors": [
+                        {"status": "order_intake_context_read_failed"},
+                        {"status": "sales_availability_read_failed"},
+                    ],
+                },
+            },
+            {"safe_to_send": True, "escalation_required": False},
+            {
+                "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+                "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+                "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "2013",
+                "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "699428938",
+                "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "96568",
+            },
+            preclaim_chronology_verifier=lambda *_args: {"allowed": True},
+            delivery_claim=lambda *_args: (
+                calls.append("claim")
+                or {"success": True, "created": False}
+            ),
+            chatwoot_sender=lambda *_args: calls.append("send"),
+        )
+        self.assertEqual(delivery["status"], "routine_reply_duplicate_withheld")
+        self.assertEqual(calls, ["claim"])
+
+    def test_unknown_context_error_fails_closed_before_claim_or_send(self):
+        for context_status in (
+            "future_identity_evidence_failure",
+            "chatwoot_conversation_identity_read_failed",
+        ):
+            with self.subTest(context_status=context_status):
+                calls = []
+                delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+                    {"conversation_id": "2013", "contact_id": "99", "inbox_id": "77"},
+                    {
+                        "canonical_composition_authorized": True,
+                        "suggested_reply_text": "Which size would suit you?",
+                        "should_reply": True,
+                        "read_context": {
+                            "chatwoot_history": {"chronology_evidence_complete": True},
+                            "context_errors": [{"status": context_status}],
+                        },
+                    },
+                    {"safe_to_send": True, "escalation_required": False},
+                    {},
+                    delivery_claim=lambda *_args: calls.append("claim"),
+                    chatwoot_sender=lambda *_args: calls.append("send"),
+                )
+                self.assertEqual(
+                    delivery["status"],
+                    "routine_reply_chronology_evidence_unavailable",
+                )
+                self.assertEqual(calls, [])
 
     def test_auto_general_invalid_chronology_blocks_before_claim_or_send(self):
         for timestamp in (None, "malformed", "NaN", "Infinity", "-Infinity"):
@@ -4409,6 +6152,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         }
         decision = {
             "conversation_ownership": "AUTO_GENERAL",
+            "canonical_composition_authorized": True,
             "suggested_reply_text": "Hi Charl! How can I help you today?",
             "reply_source": "llm_auto_general_reply_draft",
             "should_reply": True,
@@ -4542,6 +6286,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
     def test_auto_general_authorized_send_replay_and_ambiguous_outcome_transitions(self):
         payload = inbound_payload(
+            id="GENERAL-INBOUND-2401",
             content="Hi",
             conversation={"id": 2401, "inbox": {"id": 77, "channel_type": "Channel::Whatsapp"}},
         )
@@ -4573,7 +6318,15 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 payload,
                 environ=source,
                 intake_context_loader=lambda *_args: self.fail("general greeting called intake"),
-                conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+                conversation_history_loader=lambda *_args: {
+                    "success": True,
+                    "messages": [{
+                        "id": "GENERAL-INBOUND-2401",
+                        "message_type": 0,
+                        "content": "Hi",
+                        "created_at": 1785402000,
+                    }],
+                },
                 availability_loader=lambda: self.fail("general greeting called availability"),
                 llm_drafter=lambda *_args: {
                     "reply_text": "Hi! How can I help you today?",
@@ -4588,7 +6341,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         result, _ = run(lambda *_args: sends.append("sent") or {"status_code": 200, "body": {"id": 1, "status": "delivered"}})
         decision = result["sam_decision"]
-        self.assertEqual(sends, ["sent"])
+        self.assertEqual(sends, ["sent"], decision)
         self.assertTrue(result["sent"])
         self.assertTrue(decision["handled_autonomously"])
         self.assertFalse(decision["owner_escalation_required"])
@@ -4715,7 +6468,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["facts"]["quantity"], 1)
         self.assertEqual(decision["facts"]["sex"], "")
         self.assertEqual(decision["facts"]["weight_range"], "")
-        self.assertIn("male, female, or either", decision["suggested_reply_text"])
+        self.assertIn("males, females, or a mixture", decision["suggested_reply_text"])
         self.assertNotIn("Which size", decision["suggested_reply_text"])
         self.assertNotIn("how many", decision["suggested_reply_text"])
         self.assertNotIn("checking the current livestock availability", decision["suggested_reply_text"])

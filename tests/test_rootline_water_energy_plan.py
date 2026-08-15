@@ -10,6 +10,9 @@ from modules.telemetry.rootline_water_energy_plan import (
     append_water_energy_plan,
     _normalize_forecast,
     _read_historical_context,
+    _read_latest_tank_observation,
+    _read_recent_irrigation_history,
+    read_current_water_energy_evidence,
 )
 
 
@@ -137,8 +140,8 @@ class WaterEnergyPlanTests(unittest.TestCase):
         complete = incomplete | {
             "dry_interval_minutes": 30,
             "fresh_readings_during_dry_interval": 2,
-            "no_visible_rain_confirmed": True,
-            "owner_review_confirmed": True,
+            "source_healthy": True,
+            "conflicting": False,
         }
         released = self.build(weather=complete, water_demand={"status": "normal"})
         self.assertTrue(released["rain_capture"]["dry_release_proven"])
@@ -177,38 +180,20 @@ class WaterEnergyPlanTests(unittest.TestCase):
         plan = self.build()
         self.assertEqual(self.task(plan, "irrigation_C12345")["recommendation"], "Hold")
 
-    def test_fertilizer_preflow_spacing_flush_and_maximum(self):
-        insufficient = self.build(irrigation={
-            "zones": [], "active_zone": "C12345",
-            "active_zone_observed_minutes": 9,
-            "minutes_since_last_injection": 20,
-            "clean_water_flush_supported": True,
-        })
-        injection = self.task(insufficient, "fertilizer_injection_ch1")
-        self.assertEqual(injection["recommendation"], "Hold")
-        self.assertEqual(injection["maximum_duration_seconds"], 60)
-
-        no_spacing = self.build(irrigation={
-            "zones": [], "active_zone": "C12345",
-            "active_zone_observed_minutes": 12,
-            "minutes_since_last_injection": 5,
-            "clean_water_flush_supported": True,
-        })
-        self.assertEqual(self.task(no_spacing, "fertilizer_injection_ch1")["recommendation"], "Hold")
-
-        no_flush = self.build(irrigation={
-            "zones": [], "active_zone": "C12345",
-            "active_zone_observed_minutes": 12,
-            "minutes_since_last_injection": 12,
-            "clean_water_flush_supported": False,
-        })
-        self.assertEqual(self.task(no_flush, "fertilizer_injection_ch1")["recommendation"], "Hold")
+    def test_fertilizer_is_typed_only_as_auxiliary_work(self):
+        plan=self.build()
+        self.assertFalse(any("fertilizer" in row["task_id"]
+                             for row in plan["candidate_tasks"]))
+        self.assertEqual(plan["irrigation_auxiliary_devices"],
+                         ["FERTILIZER-INJECTION-CH1","FERTILIZER-MIXER-CH2"])
+        self.assertEqual({row["device_type"] for row in plan["irrigation_auxiliary_tasks"]},
+                         {"fertilizer_injection_valve","fertilizer_mixer"})
 
     def test_unused_channels_and_unproven_binding(self):
         fertilizer = OPERATING_KNOWLEDGE["fertilizer"]
         self.assertEqual(fertilizer["channels"]["3"], "unused")
         self.assertEqual(fertilizer["channels"]["4"], "unused")
-        self.assertEqual(fertilizer["relay_api_mapping"], "Unknown")
+        self.assertEqual(fertilizer["maximum_injection_pulse_seconds"], 120)
         self.assertFalse(fertilizer["supervised_identity_proven"])
 
     def test_stale_manual_observation(self):
@@ -251,6 +236,99 @@ class WaterEnergyPlanTests(unittest.TestCase):
             self.assertFalse(task["dispatchable"])
             self.assertFalse(task["physical_water_flow_confirmed"])
 
+    def test_owner_policy_builds_explicit_b_plan_without_crop_sensor_evidence(self):
+        plan = self.build(
+            forecast={
+                "observed_at": "2026-07-27T10:00:00+02:00",
+                "stale_after_minutes": 360,
+                "days": [{"rain_sum_mm": 0, "rain_probability_max_pct": 0}],
+            },
+            water_demand={},
+            tanks=evidence()["tanks"] | {"reservoir_reported_count": 9},
+            irrigation={
+                "owner_candidate": {
+                    "zone_id": "B12345",
+                    "operating_date": "2026-07-28",
+                    "source": "owner_confirmed_test",
+                },
+                "zones": [
+                    {"zone_id": "B12345", "recommendation": "Hold"},
+                    {"zone_id": "C12345", "recommendation": "Hold"},
+                ]
+            },
+        )
+        b_camp = self.task(plan, "irrigation_B12345")
+        self.assertEqual(b_camp["recommendation"], "Recommend")
+        self.assertEqual(b_camp["planned_duration_minutes"], 120)
+        self.assertEqual(b_camp["planned_start_at"], "12:30 SAST")
+        self.assertIn("Crop/soil evidence is unavailable", b_camp["reason"])
+        self.assertTrue(b_camp["advisory_plan_supported"])
+        self.assertTrue(b_camp["actuation_blocked"])
+        self.assertEqual(plan["water_demand"]["status"], "standing_essential")
+        self.assertEqual(plan["forecast"]["status"], "stale")
+
+    def test_missing_reservoir_blocks_irrigation_not_storage_borehole_conclusion(self):
+        tanks = evidence()["tanks"] | {
+            "reservoir_reported_count": None,
+            "reservoir_observed_at": None,
+            "storage_observed_at": "2026-07-28T10:00:00+02:00",
+        }
+        plan = self.build(tanks=tanks, water_demand={})
+        self.assertEqual(self.task(plan, "irrigation_B12345")["recommendation"], "Hold")
+        self.assertNotEqual(self.task(plan, "borehole")["recommendation"], "Needs Data")
+        self.assertEqual(plan["tank_evidence"]["storage_freshness"], "fresh")
+        self.assertEqual(plan["tank_evidence"]["reservoir_freshness"], "Unavailable")
+
+    def test_fraction_evidence_preserves_half_storage_and_full_reservoir(self):
+        tanks=evidence()["tanks"] | {"storage_reported_count":None,"reservoir_reported_count":None,
+            "storage_fraction":[2,4],"reservoir_fraction":[4,4],
+            "storage_state":"OK","reservoir_state":"FULL"}
+        plan=self.build(tanks=tanks)
+        self.assertEqual(plan["tank_evidence"]["storage_reported_count"],2)
+        self.assertEqual(plan["tank_evidence"]["storage_total_count"],4)
+        self.assertEqual(plan["tank_evidence"]["reservoir_reported_count"],4)
+        self.assertEqual(plan["tank_evidence"]["reservoir_total_count"],4)
+        self.assertEqual(plan["tank_evidence"]["reservoir_state"],"FULL")
+        self.assertNotEqual(self.task(plan,"borehole")["recommendation"],"Needs Data")
+        self.assertNotEqual(self.task(plan,"solar_transfer_pump")["recommendation"],"Needs Data")
+
+    def test_independent_tank_rows_are_composed_with_exact_timestamps(self):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.side_effect = [
+            (3, None, "Unknown", "Unknown",
+             datetime.fromisoformat("2026-08-01T13:16:52+02:00"), "storage-owner", "telegram-3150"),
+            (None, 9, "Unknown", "Unknown",
+             datetime.fromisoformat("2026-08-01T12:01:41+02:00"), "reservoir-owner", "telegram-3146"),
+        ]
+        with mock.patch("psycopg.connect") as connect:
+            connect.return_value.__enter__.return_value = connection
+            result = _read_latest_tank_observation("postgresql://production-shaped")
+        self.assertEqual(result["storage_reported_count"], 3)
+        self.assertEqual(result["reservoir_reported_count"], 9)
+        self.assertEqual(result["storage_observed_at"], "2026-08-01T13:16:52+02:00")
+        self.assertEqual(result["reservoir_observed_at"], "2026-08-01T12:01:41+02:00")
+        self.assertEqual(result["storage_reporter"], "storage-owner")
+        self.assertEqual(result["storage_source"], "telegram-3150")
+        self.assertEqual(result["reservoir_reporter"], "reservoir-owner")
+        self.assertEqual(result["reservoir_source"], "telegram-3146")
+
+    def test_recent_history_excludes_stopped_and_future_completion_evidence(self):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = (NOW,)
+        cursor.fetchall.return_value = []
+        with mock.patch("psycopg.connect") as connect:
+            connect.return_value.__enter__.return_value = connection
+            result = _read_recent_irrigation_history(
+                "postgresql://production-shaped", NOW
+            )
+        sql, params = cursor.execute.call_args.args
+        self.assertIn("public.irrigation_events", sql)
+        self.assertEqual(params, ("PLANNING_EPOCH_STARTED",))
+        self.assertTrue(connection.read_only)
+        self.assertEqual(result["zones"]["B12345"]["coverage_status"], "Unavailable")
+
     def test_append_database_failure_returns_fail_closed_response(self):
         plan = self.build()
         with mock.patch("psycopg.connect", side_effect=RuntimeError("offline")):
@@ -284,6 +362,46 @@ class WaterEnergyPlanTests(unittest.TestCase):
             empty = _read_historical_context("postgresql://production-shaped")
         self.assertIsNone(empty["average_coverage_pct"])
         json.dumps(empty)
+
+    @mock.patch("modules.telemetry.rootline_water_energy_plan._read_latest_tank_observation",
+                return_value={})
+    @mock.patch("modules.telemetry.rootline_water_energy_plan._read_recent_irrigation_history",
+                return_value={})
+    @mock.patch("modules.telemetry.rootline_water_energy_plan._read_historical_context",
+                return_value={})
+    @mock.patch("modules.telemetry.rootline_daily_advisor.get_rootline_daily_advisor",
+                return_value=({"zones": []}, 200))
+    @mock.patch("modules.telemetry.weather_service.get_weather_forecast",
+                return_value=({}, 200))
+    @mock.patch("modules.telemetry.weather_service.get_current_weather_state",
+                return_value=({}, 200))
+    @mock.patch("modules.telemetry.power_service.get_current_power_state",
+                return_value=({}, 200))
+    def test_canonical_reader_supplies_deployed_adaptive_bc_management(self, *_mocks):
+        current, _, _ = read_current_water_energy_evidence(now=NOW)
+        adaptive=current["irrigation"]["adaptive_management"]
+        self.assertTrue(adaptive["enabled"])
+        self.assertEqual([row["zone_id"] for row in adaptive["zones"]],
+                         ["B12345", "C12345"])
+        self.assertEqual(adaptive["max_execution_minutes"], 60)
+        self.assertFalse(adaptive["simultaneous_zones_allowed"])
+
+    def test_authenticated_current_c_need_survives_adaptive_projection_and_ranks_c_first(self):
+        item=evidence()
+        item["irrigation"]={
+            "zones":[{"zone_id":"B12345"},{"zone_id":"C12345",
+                "visible_need":"visible_need","visible_need_observed_at":NOW.isoformat(),
+                "visible_need_source":"oom_sakkie_authenticated_operational_intake"}],
+            "adaptive_management":{"enabled":True,"zones":[
+                {"zone_id":"B12345"},{"zone_id":"C12345"}],
+                "target_days_per_week":4}}
+        item["irrigation_history"]={"status":"Available","zones":{
+            zone:{"events":[],"complete_through":NOW.isoformat()} for zone in ("B12345","C12345")}}
+        plan=build_water_energy_plan(item,"2026-07-28",now=NOW)
+        tasks={row["task_id"]:row for row in plan["candidate_tasks"]}
+        self.assertGreater(tasks["irrigation_C12345"]["need_score"],
+                           tasks["irrigation_B12345"]["need_score"])
+        self.assertEqual(tasks["irrigation_C12345"]["rank"],1)
 
 
 if __name__ == "__main__":

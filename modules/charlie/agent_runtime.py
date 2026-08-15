@@ -89,7 +89,9 @@ def delegate_to_agent(agent_id, request, *, intent_id="", recorder=None, event_s
     }
     status_code = 200 if success else 422 if result.get("success") is not False else 503
     if recorder and intent_id:
-        recorder(intent_id, f"agent.{definition.agent_id}.{resolved_capability}", definition.authority_tier, request, packet, status="succeeded" if success else "failed")
+        recordable_request = {key: value for key, value in request.items()
+            if key not in {"gateway_authority", "scheduled_manager_context", "owner_user_id"}}
+        recorder(intent_id, f"agent.{definition.agent_id}.{resolved_capability}", definition.authority_tier, recordable_request, packet, status="succeeded" if success else "failed")
     if event_sink:
         event_sink("agent_completed", {"agent_id": definition.agent_id, "success": success, "status": packet["status"], "duration_ms": duration_ms, "evidence_gaps": gaps})
     return packet, status_code
@@ -115,7 +117,7 @@ def assess_evidence(result):
 
 def _normalize_request(request, definition):
     source = request if isinstance(request, dict) else {}
-    return {
+    normalized = {
         "request_id": str(source.get("request_id") or "AREQ-" + uuid.uuid4().hex.upper()),
         "goal": str(source.get("goal") or source.get("question") or "Investigate the current domain truth")[:1500],
         "question": str(source.get("question") or source.get("goal") or "")[:3000],
@@ -125,6 +127,11 @@ def _normalize_request(request, definition):
         "authority": "read_only" if definition.authority_tier == "read_only" else definition.authority_tier,
         "required_freshness": str(source.get("required_freshness") or "live")[:80],
     }
+    if definition.agent_id == "oom-sakkie":
+        normalized["gateway_authority"] = source.get("gateway_authority")
+        normalized["scheduled_manager_context"] = source.get("scheduled_manager_context")
+        normalized["owner_user_id"] = str(source.get("owner_user_id") or "")[:80]
+    return normalized
 
 
 def _ensure_defaults():

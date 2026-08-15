@@ -8,6 +8,7 @@ from modules.telemetry.power_service import get_current_power_state
 from modules.telemetry.rollup_service import get_daily_rollup_compare
 from modules.telemetry.weather_service import (
     get_current_weather_state,
+    get_weather_dry_release_evidence,
     get_weather_forecast,
     get_weather_today_summary,
 )
@@ -22,18 +23,26 @@ def get_rootline_daily_brief(brief_date=None, readers=None):
     selected_date = str(brief_date or datetime.now(ZA_TZ).date().isoformat())[:10]
     readers = readers or {
         "weather_current": lambda: get_current_weather_state(),
+        "rain_release": lambda: get_weather_dry_release_evidence(),
         "weather_today": lambda: get_weather_today_summary(selected_date),
         "forecast": lambda: get_weather_forecast(3),
         "power": lambda: get_current_power_state(),
         "irrigation": lambda: get_irrigation_status(selected_date),
         "rollups": lambda: get_daily_rollup_compare(selected_date),
     }
-    evidence = {name: _safe_read(reader) for name, reader in readers.items()}
+    # Daily brief sources are independent read models. Their individual
+    # database deadlines must not accumulate past an enclosing callback's
+    # worker deadline.
+    from modules.telemetry.rootline_bounded_read_group import run_bounded_read_group
+    evidence = run_bounded_read_group(
+        {name:lambda reader=reader:_safe_read(reader)
+         for name,reader in readers.items()},max_workers=4)
     return build_rootline_daily_brief(evidence, selected_date), 200
 
 
 def build_rootline_daily_brief(evidence, brief_date):
     weather = _usable(evidence.get("weather_current"))
+    rain_release = _usable(evidence.get("rain_release"))
     today = _usable(evidence.get("weather_today"))
     forecast = _usable(evidence.get("forecast"))
     power = _usable(evidence.get("power"))
@@ -165,6 +174,7 @@ def build_rootline_daily_brief(evidence, brief_date):
             "wind_gust_kmh": weather_values.get("wind_gust_kmh") if weather else None,
             "pressure_hpa": weather_values.get("pressure_hpa") if weather else None,
         },
+        "rain_release_evidence": rain_release,
         "today_weather": {
             "availability": "Available" if today else "Unavailable",
             "coverage_pct": today.get("window", {}).get("coverage_pct") if today else None,

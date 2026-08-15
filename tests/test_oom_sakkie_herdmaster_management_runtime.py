@@ -1,0 +1,298 @@
+from datetime import datetime, timedelta, timezone
+
+from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie.herdmaster_management_runtime import (consume_current_herdmaster_management,
+    _consumption_claim_identity, _load_active_lifecycles,
+    _retain_active_mortality_context, _retained_owner_reported_death)
+from tests.test_oom_sakkie_herdmaster_management_adapter import canonical, observations, active, NOW, OWNER
+
+
+def test_later_projection_retains_proven_mortality_and_drops_obsolete_question():
+    previous={"pig_id":"PIG-127","lifecycle_id":"CASE-127","reported_dead":True,"current_question":""}
+    later={"pig_id":"PIG-127","lifecycle_id":"CASE-127","reported_dead":False,
+           "current_question":"Is Pig 127 breathing now?"}
+    retained=_retain_active_mortality_context(previous,later)
+    assert retained["reported_dead"] is True and retained["current_question"]==""
+
+
+def test_nonmortality_lifecycle_projection_is_not_reinterpreted():
+    later={"pig_id":"PIG-11","reported_dead":False,
+           "current_question":"Is Pig 11 eating?"}
+    assert _retain_active_mortality_context(None,later)==later
+
+
+def test_different_lifecycle_for_same_entity_does_not_inherit_old_mortality():
+    previous={"pig_id":"PIG-1","lifecycle_id":"OLD","reported_dead":True}
+    current={"pig_id":"PIG-1","lifecycle_id":"NEW","reported_dead":False,
+             "current_question":"What changed?"}
+    assert _retain_active_mortality_context(previous,current)==current
+
+
+def test_missing_lifecycle_identity_fails_closed_on_retention():
+    previous={"pig_id":"PIG-1","reported_dead":True}
+    current={"pig_id":"PIG-1","reported_dead":False,"current_question":"What changed?"}
+    assert _retain_active_mortality_context(previous,current)==current
+
+
+def test_different_entity_does_not_inherit_old_mortality():
+    previous={"pig_id":"PIG-1","lifecycle_id":"CASE-1","reported_dead":True}
+    current={"pig_id":"PIG-2","lifecycle_id":"CASE-2","reported_dead":False,
+             "current_question":"Is Pig 2 eating?"}
+    assert _retain_active_mortality_context(previous,current)==current
+
+
+def test_canonical_dead_off_farm_state_retires_obsolete_waiting_lifecycle(monkeypatch):
+    import modules.oom_sakkie.herdmaster_management_runtime as runtime
+    health = {"owner_user_id": OWNER, "status": "waiting_for_input",
+        "mission_id": "PIG127-CASE", "provider_timestamp": "2026-08-03T05:00:00+00:00",
+        "preview": {"evaluator": {"identity": {"pig_id": "PIG-2026-D13C", "tag_number": "127"},
+            "smallest_missing_follow_up_question": "Is Pig 127 breathing?"}}}
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self,*_): return False
+        def execute(self,sql,params=()):
+            self.values = ([(health,"3203")] if "herdmaster_health_loss" in sql
+                           else [("PIG-2026-D13C","Dead",False)])
+        def fetchall(self): return self.values
+    class Connection:
+        read_only = True
+        def __enter__(self): return self
+        def __exit__(self,*_): return False
+        def cursor(self): return Cursor()
+    monkeypatch.setattr(runtime,"_connect",lambda:Connection())
+    projected = _load_active_lifecycles(OWNER,include_terminal=True)
+    assert projected == [{"pig_id":"PIG-2026-D13C","lifecycle_id":"PIG127-CASE",
+        "state":"completed","mortality_closed":True,
+        "closure_reason":"canonical_terminal_pig_state","canonical_status":"Dead",
+        "canonical_on_farm":False}]
+    assert _load_active_lifecycles(OWNER,include_terminal=False) == []
+
+
+def test_default_management_runtime_loads_terminal_closure_projection(monkeypatch):
+    import modules.oom_sakkie.herdmaster_management_runtime as runtime
+    calls=[]
+    closed=[{"pig_id":"PIG-2026-D13C","lifecycle_id":"PIG127-CASE",
+        "state":"completed","mortality_closed":True}]
+    def load_active(owner,*,include_terminal=False):
+        calls.append((owner,include_terminal)); return closed
+    monkeypatch.setattr(runtime,"_load_active_lifecycles",load_active)
+    result=consume_current_herdmaster_management(
+        authority=issue_gateway_owner_authority(OWNER,OWNER),owner_user_id=OWNER,now=NOW,
+        canonical_loader=canonical,observation_loader=lambda _owner:observations(),
+        prior_loader=lambda _owner,_context:[],
+        recorder=lambda _value:{"success":True,"created":True})
+    assert calls==[(OWNER,True)]
+    assert result["status"]=="herdmaster_management_round_consumed", result
+    assert result["binding"]["active_case_deduplication_state"]["active_pig_ids"]==()
+
+
+def test_default_management_runtime_retires_nonmortality_terminal_projection(monkeypatch):
+    import modules.oom_sakkie.herdmaster_management_runtime as runtime
+    projected=[{"pig_id":"PIG-SOLD","lifecycle_id":"SOLD-CASE",
+        "state":"completed","mortality_closed":False,
+        "closure_reason":"canonical_terminal_pig_state","canonical_status":"Sold",
+        "canonical_on_farm":False}]
+    monkeypatch.setattr(runtime,"_load_active_lifecycles",
+        lambda owner,include_terminal=False: projected)
+    result=consume_current_herdmaster_management(
+        authority=issue_gateway_owner_authority(OWNER,OWNER),owner_user_id=OWNER,now=NOW,
+        canonical_loader=canonical,observation_loader=lambda _owner:observations(),
+        prior_loader=lambda _owner,_context:[],
+        recorder=lambda _value:{"success":True,"created":True})
+    assert result["status"]=="herdmaster_management_round_consumed", result
+    assert result["binding"]["active_case_deduplication_state"]["active_pig_ids"]==()
+
+def test_authenticated_runtime_consumes_and_records_existing_store_binding_once():
+    recorded=[]
+    result=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
+        active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[],recorder=lambda value:(recorded.append(value) or {"success":True,"created":True}))
+    assert result["status"]=="herdmaster_management_round_consumed"
+    assert result["accepted_work_item_count"]==3 and len(recorded)==1
+    assert all("PIG-2026-E88A" not in item.item_id for item in result["specialist_result"].work_items)
+    assert result["writes_farm_data"] is result["sends_telegram"] is False
+
+def test_missing_historical_pregnancy_observations_stay_unknown_not_reconstructed():
+    result=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner:[],
+        active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
+    text=" ".join(item.title+" "+item.next_action for item in result["specialist_result"].work_items)
+    assert "Assumed Pregnant" not in text
+
+def test_runtime_exact_replay_records_nothing():
+    first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
+        active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
+    b=first["binding"]
+    prior={"management_round_identity":b["management_round_identity"],"deduplication_key":b["deduplication_key"],
+        "result_digest":b["result_digest"],"evidence_generation":b["evidence_generation"],
+        "active_case_digest":b["active_case_deduplication_state"]["digest"],
+        "invocation_context_digest":b["invocation_context"]["digest"]}
+    recorded=[]
+    replay=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
+        active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[prior],recorder=lambda value:recorded.append(value))
+    assert replay["status"]=="herdmaster_management_round_replay_suppressed" and recorded==[]
+
+def test_runtime_replay_suppresses_volatile_generation_when_material_evidence_is_unchanged():
+    first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
+        active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[],
+        recorder=lambda _value:{"success":True,"created":True})
+    binding=first["binding"]
+    prior={"management_round_identity":binding["management_round_identity"],
+        "deduplication_key":binding["deduplication_key"],"result_digest":binding["result_digest"],
+        "evidence_generation":binding["evidence_generation"],
+        "active_case_digest":binding["active_case_deduplication_state"]["digest"],
+        "invocation_context_digest":binding["invocation_context"]["digest"]}
+    later_generation=NOW-timedelta(microseconds=1)
+    recorded=[]
+    replay=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=lambda:canonical(later_generation),
+        observation_loader=lambda _owner: observations(),active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[prior],recorder=lambda value:recorded.append(value))
+    assert replay["status"]=="herdmaster_management_round_replay_suppressed"
+    assert recorded==[]
+
+
+def test_runtime_replay_accepts_legacy_full_packet_digest_across_upgrade():
+    import hashlib
+    import json
+
+    legacy_generation = NOW - timedelta(microseconds=1)
+    legacy_packet = canonical(legacy_generation)
+    from modules.pig_weights.herdmaster_management_round import build_management_round
+    prepared = build_management_round(
+        legacy_packet,
+        active_specialist_cases=(),
+        attributable_owner_observations=observations(),
+        contained_animal_ids=tuple(sorted(row["pig_id"] for row in active())),
+    )
+    legacy_digest = hashlib.sha256(json.dumps(
+        prepared, sort_keys=True, separators=(",", ":"), default=str,
+    ).encode()).hexdigest()
+    first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=lambda:canonical(legacy_generation),
+        observation_loader=lambda _owner: observations(),active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
+    binding=first["binding"]
+    prior={"management_round_identity":binding["management_round_identity"],
+        "deduplication_key":binding["deduplication_key"],"result_digest":legacy_digest,
+        "evidence_generation":legacy_generation.isoformat(),
+        "active_case_digest":binding["active_case_deduplication_state"]["digest"],
+        "invocation_context_digest":binding["invocation_context"]["digest"]}
+    recorded=[]
+    replay=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,
+        observation_loader=lambda _owner: observations(),active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[prior],recorder=lambda value:recorded.append(value))
+    assert replay["status"]=="herdmaster_management_round_replay_suppressed"
+    assert recorded==[]
+
+
+def test_runtime_deterministically_binds_legacy_observation_to_only_current_pig_task():
+    legacy = [{key: value for key, value in observations()[0].items()
+               if key != "canonical_task_id"}]
+    result=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,
+        observation_loader=lambda _owner: legacy,active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
+    assert result["status"]=="herdmaster_management_round_consumed"
+    assert result["accepted_work_item_count"]<=3
+
+
+def test_runtime_drops_legacy_observation_when_no_current_task_exists():
+    legacy = [{**observations()[0], "pig_id": "PIG-NO-CURRENT-TASK"}]
+    legacy[0].pop("canonical_task_id")
+    result=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,
+        observation_loader=lambda _owner: legacy,active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
+    assert result["status"]=="herdmaster_management_round_consumed"
+
+
+def test_runtime_accepts_evidence_generated_during_authenticated_load_window():
+    generated_during_load = NOW + timedelta(seconds=1)
+    result=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=lambda:canonical(generated_during_load),
+        observation_loader=lambda _owner: observations(),active_loader=lambda _owner: active(),
+        prior_loader=lambda _owner,_context:[],recorder=lambda _value:{"success":True,"created":True})
+    assert result["status"]=="herdmaster_management_round_consumed"
+
+def test_manager_can_retain_canonical_result_on_proven_replay_without_recording():
+    first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
+        active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[],
+        recorder=lambda _value:{"success":True,"created":True})
+    b=first["binding"]
+    prior={"management_round_identity":b["management_round_identity"],"deduplication_key":b["deduplication_key"],
+        "result_digest":b["result_digest"],"evidence_generation":b["evidence_generation"],
+        "active_case_digest":b["active_case_deduplication_state"]["digest"],
+        "invocation_context_digest":b["invocation_context"]["digest"]}
+    recorded=[]
+    replay=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner: observations(),
+        active_loader=lambda _owner: active(),prior_loader=lambda _owner,_context:[prior],
+        recorder=lambda value:recorded.append(value),retain_replay_result=True)
+    assert replay["status"]=="herdmaster_management_round_replay_suppressed"
+    assert replay["specialist_result"] is not None and recorded==[]
+
+def test_authentication_precedes_every_loader_and_loader_failure_is_contained():
+    calls=[]
+    denied=consume_current_herdmaster_management(authority=None,owner_user_id=OWNER,now=NOW,
+        canonical_loader=lambda:calls.append("canonical"), observation_loader=lambda _owner:calls.append("observations"),
+        active_loader=lambda _owner:calls.append("active"), prior_loader=lambda _owner,_context:calls.append("prior"))
+    assert denied["systemic_exception"]["reason"]=="authenticated_manager_context_denied" and calls==[]
+    failed=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,observation_loader=lambda _owner:(_ for _ in ()).throw(RuntimeError("db")))
+    assert failed["systemic_exception"]["reason"]=="herdmaster_management_runtime_evidence_unavailable"
+
+def test_persistence_interruption_is_contained_and_duplicate_claim_is_replay():
+    kwargs=dict(authority=issue_gateway_owner_authority(OWNER,OWNER),owner_user_id=OWNER,now=NOW,
+        canonical_loader=canonical,observation_loader=lambda _owner:observations(),
+        active_loader=lambda _owner:active(),prior_loader=lambda _owner,_context:[])
+    failed=consume_current_herdmaster_management(**kwargs,recorder=lambda _value:(_ for _ in ()).throw(RuntimeError("commit")))
+    replay=consume_current_herdmaster_management(**kwargs,recorder=lambda _value:{"success":True,"created":False})
+    assert failed["systemic_exception"]["reason"]=="herdmaster_management_consumption_persistence_failed"
+    assert replay["status"]=="herdmaster_management_round_replay_suppressed"
+    assert replay["specialist_result"] is None and replay["accepted_work_item_count"]==0
+
+def test_claim_identity_excludes_invocation_timestamp_and_recorder_requires_proof():
+    recorded=[]
+    first=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+        owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner:observations(),
+        active_loader=lambda _owner:active(),prior_loader=lambda _owner,_context:[],
+        recorder=lambda value:(recorded.append(value) or {"success":True,"created":True}))
+    changed={**first["binding"],"invocation_timestamp":"2026-08-02T14:00:01+00:00"}
+    assert _consumption_claim_identity(first["binding"])==_consumption_claim_identity(changed)
+    for response in (None,{}, {"success":False,"created":True}, {"success":True}):
+        result=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
+            owner_user_id=OWNER,now=NOW,canonical_loader=canonical,observation_loader=lambda _owner:observations(),
+            active_loader=lambda _owner:active(),prior_loader=lambda _owner,_context:[],recorder=lambda _value,r=response:r)
+        assert result["systemic_exception"]["reason"]=="herdmaster_management_consumption_persistence_unproven"
+
+
+def test_retained_authenticated_natural_death_report_projects_owner_reported_mortality_only():
+    row={"owner_user_id":OWNER,"owner_text_verbatim":"Pig 127 is dead and was buried.",
+        "provider_message_id":"3235","provider_timestamp":"2026-08-04T05:26:20+00:00",
+        "preview":{"evaluator":{"identity":{"pig_id":"PIG-2026-D13C","tag_number":"127","name":"127"}}},
+        "semantic_interpretation":{"domain":"herd_health","intent":"report_death",
+            "confidence":.99,"entity_refs":["pig 127"],
+            "continuation":True,"needs_clarification":False}}
+    assert _retained_owner_reported_death(row,[],OWNER) is True
+    for changed,value in (("owner_user_id","99"),("owner_text_verbatim",""),
+                          ("provider_message_id",""),("provider_timestamp","")):
+        assert _retained_owner_reported_death({**row,changed:value},[],OWNER) is False
+    for changed,value in (("intent","welfare_observation"),("domain","water_energy"),
+                          ("confidence",.79),("entity_refs",["pig 126"]),
+                          ("entity_refs",["pig 1270"]),("entity_refs",["pig 12"]),
+                          ("continuation",False),("needs_clarification",True)):
+        semantic={**row["semantic_interpretation"],changed:value}
+        assert _retained_owner_reported_death({**row,"semantic_interpretation":semantic},[],OWNER) is False
+    assert _retained_owner_reported_death({**row,"owner_text_verbatim":"Pig 127 is breathing."},[],OWNER) is False
+    assert _retained_owner_reported_death({**row,"owner_text_verbatim":"Pig 127 is dead tired."},[],OWNER) is False
+    typed=[{"fact":"animal_reported_dead","value":True}]
+    assert _retained_owner_reported_death({**row,"owner_user_id":"99"},typed,OWNER) is False
+    digest=__import__("hashlib").sha256(row["owner_text_verbatim"].encode()).hexdigest()
+    assert _retained_owner_reported_death({**row,"retained_owner_text_sha256":digest},[],OWNER) is True
+    assert _retained_owner_reported_death({**row,"retained_owner_text_sha256":"0"*64},[],OWNER) is False

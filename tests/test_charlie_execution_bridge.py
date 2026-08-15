@@ -151,6 +151,53 @@ def _successful_stage_payload(agent):
     return {key: value for key, value in payload.items() if value is not None}
 
 
+class CharlieGithubFinalizationGateTests(unittest.TestCase):
+    def test_source_mapper_only_read_only_mission_does_not_require_pull_request(self):
+        mission = {
+            "mission_id": "CHARLIE-T0-READONLY",
+            "mission_type": "read-only audit",
+            "approval_level": "LEVEL 1",
+            "agent_workflow": [{"agent": "source_mapper", "status": "complete"}],
+        }
+
+        with patch("modules.charlie.execution_bridge.query_pr_state") as query:
+            gate = execution_bridge._build_github_finalization_gate(
+                mission,
+                {"changed_files": []},
+                "a" * 40,
+            )
+
+        self.assertTrue(gate["passed"])
+        self.assertFalse(gate["required"])
+        self.assertEqual(gate["state"], "NOT_APPLICABLE")
+        query.assert_not_called()
+
+    def test_mutating_workflow_still_requires_pull_request(self):
+        mission = {
+            "mission_id": "CHARLIE-BUILD",
+            "agent_workflow": [{"agent": "builder", "status": "complete"}],
+        }
+        state = {
+            "success": True,
+            "state": "OPEN",
+            "mergeable": "MERGEABLE",
+            "headRefOid": "b" * 40,
+            "statusCheckRollup": [{"conclusion": "SUCCESS"}],
+            "number": 1,
+            "url": "https://example.invalid/pr/1",
+        }
+
+        with patch("modules.charlie.execution_bridge.query_pr_state", return_value=state):
+            gate = execution_bridge._build_github_finalization_gate(
+                mission,
+                {"pr_url": state["url"]},
+                "b" * 40,
+            )
+
+        self.assertTrue(gate["passed"])
+        self.assertTrue(gate["required"])
+
+
 class CharlieExecutionBridgeTests(unittest.TestCase):
     def test_targeted_repair_workflow_is_authoritative_execution_sequence(self):
         mission = {
@@ -454,6 +501,15 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         history = result["packet"]["expansion_history"][-1]
         self.assertEqual(history["from_generation"], packet["generation_identity"])
         self.assertEqual(history["triggering_stage"], "tester")
+        persisted = update_vault.call_args.args[1]
+        self.assertEqual(
+            persisted["orchestration_binding"]["generation_identity"],
+            result["packet"]["generation_identity"],
+        )
+        self.assertEqual(
+            [row["agent"] for row in persisted["agent_workflow"]],
+            [row["agent"] for row in result["packet"]["selected_agents"]],
+        )
         update_vault.assert_called_once()
 
     @patch("modules.charlie.execution_bridge.update_mission_vault")
@@ -3514,6 +3570,88 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         write_quality_gate.assert_not_called()
         write_audit_event.assert_not_called()
 
+    @patch("modules.charlie.execution_bridge.vault_store.write_audit_event")
+    @patch("modules.charlie.execution_bridge.vault_store.write_quality_gate")
+    @patch("modules.charlie.execution_bridge.vault_store.write_agent_run")
+    @patch("modules.charlie.execution_bridge.vault_store.write_artifact")
+    @patch("modules.charlie.execution_bridge.vault_store.write_project")
+    def test_normalized_vault_write_uses_stable_project_identity(
+        self,
+        write_project,
+        write_artifact,
+        write_agent_run,
+        write_quality_gate,
+        write_audit_event,
+    ):
+        successful = ({"success": True, "configured": True, "status": "written"}, 200)
+        write_project.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "project_written",
+            "project_id": "existing-charlie-project",
+        }, 200)
+        for writer in (
+            write_artifact, write_agent_run, write_quality_gate, write_audit_event,
+        ):
+            writer.return_value = successful
+
+        execution_bridge._write_normalized_vault_records(
+            {
+                "mission_id": "CHARLIE-T0",
+                "mission_type": "read-only audit",
+                "vault": {},
+            },
+            "EXEC-T0",
+            {"started_at": "2026-08-02T00:00:00+00:00"},
+            {"source_mapper": _successful_stage_payload("source_mapper")},
+            {"passed": True, "reason": "ok"},
+            database_url="postgres://offline",
+        )
+
+        project = write_project.call_args.args[0]
+        self.assertEqual(project["project_id"], "charlie_core")
+        self.assertEqual(project["project_key"], "charlie_core")
+        self.assertEqual(write_artifact.call_args.kwargs["project_id"], "existing-charlie-project")
+
+    def test_t0_source_mapper_report_does_not_require_release_candidate_reviewer(self):
+        mission = {
+            "metadata": {"orchestration": {
+                "version": "charlie_adaptive_orchestration_v1",
+                "tier": "T0",
+                "selected_agents": [{"agent": "source_mapper"}],
+            }},
+            "agent_workflow": [{"agent": "source_mapper", "status": "complete"}],
+        }
+        artifact = _successful_stage_payload("source_mapper")
+        artifact["evidence_lineage"] = {"source_commit": "a" * 40}
+
+        ready, evidence = execution_bridge._verify_owner_review_artifacts_ready(
+            mission,
+            {"source_mapper": artifact},
+        )
+
+        self.assertTrue(ready)
+        self.assertEqual(evidence["reason"], "t0_source_report_passing")
+        self.assertFalse(evidence["release_candidate_required"])
+
+    @patch("modules.charlie.execution_bridge._git_head_revision", return_value="c" * 40)
+    @patch("modules.charlie.execution_bridge._release_candidate_revision_sha", return_value="")
+    def test_t0_report_finalization_binds_inspected_checkout_revision(self, _release, _head):
+        mission = {
+            "metadata": {"orchestration": {
+                "version": "charlie_adaptive_orchestration_v1",
+                "tier": "T0",
+                "selected_agents": [{"agent": "source_mapper"}],
+            }},
+            "agent_workflow": [{"agent": "source_mapper", "status": "complete"}],
+        }
+
+        revision = execution_bridge._finalization_candidate_revision(
+            mission, {"source_mapper": _successful_stage_payload("source_mapper")}
+        )
+
+        self.assertEqual(revision, "c" * 40)
+
     def test_brain_guard_blocks_owner_review_without_vault_citations(self):
         artifacts = {
             "planner": {
@@ -3527,6 +3665,40 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("Vault Brain discipline", result["reason"])
         self.assertTrue(result["findings"])
+
+    @patch("modules.charlie.execution_bridge.evaluate_vault_source_coverage")
+    @patch("modules.charlie.execution_bridge.build_vault_brain_context")
+    def test_brain_guard_uses_proportional_coverage_for_t0_source_report(
+        self, build_context, evaluate_coverage
+    ):
+        build_context.return_value = {
+            "retrieval": {"sources": []},
+            "missing_docs": [],
+            "docs": [],
+            "owner_preferences": {},
+        }
+        evaluate_coverage.return_value = {"passed": False, "score": 45}
+        mission = {
+            "vault": {"problem_statement": "Inspect CORE."},
+            "metadata": {"orchestration": {
+                "version": "charlie_adaptive_orchestration_v1",
+                "tier": "T0",
+                "selected_agents": [{"agent": "source_mapper"}],
+            }},
+            "agent_workflow": [{"agent": "source_mapper", "status": "complete"}],
+        }
+        artifact = _successful_stage_payload("source_mapper")
+
+        with patch(
+            "modules.charlie.agentic_architecture.evaluate_agentic_architecture",
+            return_value={"findings": []},
+        ):
+            result = execution_bridge._brain_guard_review_gate(
+                mission, {"source_mapper": artifact}, []
+            )
+
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["t0_proportional_coverage"])
 
     def test_brain_guard_accepts_vault_docs_cited_in_canonical_inputs(self):
         artifacts = {

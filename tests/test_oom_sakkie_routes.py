@@ -244,9 +244,25 @@ class OomSakkieRouteTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+        "DATABASE_URL": "postgresql://test.invalid/db",
     }, clear=True)
+    @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result", return_value={
+        "success": True, "status": "family_message_delivered", "telegram_sends": 1,
+        "telegram_edits": 0, "telegram_message_id": "4001"})
+    @patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input",
+           return_value=({"handled": False}, 200))
+    @patch("modules.oom_sakkie.telegram_gateway.handle_owner_operational_continuation",
+           return_value=({"handled": False}, 200))
+    @patch("modules.oom_sakkie.telegram_gateway.handle_operational_specialist_message",
+           return_value=({"handled": False}, 200))
+    @patch("modules.oom_sakkie.telegram_gateway.handle_farm_manager_round",
+           return_value=({"handled": False}, 200))
+    @patch("modules.oom_sakkie.telegram_gateway.load_active_manager_question",
+           return_value=None)
     @patch("modules.oom_sakkie.telegram_gateway.handle_message")
-    def test_telegram_gateway_route_returns_read_only_reply_payload(self, mock_handle):
+    def test_telegram_gateway_route_returns_read_only_reply_payload(
+            self, mock_handle, _question, _manager, _specialist, _continuation,
+            _owner_task, _deliver):
         mock_handle.return_value = ({
             "success": True,
             "answer": "Read-only answer.",
@@ -261,9 +277,11 @@ class OomSakkieRouteTests(unittest.TestCase):
             "/api/oom-sakkie/channels/telegram/message",
             json={
                 "message": {
-                    "text": "what needs attention today",
+                    "message_id": 9001,
+                    "date": 1785668400,
+                    "text": "legacy read-only request",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
@@ -273,18 +291,19 @@ class OomSakkieRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["success"])
-        self.assertEqual(data["answer"], "Read-only answer.")
-        self.assertEqual(data["reply"]["chat_id"], "67890")
+        self.assertEqual(data["answer"], "Read-only answer.", data)
+        self.assertEqual(data["reply"]["chat_id"], "12345")
         self.assertFalse(data["reply"]["sends_telegram"])
-        self.assertFalse(data["sends_telegram"])
+        self.assertTrue(data["sends_telegram"])
+        self.assertEqual(data["reply_transport"], "backend_handles_owner_task_delivery")
         self.assertFalse(data["writes"])
         self.assertTrue(data["records_audit_trace"])
         self.assertEqual(data["audit_trace_mode"], "tool_dependent")
         self.assertFalse(data["dispatch_enabled"])
         mock_handle.assert_called_once_with({
-            "text": "what needs attention today",
+            "text": "legacy read-only request",
             "channel": "telegram_read_only",
-            "session_id": "telegram-67890",
+            "session_id": "telegram-12345",
             "authenticated_owner": TELEGRAM_OWNER_AUTHORITY,
             "gateway_authority": ANY,
         })
@@ -299,11 +318,14 @@ class OomSakkieRouteTests(unittest.TestCase):
         "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
+    @patch("modules.oom_sakkie.telegram_gateway.deliver_family_result", return_value={
+        "success": True, "status": "family_message_delivered", "telegram_sends": 1,
+        "telegram_edits": 0, "telegram_message_id": "4002"})
     @patch("modules.oom_sakkie.service.compose_answer_with_llm")
     @patch("modules.oom_sakkie.service.route_with_llm")
     @patch("modules.oom_sakkie.service.get_tool")
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
-    def test_telegram_gateway_route_suppresses_llm_egress_when_llm_enabled(self, _write_trace, mock_get_tool, mock_route, mock_compose):
+    def test_telegram_gateway_route_suppresses_llm_egress_when_llm_enabled(self, _write_trace, mock_get_tool, mock_route, mock_compose, _deliver):
         mock_get_tool.return_value = _fake_farm_attention_tool()
 
         response = self.client.post(
@@ -484,6 +506,65 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["success"])
         self.assertEqual(data["status"], "telegram_direct_auth_denied")
         self.assertFalse(data["sends_telegram"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.handle_owner_task_input")
+    @patch("modules.oom_sakkie.telegram_direct.handle_telegram_media_intake")
+    def test_provider_album_bypasses_generic_owner_context(
+            self, media_intake, owner_task):
+        media_intake.return_value = ({
+            "success": True, "status": "media_intake_stored_private_review_pending"
+        }, 201)
+        payload = {"update_id": 10, "message": {
+            "message_id": 20, "date": 1786785539,
+            "from": {"id": 12345}, "chat": {"id": 12345, "type": "private"},
+            "media_group_id": "album-provider-id",
+            "photo": [{"file_id": "file", "file_unique_id": "unique"}],
+            "caption": "Molly, litter size eight, born 11 August 2026",
+        }}
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook", json=payload,
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        media_intake.assert_called_once()
+        owner_task.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.handle_owner_task_input")
+    def test_legacy_album_completion_command_has_no_completion_authority(
+            self, owner_task):
+        owner_task.return_value=({"handled":True,"success":False,
+            "status":"legacy_album_completion_command_disabled",
+            "sends_telegram":False,"writes":False},409)
+        payload = {"update_id": 11, "message": {
+            "message_id": 21, "date": 1786785540,
+            "from": {"id": 12345}, "chat": {"id": 12345, "type": "private"},
+            "text": "/beacon-complete ABC123",
+        }}
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook", json=payload,
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+        )
+
+        self.assertEqual(response.status_code, 409)
+        owner_task.assert_called_once()
+        self.assertEqual(response.get_json()["status"],"legacy_album_completion_command_disabled")
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",

@@ -9,6 +9,7 @@ from modules.auth.owner_access import (
     owner_logout_post,
     owner_admin_principal,
     owner_status,
+    owner_status_payload,
     require_owner_admin_access,
     require_owner_page_access,
     require_owner_read_access,
@@ -65,6 +66,18 @@ app.register_blueprint(sales_bp, url_prefix="/api")
 app.register_blueprint(telemetry_bp, url_prefix="/api")
 app.register_blueprint(oom_sakkie_bp, url_prefix="/api")
 app.register_blueprint(charlie_bp, url_prefix="/api")
+
+# Render owns the morning lifecycle. Durable database/provider claims arbitrate
+# process restarts and multiple web workers; local development remains inert.
+from modules.oom_sakkie.morning_runtime import start_production_morning_runtime
+start_production_morning_runtime()
+
+
+@app.context_processor
+def owner_access_navigation():
+    status = owner_status_payload()
+    return {"owner_session_valid": status["session_valid"],
+            "owner_session_role": status["session_role"]}
 
 
 @app.route("/")
@@ -309,6 +322,21 @@ def oom_sakkie_page():
     return render_template("oom-sakkie.html")
 
 
+@app.route("/weather")
+def weather_operations_page():
+    return render_template("weather.html")
+
+
+@app.route("/power")
+def power_operations_page():
+    return render_template("power.html")
+
+
+@app.route("/irrigation")
+def irrigation_operations_page():
+    return render_template("irrigation.html")
+
+
 @app.route("/charlie")
 def charlie_page():
     guard = require_owner_page_access()
@@ -471,6 +499,16 @@ def weight_report_page():
 @app.route("/print-sheets")
 def print_sheets_page():
     return render_template("print-sheets.html")
+
+
+@app.route("/paring-werpselrekord")
+def mating_litter_record_page():
+    return render_template("paring-werpselrekord.html")
+
+
+@app.route("/verwagte-jongdatums")
+def expected_farrowing_dates_page():
+    return render_template("verwagte-jongdatums.html")
 
 
 @app.route("/health")

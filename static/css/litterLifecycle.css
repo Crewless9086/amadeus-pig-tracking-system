@@ -1,0 +1,210 @@
+.lifecycle-next-action { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin-bottom: 18px; padding: 16px 18px; border: 1px solid #b9d8c6; border-left: 6px solid var(--green-main); border-radius: 14px; background: #f2faf5; }
+.lifecycle-next-kicker { grid-row: 1 / 3; align-self: center; padding: 5px 9px; border-radius: 999px; background: var(--green-main); color: white; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.lifecycle-next-action strong { font-size: 18px; }.lifecycle-next-action > span:last-child { color: var(--text-soft); font-size: 13px; }
+.litter-workspace { display: block; }.lifecycle-stages { display: grid; gap: 16px; }
+.lifecycle-stage { overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: #fffdf9; }
+.lifecycle-stage-header { display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 12px; padding: 13px 16px; background: #eee9df; border-bottom: 1px solid var(--border); }
+.lifecycle-stage-number { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: #314b3d; color: white; font-weight: 800; }
+.lifecycle-stage-header h2 { margin: 0; font-size: 19px; }.lifecycle-stage-header p { margin: 2px 0 0; color: var(--text-soft); font-size: 13px; }
+.lifecycle-stage-status { padding: 5px 9px; border-radius: 999px; background: #ece8df; color: #625c50; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.lifecycle-stage-status.is-complete { background: #e5f4e9; color: #24613d; }.lifecycle-stage-status.is-current { background: #fff1c7; color: #755600; }.lifecycle-stage-status.needs-attention { background: #fde5df; color: #8b3221; }
+.lifecycle-stage-body { padding: 16px; }.lifecycle-stage .litter-summary-panel,.lifecycle-stage .litter-piglet-section,.lifecycle-stage .litter-side-panel { border: 0; padding: 0; margin: 0; background: transparent; }
+.lifecycle-stage .litter-summary-panel { border-left: 0; }.lifecycle-stage .litter-summary-panel .section-title-row { display: none; }
+#lifecycle_identity .detail-card { display: none; }
+#lifecycle_identity .detail-card:has(#litter_id_value),
+#lifecycle_identity .detail-card:has(#litter_mating_date_value),
+#lifecycle_identity .detail-card:has(#litter_expected_farrowing_date_value),
+#lifecycle_identity .detail-card:has(#litter_birth_date_value),
+#lifecycle_identity .detail-card:has(#litter_estimated_wean_date_value),
+#lifecycle_identity .detail-card:has(#litter_wean_attention_start_value),
+#lifecycle_identity .detail-card:has(#litter_days_until_wean_value),
+#lifecycle_identity .detail-card:has(#litter_mother_value),
+#lifecycle_identity .detail-card:has(#litter_father_value) { display: block; }
+.lifecycle-birth-snapshot { display: grid; grid-template-columns: repeat(6,1fr); gap: 10px; }.lifecycle-birth-snapshot div { padding: 13px; border: 1px solid var(--border); border-radius: 10px; background: white; }.lifecycle-birth-snapshot span { display: block; color: var(--text-soft); font-size: 12px; }.lifecycle-birth-snapshot strong { display: block; margin-top: 4px; font-size: 22px; }
+.lifecycle-stage .form-field:has(#newborn_health_given_by),
+.lifecycle-stage .form-field:has(#newborn_health_vaccination),
+.lifecycle-stage .form-field:has(#weaning_day_recorded_by),
+.lifecycle-stage .form-field:has(#weaning_day_vaccination),
+.lifecycle-stage .form-field:has(#piglet_death_recorded_by) { display: none; }
+.lifecycle-primary-form { display: block !important; margin: 0 !important; }.lifecycle-primary-form.hidden { display: none !important; }
+.lifecycle-stage-closure { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid #b9d8c6; border-radius: 10px; background: #f2faf5; }
+.lifecycle-stage-closure.hidden { display: none; }
+.lifecycle-stage-closure strong { color: #24613d; }
+.lifecycle-stage-closure span { color: var(--text-soft); line-height: 1.45; }
+#lifecycle_weaning .litter-piglet-section { margin-bottom: 16px; }#lifecycle_weaning .section-title-row h2 { font-size: 17px; }#lifecycle_weaning .section-title-row p { margin: 2px 0 8px; }
+.lifecycle-corrections { border: 1px solid var(--border); border-radius: 14px; background: #faf8f3; }.lifecycle-corrections summary { cursor: pointer; padding: 15px 18px; font-weight: 800; }.lifecycle-corrections summary span { margin-left: 8px; color: var(--text-soft); font-size: 12px; font-weight: 400; }.lifecycle-corrections-body { display: grid; gap: 14px; padding: 0 16px 16px; }.lifecycle-corrections-body > section { margin: 0; }
+@media(max-width:1000px){.lifecycle-birth-snapshot{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:760px){.lifecycle-stage-header{grid-template-columns:34px 1fr}.lifecycle-stage-status{grid-column:2}.lifecycle-birth-snapshot{grid-template-columns:repeat(2,1fr)}.lifecycle-next-action{grid-template-columns:1fr}.lifecycle-next-kicker{grid-row:auto;width:max-content}}
+.litter-first-care-skip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: .85rem 1rem;
+  border: 1px solid #d7d4ca;
+  border-radius: .65rem;
+  background: #f7f5ef;
+}
+
+/* Active litter workflow: shared Amadeus dashboard visual language. */
+.litter-detail-app-shell .lifecycle-next-action {
+  margin-bottom: 20px;
+  padding: 17px 19px;
+  border-color: #bfd0c2;
+  border-left-color: var(--farm-green);
+  border-radius: 16px;
+  background: var(--farm-green-soft);
+  box-shadow: 0 8px 24px rgba(38,58,45,.045);
+}
+.litter-detail-app-shell .lifecycle-next-kicker { background: var(--farm-green); }
+.litter-detail-app-shell .lifecycle-next-action strong { color: var(--farm-ink); }
+.litter-detail-app-shell .lifecycle-next-action > span:last-child { color: var(--farm-muted); }
+.litter-detail-app-shell .lifecycle-stages { gap: 18px; }
+.litter-detail-app-shell .lifecycle-stage {
+  border-color: var(--farm-line);
+  border-radius: 18px;
+  background: var(--farm-paper);
+  box-shadow: 0 10px 30px rgba(38,58,45,.055);
+}
+.litter-detail-app-shell .lifecycle-stage-header {
+  min-height: 72px;
+  padding: 15px 19px;
+  border-bottom-color: var(--farm-line);
+  background: #f7f5ee;
+}
+.litter-detail-app-shell .lifecycle-stage-number {
+  width: 36px;
+  height: 36px;
+  background: var(--farm-green);
+  box-shadow: 0 0 0 5px var(--farm-green-soft);
+}
+.litter-detail-app-shell .lifecycle-stage-header h2 {
+  color: var(--farm-ink);
+  font-family: Georgia, serif;
+  font-size: 22px;
+}
+.litter-detail-app-shell .lifecycle-stage-header p { color: var(--farm-muted); }
+.litter-detail-app-shell .lifecycle-stage-status {
+  padding: 6px 10px;
+  border: 1px solid var(--farm-line);
+  background: white;
+  color: var(--farm-muted);
+}
+.litter-detail-app-shell .lifecycle-stage-status.is-complete {
+  border-color: #bfd0c2;
+  background: var(--farm-green-soft);
+  color: var(--farm-green);
+}
+.litter-detail-app-shell .lifecycle-stage-status.is-current {
+  border-color: #e3c982;
+  background: #faf0d8;
+  color: #725313;
+}
+.litter-detail-app-shell .lifecycle-stage-status.needs-attention {
+  border-color: #d9b9aa;
+  background: #f6e8e1;
+  color: var(--farm-alert);
+}
+.litter-detail-app-shell .lifecycle-stage-body { padding: 20px; }
+.litter-detail-app-shell #lifecycle_identity .detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.litter-detail-app-shell #lifecycle_identity .detail-card {
+  min-height: 78px;
+  padding: 14px 16px;
+  border-color: var(--farm-line);
+  border-radius: 14px;
+  background: white;
+}
+.litter-detail-app-shell #lifecycle_identity .detail-label { color: var(--farm-muted); }
+.litter-detail-app-shell #lifecycle_identity .detail-value {
+  color: var(--farm-ink);
+  font-family: Georgia, serif;
+  font-size: 24px;
+}
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_id_value) { order: 1; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_mother_value) { order: 2; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_father_value) { order: 3; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_birth_date_value) { order: 4; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_mating_date_value) { order: 5; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_expected_farrowing_date_value) { order: 6; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_estimated_wean_date_value) { order: 7; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_wean_attention_start_value) { order: 8; }
+.litter-detail-app-shell #lifecycle_identity .detail-card:has(#litter_days_until_wean_value) { order: 9; }
+.litter-detail-app-shell #lifecycle_identity #litter_mother_value,
+.litter-detail-app-shell #lifecycle_identity #litter_father_value {
+  color: var(--farm-green);
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.05;
+}
+.litter-detail-app-shell .lifecycle-birth-snapshot { gap: 12px; }
+.litter-detail-app-shell .lifecycle-birth-snapshot div {
+  min-height: 92px;
+  padding: 15px;
+  border-color: var(--farm-line);
+  border-radius: 13px;
+  background: white;
+}
+.litter-detail-app-shell .lifecycle-birth-snapshot span { color: var(--farm-muted); }
+.litter-detail-app-shell .lifecycle-birth-snapshot strong {
+  color: var(--farm-ink);
+  font-family: Georgia, serif;
+  font-size: 26px;
+}
+.litter-detail-app-shell .lifecycle-stage .form-field label,
+.litter-detail-app-shell .lifecycle-stage .section-subtitle { color: var(--farm-ink); }
+.litter-detail-app-shell .lifecycle-stage input,
+.litter-detail-app-shell .lifecycle-stage select,
+.litter-detail-app-shell .lifecycle-stage textarea {
+  border-color: var(--farm-line);
+  border-radius: 11px;
+  background: white;
+}
+.litter-detail-app-shell .lifecycle-stage input:focus,
+.litter-detail-app-shell .lifecycle-stage select:focus,
+.litter-detail-app-shell .lifecycle-stage textarea:focus {
+  border-color: var(--farm-green);
+  box-shadow: 0 0 0 3px var(--farm-green-soft);
+}
+.litter-detail-app-shell .lifecycle-stage button,
+.litter-detail-app-shell .lifecycle-stage .button-link {
+  border-color: var(--farm-green);
+  border-radius: 11px;
+  background: var(--farm-green);
+  color: white;
+  font-weight: 800;
+}
+.litter-detail-app-shell .lifecycle-stage .button-link-secondary {
+  border-color: var(--farm-line);
+  background: white;
+  color: var(--farm-green);
+}
+.litter-detail-app-shell .lifecycle-stage button:disabled { border-color: #aebbb2; background: #aebbb2; }
+.litter-detail-app-shell .lifecycle-stage-closure {
+  padding: 15px 17px;
+  border-color: #bfd0c2;
+  border-radius: 13px;
+  background: var(--farm-green-soft);
+}
+.litter-detail-app-shell .lifecycle-stage-closure strong { color: var(--farm-green); }
+.litter-detail-app-shell .litter-first-care-skip,
+.litter-detail-app-shell .lifecycle-corrections {
+  border-color: var(--farm-line);
+  border-radius: 14px;
+  background: #f7f5ee;
+}
+.litter-detail-app-shell .litter-piglet-table-wrap,
+.litter-detail-app-shell .simple-table-wrap { border-color: var(--farm-line); border-radius: 13px; }
+.litter-detail-app-shell .litter-piglet-table-wrap thead,
+.litter-detail-app-shell .simple-table-wrap thead { background: var(--farm-green-soft); }
+
+@media(max-width:900px) {
+  .litter-detail-app-shell #lifecycle_identity .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media(max-width:620px) {
+  .litter-detail-app-shell #lifecycle_identity .detail-grid { grid-template-columns: 1fr; }
+  .litter-detail-app-shell .lifecycle-stage-body { padding: 15px; }
+}

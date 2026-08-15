@@ -21,8 +21,11 @@ and did not receive these customer messages.
 
 ## Composed source path
 
-`SAM Livestock - Continuous Chatwoot Inbound` is a narrow, inert-until-reviewed
-n8n workflow source:
+Chatwoot webhook `18495` is the direct event-driven inbound path. The separate
+`SAM Livestock - Autonomous Inbox Operator` schedule reconciles provider
+chronology once per minute so eligible backlog work and missed webhook
+delivery use the same backend claim/send rail. It is not a fixed cohort and
+does not carry historical bindings.
 
 1. Chatwoot `message_created` webhook;
 2. dedicated 32+ character webhook URL token plus exact account, inbox,
@@ -35,6 +38,17 @@ n8n workflow source:
 
 Prior idempotency suppresses only the same inbound identity. Historical
 ambiguous attempts remain quarantined and are never replayed.
+
+The operator inventories the whole configured Livestock inbox from Chatwoot,
+then independently requires latest-public-incoming chronology, an open reply
+window, authoritative Livestock routing and absence of an exact inbound claim.
+Meat, general, unclear and already-handled chronology are never relayed.
+
+After exact provider reconciliation, SAM replaces only its own workflow-state
+labels and preserves assignment, status and unrelated labels. Confirmed
+delivery may update last-seen only while the same inbound remains the latest
+customer inbound. Ambiguous delivery receives
+`delivery_quarantined_do_not_retry` and is never marked seen.
 
 Production activation requires the serialized runtime owner to:
 

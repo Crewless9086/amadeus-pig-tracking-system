@@ -5,296 +5,103 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Amadeus Farm Dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
 </head>
 <body>
-  <div class="ops-shell">
-    <main class="ops-dashboard">
-      <header class="ops-header">
+  <div class="farm-app-shell">
+    {% include '_farm_nav.html' %}
+
+    <main class="farm-home" id="farm_dashboard">
+      <header class="farm-hero">
         <div>
-          <span class="ops-kicker">Amadeus Farm</span>
-          <h1>Farm Operating Dashboard</h1>
-          <p id="dashboard_timestamp">Loading live farm status...</p>
+          <span class="farm-eyebrow">Amadeus Farm</span>
+          <h1>Good morning, Charl</h1>
+          <p id="dashboard_timestamp">Bringing the farm into focus…</p>
         </div>
-        <nav class="ops-header-actions" aria-label="Primary navigation">
-          <a href="/pigs">Pigs</a>
-          <a href="/orders">Orders</a>
-          <a href="/matings">Breeding</a>
-          <a href="/sales-dashboard">Sales</a>
-          <a href="/print-sheets">Print</a>
-        </nav>
+        <a class="manager-button" href="/oom-sakkie">
+          <span class="manager-mark">OS</span>
+          <span><strong>Ask Oom Sakkie</strong><small>Open the farm manager</small></span>
+        </a>
       </header>
 
-      <div id="dashboard_message" class="message-box hidden"></div>
+      <section class="farm-live-bar" aria-label="Current farm status">
+        <div><span id="status_weather_icon" class="live-icon" aria-hidden="true">◌</span><span><small>Weather</small><strong id="status_weather">Loading</strong></span></div>
+        <div><span class="live-icon" aria-hidden="true">◒</span><span><small>Power</small><strong id="status_power">Loading</strong></span></div>
+        <div><span class="live-icon" aria-hidden="true">◉</span><span><small>Irrigation</small><strong id="status_irrigation">Loading</strong></span></div>
+        <div><span class="live-icon" aria-hidden="true">!</span><span><small>Attention</small><strong id="status_attention">Checking</strong></span></div>
+      </section>
 
-      <section class="ops-alert-strip" id="ops_alert_strip">
-        <div class="ops-alert-item">
-          <span class="ops-alert-label">Weather</span>
-          <strong id="alert_weather">Loading</strong>
+      <section class="farm-attention" aria-labelledby="attention_heading">
+        <div class="section-heading">
+          <div><span class="farm-eyebrow">Today</span><h2 id="attention_heading">What needs attention</h2></div>
+          <span class="section-state" id="attention_state">Checking the farm</span>
         </div>
-        <div class="ops-alert-item">
-          <span class="ops-alert-label">Power</span>
-          <strong id="alert_power">Loading</strong>
-        </div>
-        <div class="ops-alert-item">
-          <span class="ops-alert-label">Irrigation</span>
-          <strong id="alert_irrigation">Loading</strong>
-        </div>
-        <div class="ops-alert-item">
-          <span class="ops-alert-label">Orders</span>
-          <strong id="alert_orders">Loading</strong>
+        <div class="attention-list" id="attention_list">
+          <div class="attention-placeholder">Current priorities will appear independently as each farm source responds.</div>
         </div>
       </section>
 
-      <section class="ops-grid ops-grid-primary">
-        <article class="ops-panel ops-panel-large" id="weather_panel">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Weather</span>
-              <h2>Current Conditions</h2>
-            </div>
-            <span class="status-pill status-pill-muted" id="weather_age">Loading</span>
-          </div>
-          <div class="ops-hero-metric">
-            <strong id="weather_temperature">--</strong>
-            <span id="weather_headline">Loading weather station data...</span>
-          </div>
-          <div class="ops-metric-grid">
-            <div><span>Humidity</span><strong id="weather_humidity">--</strong></div>
-            <div><span>Wind</span><strong id="weather_wind">--</strong></div>
-            <div><span>Rain Today</span><strong id="weather_rain">--</strong></div>
-            <div><span>Pressure</span><strong id="weather_pressure">--</strong></div>
-          </div>
-          <div class="ops-subsection">
-            <h3>Today</h3>
-            <div class="ops-metric-grid ops-metric-grid-compact">
-              <div><span>Temperature</span><strong id="today_temperature">--</strong></div>
-              <div><span>Rain</span><strong id="today_rain">--</strong></div>
-              <div><span>Max Wind</span><strong id="today_wind">--</strong></div>
-              <div><span>Coverage</span><strong id="today_coverage">--</strong></div>
-            </div>
-          </div>
-          <div class="ops-subsection">
-            <h3>Forecast</h3>
-            <div class="forecast-strip" id="forecast_strip"></div>
-          </div>
-        </article>
+      <section class="operating-grid" aria-label="Farm operating areas">
+        <a class="operating-card card-weather is-loading" id="weather_panel" href="/weather">
+          <div class="card-top"><span class="card-symbol" id="weather_symbol" aria-hidden="true">◌</span><span class="freshness" id="weather_age">Loading</span></div>
+          <div class="card-copy"><span class="farm-eyebrow">Weather</span><h2 id="weather_temperature">--</h2><p id="weather_headline">Reading the farm weather station…</p></div>
+          <div class="card-facts"><span><small>Rain today</small><strong id="weather_rain">--</strong></span><span><small>Humidity</small><strong id="weather_humidity">--</strong></span><span><small>Wind</small><strong id="weather_wind">--</strong></span><span><small>Tomorrow</small><strong id="weather_next">--</strong></span></div>
+          <span class="card-open">Open weather <b>→</b></span>
+        </a>
 
-        <article class="ops-panel" id="power_panel">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Power</span>
-              <h2>Sunsynk</h2>
-            </div>
-            <span class="status-pill status-pill-muted" id="power_age">Loading</span>
-          </div>
-          <div class="ops-hero-metric">
-            <strong id="power_battery">--</strong>
-            <span id="power_headline">Loading power data...</span>
-          </div>
-          <div class="ops-metric-grid">
-            <div><span>Solar</span><strong id="power_solar">--</strong></div>
-            <div><span>Load</span><strong id="power_load">--</strong></div>
-            <div><span>Grid</span><strong id="power_grid">--</strong></div>
-            <div><span>Generator</span><strong id="power_generator">--</strong></div>
-          </div>
-          <div class="ops-subsection">
-            <h3>Yesterday</h3>
-            <div class="ops-metric-grid ops-metric-grid-compact">
-              <div><span>Load kWh</span><strong id="rollup_load_kwh">--</strong></div>
-              <div><span>Solar kWh</span><strong id="rollup_solar_kwh">--</strong></div>
-              <div><span>Value</span><strong id="rollup_value">--</strong></div>
-              <div><span>Quality</span><strong id="rollup_power_quality">--</strong></div>
-            </div>
-            <p class="ops-footnote">Estimated from 5-minute readings.</p>
-          </div>
-        </article>
+        <a class="operating-card card-power is-loading" id="power_panel" href="/power">
+          <div class="card-top"><span class="card-symbol" aria-hidden="true">◒</span><span class="freshness" id="power_age">Loading</span></div>
+          <div class="card-copy"><span class="farm-eyebrow">Power</span><h2 id="power_battery">--</h2><p id="power_headline">Reading Sunsynk…</p></div>
+          <div class="card-facts"><span><small>Solar</small><strong id="power_solar">--</strong></span><span><small>Load</small><strong id="power_load">--</strong></span><span><small>Grid</small><strong id="power_grid">--</strong></span><span><small>Battery</small><strong id="power_state">--</strong></span></div>
+          <span class="card-open">Open power <b>→</b></span>
+        </a>
 
-        <article class="ops-panel" id="irrigation_panel">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Irrigation</span>
-              <h2>Read-Only Status</h2>
-            </div>
-            <span class="status-pill status-pill-muted" id="irrigation_source">Loading</span>
-          </div>
-          <div class="ops-hero-metric">
-            <strong id="irrigation_status">--</strong>
-            <span id="irrigation_note">Loading irrigation status...</span>
-          </div>
-          <div class="ops-metric-grid">
-            <div><span>Current Zone</span><strong id="irrigation_current_zone">--</strong></div>
-            <div><span>Next Zone</span><strong id="irrigation_next_zone">--</strong></div>
-            <div><span>Planned</span><strong id="irrigation_planned">--</strong></div>
-            <div><span>Completed</span><strong id="irrigation_completed">--</strong></div>
-          </div>
-          <div class="ops-subsection">
-            <h3>Plan</h3>
-            <div class="ops-list" id="irrigation_plan_list"></div>
-          </div>
-        </article>
+        <a class="operating-card card-water is-loading" id="irrigation_panel" href="/irrigation">
+          <div class="card-top"><span class="card-symbol" aria-hidden="true">◉</span><span class="freshness" id="irrigation_source">Loading</span></div>
+          <div class="card-copy"><span class="farm-eyebrow">Irrigation</span><h2 id="irrigation_status">--</h2><p id="irrigation_note">Reading the current water plan…</p></div>
+          <div class="card-facts"><span><small>B Camp</small><strong id="irrigation_b_status">--</strong></span><span><small>C Camp</small><strong id="irrigation_c_status">--</strong></span><span><small>Done today</small><strong id="irrigation_done">--</strong></span><span><small>Skipped / held</small><strong id="irrigation_held">--</strong></span></div>
+          <span class="card-open">Open irrigation <b>→</b></span>
+        </a>
 
-        <article class="ops-panel ops-panel-large" id="rootline_panel">
-          <div class="ops-panel-heading">
-            <div>
-              <span class="eyebrow">Owner read-only</span>
-              <h2>Rootline Daily Brief</h2>
-            </div>
-            <span class="status-pill status-pill-muted" id="rootline_status">Loading</span>
-          </div>
-          <p id="rootline_summary">Loading Rootline evidence and recommendations...</p>
-            <p id="rootline_conditions">Current conditions Unavailable</p>
-            <h3>Daily Advisor</h3>
-            <p id="rootline_advisor_summary">Owner-only advice Unavailable.</p>
-            <div class="ops-list" id="rootline_advisor_zones">
-              <div class="ops-empty-inline">Zone advice Unavailable.</div>
-            </div>
-            <h3>Operating decisions still needed</h3>
-            <div class="ops-list" id="rootline_advisor_decisions">
-              <div class="ops-empty-inline">Decision evidence Unavailable.</div>
-            </div>
-            <div class="ops-subsection" id="rootline_policy_summary">
-              <h3>Operating Knowledge policy</h3>
-              <p id="rootline_policy_status">Owner-reviewed policy evidence Unavailable.</p>
-              <a class="ops-text-link" href="/rootline/policy-review">Open owner policy review</a>
-            </div>
-            <div class="ops-subsection" id="rootline_water_energy_summary">
-              <h3>Water &amp; Energy Plan</h3>
-              <p id="rootline_water_energy_status">Current advisory plan Unavailable.</p>
-              <div class="ops-list" id="rootline_water_energy_evidence">
-                <div class="ops-empty-inline">Power, weather and tank evidence Unavailable.</div>
-              </div>
-              <div class="ops-list" id="rootline_water_energy_tasks">
-                <div class="ops-empty-inline">Task recommendations Unavailable.</div>
-              </div>
-              <div class="ops-list" id="rootline_water_energy_gaps">
-                <div class="ops-empty-inline">Evidence gaps Unavailable.</div>
-              </div>
-              <p class="ops-source-note">The shared dashboard remains read-only. Protected owner-admin evidence and generation routes are separate.</p>
-              <p class="ops-source-note" id="rootline_water_energy_authority">
-                No command, schedule, workflow or hardware authority.
-              </p>
-            </div>
-            <h3>Today's canonical plan</h3>
-            <div class="ops-list" id="rootline_daily_plan">
-              <div class="ops-empty-inline">Daily irrigation plan Unavailable.</div>
-            </div>
-            <h3>Zone recommendations</h3>
-          <div class="ops-list" id="rootline_zone_list"></div>
-          <h3>Owner decisions needed</h3>
-          <div class="ops-list" id="rootline_decisions"></div>
-        </article>
+        <a class="operating-card card-herd is-loading" id="herd_panel" href="/pigs">
+          <div class="card-top"><span class="card-symbol" aria-hidden="true">◆</span><span class="freshness">Canonical herd</span></div>
+          <div class="card-copy"><span class="farm-eyebrow">Herd</span><h2 id="herd_total">--</h2><p>pigs currently on farm</p></div>
+          <div class="card-facts"><span><small>Sows</small><strong id="herd_sows">--</strong></span><span><small>Piglets</small><strong id="herd_piglets">--</strong></span><span><small>Available for sale</small><strong id="herd_available">--</strong></span><span><small>Reserved pigs</small><strong id="herd_reserved">--</strong></span></div>
+          <span class="card-open">Open herd <b>→</b></span>
+        </a>
+
+        <a class="operating-card card-breeding is-loading" id="breeding_panel" href="/matings">
+          <div class="card-top"><span class="card-symbol" aria-hidden="true">◇</span><span class="freshness">HERDMASTER</span></div>
+          <div class="card-copy"><span class="farm-eyebrow">Breeding</span><h2 id="breeding_attention">--</h2><p id="breeding_headline">Checking litter and breeding work…</p></div>
+          <div class="card-facts"><span><small>Open matings</small><strong id="breeding_open">--</strong></span><span><small>Due in 14 days</small><strong id="breeding_due">--</strong></span><span><small>Overdue</small><strong id="breeding_overdue">--</strong></span><span><small>Boars / litter work</small><strong><span id="herd_boars">--</span> / <span id="breeding_litters">--</span></strong></span></div>
+          <span class="card-open">Open breeding <b>→</b></span>
+        </a>
+
+        <a class="operating-card card-sales is-loading" id="orders_panel" href="/sales-dashboard">
+          <div class="card-top"><span class="card-symbol" aria-hidden="true">R</span><span class="freshness">SAM</span></div>
+          <div class="card-copy"><span class="farm-eyebrow">Sales &amp; Orders</span><h2 id="orders_attention">--</h2><p id="orders_headline">Checking customers and approvals…</p></div>
+          <div class="card-facts"><span><small>Pending</small><strong id="orders_pending">--</strong></span><span><small>Completed today</small><strong id="orders_completed">--</strong></span><span><small>Live-sale ready</small><strong id="sales_ready">--</strong></span><span><small>Month</small><strong id="sales_recent_value">--</strong></span></div>
+          <span class="card-open">Open sales <b>→</b></span>
+        </a>
       </section>
 
-      <section class="ops-grid ops-grid-secondary">
-        <article class="ops-panel" id="herd_panel">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Herd</span>
-              <h2>Pigs</h2>
-            </div>
-            <a href="/pigs" class="ops-text-link">Open</a>
-          </div>
-          <div class="ops-hero-metric">
-            <strong id="herd_total">--</strong>
-            <span>On farm</span>
-          </div>
-          <div class="ops-metric-grid ops-metric-grid-compact">
-            <div><span>Sows</span><strong id="herd_sows">--</strong></div>
-            <div><span>Boars</span><strong id="herd_boars">--</strong></div>
-            <div><span>Gilts</span><strong id="herd_gilts">--</strong></div>
-            <div><span>Piglets</span><strong id="herd_piglets">--</strong></div>
-            <div><span>Weaners</span><strong id="herd_weaners">--</strong></div>
-            <div><span>Growers</span><strong id="herd_growers">--</strong></div>
-            <div><span>Finishers</span><strong id="herd_finishers">--</strong></div>
-          </div>
-          <div class="ops-subsection ops-outcome-subsection">
-            <h3>Outcomes This Month</h3>
-            <div class="ops-outcome-strip">
-              <div><span>Sold</span><strong id="outcome_sold">--</strong></div>
-              <div><span>Slaughtered</span><strong id="outcome_slaughtered">--</strong></div>
-              <div><span>Dead</span><strong id="outcome_dead">--</strong></div>
-              <div><span>Removed</span><strong id="outcome_removed">--</strong></div>
-            </div>
-          </div>
-        </article>
-
-        <article class="ops-panel" id="orders_panel">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Orders</span>
-              <h2>Sales Flow</h2>
-            </div>
-            <a href="/orders" class="ops-text-link">Open</a>
-          </div>
-          <div class="ops-metric-grid">
-            <div><span>Needs Attention</span><strong id="orders_attention">--</strong></div>
-            <div><span>Pending Approval</span><strong id="orders_pending">--</strong></div>
-            <div><span>Approved</span><strong id="orders_approved">--</strong></div>
-            <div><span>New Drafts</span><strong id="orders_drafts">--</strong></div>
-          </div>
-          <div class="ops-list" id="orders_attention_list"></div>
-        </article>
-
-        <article class="ops-panel" id="litter_panel">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Breeding</span>
-              <h2>Litter Attention</h2>
-            </div>
-            <a href="/litters" class="ops-text-link">Open</a>
-          </div>
-          <div class="ops-list" id="litter_attention_list"></div>
-        </article>
-
-        <article class="ops-panel" id="sales_panel">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Sales</span>
-              <h2>Sales Readiness</h2>
-            </div>
-            <a href="/sales-dashboard" class="ops-text-link">Open</a>
-          </div>
-          <div class="ops-metric-grid">
-            <div><span>Open Reserved Orders</span><strong id="sales_open_reserved_orders">--</strong></div>
-            <div><span>Open Reserved Pigs</span><strong id="sales_open_reserved_pigs">--</strong></div>
-            <div><span>Live-sale Ready</span><strong id="sales_live_ready">--</strong></div>
-            <div><span>Meat Window</span><strong id="sales_meat_window">--</strong></div>
-            <div><span>Slaughter/Cull Ready</span><strong id="sales_slaughter_cull_ready">--</strong></div>
-            <div><span>Sales Value This Month</span><strong id="sales_recent_value">--</strong></div>
-          </div>
-          <p class="ops-footnote" id="sales_source_note">Loading backend sales readiness...</p>
-        </article>
+      <section class="manager-overview">
+        <div class="manager-identity"><span class="manager-mark manager-mark-large">OS</span><div><span class="farm-eyebrow">Oom Sakkie</span><h2>Today’s farm manager view</h2><p>One place for priorities, questions and specialist coordination.</p></div></div>
+        <ol id="manager_priorities" class="manager-priorities"><li>Waiting for the first available farm evidence…</li></ol>
+        <a href="/oom-sakkie" class="manager-link">Open command room →</a>
       </section>
 
-      <section class="ops-panel ops-actions-panel">
-        <div class="ops-panel-header">
-          <div>
-            <span class="ops-panel-kicker">Actions</span>
-            <h2>Farm Workflows</h2>
-          </div>
+      <details class="workflow-drawer">
+        <summary><span><strong>Farm workflows</strong><small>Recording, planning and administration</small></span><b>Open tools</b></summary>
+        <div class="workflow-groups">
+          <div><h3>Herd records</h3><a href="/pig-weights">Record weight</a><a href="/bulk-weights">Monday weighing</a><a href="/purpose-review">Purpose review</a><a href="/master/add-pig">Add pig</a><a href="/master/add-litter">Add litter</a></div>
+          <div><h3>Breeding</h3><a href="/matings">Breeding board</a><a href="/api/pig-weights/breeding-attention/view">Breeding attention</a><a href="/litters">Litter operations</a><a href="/master/add-mating">Add mating</a><a href="/paring-werpselrekord">Print record</a></div>
+          <div><h3>Sales</h3><a href="/orders">Orders</a><a href="/orders/new">New order</a><a href="/pig-allocation">Pig allocation</a><a href="/meat-planning">Meat planning</a><a href="/sales/meat-leads">Meat leads</a><a href="/sales/slaughter">Slaughter sale</a><a href="/sales/meat-production">Meat production</a></div>
+          <div><h3>Administration</h3><a href="/master/add-pen">Add pen</a><a href="/master/add-product">Add product</a><a href="/print-sheets">Print sheets</a><a href="/charlie">System control</a></div>
         </div>
-        <div class="ops-action-grid">
-          <a href="/pig-weights">Record Weight</a>
-          <a href="/weight-report">Weight Report</a>
-          <a href="/pig-allocation">Pig Allocation</a>
-          <a href="/purpose-review">Purpose Review</a>
-          <a href="/meat-planning">Meat Planning</a>
-          <a href="/sales/meat-production">Meat Production</a>
-          <a href="/sales/meat-leads">Meat Leads</a>
-          <a href="/sales/slaughter">Record Slaughter Sale</a>
-          <a href="/sales-availability">Sales Availability</a>
-          <a href="/orders/new">New Order</a>
-          <a href="/master/add-pig">Add Pig</a>
-          <a href="/master/add-litter">Add Litter</a>
-          <a href="/litters">Litter Operations</a>
-          <a href="/master/add-mating">Add Mating</a>
-          <a href="/master/add-pen">Add Pen</a>
-          <a href="/master/add-product">Add Product</a>
-        </div>
-      </section>
+      </details>
     </main>
   </div>
-
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260526-sales-values"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260810-live-connections"></script>
 </body>
 </html>

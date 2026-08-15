@@ -166,7 +166,7 @@ def record_auction_list_events(payload, *, actor_id, eligibility_loader,
                     connection.rollback()
                     return _result(False, "auction_list_stale_cycle"), 409
                 cursor.execute(
-                    "select pig_id from public.pigs where pig_id=any(%s) order by pig_id for update",
+                    "select pig_id from public.current_canonical_pigs where pig_id=any(%s) order by pig_id",
                     (ids,),
                 )
                 if [row[0] for row in cursor.fetchall()] != ids:

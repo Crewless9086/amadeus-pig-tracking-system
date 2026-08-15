@@ -1,10 +1,12 @@
-from datetime import datetime, timezone
+import os
+from datetime import date, datetime, timezone
 from math import isfinite
 from time import monotonic
 
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from modules.auth.owner_access import (
+    require_owner_page_access,
     require_owner_read_access,
     require_strict_owner_admin_access,
     strict_owner_admin_principal,
@@ -19,6 +21,7 @@ from modules.pig_weights.herdmaster_breeding_operating_loop import (
 from modules.pig_weights.farm_supabase_read_service import (
     build_breeding_analytics_from_evidence,
     get_breeding_attention_source_snapshot,
+    get_full_lifecycle_merit,
     project_mating_overview,
 )
 from modules.pig_weights.mating_service import (
@@ -39,6 +42,11 @@ from modules.pig_weights.herdmaster_breeding_observation_service import (
     record_observation,
     validate_observation,
 )
+from modules.pig_weights.herdmaster_breeding_exposure_recovery import (
+    build_grouped_preview,
+    execute_grouped_preview,
+)
+from services.database_service import DATABASE_URL_ENV
 from modules.pig_weights.mating_validation import (
     validate_new_mating_payload,
     validate_assume_pregnant_payload,
@@ -58,6 +66,11 @@ def _bounded_read_connection(database_url):
     )
 
 
+def _breeding_write_connection():
+    import psycopg
+    return psycopg.connect(os.environ[DATABASE_URL_ENV], connect_timeout=10)
+
+
 def _deadline_read(started, reader, *args, **kwargs):
     if monotonic() - started >= BREEDING_ATTENTION_READ_DEADLINE_SECONDS:
         raise TimeoutError("breeding attention read deadline exhausted")
@@ -72,6 +85,13 @@ def _project_breeding_observations(rows, now=None):
     by_pig = {}
     seen_heat = set()
     seen_body_condition = set()
+    seen_recovery_hold = set()
+    seen_near_farrowing = set()
+    def row_value(row, key, index, default=None):
+        if isinstance(row, dict):
+            return row.get(key, default)
+        return row[index] if len(row) > index else default
+
     def chronological_key(row):
         if isinstance(row, dict):
             observed = row.get("observed_at")
@@ -82,7 +102,18 @@ def _project_breeding_observations(rows, now=None):
         instant = observed.timestamp() if isinstance(observed, datetime) else float("-inf")
         return instant, str(event_id or "")
 
-    for row in sorted(list(rows), key=chronological_key, reverse=True):
+    source_rows = list(rows)
+    superseded_ids = {
+        str(row_value(row, "supersedes_observation_event_id", 7) or "")
+        for row in source_rows
+        if row_value(row, "supersedes_observation_event_id", 7)
+    }
+    effective_rows = [
+        row for row in source_rows
+        if str(row_value(row, "observation_event_id", 4) or "")
+        not in superseded_ids
+    ]
+    for row in sorted(effective_rows, key=chronological_key, reverse=True):
         if isinstance(row, dict):
             raw_pig_id = row.get("pig_id")
             observed_at = row.get("observed_at")
@@ -90,7 +121,11 @@ def _project_breeding_observations(rows, now=None):
             measurements = row.get("measurements_json")
             event_id = row.get("observation_event_id")
         else:
-            raw_pig_id, observed_at, raw_category, measurements, event_id = row
+            raw_pig_id = row_value(row, "pig_id", 0)
+            observed_at = row_value(row, "observed_at", 1)
+            raw_category = row_value(row, "observation_category", 2)
+            measurements = row_value(row, "measurements_json", 3)
+            event_id = row_value(row, "observation_event_id", 4)
         pig_id, category = str(raw_pig_id), str(raw_category)
         measurements = measurements if isinstance(measurements, dict) else {}
         age_seconds = (now - observed_at).total_seconds() if isinstance(observed_at, datetime) else float("inf")
@@ -100,6 +135,20 @@ def _project_breeding_observations(rows, now=None):
         if category == "other" and not is_breeding_observation:
             continue
         item = by_pig.setdefault(pig_id, {})
+        if pig_id not in seen_recovery_hold:
+            hold_action = str(measurements.get("recovery_hold_action") or "").strip().lower()
+            if hold_action in {"active", "cleared"}:
+                seen_recovery_hold.add(pig_id)
+                item["recovery_hold"] = hold_action
+                item["recovery_hold_observed_at"] = observed_at.isoformat()
+                item["recovery_hold_observation_event_id"] = str(event_id or "")
+        if pig_id not in seen_near_farrowing:
+            farrowing = str(measurements.get("near_farrowing") or "").strip().lower()
+            if farrowing in {"observed", "not_observed"}:
+                seen_near_farrowing.add(pig_id)
+                item["near_farrowing"] = farrowing
+                item["near_farrowing_observed_at"] = observed_at.isoformat()
+                item["near_farrowing_observation_event_id"] = str(event_id or "")
         if pig_id not in seen_heat:
             heat_value = (
                 measurements.get("standing_heat")
@@ -129,12 +178,16 @@ def _project_breeding_observations(rows, now=None):
             and isinstance(score, (int, float))
             and isfinite(score)
             and 1 <= score <= 5
-            and 0 <= age_seconds <= 2592000
+            and age_seconds >= 0
         ):
             seen_body_condition.add(pig_id)
             item["body_condition_score"] = score
             item["body_condition_observed_at"] = observed_at.isoformat()
             item["body_condition_observation_event_id"] = str(event_id or "")
+            item["body_condition_fresh"] = age_seconds <= 2592000
+            item["body_condition_freshness"] = (
+                "Fresh" if age_seconds <= 2592000 else "Stale"
+            )
         if is_breeding_observation and 0 <= age_seconds <= 2592000:
             physical = item.setdefault("fresh_physical_facts", {})
             for key in (
@@ -205,17 +258,57 @@ def breeding_options():
 
 @mating_bp.route("/matings", methods=["GET"])
 def mating_list():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
     records = get_mating_overview()
-    return jsonify({
+    response = jsonify({
         "success": True,
         "count": len(records),
         "records": records
     })
+    response.headers["Cache-Control"] = "no-store, private"
+    return response
 
 
 @mating_bp.route("/breeding-analytics", methods=["GET"])
 def breeding_analytics():
     return jsonify(get_breeding_analytics())
+
+
+def _merit_cutoff():
+    supplied = str(request.args.get("cutoff") or "").strip()
+    if not supplied:
+        return date.today()
+    return date.fromisoformat(supplied)
+
+
+@mating_bp.route("/breeding-analytics/v1/full-lifecycle", methods=["GET"])
+def full_lifecycle_merit_herd():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    try:
+        result = get_full_lifecycle_merit(_merit_cutoff())
+    except ValueError:
+        return jsonify({"success": False, "reason": "invalid_cutoff", "writes_performed": False}), 400
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, private"
+    return response, 200 if result.get("success") else 503
+
+
+@mating_bp.route("/breeding-analytics/v1/full-lifecycle/<pig_id>", methods=["GET"])
+def full_lifecycle_merit_animal(pig_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    try:
+        result = get_full_lifecycle_merit(_merit_cutoff(), pig_id=pig_id)
+    except ValueError:
+        return jsonify({"success": False, "reason": "invalid_cutoff", "writes_performed": False}), 400
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, private"
+    return response, 200 if result.get("success") else 404
 
 
 def _build_breeding_attention_packets(proposed_observation=None):
@@ -300,6 +393,7 @@ def _build_breeding_attention_packets(proposed_observation=None):
             litters=litters["litters"],
             observations=snapshot["observation_rows"],
             projected_observations=observations["by_pig"],
+            exposures=snapshot.get("exposure_rows", []),
             family_trees=family_evidence,
         )
         packet["source_read_progress"] = {
@@ -335,6 +429,15 @@ def _build_breeding_attention_packets(proposed_observation=None):
         return packet, hypothetical, started
 
 
+def load_current_breeding_operating_loop():
+    """Return the current complete read-only HERDMASTER operating loop."""
+    packet, _hypothetical, _started = _build_breeding_attention_packets()
+    loop = packet.get("operating_loop") if isinstance(packet, dict) else None
+    if not isinstance(loop, dict) or loop.get("success") is not True or loop.get("writes_performed") is not False:
+        raise RuntimeError("herdmaster_operating_loop_incomplete")
+    return loop
+
+
 @mating_bp.route("/breeding-attention", methods=["GET"])
 def breeding_attention():
     denied = require_owner_read_access()
@@ -352,7 +455,7 @@ def breeding_attention():
 
 @mating_bp.route("/breeding-attention/view", methods=["GET"])
 def breeding_attention_view():
-    denied = require_owner_read_access()
+    denied = require_owner_page_access()
     if denied:
         return denied
     return render_template("breeding-attention.html")
@@ -414,6 +517,64 @@ def breeding_attention_observation_record(pig_id):
     payload["pig_id"] = pig_id
     result, status = record_observation(
         payload, actor_id=strict_owner_admin_principal(),
+    )
+    return jsonify(result), status
+
+
+@mating_bp.route("/breeding-attention/grouped-actions/preview", methods=["POST"])
+def breeding_grouped_action_preview():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result = build_grouped_preview(
+        payload, evidence_generation=str(payload.get("evidence_generation") or "")
+    )
+    return jsonify(result), 200 if result["success"] else 400
+
+
+@mating_bp.route("/breeding-attention/exposures", methods=["GET"])
+def breeding_exposure_list():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    try:
+        snapshot = get_breeding_attention_source_snapshot()
+    except Exception:
+        return jsonify({"success": False, "status": "breeding_exposure_evidence_unavailable"}), 503
+    master = ((snapshot or {}).get("allocation_inputs") or {}).get("pig_master_rows") or []
+    labels = {str(row.get("Pig_ID") or row.get("pig_id") or ""): str(
+        row.get("Name") or row.get("Tag_Number") or row.get("tag_number") or
+        row.get("Pig_ID") or row.get("pig_id") or "") for row in master}
+    pens = {str(row.get("Pig_ID") or row.get("pig_id") or ""): str(
+        row.get("Current_Pen_Name") or row.get("current_pen_name") or
+        row.get("Pen_Name") or row.get("pen_name") or "") for row in master}
+    rows = list((snapshot or {}).get("exposure_rows") or ())
+    removed = {str(row.get("exposure_identity") or "") for row in rows
+               if row.get("event_kind") == "removed"}
+    active = [{**row,
+        "sow_label": labels.get(str(row.get("sow_pig_id") or ""), str(row.get("sow_pig_id") or "")),
+        "boar_label": labels.get(str(row.get("boar_pig_id") or ""), str(row.get("boar_pig_id") or "")),
+        "current_pen_name": pens.get(str(row.get("sow_pig_id") or ""), "")}
+        for row in rows if row.get("event_kind") == "started"
+        and str(row.get("exposure_identity") or "") not in removed]
+    return jsonify({"success": True, "records": active, "writes_performed": False}), 200
+
+
+@mating_bp.route("/breeding-attention/grouped-actions/execute", methods=["POST"])
+def breeding_grouped_action_execute():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    preview = build_grouped_preview(
+        payload, evidence_generation=str(payload.get("evidence_generation") or "")
+    )
+    result, status = execute_grouped_preview(
+        preview,
+        confirmed_preview_sha256=str(payload.get("confirmed_preview_sha256") or ""),
+        actor_id=strict_owner_admin_principal(),
+        connect_factory=_breeding_write_connection,
     )
     return jsonify(result), status
 

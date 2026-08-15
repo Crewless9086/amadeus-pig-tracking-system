@@ -1,0 +1,204 @@
+"""Governed exact-preview recording for natural HERDMASTER observations.
+
+Only the existing append-only factual pig-observation rail is writable here.
+Lifecycle, medical treatment, mating, litter, movement and availability effects
+remain blocked until their canonical services are explicitly coordinated.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from typing import Any, Mapping
+
+
+def confirm_health_loss_preview(lifecycle: Mapping[str, Any], confirmation_text: str,
+                                *, actor_id: str, evidence_loader, connect_factory=None):
+    preview = lifecycle.get("preview") if isinstance(lifecycle.get("preview"), Mapping) else {}
+    binding = preview.get("confirmation_binding") if isinstance(preview.get("confirmation_binding"), Mapping) else {}
+    operation_id = str(binding.get("operation_id") or "")
+    expected = "CONFIRM " + operation_id
+    if not operation_id or str(confirmation_text or "").strip() != expected:
+        return _result(False, "exact_preview_confirmation_required"), 409
+    if binding.get("confirmation_ready") is not True or preview.get("confirmation_ready") is not True:
+        return _result(False, "preview_not_confirmation_ready"), 409
+    bound_owner = str(binding.get("authenticated_principal_id") or "").strip()
+    lifecycle_owner = str(lifecycle.get("owner_user_id") or "").strip()
+    actor_id = str(actor_id or "").strip()
+    if not bound_owner or not lifecycle_owner or actor_id != bound_owner or actor_id != lifecycle_owner:
+        return _result(False, "authenticated_owner_confirmation_required"), 403
+    prior = lifecycle.get("recording_result") if isinstance(lifecycle.get("recording_result"), Mapping) else {}
+    if prior.get("success") is True and str(prior.get("operation_id") or "") == operation_id:
+        return _result(True, "health_loss_replayed_withheld", rows_created=0,
+                       operation_id=operation_id), 200
+    evaluator = preview.get("evaluator") if isinstance(preview.get("evaluator"), Mapping) else {}
+    supported = [row for row in evaluator.get("canonical_effects") or [] if row.get("supported")]
+    supported_areas = {str(row.get("area") or "") for row in supported}
+    if "lifecycle" in supported_areas:
+        allowed = {"lifecycle", "availability", "movement_pen", "downstream_work"}
+        if not supported_areas or not supported_areas.issubset(allowed):
+            return _result(False, "canonical_effect_coordinator_unavailable",
+                           blocked_areas=sorted(supported_areas - allowed)), 409
+        return _confirm_mortality_lifecycle(
+            lifecycle, evaluator, binding, operation_id, actor_id,
+            evidence_loader=evidence_loader, connect_factory=connect_factory)
+    current = evidence_loader()
+    if str(current.get("evidence_generation") or "") != str(binding.get("evidence_generation") or ""):
+        return _result(False, "canonical_evidence_changed_repreview_required"), 409
+    if len(supported) != 1 or supported[0].get("area") != "medical_observation":
+        return _result(False, "canonical_effect_coordinator_unavailable",
+                       blocked_areas=sorted({str(row.get("area")) for row in supported
+                                             if row.get("area") != "medical_observation"})), 409
+    identity = evaluator.get("identity") if isinstance(evaluator.get("identity"), Mapping) else {}
+    pig_id = str(identity.get("pig_id") or "")
+    facts = dict(supported[0].get("facts") or {})
+    canonical = {"operation_id": operation_id, "pig_id": pig_id,
+        "provider_message_id": str(binding.get("provider_message_id") or ""),
+        "preview_sha256": str(binding.get("preview_sha256") or ""),
+        "evidence_generation": str(binding.get("evidence_generation") or ""),
+        "facts": facts, "actor_id": str(actor_id or "")}
+    digest = hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    event_id = "OBS-HL-" + hashlib.sha256(operation_id.encode()).hexdigest()[:24].upper()
+    note = _factual_note(facts)
+    severity = "urgent" if str((evaluator.get("immediate_welfare_priority") or {}).get("level") or "") in {"emergency", "urgent_follow_up"} else "attention"
+    try:
+        connection_cm = connect_factory() if connect_factory else _connect()
+        with connection_cm as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                               ("herdmaster-health-loss:" + operation_id,))
+                cursor.execute("""select observation_event_id,source_reference
+                    from public.pig_observation_events where idempotency_key=%s""", (operation_id,))
+                existing = cursor.fetchone()
+                if existing:
+                    if str(existing[1]) != digest:
+                        return _result(False, "health_loss_idempotency_conflict"), 409
+                    return _result(True, "health_loss_replayed_withheld",
+                                   observation_event_id=str(existing[0]), rows_created=0), 200
+                cursor.execute("""select 1 from public.pigs
+                    where pig_id=%s and status='Active' and on_farm is true for share""", (pig_id,))
+                if not cursor.fetchone():
+                    return _result(False, "current_active_on_farm_pig_required"), 409
+                cursor.execute("""insert into public.pig_observation_events(
+                    observation_event_id,pig_id,observed_at,observer_reference,
+                    observation_category,severity,factual_note,measurements_json,
+                    source_system,source_reference,idempotency_key)
+                    values(%s,%s,%s::timestamptz,%s,'welfare',%s,%s,%s::jsonb,
+                           'owner',%s,%s) returning observation_event_id""", (
+                    event_id, pig_id, str(lifecycle.get("provider_timestamp") or ""),
+                    str(actor_id), severity, note, json.dumps({
+                        "contract_version": "herdmaster_health_loss_recording_v1",
+                        "observed": facts.get("observed") or [],
+                        "owner_suspected_not_diagnosed": facts.get("owner_suspected") or [],
+                        "owner_reported_veterinary_evidence": facts.get("veterinary_evidence") or [],
+                        "diagnosis_inferred": False,
+                        "provider_message_id": canonical["provider_message_id"],
+                        "preview_sha256": canonical["preview_sha256"],
+                    }, sort_keys=True), digest, operation_id))
+                cursor.fetchone()
+    except Exception:
+        return _result(False, "health_loss_recording_store_unavailable"), 503
+    return _result(True, "health_loss_observation_recorded",
+                   observation_event_id=event_id, rows_created=1,
+                   recommendation_refresh_required=True,
+                   operation_id=operation_id), 201
+
+
+def _confirm_mortality_lifecycle(lifecycle, evaluator, binding, operation_id, actor_id,
+                                 *, evidence_loader, connect_factory=None):
+    identity = evaluator.get("identity") if isinstance(evaluator.get("identity"), Mapping) else {}
+    pig_id = str(identity.get("pig_id") or "")
+    lifecycle_effect = next((row for row in evaluator.get("canonical_effects") or []
+        if row.get("supported") and row.get("area") == "lifecycle"), None)
+    facts = dict((lifecycle_effect or {}).get("facts") or {})
+    if (not pig_id or (lifecycle_effect or {}).get("action") != "record_death"
+            or not str(facts.get("date") or "") or facts.get("time") != "Unknown"):
+        return _result(False, "mortality_lifecycle_effect_invalid"), 409
+    movement = next((row for row in evaluator.get("canonical_effects") or []
+        if row.get("supported") and row.get("area") == "movement_pen"), {})
+    movement_facts = dict(movement.get("facts") or {})
+    note_parts = ["Owner reported the pig found dead", "exact time of death Unknown"]
+    if movement_facts.get("owner_reported_outcome"):
+        note_parts.append("body " + str(movement_facts["owner_reported_outcome"]))
+    provider_message_id = str(binding.get("provider_message_id") or "")
+    preview_sha256 = str(binding.get("preview_sha256") or "")
+    evidence_generation = str(binding.get("evidence_generation") or "")
+    note_parts.append("source Telegram " + (provider_message_id or "Unknown"))
+    canonical = {"operation_id": operation_id, "pig_id": pig_id,
+        "provider_message_id": provider_message_id, "preview_sha256": preview_sha256,
+        "evidence_generation": evidence_generation, "event_date": str(facts["date"]),
+        "exact_time_of_death": "Unknown", "removal": movement_facts,
+        "actor_id": str(actor_id)}
+    source_digest = hashlib.sha256(json.dumps(
+        canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    event_id = "LIFE-HL-" + hashlib.sha256(operation_id.encode()).hexdigest()[:24].upper()
+    try:
+        connection_cm = connect_factory() if connect_factory else _connect()
+        with connection_cm as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                               ("herdmaster-mortality:" + operation_id,))
+                cursor.execute("""select lifecycle_event_id,pig_id,event_payload
+                    from public.pig_lifecycle_events where idempotency_key=%s""",
+                    (operation_id,))
+                existing = cursor.fetchone()
+                if existing:
+                    payload = existing[2] if isinstance(existing[2], Mapping) else {}
+                    if (str(existing[1]) != pig_id
+                            or str(payload.get("source_digest") or "") != source_digest):
+                        return _result(False, "mortality_lifecycle_idempotency_conflict"), 409
+                    return _result(True, "mortality_lifecycle_replayed_withheld",
+                        rows_created=0, operation_id=operation_id, pig_id=pig_id,
+                        lifecycle_event_id=str(existing[0]), replay=True), 200
+                current = evidence_loader()
+                if str(current.get("evidence_generation") or "") != evidence_generation:
+                    return _result(False, "canonical_evidence_changed_repreview_required"), 409
+                cursor.execute("""select status,on_farm,notes from public.pigs
+                    where pig_id=%s for update""", (pig_id,))
+                pig = cursor.fetchone()
+                if not pig or str(pig[0] or "").casefold() != "active" or pig[1] is not True:
+                    return _result(False, "current_active_on_farm_pig_required"), 409
+                prior_notes = str(pig[2] or "").strip()
+                lifecycle_note = f"{facts['date']} lifecycle outcome: Died recorded by oom_sakkie owner. Notes: {'; '.join(note_parts)}"
+                updated_notes = f"{prior_notes}\n{lifecycle_note}" if prior_notes else lifecycle_note
+                cursor.execute("""update public.pigs set status='Dead',on_farm=false,
+                    exit_date=%s::date,exit_reason='Died',notes=%s,updated_at=now()
+                    where pig_id=%s and status='Active' and on_farm is true""",
+                    (str(facts["date"]), updated_notes, pig_id))
+                if int(getattr(cursor, "rowcount", 0) or 0) != 1:
+                    return _result(False, "mortality_lifecycle_concurrent_state_change"), 409
+                cursor.execute("""insert into public.pig_lifecycle_events(
+                    lifecycle_event_id,pig_id,lifecycle_event_type,effective_at,
+                    actor_reference,source_system,source_reference,event_note,
+                    event_payload,idempotency_key)
+                    values(%s,%s,'exited_farm',%s::date::timestamptz,%s,'owner',%s,%s,%s::jsonb,%s)""", (
+                    event_id, pig_id, str(facts["date"]), str(actor_id), source_digest,
+                    "; ".join(note_parts), json.dumps({**canonical,
+                        "source_digest": source_digest, "resulting_status": "Dead",
+                        "resulting_on_farm": False}, sort_keys=True), operation_id))
+    except Exception:
+        return _result(False, "mortality_lifecycle_recording_unavailable"), 503
+    return _result(True, "mortality_lifecycle_recorded", rows_created=1,
+                   operation_id=operation_id, pig_id=pig_id,
+                   lifecycle_event_id=event_id, lifecycle_status="Dead", on_farm=False,
+                   event_date=str(facts["date"]),
+                   exact_time_of_death="Unknown", historical_records_preserved=True,
+                   recommendation_refresh_required=True), 201
+
+
+def _factual_note(facts):
+    observed = facts.get("observed") if isinstance(facts.get("observed"), list) else []
+    return "Owner-reported welfare observations: " + "; ".join(
+        f"{row.get('fact')}: {row.get('value')}" for row in observed if isinstance(row, Mapping)
+    )
+
+
+def _connect():
+    import psycopg
+    return psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10)
+
+
+def _result(success, status, **extra):
+    return {"success": success, "status": status, "writes_farm_data": bool(success and extra.get("rows_created")),
+            "diagnosis_inferred": False, "treatment_recorded": False, **extra}

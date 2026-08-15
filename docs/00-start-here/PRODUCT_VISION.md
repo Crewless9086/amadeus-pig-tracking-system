@@ -2,6 +2,11 @@
 
 # Oom Sakkie Farm Command Room Product Vision
 
+> Architecture authority: implement this experience through
+> `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`. Browser, Telegram
+> and voice are adapters to one canonical action spine; n8n and Google Sheets
+> are not the Oom Sakkie brain or canonical operational truth.
+
 **Document purpose:** This is the product vision and UI direction file for building the owner-facing Oom Sakkie interface from scratch. It should be used by Cursor, LLM build agents, UI designers, and backend/integration agents as the north-star document before creating screens, components, agent dashboards, voice behavior, or image assets.
 
 **Product concept:** Oom Sakkie is the central farm command presence for the Amadeus Farm Operations Platform. He watches the farm, sees the specialist agents, calls them forward when needed, explains what matters, and keeps the owner in control.
@@ -71,6 +76,13 @@ Examples:
 - â€œWhat needs attention today?â€
 - â€œShow approvalsâ€
 - â€œGo back to Oom Sakkieâ€
+
+Voice, typed Oom Sakkie, Telegram and application clicks must be adapters to
+the same canonical business capability. Equivalent owner intent must produce
+one meaning, one material preview, one authority gate and one canonical result.
+Channels may present differently, but may not own different business rules or
+mutation paths. See
+`docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
 
 ### 2.5 Agents are specialist rooms, not menu items
 

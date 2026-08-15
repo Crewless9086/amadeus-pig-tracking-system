@@ -379,7 +379,7 @@ def get_active_sam_live_stock_owner_card(conversation_id, database_url=None):
                 cursor.execute(
                     """
                     select review_event_id, review_json, created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where chatwoot_conversation_id = %s
                       and event_source = %s
                     order by created_at desc, review_event_id desc
@@ -409,7 +409,7 @@ def get_active_sam_live_stock_owner_card(conversation_id, database_url=None):
         return {"success": False, "status": "sam_live_stock_owner_card_load_failed", "error": _clean(str(exc), 240), "card": {}, **AUTHORITY_FLAGS}, 500
 
 
-def record_sam_live_stock_review_event(event, database_url=None):
+def record_sam_live_stock_review_event(event, database_url=None, *, connect_factory=None):
     event = event if isinstance(event, dict) else {}
     params = _review_event_params(event)
     if not params["review_event_id"]:
@@ -422,7 +422,8 @@ def record_sam_live_stock_review_event(event, database_url=None):
     except ImportError:
         return {"success": False, "status": "psycopg_dependency_missing", "event": params, **AUTHORITY_FLAGS}, 500
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        with (connect_factory() if connect_factory else
+              psycopg.connect(database_url, connect_timeout=10)) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -560,7 +561,7 @@ def get_sam_live_stock_review_event(review_event_id, database_url=None):
                         facts_json,
                         decision_json,
                         created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where review_event_id = %s
                     limit 1
                     """,
@@ -622,7 +623,7 @@ def get_latest_sam_live_stock_review_event_for_conversation(conversation_id, dat
                         facts_json,
                         decision_json,
                         created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where chatwoot_conversation_id = %s
                     order by created_at desc
                     limit 1
@@ -1603,8 +1604,14 @@ def handle_sam_live_stock_delivery_status_webhook(
     if _clean(attempt.get("conversation_id"), 120) != conversation_id or _clean(attempt.get("chatwoot_outgoing_message_id"), 120) != outgoing_id:
         return {"success": False, "status": "sam_delivery_webhook_identity_mismatch", "processed": False}, 409
     configured_account = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV), 120)
+    attempt_account = _clean(attempt.get("account_id"), 120)
     if (
         normalized.get("conflict")
+        or (
+            configured_account
+            and attempt_account
+            and attempt_account != configured_account
+        )
         or (normalized.get("inbox_id") and _clean(normalized.get("inbox_id"), 120) != _clean(attempt.get("inbox_id"), 120))
         or (normalized.get("account_id") and configured_account and _clean(normalized.get("account_id"), 120) != configured_account)
     ):
@@ -1709,10 +1716,21 @@ def handle_sam_live_stock_delivery_status_webhook(
             "processed": False,
             "delivery_state": outcome.get("delivery_state"),
             "automatic_retry_prohibited": True,
+            "operational_state": _delivery_operational_state_packet(
+                attempt, outcome
+            ),
         }, 200
     action_id = _clean(attempt.get("owner_action_identity"), 120)
     if not action_id:
-        return {"success": True, "status": "sam_delivery_non_owner_attempt_reconciled", "processed": True, "delivery_state": outcome.get("delivery_state")}, 200
+        return {
+            "success": True,
+            "status": "sam_delivery_non_owner_attempt_reconciled",
+            "processed": True,
+            "delivery_state": outcome.get("delivery_state"),
+            "operational_state": _delivery_operational_state_packet(
+                attempt, outcome
+            ),
+        }, 200
     action_result, action_status = (review_event_loader or get_sam_live_stock_review_event)(action_id)
     action_event = action_result.get("event") if isinstance(action_result.get("event"), dict) else {}
     action_json = _json_value(action_event.get("review_json"))
@@ -1761,6 +1779,39 @@ def handle_sam_live_stock_delivery_status_webhook(
         edited, _ = _edit_owner_card_state(expected, label, _open_chatwoot_keyboard(action_id, conversation_id, source), source, telegram_editor)
         return {"success": True, "status": "sam_delivery_exception_card_retained", "processed": True, "delivery_state": state, "customer_send_confirmed": False, "card_retained": True, "telegram": edited}, 200
     return {"success": True, "status": "sam_delivery_accepted_card_retained", "processed": True, "delivery_state": state, "customer_send_confirmed": False, "card_retained": True}, 200
+
+
+def _delivery_operational_state_packet(attempt, outcome):
+    """Project only exact claim-bound state needed by the Chatwoot writer."""
+    return {
+        "inbound": {
+            "account_id": _clean(attempt.get("account_id"), 120),
+            "conversation_id": _clean(
+                attempt.get("conversation_id"), 120
+            ),
+            "contact_id": _clean(attempt.get("contact_id"), 120),
+            "inbox_id": _clean(attempt.get("inbox_id"), 120),
+            "message_id": _clean(
+                attempt.get("inbound_message_id"), 120
+            ),
+        },
+        "decision": {
+            "sales_lane": "live_stock_sales",
+            "specialist_lane_selected": True,
+            "missing_fields": list(attempt.get("missing_fields") or []),
+            "owner_gate_required": (
+                attempt.get("owner_decision_required") is True
+            ),
+        },
+        "provider_state": _clean(
+            outcome.get("delivery_state"), 80
+        ),
+        "delivery_attempt_id": _clean(
+            attempt.get("delivery_attempt_id"), 120
+        ),
+        "automatic_retry_prohibited": True,
+        "contains_private_message_content": False,
+    }
 
 
 def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, telegram_editor=None, chatwoot_writer=None, review_event_loader=None, active_card_loader=None, chronology_loader=None, sales_pack_preparer=None, evidence_recorder=None):
@@ -2115,7 +2166,7 @@ def load_latest_sam_live_stock_review_events_for_conversations(conversation_ids,
                         owner_send_required, no_reply_recommended, escalation_required,
                         conversation_mode_recommendation, recommended_action,
                         review_json, facts_json, decision_json, created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where chatwoot_conversation_id = any(%s)
                     order by chatwoot_conversation_id, created_at desc
                     """,

@@ -1,4 +1,4 @@
-﻿{
+{
     "updatedAt":  "2026-05-19T00:49:53.781Z",
     "createdAt":  "2026-05-18T23:56:24.450Z",
     "id":  "s8QaxmqT69Z5mhvE",
@@ -340,7 +340,7 @@
                   },
                   {
                       "parameters":  {
-                                         "jsCode":  "const data = $json.callback_data || \"\";\nconst chat_id = $json.chat_id || \"\";\nconst callback_query_id = $json.callback_query_id || \"\";\nconst clicked_by = $json.user_name || \"Unknown\";\nconst telegram_user_id = $json.user_id || \"\";\n\nlet action = \"\";\nlet decision = \"\";\nlet order_id = \"\";\nlet document_id = \"\";\nlet conversation_id = \"\";\n\nif (data.startsWith(\"sam_live_\")) {\r\n  action = \"route_sam_live_callback\";\r\n} else if (data.startsWith(\"approve_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"approve\";\n  order_id = data.replace(\"approve_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"reject_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"reject\";\n  order_id = data.replace(\"reject_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"quote_send|\") || data.startsWith(\"quote_cancel|\")) {\n  const parts = data.split(\"|\");\n  action = \"route_document_send_callback\";\n  order_id = (parts[1] || \"\").trim().toUpperCase();\n  document_id = (parts[2] || \"\").trim();\n  conversation_id = (parts[3] || \"\").trim();\n}\n\nif (!action) {\n  action = \"invalid_callback\";\n}\n\nreturn [\n  {\n    json: {\n      action,\n      decision,\n      order_id,\n      document_id,\n      conversation_id,\n      callback_data: data,\n      chat_id: String(chat_id),\n      callback_query_id,\n      changed_by: clicked_by,\n      trigger_source: \"Telegram Button\",\n      clicked_by,\n      telegram_user_id: String(telegram_user_id),\r\n      raw_update: $json.raw_update || {},\n      decision_method: \"Button\"\n    }\n  }\n];"
+                                         "jsCode":  "const data = $json.callback_data || \"\";\nconst chat_id = $json.chat_id || \"\";\nconst callback_query_id = $json.callback_query_id || \"\";\nconst clicked_by = $json.user_name || \"Unknown\";\nconst telegram_user_id = $json.user_id || \"\";\n\nlet action = \"\";\nlet decision = \"\";\nlet order_id = \"\";\nlet document_id = \"\";\nlet conversation_id = \"\";\n\nif (data.startsWith(\"sam_live_\") || data.startsWith(\"oompa:\")) {\r\n  action = \"route_sam_live_callback\";\r\n} else if (data.startsWith(\"approve_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"approve\";\n  order_id = data.replace(\"approve_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"reject_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"reject\";\n  order_id = data.replace(\"reject_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"quote_send|\") || data.startsWith(\"quote_cancel|\")) {\n  const parts = data.split(\"|\");\n  action = \"route_document_send_callback\";\n  order_id = (parts[1] || \"\").trim().toUpperCase();\n  document_id = (parts[2] || \"\").trim();\n  conversation_id = (parts[3] || \"\").trim();\n}\n\nif (!action) {\n  action = \"invalid_callback\";\n}\n\nreturn [\n  {\n    json: {\n      action,\n      decision,\n      order_id,\n      document_id,\n      conversation_id,\n      callback_data: data,\n      chat_id: String(chat_id),\n      callback_query_id,\n      changed_by: clicked_by,\n      trigger_source: \"Telegram Button\",\n      clicked_by,\n      telegram_user_id: String(telegram_user_id),\r\n      raw_update: $json.raw_update || {},\n      decision_method: \"Button\"\n    }\n  }\n];"
                                      },
                       "type":  "n8n-nodes-base.code",
                       "typeVersion":  2,
@@ -743,7 +743,7 @@
                   },
                   {
                       "parameters":  {
-                                         "jsCode":  "const update = $json.raw_update || {};\nconst message = update.message || {};\nconst chat = message.chat || {};\nconst from = message.from || {};\nconst photos = Array.isArray(message.photo) ? message.photo : [];\nconst unsupported = !!message.video || !!message.document || !!message.animation || !!message.audio || !!message.voice || !!message.video_note;\nconst mediaPresent = photos.length > 0 || unsupported || !!message.media_group_id;\nlet route = \"ordinary\";\n\nif (mediaPresent) {\n  route = \"media_rejected\";\n  const expectedUser = String($vars.BEACON_MEDIA_INTAKE_OWNER_USER_ID || \"\");\n  const expectedChat = String($vars.BEACON_MEDIA_INTAKE_PRIVATE_CHAT_ID || \"\");\n  const privateOwner = expectedUser.length > 0 && expectedChat.length > 0 && String(from.id || \"\") === expectedUser && String(chat.id || \"\") === expectedChat && String(chat.type || \"\") === \"private\" && String($json.user_id || \"\") === expectedUser && String($json.chat_id || \"\") === expectedChat;\n  const unforwarded = !message.forward_origin && !message.forward_from && !message.forward_from_chat && !message.forward_sender_name && !message.forward_date && !message.sender_chat;\n  const singlePhoto = photos.length > 0 && !unsupported && !message.media_group_id;\n  const stableEnvelope = Number.isSafeInteger(update.update_id) && Number.isSafeInteger(message.message_id) && photos.every((photo) => typeof photo.file_id === \"string\" && photo.file_id.length > 0 && typeof photo.file_unique_id === \"string\" && photo.file_unique_id.length > 0);\n  if (privateOwner && unforwarded && singlePhoto && stableEnvelope) route = \"beacon_single_photo\";\n}\n\nreturn [{ json: { ...$json, gatekeeper_media_route: route } }];"
+                                         "jsCode":  "const update = $json.raw_update || {};\nconst message = update.message || {};\nconst chat = message.chat || {};\nconst from = message.from || {};\nconst photos = Array.isArray(message.photo) ? message.photo : [];\nconst unsupported = !!message.video || !!message.document || !!message.animation || !!message.audio || !!message.voice || !!message.video_note;\nconst mediaPresent = photos.length > 0 || unsupported || !!message.media_group_id;\nlet route = \"ordinary\";\n\nif (mediaPresent) {\n  route = \"media_rejected\";\n  const expectedUser = String($vars.BEACON_MEDIA_INTAKE_OWNER_USER_ID || \"\");\n  const expectedChat = String($vars.BEACON_MEDIA_INTAKE_PRIVATE_CHAT_ID || \"\");\n  const privateOwner = expectedUser.length > 0 && expectedChat.length > 0 && String(from.id || \"\") === expectedUser && String(chat.id || \"\") === expectedChat && String(chat.type || \"\") === \"private\" && String($json.user_id || \"\") === expectedUser && String($json.chat_id || \"\") === expectedChat;\n  const unforwarded = !message.forward_origin && !message.forward_from && !message.forward_from_chat && !message.forward_sender_name && !message.forward_date && !message.sender_chat;\n  const singlePhoto = photos.length > 0 && !unsupported && !message.media_group_id;\n  const ownerRequestAlbum = photos.length > 0 && !unsupported && typeof message.media_group_id === \"string\" && message.media_group_id.length > 0;\n  const stableEnvelope = Number.isSafeInteger(update.update_id) && Number.isSafeInteger(message.message_id) && photos.every((photo) => typeof photo.file_id === \"string\" && photo.file_id.length > 0 && typeof photo.file_unique_id === \"string\" && photo.file_unique_id.length > 0);\n  if (privateOwner && unforwarded && singlePhoto && stableEnvelope) route = \"beacon_single_photo\";\n  if (privateOwner && unforwarded && ownerRequestAlbum && stableEnvelope) route = \"owner_request_album\";\n}\n\nreturn [{ json: { ...$json, gatekeeper_media_route: route } }];"
                                      },
                       "id":  "6d4ad289-e392-4ea2-b2df-558658d323d8",
                       "name":  "Code - Gate BEACON Single Photo",
@@ -823,6 +823,28 @@
                                                                                          },
                                                                           "renameOutput":  true,
                                                                           "outputKey":  "Rejected media"
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "typeValidation":  "strict",
+                                                                                                             "version":  3
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{$json.gatekeeper_media_route}}",
+                                                                                                                    "rightValue":  "owner_request_album",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 }
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "Owner request album"
                                                                       }
                                                                   ]
                                                    },
@@ -869,6 +891,38 @@
                       "position":  [
                                        832,
                                        -240
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://amadeus-pig-tracking-system.onrender.com/api/oom-sakkie/channels/telegram/message",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "X-Oom-Sakkie-Telegram-Token",
+                                                                                         "value":  "={{$vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN}}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "contentType":  "json",
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ $json.raw_update }}",
+                                         "options":  {
+                                                         "timeout":  30000
+                                                     }
+                                     },
+                      "id":  "5e581e88-63ea-49f2-8f62-9966670db145",
+                      "name":  "Relay Owner Request Media to Gateway",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "retryOnFail":  false,
+                      "onError":  "stopWorkflow",
+                      "position":  [
+                                       832,
+                                       80
                                    ]
                   }
               ],
@@ -980,6 +1034,13 @@
                                                                           ],
                                                                           [
 
+                                                                          ],
+                                                                          [
+                                                                              {
+                                                                                  "node":  "Relay Owner Request Media to Gateway",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
                                                                           ]
                                                                       ]
                                                         },
@@ -1078,6 +1139,13 @@
 
                                                                            ]
                                                                        ]
+                                                          },
+                        "Relay Owner Request Media to Gateway":  {
+                                                                     "main":  [
+                                                                                  [
+
+                                                                                  ]
+                                                                              ]
                                                           }
                     },
     "settings":  {

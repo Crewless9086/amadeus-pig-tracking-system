@@ -228,7 +228,13 @@ def load_current_level1_control(*, database_url=None):
         ), 503
 
 
-def resolve_level1_runtime_control(inbound, *, loaded=None, now=None):
+def resolve_level1_runtime_control(
+    inbound,
+    *,
+    loaded=None,
+    now=None,
+    allow_provider_current_backlog=False,
+):
     """Authorize only a current/new exact inbound under the latest safe state."""
     inbound = dict(inbound or {})
     loaded = dict(loaded or {})
@@ -272,7 +278,13 @@ def resolve_level1_runtime_control(inbound, *, loaded=None, now=None):
         blockers.append("control_time_evidence_invalid")
     elif not (effective <= now < expires):
         blockers.append("control_not_current")
-    if observed is not None and cutoff is not None and observed < cutoff and not carried:
+    if (
+        observed is not None
+        and cutoff is not None
+        and observed < cutoff
+        and not carried
+        and not allow_provider_current_backlog
+    ):
         blockers.append("historical_event_not_authorized")
     return {
         "version": CONTROL_VERSION,
@@ -283,6 +295,9 @@ def resolve_level1_runtime_control(inbound, *, loaded=None, now=None):
             observed is not None and cutoff is not None and observed >= cutoff
         ),
         "carried_followup": carried,
+        "provider_current_backlog": bool(
+            allow_provider_current_backlog and not blockers
+        ),
         "legacy_fallback_permitted": (
             loaded.get("status") == "level1_control_not_configured"
         ),

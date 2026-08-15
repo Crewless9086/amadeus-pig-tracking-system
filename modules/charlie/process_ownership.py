@@ -1,5 +1,6 @@
 """Fail-closed process ownership records and termination authorization."""
 
+import base64
 import hashlib
 import json
 import os
@@ -308,7 +309,11 @@ def validate_bootstrap_tree(
     if any(root.get(field) != canonical_root.get(field) for field in root_fields):
         return _deny("root_member_identity_mismatch")
     descendants = [item for item in members if int(item["pid"]) != root_pid]
-    if require_interpreter and not descendants:
+    if (
+        require_interpreter
+        and not descendants
+        and not str(root.get("process_role") or "").endswith("_interpreter")
+    ):
         return _deny("ownership_identity_incomplete:interpreter")
     known_pids = set(member_pids)
     for member in descendants:
@@ -345,11 +350,15 @@ def validate_live_bootstrap_tree(
         return structural
     members = tree.get("members") or []
     root_pid = int((tree.get("root") or {}).get("pid") or -1)
+    live_processes, windows_snapshot = inspect_processes_with_snapshot(
+        [record.get("pid") for record in members if isinstance(record, dict)]
+    )
     for index, record in enumerate(members):
-        current = inspect_process(record.get("pid"))
+        current = live_processes.get(int(record.get("pid") or 0))
         label = f"member_{index}"
         if not isinstance(current, dict) or current.get("inspection_complete") is False:
-            return _deny(f"live_identity_inspection_incomplete:{label}")
+            detail = str((current or {}).get("inspection_reason") or "incomplete")
+            return _deny(f"live_identity_inspection_{detail}:{label}")
         checks = {
             "pid": int(current.get("pid") or -1) == int(record.get("pid") or -2),
             "creation_time": str(current.get("creation_time") or "") == str(record.get("creation_time") or ""),
@@ -370,7 +379,11 @@ def validate_live_bootstrap_tree(
                 if isinstance(item, dict)
             }:
                 return _deny(f"live_identity_parentage_mismatch:{label}")
-    live_rows = _inspect_process_descendants(root_pid)
+    live_rows = (
+        _process_tree_rows_from_snapshot(root_pid, windows_snapshot)
+        if windows_snapshot is not None
+        else _inspect_process_descendants(root_pid)
+    )
     live_identities = {
         (int(row.get("pid") or -1), str(row.get("creation_time") or ""))
         for row in live_rows
@@ -462,7 +475,10 @@ def observe_process_tree(
                 last_reason = chronology
                 sleep_fn(poll_seconds)
                 continue
-            if str(root.get("process_role") or "") != f"{process_role_prefix}_launcher":
+            if str(root.get("process_role") or "") not in {
+                f"{process_role_prefix}_launcher",
+                f"{process_role_prefix}_interpreter",
+            }:
                 last_reason = "root_process_role_mismatch"
                 sleep_fn(poll_seconds)
                 continue
@@ -476,7 +492,7 @@ def observe_process_tree(
                 if int(item.get("pid") or -1) != int(root_pid)
             ]
             interpreters = [
-                item for item in descendants
+                item for item in records
                 if str(item.get("process_role") or "")
                 == f"{process_role_prefix}_interpreter"
             ]
@@ -627,6 +643,12 @@ def _observed_process_role(
 ):
     """Classify one observed member without conflating wrappers and interpreters."""
     if int(row.get("pid") or -1) == int(root_pid):
+        if expected_script and _valid_interpreter_command_role(
+            row,
+            expected_script=expected_script,
+            expected_interpreter_executable=expected_interpreter_executable,
+        ):
+            return f"{process_role_prefix}_interpreter"
         return f"{process_role_prefix}_launcher"
     if _looks_like_windows_console_host(row):
         return f"{process_role_prefix}_console_host"
@@ -818,7 +840,14 @@ def _inspect_process_descendants(root_pid):
             if any(int(item.get("pid") or -1) == int(root_pid) for item in ancestry if isinstance(item, dict)):
                 rows.append(row)
         return rows
-    all_rows = _windows_process_snapshot()
+    return _process_tree_rows_from_snapshot(
+        root_pid,
+        _windows_process_snapshot(),
+    )
+
+
+def _process_tree_rows_from_snapshot(root_pid, all_rows):
+    """Return one process tree from an already-consistent OS snapshot."""
     ids = {int(root_pid)}
     changed = True
     while changed:
@@ -938,24 +967,77 @@ def inspect_process(pid):
             return None
     try:
         rows = _windows_process_snapshot()
-        by_pid = {int(row["pid"]): row for row in rows if row.get("pid")}
-        target = dict(by_pid.get(int(pid)) or {})
-        if not target:
-            return None
-        target["ancestry"] = _snapshot_ancestry(by_pid, target.get("parent_pid"))
-        target["current_process_ancestry"] = _snapshot_ancestry(
-            by_pid, os.getpid(), include_start=True
-        )
-        if not target["current_process_ancestry"]:
-            return None
-        target["inspection_complete"] = True
-        return target
+        return _inspect_windows_process_from_snapshot(pid, rows)
     except (OSError, subprocess.SubprocessError, ValueError, TypeError, json.JSONDecodeError):
         # Process inspection is a safety aid, never a reason to terminate the
         # supervisor.  Returning no identity keeps termination fail-closed:
         # make_ownership_record produces an unusable record and every later
         # kill authorization is refused until a complete inspection succeeds.
         return None
+
+
+def inspect_processes(pids):
+    """Inspect a bounded PID set from one consistent OS snapshot.
+
+    Windows CIM startup is comparatively expensive and can time out when a
+    live-tree validation launches one query per member.  One snapshot both
+    avoids that startup failure and prevents identities from being compared
+    across different observation instants.
+    """
+    inspected, _snapshot = inspect_processes_with_snapshot(pids)
+    return inspected
+
+
+def inspect_processes_with_snapshot(pids):
+    """Return bounded inspections and the Windows snapshot they came from."""
+    normalized = sorted({int(pid or 0) for pid in (pids or []) if int(pid or 0) > 0})
+    if os.name != "nt":
+        return ({pid: inspect_process(pid) for pid in normalized}, None)
+    try:
+        rows = _windows_process_snapshot()
+        if not rows:
+            return ({
+                pid: {"inspection_complete": False, "inspection_reason": "snapshot_empty"}
+                for pid in normalized
+            }, rows)
+        return ({
+            pid: (
+                _inspect_windows_process_from_snapshot(pid, rows)
+                or {"inspection_complete": False, "inspection_reason": "target_missing"}
+            )
+            for pid in normalized
+        }, rows)
+    except subprocess.TimeoutExpired:
+        reason = "snapshot_timeout"
+    except json.JSONDecodeError:
+        reason = "snapshot_json_invalid"
+    except OSError as exc:
+        reason = f"snapshot_os_error_{int(getattr(exc, 'winerror', 0) or 0)}"
+    except (subprocess.SubprocessError, ValueError, TypeError):
+        reason = "snapshot_failed"
+    return ({
+        pid: {"inspection_complete": False, "inspection_reason": reason}
+        for pid in normalized
+    }, [])
+
+
+def _inspect_windows_process_from_snapshot(pid, rows):
+    by_pid = {
+        int(row["pid"]): row
+        for row in (rows or [])
+        if isinstance(row, dict) and row.get("pid")
+    }
+    target = dict(by_pid.get(int(pid)) or {})
+    if not target:
+        return None
+    target["ancestry"] = _snapshot_ancestry(by_pid, target.get("parent_pid"))
+    target["current_process_ancestry"] = _snapshot_ancestry(
+        by_pid, os.getpid(), include_start=True
+    )
+    if not target["current_process_ancestry"]:
+        return None
+    target["inspection_complete"] = True
+    return target
 
 
 def inspect_descendant_processes(root_pid):
@@ -996,20 +1078,39 @@ def inspect_descendant_processes(root_pid):
 
 def _windows_process_snapshot():
     script = (
-        "Get-CimInstance Win32_Process|ForEach-Object{"
+        "$ErrorActionPreference='Stop';"
+        "$selfPid=$PID;"
+        "$json=Get-CimInstance Win32_Process|"
+        "Where-Object{$_.ProcessId -ne $selfPid -and $_.ParentProcessId -ne $selfPid}|"
+        "ForEach-Object{"
         "[pscustomobject]@{pid=[int]$_.ProcessId;parent_pid=[int]$_.ParentProcessId;"
         "creation_time=[string]$_.CreationDate;executable_path=[string]$_.ExecutablePath;"
         "command_line=[string]$_.CommandLine;name=[string]$_.Name}}|"
-        "ConvertTo-Json -Compress"
+        "ConvertTo-Json -Compress;"
+        "[Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)))"
     )
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        timeout=8, check=False,
-    )
-    if result.returncode or not str(result.stdout or "").strip():
+    result = None
+    for attempt in range(2):
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=8, check=False,
+            )
+            break
+        except subprocess.TimeoutExpired:
+            if attempt:
+                raise
+            # Controller and supervisor can request their startup snapshots in
+            # the same second.  Give the already-running CIM query one bounded
+            # opportunity to clear; a second timeout remains fail-closed.
+            time.sleep(0.1)
+    if result is None:
         return []
-    rows = json.loads(result.stdout)
+    raw = str(result.stdout or "").strip()
+    if result.returncode or not raw:
+        return []
+    rows = json.loads(base64.b64decode(raw, validate=True).decode("utf-8"))
     rows = [rows] if isinstance(rows, dict) else rows
     return rows if isinstance(rows, list) else []
 

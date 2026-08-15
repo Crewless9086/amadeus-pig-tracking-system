@@ -168,7 +168,7 @@ def create_meat_processing_batch(payload=None, database_url=None):
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
                 pig_ids = [item["pig_id"] for item in clean_pigs]
-                cursor.execute("select pig_id, tag_number from public.pig_current_state where pig_id = any(%s)", (pig_ids,))
+                cursor.execute("select pig_id, tag_number from public.current_canonical_pig_state where pig_id = any(%s)", (pig_ids,))
                 canonical = {row[0]: row[1] for row in cursor.fetchall()}
                 missing = [pig_id for pig_id in pig_ids if pig_id not in canonical]
                 if missing:

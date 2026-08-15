@@ -62,11 +62,20 @@ EXECUTION_MODES = {EXECUTION_MODE_ORDINARY, EXECUTION_MODE_OBSERVE_ONLY}
 EMERGENCY_CLEANUP_DISABLED_PATH = RUNNER_DIR / "EMERGENCY_PROCESS_CLEANUP_DISABLED"
 EMERGENCY_CLEANUP_REFUSAL_LOG = RUNNER_DIR / "emergency-process-cleanup-refusals.jsonl"
 STALE_SECONDS = 120
-START_ACK_TIMEOUT_SECONDS = 30
+# Windows ownership validation uses authenticated CIM snapshots for both the
+# supervisor and worker trees.  Keep the startup bounded, but allow those
+# fail-closed inspections and execution-worktree reconciliation to complete.
+START_ACK_TIMEOUT_SECONDS = 90
 SUPERVISOR_PACKET_VERSION = "charlie_supervisor_ownership_v3"
 
 
 def _python_executable(repo_root=REPO_ROOT):
+    if (
+        os.name == "nt"
+        and Path(repo_root).resolve() == REPO_ROOT.resolve()
+        and str(getattr(sys, "_base_executable", "") or "")
+    ):
+        return str(Path(sys._base_executable))
     candidates = [
         Path(repo_root) / "venv" / "Scripts" / "python.exe",
         Path(repo_root).parents[1] / "venv" / "Scripts" / "python.exe",
@@ -145,6 +154,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
     elif active:
         status = "runner_active"
         next_action = {
+            "observe_only": "CORE is healthy in credential-free observation mode and cannot access the mission queue.",
             "running_agent": "CORE is actively executing the displayed agent stage.",
             "between_stages": "CORE is healthy and transitioning between agent stages.",
             "waiting_for_queue": "CORE is healthy and waiting for an approved mission.",
@@ -173,6 +183,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         "last_seen": payload.get("last_seen", ""),
         "age_seconds": age_seconds,
         "last_result_status": payload.get("last_result_status", ""),
+        "reason": payload.get("reason", ""),
         "last_mission_id": payload.get("last_mission_id", ""),
         "elapsed_seconds": payload.get("elapsed_seconds"),
         "changed_files_count": payload.get("changed_files_count"),
@@ -217,6 +228,8 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
 def _runner_operating_state(payload, ledger, active):
     if not active:
         return "stale_or_stopped"
+    if str(payload.get("execution_mode") or "") == EXECUTION_MODE_OBSERVE_ONLY:
+        return "observe_only"
     latest = ledger.get("latest_stage") if isinstance(ledger, dict) and isinstance(ledger.get("latest_stage"), dict) else {}
     current_agent = str(payload.get("current_agent") or latest.get("agent") or "").strip()
     stage_status = str(latest.get("status") or "").strip().lower()
@@ -260,6 +273,7 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "notification_level",
         "notification_title",
         "last_failure",
+        "reason",
         "failure_class",
         "error_type",
         "marker_path",
@@ -267,10 +281,19 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "queue_health",
         "executive",
         "last_progress_at",
+        "shadow",
+        "checks",
+        "next_eligible_event",
+        "mission_pickup_attempted",
+        "release_attempted",
     ):
         if key in result:
             payload[key] = result.get(key)
-        elif key in {"queue_health", "executive", "last_progress_at"} and key in previous:
+        elif key in {
+            "queue_health", "executive", "last_progress_at", "shadow",
+            "checks", "next_eligible_event", "mission_pickup_attempted",
+            "release_attempted",
+        } and key in previous:
             payload[key] = previous.get(key)
     payload = redact_payload(payload)
     generation = str(payload.get("supervisor_generation") or "")
@@ -460,6 +483,15 @@ def start_runner(status_override=None, respect_stop_marker=True, execution_mode=
         "CHARLIE_CONTROLLER_PUBLIC_KEY": controller_public_key,
         "CHARLIE_CORE_EXECUTION_MODE": execution_mode,
     }
+    if os.name == "nt":
+        venv_site = Path(sys.prefix) / "Lib" / "site-packages"
+        child_env["PYTHONPATH"] = os.pathsep.join(
+            str(path) for path in (
+                REPO_ROOT,
+                venv_site,
+                child_env.get("PYTHONPATH", ""),
+            ) if str(path)
+        )
     # The final check is deliberately adjacent to process creation.  A marker
     # arriving after this point is still authoritative: both the child entry
     # point and the acknowledgement loop refuse it and contain the new tree.
@@ -670,7 +702,11 @@ def _wait_for_supervisor_ack(
                 ),
                 {},
             ) if isinstance(runner_tree, dict) else {}
-            if str(heartbeat.get("status") or "") != "ownership_ready":
+            if str(
+                heartbeat.get("last_result_status")
+                or heartbeat.get("status")
+                or ""
+            ) != "ownership_ready":
                 last_reason = "runner_ownership_ready_acknowledgement_missing"
             elif str(heartbeat.get("supervisor_generation") or "") != generation:
                 last_reason = "runner_heartbeat_generation_mismatch"

@@ -1,3 +1,4 @@
+import hashlib
 import unittest
 from datetime import datetime, timezone
 
@@ -58,6 +59,260 @@ def evidence(**overrides):
 
 
 class SamSalesAutonomyLevel1Tests(unittest.TestCase):
+    def _canonical_decision(self, *, reply, direct, supported, next_question="", asked=(), inbound_content=""):
+        identity = {
+            "account_id": "147387", "inbox_id": "96568", "contact_id": "C-1",
+            "conversation_id": "2033", "latest_inbound_message_id": "M-1",
+        }
+        return decision(
+            suggested_reply_text=reply,
+            canonical_composition_authorized=True,
+            # Deliberately contradictory legacy metadata proves that it is
+            # diagnostic only after a newer canonical obligation is bound.
+            missing_fields=["item.location", "item.quantity", "item.sex"],
+            canonical_evidence_offer={
+                "contract_version": "sam_livestock_evidence_offer_v1",
+                "identity": identity,
+                "should_reply": True,
+                "customer_reply": reply,
+                "evidence_errors": [],
+                "authority": {"allowed": True, "blockers": [], "asked_fields": list(asked)},
+                "conversation_obligations": {
+                    "contract_version": "sam_conversation_obligation_v1",
+                    "identity": identity,
+                    "public_chronology": [{
+                        "message_id": "M-1", "message_type": "incoming",
+                        "created_at": "2026-07-31T09:00:00Z",
+                        "content_sha256": hashlib.sha256(
+                            " ".join(inbound_content.split()).encode("utf-8")
+                        ).hexdigest(),
+                    }],
+                    "known_facts": {},
+                    "explicit_direct_questions": list(direct),
+                    "supported_answer_facts": list(supported),
+                    "qualification_dependencies": [next_question] if next_question else [],
+                    "single_next_useful_question": next_question,
+                },
+            },
+        )
+
+    def test_canonical_obligation_overrides_stale_legacy_price_metadata(self):
+        reply = (
+            "The price depends on the pig's size or weight category. Would you "
+            "prefer small piglets (about 2-6 kg) or weaned piglets (about 7-19 kg)?"
+        )
+        packet = evaluate_response_usefulness(
+            lane="live_stock", inbound=inbound(content="Price?"),
+            decision=self._canonical_decision(
+                reply=reply, direct=["price"],
+                supported=[{
+                    "kind": "price_dependency",
+                    "value": "size_or_weight_category_required",
+                    "provenance": "canonical_category_pricing_contract",
+                }],
+                next_question="category", asked=["category"], inbound_content="Price?",
+            ), evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"], packet)
+        self.assertEqual(packet["authority_source"], "canonical_conversation_obligation_packet")
+        self.assertFalse(packet["legacy_diagnostics"]["authoritative"])
+
+    def test_canonical_piglet_stage_question_advances_qualification(self):
+        reply = (
+            "Piglets are usually discussed as small piglets (about 2-6 kg) or "
+            "weaned piglets (about 7-19 kg), depending on the stage you need. "
+            "Would you prefer small piglets (about 2-6 kg) or weaned piglets "
+            "(about 7-19 kg)?"
+        )
+        packet = evaluate_response_usefulness(
+            lane="live_stock", inbound=inbound(content="More information about piglets"),
+            decision=self._canonical_decision(
+                reply=reply, direct=["product_guidance"],
+                supported=[{
+                    "kind": "piglet_size_guidance",
+                    "value": {
+                        "small": "small piglets (about 2-6 kg)",
+                        "weaned": "weaned piglets (about 7-19 kg)",
+                    },
+                    "provenance": "canonical_livestock_categories",
+                }],
+                next_question="category", asked=["category"],
+                inbound_content="More information about piglets",
+            ), evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"], packet)
+
+    def test_canonical_handover_answer_covers_location_before_qualification(self):
+        reply = (
+            "Live-pig handover is normally arranged in Riversdale or Albertinia. "
+            "Would you prefer small piglets (about 2-6 kg) or weaned piglets "
+            "(about 7-19 kg)?"
+        )
+        packet = evaluate_response_usefulness(
+            lane="live_stock", inbound=inbound(content="Where are you based? Piglets."),
+            decision=self._canonical_decision(
+                reply=reply, direct=["location"],
+                supported=[{
+                    "kind": "handover_location", "value": "Riversdale or Albertinia",
+                    "provenance": "canonical_handover_policy",
+                }],
+                next_question="category", asked=["category"],
+                inbound_content="Where are you based? Piglets.",
+            ), evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"], packet)
+
+    def test_canonical_packet_fails_closed_on_identity_chronology_or_reply_drift(self):
+        base = self._canonical_decision(
+            reply="How many weaned piglets would you like?", direct=[], supported=[],
+            next_question="quantity", asked=["quantity"], inbound_content="I want weaners.",
+        )
+        cases = []
+        wrong_identity = dict(base)
+        wrong_identity["canonical_evidence_offer"] = dict(base["canonical_evidence_offer"])
+        wrong_identity["canonical_evidence_offer"]["identity"] = {
+            **base["canonical_evidence_offer"]["identity"], "conversation_id": "other",
+        }
+        cases.append(wrong_identity)
+        wrong_reply = dict(base)
+        wrong_reply["suggested_reply_text"] = "What location should I note?"
+        cases.append(wrong_reply)
+        malformed = dict(base)
+        malformed["canonical_evidence_offer"] = {
+            **base["canonical_evidence_offer"], "conversation_obligations": {},
+        }
+        cases.append(malformed)
+        for candidate in cases:
+            with self.subTest(candidate=candidate["suggested_reply_text"]):
+                packet = evaluate_response_usefulness(
+                    lane="live_stock", inbound=inbound(content="I want weaners."),
+                    decision=candidate, evidence=evidence(),
+                )
+                self.assertFalse(packet["passed"], packet)
+
+    def test_canonical_empty_deferral_and_missing_fact_provenance_fail(self):
+        empty = self._canonical_decision(
+            reply="I cannot help with that right now.", direct=[], supported=[],
+            inbound_content="Can you help?",
+        )
+        missing_provenance = self._canonical_decision(
+            reply="The price depends on the pig's size or weight category.",
+            direct=["price"],
+            supported=[{
+                "kind": "price_dependency",
+                "value": "size_or_weight_category_required",
+            }],
+            inbound_content="What is the price?",
+        )
+        for content, candidate, blocker in (
+            ("Can you help?", empty, "not_pure_deferral"),
+            (
+                "What is the price?", missing_provenance,
+                "supported_fact_provenance_valid",
+            ),
+        ):
+            with self.subTest(blocker=blocker):
+                packet = evaluate_response_usefulness(
+                    lane="live_stock", inbound=inbound(content=content),
+                    decision=candidate, evidence=evidence(),
+                )
+                self.assertFalse(packet["passed"], packet)
+                self.assertIn(blocker, packet["blockers"])
+
+    def test_canonical_labels_cannot_mint_coverage_or_provenance(self):
+        bogus = self._canonical_decision(
+            reply="I cannot help with that right now.",
+            direct=["price"],
+            supported=[{
+                "kind": "price", "value": 400,
+                "provenance": {"untrusted": True},
+            }],
+            inbound_content="What is the price?",
+        )
+        bogus["canonical_evidence_offer"]["response_kind"] = "exact_supported_offer"
+        bogus["canonical_evidence_offer"]["price_evidence"] = {
+            "unit_price": 400,
+            "pricing": {"untrusted": True},
+        }
+        packet = evaluate_response_usefulness(
+            lane="live_stock", inbound=inbound(content="What is the price?"),
+            decision=bogus, evidence=evidence(),
+        )
+        self.assertFalse(packet["passed"], packet)
+        self.assertIn("supported_fact_provenance_valid", packet["blockers"])
+        self.assertIn("supported_fact_reply_coverage_valid", packet["blockers"])
+
+    def test_canonical_next_question_must_be_known_first_dependency(self):
+        candidate = self._canonical_decision(
+            reply="Which colour would you like?", direct=[], supported=[],
+            next_question="colour", asked=["colour"],
+            inbound_content="I want a piglet.",
+        )
+        packet = evaluate_response_usefulness(
+            lane="live_stock", inbound=inbound(content="I want a piglet."),
+            decision=candidate, evidence=evidence(),
+        )
+        self.assertFalse(packet["passed"], packet)
+        self.assertIn("canonical_obligation_schema_valid", packet["blockers"])
+
+    def test_malformed_canonical_nested_fields_fail_without_exception(self):
+        base = self._canonical_decision(
+            reply="How many weaned piglets would you like?", direct=[], supported=[],
+            next_question="quantity", asked=["quantity"],
+            inbound_content="I want weaners.",
+        )
+        mutations = (
+            {"public_chronology": ["not-a-message"]},
+            {"explicit_direct_questions": {"price": True}},
+            {"supported_answer_facts": [{"kind": ["unhashable"]}]},
+        )
+        for mutation in mutations:
+            candidate = dict(base)
+            offer = dict(base["canonical_evidence_offer"])
+            obligations = dict(offer["conversation_obligations"])
+            obligations.update(mutation)
+            offer["conversation_obligations"] = obligations
+            candidate["canonical_evidence_offer"] = offer
+            with self.subTest(mutation=mutation):
+                packet = evaluate_response_usefulness(
+                    lane="live_stock", inbound=inbound(content="I want weaners."),
+                    decision=candidate, evidence=evidence(),
+                )
+                self.assertFalse(packet["passed"], packet)
+        candidate = dict(base)
+        offer = dict(base["canonical_evidence_offer"])
+        offer["authority"] = {
+            **offer["authority"], "asked_fields": [{"quantity": True}],
+        }
+        candidate["canonical_evidence_offer"] = offer
+        packet = evaluate_response_usefulness(
+            lane="live_stock", inbound=inbound(content="I want weaners."),
+            decision=candidate, evidence=evidence(),
+        )
+        self.assertFalse(packet["passed"], packet)
+
+    def test_approaching_expiry_still_has_ordinary_reply_authority(self):
+        result = evaluate_level1_authority(
+            lane="live_stock",
+            inbound=inbound(
+                content="Tomorrow is fine.",
+                whatsapp_window_state="approaching_expiry",
+            ),
+            decision=decision(
+                suggested_reply_text="How many do you need?",
+                missing_fields=["quantity"],
+            ),
+            review=review(),
+            evidence=evidence(),
+            environ={
+                "SAM_SALES_AUTONOMY_LEVEL": "1",
+                "SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED": "1",
+                "SAM_SALES_LEVEL1_BROAD_DISPATCH_ENABLED": "1",
+            },
+        )
+        self.assertTrue(result["checks"]["channel_authorized"])
+        self.assertTrue(result["dispatch_authorized"], result)
+
     def test_production_shaped_2070_deferral_fails_usefulness_before_dispatch(self):
         result = evaluate_level1_authority(
             lane="live_stock",
@@ -174,6 +429,18 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         )
         self.assertTrue(packet["passed"])
         self.assertTrue(packet["checks"]["qualification_advanced"])
+
+    def test_collection_location_alias_is_a_useful_location_question(self):
+        packet = evaluate_response_usefulness(
+            lane="live_stock",
+            inbound=inbound(content="Five is right."),
+            decision=decision(
+                suggested_reply_text="What town or area are you in?",
+                missing_fields=["collection_location"],
+            ),
+            evidence=evidence(),
+        )
+        self.assertTrue(packet["passed"], packet)
 
     def test_unknown_availability_does_not_block_supported_guidance(self):
         packet = evaluate_response_usefulness(
@@ -522,13 +789,28 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         self.assertFalse(ambiguous["customer_advancement_confirmed"])
         self.assertFalse(ambiguous["intake_write_alone_is_advancement"])
 
-    def test_decorated_and_punctuated_display_name_shapes_are_safe(self):
-        for name in ("😎Customer🔥", "Surname,Name"):
+    def test_non_name_display_labels_are_omitted_from_customer_greetings(self):
+        for name in (
+            "😎Customer🔥",
+            "Surname,Name",
+            "Zingce@10",
+            "...",
+            "+27821234567",
+            "Free Shipping Nationwide",
+            "Best Deals",
+            "Buy Now",
+            "Amadeus Pork",
+            "ABC Pty Ltd",
+            "Premium Meat Market",
+            "Click Here",
+            "---Anne---",
+            ".John.",
+        ):
             with self.subTest(name=name):
                 normalized = normalize_customer_display_name(name)
-                self.assertEqual(normalized, name)
+                self.assertEqual(normalized, "")
                 reply = (
-                    f"Hi {normalized}, thanks for your message.\n\n"
+                    "Hi, thanks for your message.\n\n"
                     "Which size would suit you?\n"
                     "Once I know that, I can confirm the available options and price."
                 )
@@ -551,10 +833,9 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
                 ))
 
     def test_display_name_normalization_removes_unsafe_presentation_text(self):
-        self.assertEqual(
-            normalize_customer_display_name("  A\u0000\u202e <b>`&  B  "),
-            "A b B",
-        )
+        self.assertEqual(normalize_customer_display_name("  Anne-Marie  "), "Anne-Marie")
+        self.assertEqual(normalize_customer_display_name("O’Neil"), "O’Neil")
+        self.assertEqual(normalize_customer_display_name("  A\u0000 B  "), "")
         self.assertEqual(normalize_customer_display_name("x" * 81), "")
         self.assertEqual(normalize_customer_display_name(147387), "")
 
@@ -1228,6 +1509,29 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
             bound["reply_window_evidence"]["evaluated_at_utc"],
         )
 
+    def test_webwidget_chronology_uses_bounded_non_whatsapp_channel_contract(self):
+        bound = bind_authoritative_conversation_evidence(
+            inbound(channel="Channel::WebWidget"),
+            [{
+                "id": "M-1", "message_type": 0, "private": False,
+                "created_at": "2026-07-28T07:30:00Z", "attachments": [],
+            }],
+            now=datetime(2026, 7, 28, 8, 0, tzinfo=timezone.utc),
+        )
+        self.assertTrue(bound["chronology_current"])
+        self.assertEqual(bound["reply_authority_state"], "ordinary_reply_allowed")
+        self.assertEqual(bound["provider_identity_class"], "genuine_webwidget")
+        authority = evaluate_level1_authority(
+            lane="live_stock", inbound=bound, decision=decision(),
+            review=review(), evidence=evidence(),
+            environ={
+                "SAM_SALES_AUTONOMY_LEVEL": "1",
+                "SAM_SALES_LEVEL1_LIVE_STOCK_ENABLED": "1",
+                "SAM_SALES_LEVEL1_BROAD_DISPATCH_ENABLED": "1",
+            },
+        )
+        self.assertTrue(authority["checks"]["channel_authorized"])
+
     def test_later_outgoing_or_malformed_chronology_fails_closed(self):
         cases = (
             [
@@ -1286,7 +1590,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         self.assertFalse(result["dispatch_authorized"])
         self.assertIn("cohort_not_stopped", result["blockers"])
 
-    def test_livestock_context_preserves_authority_metadata_without_content(self):
+    def test_livestock_context_preserves_content_for_canonical_chronology(self):
         packet = sam_live_stock_runtime.load_live_stock_read_context(
             {"conversation_id": "2033", "message_id": "M-1", "content": "price"},
             {"sales_lane": "live_stock"},
@@ -1305,7 +1609,7 @@ class SamSalesAutonomyLevel1Tests(unittest.TestCase):
         )
         rows = packet["chatwoot_authority_messages"]
         self.assertEqual(rows[0]["id"], "M-1")
-        self.assertNotIn("content", rows[0])
+        self.assertEqual(rows[0]["content"], "redacted from authority shape")
 
     def test_livestock_authority_preserves_attachment_evidence(self):
         for attachments in ([{"id": "ATT-1"}], {"malformed": True}):

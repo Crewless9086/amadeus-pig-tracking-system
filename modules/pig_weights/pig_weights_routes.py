@@ -4,14 +4,20 @@ from modules.auth.owner_access import (
     correction_batch_owner_admin_principal,
     require_correction_batch_owner_admin_access,
     require_owner_admin_access,
+    require_strict_owner_admin_access,
     require_owner_read_access,
     owner_admin_principal,
+    strict_owner_admin_principal,
 )
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
     process_bulk_weight_batch,
     retry_failed_bulk_weight_batch,
     stage_bulk_weight_batch,
+)
+from modules.pig_weights.herdmaster_piglet_observation_action import (
+    execute_action as execute_piglet_observations,
+    preview_authoritative as preview_piglet_observations,
 )
 
 from modules.pig_weights.pig_weights_controller import (
@@ -41,6 +47,7 @@ from modules.pig_weights.pig_weights_controller import (
     mark_litter_profile_weaned,
     process_litter_profile_weaning_day,
     record_litter_profile_newborn_health,
+    skip_litter_profile_first_treatment,
     mark_litter_profile_piglets_dead,
     record_litter_profile_piglet_sex_counts,
     assign_litter_profile_piglet_tag_numbers,
@@ -313,6 +320,7 @@ def weight_report():
         date_from=request.args.get("date_from", ""),
         date_to=request.args.get("date_to", ""),
         pen_id=request.args.get("pen_id", ""),
+        batch_id=request.args.get("batch_id", ""),
     )
     return jsonify(result), status_code
 
@@ -350,12 +358,14 @@ def mark_litter_weaned_route(litter_id):
 @pig_weights_bp.route("/litter/<litter_id>/weaning-day", methods=["POST"])
 def litter_weaning_day_route(litter_id):
     denied = require_owner_admin_access()
+    if not denied:
+        denied = require_strict_owner_admin_access()
     if denied:
         return denied
     payload = dict(request.get_json(silent=True) or {})
     # Audit identity is always derived from the authenticated server session.
     # A browser-supplied changed_by value has no authority.
-    payload["changed_by"] = owner_admin_principal()
+    payload["changed_by"] = owner_admin_principal() or strict_owner_admin_principal()
     try:
         result, status_code = process_litter_profile_weaning_day(litter_id, payload)
         return jsonify(result), status_code
@@ -377,10 +387,37 @@ def litter_weaning_day_route(litter_id):
         }), 500
 
 
+@pig_weights_bp.route("/litter/<litter_id>/piglet-observations", methods=["POST"])
+def litter_piglet_observations_route(litter_id):
+    denied = require_owner_admin_access()
+    if not denied:
+        denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = dict(request.get_json(silent=True) or {})
+    payload["litter_id"] = litter_id
+    actor_id = owner_admin_principal() or strict_owner_admin_principal()
+    if payload.get("dry_run", True) is True:
+        result, status = preview_piglet_observations(payload, actor_id=actor_id, channel="application")
+    else:
+        result, status = execute_piglet_observations(
+            payload, actor_id=actor_id, channel="application",
+            confirmation_binding=payload.get("confirmation_binding"),
+        )
+    return jsonify(result), status
+
+
 @pig_weights_bp.route("/litter/<litter_id>/newborn-health", methods=["POST"])
 def litter_newborn_health_route(litter_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = record_litter_profile_newborn_health(litter_id, payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/litter/<litter_id>/first-treatment/skip", methods=["POST"])
+def litter_first_treatment_skip_route(litter_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = skip_litter_profile_first_treatment(litter_id, payload)
     return jsonify(result), status_code
 
 

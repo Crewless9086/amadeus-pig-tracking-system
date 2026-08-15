@@ -1,4 +1,757 @@
 # Vault Brain Changelog
+
+## 2026-08-15 - CORE Shadow worker heartbeat retains independent cycle truth
+
+- Preserved the deployed observation worker's last Shadow cycle, poll count and
+  exact next eligible event in the existing governed runner heartbeat.
+- Kept observation mode unable to pick missions, dispatch, release or execute;
+  only a genuine canonical Control Tower feedback event can advance Phase A.
+
+## 2026-08-15 - Forward terminal mission pipeline made mandatory
+
+- Recorded Charl's operating goal that Control Tower must keep development
+  terminals advancing toward each agent's complete documented role without
+  waiting for him to notice idle capacity or manually choose every next task.
+- Required every terminal handover and mission-register entry to retain the
+  current mission, next eligible mission, later sequenced outcomes,
+  dependencies, collision boundaries, promotion trigger and owner
+  reprioritizations.
+- Required automatic next-mission promotion when development releases, the
+  current outcome completes or a genuine external/event wait leaves safe
+  parallel work available.
+- Preserved the core separation: terminals build, test, release and prove;
+  deployed agents operate and manage the genuine recurring business/farm work.
+- Kept this responsibility with Control Tower until CORE and CHARLIE prove an
+  equivalent durable planning, dispatch and outcome-verification loop.
+
+## 2026-08-15 - Canonical payment writer supplies governed auction evidence
+
+- Continued `SMQ-20260813-05` after the genuine owner callback failed closed on
+  the existing auction evidence constraint. The shared writer now records the
+  exact protected digest evidence atomically with full or cumulative partial
+  receipt state; the retained executing claim remains the recovery identity.
+
+## 2026-08-15 - All-terminal dispatch sweep made a Mission Standard closure gate
+
+- Promoted the existing handover-template sweep into the canonical Agentic
+  Operating Mission Standard and Runtime Programme after Control Tower again
+  left CORE dependency-idle after its prerequisite had cleared.
+- Required fresh classification of CORE, OOM SAKKIE, ROOTLINE, HERDMASTER, SAM,
+  BEACON and CODEX UI after every owner message, terminal report, deployment,
+  mission release or dependency change.
+- Made stale idle classifications invalid when their dependencies change and
+  made a Control Tower response incomplete when it silently leaves eligible
+  work idle or relies on Charl to notice the cleared dependency.
+- Preserved active-terminal non-interruption, overlap checks, honest delivery
+  truth and the prohibition on manufacturing work merely to occupy terminals.
+
+## 2026-08-15 - SAM and BEACON protected claim schema reconciled
+
+- Preserved both independently reviewed protected action kinds in the final
+  database constraint after serialized deployment exposed their migration-order
+  collision. The failed SAM activation created no provider message or payment.
+
+## 2026-08-15 - Sale-payment confirmation joined the deployed Telegram rail
+
+- Continued `SMQ-20260813-05` and retained the earlier terminal-created preview
+  as zero-write regression evidence only; its signed session/token artifact was
+  destroyed without confirmation or payment effect.
+- Added a reusable SAM payment adapter to Oom Sakkie's existing provider-bound
+  family-message and protected callback claims, with exactly one Confirm/Cancel
+  card, current-state re-preview and the existing locked Supabase writer.
+- Bound owner, provider card, sale, counterparty, invoice, amount, method, date
+  and preview digest; cancel and sequential/concurrent replay create no payment
+  or repeat Telegram message.
+- Source and tests only at this entry; live provider delivery and genuine owner
+  callback remain separate acceptance evidence.
+
+## 2026-08-15 - Deployed-agent execution ownership enforced
+
+- Added a mandatory Agent Execution Ownership Gate after a SAM development
+  terminal generated a correct BKB settlement preview that should have been
+  delivered by the deployed Oom Sakkie/SAM runtime through Telegram.
+- Required every operational prompt and handover to identify the deployed actor,
+  genuine trigger, owner channel, terminal-permitted role, forbidden terminal
+  substitutions and agent-origin proof.
+- Classified terminal-created previews, cards, provider messages, confirmations,
+  business writes and hardware operations as terminal-invoked test evidence that
+  cannot establish an operating agent or Business completion.
+- Retained SMQ-20260813-05 as WORKING; its terminal-generated preview/token must
+  remain contained until a fresh deployed-agent Telegram journey succeeds.
+
+## 2026-08-15 - BEACON historical four-photo album recovered and replay sealed
+
+- Recovered n8n executions 64570-64573 only through the deployed authenticated
+  Oom Sakkie/BEACON intake into one ordered private group with four verified
+  originals, thumbnails and retained Molly/litter-eight/11-August context.
+- Corrected canonical completion owner identity, crash recovery and monotonic
+  receipt-card replay; one provider receipt was delivered and the completed
+  card was restored once after the regression exposed by production replay.
+- Proved subsequent direct and concurrent replay creates zero messages, edits,
+  media, records or protected effects, then removed the temporary recovery
+  token while leaving normal event intake enabled.
+- Kept BMQ-20260813-02 WORKING: historical terminal-invoked recovery is not the
+  fresh event epoch. One genuinely new owner Telegram album must now traverse
+  GateKeeper and deployed BEACON independently before BUSINESS_COMPLETE.
+
+## 2026-08-15 - BKB settlement journey made sale-type neutral
+
+- Continued `SMQ-20260813-05`; no second writer, database, workflow or mission
+  was created.
+- Replaced the BKB daily-manager slaughter link with the canonical transaction
+  surface and labelled auction payment as `Livestock — Auction`.
+- Kept completed-auction truth separate from settlement receipt, exposed one
+  shared human-readable protected preview and identical recorded/replay
+  readback, and left bank receipt date as the only missing owner fact.
+- Source and regression evidence only at this point; no payment, Telegram,
+  customer, n8n or Google Sheets effect occurred.
+
+## 2026-08-15 - Standing authority and minimum-owner operation enforced
+
+- Clarified that an approved policy, device, channel, cap or safety envelope is
+  durable standing authority for later equivalent routine cycles, not a reason
+  to ask the owner again.
+- Added an irreducible-owner-input test and classified avoidable approvals,
+  duplicate observations and terminal-manufactured runtime facts as
+  `owner_burden_systemic_defect` while the outcome mission remains `WORKING`.
+- Required every operating-agent handover to report authority identity and
+  scope, owner-interaction count, governed evidence sources and why any owner
+  request could not be eliminated.
+- Recorded RMQ-20260813-04 as the first acceptance case after a mandatory human
+  dry-release review blocked autonomous irrigation despite fresh local weather.
+  The correction must preserve automatic weather and hardware fail-closed
+  protection while removing recurring owner confirmation.
+
+## 2026-08-15 - BEACON four-photo intake incident reconciled
+
+- Correlated n8n executions 64570-64573 to one Telegram media group and proved
+  all four provider files remain retrievable with distinct server hashes.
+- Identified two causes: missing fail-closed Render media policy variables and
+  generic owner-context handling preceding typed media on the shared gateway.
+- Routed media and album completion through canonical BEACON intake first,
+  preserved later album captions as append-only evidence, and bound one receipt
+  to the existing durable family-message lifecycle. Integration, deployment,
+  bounded recovery and fresh end-to-end proof remain BMQ-20260813-02 work.
+
+## 2026-08-15 - BEACON awareness proposal proven in deployed runtime
+
+- Merged PR #942 and verified the exact Render merge before invoking one fresh
+  authenticated delivery-disabled awareness request.
+- Returned one owner-useful text-only Facebook proposal with audience, angle,
+  exact safe copy, SAM routing, measurement and Approve/Correct/Decline.
+- Proved one canonical provider-bound result across direct/concurrent replay and
+  zero Telegram, Meta, customer, spend, farm, media, hardware, n8n or Sheets
+  effects. BEACON remains request-driven; no autonomous scheduler is claimed.
+
+## 2026-08-15 - BEACON awareness objective retention repaired
+
+- Preserved the stable Oom Sakkie semantic intent `live_stock_awareness` into
+  BEACON's existing awareness builder instead of demand-gating every campaign.
+- Kept quantified SAM demand separate and left HERDMASTER safe-fulfilment
+  capacity `Unknown` until a canonical demand-independent source is wired;
+  prohibited sale-availability inference from animal counts or awareness copy.
+- Required current effective public-use approval plus server-computed SHA-256
+  lineage for selected media; otherwise prepared safe text-only content with
+  one optional precise media request.
+- Added the exact failed 15 August instruction as non-replay regression
+  evidence and removed raw JSON/internal blocker codes from owner rendering.
+
+## 2026-08-15 - Protected sale-payment preview/confirmation prepared
+
+- Continued existing mission `SMQ-20260813-05` without creating another sales
+  or payment authority.
+- Replaced direct sale-payment mutation with one authenticated zero-write
+  preview and digest-bound confirmation against locked Supabase state. Full
+  receipts equal canonical amount due; partial receipts retain actual amount.
+- Bound replay to the preserved preview digest, failed the legacy direct route
+  closed, and limited Oom Sakkie wording to review/preview.
+- Independent review additionally closed paid-at-creation bypass, enabled a
+  monotonic partial-to-full settlement, and suppressed confirmation for an
+  already-matching canonical payment state.
+- Follow-up review removed digest disclosure, required strict owner-admin
+  access plus a short-lived signed preview token, and restored canonical
+  received-total display for existing partial receipts.
+- Source and regression evidence only. No payment, customer, Telegram, n8n or
+  Google Sheets effect occurred; deployment and genuine proof remain separate.
+
+### Deployment and safe genuine preview
+
+- PR #946 merged as `5a414e6c5857df5c9eb44ac3847f573d80077c9f`;
+  Render deploy `dep-da03eqm7bikc73bmc240` reached `live` on that exact commit.
+- One authenticated preview used an existing genuine unpaid Livestock sale and
+  returned `payment_state_already_recorded`, `confirmation_required=false`, no
+  confirmation token and `writes_to_supabase=false`. Payment status, received
+  total, payment date and `updated_at` were identical before and after.
+- No payment was claimed or confirmed and no Telegram/customer/n8n/Sheets
+  effect occurred. Mission acceptance waits for genuine receipt evidence.
+
+## 2026-08-15 - Idle-terminal dispatch made a response closure gate
+
+- Recorded the Control Tower failure that left eligible HERDMASTER and SAM
+  terminals idle until Charl explicitly asked about utilization, despite an
+  existing mandatory all-terminal sweep.
+- Required every Control Tower response to account for all seven visible
+  terminals and classify each idle/released terminal as `SEND NOW`,
+  `DEPENDENCY IDLE` or `NO SAFE WORK` before closing.
+- Preserved the prohibition on interrupting active terminals, inventing work,
+  overlapping implementation or confusing prepared prompts with started work.
+
+## 2026-08-15 - BEACON farm-awareness direction approved
+
+- Recorded Charl's decision to prepare a non-availability farm-awareness
+  proposal while current marketing demand caps remain zero.
+- Prohibited inventory availability claims, stock selection, publication,
+  spend, customer sends, reservations and farm writes from this decision.
+- Clarified that the rejected `wait for buyer demand` option meant passive
+  waiting for a genuine quantified SAM/customer signal and did not itself
+  define a demand-generation or measurement mechanism.
+
+## 2026-08-15 - Owner-facing terminal prompt state made explicit
+
+- Required every Control Tower handover to show exactly one of `DO NOT SEND —
+  TERMINAL ACTIVE`, `SEND NOW — TERMINAL IDLE OR RELEASED`, or `HOLD — VERIFY
+  TERMINAL STATE` before any continuation instruction.
+- Prohibited sendable prompt text when the target terminal is already active or
+  its state is unknown; retained new facts in the mission register for the next
+  safe feedback boundary instead.
+- Recorded that conversation memory supplies context but is never the durable
+  terminal-dispatch ledger or authority. This documentation-only correction
+  changes no runtime, provider, farm, customer, hardware, n8n or Google Sheets
+  authority.
+
+## 2026-08-15 - Autonomous-agent operational reality gate
+
+- Corrected a cross-system Control Tower failure in which deployed source, web
+  health and terminal-invoked production canaries could be mistaken for a live
+  autonomous specialist.
+- Required every agent handover to prove its autonomous trigger, durable worker,
+  heartbeat, last independent result, next cycle, authority mode and continued
+  operation after the development terminal is released.
+- Added honest non-operational classifications including `deployed-dormant`,
+  `invocation-only`, `event-waiting`, `scheduler-degraded`,
+  `authority-disabled` and `Unknown`.
+- Required failed cards, messages, conversations, jobs, segments and canaries
+  to become immutable historical evidence after reusable repair; fresh
+  acceptance must use current canonical evidence and a new execution identity.
+- Added one mandatory Control Tower feedback and continuation template for all
+  present and future specialists. This governance change grants no runtime,
+  provider, farm, customer, hardware, n8n or Google Sheets authority.
+
+## 2026-08-14 - HERDMASTER daily cohort evidence prepared
+
+- Added a versioned read-only HERDMASTER producer for the eligible tagged
+  weekly cohort and mortality material-change signal; missing evidence remains
+  Unknown and historical 11–12 August completion is not inferred.
+- Changed Oom Sakkie's manager composition to consume the typed specialist
+  contract instead of rebuilding a weighing instruction from every active,
+  on-farm pig. Breeding, untagged, inactive/off-farm and Unknown cases remain
+  separate, and descriptive weight changes carry no diagnosis.
+- Suppressed unchanged mortality digests and completed individual follow-ups;
+  retained the existing durable mortality-consumption rail for changed
+  evidence. No route, message, farm write, hardware authority, n8n logic or
+  Google Sheets authority was added.
+
+## 2026-08-14 - Phase A private observation input prepared
+
+- Added a disabled-by-default internal private CORE action for supplying one genuine Shadow proposal and its later human Control Tower decision to the existing operational-event fabric.
+- Bound input to a sealed result from the existing private authentication boundary and the exact existing mission; malformed, cross-mission, cross-feedback, duplicate and conflicting records fail closed through stable feedback/proposal/decision identities.
+- Added no public route, parser, scheduler, process, mission, dispatch, provider, farm-write or release authority; no comparison was fabricated and the source remains undeployed and disabled.
+
+## 2026-08-13 - Phase A Shadow Control Tower source prepared
+
+- Added a disabled-by-default, non-authoritative proposal/comparison contract for later genuine Control Tower feedback transactions.
+- Reused the existing observe-tier operational event fabric with durable proposal linkage, conflicting-replay rejection and distinct-pair readiness accounting; added no mission queue, schema, scheduler, hidden terminal, agent or competing ledger.
+- Proved zero dispatch/process/mission/provider/farm/release authority and prepared for ten later real comparisons without fabricating events or claiming learning success.
+
+## 2026-08-13 - Full-lifecycle genetic merit contract reconciled
+
+- Continued `HMQ-20260813-04` from current main and preserved both historical
+  lifetime-merit worktrees plus PR #823 without merging or reviving them.
+- Defined one read-only herd/named-animal data and UX contract across pedigree,
+  breeding, litter, actual weaning, growth, mortality, health/observations,
+  destinations and supported financial evidence.
+- Prohibited missing-to-zero coercion, genetic-causation claims, unexplained
+  merit scores and farm mutation; specified denominators, sample sizes,
+  confidence, context qualifiers, charts, backend ownership and CODEX UI
+  handover.
+- This is Prepared documentation only. Backend and UI implementation remain
+  stopped pending Control Tower collision/file ownership division.
+
+## 2026-08-13 - Canonical grouped claim/executor compatibility prepared
+
+- Corrected the typed OOM preview so its displayed canonical digest binds the exact payload retained by the existing protected claim and consumed by the grouped executor.
+- Added fail-closed canonical `Unknown` handling, Unicode-safe identity parsing with full natural-preview equivalence, Unicode-stable digest identity, exact state revalidation, legacy active-claim compatibility, and focused digest/stale-state/rollback/concurrency/replay tests.
+- Added no route or lifecycle bypass and invoked no production preview, claim, confirmation, provider or farm effect; this remains undeployed source evidence.
+
+## 2026-08-13 - Typed OOM grouped preview adapter prepared
+
+- Wired only the existing authenticated typed OOM grouped-weight preview boundary to the pure canonical contract after its established natural interpretation and readiness preflight.
+- Reused already loaded pig and pen evidence, preserved owner-visible `Unknown` facts, and kept the existing protected claim payload and digest boundary byte-compatible without invoking it.
+- Left protected execution, writers, persistence, Sheets fallback, application, UI, voice, routes, schema, configuration and production unchanged; this remains undeployed source evidence.
+
+## 2026-08-13 - Application grouped preview adapter prepared
+
+- Wired only the existing application bulk preflight controller to attach the pure canonical grouped-weight/optional-movement preview after accepted legacy validation.
+- Preserved staging, processing, retry and execution paths and avoided any second database or Sheets snapshot read.
+- Left OOM SAKKIE, Telegram, voice, UI, routes, protected actions, schema, fallbacks and production configuration unchanged; this remains undeployed source evidence.
+
+## 2026-08-13 - HERDMASTER natural health/loss workflow restored
+
+- Restored the owner-approved canonical workflow against current-main source
+  truth after its historical source branch closed without integration.
+- Distinguished the prepared zero-I/O evaluator and preview, existing runtime
+  source, narrow protected recording authority, and unproven production state.
+- Preserved Pig 002 and Maya as immutable test evidence with no provider replay,
+  farm write, route activation, or production-completion claim.
+
+## 2026-08-13 - Channel-invariant grouped preview contract prepared
+
+- Added one unwired, side-effect-free grouped-weight/optional-movement preview contract and isolated adapter-conformance tests.
+- Proved application typed, OOM typed and prepared browser-voice text fixtures normalize to byte-equivalent canonical previews while Telegram voice remains excluded.
+- Changed no executor, route, UI, schema, fallback or production configuration; no runtime improvement or Business completion is claimed.
+
+## 2026-08-13 - Breeding Attention protected page return prepared
+
+- Continued `HMQ-20260813-02` by placing only the Breeding Attention HTML view
+  on the established page-oriented owner-login guard. Anonymous or invalid
+  sessions receive a friendly login return path; JSON evidence retains private
+  API-style HTTP 403 denial.
+- Constrained login return destinations to safe internal absolute paths and
+  added focused anonymous, login-return, invalid-session, authenticated,
+  malicious-next and JSON-denial regressions.
+- This is Prepared source evidence only until independent review, current-main
+  integration, exact deployment and fresh anonymous/authenticated production
+  verification complete.
+
+## 2026-08-13 - Grouped weight and movement read-only reconciliation
+
+- Mapped application, protected OOM SAKKIE, voice-preparation, Supabase and retained legacy paths without runtime or provider mutation.
+- Recorded that the application batch and OOM protected action converge on canonical Supabase events but do not yet share one preview/confirm/execute service.
+- Bounded the next step to a collision-cleared, side-effect-free shared preview contract; no cutover or Business completion is claimed.
+
+- Extended the canonical Control Tower contract with a mandatory all-terminal
+  dispatch sweep after every owner message and terminal report. Control Tower
+  now owns detection of idle/released terminals and selection of their next
+  eligible mission while keeping terminal activity separate from deployed-agent
+  operation.
+
+## 2026-08-13 - Breeding Attention eligibility truth prepared
+
+- Registered `HMQ-20260813-03` as a bounded read-model correction on the
+  existing Breeding Attention and append-only observation rails.
+- Preserved the governed minimum body-condition score as `3.0`; no handoff
+  shorthand was interpreted as score 35.
+- Made supersession lineage authoritative, retained below-minimum recovery
+  holds despite age, and required fresh in-range evidence for restored review.
+- Changed unexecuted cohort language from physical placement to explicit
+  proposal wording and carried exact observation identity, date, score and
+  freshness into the single recovery row.
+- Added disposable-PostgreSQL and browser regressions. This is Prepared source
+  evidence only until review, integration, deployment and authenticated
+  read-only production verification complete.
+
+## 2026-08-13 - Canonical mission identifiers made opaque
+
+- Replaced digit-substring mission parsing with one shared opaque identifier
+  boundary that preserves every hyphen and suffix through private Telegram
+  planning, canonical action selection and exact Supabase lookup.
+- Put explicit mission creation ahead of mission-reference lookup, fail closed
+  on malformed identifier-shaped input, and bind LLM mission reads back to the
+  exact identifier present in the owner's text.
+- Added exact lookup and creation-acknowledgement regression coverage plus
+  update-level replay/concurrency and zero-unrelated-effect checks. This does
+  not claim atomic creation across distinct updates. No provider or production
+  mission was invoked.
+
+- Added the canonical Control Tower mission register for CORE, HERDMASTER,
+  ROOTLINE, OOM SAKKIE, SAM and BEACON. It separates temporary development
+  terminals from deployed runtimes and makes every terminal-feedback assessment
+  a persisted transaction before further dispatch.
+
+## 2026-08-13 - Morning lifecycle gains provider clock
+
+- Added one authenticated Render cron entry at 04:45 UTC (06:45 SAST) for the
+  deployed morning runtime after provider inventory proved no such clock existed.
+- Kept Supabase's date-stable claim authoritative across cron, web workers and
+  restarts; no n8n, Sheets, workstation or second business identity was added.
+- Added a non-colliding synthetic ROOTLINE schedule-test family with one durable
+  claim, one labelled Telegram TEST result and zero actuation or farm authority.
+
+## 2026-08-13 - Runtime Programme pathname reconciled
+
+- Confirmed PR #867 introduced the owner-approved controlling Programme only at
+  `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`; it was not deleted,
+  reverted, renamed or stranded.
+- Added a historical pointer for the mistaken `docs/06-operations` pathname and
+  kept both source maps authoritative on the single canonical architecture file.
+
+## 2026-08-13 - CHARLIE watchdog reversible proof rolled back
+
+- Ran the single explicitly authorized watchdog disablement window, stopping
+  only its task ownership and two relay processes while Render webhook and
+  Supabase remained active.
+- Proved one authenticated Render update, one inbound claim, one owner/CHARLIE
+  conversation pair and one provider-confirmed reply without duplication.
+- Durable mission pickup failed because the CMQ date was parsed as a mission ID;
+  no retry was made. Restored the unchanged enabled/Ready task, healthy process
+  chain and webhook state. The watchdog remains retained, not retirement-ready.
+
+## 2026-08-13 - Morning startup catch-up policy bounded
+
+- Preserved the late 13 August startup plan as immutable defect evidence.
+- Limited plan construction to 06:45:00–06:59:59 SAST so deployment or restart
+  after that window cannot manufacture a stale plan.
+- Reused the one date-stable durable claim for a concise missed-window failure;
+  repeated and concurrent startup remains zero-send/edit and plan loaders do not
+  run after the window.
+
+## 2026-08-13 - CHARLIE scheduler singularity read-only proof
+
+- Proved the local relay loaded webhook transport mode while stale deployed
+  source continued Telegram `getUpdates` attempts under the enabled watchdog;
+  Render remained the provider webhook owner.
+- Classified it as a genuine duplicate transport owner but retained pending
+  fresh no-loss message, callback, mission-pickup and reversible-disable proof.
+  No task, process, provider route, message or production state changed.
+
+## 2026-08-13 - Phase 0 provider/runtime ownership snapshot
+
+- Read n8n, Render, Telegram and Chatwoot provider state plus local Windows
+  task/process ownership without invoking or changing any provider component.
+- Reconciled 31 provider workflows, seven Render services, three Chatwoot
+  callbacks, two Telegram webhook owners and four relevant scheduled tasks.
+- Identified the ready local CHARLIE relay watchdog as the strongest suspected
+  competing scheduler/transport and retirement candidate; actual polling or
+  duplicate delivery remains unproven pending loaded-mode evidence. No task,
+  process, webhook or workflow was changed.
+
+## 2026-08-13 - Agentic Farm Runtime Phase 0 repository discovery
+
+- Inventoried all 27 committed n8n workflow exports, Google Sheets operational
+  families, local relays, scheduled processes, Render cron evidence, provider
+  callbacks and duplicate scheduler risks without runtime mutation.
+- Classified dependencies and recorded disable impact, canonical replacement,
+  owner, prerequisites, rollback and exact retirement proof.
+- Kept exported state distinct from runtime-loaded and provider-verified fact;
+  the next slice is a read-only external/runtime truth snapshot.
+
+## 2026-08-13 - Oom Sakkie morning delivery claim made date-stable
+
+- Production proof of PR #865 found that material-digest claim identities
+  allowed changed evidence after restart to re-enter same-day provider editing.
+- The backend morning lifecycle now shares one date-stable delivery claim
+  between the useful plan and concise failure outcome; restart, concurrency,
+  changed evidence and replay remain zero-send/zero-edit after the first claim.
+- No missed 13 August brief was triggered, replayed or manufactured.
+
+## 2026-08-13 - Unified action spine and durable farm runtime programme
+
+- Established one controlling programme for channel-invariant actions,
+  Supabase canonical truth, durable specialist runtime, incremental n8n/Sheets
+  retirement, portable laptop-to-Farm-Node deployment and controlled learning.
+- Classified the legacy system architecture as historical and the n8n workflow
+  suite as transitional rather than allowing either to remain implicit current
+  authority.
+- Added document lifecycle and evidence-led cleanup rules so superseded methods
+  remain learnable without steering future builds.
+- Preserved the Mission Standard's owner-directed authority, mapped existing
+  status vocabulary, and grandfathered source-map-designated active doctrine
+  only until Phase 0 performs document-by-document classification.
+- Classified the old Claude review handoff as historical evidence and completed
+  the legacy architecture retirement banner with CORE ownership and Phase 0
+  replacement proof.
+- Prohibited new n8n business logic and new canonical Google Sheets write paths.
+
+## 2026-08-13 - Production-owned morning lifecycle prepared
+
+- Identified the daily manager's missing ownership boundary: durable composition
+  and Telegram delivery existed, but invocation was nested inside an external
+  ROOTLINE reassessment request and therefore stopped when no scheduler called it.
+- Added a Render-process-owned 06:45 Africa/Johannesburg wake-up with durable
+  daily/provider claims, bounded catch-up through 12:00, replay silence and one
+  visible deduplicated failure escalation.
+- Kept evidence loading and planning read-only and removed all dependency on the
+  local CHARLIE Telegram relay, n8n business logic and ROOTLINE hardware execution.
+- Source and tests are prepared only. Exact-merge deployment and a genuine
+  provider-confirmed scheduled plan remain required for Business completion.
+
+## 2026-08-12 - Inclusive breeding exposure date reconciled
+
+- Made the farm's 17-day natural-exposure rule unambiguous: placement day is
+  day 1, so placement on 12 August has planned removal on 28 August.
+- Bound application and Oom Sakkie adapters to the same HERDMASTER date
+  calculation and kept exposure separate from service, conception, pregnancy
+  and movement.
+- Retained the complete semantic packet ahead of narrower deterministic
+  recovery parsing so sow-first owner reports cannot be inverted.
+- Corrected disposable-PostgreSQL migration ordering so the observation
+  rollback gate runs against a genuinely absent observation rail.
+
+## 2026-08-12 - ROOTLINE durable doctrine restored and reconciled
+
+- Restored the missing agentic device-management plan and water/energy
+  business rules from preserved Git history, treating them as recovery
+  candidates rather than automatically authoritative truth.
+- Reconciled B/C authority to the commissioned one-zone/3,599-second boundary,
+  fail-closed source defaults, provider-confirmed OFF/native shutdown and
+  atomic same-zone daily dispatch guard. The documentation audit did not read
+  or claim the current deployed autonomy-flag value and authorized no enabling.
+- Preserved fertilizer mixing and injection as separate auxiliary capabilities
+  that never inherit B/C authority, and Borehole 1 SmartLife/IFTTT as a
+  separately commissioned device with its own authority and outcome proof.
+- Applied the channel-invariant canonical action standard across application,
+  typed Oom Sakkie, Telegram and voice without adding any action path.
+- Updated NEXT_STEPS and the implementation source map so future ROOTLINE
+  terminals discover the restored doctrine. This reconciliation made no
+  production, provider, Telegram, database or hardware change.
+
+## 2026-08-12 - Channel-invariant canonical actions approved
+
+- Established application clicks, typed Oom Sakkie, Telegram and voice as
+  adapters to one specialist-owned canonical action rather than separate
+  business systems.
+- Required one normalization, preview, validator, authority gate, executor and
+  canonical readback per capability while allowing channel-specific display.
+- Prohibited new channel-specific mutation paths, shadow records and weaker
+  confirmation rules.
+- Recorded HERDMASTER natural breeding exposure as the first full parity
+  mission, including group identity, optional explicit movement, separate
+  exact-service capture and conservative group-capacity intelligence.
+- Kept existing features on an incremental migration path rather than
+  authorizing a risky whole-system rewrite.
+
+## 2026-08-12 - Piglet weaning observation mission approved
+
+- Recorded Charl's real-world need to capture favourable pig-specific
+  observations while entering Weaning Day records without opening every pig
+  profile.
+- Kept Section 5 constrained to pre-weaning death capture and rejected litter
+  notes, medical notes and `General_Notes` as substitute evidence stores.
+- Bound the future capture workflow to the existing append-only
+  `pig_observation_events` rail with exact pig, litter, observation-date and
+  owner provenance.
+- Assigned Codex ownership of the capture UI/backend journey and HERDMASTER
+  ownership of cited advisory consumption in later purpose and breeding review.
+- Preserved the 14-day purpose-review rule and prohibited automatic purpose,
+  breeding, lifecycle, medical, movement or commercial effects.
+
+## 2026-08-13 - Piglet observation candidate reconciled with litter attention
+
+- Added one channel-invariant, actor-bound preview/confirm action that appends
+  exact-pig weaning observations to `pig_observation_events` and returns exact
+  canonical readback while retaining provenance, replay and correction history.
+- Preserved Unknown-purpose piglets for later cited HERDMASTER review without
+  converting owner observations into classification or breeding clearance.
+- Corrected litter attention so a future or unsupported legacy planned
+  `wean_date` does not imply completed weaning; actual evidence plus incomplete
+  active lifecycles is required for `complete_weaning`.
+- Made the sow name the dashboard headline and litter ID secondary context,
+  with a safe litter-only fallback. This records Prepared source/test evidence;
+  no owner event, production proof or Business-complete claim was manufactured.
+
+## 2026-08-12 - Actionable Oom Sakkie manager candidate prepared
+
+- Integrated Charl's approved actionable daily-manager mission document and
+  established the tracked Telegram presentation standard it references.
+- Limited the morning plan to three do-today and three watch items, with names
+  and business meaning before raw identities.
+- Bound an authenticated natural reply to the exact active manager question
+  before generic semantic intake, retaining partial grouped evidence and exact
+  replay safety.
+- Preserved direct HERDMASTER and ROOTLINE routing and added semantic direct
+  sales status to the existing sales capability.
+- Reconciled the four current money-due sales read-only and prepared one
+  owner-governed canonical payment-state route that preserves BKB invoice/VAT/
+  commission/settlement accounting and never infers receipt.
+- Source, tests and documentation are prepared only. No Telegram, payment,
+  farm, customer or hardware effect has occurred; production proof remains due.
+
+## 2026-08-11 - Protected mortality and grouped-weight recovery deployed
+
+- Reconciled provider chronology separately from canonical readback for Pig 130 and the four-row grouped-weight defect.
+- Bound mortality and grouped-weight previews to opaque owner/private-chat/provider-card claims with Afrikaans controls, expiry, concurrency and replay safety.
+- Enforced exact preview-to-transaction equality for grouped rows, date and pen movements, with canonical pen evidence and atomic rollback.
+- Prevented protected replies from falling into generic manager presentation and made completion one verified card edit with controls removed.
+- Added the sealed append-only Pig 130 effective-date correction from 11 August to the owner-reported 6 August while preserving the original event and Unknown clinical facts.
+- Deployed reviewed lineage, applied the additive rail, and corrected Pig 130's effective date to 6 August through one append-only supersession.
+- Proved the original event remains immutable, replay changes zero rows, and all four existing 11 August weights/D3 placements remain unchanged.
+- Released broad runtime; the next genuine protected journey remains the outstanding Business-completion proof.
+
+## 2026-08-11 - ROOTLINE status and owner-access defect documented
+
+- Confirmed the owner dashboard actively falls back from empty Supabase irrigation plan tables to legacy `Amadeus_Irrigation_Logs` rows.
+- Distinguished legacy read-only planned rows from canonical scheduler ownership and provider-confirmed execution.
+- Defined one Supabase status reconciliation across dashboard, irrigation detail, Telegram and hardware history.
+- Required a visible owner login/session control and return-to-irrigation handling for protected endpoint `403` responses.
+- Kept fertilizer mixer, injection and later borehole commissioning as separately proven physical outcomes.
+
+## 2026-08-11 - HERDMASTER foundation-herd genetic selection
+
+- Recorded Charl's bounded declaration that the current foundation breeding population is operationally unrelated unless attributable evidence proves otherwise; this is not verified ancestry and does not extend automatically to descendants.
+- Required exact sow and boar identity for all future attributable litters and offspring so later relatedness exclusions become real.
+- Replaced service-count-led preference with an evidence hierarchy centred on survival, comparable growth, maternal recovery/performance, exact pair history, known relationships and useful line diversity.
+- Classified Prince and future new boars as controlled trials until attributable results support wider use.
+- Required genetic/production pairing quality before whole-round physical capacity, with normally two or three females per immediate boar group and a persistent sequenced backlog.
+- Bound the worklist to the existing breeding-observation rail and Oom Sakkie/Breeding Attention owner journey.
+
+## 2026-08-10 - Governance availability and outcome-bound proof
+
+- Added a mandatory governance preflight in both the Control Tower workspace and the target terminal's own `HEAD`.
+- Prohibited claiming that the Mission Standard was applied when it is absent, untracked, truncated, unread or replaced by fallback doctrine.
+- Required every handoff to report the exact standard identity actually read and distinguish documented facts from runtime-loaded and provider-verified evidence.
+- Bound terminals to the owner-visible outcome across sequential defects instead of allowing PRs, deployments, replay or containment to redefine completion.
+- Required fresh post-deployment end-to-end evidence through external effect, authoritative readback and visible closure before a live journey is Operational.
+- Added a three-owner-attempt systemic-incident threshold and prohibited combining an unresolved P0 incident with a broad new capability mission.
+## 2026-08-09 - Contextual specialist follow-up correction prepared
+
+- Diagnosed Telegram `3481` as a generic active-specialist context precedence
+  failure: a valid ROOTLINE commissioning reply was treated as a tank
+  observation and produced immutable defect card `3482`.
+- Added owner/chat/provider-bound pending specialist resolution before generic
+  observation handling, including English, Afrikaans and mixed-language
+  readiness replies and fail-closed multi-case ambiguity.
+- Bound unavailable checklist evidence to the exact parent digest and explicit
+  typed affirmative values; presence, negative and partial replies fail closed.
+- Added a zero-command fertilizer follow-up adapter. Current readback keeps the
+  mixer contained because CH2 Inching remains OFF and Interlock/Scene state is
+  not provider-verifiable; all outputs and power-restoration states are OFF and
+  timers are disabled.
+- The first production replay exposed semantic routing ahead of durable replay
+  lookup and delivered defect clarification `3485`. Added exact provider replay
+  precedence before LLM/context routing; cached outcomes revalidate zero
+  authority and suppress sends/edits, while mismatches fail closed.
+- Execution `63371` exposed the distinct retained-context defect: accepted
+  commissioning facts were not retained across a later CH2 and presence reply,
+  so the backend returned silent `waiting_for_input`. Separately, CI exposed an
+  over-broad replay-lookup branch that blanked an ordinary read-only answer when
+  provider lookup was unavailable. Restored ordinary routing unless replay is
+  positively proven, retained typed parent evidence, and made every genuine
+  waiting question visibly notify once while updating the durable card.
+- Closed the subsequent process-interruption gap between an internally complete
+  contextual outcome and owner delivery. Replay suppression now requires the
+  matching terminal family-delivery receipt; an undelivered stored outcome
+  resumes only deterministic delivery and never reruns specialist work.
+- Corrected active-context projection after a visible notification. A
+  `notification_delivered` receipt now enriches chronology without replacing
+  the underlying waiting lifecycle, preventing short commissioning replies
+  from falling into a generic ROOTLINE water-and-power brief.
+
+## 2026-08-09 - Oom Sakkie farm-manager spine closeout assessed
+
+- Reconciled the single authenticated Telegram-to-manager lifecycle across
+  semantic interpretation, bounded context, typed evidence, canonical service,
+  durable receipt/readback, specialist consumption, human presentation and
+  scheduled continuation.
+- Published the evidence-backed journey scorecard. Six of eight journey
+  families are operational; Afrikaans provider presentation and a genuine
+  scheduler material-change notification remain automatic future proofs.
+- Kept the overall spine at `91% / Technical gap`: the consolidated manager
+  runtime still represents SAM and BEACON as missing. Those adapters remain
+  explicitly outside this closeout rather than being silently claimed.
+- Preserved ROOTLINE rain Hold and B/C authority, every excluded PR, family
+  permissions, farm/customer data and all provider-ambiguous no-retry guards.
+
+## 2026-08-09 - Oom Sakkie owner-observation correction completed
+
+- Diagnosed authenticated Telegram `3477` as a generic prose-to-typed-fact
+  boundary failure: admission and routing succeeded, but zero canonical tank
+  rows were written and the same mission was safely contained.
+- Added closed multilingual semantic water facts, two independent
+  provider-bound tank identities committed transactionally, exact-generation
+  readback, bounded zero-write continuation and clean owner wording.
+- Added regression coverage for natural English/Afrikaans/mixed variants,
+  compound observations, ambiguity, rollback, readback failure, restart,
+  replay and unchanged ROOTLINE notification silence.
+- Integrated PRs #750-#753; live merge
+  `d7f8b3a3054baf0b59026e10d425f718f81db678` is deployed as
+  `dep-d9s46i9srm7s73avildg` with healthy exact lineage.
+- Recovered genuine Telegram `3477` exactly once. Storage observation
+  `ROOTLINE-TANK-582FCE42A6219D6B832CBEAB` and reservoir observation
+  `ROOTLINE-TANK-0DA1FF5B057C55DCA54B456F` share the authenticated provider
+  source and were read back at generation
+  `05b6cbeaabdf4db8c535c33e52a29d2ca00ece8f863bd8196495e45401e9cf91`.
+- Existing card `3478` was corrected once; exact replay produced zero rows,
+  sends, edits, lifecycle events and hardware commands. ROOTLINE retained its
+  observed-rain Hold.
+
+## 2026-08-05 - SAM provider-identity deployment contained
+
+- Integrated clean green PR #727 at exact reviewed head
+  `0727ff80d22af89226467ab6db5d79fc8a1b8248`; exact-merge CI passed and Render
+  deployed merge `ec56263182763dc2475ca6069a3dd26853781441` as
+  `dep-d9pm0aegekts73dpv9tg` with HTTP 200 health and unchanged Level 1 controls.
+- Production read-only acceptance proved the Chatwoot conversation endpoint
+  carries exact `inbox_id` but no provider channel. The exact authenticated
+  inbox endpoint carries `Channel::Whatsapp` and `whatsapp_cloud`.
+- Contained before claim or send. Conversation 2101/inbound 777634477 remained
+  unchanged and claim-free; zero customer sends, retries, quarantines,
+  Chatwoot changes, summary writes, protected actions and farm mutations were
+  created. Shared runtime was released immediately.
+
+## 2026-08-05 - SAM typed manager summary integrated
+
+- Integrated PR #691 at reviewed head `bcd3b9cfa34a1278db18eb7e0f7c69b4612e2321`
+  and deployed exact merge `34464e89bf2d3a3ebbda12779cb2672461a2ca2b` as
+  `dep-d9pl1p8ae00c738m2n8g`; exact-head and exact-merge CI passed and health
+  returned HTTP 200.
+- Added the typed, content-free `sam_manager_summary_v1` aggregate for leads,
+  answers, waiting work, protected decisions, quarantines and coverage
+  exceptions without adding a router, queue, Telegram path or customer
+  authority.
+- Proved read-only consumption through Oom Sakkie's existing supported-answer
+  boundary. Exact replay retained digest
+  `FC74B4C78F9B7734562C1ED58D234E1E8478766FC29302238A689C3475A86217`
+  and created zero summaries, messages, claims and writes.
+- The proof truthfully exposed one current customer awaiting SAM because
+  WhatsApp provider identity is unavailable. No claim, send or retry was
+  attempted; protected decisions and quarantines remain zero.
+
+## 2026-08-05 - HERDMASTER mortality intelligence integrated
+
+- Integrated PRs #723/#724 and deployed exact merge `c1913270a0ae16f2cfb971ecc9c6b5db0bacfdcc` as `dep-d9pkn9p5efls73a501tg`.
+- Proved one authenticated current read-only consumption with 9 dated losses in 30 days, Pig 127 retained as a governed mortality follow-up, completed Pig 125 suppressed, and no obsolete breathing question.
+- Repeated assessment retained one append-only mortality-consumption event with zero farm, lifecycle, medical and Telegram authority. Provider-confirmed family presentation remains waiting for the next genuine owner request; no provider identity or evidence was manufactured.
+
+## 2026-08-05 - HERDMASTER mortality consumption successor prepared
+
+- Rebased PR #702's reviewed mortality evaluator onto current main and connected it to Oom Sakkie's existing authenticated manager and append-only consumption rails.
+- Added canonical read-only current/historical evidence loading, stable material-refresh identity, bilingual bounded presentation, active-lifecycle separation and replay suppression with no route, Telegram sender, diagnosis, treatment or farm-write authority.
+
+## 2026-08-05 - Oom Sakkie automatic reassessment scheduler prepared
+
+- Extended the existing approved 15-minute n8n scheduler with a ROOTLINE-only call to Oom Sakkie's authenticated read-only reassessment endpoint; no new workflow family, Telegram path or command authority was added.
+- Added durable SAST due-bucket claims, bounded missed-run handling, canonical evidence-cutoff validation, invocation receipts, terminal outcomes, next-due gating, restart containment and exact replay suppression.
+- Kept unchanged results silent and preserved provider-ambiguous message 3240 without retry. Source readiness is not automatic-operation proof; deployment acceptance still requires a scheduler-originated live receipt.
+- Deployed merge `5cfed5eaca643c09674db24efcc1fb48fd1036f8` and extended the existing active scheduler in place. Automatic execution `62498` durably completed unchanged with zero Telegram sends/edits, commands and farm writes, and owns the next 09:15:45 SAST reassessment. Genuine material-change delivery remains pending real evidence.
+
+## 2026-07-31 - Owner Attention Queue existing-rail adapter prepared
+
+- Connected current SAM inbox dispositions to the consolidated queue after
+  normal SAM processing, with adapter failure contained from the sales lane.
+- Reused the existing owner-card lifecycle, review-event evidence rail,
+  Telegram send/edit helpers and authenticated Oom Sakkie callback; added no
+  bot, trigger, router, webhook, workflow family, table or decision ledger.
+- Kept ordinary activity summary-only, incomplete protected evidence
+  buttonless, consumption receipt-bound, resolution in-place and every
+  customer/farm/protected action outside adapter authority.
+
+## 2026-07-31 - Oom Sakkie consolidated Owner Attention Queue prepared
+
+- Added an I/O-free coordination kernel for one deduplicated sales-status
+  summary per period, exact-bound protected owner-decision cards and separate
+  buttonless systemic SAM alerts.
+- Ordinary inbounds, acknowledgements, automatically handled conversations and
+  qualification progress create no individual Telegram item or buttons.
+- Latest proven conversation chronology wins, conflicting ties fail closed,
+  and unchanged systemic incidents deduplicate across reporting periods.
+- Changed chronology or evidence prepares an in-place button-removal edit.
+  Consumption remains unperformed: the kernel prepares a trusted-owner-bound
+  atomic intent, and only an existing-rail authoritative receipt can prepare
+  the resolved-card edit. Receipt replay is a complete no-op.
+- Preserved the existing SAM owner-card lifecycle, GateKeeper route, Telegram
+  bot/trigger and decision evidence rail. No runtime, customer, farm, Telegram,
+  deployment or configuration action occurred.
+
 ## 2026-07-27 - SAM Meat owner-assisted launch truth reconciled
 
 - Replaced the retired four-set new-sales menu with Amadeus Signature, Ember and Grand Cut while preserving Set D as historical evidence only.
@@ -442,3 +1195,111 @@
 - Bound exact Facebook copy, approved media hash, source revisions, cap, price, and SAM attribution into a deterministic packet that is server-revalidated before the existing exact owner confirmation gate.
 - Kept WhatsApp suggestion-only and preserved all no-send, no-reservation, no-order, no-stock-change, no-spend, and no-lifecycle-write boundaries.
 - Added a deterministic append-only pre-send claim so retries and concurrent duplicates stop before Meta, while the returned Facebook post ID remains separate append-only result evidence.
+# 2026-08-01 — BEACON server-derived publication hash correction prepared
+
+- Corrected Facebook image execution to derive hash trust only from authenticated
+  private-object readback joined to canonical server media and approval lineage.
+- Added fail-closed byte, MIME, object-version, freshness, changed-media,
+  concurrency, replay and ambiguous-provider regressions. No runtime, Meta,
+  publication, Telegram, merge or deployment action occurred.
+- Preserved terminal failed claim `BEACON-FB-POST-A3E2BBED0CEA5F93E2` and prepared
+  successor execution identity `BEACON-PUBLICATION-EXECUTION-928F7D5A9731FFDE3D62CE1A`
+  plus a timing-only Oom Sakkie reauthorization handover.
+# 2026-08-05 — SAM pre-claim reconciliation timeout correction
+
+- Diagnosed the approximately 30-second HTTP 503 as a transient full-inventory Chatwoot page read reaching the previous hard timeout before any durable claim or external customer effect.
+- Bounded Chatwoot reads, isolated partial-page and exact-conversation chronology failures, preserved unrelated eligible work, and added fresh claim-boundary classification without weakening identity, chronology, usefulness, pricing, inventory, delivery or authority gates.
+- Recorded the exact source and production handover in `docs/06-operations/SAM_INBOX_RECONCILIATION_TIMEOUT_HANDOVER.md`.
+# 2026-08-08 — Oom Sakkie family access and Afrikaans (source-only)
+
+- Added a closed, identity-bound family-role contract with Charl-only protected authority, independently configurable Mum/Dad permissions, privacy-safe unknown-sender denial, exact reporter provenance, and zero I/O authority.
+- Clarified that the semantic front door supports English, Afrikaans and mixed language but cannot infer identity or permission.
+- Added focused regressions and a governed onboarding/integration handover. No family identity was added; no runtime, Telegram, farm, customer, or hardware state changed.
+# 2026-08-09 — Oom Sakkie daily ROOTLINE presentation integration
+
+- Reconciled the reviewed family-access contract onto current ROOTLINE production without adding Mum or Dad.
+- Added one date-bound 07:00 SAST presentation lifecycle on the existing 15-minute scheduler and reassessment rail. It waits for fresh canonical evidence, presents only B/C decisions and genuine owner input, and suppresses volatile timestamp/format changes.
+- Kept unchanged reassessments silent and made Started, Completed and Intervention visible state-bound notifications. No new planner, command path, scheduler, Telegram path, database table or ROOTLINE authority was added.
+# 2026-08-10 — Daily farm-manager loop (source stage)
+
+- Added a typed continuation from authenticated fertilizer specialist
+  acceptance into ROOTLINE's existing single-use auxiliary coordinator.
+- Added scheduler-owned daily farm management with durable task identities,
+  stable material deduplication, semantic ranking constrained to canonical task
+  identities, overdue litter/data-quality watchers and governed sale readiness.
+- Integrated the reviewed HERDMASTER breeding and auction-sale source lineages;
+  deployment and business acceptance remain pending.
+## 2026-08-11 - Oom Sakkie specific HERDMASTER request boundary prepared
+
+- Reconciled authenticated Telegram 3527 and relay execution 63796: a specific
+  updated breeding-plan request was incorrectly consumed by the broad farm
+  manager and delivered as Telegram 3528.
+- Added one provider-bound HERDMASTER request lifecycle that consumes the
+  current canonical breeding worklist, renders concise English/Afrikaans plans,
+  preserves protected mating authority and suppresses exact replay.
+- Restricted the consolidated farm-manager handler to semantic
+  `manager_round` requests and made canonical Dead/Sold/off-farm state retire
+  stale active mortality projections.
+- Authoritative readback proves Pig 127 is Dead and off-farm effective
+  2026-08-03; no protected mortality decision remains. Pig 130's corrected
+  2026-08-06 death and the four 11 August weight records remain unchanged.
+# 2026-08-14 — CMQ-20260813-05 authenticated opaque mission creation repair
+
+- Extended only the existing authenticated private `create_mission` action to
+  pass an explicitly owner-approved opaque `mission_id` unchanged into the
+  canonical Supabase `record_mission()` boundary and verify exact readback.
+- Explicit identity requires the sealed private-owner action context and exact
+  context binding. Malformed, aliased, multiple, substituted, conflicting and
+  title-colliding identities fail closed. Exact replay reuses the same mission;
+  legacy authenticated calls without an explicit ID retain generated IDs.
+- The canonical store serializes normalized titles for both exact and retained
+  legacy intake; exact mode additionally serializes the opaque ID before any
+  insert or event. It forbids legacy replacement/alias behavior for the
+  authenticated exact call and makes exact replay, competing-title creation and
+  exact-versus-legacy races converge without unrelated effects.
+- Cross-references the CMQ-20260813-02A opaque-identity repair. This source-only
+  change creates no mission, Shadow event, route, scheduler, process, agent,
+  queue, schema, provider action, n8n authority or Google Sheets authority.
+
+# 2026-08-14 - CMQ-20260813-05 atomic bootstrap admission contract
+
+- Extended only the sealed authenticated explicit-ID creator with the single
+  owner-approved CMQ-05 bootstrap admission contract: epoch
+  `CORE-CURRENT-2026-08-14`, classification `current`, lifecycle `WORKING`,
+  human Control Tower as sole decision/dispatch authority and `runnable:false`.
+- The existing canonical mission transaction persists a non-runnable `paused`
+  mission plus exactly one `portfolio_admitted` event. Exact replay verifies
+  structured admission truth and writes no second creation/admission event;
+  malformed, aliased, cross-mission and conflicting admission fails closed.
+- This source change admits no mission by itself and grants no runner,
+  recovery, dispatch, release, Shadow, provider, n8n or Google Sheets authority.
+# 2026-08-14 — CMQ-20260813-05 legacy portfolio classification contract
+
+- Added a sealed, exact-baseline and exact-approved-set Supabase transaction for the owner-approved 86-row legacy classification.
+- Classification is a separate evidence-preserving, non-admission dimension; original statuses, evidence and timestamps are not rewritten.
+- Exact replay is no-op, conflicting replay fails closed, generic APIs cannot forge classification events, and classified legacy rows are runtime-ineligible.
+- No classification has been applied by this source change; integration, deployment and one authenticated operation remain required.
+# 2026-08-15 - CMQ-20260813-05 canonical Shadow ingress and worker subscription
+
+- Added one sealed owner-private Control Tower reconciliation producer on the
+  existing Supabase `operational_events` spine. Genuine owner-pasted terminal
+  feedback must precede the canonical human decision; memory, historical text
+  and terminal-generated substitutes fail closed.
+- Connected the retained supervised CORE runner's existing `observe_only` mode
+  to the durable feedback subscription with replay-safe proposal/comparison
+  consumption and visible next-event state. Mission pickup, recovery, release,
+  dispatch, provider and farm authority remain unreachable.
+- Granted observation eligibility only to the exact paused, non-runnable
+  `CMQ-20260813-05` bootstrap admission. The 86 classified legacy records and
+  all unapproved current candidates remain non-runnable.
+
+## 2026-08-15 - Full-lifecycle genetic merit backend truth reconciled
+
+- Reconfirmed merged PR #905 as the single authoritative HERDMASTER backend;
+  retained PR #823 and historical lifetime-merit worktrees as evidence only.
+- Repeated authenticated production herd and Tyson-profile reads returned
+  stable versioned semantics, explicit denominators and Limited confidence,
+  correction lineage, non-causation language, nullable unsupported growth and
+  finance, and `writes_performed:false`; eight canonical counts were unchanged.
+- Recorded that current owner pages still consume the legacy aggregate.
+  HMQ-20260813-04 remains `WORKING`; CODEX UI owns the next rendering-only slice.

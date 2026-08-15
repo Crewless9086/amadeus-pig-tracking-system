@@ -299,7 +299,7 @@ def list_sam_live_stock_runtime_owner_review_items(limit=12, database_url=None, 
                         facts_json,
                         decision_json,
                         created_at
-                    from public.sam_live_stock_conversation_review_events
+                    from public.current_actionable_sam_live_stock_review_events
                     where owner_send_required = true
                        or safe_to_send = true
                        or coalesce(sam_reply_excerpt, '') <> ''

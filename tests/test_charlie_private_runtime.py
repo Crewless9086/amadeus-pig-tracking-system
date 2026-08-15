@@ -1,4 +1,6 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from unittest.mock import patch
 
 from modules.charlie.private_runtime import handle_private_telegram_webhook
@@ -24,10 +26,12 @@ class FakeStore:
         self.bundles = {}
         self.context = {}
         self.completions = []
+        self.claim_lock = Lock()
 
     def claim_update(self, update, callback=""):
-        created = update not in self.claimed
-        self.claimed.add(update)
+        with self.claim_lock:
+            created = update not in self.claimed
+            self.claimed.add(update)
         return {"success": True, "created": created, "update_key": "UPDATE-" + update}, 201 if created else 200
 
     def complete_update(self, *args, **kwargs):
@@ -70,6 +74,31 @@ class CharliePrivateRuntimeTests(unittest.TestCase):
         self.assertEqual((code, duplicate_code), (200, 200))
         self.assertEqual(len(self.sent), 1)
         self.assertEqual(duplicate["status"], "duplicate_update_ignored")
+
+    @patch("modules.charlie.private_executive.execute_private_tool")
+    def test_concurrent_replay_acknowledges_exactly_once_with_zero_unrelated_effects(self, tool):
+        mission_id = "CMQ-20260813-02A"
+        tool.return_value = ({"success": True, "status": "mission_ready", "summary": "Mission ready.", "mission": {"mission_id": mission_id}}, 200)
+        acceptance = payload("opaque-concurrent", f"Status of mission {mission_id}")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _index: handle_private_telegram_webhook(acceptance, HEADERS, environ=ENV, sender=self.sender, store=self.store), range(2)))
+        self.assertEqual(sorted(result[0]["status"] for result in results), ["duplicate_update_ignored", "private_charlie_replied"])
+        tool.assert_called_once_with("read_mission", {"mission_id": mission_id})
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(len(self.store.intents), 1)
+
+    @patch("modules.charlie.private_runtime.execute_private_tool")
+    def test_create_mission_is_acknowledged_once_and_replay_creates_no_second_effect(self, tool):
+        tool.return_value = ({"success": True, "status": "mission_created_verified", "summary": "Mission created and verified.", "mission_id": "CHARLIE-MISSION-OPAQUE-02A"}, 200)
+        acceptance = payload("opaque-create", "Create a mission CMQ-20260813-02A durable queue acknowledgement only")
+        first = handle_private_telegram_webhook(acceptance, HEADERS, environ=ENV, sender=self.sender, store=self.store)
+        replay = handle_private_telegram_webhook(acceptance, HEADERS, environ=ENV, sender=self.sender, store=self.store)
+        self.assertEqual(first[1], 200)
+        self.assertEqual(replay[0]["status"], "duplicate_update_ignored")
+        tool.assert_called_once()
+        self.assertEqual(tool.call_args.args[0], "create_mission")
+        self.assertEqual(tool.call_args.args[1]["title"], "CMQ-20260813-02A durable queue acknowledgement only")
+        self.assertEqual(len(self.sent), 1)
 
     def test_unauthorized_update_sends_nothing(self):
         bad = payload("2")

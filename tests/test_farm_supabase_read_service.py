@@ -73,7 +73,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(connection.exit_count, 1)
         self.assertIsNone(connection.exit_exception)
 
-    def test_breeding_attention_snapshot_uses_one_connection_and_eight_queries(self):
+    def test_breeding_attention_snapshot_uses_one_connection_and_nine_queries(self):
         connection = self._SnapshotConnection()
         calls = []
 
@@ -84,7 +84,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
 
         self.assertEqual(len(calls), 1)
         self.assertEqual(result["read_progress"]["connection_count"], 1)
-        self.assertEqual(result["read_progress"]["query_count"], 8)
+        self.assertEqual(result["read_progress"]["query_count"], 9)
+        self.assertIn("exposure_rows", result)
         self.assertEqual(result["read_progress"]["status"], "complete")
         self.assertEqual(
             [stage["stage"] for stage in result["read_progress"]["stages"]],
@@ -184,7 +185,10 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                 return []
             if "from public.pig_weight_events" in sql:
                 return []
-            if "from public.litters" in sql or "from public.pens" in sql:
+            if (
+                "from public.current_canonical_litters" in sql
+                or "from public.pens" in sql
+            ):
                 return []
             return []
         with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[{"pig_id": "PIG-1"}]), patch.object(
@@ -628,7 +632,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         def fake_fetch_all(sql, params=(), connect_factory=None):
             if "from public.pig_weight_events" in sql:
                 return [{"pig_id": "PIG-1", "weight_date": date(2026, 6, 22), "weight_kg": 61.5}]
-            if "from public.litters" in sql:
+            if "from public.current_canonical_litters" in sql:
                 return [{
                     "litter_id": "LIT-1",
                     "sow_pig_id": "SOW-1",
@@ -712,17 +716,73 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(detail["female_count"], 1)
         self.assertEqual(detail["average_weight_kg"], 5.5)
         self.assertEqual(detail["birth_date"], "2026-06-01")
-        self.assertEqual(detail["estimated_wean_date"], "2026-07-06")
-        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-07-03")
-        self.assertEqual(detail["wean_planning_monday"], "2026-07-06")
-        self.assertEqual(detail["days_until_estimated_wean"], (date(2026, 7, 6) - date.today()).days)
-        self.assertEqual(detail["default_wean_age_days"], 35)
+        self.assertEqual(detail["estimated_wean_date"], "2026-07-01")
+        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-06-28")
+        self.assertEqual(detail["wean_planning_monday"], "2026-06-29")
+        self.assertEqual(detail["days_until_estimated_wean"], (date(2026, 7, 1) - date.today()).days)
+        self.assertEqual(detail["default_wean_age_days"], 30)
         self.assertEqual(detail["attention_window_days"], 3)
         self.assertEqual(detail["source"], "supabase_canonical")
 
+    def test_litter_detail_includes_latest_attributable_mating_dates(self):
+        def fake_fetch_all(sql, params=(), connect_factory=None):
+            if "from public.current_canonical_litters" in sql:
+                return [{
+                    "litter_id": "LIT-MATING",
+                    "farrowing_date": date(2026, 8, 1),
+                    "sow_pig_id": "SOW-1",
+                    "boar_pig_id": "BOAR-1",
+                    "litter_status": "Active",
+                }]
+            if "from public.mating_events" in sql:
+                return [{
+                    "mating_id": "MAT-LATEST",
+                    "related_litter_id": "LIT-MATING",
+                    "mating_date": date(2026, 4, 10),
+                    "expected_farrowing_date": date(2026, 8, 2),
+                }]
+            return []
+
+        with patch.object(farm_supabase_read_service, "_fetch_all", side_effect=fake_fetch_all), \
+             patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[]):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-MATING")
+
+        self.assertEqual(detail["mating_id"], "MAT-LATEST")
+        self.assertEqual(detail["mating_date"], "2026-04-10")
+        self.assertEqual(detail["expected_farrowing_date"], "2026-08-02")
+
+    def test_litter_detail_derives_114_day_date_from_one_exact_historical_mating(self):
+        def fake_fetch_all(sql, params=(), connect_factory=None):
+            if "from public.current_canonical_litters" in sql:
+                return [{
+                    "litter_id": "LIT-DERIVED",
+                    "farrowing_date": date(2026, 8, 2),
+                    "sow_pig_id": "SOW-1",
+                    "boar_pig_id": "BOAR-1",
+                    "litter_status": "Active",
+                }]
+            if "from public.mating_events" in sql:
+                return [{
+                    "mating_id": "MAT-ATTRIBUTABLE",
+                    "related_litter_id": None,
+                    "sow_pig_id": "SOW-1",
+                    "boar_pig_id": "BOAR-1",
+                    "mating_date": date(2026, 4, 10),
+                    "expected_farrowing_date": None,
+                }]
+            return []
+
+        with patch.object(farm_supabase_read_service, "_fetch_all", side_effect=fake_fetch_all), \
+             patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[]):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-DERIVED")
+
+        self.assertEqual(detail["mating_id"], "MAT-ATTRIBUTABLE")
+        self.assertEqual(detail["mating_date"], "2026-04-10")
+        self.assertEqual(detail["expected_farrowing_date"], "2026-08-02")
+
     def test_active_litter_inside_wean_window_becomes_attention_item(self):
-        birth_date = date.today() - timedelta(days=32)
-        estimated_wean_date = birth_date + timedelta(days=35)
+        birth_date = date.today() - timedelta(days=27)
+        estimated_wean_date = birth_date + timedelta(days=30)
         litters = [{
             "litter_id": "LIT-WEAN-DUE",
             "farrowing_date": birth_date,
@@ -782,7 +842,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
 
     def test_active_litter_past_estimated_wean_date_becomes_attention_item(self):
         birth_date = date.today() - timedelta(days=40)
-        estimated_wean_date = birth_date + timedelta(days=35)
+        estimated_wean_date = birth_date + timedelta(days=30)
         litters = [{
             "litter_id": "LIT-WEAN-OVERDUE",
             "farrowing_date": birth_date,
@@ -816,11 +876,70 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             summary = farm_supabase_read_service.get_litter_attention_summary()
 
         self.assertEqual(detail["estimated_wean_date"], estimated_wean_date.isoformat())
-        self.assertEqual(detail["days_until_estimated_wean"], -5)
+        self.assertEqual(detail["days_until_estimated_wean"], -10)
         self.assertEqual(detail["attention"]["action_type"], "mark_weaned")
-        self.assertIn("5 day(s) past the estimated wean date", detail["attention"]["reason"])
+        self.assertIn("10 day(s) past the estimated wean date", detail["attention"]["reason"])
         self.assertEqual(summary["count"], 1)
-        self.assertEqual(summary["items"][0]["days_until_estimated_wean"], -5)
+        self.assertEqual(summary["items"][0]["days_until_estimated_wean"], -10)
+
+    def test_recorded_wean_date_does_not_hide_incomplete_active_lifecycle(self):
+        birth_date = date.today() - timedelta(days=39)
+        litters = [{
+            "litter_id": "LIT-INCOMPLETE-WEAN",
+            "farrowing_date": birth_date,
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "born_alive": 1,
+            "total_born": 1,
+            "litter_status": "Active",
+            "wean_date": date.today() - timedelta(days=4),
+            "weaned_count": 1,
+        }]
+        pigs_by_litter = {"LIT-INCOMPLETE-WEAN": [{
+            "pig_id": "PIG-1",
+            "status": "Active",
+            "on_farm": True,
+            "date_of_birth": birth_date,
+            "litter_id": "LIT-INCOMPLETE-WEAN",
+        }]}
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-INCOMPLETE-WEAN")
+
+        self.assertEqual(detail["attention"]["action_type"], "complete_weaning")
+        self.assertIn("1 piglet(s) remain active and on-farm", detail["attention"]["reason"])
+        self.assertEqual(detail["estimated_wean_date"], (birth_date + timedelta(days=30)).isoformat())
+
+    def test_future_legacy_planned_wean_date_is_not_actual_weaning(self):
+        litters = [{
+            "litter_id": "LIT-2026-5C36", "farrowing_date": date(2026, 8, 12),
+            "sow_pig_id": "SOW-MOLLY", "sow_tag_number": "Molly",
+            "born_alive": 8, "total_born": 8, "litter_status": "Active",
+            "wean_date": date(2026, 9, 11), "weaned_count": 0,
+        }]
+        pigs = [{"pig_id": f"MOLLY-{index}", "status": "Active", "on_farm": True,
+                 "animal_type": "Piglet", "litter_id": "LIT-2026-5C36",
+                 "date_of_birth": date(2026, 8, 12)} for index in range(8)]
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, {"LIT-2026-5C36": pigs})):
+            overview = farm_supabase_read_service.list_litter_overview()
+            summary = farm_supabase_read_service.get_litter_attention_summary()
+        litter = overview["litters"][0]
+        self.assertNotEqual(litter["action_type"], "complete_weaning")
+        self.assertFalse(litter["weaning_evidence"]["actual_weaning_recorded"])
+        self.assertEqual(litter["weaning_evidence"]["planned_wean_date"], "2026-09-11")
+        if summary["items"]:
+            self.assertEqual(summary["items"][0]["sow_name"], "Molly")
+
+    def test_completed_lifecycle_has_no_incomplete_weaning_warning(self):
+        litters = [{"litter_id": "LIT-DONE", "farrowing_date": date(2026, 6, 1),
+                    "litter_status": "Completed", "wean_date": date(2026, 7, 1),
+                    "weaned_count": 1, "born_alive": 1, "total_born": 1}]
+        pigs = [{"pig_id": "DONE-1", "status": "Sold", "on_farm": False,
+                 "wean_date": date(2026, 7, 1), "animal_type": "Weaner",
+                 "litter_id": "LIT-DONE"}]
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, {"LIT-DONE": pigs})):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-DONE")
+        self.assertNotEqual((detail.get("attention") or {}).get("action_type"), "complete_weaning")
 
     def test_litter_detail_uses_piglet_birth_date_when_litter_farrowing_date_missing(self):
         litters = [{
@@ -869,8 +988,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             detail = farm_supabase_read_service.get_litter_detail("LIT-FALLBACK")
 
         self.assertEqual(detail["birth_date"], "2026-06-01")
-        self.assertEqual(detail["estimated_wean_date"], "2026-07-06")
-        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-07-03")
+        self.assertEqual(detail["estimated_wean_date"], "2026-07-01")
+        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-06-28")
         self.assertEqual(detail["average_weight_kg"], None)
 
     def test_litter_overview_derives_status_when_supabase_status_is_unknown(self):
@@ -1295,13 +1414,14 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             overview = farm_supabase_read_service.list_litter_overview()
 
         self.assertTrue(overview["success"])
-        self.assertEqual(overview["attention_count"], 0)
+        self.assertEqual(overview["attention_count"], 1)
         self.assertEqual(overview["mismatch_count"], 0)
         litter = overview["litters"][0]
         self.assertEqual(litter["litter_id"], "LIT-2026-1025")
         self.assertEqual(litter["linked_pig_records"], 9)
         self.assertEqual(litter["active_pig_records"], 7)
         self.assertEqual(litter["exited_pig_records"], 2)
+        self.assertEqual(litter["action_type"], "record_litter_newborn_health")
         reconciliation = litter["reconciliation"]
         self.assertFalse(reconciliation["mismatch"])
         self.assertEqual(reconciliation["live_linked_pig_records"], 7)
@@ -1392,6 +1512,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             "boar_tag_number": "B1",
             "mating_date": date(2026, 5, 1),
             "mating_method": "Natural",
+            "mating_pen_id": "PEN-MATING",
+            "mating_pen_name": "Mating Pen",
             "exposure_group": "G1",
             "expected_pregnancy_check_date": date(2026, 5, 22),
             "pregnancy_check_date": date(2026, 5, 22),
@@ -1430,9 +1552,99 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(matings[0]["mating_id"], "MAT-1")
         self.assertEqual(matings[0]["mating_status"], "Farrowed")
         self.assertEqual(matings[0]["sow_current_pen_name"], "Sow Pen")
+        self.assertEqual(matings[0]["mating_pen_id"], "PEN-MATING")
+        self.assertEqual(matings[0]["mating_pen_name"], "Mating Pen")
         self.assertEqual(analytics["source"]["mating_source"], "supabase_canonical")
         self.assertEqual(analytics["summary"]["mating_count"], 1)
         self.assertEqual(analytics["sows"][0]["average_born_alive"], 10.0)
+
+    def test_active_exposure_cycle_enriches_blank_names_and_preserves_windows(self):
+        current_rows = [
+            {"pig_id":"SOW-1","pig_name":"Sophie","tag_number":"Sophie",
+             "current_pen_id":"PEN-3","current_pen_name":"Kraam Saal 03"},
+            {"pig_id":"BOAR-1","pig_name":"Bola","tag_number":"Bola",
+             "current_pen_id":"PEN-3","current_pen_name":"Kraam Saal 03"},
+        ]
+        mating_rows = [{"mating_id":"MAT-EXPOSURE-1","sow_pig_id":"SOW-1",
+            "sow_tag_number":"","boar_pig_id":"BOAR-1","boar_tag_number":"",
+            "source_exposure_identity":"EXPOSURE-1","breeding_cycle_state":"Exposure Active",
+            "service_window_start":date(2026,8,12),"service_window_end":date(2026,8,28),
+            "exposure_planned_removal_on":date(2026,8,28),"exposure_actual_removal_on":None,
+            "expected_farrowing_window_start":date(2026,12,4),
+            "expected_farrowing_window_end":date(2026,12,20),"mating_date":None,
+            "pregnancy_check_result":None,"outcome":None}]
+        records=farm_supabase_read_service.project_mating_overview(
+            mating_rows,current_rows,today=date(2026,8,12))
+        row=records[0]
+        self.assertEqual((row["sow_name"],row["sow_pig_id"]),("Sophie","SOW-1"))
+        self.assertEqual((row["boar_name"],row["boar_pig_id"]),("Bola","BOAR-1"))
+        self.assertEqual(row["owner_facing_cycle_meaning"],"By beer")
+        self.assertEqual(row["exposure_planned_removal_status"],"Upcoming")
+        self.assertEqual(row["expected_farrowing_window_start"],"2026-12-04")
+        self.assertEqual(row["pregnancy_status"],"Unknown")
+
+    def test_mating_pen_projection_uses_only_attributable_exposure_placement(self):
+        rows = [{"mating_id":"MAT-1","sow_pig_id":"SOW-1",
+                 "mating_pen_id":"PEN-4","mating_pen_name":"Paringshok 4"},
+                {"mating_id":"MAT-2","sow_pig_id":"SOW-2"}]
+        state = [{"pig_id":"SOW-1","current_pen_id":"LIVE-1","current_pen_name":"Live 1"},
+                 {"pig_id":"SOW-2","current_pen_id":"LIVE-2","current_pen_name":"Live 2"}]
+        projected = farm_supabase_read_service.project_mating_overview(rows, state)
+        self.assertEqual(projected[0]["mating_pen_name"], "Paringshok 4")
+        self.assertEqual(projected[1]["mating_pen_name"], "")
+        with patch.object(farm_supabase_read_service, "_fetch_all", return_value=[] ) as fetch, \
+             patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[]):
+            farm_supabase_read_service.get_mating_overview()
+        sql = fetch.call_args.args[0]
+        self.assertIn("exposure.exposure_identity = mating.source_exposure_identity", sql)
+        self.assertIn("location.move_date = exposure.occurred_on", sql)
+        self.assertIn("location.group_batch_id = exposure.exposure_group_identity", sql)
+        self.assertIn("location.reason_for_move = 'Breeding exposure placement'", sql)
+        self.assertIn("location.source = 'herdmaster_breeding_placement'", sql)
+
+    def test_canonical_name_wins_but_historical_name_conflict_is_explicit(self):
+        row={"mating_id":"MAT-1","sow_pig_id":"PIG-2026-069E","sow_tag_number":"Olivia",
+             "boar_pig_id":"BOAR-1","boar_tag_number":"Tyson"}
+        states=[{"pig_id":"PIG-2026-069E","tag_number":"Olive"},
+                {"pig_id":"BOAR-1","tag_number":"Tyson"}]
+        result=farm_supabase_read_service.project_mating_overview([row],states,today=date(2026,8,12))[0]
+        self.assertEqual(result["sow_name"],"Olive")
+        self.assertEqual(result["sow_pig_id"],"PIG-2026-069E")
+        self.assertEqual(result["sow_historical_name"],"Olivia")
+        self.assertEqual(result["sow_name_conflict"],"canonical_tag:Olive|historical_tag:Olivia")
+
+    def test_legacy_exact_date_mating_semantics_remain_unchanged(self):
+        row={"mating_id":"MAT-LEGACY","sow_pig_id":"SOW-1","sow_tag_number":"M1",
+             "boar_pig_id":"BOAR-1","boar_tag_number":"B1","mating_date":date(2026,5,1),
+             "expected_farrowing_date":date(2026,8,23),"pregnancy_check_result":"Pregnant"}
+        result=farm_supabase_read_service.project_mating_overview([row],[],today=date(2026,8,12))[0]
+        self.assertEqual(result["mating_date"],"2026-05-01")
+        self.assertEqual(result["mating_status"],"Confirmed_Pregnant")
+        self.assertEqual(result["owner_facing_cycle_meaning"],"")
+        self.assertEqual(result["sow_name"],"M1")
+
+    def test_canonical_name_and_matching_tag_do_not_create_false_conflict(self):
+        row={"mating_id":"MAT-1","sow_pig_id":"SOW-1","sow_tag_number":"SOW-17",
+             "boar_pig_id":"BOAR-1","boar_tag_number":"BOAR-2"}
+        states=[{"pig_id":"SOW-1","pig_name":"Sophie","tag_number":"SOW-17"},
+                {"pig_id":"BOAR-1","pig_name":"Bola","tag_number":"BOAR-2"}]
+        result=farm_supabase_read_service.project_mating_overview([row],states,today=date(2026,8,12))[0]
+        self.assertEqual(result["sow_name"],"Sophie")
+        self.assertEqual(result["sow_tag_number"],"SOW-17")
+        self.assertEqual(result["sow_canonical_tag_number"],"SOW-17")
+        self.assertEqual(result["sow_name_conflict"],"")
+
+    def test_name_fallback_and_planned_uit_status_do_not_claim_removal(self):
+        base={"mating_id":"MAT-EXPOSURE","sow_pig_id":"SOW-1","sow_tag_number":"History Sow",
+              "boar_pig_id":"BOAR-1","boar_tag_number":"","breeding_cycle_state":"Exposure Active",
+              "exposure_actual_removal_on":None}
+        for planned,expected in ((date(2026,8,11),"Overdue"),(date(2026,8,12),"Due")):
+            row={**base,"exposure_planned_removal_on":planned}
+            result=farm_supabase_read_service.project_mating_overview([row],[],today=date(2026,8,12))[0]
+            self.assertEqual(result["sow_name"],"History Sow")
+            self.assertEqual(result["boar_name"],"BOAR-1")
+            self.assertEqual(result["exposure_planned_removal_status"],expected)
+            self.assertEqual(result["exposure_actual_removal_on"],"")
 
     def test_pig_weights_service_prefers_supabase_when_available(self):
         with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
@@ -1467,6 +1679,35 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
 
         self.assertEqual(result[0]["pen_id"], "PEN-1")
         self.assertEqual(result[0]["pen_name"], "Grower")
+
+
+    def test_closed_litter_detail_exposes_weaning_performance_and_exact_outcomes(self):
+        litters = [{
+            "litter_id": "LIT-CLOSED", "farrowing_date": date(2026, 5, 5),
+            "wean_date": date(2026, 6, 10), "weaned_count": 2,
+            "born_alive": 3, "total_born": 3, "litter_status": "Weaned",
+        }]
+        pigs = {"LIT-CLOSED": [
+            {"pig_id": "PIG-A", "tag_number": "101", "sex": "Female", "status": "Sold", "on_farm": False,
+             "litter_id": "LIT-CLOSED", "wean_date": date(2026, 6, 10), "wean_weight_kg": 5.0,
+             "sale_channel": "Auction", "sale_stream": "Livestock", "sale_id": "SALE-1", "sale_date": date(2026, 8, 5)},
+            {"pig_id": "PIG-B", "tag_number": "102", "sex": "Male", "status": "Active", "on_farm": True,
+             "purpose": "Breeding", "litter_id": "LIT-CLOSED", "wean_date": date(2026, 6, 10), "wean_weight_kg": 7.0},
+            {"pig_id": "PIG-C", "tag_number": "", "sex": "", "status": "Died", "on_farm": False,
+             "litter_id": "LIT-CLOSED", "wean_date": None, "wean_weight_kg": None},
+        ]}
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs)), \
+             patch.object(farm_supabase_read_service, "_fetch_all", return_value=[]):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-CLOSED")
+
+        self.assertEqual(detail["weaned_count"], 2.0)
+        self.assertEqual(detail["average_wean_weight_kg"], 6.0)
+        self.assertEqual(detail["weaned_male_count"], 1)
+        self.assertEqual(detail["weaned_female_count"], 1)
+        self.assertEqual(detail["outcome_breakdown"]["auction_sale"], 1)
+        self.assertEqual(detail["outcome_breakdown"]["breeding"], 1)
+        self.assertEqual(detail["outcome_breakdown"]["dead"], 1)
+        self.assertEqual(detail["piglets"][0]["outcome_label"], "Veilingsverkoop")
 
 
 if __name__ == "__main__":

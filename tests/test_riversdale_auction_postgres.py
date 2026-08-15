@@ -65,6 +65,12 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
                 cursor.execute("select to_regclass('public.pigs')")
                 if cursor.fetchone()[0] is None:
                     cursor.execute("create table public.pigs(pig_id text primary key)")
+                cursor.execute(
+                    """
+                    create or replace view public.current_canonical_pigs as
+                    select * from public.pigs
+                    """
+                )
                 cursor.execute("select to_regclass('public.pig_observation_events')")
                 if cursor.fetchone()[0] is None:
                     cursor.execute((root / "202607200001_create_pig_observation_events.sql").read_text(encoding="utf-8"))

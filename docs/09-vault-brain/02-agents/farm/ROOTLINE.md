@@ -64,6 +64,9 @@ sends, and Telegram actions false.
 The permanent control boundary, staged authority model, safety interlocks, and
 roadmap are defined in the
 [`ROOTLINE Control Architecture`](../../04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md).
+Durable device-class policy and current authority constraints are defined in
+the [`ROOTLINE Agentic Device Management Plan`](../../../06-operations/ROOTLINE_AGENTIC_DEVICE_MANAGEMENT_PLAN.md)
+and [`ROOTLINE Water And Energy Rules`](../../08-business-rules/ROOTLINE_WATER_ENERGY_RULES.md).
 The deployed Daily Brief is Level 1 observe-and-advise only; it does not grant
 IFTTT activation, physical hardware control, or autonomous irrigation.
 

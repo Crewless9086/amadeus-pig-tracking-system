@@ -11,6 +11,7 @@ import psycopg
 from modules.telemetry.rootline_water_energy_plan import (
     _read_latest_tank_observation,
     record_tank_observation,
+    record_tank_observations_transactional,
 )
 
 
@@ -45,6 +46,9 @@ class WaterEnergyPlanPostgresTests(unittest.TestCase):
                     cursor.execute(
                         (migrations / "202607280001_create_rootline_water_energy_plans.sql").read_text("utf-8")
                     )
+                cursor.execute("select 1 from information_schema.columns where table_schema='public' and table_name='rootline_tank_observations' and column_name='provider_message_id'")
+                if cursor.fetchone() is None:
+                    cursor.execute((migrations / "202608030001_extend_rootline_fraction_observations.sql").read_text("utf-8"))
 
     def setUp(self):
         with psycopg.connect(self.url) as connection:
@@ -267,6 +271,81 @@ class WaterEnergyPlanPostgresTests(unittest.TestCase):
         )
         self.assertEqual(status, 409)
         self.assertEqual(conflict["status"], "tank_observation_idempotency_conflict")
+
+    def test_provider_bound_fractions_round_trip_exactly_and_replay_once(self):
+        payload={"storage_fraction":[2,4],"reservoir_fraction":[4,4],
+            "storage_state":"OK","reservoir_state":"FULL",
+            "provider_message_id":"3213","observed_at":"2026-08-03T16:22:07+00:00",
+            "source":"oom_sakkie_owner","idempotency_key":"telegram:3213:water-fractions"}
+        first,status=record_tank_observation(payload,"telegram-owner:42",self.url)
+        self.assertEqual(status,201);self.assertTrue(first["created"])
+        self.assertEqual(first["storage_fraction"],[2,4]);self.assertEqual(first["reservoir_fraction"],[4,4])
+        self.assertEqual(first["provider_message_id"],"3213")
+        latest=_read_latest_tank_observation(self.url)
+        self.assertEqual(latest["storage_fraction"],[2,4])
+        self.assertEqual(latest["reservoir_fraction"],[4,4])
+        self.assertEqual(latest["storage_provider_message_id"],"3213")
+        self.assertEqual(latest["reservoir_provider_message_id"],"3213")
+        replay,status=record_tank_observation(payload,"telegram-owner:42",self.url)
+        self.assertEqual(status,200);self.assertFalse(replay["created"])
+
+    def test_fraction_requires_provider_identity_and_rejects_invalid_values(self):
+        base={"storage_fraction":[2,4],"observed_at":"2026-08-03T16:22:07+00:00",
+              "source":"oom_sakkie_owner","idempotency_key":"fraction-invalid"}
+        result,status=record_tank_observation(base,"telegram-owner:42",self.url)
+        self.assertEqual(status,400);self.assertEqual(result["status"],"provider_message_id_required_for_fraction")
+        for fraction in ([5,4],[-1,4],[2,0],[2],"2/4"):
+            result,status=record_tank_observation({**base,"storage_fraction":fraction,"provider_message_id":"3213"},"telegram-owner:42",self.url)
+            self.assertEqual(status,400)
+
+    def test_independent_full_observations_commit_and_replay_atomically(self):
+        payloads=[
+            {"storage_fraction":[1,1],"storage_state":"FULL","provider_message_id":"3477",
+             "observed_at":"2026-08-09T07:33:06+00:00","source":"oom_sakkie_owner","idempotency_key":"3477:storage"},
+            {"reservoir_fraction":[1,1],"reservoir_state":"FULL","provider_message_id":"3477",
+             "observed_at":"2026-08-09T07:33:06+00:00","source":"oom_sakkie_owner","idempotency_key":"3477:reservoir"},
+        ]
+        first,status=record_tank_observations_transactional(payloads,"telegram-owner:42",self.url)
+        self.assertEqual(status,201);self.assertEqual(first["created_count"],2)
+        self.assertEqual([row["kind"] for row in first["readback"]],["storage","reservoir"])
+        self.assertTrue(all(row["state"]=="FULL" and row["provider_message_id"]=="3477" for row in first["readback"]))
+        replay,status=record_tank_observations_transactional(payloads,"telegram-owner:42",self.url)
+        self.assertEqual(status,200);self.assertEqual(replay["created_count"],0)
+        self.assertEqual(replay["observation_ids"],first["observation_ids"])
+
+    def test_batch_conflict_rolls_back_the_other_independent_observation(self):
+        existing={"reservoir_fraction":[1,2],"reservoir_state":"OK","provider_message_id":"old",
+            "observed_at":"2026-08-09T07:00:00+00:00","source":"oom_sakkie_owner",
+            "idempotency_key":"3477:reservoir"}
+        result,status=record_tank_observation(existing,"telegram-owner:42",self.url)
+        self.assertEqual(status,201)
+        batch=[{"storage_fraction":[1,1],"storage_state":"FULL","provider_message_id":"3477",
+                "observed_at":"2026-08-09T07:33:06+00:00","source":"oom_sakkie_owner","idempotency_key":"3477:storage"},
+               {"reservoir_fraction":[1,1],"reservoir_state":"FULL","provider_message_id":"3477",
+                "observed_at":"2026-08-09T07:33:06+00:00","source":"oom_sakkie_owner","idempotency_key":"3477:reservoir"}]
+        failed,status=record_tank_observations_transactional(batch,"telegram-owner:42",self.url)
+        self.assertEqual(status,409);self.assertEqual(failed["write_outcome"],"rolled_back")
+        with psycopg.connect(self.url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select count(*) from rootline_tank_observations where idempotency_key='3477:storage'")
+                self.assertEqual(cursor.fetchone()[0],0)
+
+    def test_fraction_database_constraints_reject_partial_pairs_and_missing_provider(self):
+        base="""insert into rootline_tank_observations(
+            observation_id,idempotency_key,storage_fraction_numerator,
+            storage_fraction_denominator,provider_message_id,storage_state,
+            reservoir_state,observed_at,reporter_identity,source)
+            values(%s,%s,%s,%s,%s,'OK','Unknown',now(),'telegram-owner:test','oom_sakkie_owner')"""
+        invalid=(
+            ("ROOTLINE-TANK-BBBBBBBBBBBBBBBBBBBBBBBB","partial-fraction",2,None,"3213"),
+            ("ROOTLINE-TANK-CCCCCCCCCCCCCCCCCCCCCCCC","missing-provider",2,4,None),
+        )
+        for values in invalid:
+            with self.subTest(identity=values[0]):
+                with psycopg.connect(self.url) as connection:
+                    with connection.cursor() as cursor:
+                        with self.assertRaises(Exception):
+                            cursor.execute(base,values)
 
     def test_future_tank_observation_rejected_before_database_access(self):
         result, status = record_tank_observation({

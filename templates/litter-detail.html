@@ -5,48 +5,117 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Amadeus Litter Detail</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/litterLifecycle.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
 </head>
 <body>
-  <div class="page-shell litter-detail-shell">
-    <div class="page-card litter-detail-page">
-      <div class="page-header page-header-with-link">
+  <div class="farm-app-shell litter-detail-app-shell">
+    {% include '_farm_nav.html' %}
+    <main class="operations-page litter-detail-shell">
+    <div class="page-card litter-detail-page farm-record-page">
+      <div class="page-header page-header-with-link farm-record-hero">
         <div>
-          <h1 id="litter_title">Litter Detail</h1>
-          <p id="litter_subtitle">Loading litter information...</p>
+          <span class="farm-eyebrow">HERDMASTER · Werpselrekord</span>
+          <h1 id="litter_title">Werpselrekord</h1>
+          <p id="litter_subtitle">Laai werpselbesonderhede...</p>
         </div>
-        <a id="litter_detail_back_link" href="/" class="secondary-link">&larr; Back to Dashboard</a>
+        <div class="inline-action-group">
+          <a id="litter_record_print_link" href="/paring-werpselrekord" class="button-link button-link-secondary">Druk Parings- en Werpselrekord</a>
+          <a id="litter_detail_back_link" href="/" class="secondary-link">&larr; Back to Dashboard</a>
+        </div>
       </div>
 
       <div id="litter_message" class="message-box hidden"></div>
 
-      <div class="litter-workspace">
+      <section id="lifecycle_next_panel" class="lifecycle-next-action" aria-live="polite">
+        <span class="lifecycle-next-kicker">Volgende stap</span>
+        <strong id="lifecycle_next_action">Laai die werpsel se huidige stadium...</strong>
+        <span id="lifecycle_next_reason"></span>
+      </section>
+
+      <section id="closed_litter_view" class="closed-litter-view hidden">
+        <div class="closed-litter-hero farm-record-banner">
+          <div>
+            <span class="closed-litter-kicker">WERPSELSIKLUS VOLTOOI</span>
+            <h2>Werpselprestasie en uitkomste</h2>
+            <p>Die werpsel is klaar gespeen. Hierdie oorsig wys die speenresultaat en waar elke vark nou is.</p>
+          </div>
+          <button type="button" id="closed_history_toggle" class="button-link button-link-secondary">Wys rekordgeskiedenis</button>
+        </div>
+
+        <div class="closed-litter-parent-line">
+          <div><span>Sog</span><strong id="closed_litter_sow">-</strong></div>
+          <div><span>Beer</span><strong id="closed_litter_boar">-</strong></div>
+          <div><span>Jong Datum</span><strong id="closed_litter_birth_date">-</strong></div>
+          <div><span>Speen Datum</span><strong id="closed_litter_wean_date">-</strong></div>
+        </div>
+
+        <div class="closed-litter-metrics">
+          <article class="metric-born"><span>Lewend gebore</span><strong id="closed_born_alive">-</strong></article>
+          <article class="metric-weaned"><span>Gespeen</span><strong id="closed_weaned_count">-</strong></article>
+          <article class="metric-survival"><span>Speenoorlewing</span><strong id="closed_survival_rate">-</strong></article>
+          <article class="metric-weight"><span>Gem. speengewig</span><strong id="closed_average_wean_weight">-</strong></article>
+          <article class="metric-male"><span>Bere gespeen</span><strong id="closed_male_count">-</strong></article>
+          <article class="metric-female"><span>Soggies gespeen</span><strong id="closed_female_count">-</strong></article>
+        </div>
+
+        <section class="closed-litter-section">
+          <div class="section-title-row">
+            <div><h2>Waar is hulle nou?</h2><p>Elke vark verskyn in een bewysgebaseerde uitkoms.</p></div>
+          </div>
+          <div id="closed_outcome_tiles" class="closed-outcome-tiles"></div>
+        </section>
+
+        <section class="closed-litter-section">
+          <div class="section-title-row">
+            <div><h2>Varkuitkomste</h2><p>Speengewig, huidige gebruik en finale uitkoms per vark.</p></div>
+          </div>
+          <div id="closed_outcome_table" class="simple-table-wrap"></div>
+        </section>
+
+        <section id="closed_litter_exceptions" class="closed-litter-section closed-litter-exceptions hidden">
+          <div class="section-title-row"><div><h2>Ontbrekende of onsekere feite</h2></div></div>
+          <ul id="closed_litter_exception_list"></ul>
+        </section>
+        <section class="closed-litter-section" id="historical_observation_panel">
+          <div class="section-title-row"><div><h2>Historiese speenwaarnemings</h2><p>Teken papiernotas teen die presiese varkies aan sonder om speen weer uit te voer.</p></div></div>
+          <form id="historical_observation_form" class="attention-action-form">
+            <label>Werklike waarnemingsdatum <input type="date" id="historical_observation_date" required></label>
+            <div id="historical_observation_rows"></div>
+            <div id="historical_observation_preview" class="bulk-review-panel hidden"></div>
+            <div class="form-actions"><button type="button" id="historical_observation_preview_button" class="button-link button-link-secondary">Kontroleer waarnemings</button><button type="submit" id="historical_observation_apply_button" disabled>Bevestig en teken aan</button></div>
+          </form>
+        </section>
+      </section>
+
+      <div id="litter_workspace" class="litter-workspace">
         <main class="litter-main-column">
           <section id="litter_summary_panel" class="litter-summary-panel">
             <div class="section-title-row">
               <div>
-                <h2>Litter Summary</h2>
-                <p id="litter_summary_intro">Core records and current linked piglet counts.</p>
+                <h2>Paring en identiteit</h2>
+                <p id="litter_summary_intro">Kernrekord en huidige gekoppelde varkies.</p>
               </div>
             </div>
 
             <div class="detail-grid litter-summary-grid">
               <div class="detail-card">
-                <span class="detail-label">Litter ID</span>
+                <span class="detail-label">Werpsel-ID</span>
                 <span id="litter_id_value" class="detail-value">-</span>
               </div>
 
               <div class="detail-card">
-                <span class="detail-label">Litter Status</span>
+                <span class="detail-label">Werpselstatus</span>
                 <span id="litter_status_value" class="detail-value">-</span>
               </div>
 
               <div class="detail-card">
-                <span class="detail-label">Piglet Rows</span>
+                <span class="detail-label">Varkies</span>
                 <span id="litter_count_value" class="detail-value">-</span>
               </div>
 
               <div class="detail-card">
-                <span class="detail-label">Active Piglets</span>
+                <span class="detail-label">Aktiewe varkies</span>
                 <span id="litter_active_count_value" class="detail-value">-</span>
               </div>
 
@@ -56,27 +125,37 @@
               </div>
 
               <div class="detail-card">
-                <span class="detail-label">Birth Date</span>
+                <span class="detail-label">Jong Datum</span>
                 <span id="litter_birth_date_value" class="detail-value">-</span>
               </div>
 
+              <div class="detail-card">
+                <span class="detail-label">Parings Datum</span>
+                <span id="litter_mating_date_value" class="detail-value">-</span>
+              </div>
+
+              <div class="detail-card">
+                <span class="detail-label">Verwagte Jong Datum</span>
+                <span id="litter_expected_farrowing_date_value" class="detail-value">-</span>
+              </div>
+
               <div id="litter_estimated_wean_card" class="detail-card">
-                <span class="detail-label">Est. Wean Date</span>
+                <span class="detail-label">Verwagte Speen Datum</span>
                 <span id="litter_estimated_wean_date_value" class="detail-value">-</span>
               </div>
 
               <div id="litter_wean_attention_card" class="detail-card">
-                <span class="detail-label">Attention Starts</span>
+                <span class="detail-label">Aandag Vanaf</span>
                 <span id="litter_wean_attention_start_value" class="detail-value">-</span>
               </div>
 
               <div id="litter_days_until_wean_card" class="detail-card">
-                <span class="detail-label">Days to Wean</span>
+                <span class="detail-label">Dae tot Speen</span>
                 <span id="litter_days_until_wean_value" class="detail-value">-</span>
               </div>
 
               <div id="litter_actual_wean_card" class="detail-card hidden">
-                <span class="detail-label">Wean Date</span>
+                <span class="detail-label">Speen Datum</span>
                 <span id="litter_actual_wean_date_value" class="detail-value">-</span>
               </div>
 
@@ -91,12 +170,12 @@
               </div>
 
               <div class="detail-card">
-                <span class="detail-label">Mother</span>
+                <span class="detail-label">Sog</span>
                 <span id="litter_mother_value" class="detail-value">-</span>
               </div>
 
               <div class="detail-card">
-                <span class="detail-label">Father</span>
+                <span class="detail-label">Beer</span>
                 <span id="litter_father_value" class="detail-value">-</span>
               </div>
             </div>
@@ -105,8 +184,8 @@
           <section class="litter-piglet-section">
             <div class="section-title-row">
               <div>
-                <h2>Piglets in this Litter</h2>
-                <p>Click a piglet to open its full profile.</p>
+                <h2>Varkies in hierdie werpsel</h2>
+                <p>Vul tag en speengewig hier in; maak ’n profiel oop slegs wanneer meer besonderhede nodig is.</p>
               </div>
             </div>
 
@@ -139,51 +218,51 @@
 
         <aside class="litter-side-column">
           <section id="weaning_day_panel" class="litter-side-panel">
-            <div class="section-subtitle">Weaning Day</div>
-            <p class="form-helper">Type tag numbers and wean weights directly in the piglet table, then use this workflow for pen move, medicine, weight log, and marking this litter as weaned.</p>
+            <div class="section-subtitle">Speen en tweede behandeling</div>
+            <p class="form-helper">Vul tags en speengewigte in die tabel in. Kontroleer dan kamp, behandeling en die volledige speenaksie een keer.</p>
             <form id="weaning_day_form" class="attention-action-form">
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="weaning_day_date">Wean Date</label>
+                  <label for="weaning_day_date">Speendatum</label>
                   <input type="date" id="weaning_day_date" required />
                 </div>
                 <div class="form-field">
-                  <label for="weaning_day_target_pen">Move To Pen</label>
+                  <label for="weaning_day_target_pen">Nuwe kamp</label>
                   <select id="weaning_day_target_pen">
-                    <option value="">No pen move</option>
+                    <option value="">Geen kampverskuiwing</option>
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="weaning_day_antiparasitic">Antiparasitic</label>
+                  <label for="weaning_day_antiparasitic">Ecomectin / antiparasities</label>
                   <select id="weaning_day_antiparasitic">
-                    <option value="">None</option>
+                    <option value="">Geen</option>
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="weaning_day_deworming">Deworming</label>
+                  <label for="weaning_day_deworming">Ontwurm</label>
                   <select id="weaning_day_deworming">
-                    <option value="">None</option>
+                    <option value="">Geen</option>
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="weaning_day_vaccination">Vaccination</label>
+                  <label for="weaning_day_vaccination">Ander entstof, indien nodig</label>
                   <select id="weaning_day_vaccination">
-                    <option value="">None</option>
+                    <option value="">Geen</option>
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="weaning_day_recorded_by">Recorded By</label>
+                  <label for="weaning_day_recorded_by">Aangeteken deur</label>
                   <input type="text" id="weaning_day_recorded_by" value="web_app" required />
                 </div>
                 <div class="form-field form-field-wide">
-                  <label for="weaning_day_notes">Notes</label>
-                  <textarea id="weaning_day_notes" rows="3" placeholder="Optional notes for tags, movement, and treatment"></textarea>
+                  <label for="weaning_day_notes">Notas</label>
+                  <textarea id="weaning_day_notes" rows="3" placeholder="Opsionele notas oor tags, verskuiwing of behandeling"></textarea>
                 </div>
               </div>
               <div id="weaning_day_preview" class="bulk-review-panel hidden"></div>
               <div class="form-actions">
-                <button type="button" id="weaning_day_preview_button" class="button-link button-link-secondary">Preview Weaning Day</button>
-                <button type="submit" id="weaning_day_apply_button" disabled>Save Weaning Day</button>
+                <button type="button" id="weaning_day_preview_button" class="button-link button-link-secondary">Kontroleer speen</button>
+                <button type="submit" id="weaning_day_apply_button" disabled>Bevestig en voltooi speen</button>
               </div>
             </form>
           </section>
@@ -240,33 +319,43 @@
             <form id="newborn_health_form" class="attention-action-form hidden">
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="newborn_health_date">Action Date</label>
+                  <label for="newborn_health_date">Datum</label>
                   <input type="date" id="newborn_health_date" required />
                 </div>
                 <div class="form-field">
-                  <label for="newborn_health_antiparasitic">Antiparasitic</label>
+                  <label for="newborn_health_antiparasitic">Ecomectin / antiparasities</label>
                   <select id="newborn_health_antiparasitic">
-                    <option value="">None</option>
+                    <option value="">Geen</option>
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="newborn_health_deworming">Deworming</label>
+                  <label for="newborn_health_deworming">Ontwurm</label>
                   <select id="newborn_health_deworming">
-                    <option value="">None</option>
+                    <option value="">Geen</option>
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="newborn_health_vaccination">Vaccination</label>
+                  <label for="newborn_health_vaccination">Ander entstof, indien nodig</label>
                   <select id="newborn_health_vaccination">
-                    <option value="">None</option>
+                    <option value="">Geen</option>
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="newborn_health_given_by">Recorded By</label>
+                  <label for="newborn_health_given_by">Aangeteken deur</label>
                   <input type="text" id="newborn_health_given_by" value="web_app" required />
                 </div>
+                <div class="form-field form-field-wide litter-first-care-tally">
+                  <span class="litter-tally-title">Geslagtelling</span>
+                  <label for="newborn_health_male_count">Beertjies
+                    <input type="number" id="newborn_health_male_count" min="0" step="1" placeholder="0" />
+                  </label>
+                  <label for="newborn_health_female_count">Sogvarkies
+                    <input type="number" id="newborn_health_female_count" min="0" step="1" placeholder="0" />
+                  </label>
+                  <small>Hierdie is slegs die werpseltelling. Koppel die presiese geslag aan elke tag by speen.</small>
+                </div>
                 <div class="form-field form-field-wide">
-                  <label for="newborn_health_notes">Notes</label>
+                  <label for="newborn_health_notes">Notas</label>
                   <textarea id="newborn_health_notes" rows="3"></textarea>
                 </div>
               </div>
@@ -275,9 +364,16 @@
                 <span>Mark all active piglets as earmarked</span>
               </label>
               <div id="newborn_health_preview" class="bulk-review-panel hidden"></div>
+              <div class="litter-first-care-skip">
+                <label class="checkbox-row">
+                  <input type="checkbox" id="newborn_health_skip" />
+                  <span>Slaan Eerste Behandeling oor en sluit hierdie stap</span>
+                </label>
+                <button type="button" id="newborn_health_skip_button" class="button-link button-link-secondary" disabled>Bevestig oorslaan</button>
+              </div>
               <div class="form-actions">
-                <button type="button" id="newborn_health_preview_button" class="button-link button-link-secondary">Preview</button>
-                <button type="submit" id="newborn_health_apply_button" disabled>Save Newborn Health</button>
+                <button type="button" id="newborn_health_preview_button" class="button-link button-link-secondary">Kontroleer behandeling</button>
+                <button type="submit" id="newborn_health_apply_button" disabled>Bevestig en stoor behandeling</button>
               </div>
             </form>
           </section>
@@ -365,34 +461,34 @@
           </section>
 
           <section id="litter_piglet_death_panel" class="litter-side-panel hidden">
-            <div class="section-subtitle">Piglet Death Capture</div>
-            <p class="form-helper">Use this for pre-weaning deaths before tag numbers are assigned.</p>
+            <div class="section-subtitle">Varkievrekte</div>
+            <p class="form-helper">Gebruik dit ook vóór speen wanneer ’n varkie nog nie ’n tag het nie.</p>
             <form id="piglet_death_form" class="attention-action-form">
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="piglet_death_date">Event Date</label>
+                  <label for="piglet_death_date">Datum</label>
                   <input type="date" id="piglet_death_date" required />
                 </div>
                 <div class="form-field">
-                  <label for="piglet_death_reason">Reason</label>
+                  <label for="piglet_death_reason">Rede</label>
                   <select id="piglet_death_reason" required>
-                    <option value="Died after birth">Died after birth</option>
-                    <option value="Stillborn">Stillborn</option>
-                    <option value="Crushed by sow">Crushed by sow</option>
-                    <option value="Weak piglet">Weak piglet</option>
-                    <option value="Unknown">Unknown</option>
+                    <option value="Died after birth">Vrek ná geboorte</option>
+                    <option value="Stillborn">Doodgebore</option>
+                    <option value="Crushed by sow">Doodgelê deur sog</option>
+                    <option value="Weak piglet">Swak varkie</option>
+                    <option value="Unknown">Onbekend</option>
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="piglet_death_count">Count</label>
+                  <label for="piglet_death_count">Aantal</label>
                   <input type="number" id="piglet_death_count" min="1" step="1" />
                 </div>
                 <div class="form-field">
-                  <label for="piglet_death_male_count">Male Count</label>
+                  <label for="piglet_death_male_count">Beertjies</label>
                   <input type="number" id="piglet_death_male_count" min="0" step="1" />
                 </div>
                 <div class="form-field">
-                  <label for="piglet_death_female_count">Female Count</label>
+                  <label for="piglet_death_female_count">Sogvarkies</label>
                   <input type="number" id="piglet_death_female_count" min="0" step="1" />
                 </div>
                 <div class="form-field">
@@ -400,14 +496,14 @@
                   <input type="text" id="piglet_death_recorded_by" value="web_app" required />
                 </div>
                 <div class="form-field form-field-wide">
-                  <label for="piglet_death_notes">Notes</label>
+                  <label for="piglet_death_notes">Notas</label>
                   <textarea id="piglet_death_notes" rows="3"></textarea>
                 </div>
               </div>
               <div id="piglet_death_preview" class="bulk-review-panel hidden"></div>
               <div class="form-actions">
-                <button type="button" id="piglet_death_preview_button" class="button-link button-link-secondary">Preview</button>
-                <button type="submit" id="piglet_death_apply_button" disabled>Save Piglet Deaths</button>
+                <button type="button" id="piglet_death_preview_button" class="button-link button-link-secondary">Kontroleer vrekte</button>
+                <button type="submit" id="piglet_death_apply_button" disabled>Bevestig en stoor vrekte</button>
               </div>
             </form>
           </section>
@@ -448,8 +544,10 @@
         </aside>
       </div>
     </div>
+    </main>
   </div>
 
-  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260705-state-aware"></script>
+  <script src="{{ url_for('static', filename='js/litterLifecycleLayout.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260810-closed-outcomes"></script>
 </body>
 </html>

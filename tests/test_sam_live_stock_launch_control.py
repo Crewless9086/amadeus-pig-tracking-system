@@ -1081,6 +1081,96 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertFalse(result["customer_send_confirmed"])
         self.assertTrue(result["card_retained"])
 
+    def test_provider_webhook_projects_exact_non_owner_operational_state(self):
+        attempt = launch.build_delivery_attempt(
+            {
+                "account_id": "147387",
+                "conversation_id": "2100",
+                "contact_id": "99",
+                "inbox_id": "77",
+                "message_id": "901",
+            },
+            {
+                "suggested_reply_text": "What area are you in?",
+                "missing_fields": ["location"],
+            },
+            {"review_event_id": "REVIEW-EXACT"},
+        )
+        attempt["chatwoot_outgoing_message_id"] = "902"
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {
+                "event": "message_updated",
+                "message": {
+                    "id": "902",
+                    "conversation_id": "2100",
+                    "message_type": 1,
+                    "status": "delivered",
+                    "source_id": "wamid.SECRET",
+                },
+            },
+            environ={launch.CHATWOOT_ACCOUNT_ID_ENV: "147387"},
+            attempt_loader=lambda *_: {
+                "success": True,
+                "attempt": attempt,
+            },
+            evidence_recorder=lambda _event: (
+                {"success": True, "created": True},
+                201,
+            ),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            result["operational_state"]["provider_state"],
+            "provider_delivered",
+        )
+        self.assertEqual(
+            result["operational_state"]["inbound"]["message_id"], "901"
+        )
+        self.assertEqual(
+            result["operational_state"]["decision"]["missing_fields"],
+            ["location"],
+        )
+        self.assertNotIn("wamid.SECRET", str(result))
+
+    def test_provider_webhook_rejects_attempt_from_other_account(self):
+        attempt = launch.build_delivery_attempt(
+            {
+                "account_id": "OTHER",
+                "conversation_id": "2100",
+                "contact_id": "99",
+                "inbox_id": "77",
+                "message_id": "901",
+            },
+            {"suggested_reply_text": "What area are you in?"},
+            {"review_event_id": "REVIEW-EXACT"},
+        )
+        attempt["chatwoot_outgoing_message_id"] = "902"
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {
+                "event": "message_updated",
+                "message": {
+                    "id": "902",
+                    "conversation_id": "2100",
+                    "message_type": 1,
+                    "status": "delivered",
+                    "source_id": "wamid.SECRET",
+                },
+            },
+            environ={launch.CHATWOOT_ACCOUNT_ID_ENV: "147387"},
+            attempt_loader=lambda *_: {
+                "success": True,
+                "attempt": attempt,
+            },
+            evidence_recorder=lambda _event: self.fail(
+                "cross-account transition must not persist"
+            ),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(
+            result["status"],
+            "sam_delivery_webhook_identity_or_status_conflict",
+        )
+
     def _delivery_reader_source(self):
         return {
             launch.CHATWOOT_BASE_URL_ENV: "https://chatwoot.test",
@@ -1573,6 +1663,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             result, status = launch.audit_sam_live_stock_human_conversations(
                 environ=source,
                 review_loader=lambda conversation_id: ({"success": False}, 404),
+                now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc),
             )
 
         self.assertEqual(status, 200)

@@ -1,5 +1,6 @@
 """Bounded binary image transport for owner-approved Facebook Page packets."""
 
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
 import os
@@ -17,9 +18,84 @@ ALLOWED_IMAGE_FORMATS = {
     "jpeg": {"image/jpeg", "image/jpg"},
     "png": {"image/png"},
 }
+SERVER_READBACK_AUTHORITY = "server_private_object_authenticated_readback_v1"
+MAX_READBACK_AGE_SECONDS = 300
 
 
-def validate_facebook_image_asset(asset, data, returned_mime=""):
+class _RejectRedirects(urllib_request.HTTPRedirectHandler):
+    """Never forward private-object credentials to a redirect target."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def resolve_server_publication_assets(asset_ids, database_url):
+    """Resolve immutable media/approval evidence without trusting caller metadata."""
+    identities = [str(value or "").strip() for value in asset_ids or []]
+    database_url = str(
+        database_url if database_url is not None
+        else os.getenv("DATABASE_URL", "")
+    ).strip()
+    if not identities or len(set(identities)) != len(identities) or not database_url:
+        return {"success": False, "status": "server_media_projection_invalid"}, 409
+    try:
+        import psycopg
+        with psycopg.connect(
+            database_url, connect_timeout=10,
+            options="-c default_transaction_read_only=on -c statement_timeout=10000",
+        ) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """select a.asset_id,b.binary_asset_id,b.storage_bucket,b.storage_path,
+                          b.content_sha256,b.storage_readback_sha256,b.byte_size,
+                          b.observed_mime_type,b.validation_version,
+                          la.library_event_id,la.event_type,
+                          pu.library_event_id,pu.event_type
+                   from public.beacon_media_assets a
+                   join public.beacon_media_source_links l on l.beacon_asset_id=a.asset_id
+                   join public.beacon_media_binaries b using(binary_asset_id)
+                   left join lateral (
+                     select library_event_id,event_type from public.beacon_media_library_events
+                     where binary_asset_id=b.binary_asset_id
+                       and event_type in ('library_accepted','library_rejected','archived')
+                     order by recorded_at desc,library_event_id desc limit 1
+                   ) la on true
+                   left join lateral (
+                     select library_event_id,event_type from public.beacon_media_library_events
+                     where binary_asset_id=b.binary_asset_id
+                       and event_type in ('public_use_approved','public_use_revoked')
+                     order by recorded_at desc,library_event_id desc limit 1
+                   ) pu on true
+                   where a.asset_id=any(%s)
+                     and a.media_type='image'""", (identities,),
+            )
+            rows = cursor.fetchall()
+    except Exception as exc:
+        return {"success": False, "status": "server_media_projection_unavailable",
+                "error_type": exc.__class__.__name__}, 503
+    by_id = {row[0]: row for row in rows}
+    if len(rows) != len(identities) or set(by_id) != set(identities):
+        return {"success": False, "status": "canonical_media_identity_mismatch"}, 409
+    projected = []
+    for identity in identities:
+        row = by_id[identity]
+        if (not row[9] or not row[11] or row[10] != "library_accepted"
+                or row[12] != "public_use_approved" or row[4] != row[5]):
+            return {"success": False, "status": "server_media_approval_or_readback_missing"}, 409
+        projected.append({
+            "asset_id": row[0], "binary_asset_id": row[1],
+            "storage_bucket": row[2], "storage_path": row[3],
+            "content_sha256": row[4], "storage_readback_sha256": row[5],
+            "file_size_bytes": int(row[6]), "mime_type": row[7],
+            "media_type": "image", "validation_version": row[8],
+            "library_accept_event_id": row[9], "public_use_event_id": row[11],
+            "effective_public_use_approved": True,
+            "content_hash_provenance": "server_stream_and_storage_readback_verified",
+            "projection_authority": "server_database_private_binary_v1",
+        })
+    return {"success": True, "status": "server_media_projection_ready", "assets": projected}, 200
+
+
+def validate_facebook_image_asset(asset, data, returned_mime="", readback_proof=None, now=None):
     """Validate approval, provenance, bytes, MIME, digest and dimensions."""
     asset = asset if isinstance(asset, dict) else {}
     reasons = []
@@ -28,7 +104,10 @@ def validate_facebook_image_asset(asset, data, returned_mime=""):
         or asset.get("public_use_approved")
     ):
         reasons.append("asset_not_approved_for_public_use")
-    if asset.get("content_hash_provenance") != "server_computed_on_upload":
+    proof = readback_proof if isinstance(readback_proof, dict) else {}
+    if asset.get("projection_authority") != "server_database_private_binary_v1":
+        reasons.append("authoritative_server_projection_required")
+    if asset.get("content_hash_provenance") != "server_stream_and_storage_readback_verified":
         reasons.append("trusted_server_hash_required")
     expected_hash = str(asset.get("content_sha256") or "").strip().lower()
     if len(expected_hash) != 64:
@@ -42,6 +121,21 @@ def validate_facebook_image_asset(asset, data, returned_mime=""):
     actual_hash = sha256(data).hexdigest()
     if expected_hash and actual_hash != expected_hash:
         reasons.append("image_hash_mismatch")
+    if proof.get("authority") != SERVER_READBACK_AUTHORITY:
+        reasons.append("authenticated_private_readback_required")
+    if proof.get("trusted_server_hash") != actual_hash:
+        reasons.append("trusted_server_hash_mismatch")
+    if proof.get("byte_count") != len(data) or asset.get("file_size_bytes") != len(data):
+        reasons.append("image_byte_count_mismatch")
+    object_identity = f"{asset.get('storage_bucket','')}/{asset.get('storage_path','')}"
+    if proof.get("storage_object_identity") != object_identity:
+        reasons.append("storage_object_identity_mismatch")
+    if not str(proof.get("storage_object_version") or "").strip():
+        reasons.append("storage_object_version_required")
+    observed_at = _aware_time(proof.get("authenticated_readback_at"))
+    current = _aware_time(now) or datetime.now(timezone.utc)
+    if not observed_at or not (0 <= (current - observed_at).total_seconds() <= MAX_READBACK_AGE_SECONDS):
+        reasons.append("authenticated_readback_stale")
 
     image_format, width, height = _image_details(data)
     if image_format not in ALLOWED_IMAGE_FORMATS:
@@ -58,6 +152,8 @@ def validate_facebook_image_asset(asset, data, returned_mime=""):
         reasons.append("declared_mime_mismatch")
     if returned_mime not in allowed_mimes:
         reasons.append("returned_mime_mismatch")
+    if _mime(proof.get("returned_mime")) != returned_mime:
+        reasons.append("readback_mime_mismatch")
 
     return _validation_result(
         not reasons,
@@ -70,6 +166,16 @@ def validate_facebook_image_asset(asset, data, returned_mime=""):
         declared_mime=declared_mime,
         returned_mime=returned_mime,
         content_sha256=actual_hash,
+        binary_asset_id=asset.get("binary_asset_id", ""),
+        expected_byte_count=asset.get("file_size_bytes"),
+        library_accept_event_id=asset.get("library_accept_event_id", ""),
+        public_use_event_id=asset.get("public_use_event_id", ""),
+        readback_authority=proof.get("authority", ""),
+        authenticated_readback_at=proof.get("authenticated_readback_at", ""),
+        storage_object_identity_sha256=sha256(object_identity.encode("utf-8")).hexdigest(),
+        storage_object_version_sha256=sha256(
+            str(proof.get("storage_object_version") or "").encode("utf-8")
+        ).hexdigest(),
     )
 
 
@@ -97,9 +203,16 @@ def load_supabase_asset_bytes(asset, environ=None, opener=None):
             "Accept": "image/jpeg,image/png",
         },
     )
-    open_fn = opener or urllib_request.urlopen
+    open_fn = opener or urllib_request.build_opener(_RejectRedirects()).open
     try:
         with open_fn(req, timeout=20) as response:
+            if (not 200 <= int(response.status) < 300
+                    or str(getattr(response, "url", "")) != endpoint):
+                return {
+                    "success": False,
+                    "status": "private_storage_readback_redirect_or_status_rejected",
+                    "http_status": response.status,
+                }, 409
             content_length = _safe_int(response.headers.get("Content-Length"))
             if content_length and content_length > MAX_IMAGE_BYTES:
                 return {
@@ -118,9 +231,21 @@ def load_supabase_asset_bytes(asset, environ=None, opener=None):
                 "success": True,
                 "status": "private_storage_image_loaded",
                 "http_status": response.status,
-                "redirected": bool(getattr(response, "url", "") != endpoint),
+                "redirected": False,
                 "returned_mime": response.headers.get("Content-Type", ""),
                 "data": data,
+                "readback_proof": {
+                    "authority": SERVER_READBACK_AUTHORITY,
+                    "trusted_server_hash": sha256(data).hexdigest(),
+                    "byte_count": len(data),
+                    "returned_mime": response.headers.get("Content-Type", ""),
+                    "storage_object_identity": f"{bucket}/{path}",
+                    "storage_object_version": str(
+                        response.headers.get("ETag")
+                        or response.headers.get("x-supabase-version") or ""
+                    ).strip(),
+                    "authenticated_readback_at": datetime.now(timezone.utc).isoformat(),
+                },
             }, response.status
     except urllib_error.HTTPError as exc:
         return {
@@ -353,3 +478,16 @@ def _safe_int(value):
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _aware_time(value):
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)

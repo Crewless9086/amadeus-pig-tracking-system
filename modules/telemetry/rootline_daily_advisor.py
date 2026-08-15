@@ -182,8 +182,14 @@ def get_rootline_daily_advisor(
         advisor_date or (now or datetime.now(ZA_TZ)).astimezone(ZA_TZ).date().isoformat()
     )[:10]
     reader = brief_reader or (lambda: get_rootline_daily_brief(selected_date))
-    brief = _safe_read(reader)
-    policy_packet = _safe_read_policy(policy_reader or list_policy_review)
+    # The brief and active policy are independent read models. Load them in
+    # parallel so their bounded waits cannot accumulate inside an owner
+    # callback worker.
+    from modules.telemetry.rootline_bounded_read_group import run_bounded_read_group
+    loaded = run_bounded_read_group({"brief":lambda:_safe_read(reader),
+        "policy":lambda:_safe_read_policy(policy_reader or list_policy_review)},
+        max_workers=2)
+    brief=loaded["brief"];policy_packet=loaded["policy"]
     active_policy = (
         policy_packet.get("active_policy")
         if isinstance(policy_packet, dict)
@@ -566,10 +572,14 @@ def _advise_zone(
         if isinstance(active_policy, dict)
         else UNKNOWN
     )
+    dry_release_proven = False
     if not weather_fresh:
         reasons.append("Fresh current weather is required.")
     if not forecast_fresh:
-        reasons.append("A fresh forecast is required.")
+        reasons.append(
+            "Forecast evidence is stale or unavailable; planning confidence is "
+            "degraded, but forecast freshness is not a current-rain execution gate."
+        )
     if live_rain_rule is None:
         recommendation = "Hold"
         eligibility = "Hold"
@@ -577,7 +587,7 @@ def _advise_zone(
     elif not weather_fresh or rain_rate is None:
         recommendation = "Hold"
         eligibility = "Hold"
-        reasons.append("Live-rain evidence is missing or stale; Hold remains fail-closed.")
+        reasons.append("Local weather evidence is missing or stale; Hold remains fail-closed.")
     elif rain_rate > live_rain_rule["threshold_mm_per_hour"]:
         recommendation = "Hold"
         eligibility = "Hold"
@@ -593,21 +603,16 @@ def _advise_zone(
             "Current advice time is missing, malformed or conflicts with the "
             "operating date; the daylight gate is Needs Data."
         )
-    elif not _dry_release_proven(
-        release_evidence,
-        live_rain_rule.get("release_policy"),
-        rain_rate,
-        weather.get("last_reading_at"),
-        advisor_date,
-        evaluated_at,
-    ):
+    elif not (dry_release_proven := _dry_release_proven(
+        release_evidence, live_rain_rule.get("release_policy"), rain_rate,
+        weather.get("last_reading_at"), advisor_date, evaluated_at)):
         recommendation = "Hold"
         eligibility = "Hold"
         reasons.append(
             "The live-rain threshold is not exceeded. Release requires the current "
             "reading and every reading across 30 continuous minutes to be exactly "
-            "0.0 mm/hour, at least two fresh boundary readings, confirmed absence "
-            "of visible rain, and explicit owner review; that evidence is not proven."
+            "0.0 mm/hour with at least two fresh durable boundary readings from "
+            "the governed local station; that automatic evidence is not proven."
         )
     else:
         time_gate, time_reason = _daylight_gate(
@@ -636,6 +641,9 @@ def _advise_zone(
         "priority": "equal_owner_selection_on_conflict",
         "eligibility_today": eligibility,
         "recommendation": recommendation,
+        "live_rain_release_proven": dry_release_proven,
+        "forecast_planning_quality": "fresh" if forecast_fresh else "degraded",
+        "planning_warnings": [] if forecast_fresh else ["forecast_stale_or_unavailable"],
         "proposed_runtime_minutes": None,
         "proposed_runtime_status": UNAVAILABLE,
         "runtime_suppressed_by": [
@@ -850,9 +858,9 @@ def _dry_release_proven(
         return False
     if evidence.get("continuous_zero_rain_confirmed") is not True:
         return False
-    if evidence.get("no_visible_rain_confirmed") is not True:
+    if evidence.get("source") != "governed_local_weather_station":
         return False
-    if evidence.get("owner_review_confirmed") is not True:
+    if evidence.get("source_healthy") is not True:
         return False
     start = _aware_datetime(evidence.get("interval_start_at"))
     end = _aware_datetime(evidence.get("interval_end_at"))
@@ -864,18 +872,8 @@ def _dry_release_proven(
     if (
         current_observed is None
         or current_observed != end
+        or end > evaluated_at
         or end.astimezone(ZA_TZ).date().isoformat() != advisor_date
-    ):
-        return False
-    visible_confirmed_at = _aware_datetime(evidence.get("visible_rain_confirmed_at"))
-    owner_reviewed_at = _aware_datetime(evidence.get("owner_reviewed_at"))
-    if (
-        visible_confirmed_at is None
-        or owner_reviewed_at is None
-        or visible_confirmed_at < end
-        or owner_reviewed_at < end
-        or visible_confirmed_at > evaluated_at
-        or owner_reviewed_at > evaluated_at
     ):
         return False
     readings = evidence.get("station_readings")

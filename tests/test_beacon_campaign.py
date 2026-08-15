@@ -1,7 +1,14 @@
 import json
 import unittest
-from datetime import datetime, timezone
+import threading
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+
+from modules.oom_sakkie.specialist_owner_decisions import BEACON_CAPTION_UTF8_HEX
+from modules.beacon.publication_execution_identity import (
+    ASSET_ID, PROPOSAL_ID, PUBLISH_NOW_AUTHORITY_ID, PUBLISH_NOW_EXECUTION_ID,
+    SUCCESSOR_EXECUTION_ID,
+)
 
 from modules.sales.beacon_campaign import (
     BEACON_CAMPAIGN_MODE,
@@ -702,6 +709,234 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertEqual(result["status"], "facebook_mixed_media_requires_manual_composer")
         self.assertEqual(called, [])
 
+    def test_video_preserves_existing_provider_path_without_image_projection(self):
+        projected = []
+        called = []
+
+        def reject_if_called(identities, _database_url):
+            projected.extend(identities)
+            return {"success": False, "status": "canonical_media_identity_mismatch"}, 409
+
+        result, status = execute_beacon_facebook_page_post({
+            "publish_packet_id": "PACKET-VIDEO",
+            "channel": "Facebook",
+            "exact_text": "A day on the farm.",
+            "selected_asset": {
+                "asset_id": "VIDEO-1", "media_type": "video",
+                "effective_public_use_approved": True,
+                "storage_bucket": "private", "storage_path": "video.mp4",
+            },
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, media_projector=reject_if_called,
+           poster=lambda *_: (called.append(True) or ({"success": True, "id": "POST"}, 200)),
+           execution_recorder=lambda *_args, **_kwargs: (
+               {"success": True, "created_count": 1}, 201
+           ), environ={
+               "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+               "BEACON_FACEBOOK_PAGE_ID": "page",
+               "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+               "SUPABASE_URL": "https://storage.invalid",
+               "SUPABASE_SERVICE_ROLE_KEY": "secret",
+           })
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(projected, [])
+        self.assertEqual(called, [True])
+
+    def test_custom_poster_cannot_bypass_server_projection(self):
+        called = []
+        result, status = execute_beacon_facebook_page_post({
+            "publish_packet_id": "PACKET-IMAGE",
+            "channel": "Facebook",
+            "exact_text": "A day on the farm.",
+            "selected_asset": {"asset_id": "IMAGE-1", "media_type": "image"},
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, media_projector=lambda *_: (
+            {"success": False, "status": "server_media_projection_unavailable"}, 503
+        ), poster=lambda *_: called.append(True))
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "server_media_projection_unavailable")
+        self.assertEqual(called, [])
+
+    def test_changed_authority_after_claim_stops_before_provider(self):
+        calls = []
+        projected = {"asset_id": "IMAGE-1", "media_type": "image",
+                     "projection_authority": "server_database_private_binary_v1",
+                     "effective_public_use_approved": True,
+                     "storage_bucket": "private", "storage_path": "image.jpg"}
+        projections = [
+            ({"success": True, "assets": [projected]}, 200),
+            ({"success": False, "status": "server_media_approval_or_readback_missing"}, 409),
+        ]
+        result, status = execute_beacon_facebook_page_post({
+            "publish_packet_id": "PACKET-AUTHORITY-RACE",
+            "channel": "Facebook",
+            "exact_text": "A day on the farm.",
+            "selected_asset": {"asset_id": "IMAGE-1", "media_type": "image"},
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, media_projector=lambda *_: projections.pop(0),
+           poster=lambda *_: calls.append("provider"),
+           execution_recorder=lambda *_args, **_kwargs: (
+               {"success": True, "created_count": 1}, 201
+           ), environ={
+               "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+               "BEACON_FACEBOOK_PAGE_ID": "page",
+               "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+               "SUPABASE_URL": "https://storage.invalid",
+               "SUPABASE_SERVICE_ROLE_KEY": "secret",
+           })
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "server_media_authority_changed_after_claim")
+        self.assertEqual(calls, [])
+
+    @patch("modules.sales.beacon_campaign.validate_successor_execution")
+    def test_timing_is_revalidated_after_claim_before_provider(self, validate):
+        validate.side_effect = ("", "successor_publication_timing_window_invalid")
+        calls = []
+        result, status = execute_beacon_facebook_page_post({
+            "publish_packet_id": "PACKET-TIMING-EDGE",
+            "channel": "Facebook",
+            "exact_text": "A day on the farm.",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, poster=lambda *_: calls.append("provider"),
+           execution_recorder=lambda *_args, **_kwargs: (
+               {"success": True, "created_count": 1}, 201
+           ), environ={
+               "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+               "BEACON_FACEBOOK_PAGE_ID": "page",
+               "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+           })
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"],
+                         "successor_publication_timing_window_invalid")
+        self.assertEqual(calls, [])
+        self.assertEqual(validate.call_count, 2)
+
+    def test_successor_cannot_publish_different_or_missing_selected_media(self):
+        now = datetime.now(timezone.utc)
+        base = {
+            "publish_packet_id": PROPOSAL_ID,
+            "publication_execution_identity": SUCCESSOR_EXECUTION_ID,
+            "asset_id": ASSET_ID,
+            "exact_text": bytes.fromhex(BEACON_CAPTION_UTF8_HEX).decode("utf-8"),
+            "channel": "facebook_organic",
+            "zero_spend": True,
+            "timing_authorization_id": "OOMAQ-TIME-NEW",
+            "timing_start": (now - timedelta(minutes=1)).isoformat(),
+            "timing_end": (now + timedelta(minutes=1)).isoformat(),
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }
+        for selected in (None, {"asset_id": "OTHER", "media_type": "image"}):
+            calls = []
+            payload = dict(base)
+            if selected:
+                payload["selected_asset"] = selected
+            result, status = execute_beacon_facebook_page_post(
+                payload,
+                media_projector=lambda *_: calls.append("projection"),
+                poster=lambda *_: calls.append("provider"),
+                execution_recorder=lambda *_args, **_kwargs: calls.append("claim"),
+            )
+            self.assertEqual(status, 409)
+            self.assertEqual(result["status"],
+                             "successor_publication_media_order_mismatch")
+            self.assertEqual(calls, [])
+
+    def test_exact_publish_now_payload_preserves_r0_through_final_revalidation(self):
+        caption = bytes.fromhex(BEACON_CAPTION_UTF8_HEX).decode("utf-8")
+        projected = {
+            "asset_id": ASSET_ID, "media_type": "image",
+            "effective_public_use_approved": True,
+            "storage_bucket": "private", "storage_path": "bella.jpg",
+            "content_sha256": "15ebf5e67dbfd12693bab79464c7012d221c4686207a730dac3161e097048b55",
+            "storage_readback_sha256": "15ebf5e67dbfd12693bab79464c7012d221c4686207a730dac3161e097048b55",
+            "file_size_bytes": 418512, "mime_type": "image/jpeg",
+        }
+        provider_params = []
+        records = []
+        def recorder(params, **_kwargs):
+            records.append(dict(params))
+            return {"success": True, "created_count": 1}, 201
+        def built_in_dispatch(params, _policy, **kwargs):
+            self.assertTrue(kwargs["authority_guard"]())
+            self.assertTrue(kwargs["authority_guard"]())
+            provider_params.append(dict(params))
+            return {"success": True, "id": "PAGE_POST"}, 200
+        with patch("modules.sales.beacon_campaign._post_to_facebook_page",
+                   side_effect=built_in_dispatch):
+            result, status = execute_beacon_facebook_page_post({
+                "publish_packet_id": PROPOSAL_ID,
+                "publication_execution_identity": PUBLISH_NOW_EXECUTION_ID,
+                "publication_authority_mode": "publish_now",
+                "publication_authority_id": PUBLISH_NOW_AUTHORITY_ID,
+                "publication_authority_state": "active",
+                "channel": "facebook_organic", "exact_text": caption,
+                "asset_id": ASSET_ID, "selected_asset": projected,
+                "selected_assets": [projected], "zero_spend": True,
+                "owner_confirmation": "POST EXACT BEACON PACKET",
+            }, media_projector=lambda *_: ({"success": True, "assets": [projected]}, 200),
+               publish_now_authority_reader=lambda _database_url: (
+                   {"success": True, "status": "publish_now_authority_verified"}, 200
+               ), execution_recorder=recorder, environ={
+                   "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+                   "BEACON_FACEBOOK_PAGE_ID": "page",
+                   "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+                   "SUPABASE_URL": "https://storage.invalid",
+                   "SUPABASE_SERVICE_ROLE_KEY": "secret",
+               })
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(records[0]["zero_spend"])
+        self.assertTrue(provider_params[0]["zero_spend"])
+        self.assertEqual(provider_params[0]["publication_authority_mode"], "publish_now")
+        mutated = dict(provider_params[0])
+        mutated.update({"authorization_generation_id": "CALLER-CHANGED",
+                        "timing_authorization_id": "CALLER-CHANGED",
+                        "timing_start": "2099-01-01T00:00:00Z",
+                        "timing_end": "2099-01-01T01:00:00Z"})
+        self.assertEqual(_facebook_post_execution_id(mutated),
+                         _facebook_post_execution_id(provider_params[0]))
+
+    def test_publish_now_cancellation_after_claim_stops_before_provider(self):
+        caption = bytes.fromhex(BEACON_CAPTION_UTF8_HEX).decode("utf-8")
+        asset = {"asset_id": ASSET_ID, "media_type": "image",
+                 "effective_public_use_approved": True,
+                 "storage_bucket": "private", "storage_path": "bella.jpg",
+                 "storage_readback_sha256":
+                     "15ebf5e67dbfd12693bab79464c7012d221c4686207a730dac3161e097048b55"}
+        authority = [
+            ({"success": True, "status": "publish_now_authority_verified"}, 200),
+            ({"success": False, "status": "publish_now_authority_not_actionable"}, 409),
+        ]
+        provider_calls = []
+        with patch("modules.sales.beacon_campaign._post_to_facebook_page",
+                   side_effect=lambda *_args, **_kwargs: provider_calls.append(True)):
+            result, status = execute_beacon_facebook_page_post({
+                "publish_packet_id": PROPOSAL_ID,
+                "publication_execution_identity": PUBLISH_NOW_EXECUTION_ID,
+                "publication_authority_mode": "publish_now",
+                "publication_authority_id": PUBLISH_NOW_AUTHORITY_ID,
+                "publication_authority_state": "active", "channel": "facebook_organic",
+                "exact_text": caption, "asset_id": ASSET_ID,
+                "selected_asset": asset, "zero_spend": True,
+                "owner_confirmation": "POST EXACT BEACON PACKET",
+            }, publish_now_authority_reader=lambda _url: authority.pop(0),
+               media_projector=lambda *_: ({"success": True, "assets": [asset]}, 200),
+               execution_recorder=lambda *_args, **_kwargs: (
+                   {"success": True, "created_count": 1}, 201), environ={
+                   "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+                   "BEACON_FACEBOOK_PAGE_ID": "page",
+                   "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+                   "SUPABASE_URL": "https://storage.invalid",
+                   "SUPABASE_SERVICE_ROLE_KEY": "secret",
+               })
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "publish_now_authority_not_actionable")
+        self.assertEqual(result["outcome"], "definite_failure_before_meta")
+        self.assertEqual(provider_calls, [])
+
     def test_final_execution_gate_withholds_indirect_livestock_commerce(self):
         calls = []
         result, status = execute_beacon_facebook_page_post({
@@ -881,6 +1116,28 @@ class BeaconCampaignTests(unittest.TestCase):
             ],
         )
 
+    @patch("modules.sales.beacon_campaign.validate_facebook_image_asset")
+    def test_binary_transport_rechecks_authority_before_each_meta_call(self, validate):
+        validate.return_value = {"allowed": True, "returned_mime": "image/jpeg"}
+        guards = iter((True, False))
+        calls = []
+        result, status = _post_to_facebook_page_binary_images(
+            {"exact_text": "Exact", "post_kind": "photo",
+             "selected_assets": [{"asset_id": "IMAGE", "media_type": "image"}]},
+            {}, storage_loader=lambda _asset: (
+                {"success": True, "data": b"bytes", "returned_mime": "image/jpeg"}, 200),
+            stage_recorder=lambda _stage: True,
+            authority_guard=lambda: next(guards),
+            photo_uploader=lambda *_args: (
+                calls.append("upload") or ({"success": True, "id": "MEDIA"}, 200)),
+            feed_creator=lambda *_args: (
+                calls.append("feed") or ({"success": True, "id": "POST"}, 200)),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "publish_now_authority_not_actionable")
+        self.assertEqual(result["outcome"], "media_uploaded_final_post_not_published")
+        self.assertEqual(calls, ["upload"])
+
     def test_facebook_post_execution_can_call_mock_poster_when_enabled(self):
         recorded = []
 
@@ -967,7 +1224,12 @@ class BeaconCampaignTests(unittest.TestCase):
             "exact_text": "Follow the farm journey for responsible piglet care.",
             "selected_assets": assets,
             "owner_confirmation": "POST EXACT BEACON PACKET",
-        }, poster=lambda *_: (
+        }, media_projector=lambda identities, _database_url: ({
+            "success": True, "assets": [
+                {**item, "projection_authority": "server_database_private_binary_v1"}
+                for item in assets if item["asset_id"] in identities
+            ],
+        }, 200), poster=lambda *_: (
             poster_calls.append(True) or
             ({"success": False, "status": "fake_failure"}, 400)
         ), execution_recorder=recorder, environ={
@@ -1096,6 +1358,40 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertNotIn("CALLER-CANNOT-CONTROL-CLAIM", recorded_ids)
         self.assertFalse(result["calls_meta"])
 
+    def test_concurrent_execution_creates_one_claim_and_one_provider_call(self):
+        lock = threading.Lock()
+        claimed = set()
+        provider_calls = []
+        results = []
+
+        def recorder(params, database_url=None):
+            with lock:
+                identity = params["execution_event_id"]
+                if identity in claimed:
+                    return {"success": True, "created_count": 0}, 200
+                claimed.add(identity)
+                return {"success": True, "created_count": 1}, 201
+
+        def poster(*_args):
+            with lock:
+                provider_calls.append(True)
+            return {"success": True, "id": "POST-ONLY-ONCE"}, 200
+
+        payload = {"publish_packet_id": "CONCURRENT-PACKET", "channel": "Facebook",
+                   "exact_text": "One exact farm story.",
+                   "owner_confirmation": "POST EXACT BEACON PACKET"}
+        def run():
+            results.append(execute_beacon_facebook_page_post(
+                payload, poster=poster, execution_recorder=recorder,
+                environ={"BEACON_FACEBOOK_POSTING_ENABLED": "1",
+                         "BEACON_FACEBOOK_PAGE_ID": "page",
+                         "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token"}))
+        threads = [threading.Thread(target=run) for _ in range(2)]
+        [thread.start() for thread in threads]
+        [thread.join() for thread in threads]
+        self.assertEqual(len(provider_calls), 1)
+        self.assertEqual(sorted(status for _, status in results), [200, 409])
+
     def test_facebook_media_post_execution_rejects_unsupported_media_type(self):
         result, status = execute_beacon_facebook_page_post({
             "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
@@ -1156,7 +1452,18 @@ class BeaconCampaignTests(unittest.TestCase):
                 "storage_path": "2026/06/18/photo.jpg",
             },
             "owner_confirmation": "POST EXACT BEACON PACKET",
-        }, database_url="", poster=fake_poster, execution_recorder=fake_recorder, environ={
+        }, database_url="", media_projector=lambda _identities, _database_url: ({
+            "success": True,
+            "assets": [{
+                "asset_id": "BEACON-ASSET-APPROVED",
+                "media_type": "image",
+                "mime_type": "image/jpeg",
+                "effective_public_use_approved": True,
+                "projection_authority": "server_database_private_binary_v1",
+                "storage_bucket": "private",
+                "storage_path": "approved.jpg",
+            }],
+        }, 200), poster=fake_poster, execution_recorder=fake_recorder, environ={
             "BEACON_FACEBOOK_POSTING_ENABLED": "1",
             "BEACON_FACEBOOK_PAGE_ID": "123",
             "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",

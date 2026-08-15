@@ -54,6 +54,7 @@ from modules.charlie.executive_store import claim_pending_outbox, complete_outbo
 from modules.charlie.domain_observers import run_observer_cycle
 from modules.charlie.domain_observer_readers import observer_readers
 from modules.charlie.domain_observer_store import observer_last_runs, record_observer_run
+from modules.charlie.control_tower_feedback import process_pending_control_tower_feedback
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
@@ -186,7 +187,7 @@ def main():
     return 0 if status_code < 400 else 1
 
 
-def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep, transition_timeout_seconds=5):
+def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep, transition_timeout_seconds=60):
     if SUPERVISOR_STOP_PATH.exists():
         return {
             "success": False,
@@ -384,6 +385,21 @@ def _runtime_pickup_authorized():
         return False, "execution_mode_invalid"
     if _TEST_PICKUP_AUTHORIZED:
         return True, "test_isolation_authorized"
+    return _current_generation_authorized()
+
+
+def _runtime_observer_authorized():
+    if SUPERVISOR_STOP_PATH.exists():
+        return False, "governed_stop_active"
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY)
+    if execution_mode != EXECUTION_MODE_OBSERVE_ONLY:
+        return False, "observe_only_mode_required"
+    if _TEST_PICKUP_AUTHORIZED:
+        return True, "test_isolation_authorized"
+    return _current_generation_authorized()
+
+
+def _current_generation_authorized():
     packet = _read_json(SUPERVISOR_PATH)
     generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
     supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
@@ -450,6 +466,10 @@ def _validate_final_packet_live(packet):
         generation=generation,
         revision=revision,
         startup_nonce=supervisor_nonce,
+        # The runner is necessarily a live descendant of the supervisor.
+        # Its independently signed tree is validated below, so exclude that
+        # exact bounded subtree when revalidating the supervisor identity.
+        allowed_descendant_tree=packet.get("process_tree_identity"),
     )
     runner = validate_live_bootstrap_tree(
         packet.get("process_tree_identity"),
@@ -504,7 +524,10 @@ def watch_for_mission(
     auto_merge_pr=False,
     release_verify_url="",
 ):
-    authorized, reason = _runtime_pickup_authorized()
+    execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY)
+    authorization = (_runtime_observer_authorized if execution_mode == EXECUTION_MODE_OBSERVE_ONLY
+                     else _runtime_pickup_authorized)
+    authorized, reason = authorization()
     if not authorized:
         return {"success": False, "status": "runner_contained", "reason": reason}, 423
     interval_seconds = max(5, int(interval_seconds or 60))
@@ -521,16 +544,38 @@ def watch_for_mission(
     checks = 0
     write_runner_heartbeat({"status": "watch_started"})
     while True:
-        authorized, reason = _runtime_pickup_authorized()
+        authorized, reason = authorization()
         if not authorized:
             return {"success": False, "status": "runner_contained", "reason": reason}, 423
         checks += 1
+        shadow_cycle = process_pending_control_tower_feedback()
+        write_runner_heartbeat({
+            "status": "shadow_observation_cycle",
+            "shadow": shadow_cycle,
+            "checks": checks,
+            "execution_mode": execution_mode,
+            "next_eligible_event": shadow_cycle.get("next_eligible_event", ""),
+        })
+        if execution_mode == EXECUTION_MODE_OBSERVE_ONLY:
+            result = {
+                "success": shadow_cycle.get("success") is not False,
+                "status": "observe_only_cycle_complete",
+                "shadow": shadow_cycle,
+                "checks": checks,
+                "mission_pickup_attempted": False,
+                "release_attempted": False,
+                "next_eligible_event": shadow_cycle.get("next_eligible_event", ""),
+            }
+            if max_checks is not None and checks >= max_checks:
+                return result, 200 if result["success"] else 503
+            time.sleep(interval_seconds)
+            continue
         if continuous:
             recovery = recover_stranded_missions(notify=notify)
             if recovery.get("recovered_count"):
                 recovery["checks"] = checks
                 write_runner_heartbeat(recovery)
-            if checks == 1 or checks % 5 == 0:
+            if checks % 5 == 0:
                 executive, _executive_status = run_executive_cycle(runner={"active_mission_id": (_active_mission() or {}).get("mission_id", "")})
                 if executive.get("status") not in {"executive_disabled", "executive_cycle_complete"} or executive.get("results"):
                     executive["checks"] = checks
@@ -539,19 +584,15 @@ def watch_for_mission(
                         "status": "executive_cycle_observed", "executive": executive, "checks": checks,
                         "queue_health": cycle.get("queue_health") if isinstance(cycle.get("queue_health"), dict) else {},
                     })
-                # The first cycle must reach authoritative pickup promptly.
-                # Potentially slow observers and reconciliation begin only
-                # after one bounded pickup opportunity.
-                if checks % 5 == 0:
-                    observers = _run_domain_observers()
-                    if observers.get("status") not in {"domain_observers_disabled", "observer_cycle_not_due"}:
-                        write_runner_heartbeat({"status": "domain_observer_cycle", "observers": observers, "checks": checks})
-                    if notify:
-                        _deliver_executive_outbox()
-                    reconciliation = reconcile_blocked_pr_missions(notify=notify)
-                    if reconciliation.get("changed_count"):
-                        reconciliation["checks"] = checks
-                        write_runner_heartbeat(reconciliation)
+                observers = _run_domain_observers()
+                if observers.get("status") not in {"domain_observers_disabled", "observer_cycle_not_due"}:
+                    write_runner_heartbeat({"status": "domain_observer_cycle", "observers": observers, "checks": checks})
+                if notify:
+                    _deliver_executive_outbox()
+                reconciliation = reconcile_blocked_pr_missions(notify=notify)
+                if reconciliation.get("changed_count"):
+                    reconciliation["checks"] = checks
+                    write_runner_heartbeat(reconciliation)
             # Review-media cleanup is maintenance, not a mission-pickup gate.
             # Running it every cycle delayed an otherwise ready queue by nearly
             # a minute on the owner workstation.
@@ -1302,13 +1343,26 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
         }, update_status
     refresh = _refresh_core_plan_for_pickup(mission)
     if refresh.get("blocked"):
+        rollback, rollback_status = update_mission_status(
+            mission_id,
+            clean_status,
+            owner_decision="",
+            event_type="status_changed",
+            notes="CHARLIE returned the mission to its pre-claim state because adaptive orchestration refresh was blocked before execution.",
+            metadata={
+                "claim_rollback_reason": refresh.get("reason", "orchestration_binding_invalid"),
+                "claim_rollback_lease_id": execution_lease.get("lease_id", ""),
+            },
+            expected_status="in_progress",
+        )
         return {
             "success": False,
             "status": "adaptive_orchestration_refresh_blocked",
             "mission_id": mission_id,
             "reason": refresh.get("reason", "orchestration_binding_invalid"),
+            "claim_rollback": rollback,
             "codex_chat_written": False,
-        }, 409
+        }, 409 if rollback_status < 400 else rollback_status
     if refresh.get("refreshed"):
         refreshed, refreshed_status = get_mission(mission_id)
         if refreshed_status < 400 and refreshed.get("mission"):
@@ -1483,6 +1537,18 @@ def _refresh_core_plan_for_pickup(mission):
         for item in (plan.get("agent_workflow") if isinstance(plan.get("agent_workflow"), list) else [])
         if isinstance(item, dict) and str(item.get("agent") or "").strip()
     ]
+    intake = metadata.get("intake") if isinstance(metadata.get("intake"), dict) else {}
+    if (
+        intake.get("adaptive_orchestration_required")
+        and resume_stage
+        and resume_stage not in planned_agents
+        and str((plan.get("orchestration") or {}).get("tier") or "") == "T0"
+        and planned_agents == ["source_mapper"]
+    ):
+        # A previously failed finalization gate can leave a stale publisher
+        # recovery marker on a report-only T0 mission. T0 has no publisher or
+        # mutation authority; rerun its only authorized source-mapper stage.
+        resume_stage = "source_mapper"
     if resume_stage in AGENT_DEFINITIONS and resume_stage not in planned_agents:
         definition = AGENT_DEFINITIONS[resume_stage]
         inserted = {
@@ -1520,7 +1586,6 @@ def _refresh_core_plan_for_pickup(mission):
         },
         "charlie_core": plan,
     }
-    intake = metadata.get("intake") if isinstance(metadata.get("intake"), dict) else {}
     if intake.get("adaptive_orchestration_required"):
         payload["orchestration"] = plan.get("orchestration")
         binding = validate_orchestration_binding(
@@ -1537,6 +1602,13 @@ def _refresh_core_plan_for_pickup(mission):
             "identity": binding["identity"],
             "generation_identity": payload["orchestration"]["generation_identity"],
             "validated": True,
+        }
+    if resume_stage == "source_mapper" and review_packet:
+        payload["review_packet"] = {
+            **review_packet,
+            "return_to_stage": "source_mapper",
+            "blocked_agent": "source_mapper",
+            "recommended_next_action": "CORE will rerun the sole authorized T0 source-mapper stage.",
         }
     result, status_code = update_mission_vault(
         mission_id,

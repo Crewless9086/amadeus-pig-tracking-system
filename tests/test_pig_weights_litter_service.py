@@ -135,6 +135,15 @@ class LitterPigletCreationTests(unittest.TestCase):
 
 
 class LitterWeaningDayWorkflowTests(unittest.TestCase):
+    def setUp(self):
+        self.confirmation_gate = patch.object(
+            pig_weights_service, "_valid_weaning_confirmation", return_value=True
+        )
+        self.confirmation_gate.start()
+
+    def tearDown(self):
+        self.confirmation_gate.stop()
+
     def _active_rows(self):
         return [
             {
@@ -199,6 +208,10 @@ class LitterWeaningDayWorkflowTests(unittest.TestCase):
         self.assertEqual(result["wean_weights_captured"], 2)
         assign_tags.assert_called_once()
         record_health.assert_called_once()
+        self.assertEqual(
+            record_health.call_args.kwargs["treatment_context"],
+            "weaning_day",
+        )
         save_movement.assert_not_called()
         mark_weaned.assert_not_called()
 
@@ -1742,9 +1755,9 @@ class LifecycleDetailReadTests(unittest.TestCase):
         self.assertEqual(detail["lifecycle_outcomes"]["removed"], 0)
         self.assertEqual(detail["litter_status"], "Active")
         self.assertEqual(detail["birth_date"], "2026-05-01")
-        self.assertEqual(detail["estimated_wean_date"], "2026-06-05")
-        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-06-02")
-        self.assertEqual(detail["default_wean_age_days"], 35)
+        self.assertEqual(detail["estimated_wean_date"], "2026-05-31")
+        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-05-28")
+        self.assertEqual(detail["default_wean_age_days"], 30)
 
 
 class LitterNewbornHealthTests(unittest.TestCase):
@@ -2003,6 +2016,137 @@ class LitterNewbornHealthTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["missing_columns"], ["Earmarked", "Earmark_Date"])
         update_pigs.assert_not_called()
+
+    def test_record_litter_newborn_health_keeps_sex_tally_at_litter_level(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-2", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                litter_id="LIT-1",
+                action_date_value="2026-08-10",
+                male_count=1,
+                female_count=1,
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["sex_count_recorded"])
+        self.assertEqual(result["sex_count_scope"], "litter_tally_only")
+        self.assertFalse(result["individual_piglet_sexes_assigned"])
+        self.assertEqual(result["planned_pig_updates"], {})
+        self.assertEqual(result["planned_litter_updates"], {
+            "Male_Count": 1,
+            "Female_Count": 1,
+            "Unknown_Sex_Count": 0,
+        })
+
+    def test_record_litter_newborn_health_rejects_duplicate_closed_packet(self):
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-2", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        with patch.object(pig_weights_service, "_get_pig_master_rows", return_value=pig_rows), \
+             patch.object(pig_weights_service, "get_products", return_value=[]), \
+             patch.object(pig_weights_service, "_try_supabase_read", return_value={
+                 "first_treatment_complete": True,
+                 "first_treatment_partial": False,
+             }), \
+             patch.object(pig_weights_service, "append_row") as append_row:
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                litter_id="LIT-1",
+                action_date_value="2026-08-10",
+                male_count=1,
+                female_count=1,
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "first_treatment_already_closed")
+        self.assertTrue(result["first_treatment_complete"])
+        append_row.assert_not_called()
+
+    def test_weaning_day_treatment_remains_available_after_first_treatment_closed(self):
+        product_rows = [{
+            "product_id": "PRD-DEWORM",
+            "product_name": "Piglet Dewormer",
+            "product_category": "Dewormer",
+            "default_dose": 2.5,
+            "dose_unit": "ml",
+            "default_withdrawal_days": 7,
+        }]
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-2", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        with patch.object(pig_weights_service, "_get_pig_master_rows", return_value=pig_rows), \
+             patch.object(pig_weights_service, "get_products", return_value=product_rows), \
+             patch.object(pig_weights_service, "_try_supabase_read", return_value={
+                 "first_treatment_complete": True,
+                 "first_treatment_partial": False,
+             }):
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                litter_id="LIT-1",
+                action_date_value="2026-08-10",
+                deworming_product_id="PRD-DEWORM",
+                dry_run=True,
+                treatment_context="weaning_day",
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["action"], "record_litter_weaning_treatment")
+        self.assertEqual(result["treatment_context"], "weaning_day")
+        self.assertEqual(result["treatment_rows_planned"], 2)
+        for row in result["planned_treatment_rows"]:
+            self.assertIn("weaning day treatment", row[9])
+            self.assertIn("weaning day treatment", row[16])
+
+    def test_skip_first_treatment_records_one_durable_close_decision(self):
+        with patch.object(
+            pig_weights_service,
+            "_try_supabase_read",
+            return_value={"first_treatment_complete": False, "first_treatment_partial": False, "first_treatment_skipped": False},
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "farm_supabase_writes_available",
+            return_value=True,
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "update_litter_by_id",
+            return_value=1,
+        ) as update_litter:
+            result, status_code = pig_weights_service.skip_litter_first_treatment("LIT-1", "Charl")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["first_treatment_skipped"])
+        updates = update_litter.call_args.args[1]
+        self.assertEqual(updates["First_Treatment_Skipped_By"], "Charl")
+
+    def test_skip_first_treatment_rejects_existing_medical_evidence(self):
+        with patch.object(
+            pig_weights_service,
+            "_try_supabase_read",
+            return_value={"first_treatment_complete": True, "first_treatment_partial": False},
+        ), patch.object(
+            pig_weights_service.farm_supabase_write_service,
+            "update_litter_by_id",
+        ) as update_litter:
+            result, status_code = pig_weights_service.skip_litter_first_treatment("LIT-1", "Charl")
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "first_treatment_has_medical_evidence")
+        update_litter.assert_not_called()
 
 
 if __name__ == "__main__":

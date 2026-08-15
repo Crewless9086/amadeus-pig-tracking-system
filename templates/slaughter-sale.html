@@ -67,9 +67,8 @@
             <label for="payment_status">Payment Status</label>
             <select id="payment_status" name="payment_status" required>
               <option value="Unpaid">Unpaid</option>
-              <option value="Part_Paid">Part Paid</option>
-              <option value="Paid">Paid</option>
             </select>
+            <div class="field-helper">New sales start Unpaid. Record money later through Review Payment.</div>
           </div>
 
           <div class="form-group">
@@ -170,6 +169,13 @@
             <div class="form-group">
               <label for="update_line_total">Final Amount</label>
               <input type="number" step="0.01" inputmode="decimal" id="update_line_total" class="no-spinner" required />
+              <div class="field-helper">Canonical final total; a full payment must equal this amount.</div>
+            </div>
+
+            <div class="form-group hidden" id="received_amount_group">
+              <label for="update_received_amount">Amount Received In This Receipt</label>
+              <input type="number" step="0.01" inputmode="decimal" id="update_received_amount" class="no-spinner" />
+              <div class="field-helper">Enter the money actually received. Partial payments must be below the final amount.</div>
             </div>
 
             <div class="form-group">
@@ -196,7 +202,7 @@
             <div class="form-group">
               <label for="update_payment_date">Payment Date</label>
               <input type="date" id="update_payment_date" />
-              <div class="field-helper">Required when payment status is Paid.</div>
+              <div class="field-helper">Required for deposits, partial payments and full payments.</div>
             </div>
           </div>
 
@@ -230,7 +236,9 @@
 
           <div class="form-actions form-actions-primary">
             <button type="submit" id="submit_slaughter_update" class="submit-button">Save Payment Update</button>
+            <button type="button" id="confirm_payment_update" class="submit-button hidden">Confirm Exact Payment</button>
           </div>
+          <div id="payment_preview" class="field-helper hidden" role="status"></div>
         </form>
       </section>
 

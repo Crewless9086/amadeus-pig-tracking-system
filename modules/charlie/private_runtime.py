@@ -10,7 +10,10 @@ from datetime import datetime, timedelta, timezone
 from modules.charlie.private_media import normalize_private_media, transcribe_voice
 from modules.charlie.private_executive import build_executive_plan, compose_executive_reply, context_after_plan, run_executive_plan
 from modules.charlie.private_planner import plan_owner_intent
-from modules.charlie.private_policy import authenticate_private_update, authority_for_intent, private_policy
+from modules.charlie.private_policy import (
+    authenticate_private_update, authenticate_private_action_context,
+    authority_for_intent, private_policy,
+)
 from modules.charlie.private_store import (
     bind_owner, claim_update, complete_update, create_approval_bundle, decide_bundle,
     recent_context, record_intent, record_message, record_tool_execution, stable_id,
@@ -22,6 +25,22 @@ from modules.charlie.private_response import build_executive_response_packet
 from modules.charlie.executive_store import record_capability_outcome
 
 CALLBACK_PREFIX = "cp:"
+
+
+def handle_authenticated_private_action(action, authentication_payload, headers=None, *,
+                                        existing_mission_id="", environ=None):
+    """Run one structured private action without parsing, delivery or dispatch."""
+    if not isinstance(action, dict):
+        return {"success": False, "status": "private_action_mapping_required"}, 400
+    context = authenticate_private_action_context(
+        authentication_payload, headers, existing_mission_id, environ)
+    if context is None:
+        return {"success": False, "status": "private_action_authentication_or_mission_binding_denied"}, 403
+    intent_type = str(action.get("action") or "")
+    authority = authority_for_intent(intent_type, (), explicit_owner_command=True)
+    if not authority.get("allowed"):
+        return {"success": False, "status": "private_action_not_authorized"}, 403
+    return execute_private_tool(intent_type, action or {}, context)
 
 
 def handle_private_telegram_webhook(payload, headers=None, *, environ=None, sender=None, callback_answerer=None, store=None, event_sink=None):

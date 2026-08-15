@@ -1,144 +1,80 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="af">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Add Litter</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Voeg Werpsel By · Amadeus Farm</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/farmDashboardV2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/addLitterV2.css') }}">
 </head>
 <body>
-  <div class="page-shell">
-    <div class="page-card">
-      <div class="page-header page-header-with-link">
-        <div>
-          <h1>Add Litter</h1>
-          <p>Create a new litter record in LITTERS.</p>
-        </div>
-        <a href="/" class="secondary-link">← Dashboard</a>
+<div class="farm-app-shell">
+  {% include '_farm_nav.html' %}
+  <main class="add-litter-page">
+    <header class="add-litter-hero">
+      <div>
+        <span class="farm-eyebrow">HERDMASTER · WERPSEL OPNAME</span>
+        <h1>Voeg Werpsel By</h1>
+        <p>Skep die geboorte-rekord uit ’n bestaande paring, of vul die ouers handmatig in wanneer die vorige paring onbekend is.</p>
       </div>
+      <a class="secondary-action" href="/matings">Terug na Parings</a>
+    </header>
 
-      <form id="addLitterForm" class="weight-form">
-        <div class="form-group">
-          <label for="mating_id">Select Mating (Optional)</label>
-          <select id="mating_id" name="mating_id">
-            <option value="">Manual Entry</option>
-          </select>
+    <section class="litter-context" aria-label="Opname opsomming">
+      <div><span>BRON</span><strong id="capture_source">Word gelaai</strong><small>Kies ’n paring of gebruik handmatige opname</small></div>
+      <div><span>SOG</span><strong id="capture_sow">Nog nie gekies nie</strong><small>Die moeder is verpligtend</small></div>
+      <div><span>JONG DATUM</span><strong id="capture_date">Nog nie ingevul nie</strong><small>Die werklike geboortedatum</small></div>
+    </section>
+
+    <form id="addLitterForm" class="litter-capture-form">
+      <section class="capture-card capture-card-primary">
+        <div class="capture-heading"><div><span>STAP 1</span><h2>Oorsprong en ouers</h2><p>Gebruik die paring om die sog, beer en verwagte datum vooraf in te vul.</p></div><strong>Verpligtend</strong></div>
+        <div class="field full"><label for="mating_id">Paringsrekord <small>Opsioneel</small></label><select id="mating_id" name="mating_id"><option value="">Handmatige opname</option></select><p class="field-help">Kies die toepaslike oop paring. Laat leeg wanneer die paring of beer onbekend is.</p></div>
+        <div class="field-grid three">
+          <div class="field"><label for="mother_pig_id">Sog</label><select id="mother_pig_id" name="mother_pig_id" required><option value="">Kies sog</option></select></div>
+          <div class="field"><label for="father_pig_id">Beer <small>Mag onbekend wees</small></label><select id="father_pig_id" name="father_pig_id"><option value="">Onbekend</option></select></div>
+          <div class="field"><label for="current_pen_id">Huidige Hok</label><select id="current_pen_id" name="current_pen_id"><option value="">Kies hok</option></select></div>
         </div>
+      </section>
 
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="mother_pig_id">Mother</label>
-            <select id="mother_pig_id" name="mother_pig_id" required>
-              <option value="">Select mother</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="father_pig_id">Father</label>
-            <select id="father_pig_id" name="father_pig_id">
-              <option value="">Unknown</option>
-            </select>
-          </div>
+      <section class="capture-card">
+        <div class="capture-heading"><div><span>STAP 2</span><h2>Geboorte-uitkoms</h2><p>Vul die Jong Datum en die bewese werpseltellings in.</p></div><strong>Geboorte</strong></div>
+        <div class="field-grid three">
+          <div class="field"><label for="farrowing_date">Jong Datum</label><input id="farrowing_date" name="farrowing_date" type="date" required></div>
+          <div class="field"><label for="total_born">Totaal Gebore</label><input id="total_born" name="total_born" type="number" step="1" min="0" inputmode="numeric"></div>
+          <div class="field"><label for="born_alive">Lewend Gebore</label><input id="born_alive" name="born_alive" type="number" step="1" min="0" inputmode="numeric"></div>
         </div>
-
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="current_pen_id">Current Pen</label>
-            <select id="current_pen_id" name="current_pen_id">
-              <option value="">Select pen</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="farrowing_date">Farrowing Date</label>
-            <input id="farrowing_date" name="farrowing_date" type="date" required />
-          </div>
+        <div class="field-grid four compact-counts">
+          <div class="field"><label for="stillborn_count">Doodgebore</label><input id="stillborn_count" name="stillborn_count" type="number" step="1" min="0" inputmode="numeric"></div>
+          <div class="field"><label for="mummified_count">Gemummifiseer</label><input id="mummified_count" name="mummified_count" type="number" step="1" min="0" inputmode="numeric"></div>
+          <div class="field"><label for="male_count">Beertjies <small>Indien bekend</small></label><input id="male_count" name="male_count" type="number" step="1" min="0" inputmode="numeric"></div>
+          <div class="field"><label for="female_count">Soggies <small>Indien bekend</small></label><input id="female_count" name="female_count" type="number" step="1" min="0" inputmode="numeric"></div>
         </div>
+      </section>
 
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="wean_date">Wean Date</label>
-            <input id="wean_date" name="wean_date" type="date" />
-          </div>
-
-          <div class="form-group">
-            <label for="total_born">Total Born</label>
-            <input id="total_born" name="total_born" type="number" step="1" />
-          </div>
+      <section class="capture-card capture-card-secondary">
+        <div class="capture-heading"><div><span>HISTORIESE / LATERE DATA</span><h2>Oordrag en speen</h2><p>Hierdie velde is nie nodig vir ’n nuwe geboorte nie. Gebruik dit slegs wanneer historiese feite reeds bekend is.</p></div><strong>Opsioneel</strong></div>
+        <div class="field-grid three">
+          <div class="field"><label for="fostered_in_count">Ingepleeg</label><input id="fostered_in_count" name="fostered_in_count" type="number" step="1" min="0"></div>
+          <div class="field"><label for="fostered_out_count">Uitgepleeg</label><input id="fostered_out_count" name="fostered_out_count" type="number" step="1" min="0"></div>
+          <div class="field"><label for="wean_date">Speen Datum</label><input id="wean_date" name="wean_date" type="date"></div>
         </div>
-
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="born_alive">Born Alive</label>
-            <input id="born_alive" name="born_alive" type="number" step="1" />
-          </div>
-
-          <div class="form-group">
-            <label for="stillborn_count">Stillborn Count</label>
-            <input id="stillborn_count" name="stillborn_count" type="number" step="1" />
-          </div>
+        <div class="field-grid two">
+          <div class="field"><label for="weaned_count">Aantal Gespeen</label><input id="weaned_count" name="weaned_count" type="number" step="1" min="0"></div>
+          <div class="field"><label for="average_wean_weight_kg">Gemiddelde Speengewig (kg)</label><input id="average_wean_weight_kg" name="average_wean_weight_kg" type="number" step="0.01" min="0"></div>
         </div>
+      </section>
 
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="mummified_count">Mummified Count</label>
-            <input id="mummified_count" name="mummified_count" type="number" step="1" />
-          </div>
+      <section class="capture-card notes-card">
+        <div class="field full"><label for="notes">Werpselnotas</label><textarea id="notes" name="notes" placeholder="Teken slegs feitelike werpselbesonderhede of belangrike waarnemings aan."></textarea></div>
+      </section>
 
-          <div class="form-group">
-            <label for="male_count">Male Count</label>
-            <input id="male_count" name="male_count" type="number" step="1" />
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="female_count">Female Count</label>
-            <input id="female_count" name="female_count" type="number" step="1" />
-          </div>
-
-          <div class="form-group">
-            <label for="fostered_in_count">Fostered In Count</label>
-            <input id="fostered_in_count" name="fostered_in_count" type="number" step="1" />
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="fostered_out_count">Fostered Out Count</label>
-            <input id="fostered_out_count" name="fostered_out_count" type="number" step="1" />
-          </div>
-
-          <div class="form-group">
-            <label for="weaned_count">Weaned Count</label>
-            <input id="weaned_count" name="weaned_count" type="number" step="1" />
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="average_wean_weight_kg">Average Wean Weight (kg)</label>
-            <input id="average_wean_weight_kg" name="average_wean_weight_kg" type="number" step="0.01" />
-          </div>
-
-          <div class="form-group">
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="notes">Litter Notes</label>
-          <textarea id="notes" name="notes"></textarea>
-        </div>
-
-        <div class="form-actions">
-          <button type="submit">Save Litter</button>
-        </div>
-
-        <div id="add_litter_message" class="message-box hidden"></div>
-      </form>
-    </div>
-  </div>
-
-  <script src="{{ url_for('static', filename='js/addLitter.js') }}"></script>
+      <div id="add_litter_message" class="message-box hidden" role="status" aria-live="polite"></div>
+      <footer class="capture-actions"><div><strong>Gereed om die werpsel te skep?</strong><span>Die stelsel skep die kanonieke werpsel en die ondersteunde varkie-rekords.</span></div><button id="save_litter_button" type="submit">Stoor Werpsel</button></footer>
+    </form>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='js/addLitter.js') }}"></script>
 </body>
 </html>

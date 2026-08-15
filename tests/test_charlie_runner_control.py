@@ -45,6 +45,14 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    def test_observe_only_active_state_is_reported_truthfully(self):
+        self.assertEqual(
+            runner_control._runner_operating_state(
+                {"execution_mode": "observe_only"}, {}, True
+            ),
+            "observe_only",
+        )
+
     def test_observe_only_packet_requires_exact_mode(self):
         tree = successful_bootstrap_observation(
             100, generation="g", revision="r", startup_nonce="n"
@@ -300,7 +308,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                         runner_control.atomic_write_json(
                             runner_control.HEARTBEAT_PATH,
                             {
-                            "status": "ownership_ready",
+                            "last_result_status": "ownership_ready",
                             "supervisor_generation": generation,
                             "runner_source_commit": revision,
                             "startup_nonce": runner_nonce,
@@ -563,7 +571,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
             "controller_public_key": public_key,
         }
         heartbeat = {
-            "status": "ownership_ready",
+            "last_result_status": "ownership_ready",
             "supervisor_generation": generation,
             "runner_source_commit": revision,
             "startup_nonce": "runner-nonce",
@@ -985,6 +993,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 "agent_ledger_path": str(ledger),
                 "stdout_tail": "running tests",
                 "stderr_tail": "",
+                "reason": "bounded diagnostic reason",
             }, heartbeat)
 
             with patch("modules.charlie.runner_control.REPO_ROOT", Path(tmp)):
@@ -1006,6 +1015,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["agent_ledger"]["latest_stage"]["agent"], "builder")
         self.assertEqual(result["agent_ledger"]["latest_stage"]["commands_run"][0], "node --check static/js/charlieMissionControl.js")
         self.assertEqual(result["stdout_tail"], "running tests")
+        self.assertEqual(result["reason"], "bounded diagnostic reason")
 
     @patch("modules.charlie.runner_control._pid_alive", return_value=True)
     def test_healthy_idle_runner_reports_waiting_not_stale(self, _pid_alive):
@@ -1068,6 +1078,35 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "runner_stale_or_stopped")
         self.assertEqual(result["last_result_status"], "codex_final_artifact_seen")
         self.assertTrue(result["final_artifact_present"])
+
+    def test_heartbeat_retains_shadow_cycle_and_next_eligible_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            heartbeat = Path(tmp) / "runner.json"
+            shadow = {
+                "success": True,
+                "status": "shadow_feedback_waiting",
+                "processed_count": 0,
+                "next_eligible_event": "control_tower_feedback_recorded",
+            }
+
+            first = runner_control.write_runner_heartbeat({
+                "status": "shadow_observation_cycle",
+                "shadow": shadow,
+                "checks": 3,
+                "next_eligible_event": "control_tower_feedback_recorded",
+                "mission_pickup_attempted": False,
+                "release_attempted": False,
+            }, heartbeat)
+            second = runner_control.write_runner_heartbeat({
+                "status": "observe_only_ready",
+            }, heartbeat)
+
+        self.assertEqual(first["shadow"], shadow)
+        self.assertEqual(second["shadow"], shadow)
+        self.assertEqual(second["checks"], 3)
+        self.assertEqual(second["next_eligible_event"], "control_tower_feedback_recorded")
+        self.assertFalse(second["mission_pickup_attempted"])
+        self.assertFalse(second["release_attempted"])
 
     @patch("modules.charlie.runner_control.os.kill")
     @patch("modules.charlie.runner_control._pid_alive_windows", return_value=True)

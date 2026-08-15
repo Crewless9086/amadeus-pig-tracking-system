@@ -13,6 +13,7 @@ from typing import Any
 WORKFLOW_PATH = Path("docs/04-n8n/workflows/2 - The GateKeeper/workflow.json")
 DIRECT_WEBHOOK_PATH = "/api/oom-sakkie/channels/telegram/direct-webhook"
 MEDIA_NODE = "Relay BEACON Photo to Backend"
+OWNER_TASK_MEDIA_NODE = "Relay Owner Request Media to Gateway"
 TEXT_NODE = "Call '2.0 - OOM SAKKIE - Amadeus Assistant Agent'"
 SAM_NODE = "Relay SAM Callback to Backend"
 DEPLOYMENT_PACKET_ID = "BEACON-GATEKEEPER-DEPLOYMENT-20260727-01"
@@ -39,7 +40,7 @@ READ_ONLY_WORKFLOW_KEYS = frozenset(
 NORMALIZE_NODE = "Code - Normalize Telegram Update"
 MEDIA_GATE_NODE = "Code - Gate BEACON Single Photo"
 MEDIA_SWITCH_NODE = "Switch - BEACON Media Intake"
-BEACON_ADDED_NODES = frozenset({MEDIA_GATE_NODE, MEDIA_SWITCH_NODE, MEDIA_NODE})
+BEACON_ADDED_NODES = frozenset({MEDIA_GATE_NODE, MEDIA_SWITCH_NODE, MEDIA_NODE, OWNER_TASK_MEDIA_NODE})
 LIVE_ORDINARY_NODE = "Call '2.0B - Oom Sakkie Backend Read-Only Relay'"
 
 
@@ -526,6 +527,10 @@ def classify_update(
         "media_group_id"
     ) and stable:
         return "beacon_single_photo"
+    if private_owner and not forwarded and photos and not unsupported and isinstance(
+        message.get("media_group_id"), str
+    ) and message.get("media_group_id") and stable:
+        return "owner_request_album"
     return "media_rejected"
 
 
@@ -540,7 +545,7 @@ def validate_workflow(path: Path = WORKFLOW_PATH) -> dict[str, Any]:
     ]
     if len(triggers) != 1:
         errors.append("GateKeeper must remain the single Telegram-trigger workflow")
-    if MEDIA_NODE not in nodes or TEXT_NODE not in nodes or SAM_NODE not in nodes:
+    if MEDIA_NODE not in nodes or OWNER_TASK_MEDIA_NODE not in nodes or TEXT_NODE not in nodes or SAM_NODE not in nodes:
         errors.append("required media/text/SAM nodes are missing")
     else:
         relay = nodes[MEDIA_NODE]
@@ -573,6 +578,22 @@ def validate_workflow(path: Path = WORKFLOW_PATH) -> dict[str, Any]:
         }
         if headers != [expected_header]:
             errors.append("media relay secret boundary changed")
+        owner_relay = nodes[OWNER_TASK_MEDIA_NODE]
+        owner_params = owner_relay.get("parameters", {})
+        owner_headers = owner_params.get("headerParameters", {}).get("parameters", [])
+        if owner_params.get("url") != "https://amadeus-pig-tracking-system.onrender.com/api/oom-sakkie/channels/telegram/message":
+            errors.append("owner-task media relay does not target the approved gateway")
+        if owner_headers != [{"name": "X-Oom-Sakkie-Telegram-Token",
+                              "value": "={{$vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN}}"}]:
+            errors.append("owner-task gateway token boundary changed")
+        if (owner_params.get("contentType") != "json"
+                or owner_params.get("specifyBody") != "json"
+                or owner_params.get("jsonBody") != "={{ $json.raw_update }}"):
+            errors.append("owner-task relay does not preserve the Telegram update")
+        if owner_params.get("options", {}).get("timeout") != 30000:
+            errors.append("owner-task relay timeout is not exactly 30 seconds")
+        if owner_relay.get("retryOnFail") is not False or owner_relay.get("onError") != "stopWorkflow":
+            errors.append("owner-task relay is not one-attempt/fail-closed")
 
     authorized = connections.get("Security Check", {}).get("main", [[], []])
     if len(authorized) < 2 or [edge.get("node") for edge in authorized[1]] != [
@@ -580,8 +601,8 @@ def validate_workflow(path: Path = WORKFLOW_PATH) -> dict[str, Any]:
     ]:
         errors.append("authorized traffic does not enter the media gate first")
     media_outputs = connections.get("Switch - BEACON Media Intake", {}).get("main", [])
-    if len(media_outputs) != 3:
-        errors.append("media switch must have forward, ordinary, and rejected outputs")
+    if len(media_outputs) != 4:
+        errors.append("media switch must have BEACON, ordinary, rejected, and owner-request outputs")
     else:
         if [edge.get("node") for edge in media_outputs[0]] != [MEDIA_NODE]:
             errors.append("authorized photo is not isolated to the BEACON handler")
@@ -591,8 +612,12 @@ def validate_workflow(path: Path = WORKFLOW_PATH) -> dict[str, Any]:
             errors.append("ordinary routing changed")
         if media_outputs[2]:
             errors.append("rejected media must terminate without a responder")
+        if [edge.get("node") for edge in media_outputs[3]] != [OWNER_TASK_MEDIA_NODE]:
+            errors.append("owner-request album is not isolated to the authenticated gateway")
     if connections.get(MEDIA_NODE, {}).get("main") != [[]]:
         errors.append("backend success/failure must not fall through to text routing")
+    if connections.get(OWNER_TASK_MEDIA_NODE, {}).get("main") != [[]]:
+        errors.append("owner-task gateway success/failure must not fall through")
 
     settings = workflow.get("settings", {})
     for key in ("saveDataErrorExecution", "saveDataSuccessExecution"):

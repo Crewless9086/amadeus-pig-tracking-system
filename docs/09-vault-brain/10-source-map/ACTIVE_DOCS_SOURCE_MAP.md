@@ -8,12 +8,19 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 
 ## Highest-Level Sources
 
+- `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`
+- `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`
+- `docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`
 - `docs/00-start-here/README.md`
 - `docs/00-start-here/CURRENT_STATE.md`
 - `docs/00-start-here/WORKFLOW.md`
 - `docs/00-start-here/DEPLOYMENT_SOP.md`
 - `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`
 - `docs/00-start-here/PRODUCT_VISION.md`
+
+The similarly named
+`docs/06-operations/AGENTIC_FARM_RUNTIME_PROGRAMME.md` is a historical
+canonical-path pointer only. It is not an active or controlling source.
 
 ## Architecture And Data
 
@@ -27,6 +34,9 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 - `docs/03-google-sheets/WRITE_OWNERSHIP.md`
 
 ## Workflows
+
+The n8n documents below are transitional runtime evidence, not controlling
+architecture. Their use is bounded by the Agentic Farm Runtime Programme.
 
 - `docs/04-n8n/WORKFLOW_RULES.md`
 - `docs/04-n8n/DO_NOT_CHANGE.md`
@@ -55,12 +65,16 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 
 ## Operations And Evidence
 
+- `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`
+- `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`
 - `docs/06-operations/RUNBOOK.md`
 - `docs/06-operations/TESTING_CHECKLIST.md`
 - `docs/06-operations/RELEASE_CHECKLIST.md`
 - `docs/06-operations/TROUBLESHOOTING.md`
 - `docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md`
 - `docs/06-operations/GS_MIG_FINAL_AUDIT.md`
+- `docs/06-operations/OOM_SAKKIE_FAMILY_ACCESS_SOURCE_HANDOVER.md`
+- `docs/06-operations/OOM_SAKKIE_ROOTLINE_DAILY_PRESENTATION_HANDOVER.md`
 
 ## Static Agent Assets
 
@@ -87,4 +101,6 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 
 ## Archived After Migration
 
+- `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` (historical review evidence;
+  excluded from current architecture/review authority pending Phase 0 register)
 - `docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md`

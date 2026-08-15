@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hmac
 import os
+from dataclasses import dataclass
+from typing import Mapping
 
 from modules.charlie.environment import alias_environment
 
@@ -26,6 +28,39 @@ RED_ZONE_FLAGS = {
     "customer_send", "public_post", "payment", "deposit", "reservation", "stock_write",
     "lifecycle_write", "purpose_write", "destructive_migration", "production_delete", "credential_access",
 }
+
+_PRIVATE_ACTION_SEAL = object()
+
+
+@dataclass(frozen=True)
+class PrivateActionContext:
+    authenticated_principal_id: str
+    private_chat_id: str
+    existing_mission_id: str
+    authentication_scope: str
+    _seal: object
+
+
+def authenticate_private_action_context(payload, headers, existing_mission_id, environ=None):
+    """Authenticate raw private input and return sealed internal action context."""
+    if not isinstance(payload, Mapping) or not isinstance(headers, Mapping):
+        return None
+    auth = authenticate_private_update(payload, headers, environ)
+    actor, chat = auth.get("actor") or {}, auth.get("chat") or {}
+    mission_id = str(existing_mission_id or "").strip()
+    if not auth.get("allowed") or auth.get("reason") != "owner_authenticated" or not mission_id:
+        return None
+    return PrivateActionContext(
+        authenticated_principal_id=str(actor.get("id") or "").strip(),
+        private_chat_id=str(chat.get("id") or "").strip(),
+        existing_mission_id=mission_id,
+        authentication_scope="core_private_owner",
+        _seal=_PRIVATE_ACTION_SEAL,
+    )
+
+
+def is_authenticated_private_action_context(value):
+    return isinstance(value, PrivateActionContext) and value._seal is _PRIVATE_ACTION_SEAL
 
 
 def private_policy(environ=None):
@@ -84,7 +119,9 @@ def authority_for_intent(intent_type, risk_flags=None, *, explicit_owner_command
         return {"allowed": False, "tier": "charl_human", "reason": "exact_owner_confirmation_required"}
     if intent_type.startswith("read_") or intent_type in {"investigate", "executive_brief", "help", "clarify"}:
         return {"allowed": True, "tier": "auto", "reason": "read_only"}
-    if intent_type in {"create_mission", "approve_mission", "pause_mission", "reject_mission", "send_back_mission", "remember_preference", "prepare_order_pack", "prepare_beacon_draft", "schedule_follow_up"}:
+    if intent_type in {"observe_shadow_control_tower", "reconcile_control_tower_feedback"}:
+        return {"allowed": True, "tier": "observe", "reason": "authenticated_observation_only"}
+    if intent_type in {"create_mission", "classify_portfolio_baseline", "approve_mission", "pause_mission", "reject_mission", "send_back_mission", "remember_preference", "prepare_order_pack", "prepare_beacon_draft", "schedule_follow_up"}:
         return {"allowed": bool(explicit_owner_command), "tier": "charlie_delegated", "reason": "explicit_owner_command" if explicit_owner_command else "approval_bundle_required"}
     return {"allowed": False, "tier": "charl_human", "reason": "capability_not_delegated"}
 

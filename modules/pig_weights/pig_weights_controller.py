@@ -29,6 +29,7 @@ from modules.pig_weights.pig_weights_service import (
     mark_pig_death_or_removal,
     mark_litter_piglets_dead,
     record_litter_newborn_health,
+    skip_litter_first_treatment,
     record_litter_piglet_sex_counts,
     assign_litter_piglet_tag_numbers,
     get_pig_detail,
@@ -66,6 +67,7 @@ from modules.pig_weights.purpose_correction_batch_service import (
     create_correction_batch,
     execute_correction_batch,
 )
+from modules.pig_weights.application_grouped_preview_adapter import attach_canonical_preview
 
 
 def get_status():
@@ -240,7 +242,18 @@ def record_litter_profile_newborn_health(litter_id: str, payload: dict):
         route=payload.get("route", ""),
         batch_lot_number=payload.get("batch_lot_number", ""),
         notes=payload.get("notes", ""),
+        male_count=payload.get("male_count", None),
+        female_count=payload.get("female_count", None),
         dry_run=payload.get("dry_run", True) is True,
+    )
+
+
+def skip_litter_profile_first_treatment(litter_id: str, payload: dict):
+    payload = payload or {}
+    return skip_litter_first_treatment(
+        litter_id=litter_id,
+        changed_by=payload.get("changed_by", "web_app"),
+        reason=payload.get("reason", "Owner marked the optional first treatment as skipped."),
     )
 
 
@@ -395,9 +408,9 @@ def get_weights_by_date(weight_date: str):
     }, 200
 
 
-def get_weight_report_data(date_from: str = "", date_to: str = "", pen_id: str = ""):
+def get_weight_report_data(date_from: str = "", date_to: str = "", pen_id: str = "", batch_id: str = ""):
     try:
-        return get_weight_report(date_from=date_from, date_to=date_to, pen_id=pen_id), 200
+        return get_weight_report(date_from=date_from, date_to=date_to, pen_id=pen_id, batch_id=batch_id), 200
     except ValueError as exc:
         return {
             "success": False,
@@ -469,6 +482,8 @@ def create_weight_entry_with_optional_move(payload: dict):
 
 def preview_bulk_weight_entries(payload: dict):
     result, status_code = preflight_bulk_weight_entries(payload)
+    if status_code == 200 and result.get("success") is True and result.get("accepted_count", 0) > 0:
+        result = attach_canonical_preview(result)
     return result, status_code
 
 

@@ -17,6 +17,7 @@ from modules.orders.order_intake_service import (
 from modules.orders.order_line_sync import sync_order_lines_from_request
 from modules.orders.order_service import create_order_with_lines
 from modules.orders.order_validation import validate_new_order_payload, validate_sync_order_lines_payload
+from modules.documents.quote_service import auto_generate_quote_if_ready
 from modules.pig_weights.pig_weights_service import get_sales_availability
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge, public_profile
 from modules.sales.sam_pricing import (
@@ -40,6 +41,8 @@ from modules.sales.sam_live_stock_contextual_sales import (
     build_contextual_sales_recommendation,
     normalize_livestock_language,
 )
+from modules.sales.sam_livestock_offer_loop import build_canonical_livestock_offer
+from modules.sales.sam_customer_front_door import interpret_customer_front_door
 from modules.sales.sam_live_stock_availability_observation import (
     resolve_authoritative_availability,
 )
@@ -52,6 +55,10 @@ from modules.sales.sam_chatwoot_inbox_state import (
 )
 from modules.sales.sam_live_stock_continuous_dispatch import (
     build_delivery_owner_exception,
+)
+from modules.sales.sam_live_stock_sales_lifecycle import build_sales_lifecycle_packet
+from modules.sales.sam_owner_example_projection import (
+    read_owner_example_projection,
 )
 from modules.sales.sam_live_stock_media import classify_chatwoot_image, media_policy, transcribe_chatwoot_voice
 from modules.sales.sam_delivery_truth import (
@@ -87,6 +94,7 @@ OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV = "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_EN
 MEAT_PUBLIC_OFFER_ENABLED_ENV = "SAM_MEAT_PUBLIC_OFFER_ENABLED"
 INTAKE_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED"
 DRAFT_ORDER_CREATE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED"
+QUOTE_PREPARE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_QUOTE_PREPARE_ENABLED"
 OWNER_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED"
 CHATWOOT_BASE_URL_ENV = "CHATWOOT_BASE_URL"
 CHATWOOT_ACCOUNT_ID_ENV = "CHATWOOT_ACCOUNT_ID"
@@ -192,9 +200,11 @@ def handle_sam_live_stock_chatwoot_inbound(
     conversation_identity_loader=None,
     availability_loader=None,
     availability_evidence=None,
+    pricing_projection=None,
     intake_writer=None,
     draft_order_creator=None,
     draft_order_syncer=None,
+    quote_preparer=None,
     llm_drafter=None,
     owner_example_loader=None,
     voice_transcriber=None,
@@ -202,6 +212,8 @@ def handle_sam_live_stock_chatwoot_inbound(
     chatwoot_sender=None,
     routine_delivery_claim=None,
     routine_delivery_evidence_recorder=None,
+    allow_provider_current_backlog=False,
+    preclaim_chronology_verifier=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -228,6 +240,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     inbound["understanding"] = understanding
 
     facts = extract_live_stock_facts(inbound["content"], inbound)
+    newly_supplied_facts = dict(facts)
     facts["customer_language"] = understanding.get("language") or "unknown"
     facts["message_intent"] = understanding.get("message_intent") or "unclear"
     facts["media_review_required"] = bool(understanding.get("requires_media_review"))
@@ -277,6 +290,35 @@ def handle_sam_live_stock_chatwoot_inbound(
         general_context.get("prior_sales_context"),
     )
     general_context["contextual_sales_route"] = contextual_route
+    front_door_packet = build_sam_front_door_adapter_packet(
+        inbound,
+        general_context,
+        source,
+    )
+    front_door_specialist = front_door_packet.get(
+        "next_specialist_recommendation"
+    )
+    if (
+        front_door_packet.get("specialist_response_required") is True
+        and front_door_specialist == "livestock"
+    ):
+        campaign_focus = " ".join(
+            str(
+                (front_door_packet.get("campaign_or_post_context") or {}).get(key)
+                or ""
+            )
+            for key in ("product_focus", "post_text")
+        )
+        campaign_category = _campaign_live_stock_category(campaign_focus)
+        if campaign_category and _blank(facts.get("category")):
+            facts["category"] = campaign_category
+            facts["campaign_product_context_retained"] = True
+        facts["sales_lane"] = LANE_LIVE_STOCK
+        facts["lane_confidence"] = max(
+            float(facts.get("lane_confidence") or 0),
+            0.96,
+        )
+        facts["front_door_context_transfer"] = True
     if contextual_route.get("preserve_live_stock_lane") is True:
         facts = merge_prior_live_stock_context(
             facts,
@@ -305,6 +347,7 @@ def handle_sam_live_stock_chatwoot_inbound(
                 source,
                 llm_drafter=llm_drafter,
                 owner_example_loader=owner_example_loader,
+                pricing_projection=pricing_projection,
             )
             if facts.get("sales_lane") == LANE_FARM_GENERAL
             else build_sam_general_decision(
@@ -320,9 +363,27 @@ def handle_sam_live_stock_chatwoot_inbound(
         if isinstance(decision.get("inbound"), dict):
             decision["inbound"] = {
                 **decision["inbound"],
+                "account_id": inbound.get("account_id") or "",
                 "conversation_id": inbound.get("conversation_id") or "",
                 "contact_id": inbound.get("contact_id") or "",
                 "inbox_id": inbound.get("inbox_id") or "",
+                "message_id": inbound.get("message_id") or "",
+                "last_inbound_at": inbound.get("last_inbound_at") or "",
+                "chronology_current": (
+                    inbound.get("chronology_current") is True
+                ),
+                "whatsapp_window_state": (
+                    inbound.get("whatsapp_window_state") or ""
+                ),
+                "whatsapp_window_evidence_authoritative": (
+                    inbound.get(
+                        "whatsapp_window_evidence_authoritative"
+                    )
+                    is True
+                ),
+                "latest_observed_at": (
+                    inbound.get("latest_observed_at") or ""
+                ),
                 "identity_provenance": inbound.get("identity_provenance") or {},
             }
         decision["conversation_ownership"] = AUTO_GENERAL
@@ -362,6 +423,17 @@ def handle_sam_live_stock_chatwoot_inbound(
             decision["should_reply"] = False
             decision["next_action"] = "no_reply_needed"
             decision["reply_source"] = "natural_close_no_reply_guard"
+        front_door = front_door_packet
+        decision["customer_front_door"] = front_door
+        decision["canonical_composition_authorized"] = bool(
+            front_door.get("should_reply") is True
+            and not front_door.get("identity_errors")
+            and front_door.get("customer_reply")
+        )
+        if decision["canonical_composition_authorized"]:
+            decision["suggested_reply_text"] = front_door["customer_reply"]
+            decision["should_reply"] = True
+            decision["reply_source"] = "canonical_customer_front_door"
         routine_delivery = deliver_sam_live_stock_routine_reply_if_enabled(
             inbound,
             decision,
@@ -418,6 +490,7 @@ def handle_sam_live_stock_chatwoot_inbound(
                 "event": {},
             }
         ),
+        allow_provider_current_backlog=allow_provider_current_backlog,
     )
     if _explicit_new_request(inbound.get("content")):
         context_packet["prior_context"] = {}
@@ -440,9 +513,11 @@ def handle_sam_live_stock_chatwoot_inbound(
         source,
         llm_drafter=llm_drafter,
         owner_example_loader=owner_example_loader,
+        pricing_projection=pricing_projection,
     )
     decision["sales_autonomy_level1_inbound_evidence"] = level1_inbound
     decision["contextual_sales_route"] = contextual_route
+    decision["customer_front_door"] = front_door_packet
     decision["conversation_ownership"] = AUTO_SPECIALIST
     decision["specialist_lane_selected"] = True
     delivery_owner_exception = build_delivery_owner_exception(
@@ -521,6 +596,95 @@ def handle_sam_live_stock_chatwoot_inbound(
         )
         if decision["escalation_packet"].get("suggested_response"):
             decision["suggested_reply_text"] = decision["escalation_packet"]["suggested_response"]
+    final_canonical_offer = build_canonical_livestock_offer(
+        inbound=inbound,
+        facts=facts,
+        chronology=context_packet.get("chatwoot_authority_messages") or [],
+        availability=decision.get("availability") or {},
+        match_packet=decision.get("match_packet") or {},
+        price_packet=decision.get("price_answer_packet") or {},
+        protected_decisions=[
+            item
+            for item in (
+                (
+                    decision.get("owner_action_packet")
+                    if (
+                        _asks_formal_quote(inbound.get("content"))
+                        or facts.get("order_commitment")
+                        or facts.get("reservation_requested")
+                        or facts.get("payment_requested")
+                        or facts.get("payment_proof_received")
+                    )
+                    else None
+                ),
+                (
+                    decision.get("delivery_owner_exception")
+                    if (decision.get("delivery_owner_exception") or {}).get(
+                        "eligible"
+                    )
+                    is True
+                    else None
+                ),
+                (
+                    decision.get("escalation_packet")
+                    if conversation_review.get("escalation_required") is True
+                    else None
+                ),
+            )
+            if isinstance(item, dict) and item
+        ],
+        proposed_reply=decision.get("suggested_reply_text") or "",
+        proposed_source=decision.get("reply_source") or "",
+        evidence_context={
+            "returning_customer_context": context_packet.get("prior_context") or {},
+            "newly_supplied_facts": newly_supplied_facts,
+            "campaign_or_post_context": context_packet.get("campaign_or_post_context") or {},
+            "farm_knowledge": load_sam_farm_knowledge(source).get("knowledge") or {},
+            "delivery_claims": context_packet.get("delivery_claims") or [],
+            "delivery_outcomes": context_packet.get("delivery_outcomes") or [],
+            "quarantines": context_packet.get("quarantines") or [],
+        },
+    )
+    decision["canonical_evidence_offer"] = final_canonical_offer
+    decision["sales_lifecycle"] = _build_sales_lifecycle_decision_packet(
+        inbound,
+        facts,
+        context_packet,
+        decision,
+        pricing_projection,
+    )
+    decision["canonical_composition_authorized"] = bool(
+        final_canonical_offer.get("should_reply")
+        and not final_canonical_offer.get("evidence_errors")
+        and (final_canonical_offer.get("authority") or {}).get("allowed") is True
+    )
+    if decision["canonical_composition_authorized"]:
+        decision["suggested_reply_text"] = (
+            final_canonical_offer.get("customer_reply") or ""
+        )
+        decision["reply_source"] = "canonical_evidence_to_offer_loop"
+        # The canonical offer is the final customer-facing composition, so the
+        # safety/usefulness review that reaches authority, claim and dispatch
+        # must review this exact text rather than the earlier legacy candidate.
+        conversation_review = review_sam_live_stock_conversation(
+            inbound,
+            facts,
+            decision,
+            context_packet,
+        )
+        decision["conversation_review"] = conversation_review
+        decision["owner_escalation_required"] = bool(
+            conversation_review.get("escalation_required")
+        )
+        decision["handled_autonomously"] = not decision[
+            "owner_escalation_required"
+        ]
+        decision["owner_authority_required"] = bool(
+            conversation_review.get("owner_authority_required")
+        )
+        decision["protected_action_reasons"] = list(
+            conversation_review.get("protected_action_reasons") or []
+        )
     intake_write = write_live_stock_intake_if_enabled(
         inbound,
         facts,
@@ -558,6 +722,31 @@ def handle_sam_live_stock_chatwoot_inbound(
             decision.setdefault("blockers", []).append(draft_order.get("status") or "draft_order_failed")
             decision["owner_gate_required"] = True
             _refresh_owner_action_packet_after_failed_draft_order(inbound, facts, decision, draft_order)
+    quote_prepare = prepare_live_stock_quote_if_enabled(
+        inbound,
+        facts,
+        decision,
+        source,
+        quote_preparer=quote_preparer,
+        isolated_runtime=isolated_level1_runtime,
+    )
+    decision["quote_prepare"] = quote_prepare
+    if quote_prepare.get("success"):
+        _refresh_owner_action_packet_after_quote(inbound, decision, quote_prepare)
+    elif quote_prepare.get("attempted"):
+        decision.setdefault("blockers", []).append(
+            quote_prepare.get("status") or "quote_prepare_failed"
+        )
+        decision["owner_gate_required"] = True
+    decision["sales_lifecycle"] = _build_sales_lifecycle_decision_packet(
+        inbound,
+        facts,
+        context_packet,
+        decision,
+        pricing_projection,
+        draft_order=draft_order,
+        quote_prepare=quote_prepare,
+    )
     routine_delivery = deliver_sam_live_stock_routine_reply_if_enabled(
         inbound,
         decision,
@@ -567,6 +756,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         delivery_claim=routine_delivery_claim,
         delivery_evidence_recorder=routine_delivery_evidence_recorder,
         isolated_runtime=isolated_level1_runtime,
+        preclaim_chronology_verifier=preclaim_chronology_verifier,
     )
     decision["routine_reply_delivery"] = routine_delivery
     decision["chatwoot_inbox_state_plan"] = build_chatwoot_inbox_state_plan(
@@ -596,6 +786,61 @@ def handle_sam_live_stock_chatwoot_inbound(
     }, 200
 
 
+def _build_sales_lifecycle_decision_packet(
+    inbound,
+    facts,
+    context_packet,
+    decision,
+    pricing_projection,
+    *,
+    draft_order=None,
+    quote_prepare=None,
+):
+    """Project the existing canonical response evidence into one sales lifecycle."""
+    plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
+    order_state = dict(plan.get("order_state") or {})
+    result = (draft_order or {}).get("result") if isinstance((draft_order or {}).get("result"), dict) else {}
+    order_id = _clean(result.get("order_id") or result.get("Order_ID"), 100)
+    if order_id:
+        order_state["order_id"] = order_id
+    match = decision.get("match_packet") if isinstance(decision.get("match_packet"), dict) else {}
+    if match.get("selected_pig_ids"):
+        order_state["selected_pig_ids"] = list(match.get("selected_pig_ids") or [])
+        order_state["active_line_count"] = len(order_state["selected_pig_ids"])
+    document_state = dict(order_state.get("document_state") or {})
+    quote_result = (quote_prepare or {}).get("result") if isinstance((quote_prepare or {}).get("result"), dict) else {}
+    document_id = _clean(
+        quote_result.get("document_id")
+        or (quote_result.get("document") or {}).get("document_id")
+        or quote_result.get("Document_ID"),
+        100,
+    )
+    if document_id:
+        document_state = {
+            "document_id": document_id,
+            "current": True,
+            "status": _clean(quote_result.get("status") or "generated", 80),
+        }
+    provider_identity = {
+        "account_id": inbound.get("account_id"),
+        "inbox_id": inbound.get("inbox_id"),
+        "contact_id": inbound.get("contact_id"),
+        "conversation_id": inbound.get("conversation_id"),
+        "provider_identity_class": inbound.get("provider_identity_class"),
+    }
+    return build_sales_lifecycle_packet(
+        inbound=inbound,
+        chronology=context_packet.get("chatwoot_authority_messages") or [],
+        retained_facts=facts,
+        inventory=decision.get("availability") or context_packet.get("availability") or {},
+        pricing=(pricing_projection if isinstance(pricing_projection, dict) else {}),
+        order_state=order_state,
+        document_state=document_state,
+        claims=context_packet.get("delivery_claims") or [],
+        provider_identity=provider_identity,
+    )
+
+
 def deliver_sam_live_stock_routine_reply_if_enabled(
     inbound,
     decision,
@@ -606,6 +851,7 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
     delivery_evidence_recorder=None,
     level1_control_loader=None,
     isolated_runtime=None,
+    preclaim_chronology_verifier=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = inbound if isinstance(inbound, dict) else {}
@@ -617,7 +863,9 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
         else {}
     )
     if (
-        read_context.get("context_errors")
+        _critical_delivery_context_errors(
+            read_context.get("context_errors")
+        )
         or (
             isinstance(read_context.get("chatwoot_history"), dict)
             and read_context["chatwoot_history"].get(
@@ -630,6 +878,44 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
             "attempted": False,
             "sent": False,
             "status": "routine_reply_chronology_evidence_unavailable",
+        }
+    if decision.get("canonical_composition_authorized") is not True:
+        return {
+            "attempted": False,
+            "sent": False,
+            "status": "routine_reply_canonical_composition_not_authorized",
+        }
+    canonical_offer = (
+        decision.get("canonical_evidence_offer")
+        if isinstance(decision.get("canonical_evidence_offer"), dict)
+        else {}
+    )
+    canonical_reply = _clean_multiline(
+        canonical_offer.get("customer_reply"),
+        1800,
+    )
+    canonical_reply_raw = canonical_offer.get("customer_reply")
+    decision_reply_raw = decision.get("suggested_reply_text")
+    if (
+        decision.get("conversation_ownership") != AUTO_GENERAL
+        and (
+            decision.get("reply_source") == "canonical_evidence_to_offer_loop"
+            or canonical_offer
+        )
+        and (
+            canonical_offer.get("should_reply") is not True
+            or canonical_offer.get("evidence_errors")
+            or (canonical_offer.get("authority") or {}).get("allowed") is not True
+            or decision.get("reply_source") != "canonical_evidence_to_offer_loop"
+            or not isinstance(canonical_reply_raw, str)
+            or canonical_reply_raw != canonical_reply
+            or decision_reply_raw != canonical_reply_raw
+        )
+    ):
+        return {
+            "attempted": False,
+            "sent": False,
+            "status": "routine_reply_canonical_payload_mismatch",
         }
     reply = _clean_multiline(decision.get("suggested_reply_text"), 1800)
     legacy_canary = (
@@ -726,13 +1012,26 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
     if review.get("escalation_required") or not review.get("safe_to_send"):
         return {"attempted": False, "sent": False, "status": "routine_reply_review_blocked"}
     if (
-        not str(decision.get("reply_source") or "").startswith("llm_")
+        not str(decision.get("reply_source") or "").startswith(
+            ("llm_", "canonical_")
+        )
         and level1.get("dispatch_authorized") is not True
     ):
         return {"attempted": False, "sent": False, "status": "routine_reply_requires_llm_draft"}
     conversation_id = _clean(inbound.get("conversation_id"), 100)
     if not conversation_id:
         return {"attempted": False, "sent": False, "status": "routine_reply_conversation_id_missing"}
+    if preclaim_chronology_verifier is not None:
+        try:
+            chronology = preclaim_chronology_verifier(inbound, source)
+        except Exception:
+            chronology = {"allowed": False}
+        if not isinstance(chronology, dict) or chronology.get("allowed") is not True:
+            return {
+                "attempted": False,
+                "sent": False,
+                "status": "routine_reply_preclaim_chronology_changed",
+            }
     if delivery_claim is None:
         return {"attempted": False, "sent": False, "status": "routine_reply_idempotency_claim_unavailable", "canary": canary}
     claim = delivery_claim(inbound, decision, review)
@@ -740,6 +1039,18 @@ def deliver_sam_live_stock_routine_reply_if_enabled(
         return {"attempted": False, "sent": False, "status": "routine_reply_idempotency_claim_failed", "canary": canary}
     if claim.get("created") is not True:
         return {"attempted": False, "sent": False, "status": "routine_reply_duplicate_withheld", "canary": canary, "claim": claim}
+    if (
+        level1.get("dispatch_authorized") is True
+        and not _delivery_claim_matches_exact_payload(claim, inbound, reply)
+    ):
+        return {
+            "attempted": False,
+            "sent": False,
+            "status": "routine_reply_claim_payload_mismatch",
+            "canary": canary,
+            "claim": claim,
+            "automatic_retry_prohibited": True,
+        }
     try:
         sender = chatwoot_sender or (
             lambda target, message, runtime_source: _send_chatwoot_message(
@@ -916,6 +1227,25 @@ def _record_delivery_outcome(recorder, claim, outcome):
         return {"success": False, "status": "delivery_outcome_record_failed", "error_type": exc.__class__.__name__}
 
 
+def _delivery_claim_matches_exact_payload(claim, inbound, reply):
+    claim = claim if isinstance(claim, dict) else {}
+    inbound = inbound if isinstance(inbound, dict) else {}
+    expected = {
+        "account_id": _clean(inbound.get("account_id"), 120),
+        "conversation_id": _clean(inbound.get("conversation_id"), 120),
+        "contact_id": _clean(inbound.get("contact_id"), 120),
+        "inbox_id": _clean(inbound.get("inbox_id"), 120),
+        "inbound_message_id": _clean(inbound.get("message_id"), 120),
+        "reply_hash": hashlib.sha256(
+            str(reply or "").encode("utf-8", errors="strict")
+        ).hexdigest(),
+    }
+    return bool(
+        all(expected.values())
+        and all(_clean(claim.get(key), 120) == value for key, value in expected.items())
+    )
+
+
 def _send_failure_confirmed(exc):
     message = str(exc or "").strip().lower()
     return message.startswith("chatwoot_http_") and any(code in message for code in ("400", "401", "403", "404", "409", "422"))
@@ -991,6 +1321,16 @@ def _webhook_identity_evidence(payload, conversation, sender, contact):
         else {}
     )
     sources = {
+        "account_id": _identity_source_rows(
+            ("payload.account_id", payload.get("account_id")),
+            (
+                "payload.account.id",
+                (payload.get("account") or {}).get("id")
+                if isinstance(payload.get("account"), dict)
+                else "",
+            ),
+            ("payload.conversation.account_id", conversation.get("account_id")),
+        ),
         "conversation_id": _identity_source_rows(
             ("payload.conversation_id", payload.get("conversation_id")),
             ("payload.conversation.id", conversation.get("id")),
@@ -1018,14 +1358,62 @@ def _webhook_identity_evidence(payload, conversation, sender, contact):
         values = sorted({row["value"] for row in rows})
         conflicts[key] = len(values) > 1
         normalized[key] = values[0] if len(values) == 1 else ""
+    provider_sources = _identity_source_rows(
+        ("payload.channel", payload.get("channel")),
+        ("payload.inbox_channel", payload.get("inbox_channel")),
+        ("payload.inbox.channel_type", top_inbox.get("channel_type")),
+        ("payload.conversation.channel_type", conversation.get("channel_type")),
+        ("payload.conversation.inbox.channel_type", conversation_inbox.get("channel_type")),
+    )
+    provider_classes = {
+        _normal_provider_identity(row["value"])
+        for row in provider_sources
+        if _normal_provider_identity(row["value"]) not in {"", "transport_only"}
+    }
+    provider_identity_class = (
+        next(iter(provider_classes)) if len(provider_classes) == 1
+        else "conflicting" if len(provider_classes) > 1 else ""
+    )
     return {
         "status": "webhook_identity_conflict" if any(conflicts.values()) else "webhook_identity_normalized",
         "normalized": normalized,
         "sources": sources,
         "conflicts": conflicts,
+        "provider_identity_class": provider_identity_class,
+        "provider_sources": provider_sources,
         "authoritative_conversation_lookup": {"attempted": False, "status": "not_attempted"},
         "configured_allowlist_used_as_evidence": False,
     }
+
+
+def _critical_delivery_context_errors(errors):
+    """Only identity/chronology loss blocks an otherwise canonical reply."""
+    optional_statuses = {
+        "order_intake_context_read_failed",
+        "sales_availability_read_failed",
+    }
+    return [
+        error
+        for error in (errors or [])
+        if not isinstance(error, dict)
+        or error.get("status") not in optional_statuses
+    ]
+
+
+def _normal_provider_identity(value):
+    value = _clean(value, 100).lower()
+    if value in {"channel::whatsapp", "chatwoot_whatsapp", "whatsapp", "genuine_whatsapp"}:
+        return "genuine_whatsapp"
+    if value in {
+        "channel::webwidget", "chatwoot_webwidget", "webwidget",
+        "website", "genuine_webwidget",
+    }:
+        return "genuine_webwidget"
+    if value in {"chatwoot", "api", "webhook"}:
+        return "transport_only"
+    if value:
+        return "non_whatsapp"
+    return ""
 
 
 def _identity_source_rows(*pairs):
@@ -1053,10 +1441,17 @@ def resolve_sam_general_inbound_identity(
     evidence["normalized"] = dict(evidence.get("normalized") or {})
     evidence["sources"] = {
         key: list((evidence.get("sources") or {}).get(key) or [])
-        for key in ("conversation_id", "contact_id", "inbox_id")
+        for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
     }
     evidence["conflicts"] = dict(evidence.get("conflicts") or {})
-    webhook_complete = all(evidence["normalized"].get(key) for key in ("conversation_id", "contact_id", "inbox_id"))
+    webhook_complete = bool(
+        all(
+            evidence["normalized"].get(key)
+            for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
+        )
+        and evidence.get("provider_identity_class")
+        and evidence.get("provider_identity_class") != "conflicting"
+    )
     canary_active = (
         _truthy(source.get(AUTO_GENERAL_AUTOREPLY_ENABLED_ENV))
         and _truthy(source.get(AUTO_GENERAL_CANARY_ENABLED_ENV))
@@ -1077,12 +1472,22 @@ def resolve_sam_general_inbound_identity(
         authoritative = authoritative if isinstance(authoritative, dict) else {}
         authoritative = {**authoritative, "attempted": True}
         if authoritative.get("success") is True:
-            for key in ("conversation_id", "contact_id", "inbox_id"):
+            for key in ("account_id", "conversation_id", "contact_id", "inbox_id"):
                 value = _clean(authoritative.get(key), 100)
                 if value:
                     evidence["sources"][key].append(
                         {"source": "chatwoot_conversation_record." + key, "value": value}
                     )
+            authoritative_provider = _clean(
+                authoritative.get("provider_identity_class"), 80
+            )
+            webhook_provider = _clean(evidence.get("provider_identity_class"), 80)
+            if authoritative_provider:
+                evidence["provider_identity_class"] = (
+                    authoritative_provider
+                    if not webhook_provider or webhook_provider == authoritative_provider
+                    else "conflicting"
+                )
     inbound_account = _clean(inbound.get("account_id"), 100)
     authoritative_account = _clean(authoritative.get("account_id"), 100)
     authoritative_field_matches = {
@@ -1119,12 +1524,15 @@ def resolve_sam_general_inbound_identity(
         "account_id_matches": account_matches,
         "field_matches": authoritative_field_matches,
     }
-    for key in ("conversation_id", "contact_id", "inbox_id"):
+    for key in ("account_id", "conversation_id", "contact_id", "inbox_id"):
         values = sorted({row["value"] for row in evidence["sources"][key] if row.get("value")})
         evidence["conflicts"][key] = len(values) > 1
         evidence["normalized"][key] = values[0] if len(values) == 1 else ""
     conflict = any(evidence["conflicts"].values()) or account_conflict
-    complete = all(evidence["normalized"].get(key) for key in ("conversation_id", "contact_id", "inbox_id"))
+    complete = all(
+        evidence["normalized"].get(key)
+        for key in ("account_id", "conversation_id", "contact_id", "inbox_id")
+    )
     evidence["status"] = (
         "identity_conflict"
         if conflict
@@ -1134,6 +1542,7 @@ def resolve_sam_general_inbound_identity(
     )
     evidence["configured_allowlist_used_as_evidence"] = False
     inbound["identity_provenance"] = evidence
+    inbound["account_id"] = evidence["normalized"].get("account_id") or ""
     inbound["conversation_id"] = evidence["normalized"].get("conversation_id") or ""
     inbound["contact_id"] = evidence["normalized"].get("contact_id") or ""
     inbound["inbox_id"] = evidence["normalized"].get("inbox_id") or ""
@@ -1183,6 +1592,7 @@ def extract_live_stock_facts(message, inbound=None):
         "category": category,
         "quantity": _extract_quantity(text),
         "sex": _extract_sex(text),
+        "sex_split": _extract_sex_split(text),
         "weight_range": weight_range,
         "timing": _extract_timing(text),
         "location": _extract_location(text),
@@ -1237,6 +1647,7 @@ def merge_prior_live_stock_context(facts, prior_context):
         "category",
         "quantity",
         "sex",
+        "sex_split",
         "weight_range",
         "timing",
         "location",
@@ -1253,8 +1664,41 @@ def merge_prior_live_stock_context(facts, prior_context):
         ):
             prior_weight_category = _category_from_weight_range(prior_value)
             if prior_weight_category and prior_weight_category != current_category:
-                continue
-        if _blank(facts.get(key)) and not _blank(prior_value):
+                if (
+                    current_category == "piglet"
+                    and prior_weight_category == "weaner"
+                    and _blank(facts.get("weight_range"))
+                    and not _blank(facts.get("timing"))
+                    and re.search(
+                        r"\bthe\s+piglets\b",
+                        _normal_text(facts.get("latest_customer_message")),
+                    )
+                    and not re.search(
+                        r"\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+                        r"\s*[- ]?\s*(?:days?|weeks?|months?)"
+                        r"(?:[\s-]+(?:old|of[\s-]+age))\b",
+                        _normal_text(facts.get("latest_customer_message")),
+                    )
+                    and not _has_any(
+                        _normal_text(facts.get("latest_customer_message")),
+                        (
+                            "small piglet", "weeks old", "week old", "instead",
+                            "actually", "weaner", "not ", "rather", "only",
+                            "as well",
+                        ),
+                    )
+                ):
+                    # Customers commonly continue to call already-qualified
+                    # weaners "piglets". A generic noun in a terse follow-up
+                    # must not erase the exact retained weight band.
+                    facts["category"] = prior_weight_category
+                    current_category = prior_weight_category
+                else:
+                    continue
+        if (
+            (not facts.get(key) if key == "sex_split" else _blank(facts.get(key)))
+            and (bool(prior_value) if key == "sex_split" else not _blank(prior_value))
+        ):
             facts[key] = prior_value
     if _blank(facts.get("sales_lane")) and not _blank(interest.get("sales_lane")):
         facts["sales_lane"] = interest.get("sales_lane")
@@ -1307,10 +1751,115 @@ def load_sam_general_context(inbound, *, conversation_history_loader=None, envir
             history,
             current_message_id=inbound.get("message_id"),
         ),
+        "chatwoot_authority_messages": _authority_chatwoot_messages(history),
         "context_errors": errors,
         "specialist_context_loaded": False,
         "specialist_tools_called": [],
     }
+
+
+def build_sam_front_door_adapter_packet(inbound, context_packet, environ=None):
+    """Compose the pure Front Door through the existing authenticated adapter."""
+    inbound = inbound if isinstance(inbound, dict) else {}
+    context_packet = context_packet if isinstance(context_packet, dict) else {}
+    scope = {
+        key: _clean(inbound.get(key), 100)
+        for key in ("account_id", "inbox_id", "contact_id", "conversation_id")
+    }
+    chronology = []
+    for row in context_packet.get("chatwoot_authority_messages") or []:
+        if not isinstance(row, dict):
+            continue
+        chronology.append({
+            "message_id": _clean(row.get("id") or row.get("message_id"), 100),
+            "role": (
+                "customer"
+                if row.get("message_type") == 0
+                or row.get("speaker") == "customer"
+                else "farm"
+            ),
+            "content": _clean_multiline(row.get("content"), 1800),
+            "created_at": _clean(row.get("created_at"), 80),
+            **scope,
+        })
+    latest = chronology[-1] if chronology else {}
+    reference = (
+        context_packet.get("recovered_reference")
+        if isinstance(context_packet.get("recovered_reference"), dict)
+        else {}
+    )
+    retained = (
+        context_packet.get("prior_sales_context")
+        if isinstance(context_packet.get("prior_sales_context"), dict)
+        else {}
+    )
+    knowledge_result = load_sam_farm_knowledge(environ or {})
+    try:
+        with open(knowledge_result.get("path") or "", encoding="utf-8") as source:
+            knowledge = json.load(source)
+    except (OSError, ValueError, TypeError):
+        knowledge = knowledge_result.get("knowledge") or {}
+    evidence = {
+        "identity": {
+            **scope,
+            "latest_inbound_message_id": _clean(inbound.get("message_id"), 100),
+        },
+        "chronology": chronology,
+        "latest_inbound": {
+            **latest,
+            "message_id": _clean(inbound.get("message_id"), 100),
+            "content": _clean_multiline(inbound.get("content"), 1800),
+            **scope,
+        },
+        "retained_context": {
+            "source": "authoritative_chatwoot_and_intake",
+            "version": "v1",
+            **scope,
+            "specialist": (
+                (retained.get("interest") or {}).get("sales_lane")
+                if isinstance(retained.get("interest"), dict)
+                else ""
+            ),
+            "facts": retained.get("interest") or {},
+        },
+        "campaign_or_post": {
+            "source": reference.get("source") or "none",
+            "version": "v1",
+            **scope,
+            "post_id": reference.get("source_id") or "",
+            "title": reference.get("headline") or reference.get("subject") or "",
+            "post_text": reference.get("body") or "",
+            "product_focus": reference.get("subject") or "",
+            "specialist": (
+                "livestock"
+                if re.search(
+                    r"\b(?:pig|piglet|piggy|weaner|grower|finisher)\w*\b",
+                    " ".join(
+                        str(reference.get(key) or "")
+                        for key in ("headline", "subject", "body")
+                    ),
+                    re.I,
+                )
+                else ""
+            ),
+        },
+    }
+    return interpret_customer_front_door(evidence, knowledge)
+
+
+def _campaign_live_stock_category(text):
+    normalized = _normal_text(text)
+    if re.search(r"\b(?:weaner|weaned piglet)\w*\b", normalized):
+        return "weaner"
+    if re.search(r"\b(?:piglet|piggy|litter)\w*\b", normalized):
+        return "piglet"
+    if re.search(r"\bgrower\w*\b", normalized):
+        return "grower"
+    if re.search(r"\bfinisher\w*\b", normalized):
+        return "finisher"
+    if re.search(r"\b(?:slaughter|80\s*kg)\b", normalized):
+        return "ready_for_slaughter"
+    return ""
 
 
 def _recover_general_reference(current_context, history):
@@ -1414,6 +1963,8 @@ def _should_use_auto_general_path(inbound, facts, context_packet=None):
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
     text = _normal_text(inbound.get("content"))
+    if facts.get("front_door_context_transfer") is True:
+        return False
     contextual_route = (
         context_packet.get("contextual_sales_route")
         if isinstance(context_packet, dict)
@@ -1915,28 +2466,31 @@ def load_live_stock_read_context(
             context_errors.append(_integration_failure("chatwoot_conversation_history_read_failed", exc))
             chatwoot_history = {"success": False, "status": "read_failed", "messages": []}
     herdmaster_evidence = {}
+    availability_facts = merge_prior_live_stock_context(facts, prior_context)
     try:
         if availability_loader is not None:
             availability_rows = availability_loader()
             supplied = availability_evidence if isinstance(availability_evidence, dict) else {}
             herdmaster_evidence = {
                 "agent": {"agent_id": "herdmaster", "authority_tier": "read_only"},
-                "status": "replay_supplied_read_only_evidence",
+                "status": supplied.get("status") or "supplied_read_only_evidence",
                 "provenance": supplied.get("provenance") or "replay_fixture",
                 "freshness": supplied.get("freshness") or "sanitized_fixture",
                 "summary": supplied.get("summary") if isinstance(supplied.get("summary"), dict) else {},
-                "source_mode": "sanitized_replay_fixture",
+                "source_mode": supplied.get("source_mode") or "sanitized_replay_fixture",
+                "canonical_row_count": supplied.get("canonical_row_count"),
             }
         else:
-            herdmaster_evidence, herdmaster_status = delegate_to_agent("herdmaster", {
-                "goal": "Provide governed livestock sales candidates for SAM.",
-                "question": str(inbound.get("content") or "Current livestock sales availability"),
-                "capability": "sales_availability", "required_freshness": "live",
-            })
-            if herdmaster_status >= 400:
-                raise RuntimeError(herdmaster_evidence.get("status") or "herdmaster_availability_failed")
-            availability_rows = herdmaster_evidence.get("availability_rows") or []
-        availability_facts = merge_prior_live_stock_context(facts, prior_context)
+            availability_rows = list(get_sales_availability() or [])
+            herdmaster_evidence = {
+                "agent": {
+                    "agent_id": "herdmaster",
+                    "authority_tier": "canonical_read_only_projection",
+                },
+                "status": "canonical_sales_availability_reader",
+                "provenance": "get_sales_availability",
+                "canonical_row_count": len(availability_rows),
+            }
         availability = summarize_live_stock_availability(availability_rows, availability_facts)
         availability = resolve_authoritative_availability(
             availability_rows,
@@ -2029,9 +2583,36 @@ def summarize_live_stock_availability(rows, facts=None):
         )
         category_counts["all"] += 1
         category_counts[sex_label if sex_label in ("female", "male") else "unknown"] += 1
+    eligible_weight_ages = []
+    eligible_weight_evidence_complete = bool(safe_rows)
+    for row in safe_rows:
+        try:
+            age = float(row.get("days_since_weight"))
+        except (TypeError, ValueError):
+            eligible_weight_evidence_complete = False
+            continue
+        if not math.isfinite(age) or age < 0:
+            eligible_weight_evidence_complete = False
+            continue
+        if not _weight_evidence_consistent(row):
+            eligible_weight_evidence_complete = False
+            continue
+        eligible_weight_ages.append(age)
+    # Freshness belongs to the eligible matched evidence used for the offer.
+    # Unmatched/excluded rows may legitimately lack a complete observation and
+    # must not erase the timestamp of an otherwise exact, complete match.
+    requested_quantity = (
+        facts.get("quantity")
+        if isinstance(facts.get("quantity"), int)
+        else 0
+    )
+    exact_fulfillment = (
+        requested_quantity > 0 and len(matched) >= requested_quantity
+    )
+    observation_rows = matched if exact_fulfillment else rows
     result_observations = [
         _parse_aware_utc_timestamp(row.get("eligibility_observed_at"))
-        for row in rows
+        for row in observation_rows
         if isinstance(row, dict)
     ]
     observation_timestamp = (
@@ -2059,15 +2640,86 @@ def summarize_live_stock_availability(rows, facts=None):
             {**_availability_public_row(row), "selection_status": "eligible_exact_match", "exclusion_reasons": []}
             for row in matched[:10]
         ],
+        # This complete eligible projection is the canonical alternative pool.
+        # It is deliberately separate from the bounded diagnostic samples below.
+        "eligible_projection_count": len(safe_rows),
+        "eligible_projection": [
+            {
+                **_availability_offer_row(row),
+                "selection_status": "sale_eligible",
+                "exclusion_reasons": [],
+            }
+            for row in safe_rows
+        ],
+        "eligible_evidence_complete": bool(safe_rows) and all(
+            isinstance(row, dict) and row.get("evidence_complete") is True
+            for row in safe_rows
+        ) and eligible_weight_evidence_complete,
+        "weight_freshness_consistent": eligible_weight_evidence_complete,
+        "latest_weight_date": max(
+            (
+                _clean(row.get("latest_weight_date") or row.get("last_weight_date"), 40)
+                for row in safe_rows
+                if _clean(row.get("latest_weight_date") or row.get("last_weight_date"), 40)
+            ),
+            default="",
+        ),
+        "oldest_weight_age_days": (
+            max(eligible_weight_ages)
+            if eligible_weight_evidence_complete and eligible_weight_ages
+            else None
+        ),
         "considered_count": len(considered),
         "considered_sample": considered[:25],
         "excluded_count": len(excluded),
         "excluded_sample": excluded[:25],
+        "withdrawal_unknown_exclusions": [
+            {
+                "pig_id": row.get("pig_id"),
+                "withdrawal_evidence_state": row.get(
+                    "withdrawal_evidence_state"
+                ),
+                "eligibility_reason": row.get("eligibility_reason"),
+            }
+            for row in excluded
+            if (
+                row.get("withdrawal_evidence_state") == "unknown"
+                and _normal_text(row.get("purpose")) == "sale"
+                and _normal_text(row.get("status")) == "active"
+                and _normal_text(row.get("on_farm")) == "yes"
+            )
+        ],
         "matching_gate": {
             "affirmative_specialist_intent": facts.get("sales_lane") == LANE_LIVE_STOCK,
             "minimum_usable_constraints": specialist_match_allowed,
         },
     }
+
+
+def _canonical_availability_question(facts, latest_customer_text):
+    """Query the existing HERDMASTER reader with retained customer constraints."""
+    facts = facts if isinstance(facts, dict) else {}
+    parts = ["Current sale-eligible live pigs"]
+    for label, key in (
+        ("category", "category"),
+        ("weight", "weight_range"),
+        ("quantity", "quantity"),
+        ("sex", "sex"),
+        ("timing", "timing"),
+        ("location", "location"),
+    ):
+        value = facts.get(key)
+        if not _blank(value):
+            parts.append(f"{label}: {value}")
+    split = facts.get("sex_split") if isinstance(facts.get("sex_split"), dict) else {}
+    if split:
+        parts.append(
+            f"sex split: {int(split.get('female') or 0)} female, "
+            f"{int(split.get('male') or 0)} male"
+        )
+    if len(parts) == 1 and latest_customer_text:
+        parts.append(f"customer request: {_clean(latest_customer_text, 300)}")
+    return "; ".join(parts)
 
 
 def _parse_aware_utc_timestamp(value):
@@ -2110,7 +2762,7 @@ def _customer_sale_category_value(value):
     return ""
 
 
-def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
+def load_chatwoot_conversation_history(conversation_id, environ=None, limit=100):
     source = environ if environ is not None else os.environ
     conversation_id = _clean(conversation_id, 100)
     base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV), 200).rstrip("/")
@@ -2126,7 +2778,9 @@ def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
         method="GET",
     )
     try:
-        with urllib_request.urlopen(request, timeout=10) as response:
+        with urllib_request.urlopen(
+            request, timeout=_chatwoot_read_timeout(source)
+        ) as response:
             raw = response.read().decode("utf-8", errors="replace")
             parsed = json.loads(raw or "{}")
     except urllib_error.HTTPError as exc:
@@ -2172,7 +2826,9 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
         method="GET",
     )
     try:
-        with urllib_request.urlopen(request, timeout=10) as response:
+        with urllib_request.urlopen(
+            request, timeout=_chatwoot_read_timeout(source)
+        ) as response:
             raw = response.read().decode("utf-8", errors="replace")
             parsed = json.loads(raw or "{}")
     except urllib_error.HTTPError as exc:
@@ -2185,14 +2841,137 @@ def load_chatwoot_conversation_identity(conversation_id, environ=None):
     meta = conversation.get("meta") if isinstance(conversation.get("meta"), dict) else {}
     sender = meta.get("sender") if isinstance(meta.get("sender"), dict) else {}
     contact = conversation.get("contact") if isinstance(conversation.get("contact"), dict) else {}
+    latest = (
+        conversation.get("last_non_activity_message")
+        if isinstance(
+            conversation.get("last_non_activity_message"), dict
+        )
+        else {}
+    )
+    conversation_account_id = _clean(conversation.get("account_id"), 100)
+    account_identity_status = (
+        "account_identity_exact"
+        if conversation_account_id == account_id
+        else "account_identity_conflict"
+        if conversation_account_id
+        else "account_identity_unavailable"
+    )
+    inbox_id = _clean(conversation.get("inbox_id") or inbox.get("id"), 100)
+    provider_identity_class = _normal_provider_identity(
+        conversation.get("channel_type") or inbox.get("channel_type")
+    )
+    provider_identity_status = (
+        "conversation_provider_identity_loaded"
+        if provider_identity_class
+        else "conversation_provider_identity_unavailable"
+    )
+    if account_identity_status != "account_identity_exact":
+        provider_identity_class = ""
+        provider_identity_status = account_identity_status
+    elif inbox_id and not provider_identity_class:
+        inbox_request = urllib_request.Request(
+            f"{base_url}/api/v1/accounts/{account_id}/inboxes/{inbox_id}",
+            headers={"api_access_token": token, "Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            with urllib_request.urlopen(
+                inbox_request, timeout=_chatwoot_read_timeout(source)
+            ) as response:
+                inbox_payload = json.loads(
+                    response.read().decode("utf-8", errors="replace") or "{}"
+                )
+            inbox_payload = (
+                inbox_payload.get("payload")
+                if isinstance(inbox_payload, dict)
+                and isinstance(inbox_payload.get("payload"), dict)
+                else inbox_payload
+            )
+            inbox_payload = inbox_payload if isinstance(inbox_payload, dict) else {}
+            loaded_inbox_id = _clean(inbox_payload.get("id"), 100)
+            if not loaded_inbox_id:
+                provider_identity_status = "chatwoot_inbox_identity_unavailable"
+            elif loaded_inbox_id != inbox_id:
+                provider_identity_status = "chatwoot_inbox_identity_conflict"
+            else:
+                channel_class = _normal_provider_identity(
+                    inbox_payload.get("channel_type")
+                )
+                provider_name = _clean(inbox_payload.get("provider"), 100).lower()
+                if channel_class == "genuine_whatsapp" and provider_name == "whatsapp_cloud":
+                    provider_identity_class = "genuine_whatsapp"
+                    provider_identity_status = "chatwoot_inbox_provider_identity_loaded"
+                elif channel_class == "genuine_webwidget":
+                    provider_identity_class = "genuine_webwidget"
+                    provider_identity_status = "chatwoot_inbox_provider_identity_loaded"
+                elif not channel_class or not provider_name:
+                    provider_identity_status = "chatwoot_inbox_provider_identity_unavailable"
+                else:
+                    provider_identity_class = "conflicting"
+                    provider_identity_status = "chatwoot_inbox_provider_identity_conflict"
+        except urllib_error.HTTPError as exc:
+            provider_identity_status = f"chatwoot_inbox_identity_http_{exc.code}"
+        except (
+            urllib_error.URLError,
+            TimeoutError,
+            OSError,
+            ValueError,
+            json.JSONDecodeError,
+        ):
+            provider_identity_status = "chatwoot_inbox_identity_read_failed"
     return {
         "success": True,
         "status": "chatwoot_conversation_identity_loaded",
         "account_id": account_id,
+        "account_identity_status": account_identity_status,
         "conversation_id": _clean(conversation.get("id") or conversation_id, 100),
         "contact_id": _clean(sender.get("id") or contact.get("id"), 100),
-        "inbox_id": _clean(conversation.get("inbox_id") or inbox.get("id"), 100),
+        "inbox_id": inbox_id,
+        "provider_identity_class": provider_identity_class,
+        "provider_identity_status": provider_identity_status,
+        "can_reply": conversation.get("can_reply") is True,
+        "latest_message_id": _clean(latest.get("id"), 100),
+        "latest_message_type": latest.get("message_type"),
         "contains_secret_values": False,
+    }
+
+
+def verify_chatwoot_current_inbound(inbound, environ=None):
+    """Recheck exact provider chronology immediately before durable claim."""
+    inbound = inbound if isinstance(inbound, dict) else {}
+    identity = load_chatwoot_conversation_identity(
+        inbound.get("conversation_id"), environ
+    )
+    expected = {
+        "account_id": _clean(inbound.get("account_id"), 100),
+        "conversation_id": _clean(inbound.get("conversation_id"), 100),
+        "contact_id": _clean(inbound.get("contact_id"), 100),
+        "inbox_id": _clean(inbound.get("inbox_id"), 100),
+    }
+    exact_identity = bool(
+        identity.get("success") is True
+        and all(expected.values())
+        and all(
+            _clean(identity.get(key), 100) == value
+            for key, value in expected.items()
+        )
+    )
+    latest_matches = bool(
+        _clean(identity.get("latest_message_id"), 100)
+        == _clean(inbound.get("message_id"), 100)
+        and identity.get("latest_message_type") in (0, "incoming")
+    )
+    return {
+        "allowed": bool(
+            exact_identity
+            and latest_matches
+            and identity.get("can_reply") is True
+        ),
+        "identity_exact": exact_identity,
+        "latest_inbound_exact": latest_matches,
+        "reply_window_open": identity.get("can_reply") is True,
+        "contains_identity_values": False,
+        "writes_performed": False,
     }
 
 
@@ -2255,7 +3034,11 @@ def _prior_context_from_chatwoot_history(history, inbound):
     if latest_reset_index is not None:
         incoming_texts = incoming_texts[latest_reset_index:]
     facts = {}
-    for text in incoming_texts[-8:]:
+    # Reconstruct the complete bounded customer request since the latest
+    # explicit reset. Returning customers often qualify one order over many
+    # terse turns; limiting this to the latest eight incoming messages drops
+    # confirmed quantity/sex facts and causes repeated questions.
+    for text in incoming_texts:
         extracted = extract_live_stock_facts(text, inbound or {})
         extracted_lane = extracted.get("sales_lane")
         extracted_confidence = float(
@@ -2285,12 +3068,17 @@ def _prior_context_from_chatwoot_history(history, inbound):
             "quantity",
             "category",
             "sex",
+            "sex_split",
             "weight_range",
             "timing",
             "location",
             "payment_method",
         ):
-            if not _blank(extracted.get(key)):
+            if (
+                bool(extracted.get(key))
+                if key == "sex_split"
+                else not _blank(extracted.get(key))
+            ):
                 facts[key] = extracted.get(key)
         for key in ("quote_requested", "order_commitment", "reservation_requested", "breeding_interest"):
             if extracted.get(key):
@@ -2305,6 +3093,7 @@ def _prior_context_from_chatwoot_history(history, inbound):
         "quantity": facts.get("quantity") or "",
         "category": facts.get("category") or "",
         "sex": facts.get("sex") or "",
+        "sex_split": dict(facts.get("sex_split") or {}),
         "weight_range": facts.get("weight_range") or "",
         "timing": facts.get("timing") or "",
         "location": facts.get("location") or "",
@@ -2346,10 +3135,13 @@ def _merge_prior_context_packets(primary, secondary):
         return primary or {}
     merged = dict(primary_interest)
     customer_qualification_fields = {
-        "quantity", "category", "sex", "weight_range", "timing", "location",
+        "quantity", "category", "sex", "sex_split", "weight_range", "timing",
+        "location",
     }
     for key, value in secondary_interest.items():
-        if key in customer_qualification_fields and not _blank(value):
+        if key in customer_qualification_fields and (
+            bool(value) if key == "sex_split" else not _blank(value)
+        ):
             # Customer chronology is authoritative when an intake projection
             # and the customer's own messages overlap.
             if (
@@ -2431,16 +3223,24 @@ def _compact_chatwoot_history_messages(history, limit=10, current_message_id="")
 def _authority_chatwoot_messages(history, limit=20):
     history = history if isinstance(history, dict) else {}
     messages = history.get("messages") if isinstance(history.get("messages"), list) else []
+    public_messages = [
+        message
+        for message in messages
+        if (
+            isinstance(message, dict)
+            and message.get("private") is not True
+            and message.get("message_type") in (0, 1, "incoming", "outgoing")
+        )
+    ]
     authoritative = []
-    for message in messages[-max(int(limit or 20), 1):]:
-        if not isinstance(message, dict):
-            continue
+    for message in public_messages[-max(int(limit or 20), 1):]:
         authoritative.append({
             "id": _clean(message.get("id"), 100),
             "message_type": message.get("message_type"),
             "direction": _clean(message.get("direction"), 20),
             "private": message.get("private") is True,
             "created_at": message.get("created_at"),
+            "content": _clean_multiline(message.get("content"), 1800),
             "attachments": (
                 message.get("attachments")
             ),
@@ -2462,7 +3262,7 @@ def _chatwoot_message_is_activity(message):
     return value == 2 or str(value).strip().lower() == "activity"
 
 
-def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, llm_drafter=None, owner_example_loader=None):
+def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, llm_drafter=None, owner_example_loader=None, pricing_projection=None):
     route = classify_sam_sales_lane(inbound.get("content"), prior_context={"lane": facts.get("sales_lane")})
     if facts.get("sales_lane") == LANE_LIVE_STOCK and route["lane"] != LANE_LIVE_STOCK:
         route = {
@@ -2483,12 +3283,19 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
             "agent": "sam_live_stock_backend",
             "mode": "read_only_stage_3",
             "inbound": {
+                "account_id": inbound.get("account_id") or "",
                 "conversation_id": inbound.get("conversation_id") or "",
+                "contact_id": inbound.get("contact_id") or "",
+                "inbox_id": inbound.get("inbox_id") or "",
                 "message_id": inbound.get("message_id") or "",
+                "last_inbound_at": inbound.get("last_inbound_at") or "",
                 "customer_name": inbound.get("customer_name") or "",
                 "customer_phone": inbound.get("customer_phone") or "",
                 "channel": inbound.get("channel") or "",
                 "content": inbound.get("content") or "",
+                "identity_provenance": (
+                    inbound.get("identity_provenance") or {}
+                ),
             },
             "sales_lane": LANE_FARM_GENERAL,
             "lane_confidence": route["confidence"],
@@ -2532,19 +3339,68 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         blockers.append("breeding_or_replacement_stock_owner_gate")
     if facts.get("reservation_requested"):
         blockers.append("reservation_request_owner_gate")
-    if context_packet.get("context_errors"):
+    critical_context_errors = _critical_delivery_context_errors(
+        context_packet.get("context_errors")
+    )
+    if critical_context_errors:
         blockers.append("read_context_error")
 
     ready_for_runtime_next_step = route["lane"] == LANE_LIVE_STOCK and not missing and not blockers
-    match_packet = build_live_stock_match_packet(facts, availability)
-    draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
-    price_answer_packet = build_live_stock_price_answer_packet(facts, match_packet)
-    ledger_evidence, _ledger_status = delegate_to_agent("ledger", {
-        "goal": "Validate the active livestock price evidence for SAM's reply.",
-        "question": str(inbound.get("content") or "Validate livestock price"),
-        "capability": "livestock_price_evidence",
-        "known_context": {"pricing": price_answer_packet.get("pricing") or {}},
-    })
+    try:
+        if isinstance(pricing_projection, dict):
+            pricing_status = (
+                200 if pricing_projection.get("success") is True else 503
+            )
+        else:
+            pricing_projection, pricing_status = list_live_stock_price_entries(
+                limit=500,
+                database_url=(environ or {}).get("DATABASE_URL"),
+            )
+    except Exception as exc:
+        pricing_projection = {
+            "success": False,
+            "configured": False,
+            "source": "",
+            "price_entries": [],
+            "status": "canonical_price_projection_unavailable",
+            "error_type": exc.__class__.__name__,
+        }
+        pricing_status = 503
+    price_entries = (
+        pricing_projection.get("price_entries") or []
+        if pricing_status == 200 and isinstance(pricing_projection, dict)
+        else []
+    )
+    match_packet = build_live_stock_match_packet(
+        facts, availability, price_entries=price_entries
+    )
+    draft_packet = build_live_stock_draft_order_packet(
+        inbound, facts, match_packet, price_entries=price_entries
+    )
+    price_answer_packet = build_live_stock_price_answer_packet(
+        facts, match_packet, price_entries=price_entries
+    )
+    ledger_evidence = {
+        "agent": {
+            "agent_id": "ledger",
+            "authority_tier": "canonical_read_only_projection",
+        },
+        "status": (
+            "canonical_price_projection_loaded"
+            if pricing_status == 200
+            else "canonical_price_projection_unavailable"
+        ),
+        "source": (
+            pricing_projection.get("source")
+            if isinstance(pricing_projection, dict)
+            else ""
+        ),
+        "entry_count": len(price_entries),
+        "payment": {
+            "status": "unknown",
+            "reason": "payment_authority_not_requested_for_livestock_composition",
+        },
+    }
     agent_evidence = dict(context_packet.get("agent_evidence") or {})
     agent_evidence["ledger"] = ledger_evidence
     context_packet = {**context_packet, "agent_evidence": agent_evidence}
@@ -2565,17 +3421,19 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         price_answer_packet,
         match_packet,
     )
-    owner_correction_examples = _load_owner_correction_examples(
+    owner_example_projection = _load_owner_correction_examples(
         inbound,
         environ or {},
         owner_example_loader=owner_example_loader,
         facts=facts,
         conversation_plan=conversation_plan,
     )
+    owner_correction_examples = owner_example_projection.get("examples") or []
     information_reply = build_live_stock_information_response(
         facts,
         availability,
         environ=environ,
+        price_entries=price_entries,
     )
     contextual_sales = build_contextual_sales_recommendation(
         inbound,
@@ -2583,11 +3441,26 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         context_packet.get("chatwoot_history_messages") or [],
         availability,
         price_loader=list_live_stock_price_entries,
+        price_projection=pricing_projection,
         database_url=(environ or {}).get("DATABASE_URL"),
     )
     customer_guidance = build_live_stock_customer_guidance(inbound, facts)
     qualification_followup = build_live_stock_qualification_followup(
-        inbound, facts, missing
+        inbound,
+        facts,
+        missing,
+        conversation_plan=conversation_plan,
+        protected_price_unanswered=bool(
+            _asks_price_question(inbound.get("content"))
+            and price_answer_packet.get("can_answer_price") is not True
+            and information_reply.get("status")
+            not in {
+                "availability_and_pricing_verified",
+                "price_only_verified",
+            }
+            and contextual_sales.get("status")
+            == "commercial_evidence_unavailable"
+        ),
     )
     customer_guidance_preferred = _prefer_customer_size_guidance(
         customer_guidance=customer_guidance,
@@ -2596,6 +3469,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         price_answer_packet=price_answer_packet,
         information_scope=facts.get("information_scope"),
         sales_lane=facts.get("sales_lane"),
+        latest_customer_text=inbound.get("content"),
     )
     fallback_reply = (
         customer_guidance.get("reply_text")
@@ -2654,7 +3528,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
             "reply_text": "",
             "contains_internal_animal_evidence": True,
         }
-    reply = llm_draft.get("reply_text") if llm_draft.get("used") else fallback_reply
+    proposed_reply = llm_draft.get("reply_text") if llm_draft.get("used") else fallback_reply
     reply_source = (
         "deterministic_customer_size_guidance"
         if customer_guidance_preferred
@@ -2666,17 +3540,30 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         if llm_draft.get("used")
         else "deterministic_read_only_guard"
     )
+    # This is a composition candidate only. The exact provider-bound handler
+    # rebuilds and authorizes the canonical packet after every later rewrite
+    # and immediately before any delivery review or claim.
+    evidence_offer = {
+        "status": "candidate_only_final_canonical_gate_required",
+        "should_reply": False,
+    }
+    reply = proposed_reply
     return {
         "version": RUNTIME_VERSION,
         "agent": "sam_live_stock_backend",
         "mode": "read_only_stage_3",
         "inbound": {
+            "account_id": inbound.get("account_id") or "",
             "conversation_id": inbound.get("conversation_id") or "",
+            "contact_id": inbound.get("contact_id") or "",
+            "inbox_id": inbound.get("inbox_id") or "",
             "message_id": inbound.get("message_id") or "",
+            "last_inbound_at": inbound.get("last_inbound_at") or "",
             "customer_name": inbound.get("customer_name") or "",
             "customer_phone": inbound.get("customer_phone") or "",
             "channel": inbound.get("channel") or "",
             "content": inbound.get("content") or "",
+            "identity_provenance": inbound.get("identity_provenance") or {},
         },
         "sales_lane": route["lane"],
         "lane_confidence": route["confidence"],
@@ -2700,10 +3587,12 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "contextual_sales": contextual_sales,
         "customer_guidance": customer_guidance,
         "qualification_followup": qualification_followup,
+        "canonical_evidence_offer": evidence_offer,
         "customer_guidance_preferred": customer_guidance_preferred,
         "agent_evidence": agent_evidence,
         "owner_action_packet": owner_action_packet,
         "owner_correction_examples": owner_correction_examples,
+        "owner_example_projection": owner_example_projection,
         "draft_order_packet": draft_packet,
         "llm_draft": llm_draft,
         "blockers": blockers,
@@ -3144,6 +4033,11 @@ def _durable_live_stock_next_action(inbound, facts, route, missing, blockers, co
         return "prepare_draft_order"
     if internal_action == "sync_lines":
         return "update_draft_order"
+    # A known timing/collection acknowledgement must not displace a still
+    # missing ordinary qualification fact. Ask the smallest useful question
+    # before confirming a later-stage collection action.
+    if missing and internal_action == "confirm_collection":
+        return "ask_one_missing_detail"
     if internal_action in {
         "answer_location",
         "prepare_picture_response",
@@ -3160,7 +4054,7 @@ def _durable_live_stock_next_action(inbound, facts, route, missing, blockers, co
     return "answer_general_info"
 
 
-def build_live_stock_match_packet(facts, availability):
+def build_live_stock_match_packet(facts, availability, *, price_entries=None):
     facts = facts if isinstance(facts, dict) else {}
     availability = availability if isinstance(availability, dict) else {}
     quantity = facts.get("quantity") if isinstance(facts.get("quantity"), int) else 0
@@ -3183,6 +4077,15 @@ def build_live_stock_match_packet(facts, availability):
         matched = []
         status = "not_ready"
     selected = matched[:quantity] if minimum_constraints else []
+    considered = _rank_and_price_live_stock_alternatives(
+        facts,
+        list(
+            availability.get("eligible_projection")
+            or availability.get("considered_sample")
+            or []
+        ),
+        price_entries=price_entries,
+    )
     return {
         "version": "sam_live_stock_match_packet_v1",
         "read_only": True,
@@ -3195,7 +4098,16 @@ def build_live_stock_match_packet(facts, availability):
         "matched_sample": selected,
         "selected_pig_ids": [row.get("pig_id") for row in selected if row.get("pig_id")],
         "considered_count": int(availability.get("considered_count") or 0),
-        "considered_sample": list(availability.get("considered_sample") or []),
+        "considered_sample": considered,
+        "eligible_projection_count": int(
+            availability.get("eligible_projection_count") or len(considered)
+        ),
+        "eligible_projection_complete": (
+            int(availability.get("eligible_projection_count") or len(considered))
+            == len(considered)
+        ),
+        "latest_weight_date": _clean(availability.get("latest_weight_date"), 40),
+        "oldest_weight_age_days": availability.get("oldest_weight_age_days"),
         "excluded_count": int(availability.get("excluded_count") or 0),
         "excluded_sample": list(availability.get("excluded_sample") or []),
         "owner_review_required": True,
@@ -3215,12 +4127,106 @@ def build_live_stock_match_packet(facts, availability):
     }
 
 
-def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
+def _rank_and_price_live_stock_alternatives(
+    facts, rows, *, price_entries=None
+):
+    """Produce deterministic, price-provenanced alternatives for composition."""
+    facts = facts if isinstance(facts, dict) else {}
+    wanted_sex = _normal_text(facts.get("sex"))
+    wanted_weight = _weight_midpoint(facts.get("weight_range"))
+    eligible = [
+        dict(row)
+        for row in rows
+        if isinstance(row, dict) and row.get("live_stock_sale_eligible") is True
+    ]
+
+    def rank_key(row):
+        weight = _safe_float(row.get("current_weight_kg"))
+        distance = (
+            abs(weight - wanted_weight)
+            if weight is not None and wanted_weight is not None
+            else 999999
+        )
+        row_sex = _normal_text(row.get("sex"))
+        sex_penalty = 0 if (
+            not wanted_sex
+            or wanted_sex in {"any", "either", "mixture", "mixed"}
+            or row_sex == wanted_sex
+        ) else 1
+        freshness = int(row.get("days_since_weight") or 999999)
+        return (
+            sex_penalty,
+            distance,
+            freshness,
+            str(row.get("pig_id") or ""),
+        )
+
+    eligible.sort(key=rank_key)
+    price_cache = {}
+    for index, row in enumerate(eligible, 1):
+        category = row.get("sale_category") or row.get("suggested_price_category")
+        weight_band = row.get("weight_band") or _normal_intake_weight_range(
+            row.get("current_weight_kg"),
+            _normal_intake_category(category),
+        )
+        cache_key = (
+            str(category or ""),
+            str(weight_band or ""),
+            str(row.get("sex") or ""),
+        )
+        if cache_key not in price_cache:
+            if price_entries is None:
+                price_cache[cache_key] = resolve_live_stock_price_rule(
+                    *cache_key,
+                )
+            else:
+                price_cache[cache_key] = resolve_live_stock_price_rule(
+                    *cache_key,
+                    price_entries=price_entries,
+                )
+        pricing = price_cache[cache_key]
+        row["alternative_rank"] = index
+        row["target_weight_kg"] = wanted_weight
+        row["weight_distance_kg"] = (
+            round(abs(float(row["current_weight_kg"]) - wanted_weight), 3)
+            if wanted_weight is not None
+            and _safe_float(row.get("current_weight_kg")) is not None
+            else None
+        )
+        row["alternative_ranking_basis"] = (
+            "requested_sex_then_absolute_weight_distance_then_weight_freshness_then_pig_id"
+        )
+        row["pricing"] = dict(pricing) if pricing.get("found") is True else {}
+    return eligible
+
+
+def _weight_midpoint(value):
+    numbers = [
+        float(item)
+        for item in re.findall(r"\d+(?:\.\d+)?", str(value or ""))
+    ]
+    if not numbers:
+        return None
+    return sum(numbers[:2]) / min(len(numbers), 2)
+
+
+def _safe_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def build_live_stock_draft_order_packet(
+    inbound, facts, match_packet=None, *, price_entries=None
+):
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
     match_packet = match_packet if isinstance(match_packet, dict) else {}
     item = _live_stock_sync_requested_item(facts)
-    price_rule = _live_stock_price_rule_for_packet(facts, match_packet)
+    price_rule = _live_stock_price_rule_for_packet(
+        facts, match_packet, price_entries=price_entries
+    )
     quantity = facts.get("quantity") if isinstance(facts.get("quantity"), int) else 0
     quoted_total = (
         round(float(price_rule["unit_price"]) * quantity, 2)
@@ -3291,10 +4297,14 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
     }
 
 
-def build_live_stock_price_answer_packet(facts, match_packet=None):
+def build_live_stock_price_answer_packet(
+    facts, match_packet=None, *, price_entries=None
+):
     facts = facts if isinstance(facts, dict) else {}
     match_packet = match_packet if isinstance(match_packet, dict) else {}
-    price_rule = _live_stock_price_rule_for_packet(facts, match_packet)
+    price_rule = _live_stock_price_rule_for_packet(
+        facts, match_packet, price_entries=price_entries
+    )
     quantity = _quantity_number(facts.get("quantity"))
     unit_price = price_rule.get("unit_price") if price_rule.get("found") else None
     estimated_total = round(float(unit_price) * quantity, 2) if unit_price is not None and quantity > 0 else ""
@@ -3320,7 +4330,9 @@ def build_live_stock_price_answer_packet(facts, match_packet=None):
     }
 
 
-def build_live_stock_information_response(facts, availability, *, environ=None):
+def build_live_stock_information_response(
+    facts, availability, *, environ=None, price_entries=None
+):
     """Build a bounded owner-review information draft from current truth only."""
     facts = facts if isinstance(facts, dict) else {}
     availability = availability if isinstance(availability, dict) else {}
@@ -3334,12 +4346,17 @@ def build_live_stock_information_response(facts, availability, *, environ=None):
         }
 
     source = environ if isinstance(environ, Mapping) else os.environ
-    listed, status_code = list_live_stock_price_entries(
-        limit=500,
-        database_url=source.get("DATABASE_URL"),
-    )
-    price_entries = listed.get("price_entries") if status_code == 200 and isinstance(listed, dict) else []
-    price_entries = price_entries if isinstance(price_entries, list) else []
+    if not isinstance(price_entries, list):
+        listed, status_code = list_live_stock_price_entries(
+            limit=500,
+            database_url=source.get("DATABASE_URL"),
+        )
+        price_entries = (
+            listed.get("price_entries")
+            if status_code == 200 and isinstance(listed, dict)
+            else []
+        )
+        price_entries = price_entries if isinstance(price_entries, list) else []
     now_key = datetime.now(timezone.utc).isoformat()
     categories = ("Grower Pigs", "Finisher Pigs")
     active_prices = {}
@@ -3562,6 +4579,102 @@ def _existing_draft_order_id_from_decision(decision):
     plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
     order_state = plan.get("order_state") if isinstance(plan.get("order_state"), dict) else {}
     return _clean(order_state.get("draft_order_id") or order_state.get("order_id"), 100)
+
+
+def prepare_live_stock_quote_if_enabled(
+    inbound,
+    facts,
+    decision,
+    environ=None,
+    *,
+    quote_preparer=None,
+    isolated_runtime=None,
+):
+    """Generate or reuse one formal quote PDF after a complete accepted request."""
+    source = environ if environ is not None else os.environ
+    facts = facts if isinstance(facts, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    if not _truthy(source.get(QUOTE_PREPARE_ENABLED_ENV)):
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_prepare_disabled"}
+    if isolated_runtime is not None and isolated_runtime.get("allowed") is not True:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_runtime_not_allowed"}
+    if decision.get("sales_lane") != LANE_LIVE_STOCK:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_wrong_lane"}
+    lifecycle = decision.get("sales_lifecycle") if isinstance(decision.get("sales_lifecycle"), dict) else {}
+    if lifecycle.get("accepted") is not True:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_customer_acceptance_required"}
+    if lifecycle.get("evidence_errors"):
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_evidence_invalid"}
+    if lifecycle.get("missing_qualification"):
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_qualification_incomplete"}
+    if lifecycle.get("stock_ready") is not True:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_stock_not_ready"}
+    if lifecycle.get("price_ready") is not True:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_price_not_ready"}
+    if lifecycle.get("handover_state") != "normal_handover":
+        return {"attempted": False, "success": False, "status": "sam_live_stock_quote_handover_not_ready"}
+    order_id = _existing_draft_order_id_from_decision(decision)
+    if not order_id:
+        draft = decision.get("draft_order") if isinstance(decision.get("draft_order"), dict) else {}
+        result = draft.get("result") if isinstance(draft.get("result"), dict) else {}
+        order_id = _clean(result.get("order_id") or result.get("Order_ID"), 100)
+    if not order_id:
+        return {"attempted": True, "success": False, "status": "sam_live_stock_quote_order_required"}
+    try:
+        preparer = quote_preparer or auto_generate_quote_if_ready
+        result = preparer(order_id, created_by="Sam Live Stock")
+        document_id = _clean(
+            (result or {}).get("document_id")
+            or ((result or {}).get("document") or {}).get("document_id")
+            or (result or {}).get("Document_ID"),
+            100,
+        )
+        success = bool((result or {}).get("success") and document_id)
+        return {
+            "attempted": True,
+            "success": success,
+            "status": "sam_live_stock_quote_prepared" if success else "sam_live_stock_quote_prepare_failed",
+            "order_id": order_id,
+            "document_id": document_id,
+            "result": result,
+            "reserves_stock": False,
+            "sends_customer_message": False,
+            "owner_decision_required": True,
+        }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_quote_prepare_exception",
+            "error": _clean(str(exc), 240),
+            "order_id": order_id,
+        }
+
+
+def _refresh_owner_action_packet_after_quote(inbound, decision, quote_prepare):
+    order_id = _clean(quote_prepare.get("order_id"), 100)
+    document_id = _clean(quote_prepare.get("document_id"), 100)
+    conversation_id = _clean((inbound or {}).get("conversation_id"), 100)
+    packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
+    packet.update({
+        "status": "owner_reservation_and_document_delivery_decision_required",
+        "label": "Review exact reservation and current quote delivery",
+        "detail": "The draft order and current quote are prepared. No stock is reserved and no document is sent until the exact owner decision.",
+        "order_id": order_id,
+        "document_id": document_id,
+        "next_action": "escalate",
+        "internal_next_action": "owner_reservation_and_document_delivery_decision",
+        "routes": build_live_stock_owner_action_packet(
+            order_id=order_id,
+            conversation_id=conversation_id,
+            document_id=document_id,
+        ),
+    })
+    decision["owner_action_packet"] = packet
+    decision["owner_gate_required"] = True
+    decision["owner_authority_required"] = True
+    decision["protected_owner_exception_required"] = True
+    decision["next_action"] = "escalate"
 
 
 def build_live_stock_owner_action_packet(order_id="", conversation_id="", document_id=""):
@@ -4015,8 +5128,8 @@ def _reply_for_next_action(facts, plan, packet):
     if action == "answer_location":
         return _localized_reply(
             facts,
-            "We are based in the Riversdale area. Collections are arranged with the farm once the order details are confirmed. What type of pig are you looking for?",
-            "Ons is in die Riversdal-omgewing. Afhaal word met die plaas gereël sodra die bestelling se besonderhede bevestig is. Watter tipe vark soek jy?",
+            "We are based in the Riversdale area. Normal live-pig handover is arranged in Riversdale or Albertinia. What type of pig are you looking for?",
+            "Ons is in die Riversdal-omgewing. Gewone oorhandiging van lewende varke word in Riversdal of Albertinia gereël. Watter tipe vark soek jy?",
         )
     if action == "prepare_picture_response":
         return _localized_reply(
@@ -4027,15 +5140,14 @@ def _reply_for_next_action(facts, plan, packet):
     if action == "answer_delivery_policy":
         return _localized_reply(
             facts,
-            "Collection from the farm is the standard option. If you need delivery, send the drop-off town or location and I can prepare a distance-based estimate for owner review before anything is promised.",
-            "Afhaal by die plaas is die standaard opsie. As jy aflewering nodig het, stuur die dorp of aflaaiplek en ek kan 'n afstand-gebaseerde skatting vir eienaar-goedkeuring voorberei voordat enigiets belowe word.",
+            "Normal live-pig handover is arranged in Riversdale or Albertinia. Delivery or another arrangement needs an exact owner decision and is not promised.",
+            "Gewone oorhandiging van lewende varke word in Riversdal of Albertinia gereël. Aflewering of 'n ander reëling vereis 'n presiese eienaarbesluit en word nie belowe nie.",
         )
     if action == "confirm_collection":
-        timing = _clean(facts.get("timing"), 120) or "That time"
         return _localized_reply(
             facts,
-            f"{_sentence_case(timing)} can work as a collection option. I will keep the order details together and have the farm confirm the final collection time before we lock it in.",
-            f"{_sentence_case(timing)} kan as 'n afhaalopsie werk. Ek hou die bestelling se besonderhede bymekaar en laat die plaas die finale afhaaltyd bevestig voordat ons dit vasmaak.",
+            "Normal live-pig handover is arranged in Riversdale or Albertinia. Any different arrangement needs owner confirmation.",
+            "Gewone oorhandiging van lewende varke word in Riversdal of Albertinia gereël. Enige ander reëling vereis eienaarbevestiging.",
         )
     if action == "propose_breeding_stock_mix":
         return _localized_reply(
@@ -4082,7 +5194,7 @@ def _farm_general_reply(inbound, source):
         if language == "afrikaans":
             return (
                 f"{greeting}ons is Amadeus Plaas in die Riversdal-omgewing. "
-                "Ons help met lewende varke, plaas-afhaal en algemene plaasvrae. Vleisverkope is nog nie oop nie. "
+                "Ons help met lewende varke en algemene plaasvrae. Vleisverkope is nog nie oop nie. "
                 "Sê vir my waarna jy soek en wanneer jy dit nodig het, dan help ek met die regte volgende stap."
             )
         return (
@@ -4105,13 +5217,12 @@ def _farm_general_reply(inbound, source):
         if language == "afrikaans":
             return (
                 f"{greeting}ons is in die Riversdal-omgewing. "
-                "Afhaal word met die plaas gereël sodra die bestelling se besonderhede bevestig is. "
-                "Sê vir my waarna jy soek en wanneer jy wil afhaal."
+                "Gewone oorhandiging van lewende varke word in Riversdal of Albertinia gereël. "
+                "Sê vir my waarna jy soek en wanneer jy dit nodig het."
             )
         followup = (
-            "Tell me what you need and when you would like to collect, and I will help from there."
-            if "collection" in location.lower()
-            else "Collections are arranged with the farm once the order details are confirmed. Tell me what you need and when you would like to collect, and I will help from there."
+            "Normal live-pig handover is arranged in Riversdale or Albertinia. "
+            "Tell me what you need and when you need it, and I will help from there."
         )
         return (
             f"{greeting}{location} "
@@ -4119,7 +5230,7 @@ def _farm_general_reply(inbound, source):
         )
     return (
         f"{greeting}{location} "
-        "If you are asking about live pigs, farm collections, or the farm itself, send me what you need and I will help from there."
+        "If you are asking about live pigs, handover in Riversdale or Albertinia, or the farm itself, send me what you need and I will help from there."
     )
 
 
@@ -4180,6 +5291,20 @@ def _asks_location_question(text):
             "provinsie",
             "directions",
         ),
+    )
+
+
+def _asks_availability_question(text):
+    return _has_any(
+        _normal_text(text),
+        ("available", "availability", "in stock", "on hand"),
+    )
+
+
+def _asks_delivery_question(text):
+    return _has_any(
+        _normal_text(text),
+        ("deliver", "delivery", "transport", "courier"),
     )
 
 
@@ -4413,14 +5538,10 @@ def build_live_stock_customer_guidance(inbound, facts):
         )
         if vague_all or vague_piglet:
             questions.append("Which size would suit you")
-    if needs_sex:
-        questions.append(
-            "Would you prefer a male, female, or either"
-            if not options
-            else "would you prefer a male, female, or either"
-        )
-    if needs_quantity:
+    if needs_quantity and not options:
         questions.append("how many do you need")
+    elif needs_sex and not options:
+        questions.append("Would you prefer a male, female, or either")
     lines.extend(["", _joined_customer_questions(questions)])
     lines.append(
         "Price and current availability still need to be confirmed separately."
@@ -4458,19 +5579,36 @@ def build_live_stock_customer_guidance(inbound, facts):
     }
 
 
-def build_live_stock_qualification_followup(inbound, facts, missing):
+def build_live_stock_qualification_followup(
+    inbound,
+    facts,
+    missing,
+    *,
+    conversation_plan=None,
+    protected_price_unanswered=False,
+):
     """Advance known Livestock interest while protected facts stay pending."""
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
+    conversation_plan = (
+        conversation_plan
+        if isinstance(conversation_plan, dict)
+        else {}
+    )
     fields = {
-        str(value).split(".")[-1].strip().lower()
+        (
+            "location"
+            if str(value).split(".")[-1].strip().lower()
+            == "collection_location"
+            else str(value).split(".")[-1].strip().lower()
+        )
         for value in (missing or [])
         if isinstance(value, str)
     }
     questions = []
     if "quantity" in fields and _quantity_number(facts.get("quantity")) <= 0:
         questions.append("how many do you need")
-    if "location" in fields and _blank(facts.get("location")):
+    elif "location" in fields and _blank(facts.get("location")):
         questions.append("what town or area are you in")
     if (
         not questions
@@ -4495,10 +5633,47 @@ def build_live_stock_qualification_followup(inbound, facts, missing):
         and _has_any(current_text, ("weaned piglets", "weaner piglets"))
         and _has_any(current_text, ("male", "males"))
         and _has_any(current_text, ("female", "females"))
-        and not facts.get("reservation_requested")
-        and not facts.get("breeding_interest")
     )
-    if not known_selection:
+    timing_followup_missing_quantity = bool(
+        "quantity" in fields
+        and _quantity_number(facts.get("quantity")) <= 0
+        and not _blank(facts.get("timing"))
+        and (
+            not _blank(facts.get("category"))
+            or not _blank(facts.get("weight_range"))
+        )
+    )
+    collection_followup_missing_quantity = bool(
+        conversation_plan.get("next_action") == "confirm_collection"
+        and "quantity" in fields
+        and _quantity_number(facts.get("quantity")) <= 0
+        and (
+            not _blank(facts.get("category"))
+            or not _blank(facts.get("weight_range"))
+        )
+    )
+    protected_price_followup_missing_quantity = bool(
+        protected_price_unanswered
+        and _asks_price_question(current_text)
+        and "quantity" in fields
+        and _quantity_number(facts.get("quantity")) <= 0
+        and (
+            not _blank(facts.get("category"))
+            or not _blank(facts.get("weight_range"))
+        )
+    )
+    if (
+        not (
+            known_selection
+            or timing_followup_missing_quantity
+            or collection_followup_missing_quantity
+            or protected_price_followup_missing_quantity
+        )
+        or facts.get("reservation_requested")
+        or facts.get("breeding_interest")
+        or facts.get("order_commitment")
+        or not _blank(facts.get("payment_method"))
+    ):
         return {
             "applicable": False,
             "reply_text": "",
@@ -4534,21 +5709,43 @@ def _prefer_customer_size_guidance(
     price_answer_packet,
     information_scope,
     sales_lane,
+    latest_customer_text="",
 ):
     """Prefer safe guidance only when no stronger source-backed answer exists."""
+    latest_customer_text = _normal_text(latest_customer_text)
     return bool(
         customer_guidance.get("applicable") is True
         and sales_lane == LANE_LIVE_STOCK
-        and not information_scope
-        and contextual_sales.get("status") in {
-            "commercial_evidence_unavailable",
-            "not_commercial_livestock",
-        }
-        and information_reply.get("status") not in {
-            "availability_and_pricing_verified",
-            "price_only_verified",
-        }
-        and price_answer_packet.get("can_answer_price") is not True
+        and (
+            (
+                customer_guidance.get("guidance_scope")
+                == "qualification_only"
+                and customer_guidance.get("questions_asked")
+                == ["how many do you need"]
+                and bool(customer_guidance.get("canonical_mapping") == {})
+                and not _asks_price_question(latest_customer_text)
+                and not _asks_quote(latest_customer_text)
+                and not (
+                    _asks_availability_question(latest_customer_text)
+                    and information_reply.get("status")
+                    == "availability_and_pricing_verified"
+                )
+                and not _asks_location_question(latest_customer_text)
+                and not _asks_delivery_question(latest_customer_text)
+            )
+            or (
+                not information_scope
+                and contextual_sales.get("status") in {
+                    "commercial_evidence_unavailable",
+                    "not_commercial_livestock",
+                }
+                and information_reply.get("status") not in {
+                    "availability_and_pricing_verified",
+                    "price_only_verified",
+                }
+                and price_answer_packet.get("can_answer_price") is not True
+            )
+        )
     )
 
 
@@ -4717,36 +5914,16 @@ def _llm_runtime_diagnostics(source):
 def _load_owner_correction_examples(inbound, source, owner_example_loader=None, facts=None, conversation_plan=None):
     source = source if isinstance(source, dict) else {}
     if not _owner_example_retrieval_enabled(source):
-        return []
-    loader = owner_example_loader
-    if loader is None:
-        try:
-            from modules.sales.conversation_learning import list_live_stock_owner_reply_examples
-        except Exception:
-            return []
-        loader = list_live_stock_owner_reply_examples
-    try:
-        result, _status = loader(
-            conversation_id=(inbound or {}).get("conversation_id") or "",
-            limit=3,
-            customer_message=(inbound or {}).get("content") or "",
-            customer_language=(facts or {}).get("customer_language") or "",
-            conversation_stage=(conversation_plan or {}).get("stage") or "",
-            reply_class=(facts or {}).get("message_intent") or "",
-        )
-    except TypeError:
-        try:
-            result, _status = loader(
-                conversation_id=(inbound or {}).get("conversation_id") or "",
-                limit=3,
-                customer_message=(inbound or {}).get("content") or "",
-            )
-        except TypeError:
-            result, _status = loader((inbound or {}).get("conversation_id") or "", 3)
-    except Exception:
-        return []
-    examples = result.get("examples") if isinstance(result, dict) else []
-    return examples if isinstance(examples, list) else []
+        return {
+            "version": "sam_owner_example_projection_v1",
+            "projection_id": "",
+            "fresh": False,
+            "status": "disabled",
+            "examples": [],
+            "request_blocking_load": False,
+            "canonical_authority": False,
+        }
+    return read_owner_example_projection(loader=owner_example_loader)
 
 
 def _llm_reply_context_packet(
@@ -4972,7 +6149,9 @@ def _complete_reservation_protection_reply(facts):
     )
 
 
-def _live_stock_price_rule_for_packet(facts, match_packet):
+def _live_stock_price_rule_for_packet(
+    facts, match_packet, *, price_entries=None
+):
     facts = facts if isinstance(facts, dict) else {}
     match_packet = match_packet if isinstance(match_packet, dict) else {}
     sample = match_packet.get("matched_sample") if isinstance(match_packet.get("matched_sample"), list) else []
@@ -4983,7 +6162,9 @@ def _live_stock_price_rule_for_packet(facts, match_packet):
         _normal_intake_category(facts.get("category")),
     )
     sex = first.get("sex") or facts.get("sex")
-    return resolve_live_stock_price_rule(category, weight_band, sex)
+    return resolve_live_stock_price_rule(
+        category, weight_band, sex, price_entries=price_entries
+    )
 
 
 def _quantity_number(value):
@@ -5052,7 +6233,7 @@ def _question_for_missing(field):
         "sex": "Do you need males, females, or does the sex not matter if the size is right?",
         "timing": "When would you want them?",
         "location": "Where would they need to go?",
-    }.get(field, "What detail should I note for the farm?")
+    }.get(field, "")
 
 
 def _missing_live_stock_fields(facts):
@@ -5205,10 +6386,22 @@ def _extract_quantity(text):
             int(value) if value.isdigit() else number_words[value]
             for value in split_counts.groups()
         )
-    match = re.search(r"\b(?:buy|purchase|koop)\s+(\d{1,3})\b", text)
+    match = re.search(
+        r"\b(?:buy|purchase|koop)\s+(\d{1,3})(?!\d)"
+        r"(?!\s*(?:kg|kilograms?)\b)",
+        text,
+    )
     if match:
         return int(match.group(1))
-    match = re.search(r"\b(?:for|need|want)\s+(\d{1,3})\b", text)
+    match = re.search(
+        r"\b(?:for|need|want)\s+(\d{1,3})(?!\d)"
+        r"(?!\s*(?:st|nd|rd|th)\b)"
+        r"(?!\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+        r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|"
+        r"nov(?:ember)?|dec(?:ember)?)\b)"
+        r"(?!\s*(?:kg|kilograms?)\b)",
+        text,
+    )
     if match:
         return int(match.group(1))
     match = re.search(
@@ -5238,6 +6431,25 @@ def _extract_quantity(text):
         ):
             return value
     return ""
+
+
+def _extract_sex_split(text):
+    """Retain an explicit female/male quantity split across follow-up turns."""
+    number_words = {
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    }
+    matches = re.findall(
+        r"\b(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)"
+        r"\s+(?:x\s+)?(males?|females?|boars?|gilts?|sows?)\b",
+        text,
+    )
+    split = {"female": 0, "male": 0}
+    for raw_count, raw_sex in matches:
+        count = int(raw_count) if raw_count.isdigit() else number_words[raw_count]
+        sex = "female" if raw_sex in {"female", "females", "gilt", "gilts", "sow", "sows"} else "male"
+        split[sex] += count
+    return split if split["female"] and split["male"] else {}
 
 
 def _extract_sex(text):
@@ -5282,7 +6494,12 @@ def _extract_sex(text):
 
 
 def _extract_weight_range(text):
-    range_match = re.search(r"\b(\d{1,3})\s*(?:kg)?\s*(?:-|to|and)\s*(\d{1,3})\s*kg\b", text)
+    unit = r"(?:kg|kilograms?)"
+    range_match = re.search(
+        rf"\b(\d{{1,3}})\s*(?:{unit})?\s*(?:-|to|and)\s*"
+        rf"(\d{{1,3}})\s*{unit}\b",
+        text,
+    )
     if range_match:
         low, high = int(range_match.group(1)), int(range_match.group(2))
         if low > high:
@@ -5296,7 +6513,10 @@ def _extract_weight_range(text):
     if known_range:
         low, high = re.findall(r"\d{1,3}", known_range.group(1))
         return f"{int(low)}-{int(high)} kg"
-    single = re.search(r"\b(?:around|about|roughly|\+-)?\s*(\d{1,3})\s*kg\b", text)
+    single = re.search(
+        rf"\b(?:around|about|roughly|\+-)?\s*(\d{{1,3}})\s*{unit}\b",
+        text,
+    )
     if single:
         weight = int(single.group(1))
         return f"around {weight} kg"
@@ -5310,6 +6530,21 @@ def _extract_timing(text):
     weekday = re.search(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", text)
     if weekday:
         return weekday.group(1)
+    month = (
+        r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+        r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|"
+        r"nov(?:ember)?|dec(?:ember)?)"
+    )
+    day = r"(?:0?[1-9]|[12]\d|3[01])"
+    dated = re.search(
+        rf"\b(?:(?:on|by|before)\s+(?:the\s+)?"
+        rf"({day}(?:st|nd|rd|th))|"
+        rf"({day}(?:st|nd|rd|th)?\s+{month})|"
+        rf"({month}\s+{day}(?:st|nd|rd|th)?))\b",
+        text,
+    )
+    if dated:
+        return next(group for group in dated.groups() if group)
     return ""
 
 
@@ -5317,6 +6552,7 @@ def _extract_location(text):
     known = (
         "riversdale", "albertinia", "still bay", "stilbaai", "jongensfontein", "heidelberg", "mossel bay",
         "port elizabeth", "gqeberha", "east london", "eastern cape", "western cape", "cape town", "george",
+        "worcester",
     )
     for place in known:
         if place in text:
@@ -5343,6 +6579,10 @@ def _extract_payment(text):
 
 def _asks_quote(text):
     return _has_any(text, ("price", "pricce", "prise", "cost", "how much", "quote", "quotation", "prys"))
+
+
+def _asks_formal_quote(text):
+    return bool(re.search(r"\b(?:quote|quotation)\b", _normal_text(text)))
 
 
 def _asks_price_question(text):
@@ -5554,6 +6794,54 @@ def _availability_public_row(row):
     }
 
 
+def _availability_offer_row(row):
+    """Minimize the complete internal alternative pool to composition evidence."""
+    public = _availability_public_row(row)
+    return {
+        key: public.get(key)
+        for key in (
+            "pig_id",
+            "sex",
+            "current_weight_kg",
+            "latest_weight_date",
+            "days_since_weight",
+            "weight_band",
+            "sale_category",
+            "suggested_price_category",
+            "live_stock_sale_eligible",
+            "exact_animal_eligibility_contract_version",
+            "evidence_complete",
+            "eligibility_observed_at",
+            "allocation_query_status",
+            "allocation_evidence_state",
+            "withdrawal_evidence_state",
+        )
+    } | {"weight_freshness_consistent": _weight_evidence_consistent(row)}
+
+
+def _weight_evidence_consistent(row, *, now=None):
+    raw_date = _clean(
+        row.get("latest_weight_date") or row.get("last_weight_date"), 40
+    )
+    try:
+        reported_age = float(row.get("days_since_weight"))
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(reported_age) or reported_age < 0 or not raw_date:
+        return False
+    try:
+        observed = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            observed = datetime.strptime(raw_date, "%Y-%m-%d")
+        except ValueError:
+            return False
+    current_date = (now or datetime.now(timezone.utc)).date()
+    observed_date = observed.date()
+    actual_age = (current_date - observed_date).days
+    return actual_age >= 0 and abs(actual_age - reported_age) <= 1
+
+
 def _autoreply_canary_policy(source):
     source = source if isinstance(source, Mapping) else {}
     return {
@@ -5653,10 +6941,29 @@ def _auto_general_canary_evaluation(inbound, decision, review, source):
         "inbox_matches": bool(expected["inbox"] and actual["inbox"] == expected["inbox"]),
         "auto_general_state": decision.get("conversation_ownership") == AUTO_GENERAL,
         "review_safe": review.get("safe_to_send") is True and not review.get("escalation_required"),
-        "reviewed_llm_draft": llm.get("used") is True and decision.get("reply_source") == "llm_auto_general_reply_draft",
+        "reviewed_llm_draft": bool(
+            (
+                llm.get("used") is True
+                and decision.get("reply_source")
+                == "llm_auto_general_reply_draft"
+            )
+            or (
+                decision.get("reply_source")
+                == "canonical_customer_front_door"
+                and decision.get("canonical_composition_authorized") is True
+                and (decision.get("customer_front_door") or {}).get(
+                    "valid_for_idempotency"
+                ) is True
+            )
+        ),
         "low_risk_response_class": low_risk_threshold_allowed,
         "claim_free_reply": claim_free_reply,
-        "llm_confident": _confidence_at_least(llm.get("confidence"), minimum_llm_confidence),
+        "llm_confident": bool(
+            decision.get("reply_source") == "canonical_customer_front_door"
+            or _confidence_at_least(
+                llm.get("confidence"), minimum_llm_confidence
+            )
+        ),
         "low_risk_general_reply": not decision.get("specialist_lane_selected") and not decision.get("owner_escalation_required"),
         "specialist_tools_absent": not list(decision.get("specialist_tools_called") or []),
         "protected_mutation_absent": not any(decision.get(key) is True for key in protected_keys),
@@ -6395,7 +7702,9 @@ def _send_chatwoot_message(conversation_id, message, source, amadeus_source="sam
         method="POST",
     )
     try:
-        with urllib_request.urlopen(request, timeout=10) as response:
+        with urllib_request.urlopen(
+            request, timeout=_chatwoot_write_timeout(source)
+        ) as response:
             raw = response.read().decode("utf-8", errors="replace")
             return {
                 "status_code": getattr(response, "status", 200),
@@ -6407,6 +7716,28 @@ def _send_chatwoot_message(conversation_id, message, source, amadeus_source="sam
 
 def _configured_model(source):
     return str(source.get(AGENT_V3_MODEL_ENV) or source.get(LLM_MODEL_ENV) or DEFAULT_LLM_MODEL).strip()
+
+
+def _chatwoot_read_timeout(source):
+    source = source or {}
+    try:
+        configured = float(
+            source.get("SAM_CHATWOOT_READ_TIMEOUT_SECONDS", "5")
+        )
+    except (TypeError, ValueError):
+        configured = 5.0
+    return max(1.0, min(10.0, configured))
+
+
+def _chatwoot_write_timeout(source):
+    source = source or {}
+    try:
+        configured = float(
+            source.get("SAM_CHATWOOT_WRITE_TIMEOUT_SECONDS", "5")
+        )
+    except (TypeError, ValueError):
+        configured = 5.0
+    return max(1.0, min(10.0, configured))
 
 
 def _timeout(source):

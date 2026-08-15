@@ -74,6 +74,15 @@ def _mating_sheet_row(row):
         "Pregnancy_Check_Date": _date_text(row.get("pregnancy_check_date")),
         "Pregnancy_Check_Result": to_clean_string(row.get("pregnancy_check_result")),
         "Expected_Farrowing_Date": _date_text(row.get("expected_farrowing_date")),
+        "Source_Exposure_Identity": to_clean_string(row.get("source_exposure_identity")),
+        "Service_Window_Start": _date_text(row.get("service_window_start")),
+        "Service_Window_End": _date_text(row.get("service_window_end")),
+        "Service_Date_Basis": to_clean_string(row.get("service_date_basis")),
+        "Expected_Farrowing_Window_Start": _date_text(row.get("expected_farrowing_window_start")),
+        "Expected_Farrowing_Window_End": _date_text(row.get("expected_farrowing_window_end")),
+        "Breeding_Cycle_State": to_clean_string(row.get("breeding_cycle_state")),
+        "Exposure_Planned_Removal_On": _date_text(row.get("exposure_planned_removal_on")),
+        "Exposure_Actual_Removal_On": _date_text(row.get("exposure_actual_removal_on")),
         "Actual_Farrowing_Date": _date_text(row.get("farrowing_date")),
         "Mating_Status": status,
         "Outcome": to_clean_string(row.get("outcome")),
@@ -92,7 +101,7 @@ def get_pig_lookup(connect_factory=None):
                 cursor,
                 """
                 select pig_id, tag_number, current_pen_id
-                from public.pig_current_state
+                from public.current_canonical_pig_state
                 """,
             )
     return {

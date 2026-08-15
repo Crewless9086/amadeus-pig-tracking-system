@@ -13,6 +13,7 @@ from modules.beacon.facebook_media_transport import (
     create_multi_photo_feed,
     load_supabase_asset_bytes,
     manual_composer_handoff,
+    resolve_server_publication_assets,
     upload_unpublished_photo_binary,
     validate_facebook_image_asset,
 )
@@ -26,6 +27,11 @@ from modules.beacon.organic_publication_binding import (
 )
 from modules.beacon.organic_publication_authorization import (
     canonical_caption_text,
+)
+from modules.beacon.publication_execution_identity import (
+    ASSET_SHA256 as SUCCESSOR_ASSET_SHA256,
+    CAPTION_SHA256 as SUCCESSOR_CAPTION_SHA256,
+    require_publish_now_authority, validate_successor_execution,
 )
 from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
@@ -1249,11 +1255,32 @@ def facebook_posting_policy(environ=None):
 
 
 def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None,
-                                      meat_launch_authorized=False):
+                                      meat_launch_authorized=False, media_projector=None,
+                                      now_provider=None, publish_now_authority_reader=None):
     payload = payload if isinstance(payload, dict) else {}
+    current_time = now_provider or (lambda: datetime.now(timezone.utc))
     raw_campaign_lane = payload.get("campaign_lane")
     raw_objective = payload.get("objective")
     campaign_lane = normalize_campaign_lane(raw_campaign_lane)
+    is_publish_now = (
+        payload.get("publish_packet_id") == "BEACON-PROPOSAL-18DEAAD8E896A87FE961F45B"
+        and payload.get("publication_authority_mode") == "publish_now"
+    )
+    authority_reader = publish_now_authority_reader or require_publish_now_authority
+    successor_error = validate_successor_execution(payload, now=current_time())
+    if successor_error:
+        return {"success": False, "status": successor_error,
+                **_facebook_execution_authority(False)}, 409
+    if is_publish_now:
+        authority_result, authority_status = authority_reader(database_url)
+        if authority_status != 200 or authority_result.get("success") is not True:
+            return {**authority_result, **_facebook_execution_authority(False)}, authority_status
+        if poster is not None:
+            return {
+                "success": False,
+                "status": "publish_now_custom_poster_forbidden",
+                **_facebook_execution_authority(False),
+            }, 409
     authorization_generation_id = _clean_text(
         payload.get("authorization_generation_id")
     )
@@ -1286,6 +1313,24 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
                 **_facebook_execution_authority(False),
             }, 409
     policy = facebook_posting_policy(environ=environ)
+    requested_assets = payload.get("selected_assets") if isinstance(payload.get("selected_assets"), list) else []
+    if not requested_assets and isinstance(payload.get("selected_asset"), dict):
+        requested_assets = [payload["selected_asset"]]
+    requested_types = {str(item.get("media_type") or "").lower() for item in requested_assets if isinstance(item, dict)}
+    projector = media_projector or resolve_server_publication_assets
+    projected = []
+    if requested_assets and requested_types == {"image"}:
+        identities = [str(item.get("asset_id") or "").strip() for item in requested_assets if isinstance(item, dict)]
+        projection, projection_status = projector(identities, database_url)
+        if projection_status != 200 or projection.get("success") is not True:
+            return {**projection, **_facebook_execution_authority(False)}, projection_status
+        projected = projection["assets"]
+        payload = {**payload, "asset_id": projected[0]["asset_id"],
+                   "selected_asset": projected[0], "selected_assets": projected}
+        successor_error = validate_successor_execution(payload, now=current_time())
+        if successor_error:
+            return {"success": False, "status": successor_error,
+                    **_facebook_execution_authority(False)}, 409
     try:
         params = _facebook_post_params(payload, policy)
     except ValueError:
@@ -1326,6 +1371,16 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
         params["authorization_generation_id"] = authorization[
             "authorization_generation_id"
         ]
+        successor_error = validate_successor_execution(
+            params,
+            now=current_time(),
+            authoritative_timing_authorization_id=authorization[
+                "authorization_generation_id"
+            ],
+        )
+        if successor_error:
+            return {"success": False, "status": successor_error,
+                    **_facebook_execution_authority(False)}, 409
         params["execution_event_id"] = _facebook_post_execution_id(params)
         if (
             params["execution_event_id"]
@@ -1380,6 +1435,47 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             **_facebook_execution_authority(False),
         }, 409 if claim_status < 400 else 503
 
+    if projected:
+        current_projection, current_status = projector(
+            [asset.get("asset_id", "") for asset in projected], database_url
+        )
+        if (current_status != 200
+                or current_projection.get("success") is not True
+                or current_projection.get("assets") != projected):
+            return {
+                "success": False,
+                "status": "server_media_authority_changed_after_claim",
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+                **_facebook_execution_authority(False),
+            }, 409
+
+    successor_error = validate_successor_execution(
+        params,
+        now=current_time(),
+        authoritative_timing_authorization_id=(
+            params.get("authorization_generation_id") or None
+        ),
+    )
+    if successor_error:
+        return {
+            "success": False,
+            "status": successor_error,
+            "outcome": "definite_failure_before_meta",
+            "automatic_retry_allowed": False,
+            **_facebook_execution_authority(False),
+        }, 409
+
+    if is_publish_now:
+        authority_result, authority_status = authority_reader(database_url)
+        if authority_status != 200 or authority_result.get("success") is not True:
+            return {
+                **authority_result,
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+                **_facebook_execution_authority(False),
+            }, authority_status
+
     if poster:
         post_result, post_status = poster(params, policy)
     else:
@@ -1401,8 +1497,15 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             result, status = recorder(stage_params, database_url=database_url)
             return status < 400 and bool(result.get("success"))
 
+        def authority_guard():
+            if not is_publish_now:
+                return True
+            guard_result, guard_status = authority_reader(database_url)
+            return guard_status == 200 and guard_result.get("success") is True
+
         post_result, post_status = _post_to_facebook_page(
-            params, policy, stage_recorder=record_stage
+            params, policy, stage_recorder=record_stage,
+            authority_guard=authority_guard,
         )
     execution_status = "facebook_page_post_sent" if post_status < 400 and post_result.get("success") else "facebook_page_post_failed"
     params.update({
@@ -2498,6 +2601,24 @@ def _facebook_post_params(payload, policy):
         "authorization_generation_id": _clean_text(
             payload.get("authorization_generation_id")
         )[:160],
+        "publication_execution_identity": _clean_text(
+            payload.get("publication_execution_identity")
+        )[:160],
+        "publication_authority_mode": _clean_text(
+            payload.get("publication_authority_mode") or "scheduled_exact"
+        )[:40],
+        "publication_authority_id": _clean_text(
+            payload.get("publication_authority_id")
+        )[:160],
+        "publication_authority_state": _clean_text(
+            payload.get("publication_authority_state") or "active"
+        )[:40],
+        "zero_spend": payload.get("zero_spend") is True,
+        "timing_authorization_id": _clean_text(
+            payload.get("timing_authorization_id")
+        )[:160],
+        "timing_start": _clean_text(payload.get("timing_start"))[:80],
+        "timing_end": _clean_text(payload.get("timing_end"))[:80],
         "campaign_lane": payload.get("campaign_lane", ""),
         "objective": payload.get("objective", ""),
         "execution_status": "not_attempted",
@@ -2543,16 +2664,19 @@ def _facebook_post_validation_error(params, policy):
     return ""
 
 
-def _post_to_facebook_page(params, policy, environ=None, stage_recorder=None):
+def _post_to_facebook_page(params, policy, environ=None, stage_recorder=None,
+                           authority_guard=None):
     if params.get("post_kind") == "multi_photo":
         return _post_to_facebook_page_binary_images(
-            params, policy, environ=environ, stage_recorder=stage_recorder
+            params, policy, environ=environ, stage_recorder=stage_recorder,
+            authority_guard=authority_guard,
         )
     if params.get("post_kind") == "video":
         return _post_to_facebook_page_video(params, policy, environ=environ)
     if params.get("asset_id"):
         return _post_to_facebook_page_binary_images(
-            params, policy, environ=environ, stage_recorder=stage_recorder
+            params, policy, environ=environ, stage_recorder=stage_recorder,
+            authority_guard=authority_guard,
         )
     return _post_to_facebook_page_feed(params, policy, environ=environ)
 
@@ -2600,6 +2724,7 @@ def _post_to_facebook_page_binary_images(
     storage_loader=None,
     photo_uploader=None,
     feed_creator=None,
+    authority_guard=None,
 ):
     """Validate all bytes, then upload once per image with no retry."""
     source = environ if environ is not None else os.environ
@@ -2624,6 +2749,7 @@ def _post_to_facebook_page_binary_images(
         )
     )
     stage_fn = stage_recorder or (lambda _stage: True)
+    authority_fn = authority_guard or (lambda: True)
     validations = []
     loaded = []
     for position, asset in enumerate(assets, start=1):
@@ -2648,6 +2774,7 @@ def _post_to_facebook_page_binary_images(
             asset,
             loaded_result.get("data"),
             loaded_result.get("returned_mime"),
+            loaded_result.get("readback_proof"),
         )
         validation["position"] = position
         validations.append(validation)
@@ -2711,6 +2838,10 @@ def _post_to_facebook_page_binary_images(
 
     media_ids = []
     for position, (asset, data, mime_type) in enumerate(loaded, start=1):
+        if not authority_fn():
+            return {"success": False, "status": "publish_now_authority_not_actionable",
+                    "outcome": "definite_failure_before_meta",
+                    "automatic_retry_allowed": False}, 409
         result, status = upload_fn(asset, data, mime_type)
         media_id = str(result.get("id") or "")
         upload_stage = {
@@ -2762,6 +2893,10 @@ def _post_to_facebook_page_binary_images(
                 "automatic_retry_allowed": False,
             }, status
 
+    if not authority_fn():
+        return {"success": False, "status": "publish_now_authority_not_actionable",
+                "outcome": "media_uploaded_final_post_not_published",
+                "automatic_retry_allowed": False}, 409
     result, status = feed_fn(params.get("exact_text", ""), media_ids)
     post_id = str(result.get("id") or result.get("post_id") or "")
     feed_stage = {
@@ -3089,6 +3224,21 @@ def _facebook_post_row_to_event(row):
 
 
 def _facebook_post_execution_id(params):
+    if (params.get("publish_packet_id") == "BEACON-PROPOSAL-18DEAAD8E896A87FE961F45B"
+            and params.get("publication_authority_mode") == "publish_now"):
+        assets = params.get("selected_assets") or []
+        seed = {
+            "publish_packet_id": params.get("publish_packet_id", ""),
+            "channel": params.get("channel", ""),
+            "publication_execution_identity": params.get(
+                "publication_execution_identity", ""
+            ),
+            "caption_sha256": SUCCESSOR_CAPTION_SHA256,
+            "asset_sha256": SUCCESSOR_ASSET_SHA256,
+            "zero_spend": params.get("zero_spend") is True,
+        }
+        digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
+        return f"BEACON-FB-POST-{digest}"
     seed = {
         "publish_packet_id": params.get("publish_packet_id", ""),
         "channel": params.get("channel", ""),
@@ -3098,6 +3248,12 @@ def _facebook_post_execution_id(params):
         "authorization_generation_id": params.get(
             "authorization_generation_id", ""
         ),
+        "publication_execution_identity": params.get(
+            "publication_execution_identity", ""
+        ),
+        "timing_authorization_id": params.get("timing_authorization_id", ""),
+        "timing_start": params.get("timing_start", ""),
+        "timing_end": params.get("timing_end", ""),
     }
     digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
     return f"BEACON-FB-POST-{digest}"

@@ -7,7 +7,9 @@ from modules.auth.owner_access import (
     owner_admin_principal,
     require_owner_admin_access,
     require_owner_read_access,
+    require_strict_owner_admin_access,
 )
+from modules.oom_sakkie.sam_payment_owner_runtime import present_sale_payment_preview
 from modules.beacon.media_intake import (
     list_media_intakes,
     read_private_thumbnail,
@@ -115,9 +117,16 @@ from modules.oom_sakkie.sales_campaign_store import (
     send_customer_followup_to_chatwoot,
 )
 from modules.oom_sakkie.service import handle_message
+from modules.oom_sakkie.morning_scheduler import (
+    TOKEN_ENV as MORNING_SCHEDULER_TOKEN_ENV,
+    run_provider_schedule,
+    run_synthetic_acceptance,
+)
+from modules.oom_sakkie.protected_payment_recovery import run_payment_recovery_cycle
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
 from modules.oom_sakkie.telegram_gateway import (
+    handle_rootline_reassessment_trigger,
     handle_telegram_gateway_message,
     telegram_gateway_exposure_preflight,
 )
@@ -237,6 +246,34 @@ def _env_truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+@oom_sakkie_bp.route("/oom-sakkie/management/morning-schedule", methods=["POST"])
+def oom_sakkie_morning_schedule():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success": False, "status": "morning_scheduler_auth_denied",
+                        "telegram_sends": 0, "telegram_edits": 0,
+                        "hardware_commands": 0, "writes_farm_data": False}), 403
+    payload = request.get_json(silent=True) or {}
+    synthetic = str(payload.get("synthetic_acceptance_identity") or "").strip()
+    result = (run_synthetic_acceptance(synthetic) if synthetic
+              else run_provider_schedule())
+    return jsonify(result), 200 if result.get("success") else 503
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/protected-payment-recovery", methods=["POST"])
+def oom_sakkie_protected_payment_recovery():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success": False, "status": "payment_recovery_auth_denied",
+                        "telegram_sends": 0, "telegram_edits": 0,
+                        "writes_to_supabase": False}), 403
+    result = run_payment_recovery_cycle()
+    status = 200 if result.get("success") else 503
+    return jsonify(result), status
+
+
 @oom_sakkie_bp.route("/oom-sakkie/message", methods=["POST"])
 def oom_sakkie_message():
     if not is_message_request_allowed(request.remote_addr):
@@ -251,6 +288,22 @@ def oom_sakkie_message():
 def oom_sakkie_telegram_message():
     payload = request.get_json(silent=True) or {}
     result, status_code = handle_telegram_gateway_message(payload, headers=request.headers)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales/payment-preview", methods=["POST"])
+def oom_sakkie_sale_payment_preview():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = present_sale_payment_preview(request.get_json(silent=True) or {})
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/rootline/reassess", methods=["POST"])
+def oom_sakkie_rootline_reassess():
+    result, status_code = handle_rootline_reassessment_trigger(
+        request.get_json(silent=True) or {}, headers=request.headers)
     return jsonify(result), status_code
 
 

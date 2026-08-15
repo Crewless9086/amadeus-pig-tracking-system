@@ -257,6 +257,52 @@ class CharlieMissionPickupTests(unittest.TestCase):
             result["reason"], "live_identity_creation_time_mismatch"
         )
 
+    def test_runner_excludes_its_signed_tree_from_supervisor_descendants(self):
+        acknowledgement = {
+            "runner_pid": str(os.getpid()),
+            "supervisor_member_pids": [100, 101],
+            "runner_member_pids": [200, os.getpid()],
+            "supervisor_tree_digest": "supervisor-digest",
+            "runner_tree_digest": "runner-digest",
+        }
+        packet = {
+            "controller_final_acknowledgement": acknowledgement,
+            "controller_public_key": "public-key",
+            "supervisor_tree_identity": {"tree": "supervisor"},
+            "process_tree_identity": {"tree": "runner"},
+        }
+        with patch.dict(os.environ, {
+            "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+            "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
+            "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
+            "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+            "CHARLIE_CONTROLLER_PUBLIC_KEY": "public-key",
+        }, clear=True), patch.object(
+            charlie_mission_pickup,
+            "validate_live_bootstrap_tree",
+            side_effect=[
+                {"authorized": True, "member_pids": [100, 101]},
+                {"authorized": True, "member_pids": [200, os.getpid()]},
+            ],
+        ) as validate_live, patch.object(
+            charlie_mission_pickup,
+            "verify_controller_acknowledgement",
+            return_value=True,
+        ), patch.object(
+            charlie_mission_pickup,
+            "process_tree_identity_digest",
+            side_effect=["supervisor-digest", "runner-digest"],
+        ):
+            result = charlie_mission_pickup._validate_final_packet_live(packet)
+        self.assertTrue(result["success"], result)
+        self.assertIs(
+            validate_live.call_args_list[0].kwargs["allowed_descendant_tree"],
+            packet["process_tree_identity"],
+        )
+        self.assertNotIn(
+            "allowed_descendant_tree", validate_live.call_args_list[1].kwargs
+        )
+
     def test_runner_refuses_missing_current_generation_packet(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(
             os.environ,
@@ -1055,6 +1101,40 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
     @patch("scripts.charlie_mission_pickup.build_core_plan")
+    def test_t0_refresh_replaces_stale_publisher_recovery_with_source_mapper(self, build_plan, update_vault):
+        mission = {
+            "mission_id": "MISSION-T0",
+            "metadata": {
+                "intake": {"adaptive_orchestration_required": True},
+                "review_packet": {"return_to_stage": "publisher", "blocked_agent": "publisher"},
+            },
+            "agent_workflow": [{"agent": "source_mapper", "status": "complete"}],
+        }
+        orchestration = {
+            "version": "charlie_adaptive_orchestration_v1",
+            "generation_identity": "a" * 24,
+            "tier": "T0",
+            "selected_agents": [{"agent": "source_mapper", "allowed_mutations": []}],
+        }
+        build_plan.return_value = {
+            "version": "v1",
+            "project_truth": {"pipeline_profile": "t0", "workflow_template": "t0", "workflow_right_sized": True},
+            "agent_workflow": [{"agent": "source_mapper", "status": "pending"}],
+            "orchestration": orchestration,
+        }
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+
+        result = charlie_mission_pickup._refresh_core_plan_for_pickup(mission)
+
+        self.assertTrue(result["refreshed"])
+        payload = update_vault.call_args.args[1]
+        self.assertEqual(payload["mission_context_pack"]["agent_order"], ["source_mapper"])
+        self.assertEqual(payload["agent_workflow"][0]["agent"], "source_mapper")
+        self.assertEqual(payload["agent_workflow"][0]["status"], "active")
+        self.assertEqual(payload["review_packet"]["return_to_stage"], "source_mapper")
+
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup.build_core_plan")
     def test_refresh_preserves_explicit_targeted_repair_workflow(self, build_plan, update_vault):
         mission = {
             "mission_id": "MISSION-REPAIRED",
@@ -1222,6 +1302,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["mission_id"], "REPLACEMENT")
         pickup.assert_called_once()
+        executive.assert_not_called()
         observers.assert_not_called()
         reconcile.assert_not_called()
         write_heartbeat.assert_called()

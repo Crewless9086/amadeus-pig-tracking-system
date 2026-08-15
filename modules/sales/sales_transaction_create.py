@@ -26,6 +26,12 @@ def create_sales_transaction(payload, database_url=None):
         return _failure("validation_failed", validation["errors"], 400)
 
     cleaned = validation["cleaned_data"]
+    if cleaned["payment_status"] != "Unpaid":
+        return _failure(
+            "validation_failed",
+            ["new sales must start Unpaid; record received money through the protected payment preview and confirmation flow."],
+            400,
+        )
     if cleaned["sale_stream"] != "Slaughter":
         return _failure(
             "validation_failed",

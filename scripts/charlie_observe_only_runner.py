@@ -37,7 +37,7 @@ def _identity():
     }
 
 
-def _validate_runner_start(sleep_fn=time.sleep, timeout_seconds=5):
+def _validate_runner_start(sleep_fn=time.sleep, timeout_seconds=60):
     identity = _identity()
     if SUPERVISOR_STOP_PATH.exists():
         return {"success": False, "reason": "governed_stop_active"}
@@ -142,6 +142,7 @@ def _validate_final(packet):
         generation=identity["generation"],
         revision=identity["execution_revision"],
         startup_nonce=identity["supervisor_nonce"],
+        allowed_descendant_tree=packet.get("process_tree_identity"),
     )
     runner = validate_live_bootstrap_tree(
         packet.get("process_tree_identity"),

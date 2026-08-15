@@ -86,10 +86,11 @@ class DailyPlanContractTests(unittest.TestCase):
     def test_one_dashboard_projection_and_no_generation_list(self):
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")
         javascript = Path("static/js/dashboard.js").read_text(encoding="utf-8")
-        self.assertEqual(template.count('id="rootline_panel"'), 1)
-        self.assertEqual(template.count('id="rootline_daily_plan"'), 1)
+        self.assertEqual(template.count('id="irrigation_panel"'), 1)
+        self.assertEqual(template.count('id="irrigation_b_status"'), 1)
+        self.assertEqual(template.count('id="irrigation_c_status"'), 1)
         self.assertEqual(
-            javascript.count("/api/telemetry/rootline/daily-irrigation-plan?date="), 1
+            javascript.count("/api/telemetry/irrigation/status?date="), 1
         )
         self.assertNotIn("daily_plan_generations", javascript)
 

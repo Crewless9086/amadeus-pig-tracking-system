@@ -1,8 +1,12 @@
 # n8n Workflow Suite
 
-Status: active runtime reference.
+Status: transitional runtime inventory under
+`docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`.
 
 n8n is an integration/orchestration layer, not the source of farm truth.
+It is not the farm brain. No new business rule, canonical write, specialist
+memory, safety decision or durable schedule may be added here. Every retained
+workflow requires a replacement/retirement classification in Programme Phase 0.
 
 ## Suite Map
 

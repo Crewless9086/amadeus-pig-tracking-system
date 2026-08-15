@@ -3,9 +3,12 @@ from datetime import date, datetime, timedelta
 from time import monotonic
 
 from services.database_service import DATABASE_URL_ENV
+from modules.pig_weights.herdmaster_weighing_batch_intelligence import build_weighing_batch_intelligence
+from modules.pig_weights.herdmaster_full_lifecycle_merit import compose_full_lifecycle_merit
 
-DEFAULT_LITTER_WEAN_AGE_DAYS = 35
+DEFAULT_LITTER_WEAN_AGE_DAYS = 30
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
+FIRST_TREATMENT_ATTENTION_DAY = 4
 ALLOCATION_READ_STAGES = (
     "current_animal_state", "order_allocation", "medical_events",
     "weights", "litters", "pens",
@@ -13,6 +16,11 @@ ALLOCATION_READ_STAGES = (
 BREEDING_ATTENTION_READ_STAGES = ALLOCATION_READ_STAGES + (
     "mating_chronology",
     "human_observations",
+    "boar_exposures",
+)
+FULL_LIFECYCLE_MERIT_READ_STAGES = (
+    "canonical_animals", "effective_litters", "litter_correction_lineage", "mating_events",
+    "observations", "lifecycle", "offspring_weights", "medical_context",
 )
 ALLOCATION_TOTAL_DEADLINE_SECONDS = 20.0
 ALLOCATION_STATEMENT_TIMEOUT_SECONDS = 3.0
@@ -278,10 +286,25 @@ def _current_state_rows(connect_factory=None):
             pig.father_pig_id,
             pig.wean_date,
             pig.wean_weight_kg,
+            pig.exit_date,
             pig.exit_reason,
-            pig.notes
-        from public.pig_current_state state
+            pig.notes,
+            sale.sale_id,
+            sale.sale_date,
+            sale.sale_stream,
+            sale.sale_channel
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
+        left join lateral (
+            select transaction.sale_id, transaction.sale_date,
+                   transaction.sale_stream, transaction.sale_channel
+            from public.sales_transaction_items item
+            join public.sales_transactions transaction on transaction.sale_id = item.sale_id
+            where item.pig_id = state.pig_id
+              and coalesce(transaction.sale_status, '') <> 'Cancelled'
+            order by transaction.sale_date desc nulls last, transaction.sale_id desc
+            limit 1
+        ) sale on true
         order by coalesce(nullif(state.tag_number, ''), state.pig_id)
         """,
         connect_factory=connect_factory,
@@ -299,7 +322,7 @@ def _dashboard_rows(connect_factory=None):
             state.current_weight_kg,
             pig.exit_date,
             pig.exit_reason
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         """,
         connect_factory=connect_factory,
@@ -426,7 +449,7 @@ def get_pig_detail(pig_id, connect_factory=None):
             pig.notes,
             mother.tag_number as mother_tag_number,
             father.tag_number as father_tag_number
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         left join public.pigs mother on mother.pig_id = pig.mother_pig_id
         left join public.pigs father on father.pig_id = pig.father_pig_id
@@ -530,7 +553,7 @@ def get_parent_options(connect_factory=None):
     rows = _fetch_all(
         """
         select pig_id, tag_number, sex, status, purpose, current_pen_id, current_pen_name
-        from public.pig_current_state
+        from public.current_canonical_pig_state
         where status = 'Active'
           and purpose = 'Breeding'
           and sex in ('Female', 'Male', 'Castrated_Male')
@@ -587,7 +610,7 @@ def get_pig_master_rows_by_ids(pig_ids, connect_factory=None):
             state.litter_id,
             state.purpose,
             pig.notes
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         where state.pig_id = any(%s)
         """,
@@ -635,7 +658,7 @@ def get_pig_master_rows(connect_factory=None):
             pig.wean_weight_kg,
             pig.earmarked,
             pig.earmark_date
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         join public.pigs pig on pig.pig_id = state.pig_id
         order by coalesce(nullif(state.tag_number, ''), state.pig_id)
         """,
@@ -697,7 +720,7 @@ def get_litter_register_rows(connect_factory=None):
             wean_date,
             litter_status,
             litter_notes
-        from public.litters
+        from public.current_canonical_litters
         order by farrowing_date desc nulls last, litter_id
         """,
         connect_factory=connect_factory,
@@ -991,22 +1014,32 @@ def get_breeding_attention_source_snapshot(
         observation_rows = _fetch_all(
             """
             select event.pig_id, event.observed_at, event.observation_category,
-                   event.measurements_json, event.observation_event_id
+                   event.measurements_json, event.observation_event_id,
+                   event.recorded_at, event.factual_note,
+                   event.supersedes_observation_event_id
             from public.pig_observation_events event
             where (
                 event.observation_category in ('behaviour', 'body_condition')
                 or (
                     event.observation_category = 'other'
-                    and event.measurements_json->>'contract_version' =
-                        'herdmaster_breeding_observation_v1'
+                    and event.measurements_json->>'contract_version' in (
+                        'herdmaster_breeding_observation_v1',
+                        'herdmaster_piglet_observation_v1'
+                    )
                 )
             )
-              and not exists (
-                select 1 from public.pig_observation_events correction
-                where correction.supersedes_observation_event_id = event.observation_event_id
-              )
             order by event.pig_id, event.observation_category,
                      event.observed_at desc, event.observation_event_id desc
+            """,
+            connect_factory=snapshot,
+        )
+        exposure_rows = _fetch_all(
+            """
+            select exposure_event_id, exposure_identity, exposure_group_identity, event_kind,
+                   sow_pig_id, boar_pig_id, occurred_on,
+                   planned_removal_on, created_at
+            from public.pig_breeding_exposure_events
+            order by exposure_identity, occurred_on, exposure_event_id
             """,
             connect_factory=snapshot,
         )
@@ -1019,8 +1052,90 @@ def get_breeding_attention_source_snapshot(
             "allocation_inputs": allocation_inputs,
             "mating_rows": mating_rows,
             "observation_rows": observation_rows,
+            "exposure_rows": exposure_rows,
             "read_progress": snapshot.progress(),
         }
+
+
+def load_full_lifecycle_merit_evidence(
+    cutoff, pig_id=None, connect_factory=None, *,
+    deadline_seconds=ALLOCATION_TOTAL_DEADLINE_SECONDS, now_fn=monotonic,
+):
+    """Load all merit inputs through one bounded repeatable-read transaction."""
+    started = now_fn()
+    with _connect(connect_factory=connect_factory) as connection:
+        snapshot = _AllocationSnapshot(
+            connection, now_fn() - started, deadline_seconds=deadline_seconds,
+            now_fn=now_fn, started_at=started, stages=FULL_LIFECYCLE_MERIT_READ_STAGES,
+        )
+        if snapshot.remaining_seconds() <= 0:
+            raise TimeoutError("full-lifecycle merit snapshot deadline exhausted")
+        if not getattr(connect_factory, "transaction_managed", False):
+            with connection.cursor() as cursor:
+                cursor.execute("set transaction isolation level repeatable read read only")
+        pigs = _fetch_all(
+            "select * from public.current_canonical_pigs order by pig_id",
+            connect_factory=snapshot,
+        )
+        litters = _fetch_all(
+            "select * from public.current_canonical_litters order by farrowing_date, litter_id",
+            connect_factory=snapshot,
+        )
+        litter_history = _fetch_all(
+            "select * from public.historical_litter_representations order by farrowing_date, litter_id",
+            connect_factory=snapshot,
+        )
+        matings = _fetch_all(
+            "select * from public.mating_events order by mating_date, mating_id",
+            connect_factory=snapshot,
+        )
+        observations = _fetch_all(
+            "select * from public.pig_observation_events order by observed_at, observation_event_id",
+            connect_factory=snapshot,
+        )
+        lifecycle = _fetch_all(
+            "select * from public.pig_lifecycle_events order by effective_at, lifecycle_event_id",
+            connect_factory=snapshot,
+        )
+        weights = _fetch_all(
+            "select * from public.pig_weight_events order by weight_date, weight_event_id",
+            connect_factory=snapshot,
+        )
+        medical = _fetch_all(
+            "select * from public.pig_medical_events order by treatment_date, medical_event_id",
+            connect_factory=snapshot,
+        )
+        if snapshot.remaining_seconds() < 0:
+            raise TimeoutError("full-lifecycle merit snapshot deadline exhausted during projection")
+        return {
+            "cutoff": cutoff, "pig_id": pig_id, "pigs": pigs, "litters": litters,
+            "litter_history": litter_history,
+            "matings": matings, "observations": observations, "lifecycle": lifecycle,
+            "weights": weights, "medical": medical, "read_progress": snapshot.progress(),
+            "writes_performed": False,
+        }
+
+
+def get_full_lifecycle_merit(cutoff, pig_id=None, connect_factory=None):
+    if _date_or_none(cutoff) != date.today():
+        return {
+            "success": False, "reason": "historical_cutoff_not_authoritative",
+            "evidence_cutoff": _date_text(cutoff) or None,
+            "writes_performed": False,
+        }
+    try:
+        evidence = load_full_lifecycle_merit_evidence(cutoff, pig_id, connect_factory)
+    except Exception:
+        return {
+            "success": False, "reason": "canonical_evidence_unavailable",
+            "evidence_cutoff": _date_text(cutoff) or None,
+            "writes_performed": False,
+        }
+    if evidence["read_progress"]["status"] != "complete":
+        return {"success": False, "reason": "incomplete_evidence_snapshot", "writes_performed": False}
+    result = compose_full_lifecycle_merit(evidence, pig_id=pig_id)
+    result["read_progress"] = evidence["read_progress"]
+    return result
 
 
 def _get_allocation_input_rows_queries(connect_factory):
@@ -1122,7 +1237,7 @@ def _get_allocation_input_rows_queries(connect_factory):
         """
         select litter_id, sow_pig_id, boar_pig_id, sow_tag_number, boar_tag_number,
                farrowing_date, wean_date, born_alive, weaned_count, litter_status
-        from public.litters
+        from public.current_canonical_litters
         order by litter_id
         """,
         connect_factory=connect_factory,
@@ -1180,11 +1295,52 @@ def _litter_rows_with_pigs(connect_factory=None):
     litters = _fetch_all(
         """
         select *
-        from public.litters
+        from public.current_canonical_litters
         order by farrowing_date desc nulls last, litter_id
         """,
         connect_factory=connect_factory,
     )
+    mating_rows = _fetch_all(
+        """
+        select mating_id, related_litter_id, sow_pig_id, boar_pig_id,
+               mating_date, expected_farrowing_date, farrowing_date
+        from public.mating_events
+        order by mating_date desc nulls last, mating_id desc
+        """,
+        connect_factory=connect_factory,
+    )
+    latest_mating_by_litter = {}
+    for mating in mating_rows:
+        related_litter_id = _text(mating.get("related_litter_id"))
+        if related_litter_id and related_litter_id not in latest_mating_by_litter:
+            latest_mating_by_litter[related_litter_id] = mating
+    for litter in litters:
+        litter_id = _text(litter.get("litter_id"))
+        mating = latest_mating_by_litter.get(litter_id) or {}
+        if not mating:
+            litter_farrowing = litter.get("farrowing_date")
+            exact_candidates = []
+            for candidate in mating_rows:
+                mating_date = candidate.get("mating_date")
+                if not isinstance(litter_farrowing, date) or not isinstance(mating_date, date):
+                    continue
+                if _text(candidate.get("sow_pig_id")) != _text(litter.get("sow_pig_id")):
+                    continue
+                litter_boar = _text(litter.get("boar_pig_id"))
+                candidate_boar = _text(candidate.get("boar_pig_id"))
+                if litter_boar and candidate_boar and litter_boar != candidate_boar:
+                    continue
+                gestation_days = (litter_farrowing - mating_date).days
+                if 90 <= gestation_days <= 130:
+                    exact_candidates.append(candidate)
+            if len(exact_candidates) == 1:
+                mating = exact_candidates[0]
+        litter["mating_id"] = _text(mating.get("mating_id"))
+        litter["mating_date"] = mating.get("mating_date")
+        litter["expected_farrowing_date"] = (
+            mating.get("expected_farrowing_date")
+            or (mating.get("mating_date") + timedelta(days=114) if isinstance(mating.get("mating_date"), date) else None)
+        )
     pigs = _current_state_rows(connect_factory=connect_factory)
     pigs_by_litter = {}
     for pig in pigs:
@@ -1220,6 +1376,50 @@ def _litter_lifecycle_outcomes(pigs):
     return outcomes
 
 
+def _litter_pig_outcome(row):
+    status = _text(row.get("status")).lower().replace("-", "_").replace(" ", "_")
+    exit_reason = _text(row.get("exit_reason")).lower().replace("-", "_").replace(" ", "_")
+    sale_channel = _text(row.get("sale_channel")).lower()
+    sale_stream = _text(row.get("sale_stream")).lower()
+    purpose = _text(row.get("purpose")).lower().replace("-", "_").replace(" ", "_")
+    if status in {"dead", "died", "deceased"} or exit_reason in {
+        "died", "dead", "deceased", "culled", "lost", "stillborn",
+        "died_after_birth", "crushed_by_sow", "weak_piglet",
+    }:
+        return "dead", "Dood"
+    if status == "slaughtered" or exit_reason in {
+        "slaughter", "slaughtered", "abattoir", "abattoir_sale", "sold_to_abattoir",
+    }:
+        return "slaughtered", "Geslag"
+    if status in {"removed", "disposed"} or exit_reason in {"removed", "disposed", "disposal"}:
+        return "removed", "Verwyder"
+    if status in {"sold", "completed_sale"}:
+        if sale_channel == "auction" or exit_reason == "auction_sale":
+            return "auction_sale", "Veilingsverkoop"
+        if sale_stream == "meat" or exit_reason in {
+            "meat", "meat_sale", "carcass", "carcass_sale", "pork_sale", "processed_meat_sale",
+        }:
+            return "meat_sale", "Vleisverkoop"
+        if sale_stream == "livestock" or sale_channel in {"direct", "livestock"} or exit_reason in {
+            "livestock", "livestock_sale", "live_sale",
+        }:
+            return "livestock_sale", "Lewendehaweverkoop"
+        return "unclassified_sale", "Ongeklassifiseerde verkoop"
+    if status == "active" and row.get("on_farm") is True:
+        if purpose == "breeding":
+            return "breeding", "Teelvark"
+        return "active_on_farm", "Aktief op plaas"
+    return "other", "Ander"
+
+
+def _empty_litter_outcome_breakdown():
+    return {
+        "active_on_farm": 0, "breeding": 0, "auction_sale": 0,
+        "livestock_sale": 0, "meat_sale": 0, "unclassified_sale": 0,
+        "slaughtered": 0, "dead": 0, "removed": 0, "other": 0,
+    }
+
+
 def _derive_litter_status(litter, reconciliation, lifecycle_outcomes):
     explicit_status = _text(litter.get("litter_status"))
     terminal_count = sum(int(lifecycle_outcomes.get(key) or 0) for key in ("sold", "slaughtered", "dead", "removed"))
@@ -1229,14 +1429,14 @@ def _derive_litter_status(litter, reconciliation, lifecycle_outcomes):
         return "Completed"
     if explicit_status and explicit_status.lower() != "unknown":
         if explicit_status.lower() == "active" and (_float_or_none(litter.get("weaned_count")) or 0) > 0:
-            return "Weaned"
+            return "Active" if active_count > 0 else "Weaned"
         return explicit_status
     if int(lifecycle_outcomes.get("total") or 0) <= 0:
         return "No piglets recorded"
-    if (_float_or_none(litter.get("weaned_count")) or 0) > 0:
-        return "Weaned"
     if int(lifecycle_outcomes.get("active") or 0) > 0:
         return "Active"
+    if (_float_or_none(litter.get("weaned_count")) or 0) > 0:
+        return "Weaned"
     if int(reconciliation.get("linked_pig_records") or 0) > 0:
         return "Review"
     return "Unknown"
@@ -1274,10 +1474,28 @@ def _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean
     status = _text(litter_status).lower()
     if status in {"weaned", "completed"}:
         return None
-    if _date_or_none(litter.get("wean_date")):
-        return None
     if int(lifecycle_outcomes.get("active") or 0) <= 0:
         return None
+    recorded_wean_date = _date_or_none(litter.get("wean_date"))
+    actual_weaning_evidence = _actual_weaning_evidence(
+        litter, pigs, recorded_wean_date
+    )
+    if actual_weaning_evidence["actual_weaning_recorded"]:
+        return {
+            "action_type": "complete_weaning",
+            "reason": (
+                f"Weaning date {_date_text(recorded_wean_date)} is recorded, but "
+                f"{int(lifecycle_outcomes.get('active') or 0)} piglet(s) remain active and on-farm."
+            ),
+            "recommended_action": "Complete and verify the remaining weaning lifecycle before closing the litter.",
+            "wean_date": _date_text(recorded_wean_date),
+            "weaning_evidence": actual_weaning_evidence,
+            "estimated_wean_date": wean_timing.get("estimated_wean_date", ""),
+            "wean_tag_attention_start_date": wean_timing.get("wean_tag_attention_start_date", ""),
+            "wean_planning_monday": wean_timing.get("wean_planning_monday", ""),
+            "days_until_estimated_wean": wean_timing.get("days_until_estimated_wean"),
+            "active_pig_count": int(lifecycle_outcomes.get("active") or 0),
+        }
     if not wean_timing.get("wean_tag_attention_due"):
         return None
 
@@ -1303,6 +1521,34 @@ def _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean
         "wean_planning_monday": wean_timing.get("wean_planning_monday", ""),
         "days_until_estimated_wean": days_until,
         "active_pig_count": int(lifecycle_outcomes.get("active") or 0),
+    }
+
+
+def _actual_weaning_evidence(litter, pigs, recorded_wean_date, *, today=None):
+    """Distinguish an overloaded planned date from attributable actual weaning."""
+    today = today or date.today()
+    status = _text(litter.get("litter_status")).lower()
+    weaned_count = _float_or_none(litter.get("weaned_count"))
+    pig_evidence_ids = sorted({
+        _text(pig.get("pig_id")) for pig in pigs
+        if (_date_or_none(pig.get("wean_date"))
+            or _float_or_none(pig.get("wean_weight_kg")) is not None
+            or _text(pig.get("animal_type")).lower() == "weaner")
+        and _text(pig.get("pig_id"))
+    })
+    status_evidence = status in {"weaned", "completed"}
+    count_and_date_evidence = bool(
+        recorded_wean_date and recorded_wean_date <= today
+        and weaned_count is not None and weaned_count > 0
+    )
+    actual = bool(status_evidence or pig_evidence_ids or count_and_date_evidence)
+    return {
+        "actual_weaning_recorded": actual,
+        "actual_wean_date": _date_text(recorded_wean_date) if actual else "",
+        "planned_wean_date": _date_text(recorded_wean_date) if recorded_wean_date and not actual else "",
+        "litter_status_evidence": status if status_evidence else "",
+        "weaned_count_evidence": weaned_count if count_and_date_evidence else None,
+        "pig_evidence_ids": pig_evidence_ids,
     }
 
 
@@ -1402,6 +1648,24 @@ def _litter_reconciliation(litter, pigs):
 
 def list_litter_overview(connect_factory=None):
     litters, pigs_by_litter = _litter_rows_with_pigs(connect_factory=connect_factory)
+    first_treatment_counts = {}
+    if connect_factory is not None or farm_supabase_reads_available():
+        treatment_rows = _fetch_all(
+            """
+            select p.litter_id,
+                   count(distinct m.pig_id) as treated_count
+            from public.pig_medical_events m
+            join public.current_canonical_pigs p on p.pig_id = m.pig_id
+            where m.medical_notes ilike %s or m.reason_for_treatment ilike %s
+            group by p.litter_id
+            """,
+            ("%litter % newborn health action%", "%litter newborn health action%"),
+            connect_factory=connect_factory,
+        )
+        first_treatment_counts = {
+            _text(row.get("litter_id")): int(row.get("treated_count") or 0)
+            for row in treatment_rows
+        }
     result_rows = []
     for litter in litters:
         litter_id = _text(litter.get("litter_id"))
@@ -1420,19 +1684,42 @@ def list_litter_overview(connect_factory=None):
         male_count = len([pig for pig in pigs if _text(pig.get("sex")) == "Male"])
         female_count = len([pig for pig in pigs if _text(pig.get("sex")) == "Female"])
         active_count = reconciliation["active_pig_records"]
-        needs_attention = "Yes" if reconciliation["mismatch"] or wean_attention else ""
-        attention_reason = reconciliation["recommended_action"] if reconciliation["mismatch"] else (wean_attention or {}).get("reason", "")
-        recommended_action = reconciliation["recommended_action"] if reconciliation["mismatch"] else (wean_attention or {}).get("recommended_action", "")
-        action_type = "review_litter_counts" if reconciliation["mismatch"] else (wean_attention or {}).get("action_type", "")
+        treated_count = first_treatment_counts.get(litter_id, 0)
+        first_treatment_timing = _first_treatment_timing(
+            litter,
+            pigs,
+            complete=bool(active_count and treated_count >= active_count),
+            partial=bool(treated_count and treated_count < active_count),
+        )
+        first_treatment_attention = None
+        if (
+            first_treatment_timing["first_treatment_attention_due"]
+            and active_count > 0
+            and not any(lifecycle_outcomes.get(key, 0) for key in ("sold", "removed", "weaned"))
+        ):
+            first_treatment_attention = {
+                "reason": "Eerste behandeling is gereed",
+                "recommended_action": "Teken Eerste Behandeling aan, of merk die stap uitdruklik as oorgeslaan.",
+                "action_type": "record_litter_newborn_health",
+            }
+        operational_attention = wean_attention or first_treatment_attention
+        needs_attention = "Yes" if reconciliation["mismatch"] or operational_attention else ""
+        attention_reason = reconciliation["recommended_action"] if reconciliation["mismatch"] else (operational_attention or {}).get("reason", "")
+        recommended_action = reconciliation["recommended_action"] if reconciliation["mismatch"] else (operational_attention or {}).get("recommended_action", "")
+        action_type = "review_litter_counts" if reconciliation["mismatch"] else (operational_attention or {}).get("action_type", "")
         result_rows.append({
             "litter_id": litter_id,
             "sow_pig_id": _text(litter.get("sow_pig_id")),
             "sow_tag_number": _text(litter.get("sow_tag_number")),
+            "sow_name": _text(litter.get("sow_name") or litter.get("sow_tag_number")),
             "boar_pig_id": _text(litter.get("boar_pig_id")),
             "boar_tag_number": _text(litter.get("boar_tag_number")),
             "current_pen_id": "",
             "farrowing_date": _date_text(litter.get("farrowing_date")),
             "wean_date": _date_text(litter.get("wean_date")),
+            "weaning_evidence": _actual_weaning_evidence(
+                litter, pigs, _date_or_none(litter.get("wean_date"))
+            ),
             "litter_status": litter_status,
             "needs_attention": needs_attention,
             "sheet_needs_attention": "",
@@ -1453,6 +1740,7 @@ def list_litter_overview(connect_factory=None):
             "lifecycle_outcomes": lifecycle_outcomes,
             "reconciliation": reconciliation,
             **wean_timing,
+            **first_treatment_timing,
         })
 
     result_rows.sort(key=lambda item: (
@@ -1490,22 +1778,20 @@ def get_litter_detail(litter_id, connect_factory=None):
         if detail_state in {"weaned", "completed"}
         else _litter_wean_timing(litter, pigs)
     )
-    attention = (
-        _litter_attention_from_reconciliation(reconciliation)
-        or _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean_timing)
-    )
+    attention = _litter_attention_from_reconciliation(reconciliation)
     piglets = []
     current_weights = []
     wean_weights = []
-    male_count = 0
-    female_count = 0
+    identified_male_count = 0
+    identified_female_count = 0
     active_count = 0
+    outcome_breakdown = _empty_litter_outcome_breakdown()
     for pig in pigs:
         sex = _text(pig.get("sex"))
         if sex == "Male":
-            male_count += 1
+            identified_male_count += 1
         elif sex == "Female":
-            female_count += 1
+            identified_female_count += 1
         if _text(pig.get("status")).lower() == "active" and pig.get("on_farm") is True:
             active_count += 1
         weight = _float_or_none(pig.get("current_weight_kg"))
@@ -1514,6 +1800,8 @@ def get_litter_detail(litter_id, connect_factory=None):
         wean_weight = _float_or_none(pig.get("wean_weight_kg"))
         if wean_weight is not None:
             wean_weights.append(wean_weight)
+        outcome_category, outcome_label = _litter_pig_outcome(pig)
+        outcome_breakdown[outcome_category] += 1
         piglets.append({
             "pig_id": _text(pig.get("pig_id")),
             "tag_number": _text(pig.get("tag_number")),
@@ -1528,23 +1816,109 @@ def get_litter_detail(litter_id, connect_factory=None):
             "wean_date": _date_text(pig.get("wean_date")),
             "calculated_stage": _calculated_stage(pig),
             "current_pen_id": _text(pig.get("current_pen_id")),
+            "current_pen_name": _text(pig.get("current_pen_name")),
+            "purpose": _text(pig.get("purpose")),
+            "exit_date": _date_text(pig.get("exit_date")),
+            "sale_id": _text(pig.get("sale_id")),
+            "sale_date": _date_text(pig.get("sale_date")),
+            "sale_stream": _text(pig.get("sale_stream")),
+            "sale_channel": _text(pig.get("sale_channel")),
+            "outcome_category": outcome_category,
+            "outcome_label": outcome_label,
         })
     piglets.sort(key=lambda item: (item["tag_number"] or item["pig_id"]).lower())
     average_current_weight = _average(current_weights)
     average_wean_weight = _average(wean_weights)
+    weaned_piglets = [piglet for piglet in piglets if piglet["wean_date"]]
+    weaned_male_count = len([piglet for piglet in weaned_piglets if piglet["sex"] == "Male"])
+    weaned_female_count = len([piglet for piglet in weaned_piglets if piglet["sex"] == "Female"])
     average_weight = average_wean_weight if detail_state in {"weaned", "completed"} else average_current_weight
     wean_date = _date_text(litter.get("wean_date")) or next((piglet["wean_date"] for piglet in piglets if piglet["wean_date"]), "")
+    observed_male_count = _float_or_none(litter.get("male_count"))
+    observed_female_count = _float_or_none(litter.get("female_count"))
+    tally_recorded = observed_male_count is not None and observed_female_count is not None
+    pig_ids = [item["pig_id"] for item in piglets if item["pig_id"]]
+    first_treatment_rows = _fetch_all(
+        """
+        select medical_event_id, pig_id, treatment_date, treatment_type, product_id
+        from public.pig_medical_events
+        where pig_id = any(%s)
+          and (
+            medical_notes ilike %s
+            or reason_for_treatment ilike %s
+          )
+        order by treatment_date, medical_event_id
+        """,
+        (
+            pig_ids,
+            f"%Litter {_text(litter_id)} newborn health action%",
+            "%litter newborn health action%",
+        ),
+        connect_factory=connect_factory,
+    ) if pig_ids and (connect_factory is not None or os.getenv(DATABASE_URL_ENV)) else []
+    treated_pig_ids = {_text(row.get("pig_id")) for row in first_treatment_rows if _text(row.get("pig_id"))}
+    active_pig_ids = {
+        item["pig_id"] for item in piglets
+        if item["status"] == "Active" and item["on_farm"] == "Yes"
+    }
+    treatment_packet_complete = bool(first_treatment_rows) and active_pig_ids.issubset(treated_pig_ids)
+    first_treatment_complete = treatment_packet_complete
+    first_treatment_partial = bool(first_treatment_rows) and not treatment_packet_complete
+    first_treatment_dates = [
+        _date_text(row.get("treatment_date")) for row in first_treatment_rows
+        if _date_text(row.get("treatment_date"))
+    ]
+    first_treatment_timing = _first_treatment_timing(
+        litter,
+        pigs,
+        complete=first_treatment_complete,
+        partial=first_treatment_partial,
+    )
+    wean_attention = _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean_timing)
+    if not attention and wean_attention:
+        attention = wean_attention
+    if (
+        not attention
+        and detail_state == "active"
+        and active_count > 0
+        and not any(lifecycle_outcomes.get(key, 0) for key in ("sold", "removed", "weaned"))
+        and first_treatment_timing["first_treatment_attention_due"]
+    ):
+        attention = {
+            "reason": "Eerste behandeling is gereed",
+            "recommended_action": "Teken Eerste Behandeling aan, of merk die stap uitdruklik as oorgeslaan.",
+            "action_type": "record_litter_newborn_health",
+            "attention_date": first_treatment_timing["first_treatment_attention_date"],
+        }
     return {
         "litter_id": _text(litter_id),
         "mother_pig_id": _text(litter.get("sow_pig_id")),
         "mother_tag_number": _text(litter.get("sow_tag_number")),
         "father_pig_id": _text(litter.get("boar_pig_id")),
         "father_tag_number": _text(litter.get("boar_tag_number")),
+        "mating_id": _text(litter.get("mating_id")),
+        "mating_date": _date_text(litter.get("mating_date")),
+        "expected_farrowing_date": _date_text(litter.get("expected_farrowing_date")),
         "litter_status": litter_status,
         "detail_state": detail_state,
         "count": len(piglets),
-        "male_count": male_count,
-        "female_count": female_count,
+        "male_count": observed_male_count if observed_male_count is not None else identified_male_count,
+        "female_count": observed_female_count if observed_female_count is not None else identified_female_count,
+        "observed_male_count": observed_male_count,
+        "observed_female_count": observed_female_count,
+        "identified_male_count": identified_male_count,
+        "identified_female_count": identified_female_count,
+        "weaned_male_count": weaned_male_count,
+        "weaned_female_count": weaned_female_count,
+        "born_alive": reconciliation.get("born_alive"),
+        "weaned_count": _float_or_none(litter.get("weaned_count")),
+        "first_treatment_tally_recorded": tally_recorded,
+        "first_treatment_complete": first_treatment_complete,
+        "first_treatment_partial": first_treatment_partial,
+        "first_treatment_record_count": len(first_treatment_rows),
+        "first_treatment_pig_count": len(treated_pig_ids),
+        "first_treatment_date": max(first_treatment_dates) if first_treatment_dates else "",
+        **first_treatment_timing,
         "active_count": active_count,
         "average_weight_kg": average_weight,
         "average_current_weight_kg": average_current_weight,
@@ -1554,10 +1928,28 @@ def get_litter_detail(litter_id, connect_factory=None):
         "attention": attention,
         "reconciliation": reconciliation,
         "lifecycle_outcomes": lifecycle_outcomes,
+        "outcome_breakdown": outcome_breakdown,
         **wean_timing,
         "wean_status": "Complete" if detail_state in {"weaned", "completed"} else "",
         "wean_date": wean_date,
         "source": "supabase_canonical",
+    }
+
+
+def _first_treatment_timing(litter, pigs, *, complete=False, partial=False, today=None):
+    today = today or date.today()
+    birth_date = _litter_birth_date(litter, pigs)
+    due_date = birth_date + timedelta(days=FIRST_TREATMENT_ATTENTION_DAY) if birth_date else None
+    skipped = litter.get("first_treatment_skipped_at") is not None
+    return {
+        "first_treatment_attention_date": _date_text(due_date),
+        "first_treatment_attention_due": bool(
+            due_date and today >= due_date and not complete and not partial and not skipped
+        ),
+        "first_treatment_skipped": skipped,
+        "first_treatment_skipped_at": _date_text(litter.get("first_treatment_skipped_at")),
+        "first_treatment_skipped_by": _text(litter.get("first_treatment_skipped_by")),
+        "first_treatment_skip_reason": _text(litter.get("first_treatment_skip_reason")),
     }
 
 
@@ -1570,6 +1962,7 @@ def get_litter_attention_summary(limit=5, connect_factory=None):
         items.append({
             "litter_id": litter.get("litter_id", ""),
             "sow_tag_number": litter.get("sow_tag_number", ""),
+            "sow_name": litter.get("sow_name") or litter.get("sow_tag_number", ""),
             "farrowing_date": litter.get("farrowing_date", ""),
             "wean_date": litter.get("wean_date", ""),
             "litter_status": litter.get("litter_status", ""),
@@ -1645,6 +2038,29 @@ def _days_since(value):
     return str((date.today() - value).days)
 
 
+def _mating_owner_name(row, current, role):
+    """Prefer canonical current identity text without hiding historical conflicts."""
+    canonical_name = _text(current.get("pig_name"))
+    canonical_tag = _text(current.get("tag_number"))
+    historical = _text(row.get(f"{role}_tag_number"))
+    pig_id = _text(row.get(f"{role}_pig_id"))
+    name = canonical_name or canonical_tag or historical or pig_id
+    conflict = ""
+    if canonical_tag and historical and canonical_tag.casefold() != historical.casefold():
+        conflict = f"canonical_tag:{canonical_tag}|historical_tag:{historical}"
+    return name, canonical_name, canonical_tag, historical, conflict
+
+
+def _planned_removal_state(value, today):
+    if not isinstance(value, date):
+        return "Unknown"
+    if value < today:
+        return "Overdue"
+    if value == today:
+        return "Due"
+    return "Upcoming"
+
+
 def project_mating_overview(rows, state_rows, today=None):
     state_rows = {row["pig_id"]: row for row in state_rows}
     records = []
@@ -1656,18 +2072,38 @@ def project_mating_overview(rows, state_rows, today=None):
         is_open = _mating_is_open(row)
         expected_check = row.get("expected_pregnancy_check_date")
         expected_farrowing = row.get("expected_farrowing_date")
+        expected_window_start = row.get("expected_farrowing_window_start")
+        expected_window_end = row.get("expected_farrowing_window_end")
+        sow_name, sow_canonical_name, sow_canonical_tag, sow_historical_name, sow_name_conflict = _mating_owner_name(row, sow, "sow")
+        boar_name, boar_canonical_name, boar_canonical_tag, boar_historical_name, boar_name_conflict = _mating_owner_name(row, boar, "boar")
+        cycle_state = _text(row.get("breeding_cycle_state"))
+        exposure_active = cycle_state == "Exposure Active"
+        if not isinstance(expected_farrowing, date) and isinstance(row.get("mating_date"), date):
+            expected_farrowing = row["mating_date"] + timedelta(days=114)
         records.append({
             "mating_id": _text(row.get("mating_id")),
             "sow_pig_id": _text(row.get("sow_pig_id")),
+            "sow_name": sow_name,
             "sow_tag_number": _text(row.get("sow_tag_number")),
+            "sow_canonical_name": sow_canonical_name,
+            "sow_canonical_tag_number": sow_canonical_tag,
+            "sow_historical_name": sow_historical_name,
+            "sow_name_conflict": sow_name_conflict,
             "sow_current_pen_id": _text(sow.get("current_pen_id")),
             "sow_current_pen_name": _text(sow.get("current_pen_name")),
             "boar_pig_id": _text(row.get("boar_pig_id")),
+            "boar_name": boar_name,
             "boar_tag_number": _text(row.get("boar_tag_number")),
+            "boar_canonical_name": boar_canonical_name,
+            "boar_canonical_tag_number": boar_canonical_tag,
+            "boar_historical_name": boar_historical_name,
+            "boar_name_conflict": boar_name_conflict,
             "boar_current_pen_id": _text(boar.get("current_pen_id")),
             "boar_current_pen_name": _text(boar.get("current_pen_name")),
             "mating_date": _date_text(row.get("mating_date")),
             "mating_method": _text(row.get("mating_method")),
+            "mating_pen_id": _text(row.get("mating_pen_id")),
+            "mating_pen_name": _text(row.get("mating_pen_name")),
             "exposure_group": _text(row.get("exposure_group")),
             "expected_pregnancy_check_date": _date_text(expected_check),
             "pregnancy_check_date": _date_text(row.get("pregnancy_check_date")),
@@ -1684,6 +2120,23 @@ def project_mating_overview(rows, state_rows, today=None):
             "pregnancy_check_time": _text(row.get("pregnancy_check_time")),
             "pregnancy_checked_at": _text(row.get("pregnancy_checked_at")),
             "expected_farrowing_date": _date_text(expected_farrowing),
+            "source_exposure_identity": _text(row.get("source_exposure_identity")),
+            "service_window_start": _date_text(row.get("service_window_start")),
+            "service_window_end": _date_text(row.get("service_window_end")),
+            "service_date_basis": _text(row.get("service_date_basis")),
+            "expected_farrowing_window_start": _date_text(expected_window_start),
+            "expected_farrowing_window_end": _date_text(expected_window_end),
+            "breeding_cycle_state": cycle_state,
+            "owner_facing_cycle_code": "with_boar" if exposure_active else "",
+            "owner_facing_cycle_meaning": "By beer" if exposure_active else "",
+            "exposure_planned_removal_on": _date_text(row.get("exposure_planned_removal_on")),
+            "exposure_planned_removal_status": _planned_removal_state(
+                row.get("exposure_planned_removal_on"), today
+            ),
+            "exposure_actual_removal_on": _date_text(row.get("exposure_actual_removal_on")),
+            "exact_service_date_status": "Unknown" if exposure_active and not row.get("mating_date") else "",
+            "conception_status": "Unknown" if exposure_active else "",
+            "pregnancy_status": "Unknown" if exposure_active and not row.get("pregnancy_check_result") else "",
             "actual_farrowing_date": _date_text(row.get("farrowing_date")),
             "mating_status": status,
             "outcome": _text(row.get("outcome")),
@@ -1691,7 +2144,11 @@ def project_mating_overview(rows, state_rows, today=None):
             "days_since_mating": _days_since(row.get("mating_date")),
             "is_open": is_open,
             "is_overdue_check": "Yes" if is_open == "Yes" and isinstance(expected_check, date) and expected_check < today and not row.get("pregnancy_check_result") else "No",
-            "is_overdue_farrowing": "Yes" if is_open == "Yes" and isinstance(expected_farrowing, date) and expected_farrowing < today and not row.get("farrowing_date") else "No",
+            "is_overdue_farrowing": "Yes" if is_open == "Yes" and (
+                (isinstance(expected_window_end, date) and expected_window_end < today)
+                or (not isinstance(expected_window_end, date) and isinstance(expected_farrowing, date)
+                    and expected_farrowing < today)
+            ) and not row.get("farrowing_date") else "No",
             "service_notes": _text(row.get("mating_notes")),
             "created_at": _date_text(row.get("created_at")),
             "updated_at": _date_text(row.get("updated_at")),
@@ -1702,9 +2159,29 @@ def project_mating_overview(rows, state_rows, today=None):
 def get_mating_overview(connect_factory=None):
     rows = _fetch_all(
         """
-        select *
-        from public.mating_events
-        order by mating_date desc nulls last, mating_id desc
+        select mating.*,
+               placement.to_pen_id as mating_pen_id,
+               placement.to_pen_name as mating_pen_name
+        from public.mating_events mating
+        left join lateral (
+            select location.to_pen_id, pen.pen_name as to_pen_name
+            from public.pig_breeding_exposure_events exposure
+            join public.pig_location_events location
+              on location.pig_id = exposure.sow_pig_id
+             and location.move_date = exposure.occurred_on
+             and location.group_batch_id = exposure.exposure_group_identity
+            left join public.pens pen on pen.pen_id = location.to_pen_id
+            where exposure.exposure_identity = mating.source_exposure_identity
+              and exposure.exposure_group_identity = mating.exposure_group_identity
+              and exposure.event_kind = 'started'
+              and exposure.sow_pig_id = mating.sow_pig_id
+              and location.reason_for_move = 'Breeding exposure placement'
+              and location.source = 'herdmaster_breeding_placement'
+            order by location.move_date asc, location.created_at asc,
+                     location.location_event_id asc
+            limit 1
+        ) placement on true
+        order by mating.mating_date desc nulls last, mating.mating_id desc
         """,
         connect_factory=connect_factory,
     )
@@ -1819,7 +2296,7 @@ def get_breeding_analytics(connect_factory=None):
 
 
 def _tag_for_pig(pig_id, connect_factory=None):
-    row = _fetch_one("select tag_number from public.pigs where pig_id = %s", (pig_id,), connect_factory=connect_factory)
+    row = _fetch_one("select tag_number from public.current_canonical_pigs where pig_id = %s", (pig_id,), connect_factory=connect_factory)
     return _text(row.get("tag_number")) if row else ""
 
 
@@ -1950,7 +2427,7 @@ def get_latest_weight_for_pig(pig_id, connect_factory=None):
     row = _fetch_one(
         """
         select state.pig_id, state.tag_number, state.current_weight_kg, state.last_weight_date
-        from public.pig_current_state state
+        from public.current_canonical_pig_state state
         where state.pig_id = %s
         """,
         (pig_id,),
@@ -1973,7 +2450,7 @@ def get_weight_entries_by_date(weight_date, connect_factory=None):
                event.weight_date, event.weight_kg, event.weighed_by, event.condition_notes
         from public.pig_weight_events event
         left join public.pigs pig on pig.pig_id = event.pig_id
-        left join public.pig_current_state state on state.pig_id = event.pig_id
+        left join public.current_canonical_pig_state state on state.pig_id = event.pig_id
         where event.weight_date = %s
         order by coalesce(nullif(pig.tag_number, ''), event.pig_id), event.pig_id
         """,
@@ -1993,7 +2470,7 @@ def get_weight_entries_by_date(weight_date, connect_factory=None):
     return {"weight_date": _date_text(weight_date), "count": len(history), "history": history}
 
 
-def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
+def get_weight_report(date_from, date_to, pen_id="", connect_factory=None, batch_id=""):
     rows = _fetch_all(
         """
         select
@@ -2011,7 +2488,7 @@ def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
             state.animal_type,
             state.current_weight_kg
         from public.pig_weight_events event
-        left join public.pig_current_state state on state.pig_id = event.pig_id
+        left join public.current_canonical_pig_state state on state.pig_id = event.pig_id
         where event.weight_date <= %s
         order by event.pig_id, event.weight_date, event.created_at, event.weight_event_id
         """,
@@ -2139,7 +2616,7 @@ def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
         if entry["difference_kg"] is not None and entry["difference_kg"] < 0
     ]
 
-    return {
+    result = {
         "success": True,
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
@@ -2170,3 +2647,142 @@ def get_weight_report(date_from, date_to, pen_id="", connect_factory=None):
         "entries": entries,
         "source": "supabase_canonical",
     }
+    if _text(batch_id):
+        result["herdmaster_intelligence"] = _completed_batch_intelligence(
+            _text(batch_id), selected_pen_id, connect_factory=connect_factory)
+    return result
+
+
+def _completed_batch_intelligence(batch_id, selected_pen_id="", connect_factory=None):
+    """Load one completed canonical batch and pass it to the pure evaluator."""
+    batch = _fetch_one(
+        """select batch_id::text, weight_date, status, visible_row_count,
+                  actionable_row_count, weight_row_count, movement_row_count,
+                  skipped_row_count, success_count, failed_count, duplicate_count,
+                  source, completed_at
+             from public.bulk_weight_batches where batch_id = %s::uuid""",
+        (batch_id,), connect_factory=connect_factory,
+    )
+    if not batch or _text(batch.get("status")).lower() != "complete":
+        return build_weighing_batch_intelligence(batch=batch or {}, batch_rows=[], weight_history=[])
+    rows = _fetch_all(
+        """select audit.row_id::text, audit.row_index, audit.pig_id, audit.pig_name,
+                  audit.weight_kg, audit.from_pen_id, audit.to_pen_id, audit.status,
+                  audit.status_reason, audit.result_json, audit.original_row_json,
+                  event.weight_event_id::text, event.event_count,
+                  movement.location_event_id::text, movement.event_count as movement_event_count,
+                  state.tag_number, state.status as lifecycle_state, state.litter_id,
+                  batch_litter.litter_id as batch_litter_id,
+                  batch_litter.farrowing_date as batch_litter_farrowing_date,
+                  batch_litter.wean_date as batch_litter_wean_date,
+                  batch_litter.litter_status as batch_litter_status,
+                  latest_mating.mating_id as latest_mating_id,
+                  latest_mating.pregnancy_check_result, latest_mating.outcome
+             from public.bulk_weight_batch_rows audit
+        left join lateral (
+              select min(weight_event_id) as weight_event_id, count(*) as event_count
+                from public.pig_weight_events
+               where bulk_batch_id = audit.batch_id and bulk_row_id = audit.row_id
+        ) event on true
+        left join lateral (
+              select min(location_event_id) as location_event_id, count(*) as event_count
+                from public.pig_location_events
+               where bulk_batch_id = audit.batch_id and bulk_row_id = audit.row_id
+        ) movement on true
+        left join public.current_canonical_pig_state state on state.pig_id = audit.pig_id
+        left join lateral (
+              select litter_id, farrowing_date, wean_date, litter_status
+                from public.current_canonical_litters
+               where sow_pig_id = audit.pig_id
+                 and farrowing_date <= %s
+               order by farrowing_date desc nulls last, litter_id desc limit 1
+        ) batch_litter on true
+        left join lateral (
+              select mating_id, pregnancy_check_result, outcome
+                from public.mating_events
+               where sow_pig_id = audit.pig_id and mating_date <= %s
+               order by mating_date desc, created_at desc, mating_id desc limit 1
+        ) latest_mating on true
+            where audit.batch_id = %s::uuid
+         order by audit.row_index""",
+        (batch["weight_date"], batch["weight_date"], batch_id), connect_factory=connect_factory,
+    )
+    for row in rows:
+        row["reproductive_state"] = _batch_reproductive_state(row, batch["weight_date"])
+    integrity_error = _batch_integrity_error(batch, rows)
+    if integrity_error:
+        return {"success": False, "contract_version": "herdmaster_weighing_batch_intelligence_v1",
+                "reason": integrity_error, "writes_performed": False,
+                "telegram_delivery_enabled": False, "protected_actions_performed": False}
+    pig_ids = sorted({_text(row.get("pig_id")) for row in rows if _text(row.get("pig_id"))})
+    history = []
+    expected = [{"pig_id": _text(row.get("pig_id")),
+                 "name": _text(row.get("pig_name")) or _text(row.get("tag_number")),
+                 "tag_number": _text(row.get("tag_number")),
+                 "pen_id": _text(row.get("from_pen_id")), "pen_name": _text(row.get("from_pen_id")),
+                 "expected_for_batch": True}
+                for row in rows if _text(row.get("pig_id"))]
+    if pig_ids:
+        history = _fetch_all(
+            """select weight_event_id::text, pig_id, weight_date, weight_kg, created_at
+                 from public.pig_weight_events
+                where pig_id = any(%s) and weight_date <= %s
+             order by pig_id, weight_date, created_at, weight_event_id""",
+            (pig_ids, batch["weight_date"]), connect_factory=connect_factory,
+        )
+    return build_weighing_batch_intelligence(
+        batch=batch, batch_rows=rows, weight_history=history, expected_animals=expected,
+        contexts=(), correction_lineage={"batch_id": batch_id, "completed_at": batch.get("completed_at")},
+    )
+
+
+def _batch_integrity_error(batch, rows):
+    row_ids = [_text(row.get("row_id")) for row in rows]
+    if len(rows) != int(batch.get("visible_row_count") or 0) or len(row_ids) != len(set(row_ids)):
+        return "completed_batch_row_manifest_mismatch"
+    allowed_statuses = {"success", "failed", "duplicate", "skipped", "blocked"}
+    statuses = [_text(row.get("status")).lower() for row in rows]
+    if any(status not in allowed_statuses for status in statuses):
+        return "completed_batch_status_manifest_mismatch"
+    for status, field in (("success", "success_count"), ("failed", "failed_count"),
+                          ("duplicate", "duplicate_count"), ("skipped", "skipped_row_count")):
+        count = sum(_text(row.get("status")).lower() == status for row in rows)
+        if count != int(batch.get(field) or 0):
+            return f"completed_batch_{status}_count_mismatch"
+    actionable = sum(status not in {"skipped", "duplicate"} for status in statuses)
+    if actionable != int(batch.get("actionable_row_count") or 0):
+        return "completed_batch_actionable_count_mismatch"
+    weight_rows = [row for row in rows if bool((row.get("result_json") or {}).get("has_weight"))]
+    if len(weight_rows) != int(batch.get("weight_row_count") or 0):
+        return "completed_batch_weight_count_mismatch"
+    if any(_text(row.get("status")).lower() == "success" and int(row.get("event_count") or 0) != 1
+           for row in weight_rows):
+        return "completed_batch_weight_event_binding_mismatch"
+    movement_rows = [row for row in rows if bool((row.get("result_json") or {}).get("has_pen_change"))]
+    if len(movement_rows) != int(batch.get("movement_row_count") or 0):
+        return "completed_batch_movement_count_mismatch"
+    if any(_text(row.get("status")).lower() == "success" and int(row.get("movement_event_count") or 0) != 1
+           for row in movement_rows):
+        return "completed_batch_movement_event_binding_mismatch"
+    return None
+
+
+def _batch_reproductive_state(row, batch_date):
+    farrowing_date = row.get("batch_litter_farrowing_date")
+    wean_date = row.get("batch_litter_wean_date")
+    litter_status = _text(row.get("batch_litter_status")).lower()
+    if row.get("batch_litter_id") and isinstance(farrowing_date, date) and farrowing_date <= batch_date:
+        if isinstance(wean_date, date):
+            if wean_date > batch_date:
+                return "Nursing"
+        elif litter_status not in {"weaned", "closed", "completed"}:
+            return "Nursing"
+    outcome = _text(row.get("outcome"))
+    if outcome:
+        return outcome
+    check = _text(row.get("pregnancy_check_result"))
+    if check:
+        return check
+    if row.get("latest_mating_id"):
+        return "Active mating cycle"
+    return "Unknown"

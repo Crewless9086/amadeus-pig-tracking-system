@@ -1,5 +1,21 @@
 # Owner Decisions
 
+## 2026-08-11 - Weaning-led boar exposure, not observed-heat gating
+
+Charl confirmed the farm's mating operating rule. A breeding female becomes due for boar allocation from her governed weaning chronology, subject to genuine lifecycle, welfare, medical, withdrawal and owner holds. HERDMASTER must not require observed standing heat or a `heat/no heat` entry before selecting a boar or scheduling placement. The farm expects heat at roughly four days after weaning and keeps the selected female with the selected boar for 17 days to cover the intended heat opportunities. The exposure count is inclusive: the placement/start date is day 1, so a 17-day exposure beginning on 2026-08-12 has planned removal on 2026-08-28 (start plus 16 calendar days). Those timings are owner-declared farm practice, not universal biological claims.
+
+Heat signs may still be recorded as optional factual observations, but absence of that observation is never a readiness blocker, missing-fact question or reason to leave a weaned female idle. The exact 17-day exposure window is not itself proof of a particular service date. A mating/service event must retain its attributable date when observed or otherwise use the governed exposure evidence without inventing a precise service time.
+
+## 2026-08-11: Foundation herd and genetic-selection objective
+
+Charl declared the current foundation breeding population operationally unrelated unless attributable evidence proves otherwise. This is a bounded starting assumption because earlier parentage is unavailable, not a scientific assertion that may be extended to later animals. From this point forward every attributable service, litter and offspring must retain exact sow and boar identity so HERDMASTER can prevent parent-offspring, sibling and half-sibling mating and avoid excessive concentration of one foundation line.
+
+HERDMASTER must select matings to improve litter survival, healthy comparable-age growth, structural/welfare quality, maternal performance and useful genetic diversity. A low service count means a boar is less proven, not genetically superior. Prince and future new boars receive bounded controlled trials and earn wider use only through attributable results. Individual pairing quality is determined before the normally two-or-three-female physical group limit is applied. Binding detail: `docs/09-vault-brain/08-business-rules/HERDMASTER_GENETIC_SELECTION_RULES.md`.
+
+## 2026-08-10: HERDMASTER practical mating selection
+
+Charl clarified that physical pen location is not reproductive status: D3 currently contains several idle females but is not a universal mating or resting pen. HERDMASTER must determine eligibility from active litter, mating/pregnancy cycle, breeding purpose, lifecycle, and genuine health/welfare/owner holds. For foundation breeders, missing dam/sire ancestry must be disclosed but must not universally block evidence-backed recommendations. Known relationships remain hard exclusions. Pair ranking must use attributable service, litter, survival, growth, repeat-pair, workload, health, and known relationship evidence. Full operating detail: `docs/06-operations/HERDMASTER_PRACTICAL_MATING_SELECTION_PLAN.md`.
+
 Status: owner-reviewed governance decisions captured on 2026-07-02.
 
 ## Herdmaster Breeding Observation Boundary - 2026-07-27

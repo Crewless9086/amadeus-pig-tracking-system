@@ -6,6 +6,8 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
+from modules.charlie.mission_store import mission_runtime_eligible
+
 
 RED_ZONE_TERMS = {
     "customer_send", "public_post", "payment", "deposit", "reservation",
@@ -131,6 +133,7 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
     executable_missions = [
         item for item in missions
         if str(item.get("mission_id") or "") not in superseded_ids
+        and mission_runtime_eligible(item)
     ]
     goals = [item for item in (goals or []) if isinstance(item, dict) and item.get("status") == "active"]
     active_goal_ids = [item.get("goal_id") for item in goals]

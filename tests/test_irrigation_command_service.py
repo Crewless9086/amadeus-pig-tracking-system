@@ -111,6 +111,16 @@ class IrrigationCommandContractTests(unittest.TestCase):
         self.assertIn("weather_stale", contract["prohibition_reasons"])
         self.assertEqual(contract["state"], "execution_prohibited")
 
+    def test_stale_or_unavailable_forecast_is_a_planning_warning_not_a_blocker(self):
+        data = payload()
+        data["weather_evidence"].update(
+            forecast_availability="Unavailable", forecast_freshness="stale"
+        )
+        contract = prepare_command_contract(data, now=NOW, inventory=verified_inventory())
+        self.assertNotIn("forecast_unavailable", contract["prohibition_reasons"])
+        self.assertNotIn("forecast_stale", contract["prohibition_reasons"])
+        self.assertEqual(contract["planning_warnings"], ["forecast_stale", "forecast_unavailable"])
+
     def test_suspicious_power_is_prohibited(self):
         data = payload()
         data["power_evidence"]["suspicious"] = True

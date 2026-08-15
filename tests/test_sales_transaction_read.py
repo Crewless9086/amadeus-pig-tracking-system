@@ -5,6 +5,7 @@ from decimal import Decimal
 from unittest.mock import Mock, patch
 
 from modules.sales.sales_transaction_read import (
+    _complete_total,
     get_sales_transaction,
     get_monthly_sales_transaction_summary,
     list_sales_transactions,
@@ -12,6 +13,10 @@ from modules.sales.sales_transaction_read import (
 
 
 class SalesTransactionReadTests(unittest.TestCase):
+    def test_vat_monthly_total_is_unknown_when_any_active_stream_is_incomplete(self):
+        streams={"livestock":{"transaction_count":1,"output_vat":None,"output_vat_unknown_count":1}}
+        self.assertIsNone(_complete_total(streams,"output_vat","output_vat_unknown_count"))
+
     def test_list_sales_transactions_reports_missing_database_url_without_importing_driver(self):
         with patch.dict(os.environ, {}, clear=True):
             result, status_code = list_sales_transactions()
@@ -74,6 +79,8 @@ class SalesTransactionReadTests(unittest.TestCase):
         self.assertFalse(result["source"]["writes_to_supabase"])
         cursor.execute.assert_called_once()
         self.assertIn("created_at desc", cursor.execute.call_args[0][0].lower())
+        self.assertIn("to_jsonb(st)->>'external_reference'", cursor.execute.call_args[0][0].lower())
+        self.assertNotIn("st.external_reference", cursor.execute.call_args[0][0].lower())
 
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_get_sales_transaction_returns_header_and_items(self):
@@ -130,11 +137,23 @@ class SalesTransactionReadTests(unittest.TestCase):
             ("pig_count",),
             ("gross_total",),
             ("net_total",),
+            ("lot_total",),
+            ("received_total",),
+            ("output_vat",),
+            ("gross_including_vat",),
+            ("commission_ex_vat",),
+            ("commission_input_vat",),
+            ("commission_including_vat",),
+            ("other_deductions",),
+            ("net_settlement_payable",),
+            ("gross_unknown_count",),
+            ("net_unknown_count",),
+            ("received_unknown_count",),
             ("item_count",),
         ]
         cursor.fetchall.return_value = [
-            ("Slaughter", 1, 1, Decimal("2500.00"), Decimal("2400.00"), 1),
-            ("Livestock", 2, 5, Decimal("5000.00"), Decimal("5000.00"), 5),
+            ("Slaughter", 1, 1, Decimal("2500.00"), Decimal("2400.00"), Decimal("2500.00"), Decimal("2400.00"), Decimal("0"), Decimal("2500"), Decimal("100"), Decimal("15"), Decimal("115"), Decimal("0"), Decimal("2400"), 0, 0, 0, 1),
+            ("Livestock", 2, 5, Decimal("5000.00"), Decimal("5000.00"), Decimal("9470.51"), Decimal("4470.51"), Decimal("627"), Decimal("7307"), Decimal("292.60"), Decimal("43.89"), Decimal("336.49"), Decimal("0"), Decimal("4470.51"), 0, 0, 0, 5),
         ]
         cursor_context = Mock()
         cursor_context.__enter__ = Mock(return_value=cursor)
@@ -158,6 +177,11 @@ class SalesTransactionReadTests(unittest.TestCase):
         self.assertEqual(result["streams"]["livestock"]["transaction_count"], 2)
         self.assertEqual(result["totals"]["transaction_count"], 3)
         self.assertEqual(result["totals"]["net_total"], 7400.0)
+        self.assertEqual(result["totals"]["lot_total"], 11970.51)
+        self.assertEqual(result["totals"]["received_total"], 6870.51)
+        self.assertEqual(result["totals"]["output_vat"], 627.0)
+        self.assertEqual(result["totals"]["commission_including_vat"], 451.49)
+        self.assertEqual(result["totals"]["net_settlement_payable"], 6870.51)
         cursor.execute.assert_called_once()
 
 

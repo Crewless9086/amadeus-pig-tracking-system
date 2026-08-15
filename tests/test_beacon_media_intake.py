@@ -16,6 +16,7 @@ from modules.beacon.media_intake import (
     _thumbnail_token,
     _thumbnail_token_valid,
     _validate_streamed_image,
+    complete_telegram_album,
     handle_telegram_media_intake,
     media_intake_policy,
     telegram_media_envelope,
@@ -268,8 +269,51 @@ class BeaconMediaIntakeTests(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(result["album_state"], "awaiting_explicit_owner_completion")
         self.assertEqual(len(receipts), 1)
-        self.assertIn("/beacon-complete ABC123", receipts[0][1])
+        self.assertIn("Finish Album", receipts[0][1])
+        self.assertNotIn("/beacon-complete", receipts[0][1])
         self.assertNotIn("album-1", receipts[0][1])
+
+    def test_bounded_recovery_context_requires_exact_token_and_album(self):
+        path = image_temp()
+        env = {**ENV, "BEACON_TELEGRAM_MEDIA_RECOVERY_CONTEXT_TOKEN": "r" * 40}
+        payload = telegram_photo(
+            message={"media_group_id": "album-1"},
+            beacon_media_recovery={
+                "token": "wrong", "media_group_id": "album-1",
+                "owner_context": "Molly, litter size eight, born 11 August 2026",
+            },
+        )
+        result, status = handle_telegram_media_intake(
+            payload, environ=env, fetcher=lambda *_: self.fail("invalid recovery must not fetch"))
+        self.assertEqual((status, result["status"]),
+                         (403, "beacon_media_recovery_context_invalid"))
+
+        payload["beacon_media_recovery"]["token"] = "r" * 40
+        with patch("modules.beacon.media_intake.IntakeStore", FakeStore):
+            result, status = handle_telegram_media_intake(
+                payload, environ=env,
+                fetcher=lambda *_: (path, {"returned_mime_type": "image/jpeg"}),
+                storage=FakeStorage(),
+            )
+        self.assertEqual(status, 201)
+        self.assertEqual(result["album_state"], "awaiting_explicit_owner_completion")
+
+    def test_album_completion_uses_same_prefixed_owner_principal_as_intake(self):
+        captured={}
+        class CompletionStore:
+            def __init__(self,_database_url):pass
+            def complete_album_by_code(self,identity,code):
+                captured.update(identity);captured["code"]=code
+                return {"status":"album_completed","created_count":1,
+                    "received_count":4,"attention_count":0,
+                    "intake_group_id":"BEACON-INTAKE-GROUP-ONE"},201
+        with patch("modules.beacon.media_intake.IntakeStore",CompletionStore):
+            result,status=complete_telegram_album({"chat_id":"200",
+                "owner_user_id":"100","completion_code":"ABC123"},environ=ENV)
+        self.assertEqual((status,result["status"]),(201,"album_completed"))
+        self.assertTrue(captured["owner_principal"].startswith("telegram-owner:"))
+        self.assertEqual(len(captured["owner_principal"].split(":",1)[1]),64)
+        self.assertEqual(captured["code"],"ABC123")
 
     def test_exact_bytes_under_another_source_are_retired_without_finalization(self):
         path = image_temp()

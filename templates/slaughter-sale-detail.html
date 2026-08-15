@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Slaughter Sale Detail</title>
+  <title>Livestock Transaction</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
 <body>
@@ -11,7 +11,7 @@
     <div class="page-card slaughter-page-card">
       <div class="page-header page-header-with-link">
         <div>
-          <h1 id="sale_detail_title">Slaughter Sale</h1>
+          <h1 id="sale_detail_title">Livestock Transaction</h1>
           <p id="sale_detail_subtitle">Loading sale details...</p>
         </div>
         <button type="button" id="sale_detail_back" class="small-action-button">Back</button>
@@ -52,6 +52,28 @@
         <article class="slaughter-detail-panel">
           <h2>Payment</h2>
           <dl class="detail-list" id="sale_detail_payment"></dl>
+          <form id="sale_payment_form" class="compact-form hidden">
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="sale_payment_received_amount">Amount received in this receipt</label>
+                <input id="sale_payment_received_amount" type="number" min="0.01" step="0.01" inputmode="decimal" required>
+              </div>
+              <div class="form-field">
+                <label for="sale_payment_method">Payment method</label>
+                <select id="sale_payment_method" required><option value="EFT">EFT</option><option value="Cash">Cash</option></select>
+              </div>
+              <div class="form-field">
+                <label for="sale_payment_date">Bank receipt date</label>
+                <input id="sale_payment_date" type="date" required>
+              </div>
+            </div>
+            <p class="form-helper">Preview writes nothing. The exact protected confirmation records the receipt once in Supabase.</p>
+            <div class="form-actions">
+              <button id="sale_payment_preview_button" type="submit">Preview settlement</button>
+              <button id="sale_payment_confirm_button" type="button" class="button-danger hidden">Confirm exact settlement</button>
+            </div>
+            <div id="sale_payment_preview" class="message-box hidden"></div>
+          </form>
         </article>
       </section>
 
