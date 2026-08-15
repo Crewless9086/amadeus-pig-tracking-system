@@ -1,5 +1,20 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - BEACON historical four-photo album recovered and replay sealed
+
+- Recovered n8n executions 64570-64573 only through the deployed authenticated
+  Oom Sakkie/BEACON intake into one ordered private group with four verified
+  originals, thumbnails and retained Molly/litter-eight/11-August context.
+- Corrected canonical completion owner identity, crash recovery and monotonic
+  receipt-card replay; one provider receipt was delivered and the completed
+  card was restored once after the regression exposed by production replay.
+- Proved subsequent direct and concurrent replay creates zero messages, edits,
+  media, records or protected effects, then removed the temporary recovery
+  token while leaving normal event intake enabled.
+- Kept BMQ-20260813-02 WORKING: historical terminal-invoked recovery is not the
+  fresh event epoch. One genuinely new owner Telegram album must now traverse
+  GateKeeper and deployed BEACON independently before BUSINESS_COMPLETE.
+
 ## 2026-08-15 - BKB settlement journey made sale-type neutral
 
 - Continued `SMQ-20260813-05`; no second writer, database, workflow or mission
