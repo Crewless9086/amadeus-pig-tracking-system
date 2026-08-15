@@ -265,6 +265,13 @@ semantic front door into BEACON's existing awareness builder, then return one
 exact Facebook organic proposal with safe media/text-only handling and no
 publication, spend, customer, reservation or farm effect.
 
+Production proof is complete at merge `3db13e5f`: the deployed authenticated
+Oom Sakkie/BEACON lane returned one text-only awareness proposal exactly once
+under canonical replay, with zero external effects. The next action is the
+owner's Approve/Correct/Decline choice for a later separately protected public
+journey; do not reopen the awareness-objective decision. Scheduler, media-intake
+automation, Meta-performance ingestion and boost automation remain later work.
+
 0. **BEACON-MEDIA-INTAKE-1 - default-disabled foundation candidate built for review.** Use the existing owner-controlled OOM SAKKIE Telegram bot as the preferred mobile intake door; store validated JPEG/PNG media privately in BEACON raw intake; preserve owner context and explicit album order; hash/deduplicate exact bytes; and present real owner-authorized thumbnails/contact sheets for separate library and public-use decisions. The additive migration is unapplied, Telegram intake is inactive, videos remain visibly unsupported pending bounded resumable transport, and no first canary has run. Historical OneDrive/folder ingestion is a separate bounded follow-up using the same provenance contract. See `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`.
 
 Current production learning state (2026-07-27): one confirmed organic Page
