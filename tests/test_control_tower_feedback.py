@@ -1,10 +1,11 @@
 from unittest.mock import patch
+import hashlib
 import unittest
 
 from modules.charlie.control_tower_feedback import (
     ACTION, DECISION_EVENT, DECISION_SOURCE_KIND, FEEDBACK_EVENT, SOURCE_KIND,
     handle_control_tower_feedback, process_pending_control_tower_feedback,
-    shadow_observation_eligible,
+    shadow_observation_eligible, control_tower_feedback_readback,
 )
 from modules.charlie.mission_store import BOOTSTRAP_PORTFOLIO_ADMISSION
 from modules.charlie.private_policy import authenticate_private_action_context
@@ -26,6 +27,7 @@ def mission():
 
 
 def transaction():
+    feedback = "Genuine terminal feedback pasted by Charl."
     return {
         "feedback_transaction_id": "CTF-GENUINE-001",
         "terminal_identity": "CORE-development-terminal",
@@ -46,7 +48,8 @@ def transaction():
         "feedback_occurred_at": "2026-08-15T10:00:00+00:00",
         "control_tower_reconciliation_id": "CTR-001",
         "source_kind": SOURCE_KIND,
-        "owner_pasted_feedback": "Genuine terminal feedback pasted by Charl.",
+        "owner_pasted_feedback": feedback,
+        "owner_pasted_feedback_sha256": hashlib.sha256(feedback.encode("utf-8")).hexdigest(),
     }
 
 
@@ -75,6 +78,16 @@ def test_producer_requires_sealed_auth_and_genuine_owner_paste_source():
             environ=ENV, mission_reader=reader)
         assert status == 400 and result["status"] == "control_tower_feedback_source_not_genuine"
         append.assert_not_called()
+
+
+def test_feedback_digest_is_required_and_must_match_exact_content():
+    changed = action()
+    changed["transaction"]["owner_pasted_feedback"] += " changed"
+    with patch("modules.charlie.control_tower_feedback.append_operational_event") as append:
+        result, status = handle_control_tower_feedback(
+            changed, runtime_context=AUTH, environ=ENV, mission_reader=reader)
+    assert status == 400 and result["status"] == "control_tower_feedback_digest_mismatch"
+    append.assert_not_called()
 
 
 def test_feedback_producer_appends_once_with_zero_authority():
@@ -154,6 +167,52 @@ def test_worker_consumes_feedback_then_decision_with_replay_noop():
     assert result["dispatches"] == result["provider_messages"] == result["farm_writes"] == 0
 
 
+def test_identity_readback_omits_feedback_content_and_reports_lifecycle_ids():
+    events = [
+        {"event_id": "E1", "event_type": FEEDBACK_EVENT, "aggregate_id": "F1",
+         "occurred_at": "2026-08-15T10:00:00Z", "payload": {"transaction": transaction()}},
+        {"event_id": "E2", "event_type": "shadow_control_tower_proposal_recorded",
+         "aggregate_id": "F1", "payload": {"proposal": {"proposal_id": "P1"}}},
+        {"event_id": "E3", "event_type": DECISION_EVENT, "aggregate_id": "F1",
+         "payload": {"human_decision": {"human_decision_id": "D1"}}},
+        {"event_id": "E4", "event_type": "shadow_control_tower_human_comparison_recorded",
+         "aggregate_id": "F1", "payload": {
+             "comparison_id": "C1", "proposal_id": "P1", "human_decision_id": "D1"}},
+    ]
+    with patch("modules.charlie.control_tower_feedback.load_operational_events",
+               return_value=({"success": True, "events": events}, 200)):
+        result, status = control_tower_feedback_readback("F1")
+    assert status == 200 and len(result["events"]) == 4
+    assert result["events"][-1]["comparison_id"] == "C1"
+    assert result["counts"][FEEDBACK_EVENT] == 1
+    assert "owner_pasted_feedback" not in str(result)
+    assert result["dispatches"] == result["farm_writes"] == 0
+
+
+def test_strict_owner_route_reaches_sealed_private_action_and_readback():
+    from app import app
+    client = app.test_client()
+    policy = {"enabled": True, "owner_user_id": "42", "owner_chat_id": "42",
+              "secret": "s" * 32}
+    with patch("modules.charlie.routes.require_strict_owner_admin_access", return_value=None), \
+         patch("modules.charlie.routes.private_policy", return_value=policy), \
+         patch("modules.charlie.routes.handle_authenticated_private_action",
+               return_value=({"success": True, "status": "operational_event_appended"}, 201)) as handler:
+        response = client.post("/api/charlie/control-tower/feedback",
+                               json={"record_type": "feedback", "transaction": transaction()})
+    assert response.status_code == 201
+    called_action = handler.call_args.args[0]
+    assert called_action["action"] == ACTION
+    assert handler.call_args.kwargs["existing_mission_id"] == "CMQ-20260813-05"
+
+    with patch("modules.charlie.routes.require_strict_owner_admin_access", return_value=None), \
+         patch("modules.charlie.routes.control_tower_feedback_readback",
+               return_value=({"success": True, "events": []}, 200)) as readback:
+        response = client.get("/api/charlie/control-tower/feedback?feedback_transaction_id=F1")
+    assert response.status_code == 200
+    readback.assert_called_once_with("F1")
+
+
 def test_observe_only_runner_cycle_never_touches_mission_or_release_paths():
     old = pickup._TEST_PICKUP_AUTHORIZED
     pickup._TEST_PICKUP_AUTHORIZED = True
@@ -182,6 +241,9 @@ class ControlTowerFeedbackUnittest(unittest.TestCase):
     def test_authentication_and_source(self):
         test_producer_requires_sealed_auth_and_genuine_owner_paste_source()
 
+    def test_feedback_digest(self):
+        test_feedback_digest_is_required_and_must_match_exact_content()
+
     def test_feedback_append(self):
         test_feedback_producer_appends_once_with_zero_authority()
 
@@ -193,6 +255,12 @@ class ControlTowerFeedbackUnittest(unittest.TestCase):
 
     def test_worker_consumption_and_replay(self):
         test_worker_consumes_feedback_then_decision_with_replay_noop()
+
+    def test_readback(self):
+        test_identity_readback_omits_feedback_content_and_reports_lifecycle_ids()
+
+    def test_route(self):
+        test_strict_owner_route_reaches_sealed_private_action_and_readback()
 
     def test_observe_only_runner_isolation(self):
         test_observe_only_runner_cycle_never_touches_mission_or_release_paths()

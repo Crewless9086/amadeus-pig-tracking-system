@@ -20,6 +20,12 @@
   it gains no execution eligibility. Focused tests:
   `tests/test_control_tower_feedback.py`; disposable concurrency, proposal-before-
   decision and exact replay coverage: `tests/test_control_tower_feedback_postgres.py`.
+- Authenticated Control Tower platform bridge: strict owner-admin `POST
+  /api/charlie/control-tower/feedback` in `modules/charlie/routes.py` converts
+  only an authenticated owner session into the existing sealed private-action
+  context. It requires the exact UTF-8 feedback SHA-256. The matching strict
+  owner-admin `GET` returns only lifecycle identities and zero-authority
+  counters. Neither route invokes the Shadow worker or creates proposals.
 - Bootstrap portfolio admission: the sealed authenticated `create_mission`
   action in `modules/charlie/private_tools.py` accepts only the one
   owner-approved `CMQ-20260813-05` admission contract. The canonical

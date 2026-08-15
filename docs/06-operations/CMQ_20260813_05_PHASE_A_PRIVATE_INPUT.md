@@ -1,6 +1,6 @@
 # CMQ-20260813-05 Phase A private observation input
 
-Status: authenticated producer and durable-worker subscription prepared for review
+Status: authenticated producer bridge and durable-worker subscription prepared for review
 
 Owner and sole dispatch authority: human Control Tower
 
@@ -19,6 +19,16 @@ identity and later the canonical human Control Tower decision. Conversation
 memory, a terminal-generated sample and historical register prose are rejected
 as source identities. Both records remain owner-private `observe` events in the
 same operational-event fabric.
+
+The strict owner-admin application bridge `POST
+/api/charlie/control-tower/feedback` is the platform-facing entry to that same
+sealed action. It is not public: an authenticated owner-admin session is
+required, then the server constructs the existing private-owner authentication
+envelope and seal. Feedback supplies its exact UTF-8 SHA-256; changed bytes
+under the same identity fail closed. `GET` on the same path provides
+identity-only lifecycle readback without returning the pasted feedback body.
+The independently supervised observe-only worker remains the sole proposal and
+comparison actor.
 
 The retained supervised CORE runner consumes these events in its existing
 `observe_only` mode. That mode runs only the Shadow subscription: it cannot call
@@ -58,5 +68,6 @@ Even when a later reviewed observation window enables the switch, the handler
 can append only the two owner-private observe-tier Shadow event types. It
 cannot send prompts, start terminals or processes, create missions, merge,
 deploy, contact providers, write farm data or grant release authority. It is
-not connected to natural-language parsing, Telegram delivery or any public
-route in this source slice. No comparison was fabricated during development.
+not connected to natural-language parsing or Telegram delivery. The strict
+owner-admin route has observation-only authority and cannot invoke the worker
+directly. No comparison was fabricated during development.

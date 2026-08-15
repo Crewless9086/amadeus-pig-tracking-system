@@ -1314,6 +1314,11 @@
 - Granted observation eligibility only to the exact paused, non-runnable
   `CMQ-20260813-05` bootstrap admission. The 86 classified legacy records and
   all unapproved current candidates remain non-runnable.
+- Repaired the remaining platform-ingress defect with one strict owner-admin
+  route that reaches the existing sealed producer, binds immutable feedback
+  bytes to an explicit SHA-256 and exposes identity-only lifecycle readback.
+  Proposal/comparison creation remains exclusively in the autonomous
+  observe-only worker; this source change records no genuine event.
 
 ## 2026-08-15 - Full-lifecycle genetic merit backend truth reconciled
 

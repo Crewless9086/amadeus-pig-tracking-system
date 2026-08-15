@@ -92,6 +92,49 @@ def handle_control_tower_feedback(payload, *, runtime_context=None, environ=None
             "observation_only": True, **_zero_authority()}, status
 
 
+def control_tower_feedback_readback(feedback_id="", *, database_url=None,
+                                    connect_factory=None):
+    """Return owner-private lifecycle identities without exposing feedback text."""
+    loaded, status = load_operational_events(
+        domain="missions", aggregate_type="control_tower_feedback_transaction",
+        aggregate_id=str(feedback_id or "").strip(), limit=1000,
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    if status >= 400:
+        return loaded, status
+    events = list(loaded.get("events") or [])
+    if feedback_id:
+        events = [event for event in events
+                  if str(event.get("aggregate_id") or "") == str(feedback_id).strip()]
+    rows = []
+    for event in events:
+        if event.get("event_type") not in {
+                FEEDBACK_EVENT, DECISION_EVENT,
+                "shadow_control_tower_proposal_recorded",
+                "shadow_control_tower_human_comparison_recorded"}:
+            continue
+        payload = event.get("payload") if isinstance(event.get("payload"), Mapping) else {}
+        proposal = payload.get("proposal") if isinstance(payload.get("proposal"), Mapping) else {}
+        decision = payload.get("human_decision") if isinstance(payload.get("human_decision"), Mapping) else {}
+        comparison = (payload.get("comparison") if isinstance(payload.get("comparison"), Mapping)
+                      else payload if event.get("event_type") ==
+                      "shadow_control_tower_human_comparison_recorded" else {})
+        rows.append({
+            "event_id": str(event.get("event_id") or event.get("id") or ""),
+            "event_type": str(event.get("event_type") or ""),
+            "feedback_transaction_id": str(event.get("aggregate_id") or ""),
+            "proposal_id": str(proposal.get("proposal_id") or comparison.get("proposal_id") or ""),
+            "human_decision_id": str(decision.get("human_decision_id") or comparison.get("human_decision_id") or ""),
+            "comparison_id": str(comparison.get("comparison_id") or ""),
+            "occurred_at": str(event.get("occurred_at") or ""),
+        })
+    counts = {kind: sum(row["event_type"] == kind for row in rows) for kind in (
+        FEEDBACK_EVENT, "shadow_control_tower_proposal_recorded", DECISION_EVENT,
+        "shadow_control_tower_human_comparison_recorded")}
+    return {"success": True, "status": "control_tower_feedback_readback",
+            "events": rows, "counts": counts, **_zero_authority()}, 200
+
+
 def process_pending_control_tower_feedback(*, environ=None, database_url=None,
                                            connect_factory=None, mission_reader=None):
     """Consume canonical feedback events from the existing durable worker."""
@@ -168,13 +211,17 @@ def _authenticated(context, environ):
 def _validate_feedback_identity(tx):
     required = ("feedback_transaction_id", "terminal_identity", "existing_mission_id",
         "worktree_identity", "feedback_occurred_at", "control_tower_reconciliation_id",
-        "source_kind", "owner_pasted_feedback")
+        "source_kind", "owner_pasted_feedback", "owner_pasted_feedback_sha256")
     if any(not str(tx.get(key) or "").strip() for key in required):
         return "control_tower_feedback_identity_required"
     if tx.get("source_kind") != SOURCE_KIND:
         return "control_tower_feedback_source_not_genuine"
     if tx.get("existing_mission_id") != MISSION_ID:
         return "control_tower_feedback_cross_mission_denied"
+    expected_digest = hashlib.sha256(str(tx["owner_pasted_feedback"]).encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(
+            str(tx.get("owner_pasted_feedback_sha256") or "").lower(), expected_digest):
+        return "control_tower_feedback_digest_mismatch"
     try:
         parsed = datetime.fromisoformat(str(tx["feedback_occurred_at"]).replace("Z", "+00:00"))
         if parsed.tzinfo is None:
@@ -214,7 +261,7 @@ def _feedback_packet(tx):
     reconciliation_id = str(tx["control_tower_reconciliation_id"]).strip()
     return _packet(FEEDBACK_EVENT, feedback_id, reconciliation_id,
         {"record_type": "feedback", "transaction": dict(tx),
-         "owner_pasted_feedback_sha256": _digest(str(tx["owner_pasted_feedback"]))},
+         "owner_pasted_feedback_sha256": str(tx["owner_pasted_feedback_sha256"]).lower()},
         str(tx["feedback_occurred_at"]))
 
 

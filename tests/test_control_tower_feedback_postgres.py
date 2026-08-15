@@ -1,4 +1,5 @@
 import os
+import hashlib
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 
@@ -28,6 +29,7 @@ def reader(_mission_id):
 
 
 def transaction():
+    feedback = "Synthetic disposable test only."
     return {"feedback_transaction_id": FEEDBACK_ID, "terminal_identity": "CORE-test-terminal",
         "terminal_state": "released", "deployed_agent_identity": "CORE-test-worker",
         "existing_mission_id": "CMQ-20260813-05", "business_status": "WORKING",
@@ -39,7 +41,8 @@ def transaction():
         "reasons": ["disposable database"], "worktree_identity": "disposable@test",
         "feedback_occurred_at": "2026-08-15T10:00:00+00:00",
         "control_tower_reconciliation_id": "CTR-DISPOSABLE-001",
-        "source_kind": SOURCE_KIND, "owner_pasted_feedback": "Synthetic disposable test only."}
+        "source_kind": SOURCE_KIND, "owner_pasted_feedback": feedback,
+        "owner_pasted_feedback_sha256": hashlib.sha256(feedback.encode("utf-8")).hexdigest()}
 
 
 @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL is required")
@@ -69,6 +72,7 @@ class ControlTowerFeedbackPostgresTests(unittest.TestCase):
         self.assertEqual(proposal_cycle["processed_count"], 1)
         decision_tx = transaction()
         decision_tx.pop("owner_pasted_feedback")
+        decision_tx.pop("owner_pasted_feedback_sha256")
         decision_tx["source_kind"] = DECISION_SOURCE_KIND
         decision_tx["feedback_reconciliation_id"] = "CTR-DISPOSABLE-001"
         decision_tx["control_tower_reconciliation_id"] = "CTR-DISPOSABLE-DECISION-001"
