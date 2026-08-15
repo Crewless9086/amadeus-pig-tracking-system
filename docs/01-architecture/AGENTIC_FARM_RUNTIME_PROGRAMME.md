@@ -56,6 +56,15 @@ Rules:
    memory, learning or action execution.
 7. Learning proposes evidence-backed change. It never silently changes doctrine,
    thresholds, authority or executable code.
+8. A deployed web/API service is not an operating agent unless the relevant
+   autonomous trigger and durable worker are enabled, supervised and producing
+   fresh canonical cycles. Runtime truth must expose trigger identity, worker
+   identity, heartbeat, last result, next cycle and authority mode.
+9. Terminal-invoked scripts, cards, canaries and callbacks are commissioning or
+   regression evidence only. They must not become the steady operating loop.
+10. After a contained execution exposes a reusable defect, preserve it as
+    immutable history and prove the repaired capability with a fresh execution
+    identity derived from current canonical evidence.
 
 ## Programme phases
 
@@ -106,9 +115,17 @@ Exit: priority farm journeys remain correct when Google Sheets is unavailable.
   status for Oom Sakkie and every specialist.
 - Move Oom Sakkie morning planning and other important schedules into this
   runtime, then retire their duplicate triggers.
+- Publish one machine-readable operating-state contract per specialist:
+  deployed revision, web/API state, autonomous trigger, worker identity,
+  heartbeat, last independent cycle, next cycle, authority state and whether a
+  development terminal participated.
+- Require a terminal-close acceptance: release the development terminal and
+  prove the next genuine scheduled or event-driven cycle still completes.
 
 Exit: closing terminals or restarting the laptop does not lose, repeat or hide
-scheduled work; every failure has a visible owner-relevant state.
+scheduled work; every failure has a visible owner-relevant state; and no
+specialist is labelled automatic or always-on without a fresh independent
+cycle and observable next trigger.
 
 ### Phase 4 — n8n and legacy retirement (3–8 weeks, incremental)
 

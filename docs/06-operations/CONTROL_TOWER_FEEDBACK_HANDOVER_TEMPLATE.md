@@ -1,0 +1,101 @@
+# Control Tower Feedback And Continuation Template
+
+Status: mandatory cross-system handover contract
+
+Use this template for CORE, OOM SAKKIE, ROOTLINE, HERDMASTER, SAM, BEACON,
+CODEX UI and every future specialist. Do not omit sections because a terminal
+performed only source work. Use `Unknown`, `none` or `not applicable` rather
+than inferring evidence.
+
+## Governance preflight
+
+- Worktree, branch and HEAD:
+- Mission Standard tracked blob, filesystem SHA-256, physical lines and read completely:
+- Canonical Runtime Programme tracked blob, filesystem SHA-256, physical lines and read completely:
+- Authoritative-main comparison:
+- Worktree status and preservation classification:
+
+## Mission identity and owner outcome
+
+- Existing mission ID:
+- Owner-visible outcome:
+- Explicit non-outcomes:
+- Lifecycle state:
+- Remaining acceptance journey:
+
+## Terminal state
+
+- Visible development terminal: active / idle / released / stopped / Unknown
+- Last instruction actually delivered:
+- Delivery proof: prepared / delivered / acknowledged / started / progress observed
+- Worktree, branch and current action:
+- Last terminal-invoked production/test cycle:
+- What stops when this terminal closes:
+
+## Deployed agent operational reality
+
+- Exact deployed revision:
+- Web/API runtime and health:
+- Background worker identity:
+- Autonomous trigger type and provider identity:
+- Trigger enabled:
+- Fresh heartbeat:
+- Supervisor/restart state:
+- Last independently triggered cycle and correlation ID:
+- Last canonical result:
+- Next scheduled cycle or exact triggering condition:
+- Production authority mode:
+- Proof the terminal did not create or keep alive the independent cycle:
+- Honest classification: autonomous / event-waiting / invocation-only /
+  deployed-dormant / scheduler-degraded / authority-disabled / Unknown
+
+HTTP health, deployed source, CI, a route, a terminal-created card, a manual
+script or a synthetic canary cannot by itself establish autonomous operation.
+
+## Evidence classification
+
+- Documented facts:
+- Runtime-loaded facts:
+- Supabase/canonical facts:
+- Provider-verified facts:
+- Physical or customer-visible facts:
+- Unknown or contradictory facts:
+
+## Fresh execution epoch
+
+- Historical contained identities sealed and non-replayable:
+- Reusable defect repaired:
+- Fresh current-world evidence source:
+- New canonical execution identity:
+- Why this is not a replay or reconstruction of an old attempt:
+- Terminal-independent subsequent-cycle proof:
+
+## Effects and authority
+
+- Database/farm/customer/provider/hardware changes:
+- n8n or Google Sheets authority added: no / explain violation
+- Protected authority used:
+- Replay and concurrency result:
+
+## Closeout and next action
+
+- Business result, or `NO BUSINESS OUTCOME`:
+- Exact blocker and owner:
+- Safe work remaining:
+- Terminal/worktree closeout:
+- Control Tower classification: SEND_NOTHING / ADDENDUM / CONTINUE /
+  NEW_MISSION / WAIT_FOR_INPUT / CLOSE
+- Exact next terminal:
+- Expected owner-visible result:
+
+## Mandatory continuation-prompt clause
+
+Every continuation prompt for an intended autonomous agent must say:
+
+> Do not stop at source, tests, PR, merge, deployment, health, a manually
+> invoked canary or containment. Prove the deployed agent's autonomous trigger,
+> worker identity, heartbeat, durable independent cycle, next cycle and
+> terminal-independent continuity. Retire contained historical attempts as
+> immutable evidence and use a fresh current execution identity after repair.
+> Keep one canonical action spine, Supabase truth and no new n8n or Google
+> Sheets business authority.

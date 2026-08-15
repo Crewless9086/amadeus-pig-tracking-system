@@ -8,7 +8,7 @@ Purpose: keep every terminal focused on completing real business and farm work w
 
 Charl may invoke this file with:
 
-> Apply the Agentic Operating Mission Standard in `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md` to the following terminal feedback. First verify and report whether that exact file is present and Git-tracked in the current workspace and require the target terminal to verify it exists in its own current `HEAD` before acting. Never claim the standard was applied when it was unavailable, untracked, unread, truncated or replaced by fallback doctrine. Give me one decisive assessment and one self-contained continuation prompt addressed to the exact terminal that should act next. Keep the terminal bound to the owner-visible outcome until a fresh real-world end-to-end proof succeeds; CI, deployment, replay or containment alone is not completion.
+> Apply the Agentic Operating Mission Standard in `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md` to the following terminal feedback. First verify and report whether that exact file is present and Git-tracked in the current workspace and require the target terminal to verify it exists in its own current `HEAD` before acting. Never claim the standard was applied when it was unavailable, untracked, unread, truncated or replaced by fallback doctrine. Give me one decisive assessment and one self-contained continuation prompt addressed to the exact terminal that should act next. Keep the terminal bound to the owner-visible outcome until a fresh real-world end-to-end proof succeeds; CI, deployment, replay or containment alone is not completion. Separately prove whether the deployed agent has an autonomous trigger, worker identity, fresh heartbeat, last and next cycle, durable outcome and terminal-independent continuity; a live web service or terminal-invoked test is not an operating agent. Retire contained historical attempts as evidence and use a fresh execution identity after repair.
 
 The Control Tower and target terminal must each read this entire file before proposing or continuing work. Reading it in the Control Tower workspace does not prove that a separate target worktree contains it.
 
@@ -73,6 +73,37 @@ Use these terms precisely in every Control Tower assessment, status report, hand
 - **Specialist role:** the complete intended business responsibility, such as “BEACON marketing department” or “HERDMASTER herd manager.” A deployed agent may implement only part of its specialist role.
 
 Never say an **agent** is working merely because its **terminal** is editing code. Never say a **terminal** is running merely because the deployed **agent** is healthy. Report these independently, for example: “SAM Livestock agent is enabled and processing webhooks; the SAM Livestock terminal is idle,” or “the ROOTLINE terminal is preparing source while the ROOTLINE agent remains read-only.”
+
+### Agent Operational Reality Gate
+
+Before Control Tower or a terminal calls a deployed agent `alive`, `working`,
+`automatic`, `operational` or `always-on`, it must obtain current evidence for:
+
+1. the exact deployed revision and service/process identity;
+2. the autonomous trigger type and provider-owned schedule, subscription, queue
+   consumer or durable event source;
+3. the worker or scheduler identity, fresh heartbeat and restart/supervisor
+   state;
+4. the last independently triggered cycle, its durable correlation identity
+   and canonical result;
+5. the next scheduled cycle or exact event condition that will trigger it;
+6. the production authority mode and any fail-closed limitation;
+7. proof that the relevant cycle was not started, advanced or kept alive by a
+   visible development terminal; and
+8. proof that releasing or closing the terminal leaves the deployed loop
+   running and able to complete its next genuine cycle.
+
+HTTP 200, a loaded commit, an available route, a passing canary, a manually
+invoked script, a terminal-created card, provider connectivity or process
+existence alone does not pass this gate. If the evidence is incomplete, report
+the narrowest honest state: `source-only`, `deployed-dormant`,
+`invocation-only`, `event-waiting`, `scheduler-degraded`, `authority-disabled`
+or `Unknown`. Never infer autonomous operation.
+
+Every operating-agent handover must separately report the visible terminal,
+web/API runtime, background worker, scheduler/trigger, authority, last
+terminal-invoked cycle and last independently triggered cycle. The owner should
+be able to tell immediately what stops when the terminal closes.
 
 Unless stated otherwise, “send this prompt to [name] terminal” means Charl must paste it into that visible development terminal. Operational Telegram input is sent to the deployed Oom Sakkie agent, not to the Oom Sakkie terminal.
 
@@ -201,6 +232,8 @@ Do not change governance merely to appear busy. One isolated wording preference 
 | Keep one terminal outcome-bound until the genuine real-world loop passes; do not accept CI, replay, deployment or a newly sent owner question as completion | Adopted | Prevents repeated narrow repairs from returning Charl to the same failed operational step | Verify the same terminal observes one fresh post-deployment input through specialist action, external outcome, readback and visible closure without another development prompt |
 | Require every terminal to classify intermediate stops with the shared Hold taxonomy and reserve BUSINESS COMPLETE for fresh owner-visible proof | Adopted | Prevents a source slice, PR, CI run or deployment from sounding like the full job is finished, while preserving necessary safety and authority stops | Every terminal handover names one lifecycle state, the exact unblock condition and the remaining owner-visible acceptance journey; Control Tower rejects ambiguous `complete`, `done` or `ready` wording |
 | Verify the Mission Standard is Git-tracked and completely read in both Control Tower and target-terminal `HEAD` before claiming it was applied | Adopted | Prevents separate worktrees and CORE missions from silently operating with missing or stale governance | Every handoff reports standard path, target availability and exact blob/digest; missing governance blocks non-urgent implementation until reconciled |
+| Require the Agent Operational Reality Gate before describing any deployed specialist as alive, automatic or operational | Adopted | Prevents a healthy web service, loaded revision or terminal-driven canary from being mistaken for an autonomous farm or business agent | Verify worker/trigger identity, heartbeat, last and next cycle, durable result and one terminal-independent subsequent cycle |
+| Retire failed execution identities after reusable repair and prove the correction with one fresh current execution epoch | Adopted | Prevents historical cards, conversations, jobs and canaries from becoming the permanent mission and repeatedly consuming owner effort | After containment, old identities remain immutable evidence; the next acceptance uses current facts and a new identity and cannot replay the old attempt |
 
 ## Outcome-Bound Terminal Missions And Real-World Proof
 
@@ -227,6 +260,28 @@ For a live acceptance journey:
 - if the live proof exposes another internal defect, contain unsafe effects, repair the reusable boundary, redeploy and resume the same mission without asking Charl to restate known facts;
 - never declare a physical, customer, farm, financial or publication journey Operational until its intended real-world effect and required readback have occurred;
 - after three owner attempts without the intended outcome, stop requesting more owner input, classify the journey as a systemic incident, and require an end-to-end trace and correction before another live attempt.
+
+### Fresh Execution Epoch After Repair
+
+A contained card, callback, conversation, customer send, job, segment, canary
+or provider event is historical evidence after it has exposed a reusable defect.
+Repair must not keep that identity alive as the operating mission.
+
+After the reusable boundary is corrected and deployed:
+
+1. seal every failed identity as immutable and non-replayable;
+2. retain its evidence, correlation and incident lessons;
+3. obtain fresh current-world evidence through the normal deployed intake;
+4. create a new execution identity through the canonical action spine;
+5. prove the complete current journey rather than reconstructing the old one;
+6. verify one subsequent autonomous cycle after the development terminal is
+   released.
+
+Reusing an old identity for a negative replay test is permitted only as
+non-actuating regression evidence. It may never be presented as the fresh
+business acceptance journey. A new test is also insufficient when it is still
+created or advanced by the terminal instead of the deployed agent's normal
+trigger.
 
 Do not combine a failing P0 operational incident with a broad new capability mission. Close or precisely contain the incident first, release its runtime, then start the next goal under a separate mission identity. Larger prompts are not a substitute for stronger completion gates.
 
@@ -281,6 +336,13 @@ Mission lifecycle state: WORKING | REVIEW_HOLD | RELEASE_HOLD | OWNER_HOLD |
 Owner-visible outcome: <the complete outcome still being pursued>
 Technical stage reached: <source/PR/CI/merge/deploy/runtime/live proof facts>
 Deployed-agent state: <runtime-loaded facts, separately from terminal activity>
+Web/API runtime: <revision, health and scope; never substitute for a worker>
+Autonomous trigger: <schedule/subscription/queue/event identity or absent>
+Worker/scheduler: <identity, heartbeat, supervisor/restart state or Unknown>
+Last independent cycle: <time, correlation, canonical result or none>
+Next automatic cycle: <time or exact event condition>
+Terminal independence: <what continues after this terminal is released>
+Last terminal-invoked cycle: <identity and purpose, separately classified>
 Provider/canonical/physical evidence: <separately classified>
 Remaining acceptance journey: <what must still happen before BUSINESS_COMPLETE>
 Exact hold and unblock condition: <required unless WORKING or BUSINESS_COMPLETE>
@@ -366,6 +428,10 @@ Before implementation, the target terminal must perform one concise challenge pa
 5. What downstream states, users, agents, reports, automation, history, replay, concurrency, privacy, safety, and recovery paths could this change affect?
 6. What assumption is most likely to be wrong, and what smallest read-only check can disprove it before implementation?
 7. Does the proposed acceptance prove the real journey, or only code, CI, deployment, replay, containment, or a prepared question?
+8. Is a deployed agent genuinely operating, or is a terminal, manual script,
+   web request or synthetic canary creating the appearance of operation?
+9. If an earlier attempt is contained, has it been retired as evidence and has
+   acceptance moved to a fresh current execution identity?
 
 If a materially better in-scope method is found, recommend it with the trade-off before building. If the owner's requested method is still sound, proceed without ceremonial debate. Challenge does not permit a terminal to broaden scope, override an explicit owner decision, repeatedly reopen a settled choice, or withhold safe routine progress in pursuit of perfection.
 
@@ -582,7 +648,7 @@ Latest direct owner instruction outranks older documentation. A contradiction mu
 Return the assessment in this order:
 
 1. **Business result:** State the real-world outcome. If none occurred, say **NO BUSINESS OUTCOME** plainly. Code, tests, reviews, PRs, migrations, deployments, policies, packets, and canaries do not count unless an operational or user-facing capability actually worked.
-2. **Operational usefulness:** State what the agent can now do for the business that it could not do before, and what Charl must still do manually.
+2. **Operational usefulness:** State what the agent can now do for the business that it could not do before, and what Charl must still do manually. Apply the Agent Operational Reality Gate and state whether the capability is autonomous, event-waiting, invocation-only, deployed-dormant or Unknown.
 3. **Current relevance:** Confirm that the customer, conversation, animal, mission, device, or task is still live. Retire already-handled or stale targets immediately and retain them only as regression evidence.
 4. **Genuine blockers:** Classify each blocker as a missing factual/business decision, protected authority boundary, technical defect, routine reversible work, or documentation housekeeping.
 5. **Proportionality:** Decide whether controls are reasonable or are preventing supported useful work. Missing evidence must block only the unsupported claim or action, not every supported part of a response, recommendation, plan, or workflow.
@@ -634,6 +700,12 @@ owner direction → authoritative doctrine/business rule → workflow → source
 Not every task requires every link, but omitted links must be explicitly justified. "Built," "reviewed," "merged," "deployed," "operationally proven," and "business-complete" are separate states and must never be conflated.
 
 For an outcome-bound live journey, `operationally proven` requires one fresh post-deployment trigger to traverse the intended production path through its real external effect, authoritative readback and owner-visible closure. Replaying historical input, sending the next question, returning a safe Hold, or proving zero effects does not satisfy this requirement unless that exact contained result is the mission's stated business outcome.
+
+For an autonomous or always-on agent, `operationally proven` additionally
+requires one terminal-independent cycle after the development terminal is
+released. The evidence must identify the autonomous trigger, worker/scheduler,
+heartbeat, durable correlation, result and next cycle. Web health and deployed
+source are only `Integrated` evidence.
 
 Examples of valid success measurements include:
 
