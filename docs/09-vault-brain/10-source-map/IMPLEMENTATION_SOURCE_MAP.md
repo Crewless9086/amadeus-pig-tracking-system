@@ -1,5 +1,18 @@
 # Implementation Source Map
 
+## ROOTLINE water-credit lifecycle
+
+- Canonical contract/projection: `modules/telemetry/rootline_water_credit.py`.
+- Canonical execution-history integration:
+  `modules/telemetry/rootline_irrigation_history.py`.
+- Planning consumers: `modules/telemetry/rootline_water_energy_plan.py` and
+  `modules/telemetry/rootline_adaptive_irrigation.py`.
+- Owner projection: `modules/telemetry/rootline_owner_status.py`.
+- Supabase truth and append-only replay/conflict enforcement:
+  `supabase/migrations/202608150009_create_rootline_water_credit_lifecycle.sql`.
+- No channel adapter, n8n workflow, Google Sheet, provider adapter or hardware
+  executor owns water-credit authority.
+
 ## CMQ-20260813-05 Phase A Shadow Control Tower
 
 - Source contract: `modules/charlie/shadow_control_tower.py`.
