@@ -75,3 +75,21 @@ def test_concurrent_cycles_lease_one_execution_only():
     for thread in threads: thread.start()
     for thread in threads: thread.join()
     assert effects == ["write"]
+
+
+def test_store_records_actual_finish_heartbeat_not_cycle_start():
+    class Cursor:
+        def __init__(self): self.params = None
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def execute(self, sql, params): self.params = params
+    class Connection:
+        def __init__(self, cursor): self.value = cursor
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def cursor(self): return self.value
+    from modules.oom_sakkie.protected_payment_recovery import _RecoveryStore
+    cursor = Cursor(); started = datetime(2026, 8, 15, 13, 15, tzinfo=timezone.utc)
+    _RecoveryStore(lambda: Connection(cursor)).finish_cycle("cycle", started, {"status": "idle"})
+    assert cursor.params[0] > started
+    assert cursor.params[1] == cursor.params[0]
