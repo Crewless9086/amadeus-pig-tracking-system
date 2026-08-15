@@ -80,7 +80,9 @@ def record_sale_payment_state(sale_id, payload=None, database_url=None, *, actor
                                 "status": "existing_receipt_requires_governed_correction",
                                 "writes_to_supabase": False}, 409
                     return {"success": True, "status": "payment_state_replay_noop",
-                            "created": False, "sale_id": sale_id,
+                            "created": False,
+                            **_receipt_readback(sale_id, row[0], row[1], row[2],
+                                row[3], row[4], row[6] if row[6] is not None else row[5], row[7]),
                             "writes_to_supabase": False}, 200
                 preview = _payment_preview(sale_id, row, proposed)
                 if confirmed_digest != _preview_digest(preview):
@@ -98,11 +100,9 @@ def record_sale_payment_state(sale_id, payload=None, database_url=None, *, actor
                      paid_at if status != "Unpaid" else None, note, sale_id))
                 updated = cursor.fetchone()
         return {"success": True, "status": "payment_state_recorded", "created": True,
-            "sale_id": updated[0], "payment_status": updated[1],
-            "payment_method": updated[2], "payment_date": updated[3].isoformat()
-                if updated[3] else None, "received_amount": str(updated[4]),
-            "amount_due": str(updated[6] if updated[6] is not None else updated[5]),
-            "sale_channel": updated[7], "writes_to_supabase": True}, 200
+            **_receipt_readback(updated[0], row[0], updated[1], updated[2],
+                updated[3], updated[4], updated[6] if updated[6] is not None else updated[5], updated[7]),
+            "writes_to_supabase": True}, 200
     except Exception as exc:
         return {"success": False, "status": "payment_state_write_failed",
                 "error_type": exc.__class__.__name__, "writes_to_supabase": False}, 503
@@ -183,15 +183,52 @@ def _is_exact_transition(row, proposed):
 def _payment_preview(sale_id, row, proposed):
     due = Decimal(str(row[6] if row[6] is not None else row[5]))
     received = proposed["received_amount"]
-    return {"version": "sale_payment_preview_v1", "sale_id": sale_id,
+    current_received = Decimal(str(row[4] or 0))
+    sale_label = _sale_label(row[7])
+    amount = None if received is None else str(received)
+    paid_at = proposed["payment_date"].isoformat() if proposed["payment_date"] else None
+    preview = {"version": "sale_payment_preview_v1", "sale_id": sale_id,
+        "canonical_action_service": "sale_payment_receipt",
+        "transaction_label": sale_label,
+        "sale_status": str(row[0] or ""),
         "current_payment_status": str(row[1] or ""),
         "current_received_amount": None if row[4] is None else str(Decimal(str(row[4])).quantize(Decimal("0.01"))),
         "payment_status": proposed["payment_status"],
-        "received_amount": None if received is None else str(received),
+        "received_amount": amount,
+        "receipt_amount": None if received is None else str((received - current_received).quantize(Decimal("0.01"))),
         "amount_due": str(due.quantize(Decimal("0.01"))),
         "payment_method": proposed["payment_method"] if proposed["payment_status"] != "Unpaid" else str(row[2] or ""),
-        "payment_date": proposed["payment_date"].isoformat() if proposed["payment_date"] else None,
+        "payment_date": paid_at,
         "sale_channel": str(row[7] or ""), "actor_id": proposed["actor_id"]}
+    preview["human_readable"] = (
+        f"{sale_label} · {sale_id} · receipt R{preview['receipt_amount'] or '0.00'}; "
+        f"total received after this receipt R{amount or '0.00'} of R{preview['amount_due']} "
+        f"by {preview['payment_method'] or 'unchanged'} "
+        f"on {paid_at or 'unchanged'}. No receipt has been recorded yet.")
+    return preview
+
+
+def _sale_label(sale_channel):
+    channel = str(sale_channel or "").strip()
+    return "Livestock — Auction" if channel.casefold() == "auction" else (
+        f"Livestock — {channel}" if channel else "Livestock — Sale")
+
+
+def _receipt_readback(sale_id, sale_status, payment_status, payment_method,
+                      payment_date, received_amount, amount_due, sale_channel):
+    sale_completed = str(sale_status) == "Completed"
+    is_auction = str(sale_channel or "").casefold() == "auction"
+    settlement_received = str(payment_status) == "Paid"
+    return {"sale_id": sale_id, "payment_status": payment_status,
+        "payment_method": payment_method,
+        "payment_date": payment_date.isoformat() if payment_date else None,
+        "received_amount": str(received_amount), "amount_due": str(amount_due),
+        "sale_channel": sale_channel, "transaction_label": _sale_label(sale_channel),
+        "sale_completed": sale_completed,
+        "auction_completed": sale_completed if is_auction else None,
+        "settlement_received": settlement_received,
+        "fully_reconciled": sale_completed and settlement_received,
+        "canonical_action_service": "sale_payment_receipt"}
 
 
 def _preview_digest(preview):

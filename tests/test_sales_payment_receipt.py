@@ -55,6 +55,10 @@ def test_bkb_paid_receipt_preserves_invoice_accounting_and_records_only_payment_
             actor_id="owner:charl")
     assert status == 200 and result["status"] == "payment_state_recorded"
     assert result["received_amount"] == "4470.51"
+    assert result["transaction_label"] == "Livestock — Auction"
+    assert result["auction_completed"] is True
+    assert result["settlement_received"] is True
+    assert result["fully_reconciled"] is True
     update_sql = cursor.execute.call_args_list[1].args[0].lower()
     assert "received_total" in update_sql
     assert "gross_total" not in update_sql and "net_total=" not in update_sql
@@ -87,6 +91,8 @@ def test_exact_payment_replay_is_noop():
             "SALE-AUCT", request, actor_id="owner:charl")
     assert status == 200 and result["status"] == "payment_state_replay_noop"
     assert result["created"] is False and cursor.execute.call_count == 1
+    assert result["transaction_label"] == "Livestock — Auction"
+    assert result["fully_reconciled"] is True
 
 
 def test_preexisting_exact_receipt_without_bound_digest_is_not_claimed_as_replay():
@@ -146,6 +152,12 @@ def test_preview_is_zero_write_and_partial_preserves_actual_received_amount():
     assert status == 200 and result["status"] == "payment_state_preview_ready"
     assert result["preview"]["received_amount"] == "1000.00"
     assert result["preview"]["amount_due"] == "4470.51"
+    assert result["preview"]["transaction_label"] == "Livestock — Auction"
+    assert result["preview"]["canonical_action_service"] == "sale_payment_receipt"
+    assert result["preview"]["receipt_amount"] == "1000.00"
+    assert result["preview"]["human_readable"] == (
+        "Livestock — Auction · SALE-AUCT · receipt R1000.00; total received after this receipt R1000.00 of R4470.51 by EFT "
+        "on 2026-08-12. No receipt has been recorded yet.")
     assert result["writes_to_supabase"] is False
     assert cursor.execute.call_count == 1
 

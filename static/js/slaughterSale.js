@@ -46,6 +46,7 @@ let pigRowCounter = 0;
 let paymentDeepLinkOpened = false;
 let paymentDeepLinkMode = false;
 let pendingPaymentPreview = null;
+let activePaymentCurrentReceived = 0;
 
 function setTodayDate() {
   const today = new Date();
@@ -507,6 +508,7 @@ async function cancelTransaction(saleId) {
 function openUpdatePanel(saleId, currentTotal, itemCount = 1) {
   clearMessage();
   const transaction = allTransactions.find((item) => item.sale_id === saleId) || {};
+  activePaymentCurrentReceived = Number(transaction.received_total || 0);
   const count = Number(itemCount || transaction.item_count || 1);
 
   updateSaleIdInput.value = saleId;
@@ -529,7 +531,7 @@ function openUpdatePanel(saleId, currentTotal, itemCount = 1) {
   receivedAmountGroup.classList.toggle("hidden", !paymentDeepLinkMode);
   updateReceivedAmountInput.required = paymentDeepLinkMode && updatePaymentStatusSelect.value !== "Unpaid";
   updateReceivedAmountInput.value = paymentDeepLinkMode && updatePaymentStatusSelect.value !== "Unpaid"
-    ? (transaction.received_total ?? (updatePaymentStatusSelect.value === "Paid" ? updateLineTotalInput.value : "")) : "";
+    ? Math.max(0, Number(currentTotal || transaction.net_total || 0) - activePaymentCurrentReceived).toFixed(2) : "";
   updateLineTotalInput.readOnly = paymentDeepLinkMode;
   submitUpdateButton.textContent = paymentDeepLinkMode ? "Preview Payment" : "Save Payment Update";
   invalidatePaymentPreview();
@@ -599,7 +601,9 @@ async function submitUpdatePayment(event) {
       payment_status: payload.payment_status,
       payment_method: payload.payment_method,
       payment_date: payload.payment_date,
-      received_amount: payload.payment_status === "Unpaid" ? 0 : Number(updateReceivedAmountInput.value),
+      received_amount: payload.payment_status === "Unpaid" ? 0
+        : ((Math.round(activePaymentCurrentReceived * 100)
+          + Math.round(Number(updateReceivedAmountInput.value) * 100)) / 100).toFixed(2),
     };
     const response = await fetch(endpoint, {
       method: "POST",
