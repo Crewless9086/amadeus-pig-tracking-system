@@ -314,6 +314,49 @@ interrupted to maximize utilization. The compact all-terminal closure receipt
 must remain visible in Control Tower status and reconciliation responses so
 Charl can verify enforcement without maintaining the register himself.
 
+### Forward Mission Pipeline And Full-Scope Completion
+
+Control Tower must manage development toward each specialist's complete
+documented role, not only react to the latest defect or owner observation. For
+every named terminal, the durable mission register must retain a forward
+pipeline containing:
+
+- the specialist's intended owner-visible end state;
+- capabilities already operationally proven through the deployed agent;
+- the current outcome-bound mission;
+- the next highest-value eligible mission;
+- later sequenced missions required to complete the documented scope;
+- dependencies, collision boundaries and automatic promotion triggers; and
+- the latest owner observation or priority change that altered the sequence.
+
+Every terminal handover must name the terminal's **next mission after the
+current mission**. When the current mission becomes Business-complete, enters a
+genuine external/event wait, or releases its development worktree, Control
+Tower must immediately re-evaluate the full specialist scope and promote the
+highest-value non-colliding mission. Charl does not need to ask for this
+promotion. If the next mission is not already registered, Control Tower may
+derive and register it only from the specialist's authoritative scope,
+business rules, roadmap, proven operational gap or a new owner observation; it
+must not invent infrastructure work merely to keep a terminal occupied.
+
+New owner observations are durable reprioritization evidence. Control Tower
+must reconcile them against active work, preserve completed and unique work,
+update the pipeline and dependencies, and issue an addendum or revised next
+mission without restarting unrelated work. Conversation memory is never the
+pipeline of record.
+
+The development terminal builds, tests, reviews, integrates, deploys and proves
+the capability. The deployed named agent then owns the genuine recurring or
+event-driven operation. A terminal may not become the permanent operator merely
+because the capability is unfinished, and an agent is not considered complete
+until its intended documented operating scope has been either operationally
+proven or explicitly deferred with an exact dependency and promotion trigger.
+
+This forward pipeline remains a Control Tower responsibility until the existing
+CORE and CHARLIE automation can demonstrably maintain the same register,
+dependency promotion, collision control, dispatch delivery and outcome
+verification without increasing Charl's workload.
+
 ## Control Tower Self-Audit And Improvement Loop
 
 The Control Tower is part of the agentic system and must monitor its own decisions. It must not wait for Charl to become frustrated before correcting repeated drift, duplicated work, avoidable owner effort, misleading progress, or weak terminal coordination.
@@ -345,6 +388,7 @@ Do not change governance merely to appear busy. One isolated wording preference 
 
 | Improvement | Status | Why it matters | Verification |
 |---|---|---|---|
+| Maintain one forward mission pipeline from every specialist's complete documented scope and promote the next eligible mission without waiting for Charl | Adopted | Keeps terminals building toward genuinely useful complete agents while preserving deployed-agent ownership and reducing manual dispatch work | Every handover names the next mission, later outcomes and promotion trigger; later terminal releases produce an automatic non-colliding dispatch or evidenced no-safe-work result |
 | Check the active mission and last instruction before generating a continuation prompt; use CONTINUE, ADDENDUM, NEW MISSION, PARALLEL MISSION, or WAIT | Adopted | Prevents duplicated prompts, restarts, and confusion while terminals are already working | Verify on subsequent feedback that already-running work receives “send nothing” rather than a repeated prompt |
 | Report both bounded component progress and readiness for the full intended agent role | Adopted | Prevents source PRs and isolated proofs from overstating how much work the agent actually performs for the family | Verify future progress summaries distinguish technical stage from real working autonomy |
 | Prefer one useful parallel mission for an idle specialist when the priority lane is occupied | Adopted | Keeps the program moving without colliding in shared runtime or manufacturing infrastructure | Verify parallel work produces a reusable business/farm result or is explicitly declined when no useful task exists |

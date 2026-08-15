@@ -71,7 +71,10 @@
   result must update this ledger transactionally before another prompt is
   issued. Every owner message and terminal report also triggers an all-terminal
   dispatch sweep so idle terminals receive the next eligible existing mission
-  without making the owner act as dispatcher.
+  without making the owner act as dispatcher. The same ledger maintains a
+  forward mission pipeline from each specialist's authoritative full scope:
+  proven capability, active mission, next eligible mission, later outcomes,
+  dependencies, collision boundaries and owner reprioritizations.
 - Mandatory cross-system terminal/agent truth template:
   `docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`. It requires
   separate web/API, worker, trigger, heartbeat, last/next cycle, authority,

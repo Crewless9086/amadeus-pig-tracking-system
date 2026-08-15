@@ -1,5 +1,22 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - Forward terminal mission pipeline made mandatory
+
+- Recorded Charl's operating goal that Control Tower must keep development
+  terminals advancing toward each agent's complete documented role without
+  waiting for him to notice idle capacity or manually choose every next task.
+- Required every terminal handover and mission-register entry to retain the
+  current mission, next eligible mission, later sequenced outcomes,
+  dependencies, collision boundaries, promotion trigger and owner
+  reprioritizations.
+- Required automatic next-mission promotion when development releases, the
+  current outcome completes or a genuine external/event wait leaves safe
+  parallel work available.
+- Preserved the core separation: terminals build, test, release and prove;
+  deployed agents operate and manage the genuine recurring business/farm work.
+- Kept this responsibility with Control Tower until CORE and CHARLIE prove an
+  equivalent durable planning, dispatch and outcome-verification loop.
+
 ## 2026-08-15 - Canonical payment writer supplies governed auction evidence
 
 - Continued `SMQ-20260813-05` after the genuine owner callback failed closed on

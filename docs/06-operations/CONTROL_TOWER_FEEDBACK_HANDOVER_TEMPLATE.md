@@ -107,6 +107,24 @@ script or a synthetic canary cannot by itself establish autonomous operation.
 - Exact next terminal:
 - Expected owner-visible result:
 
+## Mandatory forward mission pipeline
+
+- Intended complete specialist role:
+- Capabilities already operationally proven through the deployed agent:
+- Current outcome-bound mission:
+- Next mission after the current mission:
+- Later sequenced missions required for full scope:
+- Exact dependencies/collision boundaries:
+- Automatic promotion trigger:
+- Latest owner observation or priority change:
+- Register update evidence, or explicit reason persistence was unsafe:
+
+The next-mission field is mandatory even when the current mission is active or
+event-waiting. It records future sequencing; it is not permission to interrupt
+active work. When the current development work releases, Control Tower promotes
+the highest-value eligible non-colliding mission without waiting for Charl to
+ask. Terminals build and prove capabilities; deployed agents operate them.
+
 ## Mandatory all-terminal closure gate
 
 Before Control Tower may end its response, list CORE, OOM SAKKIE, ROOTLINE,
