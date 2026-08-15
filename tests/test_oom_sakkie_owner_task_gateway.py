@@ -88,11 +88,17 @@ class OwnerTaskGatewayTests(unittest.TestCase):
     @patch("modules.oom_sakkie.telegram_gateway.handle_telegram_media_intake")
     def test_bound_recovery_completes_by_editing_receipt_once_and_replay_is_silent(
             self,mock_media,mock_complete,mock_task):
-        mock_media.side_effect=lambda *args,**kwargs: ({"success":True,
-            "status":"media_intake_stored_private_review_pending",
+        seen_updates=set()
+        def media_result(payload,*args,**kwargs):
+            update_id=payload["update_id"];replayed=update_id in seen_updates
+            seen_updates.add(update_id)
+            return ({"success":True,"replayed":replayed,
+            "status":"exact_intake_replay_withheld" if replayed
+                else "media_intake_stored_private_review_pending",
             "receipt_text":"BEACON started this private album. Reply /beacon-complete ABC.",
             "receipt_mission_id":"BEACON-INTAKE-GROUP-ONE",
             "completion_code":"ABC"},201)
+        mock_media.side_effect=media_result
         mock_complete.return_value=({"success":True,"status":"media_group_completed",
             "intake_group_id":"BEACON-INTAKE-GROUP-ONE",
             "received_count":4,"attention_count":0},200)
@@ -103,6 +109,9 @@ class OwnerTaskGatewayTests(unittest.TestCase):
         recovery["beacon_media_recovery"]={"token":"r"*40,
             "media_group_id":"album","owner_context":"Molly; litter size eight; born 11 August 2026",
             "complete_album":True}
+        second=json.loads(json.dumps(PHOTO));second["update_id"]=2
+        second["message"]["message_id"]=3158
+        second["message"]["photo"][0]["file_unique_id"]="u2"
         store=self.EventStore(); sends=[]; edits=[]
         def sender(chat_id,text,source):
             sends.append((chat_id,text))
@@ -115,14 +124,22 @@ class OwnerTaskGatewayTests(unittest.TestCase):
              patch("modules.oom_sakkie.telegram_gateway._send_owner_task_telegram",sender), \
              patch("modules.oom_sakkie.family_message_lifecycle._edit_telegram",editor):
             receipt=handle_telegram_gateway_message(PHOTO,headers=HEADERS,environ=ENV)
+            middle=handle_telegram_gateway_message(second,headers=HEADERS,environ=ENV)
             first=handle_telegram_gateway_message(recovery,headers=HEADERS,environ=ENV)
             replay=handle_telegram_gateway_message(recovery,headers=HEADERS,environ=ENV)
-        self.assertEqual((receipt[1],first[1],len(sends),len(edits)),(201,201,1,1))
+            prior_member_replay=handle_telegram_gateway_message(
+                second,headers=HEADERS,environ=ENV)
+        self.assertEqual((receipt[1],middle[1],first[1],len(sends),len(edits)),
+                         (201,201,201,1,1))
         self.assertEqual(receipt[0]["delivery"]["telegram_sends"],1)
         self.assertEqual(first[0]["delivery"]["telegram_sends"],0)
         self.assertEqual(first[0]["delivery"]["telegram_edits"],1)
         self.assertEqual(replay[0]["delivery"]["telegram_sends"],0)
         self.assertEqual(replay[0]["delivery"]["telegram_edits"],0)
+        self.assertEqual(prior_member_replay[0]["delivery"]["telegram_sends"],0)
+        self.assertEqual(prior_member_replay[0]["delivery"]["telegram_edits"],0)
+        self.assertEqual(prior_member_replay[0]["delivery"]["status"],
+                         "media_album_completed_receipt_replay_noop")
         self.assertEqual(edits[0][1],"4001")
         self.assertEqual(edits[0][3],{"inline_keyboard":[]})
         self.assertEqual(mock_complete.call_count,2)

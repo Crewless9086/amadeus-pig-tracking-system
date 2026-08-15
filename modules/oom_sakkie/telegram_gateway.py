@@ -9,7 +9,9 @@ from modules.oom_sakkie.owner_task_lifecycle import handle_owner_task_input
 from modules.oom_sakkie.herdmaster_health_loss_runtime import handle_authenticated_health_loss_message
 from modules.oom_sakkie.operational_specialist_intake import (
     handle_operational_specialist_message, recover_contextual_specialist_replay)
-from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+from modules.oom_sakkie.family_message_lifecycle import (
+    deliver_family_result, load_family_lifecycle,
+)
 from modules.oom_sakkie.farm_manager_runtime import handle_farm_manager_round
 from modules.oom_sakkie.owner_conversation_front_door import build_owner_clarification
 from modules.oom_sakkie.owner_operational_continuation import handle_owner_operational_continuation
@@ -244,13 +246,27 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                     "telegram_sends": 0, "telegram_edits": 0}
         if receipt_text:
             receipt_mission = str(intake.get("receipt_mission_id") or "")
-            delivery = deliver_family_result(
-                parsed, {"answer": receipt_text, "status": "media_album_received",
-                         "writes_farm_data": False, "hardware_commands": 0},
-                specialist="BEACON_MEDIA", mission_id=receipt_mission,
-                card_mission_id=receipt_mission,
-                sender=lambda chat_id, text: _send_owner_task_telegram(chat_id, text, source),
-            )
+            prior_receipt = (load_family_lifecycle(receipt_mission)
+                             if intake.get("replayed") is True else [])
+            completed_card = next((row for row in reversed(prior_receipt)
+                if row.get("state") in {"delivered", "updated"}
+                and row.get("task_state") == "completed"
+                and str(row.get("telegram_message_id") or "")), None)
+            if completed_card:
+                delivery = {"success": True,
+                    "status": "media_album_completed_receipt_replay_noop",
+                    "mission_id": receipt_mission,
+                    "card_mission_id": receipt_mission,
+                    "telegram_message_id": completed_card["telegram_message_id"],
+                    "telegram_sends": 0, "telegram_edits": 0}
+            else:
+                delivery = deliver_family_result(
+                    parsed, {"answer": receipt_text, "status": "media_album_received",
+                             "writes_farm_data": False, "hardware_commands": 0},
+                    specialist="BEACON_MEDIA", mission_id=receipt_mission,
+                    card_mission_id=receipt_mission,
+                    sender=lambda chat_id, text: _send_owner_task_telegram(chat_id, text, source),
+                )
         recovery = payload.get("beacon_media_recovery")
         recovery_completed = None
         completion_delivery = None
