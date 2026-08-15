@@ -1,6 +1,6 @@
 # CMQ-20260813-05 Phase A private observation input
 
-Status: source-prepared; disabled by default; not deployed or enabled
+Status: authenticated producer and durable-worker subscription prepared for review
 
 Owner and sole dispatch authority: human Control Tower
 
@@ -11,6 +11,21 @@ the existing private CORE tool registry. It adds no route, endpoint, process,
 scheduler, terminal, agent, mission queue, database schema or ledger. The
 handler reuses the Phase A Shadow module and the existing owner-private
 `operational_events` fabric.
+
+The subsequent systemic-ingress repair adds the internal typed action
+`reconcile_control_tower_feedback`. It is the sole canonical producer for this
+Phase A slice. It accepts an exact genuine owner-pasted terminal-feedback
+identity and later the canonical human Control Tower decision. Conversation
+memory, a terminal-generated sample and historical register prose are rejected
+as source identities. Both records remain owner-private `observe` events in the
+same operational-event fabric.
+
+The retained supervised CORE runner consumes these events in its existing
+`observe_only` mode. That mode runs only the Shadow subscription: it cannot call
+mission pickup, recovery, release, Codex execution, delivery or dispatch. The
+exact paused `CMQ-20260813-05` bootstrap is observation-eligible only when its
+complete non-runnable admission is intact. Every other admitted, candidate or
+legacy mission remains ineligible.
 
 The caller must arrive through the existing private CORE authentication
 boundary. `handle_authenticated_private_action` reuses

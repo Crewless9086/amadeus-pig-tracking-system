@@ -1255,6 +1255,19 @@
 - Classification is a separate evidence-preserving, non-admission dimension; original statuses, evidence and timestamps are not rewritten.
 - Exact replay is no-op, conflicting replay fails closed, generic APIs cannot forge classification events, and classified legacy rows are runtime-ineligible.
 - No classification has been applied by this source change; integration, deployment and one authenticated operation remain required.
+# 2026-08-15 - CMQ-20260813-05 canonical Shadow ingress and worker subscription
+
+- Added one sealed owner-private Control Tower reconciliation producer on the
+  existing Supabase `operational_events` spine. Genuine owner-pasted terminal
+  feedback must precede the canonical human decision; memory, historical text
+  and terminal-generated substitutes fail closed.
+- Connected the retained supervised CORE runner's existing `observe_only` mode
+  to the durable feedback subscription with replay-safe proposal/comparison
+  consumption and visible next-event state. Mission pickup, recovery, release,
+  dispatch, provider and farm authority remain unreachable.
+- Granted observation eligibility only to the exact paused, non-runnable
+  `CMQ-20260813-05` bootstrap admission. The 86 classified legacy records and
+  all unapproved current candidates remain non-runnable.
 
 ## 2026-08-15 - Full-lifecycle genetic merit backend truth reconciled
 

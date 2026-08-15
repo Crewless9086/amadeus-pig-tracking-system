@@ -93,6 +93,7 @@ jobs:
       - name: Apply Oom Sakkie audit migrations
         run: |
           python scripts/apply_supabase_migration.py supabase/migrations/202605210001_foundation_migration_log.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607190001_create_operational_event_fabric.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202605210005_create_telemetry_power_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202605220001_create_telemetry_weather_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202605230001_create_irrigation_tables.sql
@@ -171,7 +172,7 @@ jobs:
         run: python -m unittest tests.test_charlie_callback_postgres
 
       - name: Run CHARLIE exact identity and bootstrap admission transaction tests
-        run: python -m unittest tests.test_private_opaque_mission_creation_postgres tests.test_portfolio_classification_postgres
+        run: python -m unittest tests.test_private_opaque_mission_creation_postgres tests.test_portfolio_classification_postgres tests.test_control_tower_feedback_postgres
 
       - name: Run CHARLIE adaptive orchestration durable canary tests
         run: python -m unittest tests.test_charlie_adaptive_orchestration_postgres tests.test_charlie_owner_execution_hold_postgres
