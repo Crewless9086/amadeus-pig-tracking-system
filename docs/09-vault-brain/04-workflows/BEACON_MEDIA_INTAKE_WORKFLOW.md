@@ -1,8 +1,8 @@
 # BEACON Media Intake Workflow
 
-Status: owner-approved append-only foundation deployed, with the 15 August 2026
-four-photo album exposing an inactive Render policy and shared-gateway
-precedence defect. BMQ-20260813-02 owns correction and live recovery.
+Status: private intake and Finish Album are deployed. The completed eight-photo
+Bella album is retained evidence. BMQ-20260813-03 owns the separate Library and
+Public Use review journey; no recovery or Finish replay is authorized.
 
 ## Owner Outcome
 
@@ -38,9 +38,12 @@ or a second manual Farm App upload.
    warnings, campaign-use suggestions, and prior-use evidence.
 7. The Farm App presents thumbnails/contact sheets and an enlarged preview
    instead of asking the owner to approve filenames.
-8. Charl may approve, reject, archive, or correct individual assets;
-   album-level decisions are available where safe.
-9. Public use and later publication remain separate decisions.
+8. The authenticated browser shows the ordered private contact sheet. Telegram
+   shows the bound decision plus a direct contact-sheet link; both resolve the
+   same canonical album generation and decision state.
+9. Charl first chooses Library Accept or Reject. Public Use Approve or Decline
+   is a later, separate choice and is shown only after compliance checks pass.
+10. Campaign Review and Publication remain later separate decisions.
 
 Provider media must enter the typed BEACON intake before generic owner-context
 or semantic handling on both the retained GateKeeper gateway and any future
@@ -78,8 +81,14 @@ The `BEACON-MEDIA-INTAKE-1` candidate:
 - supports owner-authenticated private thumbnail/contact-sheet review without
   exposing storage URLs;
 - permits whole-album review only after durable explicit completion, and binds
-  every owner decision to a stable action identity plus its exact predecessor
-  so delayed delivery cannot become a new transition; and
+  every owner decision to owner, album, version, exact ordered binary/hash
+  snapshot, decision type, stable action identity and exact predecessor so
+  delayed delivery cannot become a new transition;
+- requires a reason for rejection or decline, and records reconsideration as a
+  new append-only successor;
+- withholds Public Use until server hash readback, private thumbnail,
+  evidence-qualified observation, privacy, animal-welfare, brand and Meta
+  organic-awareness scope checks pass; and
 - keeps video visibly unsupported until bounded resumable transport is
   separately designed and reviewed, and sends the owner one bounded
   unsupported receipt without accessing the video file.
@@ -114,9 +123,11 @@ These gates are deliberately separate:
 1. **Intake received:** the private file and provenance were stored
    successfully.
 2. **Library accepted:** the asset may remain in BEACON's managed library.
-3. **Public-use approved:** the exact asset may be considered for public
-   campaigns.
-4. **Publication authorized:** an exact post, caption, media order, channel,
+3. **Public-use approved:** the exact asset may be considered only for a later
+   organic farm-awareness campaign review.
+4. **Campaign reviewed:** one exact campaign may advance to its publication
+   authority gate, but nothing is scheduled, sent or spent.
+5. **Publication authorized:** an exact post, caption, media order, channel,
    and execution attempt has its required authority.
 
 No earlier gate implies a later gate. Approvals and revocations must be

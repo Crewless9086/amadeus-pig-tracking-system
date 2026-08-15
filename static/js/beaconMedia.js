@@ -13,6 +13,7 @@
     metaImportPacket: null,
     currentReviewPacket: null,
     intakeItems: [],
+    albumReviews: {},
   };
 
   const byId = (id) => document.getElementById(id);
@@ -1379,11 +1380,31 @@
     elements.intakeState.textContent = state.intakeItems.length
       ? `${state.intakeItems.length} private item${state.intakeItems.length === 1 ? "" : "s"} awaiting or carrying review evidence.`
       : "No durable Telegram intake items yet. The gateway remains inactive until separately activated.";
-    elements.intakeContactSheet.innerHTML = state.intakeItems.map((item) => {
+    elements.intakeContactSheet.innerHTML = state.intakeItems.map((item, index) => {
       const observation = item.observation && typeof item.observation === "object" ? item.observation : {};
       const tags = Array.isArray(observation.suggested_tags) ? observation.suggested_tags.join(", ") : "Unavailable";
       const warnings = Array.isArray(observation.warnings) ? observation.warnings.join("; ") : "No evidence-qualified warnings recorded";
-      return `
+      const packet = state.albumReviews[item.intake_group_id] || null;
+      const firstInAlbum = index === 0 || state.intakeItems[index - 1].intake_group_id !== item.intake_group_id;
+      const albumHeader = firstInAlbum && packet ? `
+        <section class="beacon-album-review" data-album-review="${escapeHtml(item.intake_group_id)}" data-intake-group-id="${escapeHtml(item.intake_group_id)}">
+          <h3>Private album review</h3>
+          <p><strong>${escapeHtml(packet.owner_context || "No owner context supplied")}</strong></p>
+          <p>${Number(packet.stored_count || 0)} ordered private photographs. Library: ${escapeHtml(packet.library_state)}. Public use: ${escapeHtml(packet.public_use_state)}.</p>
+          <p>These are separate decisions. Neither decision reviews a campaign or publishes anything.</p>
+          <p>${packet.public_use_eligible
+            ? "Privacy, animal-welfare, brand, file-integrity and Meta organic-awareness checks are ready."
+            : "Public Use stays unavailable until every privacy, animal-welfare, brand, file-integrity and Meta organic-awareness check is ready."}</p>
+          <div class="beacon-intake-card-actions">
+            <button type="button" data-intake-group-review="library_accepted" class="button-link">Accept to Library</button>
+            <button type="button" data-intake-group-review="library_rejected" class="button-link button-link-secondary">Reject from Library</button>
+            ${packet.library_state === "accepted" && packet.public_use_eligible ? `
+              <button type="button" data-intake-group-review="public_use_approved" class="button-link">Approve Public Use</button>
+              <button type="button" data-intake-group-review="public_use_revoked" class="button-link button-link-secondary">Decline Public Use</button>` : ""}
+          </div>
+          <small>Later and still locked: Campaign Review; Publication.</small>
+        </section>` : "";
+      return `${albumHeader}
       <article class="beacon-intake-card" data-binary-id="${escapeHtml(item.binary_asset_id || "")}" data-intake-group-id="${escapeHtml(item.intake_group_id || "")}">
         ${item.thumbnail_url
           ? `<button type="button" class="beacon-intake-thumb" data-preview="${escapeHtml(item.thumbnail_url)}" aria-label="Enlarge private thumbnail"><img src="${escapeHtml(item.thumbnail_url)}" alt="Private BEACON intake thumbnail, album position ${escapeHtml(item.album_position || "pending")}" loading="lazy" /></button>`
@@ -1405,15 +1426,13 @@
           </dl>
           <p><strong>Authority:</strong> private review only. Library acceptance, public use, and publication are separate.</p>
           <div class="beacon-intake-card-actions">
-            <button type="button" data-intake-review="library_accepted" class="button-link">Library Accept</button>
-            <button type="button" data-intake-review="public_use_approved" class="button-link button-link-secondary">Public-use Approve</button>
-            <button type="button" data-intake-review="library_rejected" class="button-link button-link-secondary">Reject</button>
-            <button type="button" data-intake-review="archived" class="button-link button-link-secondary">Archive</button>
+            ${item.album_completed ? "" : `
+              <button type="button" data-intake-review="library_accepted" class="button-link">Library Accept</button>
+              <button type="button" data-intake-review="public_use_approved" class="button-link button-link-secondary">Public-use Approve</button>
+              <button type="button" data-intake-review="library_rejected" class="button-link button-link-secondary">Reject</button>
+              <button type="button" data-intake-review="archived" class="button-link button-link-secondary">Archive</button>`}
             <button type="button" data-intake-review="owner_context_recorded" class="button-link button-link-secondary">Edit owner context</button>
-            ${item.album_completed ? `
-              <button type="button" data-intake-group-review="library_accepted" class="button-link button-link-secondary">Accept whole album</button>
-              <button type="button" data-intake-group-review="library_rejected" class="button-link button-link-secondary">Reject whole album</button>
-            ` : `<span class="beacon-status-chip" data-state="blocked">Whole-album review waits for explicit completion</span>`}
+            ${item.album_completed ? "" : `<span class="beacon-status-chip" data-state="blocked">Whole-album review waits for explicit completion</span>`}
           </div>
         </div>
       </article>
@@ -1423,6 +1442,9 @@
 
   async function loadMediaIntakes() {
     const result = await fetchJson("/api/oom-sakkie/beacon/media-intakes?limit=100");
+    const groups = [...new Set((result.items || []).filter((item) => item.album_completed).map((item) => item.intake_group_id))];
+    const packets = await Promise.all(groups.map(async (groupId) => [groupId, await fetchJson(`/api/oom-sakkie/beacon/media-intakes/groups/${encodeURIComponent(groupId)}/review`)]));
+    state.albumReviews = Object.fromEntries(packets);
     renderIntakeItems(result.items);
   }
 
@@ -1454,6 +1476,13 @@
 
   async function recordIntakeGroupReview(intakeGroupId, eventType) {
     if (!intakeGroupId) throw new Error("Private album identity is unavailable.");
+    const packet = state.albumReviews[intakeGroupId];
+    if (!packet) throw new Error("The current album review snapshot is unavailable.");
+    let notes = "";
+    if (["library_rejected", "public_use_revoked", "archived"].includes(eventType)) {
+      notes = window.prompt("Please give a short reason. This appends a new decision and keeps history.") || "";
+      if (!notes.trim()) return;
+    }
     const result = await fetchJson(
       `/api/oom-sakkie/beacon/media-intakes/groups/${encodeURIComponent(intakeGroupId)}/review`,
       {
@@ -1461,14 +1490,15 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           event_type: eventType,
-          notes: "",
+          notes,
+          contract_version: packet.contract_version,
+          album_digest: packet.album_digest,
           owner_action_id: crypto.randomUUID(),
           expected_predecessors: Object.fromEntries(
-            state.intakeItems
-              .filter((item) => item.intake_group_id === intakeGroupId)
+            (packet.ordered_media || [])
               .map((item) => [
                 item.binary_asset_id,
-                item.latest_review_event_id || "",
+                item.library_event_id || "",
               ]),
           ),
         }),

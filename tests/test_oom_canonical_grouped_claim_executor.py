@@ -116,8 +116,9 @@ def test_partial_failure_rolls_back_the_single_group_transaction():
 
 
 class ClaimDb:
-    def __init__(self, payload, digest):
+    def __init__(self, payload, digest, action_kind="grouped_weights"):
         self.payload, self.digest = payload, digest
+        self.action_kind = action_kind
         self.status = "active"
         self.provider_id = None
         self.provider_time = None
@@ -134,7 +135,7 @@ class ClaimDb:
     def fetchone(self):
         if "select confirmation_provider_message_id" in self.last:
             return self.provider_id, self.provider_time
-        return ("grouped_weights", "42", "42", "MISSION", self.digest, "GEN", self.payload,
+        return (self.action_kind, "42", "42", "MISSION", self.digest, "GEN", self.payload,
             self.status, datetime.now(timezone.utc) + timedelta(minutes=5), None, "700")
 
 
@@ -149,6 +150,24 @@ def test_concurrent_confirmation_has_one_claim_and_exact_receipt_recovery_only()
     competing, competing_status = claims.claim_callback(**{**kwargs, "provider_message_id": "901"})
     assert (first_status, first["status"]) == (200, "protected_callback_claimed")
     assert (second_status, second["status"]) == (200, "protected_callback_recovered")
+    assert (competing_status, competing["status"]) == (409, "protected_callback_stale")
+
+
+def test_media_decline_exact_receipt_recovers_with_same_decision_only():
+    payload = {"contract_version": "beacon_private_album_review_v1"}
+    digest = claims.canonical_preview_digest("beacon_media_review", payload)
+    db = ClaimDb(payload, digest, action_kind="beacon_media_review")
+    kwargs = dict(callback_data="oompa:opaque:cancel", owner_user_id="42", private_chat_id="42",
+        provider_message_id="MEDIA-CALLBACK", provider_timestamp="2026-08-15T12:00:00Z",
+        source_card_message_id="700", connect_factory=lambda: db)
+    first, first_status = claims.claim_callback(**kwargs)
+    recovered, recovered_status = claims.claim_callback(**kwargs)
+    competing, competing_status = claims.claim_callback(
+        **{**kwargs, "provider_message_id": "OTHER-CALLBACK"})
+    assert (first_status, first["status"], first["selected_action"]) == (
+        200, "protected_callback_claimed", "decline")
+    assert (recovered_status, recovered["status"], recovered["selected_action"]) == (
+        200, "protected_callback_recovered", "decline")
     assert (competing_status, competing["status"]) == (409, "protected_callback_stale")
 
 

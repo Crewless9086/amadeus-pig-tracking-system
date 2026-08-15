@@ -16,6 +16,7 @@ from modules.beacon.content_operations import (
     gather_beacon_content_evidence,
 )
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
+from modules.oom_sakkie.beacon_media_review_runtime import present_private_media_review
 
 CONTRACT_VERSION = "oom_sakkie_beacon_request_v1"
 EVENT_SOURCE = "oom_sakkie_beacon_request"
@@ -40,6 +41,8 @@ def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
     bound = bind_gateway_owner_authority(authority, "farm_manager_round")
     if not provider_id or not provider_time or not bound or bound.owner_user_id != owner or bound.private_chat_id != chat:
         return {"handled": False}, 200
+    if str(semantic.get("intent") or "") == "private_media_library_review":
+        return present_private_media_review(parsed)
     binding = {"owner": owner, "chat": chat, "provider_message_id": provider_id,
         "provider_timestamp": provider_time, "content_digest": _digest(parsed.get("text") or ""),
         "semantic_domain": "beacon", "semantic_intent": str(semantic.get("intent") or ""),

@@ -11,6 +11,20 @@
 - Kept observation mode unable to pick missions, dispatch, release or execute;
   only a genuine canonical Control Tower feedback event can advance Phase A.
 
+## 2026-08-15 - BEACON private album review separated from Public Use
+
+- Started existing BMQ-20260813-03 from authoritative main and retained the
+  completed eight-photo Bella album without replaying intake or Finish Album.
+- Added one owner-friendly browser/Telegram review contract over the existing
+  canonical media and protected-action rails. Each group decision binds the
+  exact album version, digest, ordered binary/hash identities, predecessor,
+  owner action and organic-awareness-only Public Use scope.
+- Required explicit Reject/Decline reasons and append-only reconsideration.
+  Library, Public Use, Campaign Review and Publication remain separate; no
+  public/customer/spend/farm/hardware/n8n/Sheets authority was added.
+- Mission remains WORKING pending reviewed integration, deployment, genuine
+  owner presentation and one real button decision with canonical readback.
+
 ## 2026-08-15 - Forward terminal mission pipeline made mandatory
 
 - Recorded Charl's operating goal that Control Tower must keep development

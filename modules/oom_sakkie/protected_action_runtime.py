@@ -39,6 +39,13 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "durable_claim_truth_loaded":False,"current_segment_consumed":None,
           "segment_consumption_proven":False,"recovery_required":True},503
     if claimed.get("status")=="protected_callback_completed_delivery_retry":
+        if claimed.get("action_kind")=="beacon_media_review":
+            result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
+            return {"handled":True,**result,"specialist":"BEACON_MEDIA",
+              "mission_id":str(result.get("mission_id") or claimed["mission_id"]),
+              "card_mission_id":str(result.get("card_mission_id") or claimed["mission_id"]),
+              "owner_visible_completion_policy":"verified_edit_or_new_message",
+              "writes_farm_data":False,"delivery_recovery_required":True},200
         if claimed.get("action_kind")=="sam_sale_payment":
             result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
             return {"handled":True,**result,"specialist":"SAM",
@@ -99,6 +106,19 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
                 "writes_farm_data":False,"hardware_commands":0},result_status
         contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         return {"handled":True,**result,"writes_farm_data":False,"suppress_owner_delivery":True},result_status
+    if claimed["action_kind"]=="beacon_media_review":
+        from modules.oom_sakkie.beacon_media_review_runtime import execute_private_media_review
+        result,result_status=execute_private_media_review(claimed,parsed)
+        if result.get("success") is True:
+            completed=complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            if completed.get("replayed"):
+                return {"handled":True,**(completed.get("result") or result),"answer":"",
+                    "suppress_owner_delivery":True,"telegram_sends":0,"telegram_edits":0,
+                    "writes_farm_data":False},200
+            return {"handled":True,**result,"writes_farm_data":False},result_status
+        contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        return {"handled":True,**result,"writes_farm_data":False,
+            "suppress_owner_delivery":True},result_status
     if claimed["action_kind"]=="rootline_irrigation_segment":
         from modules.oom_sakkie.rootline_protected_irrigation import protected_card_mission_id
         if irrigation_handler is None:

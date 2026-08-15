@@ -67,6 +67,29 @@ def test_awareness_semantic_family_preserves_stable_intent(text, language, conti
     assert "stable intent live_stock_awareness" in captured["messages"][0]["content"]
 
 
+@pytest.mark.parametrize("text,language,continuation", [
+    ("Show me Bella's private album so I can review it for the Library.", "en", False),
+    ("Wys asseblief Bella se privaat foto-album vir Biblioteek-hersiening.", "af", False),
+    ("Let's review die private foto's, but publish niks nie.", "mixed", False),
+    ("Ja, wys daardie album se aparte besluite.", "af", True),
+])
+def test_private_media_review_semantic_family_preserves_stable_intent(text, language, continuation):
+    captured = {}
+    def open_request(request, timeout):
+        captured.update(json.loads(request.data.decode()))
+        return _HttpResponse(_response(_semantic("beacon", "private_media_library_review",
+            message_kind="request", language=language, continuation=continuation)))
+    result = interpret_owner_message({"text": text, "provider_message_id": "MEDIA-REVIEW-1"},
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+        context_loader=lambda parsed: ({"recent_turns": [{"semantic_domain": "beacon",
+            "semantic_intent": "private_media_library_review"}]} if continuation else {}),
+        http_open=open_request)
+    assert result.domain == "beacon" and result.intent == "private_media_library_review"
+    assert result.language == language and result.continuation is continuation
+    assert "stable intent private_media_library_review" in captured["messages"][0]["content"]
+
+
 def test_english_death_update_is_typed_as_herd_evidence():
     result = parse_semantic_response(_response(_semantic("herd_health", "death_report",
         entity_refs=["Pig 127"], continuation=True,
