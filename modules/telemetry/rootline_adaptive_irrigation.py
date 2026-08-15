@@ -308,6 +308,9 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "simultaneous_with_other_zone": False,
         "grid_exposure_may_be_justified": urgent and not gravity_fed,
         "evidence_gaps": gaps,
+        "planning_warnings": [gap for gap in gaps if gap in {
+            "forecast_unavailable", "forecast_stale",
+        }],
         "forecast_status": _freshness(forecast, now, 360),
         "local_weather_status": _freshness(weather, now, 30),
         "last_completed_at": latest.isoformat() if latest else None,

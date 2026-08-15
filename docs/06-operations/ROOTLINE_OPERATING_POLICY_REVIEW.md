@@ -172,9 +172,14 @@ a recurring human authority boundary, and historical `true` values are not
 interpreted as current execution prerequisites.
 
 Dry release remains fail-closed and automatic: the governed local weather
-source must be healthy and fresh; the forecast must be fresh; every durable
-reading across the configured 30-minute interval must be exactly 0.0 mm/hour;
-at least two boundary readings must exist; and missing, conflicting, future or
-stale evidence blocks release. This correction changes no controller,
-fail-stop, water, accounting, shutdown, fertilizer, borehole or future-device
-authority.
+source must be healthy and fresh; every durable reading across the configured
+30-minute interval must be exactly 0.0 mm/hour; at least two boundary readings
+must exist; and missing, conflicting, future or stale local evidence blocks
+release. Forecast evidence informs planning quality, prioritisation, duration
+and future-window selection. A stale or unavailable forecast is an explicit
+planning warning, not an independent execution Hold. Forecast rain can defer a
+plan only through an active governed forecast threshold; an `Unknown` threshold
+cannot invent execution authority or prohibition. This correction changes no
+controller, fail-stop, water, accounting, shutdown, fertilizer, borehole or
+future-device authority. Execution eligibility artifacts use a new contract
+version so older forecast-blocked artifacts cannot cross this boundary.
