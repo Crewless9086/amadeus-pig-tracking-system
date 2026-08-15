@@ -86,10 +86,11 @@ def test_conflict_or_unproven_execution_is_zero_effect():
 
 
 def test_owner_zone_and_physical_bindings_fail_closed():
-    for change in ("owner", "zone", "flow", "off"):
+    for change in ("owner", "zone", "execution", "flow", "off"):
         item = payload()
         if change == "owner": item["private_chat_id"] = "8"
         if change == "zone": item["observations"][0]["zone_id"] = "B12345"
+        if change == "execution": item["observations"][0]["execution_id"] = "ROOTLINE-EXECUTION-OTHER"
         if change == "flow": item["observations"][0]["water_flow"] = "unknown"
         if change == "off": item["observations"][0]["physically_off_now"] = False
         result, status = attach_physical_acceptance(item, owner_principal="owner:abc",

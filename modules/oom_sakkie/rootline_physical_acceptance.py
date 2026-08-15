@@ -9,6 +9,10 @@ import os
 CONTRACT_VERSION = "rootline_physical_acceptance.v1"
 EVENT_SOURCE = "rootline_physical_acceptance"
 MISSION_ID = "RMQ-20260813-04"
+EXPECTED_EXECUTIONS = {
+    "ROOTLINE-EXECUTION-79A473B14C98D5E58B9DD2D5": "C12345",
+    "ROOTLINE-EXECUTION-8CF9AD2989F15CC5BDC696AE": "B12345",
+}
 
 
 def attach_physical_acceptance(payload, *, owner_principal, execution_loader=None,
@@ -115,7 +119,9 @@ def _canonical_packet(payload, principal, now, allowed_owner_ids):
         observations.append({key: row[key] for key in (
             "execution_id", "zone_id", "water_flow", "stopped_flow", "physically_off_now")})
     if ({row["zone_id"] for row in observations} != {"B12345", "C12345"}
-            or len({row["execution_id"] for row in observations}) != 2):
+            or len({row["execution_id"] for row in observations}) != 2
+            or {row["execution_id"]: row["zone_id"] for row in observations}
+               != EXPECTED_EXECUTIONS):
         return None
     return {"contract_version": CONTRACT_VERSION, "mission_id": MISSION_ID,
             "owner_principal": str(principal), "owner_user_id": owner,
@@ -190,7 +196,8 @@ def _send_owner_closure(chat_id, text):
 
 def _closure_text(_packet):
     return ("ROOTLINE acceptance complete: C Camp and B Camp irrigated with normal water "
-            "flow, both stopped normally, and provider readback confirms both remain OFF. "
+            "flow and both stopped normally. Provider evidence confirmed each shutdown OFF; "
+            "Charl confirms both camps are physically OFF now. "
             "Each bounded segment ran exactly once for 3,599 seconds. RMQ-20260813-04 is complete.")
 
 
