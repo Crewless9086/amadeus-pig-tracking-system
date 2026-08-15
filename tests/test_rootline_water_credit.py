@@ -164,6 +164,13 @@ def test_disposable_postgres_one_credit_per_execution_and_conflict():
         "observations": [{**ACCEPTANCE["observations"][0], "execution_id": execution["execution_id"]}]}
     evidence = volume_evidence(evidence_id="VOLUME-" + uuid.uuid4().hex,
                                measured_volume_litres=100)
+    missing = volume_evidence(evidence_id="VOLUME-MISSING-" + uuid.uuid4().hex)
+    with psycopg.connect(url, connect_timeout=10) as connection:
+        with connection.cursor() as cursor, pytest.raises(psycopg.Error):
+            cursor.execute("select public.rootline_append_water_volume_evidence(%s,%s,%s,%s,%s::jsonb)",
+                (missing["evidence_id"], missing["evidence_type"], missing["zone_id"],
+                 missing["evidence_sha256"], json.dumps(missing, sort_keys=True,
+                    separators=(",", ":"))))
     with psycopg.connect(url, connect_timeout=10) as connection:
         with connection.cursor() as cursor:
             cursor.execute("""insert into public.sam_live_stock_conversation_review_events(event_source,review_json)

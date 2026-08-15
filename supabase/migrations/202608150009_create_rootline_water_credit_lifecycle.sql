@@ -15,8 +15,12 @@ create table if not exists public.irrigation_water_volume_evidence (
   check (coalesce(evidence_json->>'observed_at',evidence_json->>'calibrated_at',evidence_json->>'recorded_at') is not null),
   check (evidence_json->>'source' in ('verified_flow_meter','verified_volume_measurement','commissioned_zone_calibration')),
   check ((evidence_type='measured_volume'
+      and evidence_json ? 'measured_volume_litres'
+      and (evidence_json->>'measured_volume_litres') is not null
       and (evidence_json->>'measured_volume_litres')::numeric > 0)
     or (evidence_type='governed_calibration'
+      and evidence_json ? 'litres_per_minute'
+      and (evidence_json->>'litres_per_minute') is not null
       and (evidence_json->>'litres_per_minute')::numeric > 0))
 );
 
