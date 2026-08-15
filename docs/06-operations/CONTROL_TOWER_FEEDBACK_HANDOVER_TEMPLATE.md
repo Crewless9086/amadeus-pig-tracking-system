@@ -79,6 +79,8 @@ script or a synthetic canary cannot by itself establish autonomous operation.
 
 ## Closeout and next action
 
+- Owner-facing dispatch banner: `DO NOT SEND — TERMINAL ACTIVE` /
+  `SEND NOW — TERMINAL IDLE OR RELEASED` / `HOLD — VERIFY TERMINAL STATE`
 - Business result, or `NO BUSINESS OUTCOME`:
 - Exact blocker and owner:
 - Safe work remaining:
@@ -87,6 +89,26 @@ script or a synthetic canary cannot by itself establish autonomous operation.
   NEW_MISSION / WAIT_FOR_INPUT / CLOSE
 - Exact next terminal:
 - Expected owner-visible result:
+
+## Mandatory owner-facing prompt rule
+
+The dispatch banner controls whether Charl receives prompt text:
+
+- `DO NOT SEND — TERMINAL ACTIVE`: give no sendable continuation prompt. Name
+  the existing mission and retain any new fact for reconciliation at the next
+  safe feedback boundary. Do not invite Charl to interrupt or resend.
+- `SEND NOW — TERMINAL IDLE OR RELEASED`: provide one self-contained prompt,
+  the exact terminal and worktree, and state plainly that Charl should paste it
+  now unless direct delivery is proven.
+- `HOLD — VERIFY TERMINAL STATE`: give no sendable prompt until fresh evidence
+  resolves whether the terminal is active, idle, released or stopped.
+
+An assessment format that requests an exact continuation prompt does not
+override this rule. When the correct terminal is already active, the exact
+continuation field must contain only `DO NOT SEND — TERMINAL ACTIVE` plus the
+current mission identity; it must not include prompt-shaped text that Charl
+could reasonably paste. Conversation memory is context, never the durable
+dispatch ledger or authority.
 
 ## Mandatory continuation-prompt clause
 
