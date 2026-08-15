@@ -1,8 +1,8 @@
 # BEACON Media Intake Workflow
 
-Status: owner-approved direction with a default-disabled foundation candidate.
-The additive migration is unapplied, the Telegram gate is inactive, and no
-production intake canary has run.
+Status: owner-approved append-only foundation deployed, with the 15 August 2026
+four-photo album exposing an inactive Render policy and shared-gateway
+precedence defect. BMQ-20260813-02 owns correction and live recovery.
 
 ## Owner Outcome
 
@@ -41,6 +41,15 @@ or a second manual Farm App upload.
 8. Charl may approve, reject, archive, or correct individual assets;
    album-level decisions are available where safe.
 9. Public use and later publication remain separate decisions.
+
+Provider media must enter the typed BEACON intake before generic owner-context
+or semantic handling on both the retained GateKeeper gateway and any future
+direct webhook. Album members share one HMAC-derived group identity, append
+caption/context evidence independently of arrival order, and use the existing
+family-message lifecycle for one provider-confirmed receipt and silent replay.
+A bounded incident-recovery context supplement is accepted only with a
+temporary high-entropy Render token bound to the exact provider media-group;
+remove that token immediately after recovery.
 
 ## Built Candidate Contract
 

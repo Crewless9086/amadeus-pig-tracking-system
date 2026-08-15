@@ -271,6 +271,31 @@ class BeaconMediaIntakeTests(unittest.TestCase):
         self.assertIn("/beacon-complete ABC123", receipts[0][1])
         self.assertNotIn("album-1", receipts[0][1])
 
+    def test_bounded_recovery_context_requires_exact_token_and_album(self):
+        path = image_temp()
+        env = {**ENV, "BEACON_TELEGRAM_MEDIA_RECOVERY_CONTEXT_TOKEN": "r" * 40}
+        payload = telegram_photo(
+            message={"media_group_id": "album-1"},
+            beacon_media_recovery={
+                "token": "wrong", "media_group_id": "album-1",
+                "owner_context": "Molly, litter size eight, born 11 August 2026",
+            },
+        )
+        result, status = handle_telegram_media_intake(
+            payload, environ=env, fetcher=lambda *_: self.fail("invalid recovery must not fetch"))
+        self.assertEqual((status, result["status"]),
+                         (403, "beacon_media_recovery_context_invalid"))
+
+        payload["beacon_media_recovery"]["token"] = "r" * 40
+        with patch("modules.beacon.media_intake.IntakeStore", FakeStore):
+            result, status = handle_telegram_media_intake(
+                payload, environ=env,
+                fetcher=lambda *_: (path, {"returned_mime_type": "image/jpeg"}),
+                storage=FakeStorage(),
+            )
+        self.assertEqual(status, 201)
+        self.assertEqual(result["album_state"], "awaiting_explicit_owner_completion")
+
     def test_exact_bytes_under_another_source_are_retired_without_finalization(self):
         path = image_temp()
         evidence = _validate_streamed_image(path, "image/jpeg", {})
