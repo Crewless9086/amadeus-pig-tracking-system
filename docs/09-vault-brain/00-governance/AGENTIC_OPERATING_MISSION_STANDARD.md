@@ -427,6 +427,64 @@ For a live acceptance journey:
 - never declare a physical, customer, farm, financial or publication journey Operational until its intended real-world effect and required readback have occurred;
 - after three owner attempts without the intended outcome, stop requesting more owner input, classify the journey as a systemic incident, and require an end-to-end trace and correction before another live attempt.
 
+### Mandatory Hierarchical Completion Reconciliation Gate
+
+Before a terminal or Control Tower may classify any mission, job, plan,
+schedule, order, conversation, campaign or protected action as
+`BUSINESS_COMPLETE`, it must reconcile the complete outcome hierarchy against
+authoritative records. A successful child action, safe shutdown, provider
+receipt, delivery, segment, payment part, message or test does not establish
+completion of its parent objective.
+
+The reconciliation must start with the owner-visible parent outcome and trace
+down through every required level, for example:
+
+`owner outcome -> mission or plan -> durable job -> segment or action -> provider effect -> canonical readback -> physical or customer-visible result`
+
+For each applicable level, the terminal and Control Tower must report:
+
+- required quantity, duration, amount, count, state or acceptance condition;
+- expected child count and the identity of every required child;
+- completed, cancelled, deferred, failed, pending and missing children;
+- cumulative delivered result reconciled arithmetically to the parent target;
+- the authoritative completion field and its exact current value;
+- provider, canonical and physical evidence kept as separate facts;
+- every `false`, `pending`, `Unknown`, stale or contradictory field;
+- the supported reason and durable record for any intentionally undelivered
+  remainder.
+
+The following are hard completion blockers unless the parent outcome explicitly
+excludes them or a supported cancellation/deferment resolves the remainder:
+
+- any authoritative parent field such as `completed`, `job_completed`,
+  `fully_reconciled` or equivalent remains false;
+- completed child count is lower than expected child count;
+- cumulative delivery is lower than the requested parent objective;
+- a planner, dashboard, projection, message or terminal summary says complete
+  while the durable parent or child records disagree;
+- safe containment, OFF readback or shutdown is proven but the intended work is
+  only partially delivered;
+- the remaining objective disappeared from refreshed planning without an
+  explicit supported execution, cancellation or deferment decision.
+
+Every proposed `BUSINESS_COMPLETE` closeout must include a compact completion
+reconciliation matrix. Control Tower must independently challenge the matrix
+against canonical source records and must reject the closeout if the matrix is
+absent, incomplete or contradictory. It may not rely on the terminal's lifecycle
+label or narrative summary as evidence. If direct canonical read access is not
+available, completion remains unproven rather than inferred.
+
+For segmented or multi-stage work specifically, completion requires every
+expected segment or stage to be accounted for. A completed segment proves only
+that segment. Verified OFF, safe shutdown and replay safety prove containment
+and safety; they do not convert a partial parent job into a completed one.
+
+When this gate exposes a contradiction after a closeout, Control Tower must
+immediately withdraw the premature completion classification, preserve the
+evidence, reopen or continue the existing outcome-bound mission, prevent
+downstream projections from cementing the false completion, and repair the
+reusable journey before requesting further owner action.
+
 ### Fresh Execution Epoch After Repair
 
 A contained card, callback, conversation, customer send, job, segment, canary
