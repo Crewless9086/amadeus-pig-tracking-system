@@ -1,5 +1,12 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - CORE Shadow worker heartbeat retains independent cycle truth
+
+- Preserved the deployed observation worker's last Shadow cycle, poll count and
+  exact next eligible event in the existing governed runner heartbeat.
+- Kept observation mode unable to pick missions, dispatch, release or execute;
+  only a genuine canonical Control Tower feedback event can advance Phase A.
+
 ## 2026-08-15 - Forward terminal mission pipeline made mandatory
 
 - Recorded Charl's operating goal that Control Tower must keep development

@@ -281,10 +281,19 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "queue_health",
         "executive",
         "last_progress_at",
+        "shadow",
+        "checks",
+        "next_eligible_event",
+        "mission_pickup_attempted",
+        "release_attempted",
     ):
         if key in result:
             payload[key] = result.get(key)
-        elif key in {"queue_health", "executive", "last_progress_at"} and key in previous:
+        elif key in {
+            "queue_health", "executive", "last_progress_at", "shadow",
+            "checks", "next_eligible_event", "mission_pickup_attempted",
+            "release_attempted",
+        } and key in previous:
             payload[key] = previous.get(key)
     payload = redact_payload(payload)
     generation = str(payload.get("supervisor_generation") or "")

@@ -1079,6 +1079,35 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["last_result_status"], "codex_final_artifact_seen")
         self.assertTrue(result["final_artifact_present"])
 
+    def test_heartbeat_retains_shadow_cycle_and_next_eligible_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            heartbeat = Path(tmp) / "runner.json"
+            shadow = {
+                "success": True,
+                "status": "shadow_feedback_waiting",
+                "processed_count": 0,
+                "next_eligible_event": "control_tower_feedback_recorded",
+            }
+
+            first = runner_control.write_runner_heartbeat({
+                "status": "shadow_observation_cycle",
+                "shadow": shadow,
+                "checks": 3,
+                "next_eligible_event": "control_tower_feedback_recorded",
+                "mission_pickup_attempted": False,
+                "release_attempted": False,
+            }, heartbeat)
+            second = runner_control.write_runner_heartbeat({
+                "status": "observe_only_ready",
+            }, heartbeat)
+
+        self.assertEqual(first["shadow"], shadow)
+        self.assertEqual(second["shadow"], shadow)
+        self.assertEqual(second["checks"], 3)
+        self.assertEqual(second["next_eligible_event"], "control_tower_feedback_recorded")
+        self.assertFalse(second["mission_pickup_attempted"])
+        self.assertFalse(second["release_attempted"])
+
     @patch("modules.charlie.runner_control.os.kill")
     @patch("modules.charlie.runner_control._pid_alive_windows", return_value=True)
     def test_pid_alive_on_windows_does_not_use_os_kill_probe(self, pid_alive_windows, kill):
