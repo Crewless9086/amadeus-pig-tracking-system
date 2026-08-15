@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - BEACON farm-awareness direction approved
+
+- Recorded Charl's decision to prepare a non-availability farm-awareness
+  proposal while current marketing demand caps remain zero.
+- Prohibited inventory availability claims, stock selection, publication,
+  spend, customer sends, reservations and farm writes from this decision.
+- Clarified that the rejected `wait for buyer demand` option meant passive
+  waiting for a genuine quantified SAM/customer signal and did not itself
+  define a demand-generation or measurement mechanism.
+
 ## 2026-08-15 - Owner-facing terminal prompt state made explicit
 
 - Required every Control Tower handover to show exactly one of `DO NOT SEND —
