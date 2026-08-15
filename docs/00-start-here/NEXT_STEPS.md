@@ -555,8 +555,9 @@ autonomous authority.
 - Never retry the contained HTTP 503 execution; it created no claim or provider attempt.
 # BEACON private album review — BMQ-20260813-03
 
-- Integrate and deploy the exact completed-album Library/Public Use review
-  candidate through the serialized lane.
+- Exact completed-album Library/Public Use review is merged/deployed as
+  `ed8cb1b2`; production schema and Bella's eight-photo contact sheet readback
+  are verified.
 - Present the genuine eight-photo Bella contact sheet from deployed BEACON.
   The terminal must not press a button or manufacture an owner decision.
 - Keep Library Accept/Reject, Public Use Approve/Decline, Campaign Review and

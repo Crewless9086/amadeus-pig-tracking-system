@@ -22,8 +22,12 @@
 - Required explicit Reject/Decline reasons and append-only reconsideration.
   Library, Public Use, Campaign Review and Publication remain separate; no
   public/customer/spend/farm/hardware/n8n/Sheets authority was added.
-- Mission remains WORKING pending reviewed integration, deployment, genuine
-  owner presentation and one real button decision with canonical readback.
+- PR #979 merged as `ed8cb1b2`; exact Render deployment and production schema
+  readback passed. Authenticated deployed readback proves Bella's eight ordered
+  originals/hashes and eight private thumbnails with retained context. Library
+  remains pending and Public Use/Campaign Review/Publication remain false.
+- Mission remains WORKING pending Charl's genuine bound button decision and
+  exactly-once canonical readback; the terminal created no decision or message.
 
 ## 2026-08-15 - Forward terminal mission pipeline made mandatory
 
@@ -1310,6 +1314,11 @@
 - Granted observation eligibility only to the exact paused, non-runnable
   `CMQ-20260813-05` bootstrap admission. The 86 classified legacy records and
   all unapproved current candidates remain non-runnable.
+- Repaired the remaining platform-ingress defect with one strict owner-admin
+  route that reaches the existing sealed producer, binds immutable feedback
+  bytes to an explicit SHA-256 and exposes identity-only lifecycle readback.
+  Proposal/comparison creation remains exclusively in the autonomous
+  observe-only worker; this source change records no genuine event.
 
 ## 2026-08-15 - Full-lifecycle genetic merit backend truth reconciled
 
