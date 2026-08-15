@@ -104,6 +104,25 @@ Control Tower must then:
    delivered, and delivered work is not started;
 8. repeat the sweep after any terminal completes, blocks or releases.
 
+### Control Tower response closure gate
+
+Control Tower may not close an owner response merely because the named mission
+was assessed. Before responding, it must account for CORE, OOM SAKKIE,
+ROOTLINE, HERDMASTER, SAM, BEACON and CODEX UI. Each `idle_open` or `released`
+terminal must be classified as exactly one of:
+
+1. `SEND NOW` — one eligible existing mission and paste-ready prompt are
+   surfaced to Charl;
+2. `DEPENDENCY IDLE` — the exact dependency and automatic eligibility trigger
+   are recorded; or
+3. `NO SAFE WORK` — the inspected queue contains no non-colliding authorized
+   work.
+
+An unexplained eligible idle terminal is a failed dispatch transaction and
+must be corrected before the response closes. This gate does not authorize
+invented work, overlapping files, simultaneous release-lane ownership or a
+prompt to an already active terminal.
+
 The owner should not have to ask which terminal is idle or remember its next
 mission. Until automatic terminal delivery is proven, Control Tower remains
 responsible for detecting the opportunity and presenting the exact prompts to
@@ -254,6 +273,7 @@ result appear known earlier.
 
 | Date | Terminal / mission | Evidence and decision | Closeout / next action |
 |---|---|---|---|
+| 2026-08-15 | Control Tower idle-terminal dispatch failure | After summarizing live agents and terminals, Control Tower identified eligible queued HERDMASTER and SAM work but did not proactively surface the dispatches until Charl asked why the terminals remained idle. The mandatory sweep existed, so this was an execution failure rather than missing doctrine. | Add and enforce the all-terminal response closure gate. Dispatch eligible disjoint HERDMASTER and SAM missions; keep OOM SAKKIE dependency-idle until HERDMASTER supplies corrected lifecycle/materiality truth. |
 | 2026-08-15 | BEACON `BMQ-20260813-04` owner strategy decision | Charl selected the non-availability farm-awareness campaign. Current evidence has demand cap zero, so BEACON must not claim available inventory, select sale stock or publish an availability offer. The alternative wording `wait for buyer demand` meant no proactive campaign until a genuine quantified SAM/customer demand signal existed; because no acquisition or measurement action was specified, it was passive and insufficiently explained, and Charl did not select it. | Remove `OWNER_HOLD` and return the operational outcome to `WORKING`. The deployed Oom Sakkie/BEACON path should prepare one owner-reviewable farm-awareness proposal that makes no availability claim and performs no publication, spend, customer send, reservation or farm write. A development terminal is assigned only if the deployed runtime cannot perform that approved next step. |
 | 2026-08-13 | CORE `CMQ-20260813-02A` | Reversible watchdog window rolled back; synthetic receipt/reply passed; mission pickup failed through ID truncation. | Released; repair parser before another window. |
 | 2026-08-13 | CORE `CMQ-20260813-02A` parser repair | PR #877 evidence merged as `8f8ec3b2`; PR #885 opaque mission-ID and creation-precedence repair merged/deployed as `7c22cd5f`; no Telegram proof or provider mutation occurred. | Parser development released; live proof remains unauthorized. Promote CMQ-03 read-only reconciliation. |
