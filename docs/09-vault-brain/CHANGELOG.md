@@ -1,5 +1,28 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - BEACON farm-awareness direction approved
+
+- Recorded Charl's decision to prepare a non-availability farm-awareness
+  proposal while current marketing demand caps remain zero.
+- Prohibited inventory availability claims, stock selection, publication,
+  spend, customer sends, reservations and farm writes from this decision.
+- Clarified that the rejected `wait for buyer demand` option meant passive
+  waiting for a genuine quantified SAM/customer signal and did not itself
+  define a demand-generation or measurement mechanism.
+
+## 2026-08-15 - Owner-facing terminal prompt state made explicit
+
+- Required every Control Tower handover to show exactly one of `DO NOT SEND —
+  TERMINAL ACTIVE`, `SEND NOW — TERMINAL IDLE OR RELEASED`, or `HOLD — VERIFY
+  TERMINAL STATE` before any continuation instruction.
+- Prohibited sendable prompt text when the target terminal is already active or
+  its state is unknown; retained new facts in the mission register for the next
+  safe feedback boundary instead.
+- Recorded that conversation memory supplies context but is never the durable
+  terminal-dispatch ledger or authority. This documentation-only correction
+  changes no runtime, provider, farm, customer, hardware, n8n or Google Sheets
+  authority.
+
 ## 2026-08-15 - Autonomous-agent operational reality gate
 
 - Corrected a cross-system Control Tower failure in which deployed source, web

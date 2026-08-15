@@ -11,7 +11,9 @@ import json
 import os
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
-from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+from modules.oom_sakkie.bounded_postgres_read import (
+    connect_bounded_rootline_postgres,
+)
 
 EVENT_SOURCE = "oom_sakkie_manager_question_reply"
 MAX_AGE_SECONDS = 24 * 60 * 60
@@ -81,7 +83,8 @@ def semantic_context_with_manager_question(parsed, *, base_context_loader, quest
 
 
 def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
-                                  question_loader=None, event_store=None):
+                                  question_loader=None, event_store=None,
+                                  event_loader=None):
     if authority is None:
         return {"handled": False, **ZERO}, 200
     active = question or load_active_manager_question(parsed, loader=question_loader)
@@ -110,7 +113,8 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             "answer": str(active.get("question") or "Could you clarify that answer?")[:240],
             "requires_visible_notification": True, "question_count": 1, **ZERO}, 409
     bound = bind_gateway_owner_authority(authority, "farm_manager_round")
-    if bound is None:
+    if (bound is None or str(bound.owner_user_id) != str(parsed.get("telegram_user_id") or "")
+            or str(bound.private_chat_id) != str(parsed.get("telegram_chat_id") or "")):
         return {"handled": True, "success": False,
             "status": "manager_question_authority_denied",
             "answer": "I could not safely bind that reply to the active farm question.",
@@ -132,6 +136,7 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         str((active.get("question_binding") or {}).get("task_id") or ""), dedupe_key))
     event_id = "OOM-MANAGER-QUESTION-" + sha256(
         f"{question_identity}|{generation}".encode()).hexdigest()[:24].upper()
+    completion_event_id = event_id + "-COMPLETED"
     facts = _semantic_facts(semantic)
     clarification = str(getattr(semantic, "clarification_question", "") or "").strip()
     partial = bool(getattr(semantic, "needs_clarification", False) and clarification)
@@ -139,6 +144,35 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         "chat_id": str(parsed.get("telegram_chat_id") or ""),
         "provider_message_id": provider, "provider_timestamp": provider_at,
         "reply_to_message_id": reply_to, "content_sha256": sha256(text.encode()).hexdigest()}
+    try:
+        existing = ((event_loader)(event_id) if event_loader is not None else
+                    _load_manager_question_record(event_id) if event_store is None else {})
+        completed = ((event_loader)(completion_event_id) if event_loader is not None else
+                    _load_manager_question_record(completion_event_id) if event_store is None else {})
+    except Exception as exc:
+        return {"handled": True, "success": False,
+            "status": "manager_question_receipt_lookup_unavailable",
+            "failure_class": exc.__class__.__name__,
+            "answer": ("I received the reply, but could not safely check its durable receipt. "
+                       "Nothing was applied; exact recovery remains available."),
+            "requires_visible_notification": True, **ZERO}, 503
+    terminal = completed or (existing if existing.get("status") != "dispatch_claimed" else {})
+    if terminal:
+        if terminal.get("provider_binding") != binding:
+            return {"handled": True, "success": False,
+                "status": "manager_question_concurrent_reply_conflict",
+                "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
+                "requires_visible_notification": True, **ZERO}, 409
+        recovered = (terminal.get("downstream_result")
+            if isinstance(terminal.get("downstream_result"), dict) else None)
+        if recovered:
+            return {**recovered, "handled": True,
+                "manager_question_status": "manager_question_reply_replay_recovered",
+                "manager_question_event_id": event_id,
+                "records_audit_trace": True}, int(terminal.get("downstream_status") or 200)
+        return {"handled": True, "success": True,
+            "status": "manager_question_reply_replay_suppressed", "answer": "",
+            "suppress_owner_delivery": True, **ZERO}, 200
     for prior in partials:
         prior_binding = prior.get("provider_binding") if isinstance(
             prior.get("provider_binding"), dict) else {}
@@ -167,16 +201,92 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         "semantic_facts": facts, "accumulated_semantic_facts": accumulated,
         "generation": generation, "provider_binding": binding,
         "content_sha256": binding["content_sha256"]}
+    downstream = None
+    downstream_status = 200
+    if expected_domain == "rootline" and semantic_domain == "rootline":
+        store = event_store or manager_question_event_store
+        if existing:
+            if existing.get("provider_binding") != binding:
+                return {"handled": True, "success": False,
+                    "status": "manager_question_concurrent_reply_conflict",
+                    "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
+                    "requires_visible_notification": True, **ZERO}, 409
+            return {"handled": True, "success": True,
+                "status": "manager_question_reply_replay_suppressed", "answer": "",
+                "suppress_owner_delivery": True, **ZERO}, 200
+        else:
+            claim = {**record, "status": "dispatch_claimed",
+                "claim_started_at": datetime.now(timezone.utc).isoformat()}
+            claimed = store(event_id, claim)
+            if not isinstance(claimed, dict) or claimed.get("success") is not True:
+                return {"handled": True, "success": False,
+                    "status": "manager_question_receipt_unavailable",
+                    "answer": ("I received the reply, but could not durably claim it. "
+                               "Nothing was applied; exact recovery remains available."),
+                    "requires_visible_notification": True, **ZERO}, 503
+            if claimed.get("created") is False:
+                prior = claimed.get("record") if isinstance(claimed.get("record"), dict) else {}
+                if prior.get("provider_binding") != binding:
+                    return {"handled": True, "success": False,
+                        "status": "manager_question_concurrent_reply_conflict",
+                        "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
+                        "requires_visible_notification": True, **ZERO}, 409
+                return {"handled": True, "success": True,
+                    "status": "manager_question_reply_replay_suppressed", "answer": "",
+                    "suppress_owner_delivery": True, **ZERO}, 200
+        from modules.oom_sakkie.operational_specialist_intake import (
+            handle_operational_specialist_message,
+        )
+        downstream, downstream_status = handle_operational_specialist_message(
+            parsed, authority)
+        if not downstream.get("handled"):
+            return {"handled": False, **ZERO}, 200
+        completion = {**record, "event_id": completion_event_id,
+            "status": "recorded", "downstream_result": dict(downstream),
+            "downstream_status": int(downstream_status)}
+        stored = store(completion_event_id, completion)
+        if not isinstance(stored, dict) or stored.get("success") is not True:
+            retained_identity = {key: downstream.get(key) for key in
+                ("specialist_identity", "mission_id", "card_mission_id",
+                 "provider_message_id", "provider_timestamp")
+                if downstream.get(key) is not None}
+            return {"handled": True, "success": False,
+                "status": "manager_question_receipt_unavailable",
+                "answer": ("ROOTLINE retained the attributable update, but the linked manager receipt "
+                           "is not yet proven. Exact recovery will reconcile this same provider identity; "
+                           "no hardware command was issued."),
+                "downstream_retention_possible": True,
+                "requires_visible_notification": True, **retained_identity, **ZERO}, 503
+        return {**downstream, "handled": True,
+            "manager_question_status": "manager_question_reply_recorded",
+            "manager_question_event_id": event_id,
+            "records_audit_trace": True}, downstream_status
     stored = (event_store or manager_question_event_store)(event_id, record)
     if not isinstance(stored, dict) or stored.get("success") is not True:
+        downstream_applied = downstream is not None
+        retained_identity = ({key: downstream.get(key) for key in
+            ("specialist_identity", "mission_id", "card_mission_id",
+             "provider_message_id", "provider_timestamp")
+            if downstream is not None and downstream.get(key) is not None})
         return {"handled": True, "success": False,
             "status": "manager_question_receipt_unavailable",
-            "answer": ("I received the reply, but could not prove its durable receipt. "
-                       "Nothing was applied; recovery must use this same provider message identity."),
-            "requires_visible_notification": True, **ZERO}, 503
+            "answer": (("ROOTLINE retained the attributable update, but the linked manager receipt "
+                        "is not yet proven. Exact recovery will reconcile this same provider identity; "
+                        "no hardware command was issued.") if downstream_applied else
+                       ("I received the reply, but could not prove its durable receipt. "
+                        "Nothing was applied; recovery must use this same provider message identity.")),
+            "downstream_retention_possible": downstream_applied,
+            "requires_visible_notification": True, **retained_identity, **ZERO}, 503
     if stored.get("created") is False:
         existing = stored.get("record") if isinstance(stored.get("record"), dict) else {}
         if existing.get("provider_binding") == binding:
+            recovered = (existing.get("downstream_result")
+                if isinstance(existing.get("downstream_result"), dict) else None)
+            if recovered:
+                return {**recovered, "handled": True,
+                    "manager_question_status": "manager_question_reply_replay_recovered",
+                    "manager_question_event_id": event_id,
+                    "records_audit_trace": True}, int(existing.get("downstream_status") or 200)
             return {"handled": True, "success": True,
                 "status": "manager_question_reply_replay_suppressed", "answer": "",
                 "suppress_owner_delivery": True, **ZERO}, 200
@@ -210,7 +320,9 @@ def manager_question_event_store(event_id, record):
         "review_json": {"manager_question_reply": dict(record)},
         "decision_json": {}, "facts_json": {}, "customer_message_excerpt": "",
         "sam_reply_excerpt": ""})
-    result, status = record_sam_live_stock_review_event(event)
+    result, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: connect_bounded_rootline_postgres(
+            read_only=False, connect_deadline_seconds=3))
     created = result.get("created", status < 300)
     existing = record if created else _load_manager_question_record(event_id)
     return {**result, "success": status < 400 and result.get("success") is True,
@@ -220,7 +332,8 @@ def manager_question_event_store(event_id, record):
 def _load_manager_question_record(event_id):
     if not str(os.environ.get("DATABASE_URL") or "").strip():
         return {}
-    with connect_bounded_read() as connection:
+    with connect_bounded_rootline_postgres(
+            read_only=True, connect_deadline_seconds=3) as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select review_json->'manager_question_reply'
                 from public.sam_live_stock_conversation_review_events
@@ -232,24 +345,30 @@ def _load_manager_question_record(event_id):
 def _load_questions(owner, chat):
     if not str(os.environ.get("DATABASE_URL") or "").strip():
         return []
-    with connect_bounded_read() as connection:
+    with connect_bounded_rootline_postgres(
+            read_only=True, connect_deadline_seconds=3) as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select q.body, coalesce(p.partials, '[]'::jsonb)
-                from (select review_json->'daily_farm_manager' as body, created_at, review_event_id
-                    from public.sam_live_stock_conversation_review_events
-                    where event_source='oom_sakkie_daily_farm_manager'
-                      and review_json->'daily_farm_manager'->>'status'='presented'
-                      and review_json->'daily_farm_manager'->>'owner_user_id'=%s
-                      and review_json->'daily_farm_manager'->>'chat_id'=%s
-                      and coalesce(review_json->'daily_farm_manager'->>'question','')<>''
+                from (select daily.review_json->'daily_farm_manager' as body,
+                             daily.created_at, daily.review_event_id
+                    from public.sam_live_stock_conversation_review_events daily
+                    where daily.event_source='oom_sakkie_daily_farm_manager'
+                      and daily.review_json->'daily_farm_manager'->>'status'='presented'
+                      and daily.review_json->'daily_farm_manager'->>'owner_user_id'=%s
+                      and daily.review_json->'daily_farm_manager'->>'chat_id'=%s
+                      and coalesce(daily.review_json->'daily_farm_manager'->>'question','')<>''
                       and not exists (select 1
                         from public.sam_live_stock_conversation_review_events answered
                         where answered.event_source='oom_sakkie_manager_question_reply'
                           and answered.review_json->'manager_question_reply'->>'status'='recorded'
                           and answered.review_json->'manager_question_reply'->>'owner_user_id'=%s
                           and answered.review_json->'manager_question_reply'->>'chat_id'=%s
-                          and answered.review_json->'manager_question_reply'->>'task_id'=
-                              review_json->'daily_farm_manager'->'question_binding'->>'task_id')
+                           and answered.review_json->'manager_question_reply'->>'task_id'=
+                               daily.review_json->'daily_farm_manager'->'question_binding'->>'task_id'
+                           and answered.review_json->'manager_question_reply'->>'daily_identity'=
+                               daily.review_json->'daily_farm_manager'->>'daily_identity'
+                           and answered.review_json->'manager_question_reply'->>'dedupe_key'=
+                               daily.review_json->'daily_farm_manager'->'question_binding'->>'dedupe_key')
                     order by created_at desc, review_event_id desc limit 8) q
                 left join lateral (select jsonb_agg(
                         partial.review_json->'manager_question_reply'
@@ -270,7 +389,51 @@ def _load_questions(owner, chat):
                 question = dict(body)
                 question["partial_replies"] = list(partials or [])
                 questions.append(question)
-            return questions
+            if questions:
+                return questions
+            # A provider-confirmed morning card can outlive an ambiguous daily
+            # outcome receipt when the post-send database read stalls. Preserve
+            # that immutable discrepancy and recover only the card's bounded
+            # contextual continuation; do not manufacture a stale question.
+            cursor.execute("""select f.body, f.created_at
+                from (select review_json->'family_message_lifecycle' as body,
+                             created_at, review_event_id
+                      from public.sam_live_stock_conversation_review_events cards
+                      where cards.event_source='oom_sakkie_family_message_lifecycle'
+                        and cards.review_json->'family_message_lifecycle'->>'state'='delivered'
+                        and cards.review_json->'family_message_lifecycle'->>'owner_user_id'=%s
+                        and cards.review_json->'family_message_lifecycle'->>'chat_id'=%s
+                        and cards.review_json->'family_message_lifecycle'->>'card_mission_id'
+                            ~ '^OOM-DAILY-FARM-MANAGER-[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                        and not exists (select 1
+                            from public.sam_live_stock_conversation_review_events answered
+                            where answered.event_source='oom_sakkie_manager_question_reply'
+                              and answered.review_json->'manager_question_reply'->>'status'='recorded'
+                              and answered.review_json->'manager_question_reply'->>'owner_user_id'=%s
+                              and answered.review_json->'manager_question_reply'->>'chat_id'=%s
+                               and answered.review_json->'manager_question_reply'->>'task_id'=
+                                   cards.review_json->'family_message_lifecycle'->>'card_mission_id'
+                                       || ':contextual-update'
+                               and answered.review_json->'manager_question_reply'->>'daily_identity'=
+                                   cards.review_json->'family_message_lifecycle'->>'card_mission_id'
+                               and answered.review_json->'manager_question_reply'->>'dedupe_key'=
+                                   cards.review_json->'family_message_lifecycle'->>'card_mission_id'
+                                       || ':contextual-update')
+                      order by created_at desc, review_event_id desc limit 1) f""",
+                (owner, chat, owner, chat))
+            row = cursor.fetchone()
+            if not row:
+                return []
+            body, created_at = dict(row[0] or {}), row[1]
+            return [{"daily_identity": str(body.get("card_mission_id") or ""),
+                "telegram_message_id": str(body.get("telegram_message_id") or ""),
+                "presented_at": str(body.get("delivery_provider_timestamp")
+                    or created_at.isoformat()),
+                "question": "Contextual update to the delivered morning farm plan",
+                "question_binding": {
+                    "task_id": str(body.get("card_mission_id") or "") + ":contextual-update",
+                    "dedupe_key": str(body.get("card_mission_id") or "") + ":contextual-update",
+                    "domain": "rootline", "contextual_card_recovery": True}}]
 
 
 def _compatible(expected, actual):

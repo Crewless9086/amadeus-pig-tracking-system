@@ -35,6 +35,22 @@ Control Tower must:
    `NEW_MISSION`, `WAIT_FOR_INPUT` or `CLOSE`;
 9. only then return the assessment and continuation prompt to Charl.
 
+Before displaying any prompt text, Control Tower must also emit exactly one
+owner-facing dispatch banner:
+
+- `DO NOT SEND — TERMINAL ACTIVE` when the exact terminal is already executing
+  the correct mission. No sendable prompt text may follow.
+- `SEND NOW — TERMINAL IDLE OR RELEASED` only when fresh evidence proves the
+  terminal can accept the named mission now.
+- `HOLD — VERIFY TERMINAL STATE` when current terminal state is Unknown or
+  contradictory. No sendable prompt text may follow.
+
+This presentation rule is mandatory even when an assessment request asks for a
+continuation prompt. A queued addendum remains in this register until the next
+safe terminal feedback boundary unless immediate delivery is genuinely needed
+and explicitly classified. Control Tower must not rely on conversation memory
+as the dispatch record.
+
 Before assigning or reporting any autonomous specialist mission, Control Tower
 must also apply the Agent Operational Reality Gate. Record web/API state,
 background-worker state, autonomous trigger, heartbeat, last independent cycle,
@@ -238,6 +254,7 @@ result appear known earlier.
 
 | Date | Terminal / mission | Evidence and decision | Closeout / next action |
 |---|---|---|---|
+| 2026-08-15 | BEACON `BMQ-20260813-04` owner strategy decision | Charl selected the non-availability farm-awareness campaign. Current evidence has demand cap zero, so BEACON must not claim available inventory, select sale stock or publish an availability offer. The alternative wording `wait for buyer demand` meant no proactive campaign until a genuine quantified SAM/customer demand signal existed; because no acquisition or measurement action was specified, it was passive and insufficiently explained, and Charl did not select it. | Remove `OWNER_HOLD` and return the operational outcome to `WORKING`. The deployed Oom Sakkie/BEACON path should prepare one owner-reviewable farm-awareness proposal that makes no availability claim and performs no publication, spend, customer send, reservation or farm write. A development terminal is assigned only if the deployed runtime cannot perform that approved next step. |
 | 2026-08-13 | CORE `CMQ-20260813-02A` | Reversible watchdog window rolled back; synthetic receipt/reply passed; mission pickup failed through ID truncation. | Released; repair parser before another window. |
 | 2026-08-13 | CORE `CMQ-20260813-02A` parser repair | PR #877 evidence merged as `8f8ec3b2`; PR #885 opaque mission-ID and creation-precedence repair merged/deployed as `7c22cd5f`; no Telegram proof or provider mutation occurred. | Parser development released; live proof remains unauthorized. Promote CMQ-03 read-only reconciliation. |
 | 2026-08-13 | CORE `CMQ-20260813-03` discovery | PR #888 documentation at exact head `5f5aa641` passed all checks and merged as `c5f4c68d`. Application and OOM converge on Supabase events but do not share one atomic group contract; Sheets fallback authority remains. | Clear only a new pure preview-contract module and isolated tests; prohibit executor/fallback cutover. |

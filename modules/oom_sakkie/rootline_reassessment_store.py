@@ -30,7 +30,17 @@ def _load(action, identity):
                 cursor.execute("""select review_json->'rootline_reassessment'
                     from public.sam_live_stock_conversation_review_events
                     where event_source=%s and review_json->'rootline_reassessment'->>'identity'=%s
-                    order by created_at desc,review_event_id desc limit 1""", (EVENT_SOURCE, identity))
+                    order by created_at desc,review_event_id desc limit 10""", (EVENT_SOURCE, identity))
+                rows = cursor.fetchall()
+                if not rows:
+                    return None
+                latest = dict(rows[0][0] or {})
+                if not str(latest.get("operating_date") or ""):
+                    dated = next((dict(row[0] or {}) for row in rows
+                        if str((row[0] or {}).get("operating_date") or "")), None)
+                    if dated:
+                        latest["operating_date"] = dated["operating_date"]
+                return latest
             else:
                 owner, chat = identity.split("|", 1)
                 cursor.execute("""select review_json->'rootline_reassessment'

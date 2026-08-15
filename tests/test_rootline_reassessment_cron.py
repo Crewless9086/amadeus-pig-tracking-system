@@ -6,7 +6,8 @@ from scripts.rootline_reassessment_cron import build_payload, run
 NOW=datetime(2026,8,15,7,28,41,tzinfo=timezone.utc)
 ENV={"ROOTLINE_REASSESSMENT_SCHEDULER_URL":"https://example.test/api/oom-sakkie/management/rootline/reassess",
      "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*32,
-     "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
+     "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"41,42,43",
+     "ROOTLINE_REASSESSMENT_OWNER_USER_ID":"42"}
 
 class Response:
     def __init__(self,payload): self.payload=payload
@@ -17,9 +18,19 @@ class Response:
 def test_payload_is_stable_current_bucket_and_owner_private_chat_bound():
     value=build_payload(NOW,"42")
     assert value["due_at"]=="2026-08-15T07:15:00+00:00"
+    assert value["evidence_cutoff"]=="2026-08-15T07:28:41+00:00"
+    assert value["trigger_timestamp"]=="2026-08-15T07:28:41+00:00"
     assert value["trigger_id"]=="ROOTLINE-AUTO-20260815T071500Z"
     assert value["owner_user_id"]==value["chat_id"]=="42"
     assert value["specialist"]=="ROOTLINE"
+
+def test_evidence_cutoff_does_not_alias_late_invocation_to_bucket_edge():
+    early=build_payload(datetime(2026,8,15,7,30,1,tzinfo=timezone.utc),"42")
+    late=build_payload(datetime(2026,8,15,7,30,59,tzinfo=timezone.utc),"42")
+    assert early["due_at"]==late["due_at"]=="2026-08-15T07:30:00+00:00"
+    assert early["trigger_id"]==late["trigger_id"]=="ROOTLINE-AUTO-20260815T073000Z"
+    assert early["evidence_cutoff"]=="2026-08-15T07:30:01+00:00"
+    assert late["evidence_cutoff"]=="2026-08-15T07:30:59+00:00"
 
 def test_cron_calls_only_authenticated_existing_application_spine():
     seen={}
@@ -37,7 +48,8 @@ def test_cron_calls_only_authenticated_existing_application_spine():
 def test_missing_or_ambiguous_identity_fails_without_network():
     for changes in ({"ROOTLINE_REASSESSMENT_SCHEDULER_URL":"http://bad"},
                     {"OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"short"},
-                    {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42,43"}):
+                    {"ROOTLINE_REASSESSMENT_OWNER_USER_ID":""},
+                    {"ROOTLINE_REASSESSMENT_OWNER_USER_ID":"99"}):
         result=run(environ={**ENV,**changes},now=NOW,
                    opener=lambda *_a,**_k: (_ for _ in ()).throw(AssertionError("network")))
         assert result=={"success":False,"status":"rootline_scheduler_configuration_invalid",
