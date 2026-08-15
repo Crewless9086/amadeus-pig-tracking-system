@@ -241,6 +241,17 @@ replacement.
 Development terminals implement and prove missions; they are not deployed
 agents and must never be described as background runtime.
 
+Control Tower must keep the development plane moving through a durable
+all-terminal dispatch sweep. After each owner message, terminal report,
+deployment, mission release or dependency change, it re-evaluates CORE, OOM
+SAKKIE, ROOTLINE, HERDMASTER, SAM, BEACON and CODEX UI from current ledger and
+worktree evidence. An earlier `idle`, `released` or `dependency` label never
+survives a changed dependency without revalidation. Each terminal is classified
+as active, send-now, dependency-idle with an exact automatic trigger, no-safe-
+work with queue evidence, or unknown pending current feedback. This coordination
+mechanism may activate engineering work, but it does not substitute a terminal
+for the deployed specialist that must perform the genuine operational journey.
+
 ## Programme order
 
 1. CORE completes Phase 0 inventory and publishes the dependency/retirement

@@ -1,5 +1,19 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - All-terminal dispatch sweep made a Mission Standard closure gate
+
+- Promoted the existing handover-template sweep into the canonical Agentic
+  Operating Mission Standard and Runtime Programme after Control Tower again
+  left CORE dependency-idle after its prerequisite had cleared.
+- Required fresh classification of CORE, OOM SAKKIE, ROOTLINE, HERDMASTER, SAM,
+  BEACON and CODEX UI after every owner message, terminal report, deployment,
+  mission release or dependency change.
+- Made stale idle classifications invalid when their dependencies change and
+  made a Control Tower response incomplete when it silently leaves eligible
+  work idle or relies on Charl to notice the cleared dependency.
+- Preserved active-terminal non-interruption, overlap checks, honest delivery
+  truth and the prohibition on manufacturing work merely to occupy terminals.
+
 ## 2026-08-15 - SAM and BEACON protected claim schema reconciled
 
 - Preserved both independently reviewed protected action kinds in the final
