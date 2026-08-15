@@ -8,7 +8,7 @@ device transport, retry, SmartLife, SONOFF, IFTTT, n8n, or hardware consumer.
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 import json
 import os
@@ -387,6 +387,7 @@ def read_current_water_energy_evidence(
         "history": lambda: _read_historical_context(database_url),
         "irrigation_history": lambda: _read_recent_irrigation_history(database_url, now),
         "tanks": lambda: _read_latest_tank_observation(database_url),
+        "owner_zone_need": lambda: _read_latest_owner_zone_need(database_url, now),
     }
     loaded = run_bounded_read_group(readers,max_workers=3,deadline_seconds=20)
     power_packet, _ = loaded["power"]
@@ -402,6 +403,14 @@ def read_current_water_energy_evidence(
     history = loaded["history"]
     irrigation_history = loaded["irrigation_history"]
     tanks = loaded["tanks"]
+    owner_zone_need = loaded["owner_zone_need"]
+    if isinstance(owner_zone_need, dict) and owner_zone_need.get("status") == "Available":
+        matching = next((zone for zone in advisor_zones
+                         if zone.get("zone_id") == owner_zone_need.get("zone_id")), None)
+        if matching is not None:
+            matching.update({"visible_need": "visible_need",
+                "visible_need_observed_at": owner_zone_need["observed_at"],
+                "visible_need_source": owner_zone_need["source"]})
     database_failures = [str(packet.get("error_type")) for packet in (
         power_packet, weather_packet, forecast_packet, history, tanks, balances)
         if isinstance(packet, dict) and packet.get("error_type")]
@@ -842,6 +851,48 @@ def _read_latest_tank_observation(database_url):
         return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
 
 
+def _read_latest_owner_zone_need(database_url, now):
+    """Load one fresh provider-bound need without turning free text into authority."""
+    database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"status": UNAVAILABLE}
+    try:
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
+        with connect_bounded_read(database_url=database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    select review_json->'rootline_operational_intake'->'outcome'
+                      from public.sam_live_stock_conversation_review_events
+                     where event_source='oom_sakkie_rootline_operational_intake'
+                       and review_json->'rootline_operational_intake'->>'state'='completed'
+                       and review_json->'rootline_operational_intake'->'outcome'->>'visible_irrigation_need_zone'
+                           in ('B12345','C12345')
+                       and (review_json->'rootline_operational_intake'->'outcome'->>'writes_farm_data')::boolean is true
+                     order by created_at desc,review_event_id desc limit 1
+                """)
+                row = cursor.fetchone()
+        outcome = row[0] if row and isinstance(row[0], dict) else {}
+        try:
+            observed = datetime.fromisoformat(
+                str(outcome.get("provider_timestamp") or "").replace("Z", "+00:00"))
+            if observed.tzinfo is None:
+                observed = None
+        except (TypeError, ValueError):
+            observed = None
+        provider_id = str(outcome.get("provider_message_id") or "").strip()
+        zone = str(outcome.get("visible_irrigation_need_zone") or "")
+        current = _as_za(now or datetime.now(timezone.utc))
+        if (zone not in {"B12345", "C12345"} or not provider_id or observed is None
+                or observed > current or current - observed > timedelta(hours=24)):
+            return {"status": UNAVAILABLE}
+        return {"status": "Available", "zone_id": zone,
+                "observed_at": observed.isoformat(),
+                "source": "oom_sakkie_authenticated_operational_intake",
+                "provider_message_id": provider_id}
+    except Exception as exc:
+        return {"status": UNAVAILABLE, "error_type": exc.__class__.__name__}
+
+
 def read_tank_observation(observation_id, database_url=None):
     database_url = str(database_url or os.getenv(DATABASE_URL_ENV, "")).strip()
     try:
@@ -1017,8 +1068,9 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             # policy-only, so compose that read projection here rather than
             # silently dropping the balance before the governed planner.
             evidence_zone = _dict(evidence_zones.get(str(item.get("zone_id") or "")))
-            if "water_balance" in evidence_zone:
-                zone["water_balance"] = deepcopy(evidence_zone["water_balance"])
+            for key in allowed_zone_fields - {"zone_id", "completion_events"}:
+                if key in evidence_zone:
+                    zone[key] = deepcopy(evidence_zone[key])
             canonical = _dict(history_zones.get(str(item.get("zone_id") or "")))
             zone["completion_events"] = [{
                 "completed_at": event.get("event_at_sast"), "state": "Completed",

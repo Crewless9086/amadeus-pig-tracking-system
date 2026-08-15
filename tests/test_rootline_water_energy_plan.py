@@ -386,6 +386,23 @@ class WaterEnergyPlanTests(unittest.TestCase):
         self.assertEqual(adaptive["max_execution_minutes"], 60)
         self.assertFalse(adaptive["simultaneous_zones_allowed"])
 
+    def test_authenticated_current_c_need_survives_adaptive_projection_and_ranks_c_first(self):
+        item=evidence()
+        item["irrigation"]={
+            "zones":[{"zone_id":"B12345"},{"zone_id":"C12345",
+                "visible_need":"visible_need","visible_need_observed_at":NOW.isoformat(),
+                "visible_need_source":"oom_sakkie_authenticated_operational_intake"}],
+            "adaptive_management":{"enabled":True,"zones":[
+                {"zone_id":"B12345"},{"zone_id":"C12345"}],
+                "target_days_per_week":4}}
+        item["irrigation_history"]={"status":"Available","zones":{
+            zone:{"events":[],"complete_through":NOW.isoformat()} for zone in ("B12345","C12345")}}
+        plan=build_water_energy_plan(item,"2026-07-28",now=NOW)
+        tasks={row["task_id"]:row for row in plan["candidate_tasks"]}
+        self.assertGreater(tasks["irrigation_C12345"]["need_score"],
+                           tasks["irrigation_B12345"]["need_score"])
+        self.assertEqual(tasks["irrigation_C12345"]["rank"],1)
+
 
 if __name__ == "__main__":
     unittest.main()
