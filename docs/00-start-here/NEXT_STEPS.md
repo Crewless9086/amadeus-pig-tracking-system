@@ -258,6 +258,13 @@ cutting source is `external_sources/AMADEUS_HALF_CARCASS_CUTTING_STANDARD_v1.0.m
 
 ## Beacon Marketing Department Roadmap - Owner Approval Queue
 
+Current BMQ-20260813-04 outcome: Charl has already selected a non-availability
+farm-awareness campaign. Do not ask again or wait for buyer demand. The active
+adapter correction must preserve `live_stock_awareness` from Oom Sakkie's
+semantic front door into BEACON's existing awareness builder, then return one
+exact Facebook organic proposal with safe media/text-only handling and no
+publication, spend, customer, reservation or farm effect.
+
 0. **BEACON-MEDIA-INTAKE-1 - default-disabled foundation candidate built for review.** Use the existing owner-controlled OOM SAKKIE Telegram bot as the preferred mobile intake door; store validated JPEG/PNG media privately in BEACON raw intake; preserve owner context and explicit album order; hash/deduplicate exact bytes; and present real owner-authorized thumbnails/contact sheets for separate library and public-use decisions. The additive migration is unapplied, Telegram intake is inactive, videos remain visibly unsupported pending bounded resumable transport, and no first canary has run. Historical OneDrive/folder ingestion is a separate bounded follow-up using the same provenance contract. See `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`.
 
 Current production learning state (2026-07-27): one confirmed organic Page

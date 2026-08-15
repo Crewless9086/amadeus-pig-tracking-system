@@ -4,11 +4,17 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import re
 from typing import Any, Callable, Mapping
 
 from modules.beacon.marketing_proposal import prepare_marketing_proposal
 from modules.beacon.media_intake import list_media_intakes
 from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
+from modules.beacon.public_livestock_content_policy import assess_public_livestock_content
+from modules.beacon.content_operations import (
+    build_beacon_content_candidate,
+    gather_beacon_content_evidence,
+)
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
 
 CONTRACT_VERSION = "oom_sakkie_beacon_request_v1"
@@ -20,7 +26,10 @@ ZERO = {"writes_farm_data": False, "writes_media": False, "publishes": False,
 
 def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
         opportunity_loader: Callable = build_beacon_opportunity_cards,
-        media_loader: Callable = list_media_intakes, event_store=None):
+        media_loader: Callable = list_media_intakes,
+        content_evidence_loader: Callable = gather_beacon_content_evidence,
+        content_candidate_builder: Callable = build_beacon_content_candidate,
+        event_store=None):
     semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), Mapping) else {}
     if (semantic.get("domain") != "beacon" or semantic.get("needs_clarification") is True
             or str(semantic.get("message_kind") or "") not in {"question", "request", "command"}):
@@ -49,9 +58,18 @@ def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
                 "mission_id": mission_id, **ZERO}, 409
         return {**(prior.get("result") or {}), "status": "beacon_request_replay_recovered"}, 200
     try:
-        media_result = media_loader()
-        media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
-        packet = build_current_beacon_proposal(opportunity_loader(), media_payload)
+        opportunities = opportunity_loader()
+        if str(semantic.get("intent") or "") == "live_stock_awareness":
+            content_evidence = content_evidence_loader(opportunity_result=opportunities)
+            media_result = media_loader()
+            media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
+            packet = build_live_stock_awareness_proposal(
+                opportunities, content_candidate_builder(content_evidence), media_payload,
+                language=str(semantic.get("language") or "en"))
+        else:
+            media_result = media_loader()
+            media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
+            packet = build_current_beacon_proposal(opportunities, media_payload)
         answer = render_beacon_packet(packet, language=str(semantic.get("language") or "en"))
     except Exception as exc:
         return {"handled": True, "success": False, "status": "beacon_request_evidence_unavailable",
@@ -75,6 +93,93 @@ def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
                 "mission_id": mission_id, **ZERO}, 409
         return {**(winner.get("result") or {}), "status": "beacon_request_replay_recovered"}, 200
     return output, 200
+
+
+def build_live_stock_awareness_proposal(opportunities, candidate, media_payload=None, *, language="en"):
+    """Normalize the existing awareness builder for the Oom Sakkie owner lane."""
+    if not isinstance(opportunities, Mapping) or opportunities.get("success") is not True:
+        raise ValueError("canonical_opportunity_evidence_required")
+    if not isinstance(candidate, Mapping) or candidate.get("success") is not True:
+        raise ValueError("awareness_candidate_required")
+    review = candidate.get("owner_review_packet") or {}
+    policy = review.get("public_livestock_policy") or {}
+    if not review.get("draft_copy") or policy.get("policy_version") != "beacon_public_livestock_awareness_only_v1":
+        raise ValueError("awareness_policy_proof_required")
+    media_plan = _public_awareness_media(media_payload)
+    if not media_plan:
+        media_plan = {"status": "text_only",
+            "reason": "No current public-use-approved, hash-verified farm asset was selected.",
+            "request": "Optional: one portrait photo or short vertical video of piglets during a calm daily-care moment, with no people, vehicle plates, customer locations, illness or sales signage."}
+    capacity = _awareness_capacity_context(opportunities)
+    caption = str(review["draft_copy"])
+    if str(language).casefold().startswith("af"):
+        caption = ("'n Klein oomblik uit die lewe op Amadeus Farm. Geduldige daaglikse versorging "
+            "vorm die alledaagse plaaslewe.\n\nVolg die plaas se reis vir meer eerlike oomblikke agter die skerms.")
+    if not assess_public_livestock_content(caption, objective="farm_awareness",
+            campaign_lane="live_stock_awareness")["allowed"]:
+        raise ValueError("awareness_copy_policy_failed")
+    af = str(language).casefold().startswith("af")
+    packet = {"contract_version": "beacon_live_stock_awareness_proposal_v1",
+        "packet_type": "live_stock_awareness_proposal", "status": "ready_for_owner_review",
+        "objective": "Build familiarity and trust through a non-availability Amadeus Farm story",
+        "audience": ("Mense wat belangstel in verantwoordelike plaaslike veeboerdery en plaaslewe" if af else
+            str(review.get("audience") or "People interested in responsible local livestock and farm life")),
+        "awareness_angle": ("Geduldige daaglikse versorging en eerlike plaaslewe agter die skerms" if af else
+            "Patient daily care and honest behind-the-scenes farm life"),
+        "intended_channel": "Facebook Page organic", "draft_caption": caption,
+        "media": media_plan, "capacity_context": capacity,
+        "sam_routing": ("Skryf antwoorde aan hierdie veldtog toe en roeteer koopnavrae as nuwe navrae na SAM Lewendehawe. SAM moet vraag, verkoopsbevoegdheid en lewering onafhanklik verifieer voor enige aanbod of verbintenis." if af else
+            "Attribute replies to this campaign packet; route buying enquiries to SAM Live Stock as new enquiries. SAM must independently verify demand, sale eligibility and fulfilment before any offer or commitment."),
+        "performance_measurement": ("Teken Facebook-bereik en betrokkenheid aan; tel veldtog-toegeskrewe gekwalifiseerde SAM-leidrade, omskakelings, voltooide verkope en toeskryfbare bruto wins afsonderlik. Onbekende waardes bly Onbekend en geen resultaat word afgelei nie." if af else
+            "Record Facebook reach and engagement; count campaign-attributed qualified SAM leads, conversions, completed sales and attributable gross profit separately. Unknown values remain Unknown and no result is inferred."),
+        "decision_options": ["approve", "correct", "decline"],
+        "protected_owner_decision": "Approve this exact draft and selected media (if any) for the later protected publication step, Correct it, or Decline it.",
+        "authority": dict(ZERO)}
+    packet["packet_id"] = "BEACON-AWARENESS-" + _digest({"source_packet": review.get("packet_id"),
+        "copy": packet["draft_caption"], "media": media_plan, "capacity": capacity})[:24].upper()
+    return packet
+
+
+def _awareness_capacity_context(opportunities):
+    card = next((row for row in opportunities.get("cards") or []
+        if isinstance(row, Mapping) and row.get("lane") == "live_stock"), None)
+    if not card:
+        return {"herdmaster_safe_fulfilment_capacity": "Unknown",
+            "sam_quantified_buyer_demand": "Unknown", "sale_availability_inferred": False}
+    blockers = set(card.get("blockers") or [])
+    demand = card.get("demand_summary") or {}
+    demand_unknown = bool(blockers.intersection({"sam_live_stock_demand_unavailable",
+        "unknown_live_stock_demand_quantity", "incompatible_live_stock_demand",
+        "invalid_live_stock_weight_requirement", "invalid_live_stock_sex_requirement",
+        "malformed_live_stock_demand_evidence"}))
+    return {"herdmaster_safe_fulfilment_capacity": "Unknown",
+        "sam_quantified_buyer_demand": ("Unknown" if demand_unknown else int(demand.get("qualified_units") or 0)),
+        "sale_availability_inferred": False,
+        "explanation": "Herd capacity and buyer demand are independent signals. Neither animal counts nor this awareness proposal establish sale availability."}
+
+
+def _public_awareness_media(payload):
+    rows = payload.get("items") if isinstance(payload, Mapping) and payload.get("success") is True else []
+    for row in rows or []:
+        digest = str(row.get("content_sha256") or "").lower()
+        observation = row.get("observation") if isinstance(row.get("observation"), Mapping) else {}
+        tags = {str(tag).casefold() for tag in
+            (observation.get("tags") or observation.get("subject_tags") or [])}
+        if (row.get("latest_library_event") == "library_accepted"
+                and row.get("effective_public_use_approved") is True
+                and row.get("current_library_accept_event_id")
+                and row.get("current_public_use_event_id")
+                and row.get("private_storage_proof_id")
+                and re.fullmatch(r"[0-9a-f]{64}", digest)
+                and tags.intersection({"live_stock", "livestock", "piglet", "piglets", "litter", "weaner", "farm_life"})):
+            return {"status": "approved_public_media_selected",
+                "asset_id": str(row.get("beacon_asset_id") or row.get("binary_asset_id") or ""),
+                "media_type": str(row.get("observed_mime_type") or "farm media"),
+                "content_sha256": digest,
+                "storage_readback_proof_id": str(row["private_storage_proof_id"]),
+                "library_accept_event_id": str(row["current_library_accept_event_id"]),
+                "public_use_event_id": str(row["current_public_use_event_id"])}
+    return None
 
 
 def build_current_beacon_proposal(opportunities, media_payload):
@@ -166,13 +271,33 @@ def _project_media(payload, tags):
 
 def render_beacon_packet(packet, *, language="en"):
     af = str(language).casefold().startswith("af")
-    if packet.get("packet_type") == "marketing_evidence_request":
+    if packet.get("packet_type") == "live_stock_awareness_proposal":
+        media = packet.get("media") or {}
+        media_text = (("'n Goedgekeurde plaasfoto is gekies; openbare-gebruiktoestemming en lêerintegriteit is bevestig."
+                if af else "An approved farm photo is selected; public-use authority and file integrity are verified.")
+            if media.get("status") == "approved_public_media_selected" else
+            (("Teks alleen is geskik. Opsioneel: een portretfoto of kort vertikale video van varkies tydens 'n rustige daaglikse versorgingsoomblik; geen mense, nommerplate, kliëntliggings, siekte of verkoopstekens nie."
+                if af else f"Text-only is suitable. {media.get('request') or ''}")))
+        capacity = packet.get("capacity_context") or {}
+        lines = ["<b>BEACON — PLAASBEWUSTHEIDSVOORSTEL</b>" if af else "<b>BEACON — FARM-AWARENESS PROPOSAL</b>", "",
+            f"<b>{'Teikengehoor' if af else 'Audience'}:</b> {html.escape(str(packet.get('audience') or ''))}",
+            f"<b>{'Storiehoek' if af else 'Story angle'}:</b> {html.escape(str(packet.get('awareness_angle') or ''))}",
+            f"<b>{'Kanaal' if af else 'Channel'}:</b> {html.escape(str(packet.get('intended_channel') or ''))}",
+            f"<b>{'Veilige konsepkopie' if af else 'Safe draft copy'}:</b>\n{html.escape(str(packet.get('draft_caption') or ''))}",
+            f"<b>Media:</b> {html.escape(media_text)}",
+            (f"<b>Bewysgrens:</b> Veilige leweringskapasiteit: {html.escape(str(capacity.get('herdmaster_safe_fulfilment_capacity')))}; gekwantifiseerde SAM-vraag: {html.escape(str(capacity.get('sam_quantified_buyer_demand')))}. Geen verkoopsbeskikbaarheid word afgelei nie." if af else
+             f"<b>Evidence boundary:</b> Safe fulfilment capacity: {html.escape(str(capacity.get('herdmaster_safe_fulfilment_capacity')))}; quantified SAM demand: {html.escape(str(capacity.get('sam_quantified_buyer_demand')))}. No sale availability is inferred."),
+            f"<b>{'SAM-toeskrywing/roetering' if af else 'SAM attribution/routing'}:</b> {html.escape(str(packet.get('sam_routing') or ''))}",
+            f"<b>{'Meting' if af else 'Measure'}:</b> {html.escape(str(packet.get('performance_measurement') or ''))}",
+            ("<b>Kies:</b> Keur goed / Korrigeer / Wys af. Niks word deur hierdie besluit gepubliseer of bestee nie." if af else
+             "<b>Choose:</b> Approve / Correct / Decline. Nothing is published or spent by this decision response.")]
+    elif packet.get("packet_type") == "marketing_evidence_request":
         blockers = ", ".join(packet.get("missing_evidence") or [])
         lines = ["<b>BEACON — CURRENT EVIDENCE REQUEST</b>", "",
             f"<b>Objective:</b> {html.escape(str(packet.get('objective') or ''))}",
             f"<b>Audience:</b> {html.escape(str(packet.get('audience') or ''))}",
-            f"<b>Supported current evidence:</b> {html.escape(json.dumps(packet.get('factual_evidence') or [], sort_keys=True))}",
-            f"<b>Missing evidence:</b> {html.escape(blockers)}",
+            "<b>Supported current evidence:</b> Current sales evidence does not support an availability campaign.",
+            "<b>Missing evidence:</b> A quantified current buyer need matched to independently verified safe fulfilment capacity.",
             f"<b>Media:</b> {html.escape(str(packet.get('available_media') or ''))}; {html.escape(str(packet.get('missing_media') or ''))}",
             f"<b>Channel/copy:</b> {html.escape(str(packet.get('intended_channel') or ''))}; {html.escape(str(packet.get('recommended_copy') or ''))}",
             f"<b>Expected value:</b> {html.escape(str(packet.get('expected_commercial_value') or ''))}",

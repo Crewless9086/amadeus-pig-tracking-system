@@ -613,6 +613,16 @@ Current built gated surface:
   publication, customer-send, spend, farm-write, n8n, or Sheets authority is
   introduced. Coverage: `tests/test_beacon_marketing_proposal.py` and
   `tests/test_oom_sakkie_beacon_request_runtime.py`.
+  The stable semantic intent `live_stock_awareness` routes through the existing
+  `modules/beacon/content_operations.py` awareness builder even when SAM demand
+  is zero. `modules/beacon/opportunity_scanner.py` supplies SAM demand and
+  overlap context. Independent HERDMASTER safe-fulfilment capacity remains
+  `Unknown` until a canonical demand-independent source is wired; no
+  availability claim may be inferred from animal counts. Public livestock media must have
+  effective public-use approval and server-computed SHA-256 lineage; otherwise
+  the owner receives text-only content plus one optional precise media request.
+  The exact failed 15 August instruction is a regression in
+  `tests/test_oom_sakkie_beacon_request_runtime.py`, not a replay identity.
 
 - routes: `/sales/beacon-media`, `/api/beacon/media-assets`, `/api/beacon/creative-studio/providers`, `/api/beacon/creative-studio/jobs`, `/api/beacon/creative-studio/jobs/<job_id>/reviews`, `/api/beacon/campaign-draft-selection`, `/api/beacon/campaign-publish-packet`, `/api/beacon/facebook-image-launch-packet`, `/api/beacon/manual-post-evidence`, `/api/beacon/campaign-performance`;
 - owner media-intake workflow: `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`; OOM SAKKIE is the preferred owner-only Telegram intake gateway, while BEACON owns private storage, cataloguing, understanding, visual review, approval state, and usage history. A default-disabled foundation is built as a candidate; its migration is unapplied and the gateway is inactive;

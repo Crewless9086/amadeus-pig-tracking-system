@@ -846,7 +846,7 @@ class IntakeStore:
                               b.storage_readback_sha256,b.storage_path,
                               o.observation_json,o.confidence_state,
                               le.event_type,le.library_event_id,
-                              coalesce(pe.event_type='approved_public_use',false),
+                              coalesce(pe.event_type='approved_public_use',false),pe.event_id,
                               coalesce(a.campaign_usage_count,0),
                               coalesce(cs.album_completed,false)
                        from public.beacon_media_intake_groups g
@@ -869,11 +869,11 @@ class IntakeStore:
                          order by recorded_at desc,library_event_id desc limit 1
                        ) le on true
                        left join lateral (
-                         select event_type
+                         select event_id,event_type
                          from public.beacon_media_asset_events
                          where asset_id=l.beacon_asset_id
                            and event_type in ('approved_public_use','rejected_public_use')
-                         order by created_at desc limit 1
+                         order by created_at desc,event_id desc limit 1
                        ) pe on true
                        left join lateral (
                          select true as album_completed
@@ -904,8 +904,9 @@ class IntakeStore:
             "latest_library_event": row[21] or "",
             "current_library_accept_event_id": row[22] or "",
             "effective_public_use_approved": bool(row[23]),
-            "prior_campaign_use_count": row[24] or 0,
-            "album_completed": bool(row[25]),
+            "current_public_use_event_id": row[24] or "",
+            "prior_campaign_use_count": row[25] or 0,
+            "album_completed": bool(row[26]),
             "latest_review_event_id": row[22] or "",
             **AUTHORITY,
         } for row in rows]
@@ -1130,7 +1131,7 @@ class IntakeStore:
                 """select event_type from public.beacon_media_library_events
                    where binary_asset_id=%s
                      and event_type in ('library_accepted','library_rejected','archived')
-                   order by recorded_at desc limit 1""",
+                   order by recorded_at desc,library_event_id desc limit 1""",
                 (binary_asset_id,),
             )
             library_state = cursor.fetchone()

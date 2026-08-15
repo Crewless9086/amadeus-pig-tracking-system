@@ -1,5 +1,18 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - BEACON awareness objective retention repaired
+
+- Preserved the stable Oom Sakkie semantic intent `live_stock_awareness` into
+  BEACON's existing awareness builder instead of demand-gating every campaign.
+- Kept quantified SAM demand separate and left HERDMASTER safe-fulfilment
+  capacity `Unknown` until a canonical demand-independent source is wired;
+  prohibited sale-availability inference from animal counts or awareness copy.
+- Required current effective public-use approval plus server-computed SHA-256
+  lineage for selected media; otherwise prepared safe text-only content with
+  one optional precise media request.
+- Added the exact failed 15 August instruction as non-replay regression
+  evidence and removed raw JSON/internal blocker codes from owner rendering.
+
 ## 2026-08-15 - Idle-terminal dispatch made a response closure gate
 
 - Recorded the Control Tower failure that left eligible HERDMASTER and SAM
