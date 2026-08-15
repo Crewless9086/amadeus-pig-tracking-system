@@ -19,3 +19,9 @@ The owner surface is sale-type neutral. Auction transactions are labelled
 settlement receipt are separate canonical facts; `Fully reconciled` is true
 only when both are true. Application, Telegram links and voice-assisted browser
 use the same sale-payment preview/confirmation service and identical readback.
+Telegram payment confirmation uses the existing Oom Sakkie protected-action
+claim and family-message lifecycle: one provider-confirmed preview card with
+Confirm and Cancel callbacks bound to the configured owner, provider card,
+canonical sale state and exact payment preview digest. The callback re-previews
+current truth before the sole Supabase writer runs. Sequential and concurrent
+replay create no second write or owner message.

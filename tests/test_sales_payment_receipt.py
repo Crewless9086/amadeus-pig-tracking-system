@@ -176,6 +176,20 @@ def test_confirmation_digest_mismatch_fails_before_update():
     assert cursor.execute.call_count == 1 and result["writes_to_supabase"] is False
 
 
+def test_confirmation_rechecks_counterparty_and_invoice_under_sale_row_lock():
+    row = ("Completed", "Unpaid", "EFT", None, None, Decimal("4470.51"),
+           Decimal("4470.51"), "Auction", "", None, "Changed buyer", "S-EE02-2710")
+    cursor = Mock(); cursor.fetchone.return_value = row
+    request = {**payload(), "expected_counterparty": "BKB",
+        "expected_invoice_reference": "S-EE02-2710"}
+    request = confirmed(request, row, "SALE-AUCT")
+    with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
+        result, status = record_sale_payment_state("SALE-AUCT", request,
+            database_url="postgresql://example", actor_id="owner:charl")
+    assert status == 409 and result["status"] == "payment_transaction_identity_changed"
+    assert cursor.execute.call_count == 1 and result["writes_to_supabase"] is False
+
+
 def test_partial_receipt_can_progress_to_full_cumulative_settlement():
     row = ("Completed", "Part_Paid", "EFT", date(2026, 8, 12),
            Decimal("1000.00"), Decimal("4470.51"), Decimal("4470.51"),

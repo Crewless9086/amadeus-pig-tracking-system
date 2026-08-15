@@ -7,7 +7,9 @@ from modules.auth.owner_access import (
     owner_admin_principal,
     require_owner_admin_access,
     require_owner_read_access,
+    require_strict_owner_admin_access,
 )
+from modules.oom_sakkie.sam_payment_owner_runtime import present_sale_payment_preview
 from modules.beacon.media_intake import (
     list_media_intakes,
     read_private_thumbnail,
@@ -272,6 +274,15 @@ def oom_sakkie_message():
 def oom_sakkie_telegram_message():
     payload = request.get_json(silent=True) or {}
     result, status_code = handle_telegram_gateway_message(payload, headers=request.headers)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales/payment-preview", methods=["POST"])
+def oom_sakkie_sale_payment_preview():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = present_sale_payment_preview(request.get_json(silent=True) or {})
     return jsonify(result), status_code
 
 

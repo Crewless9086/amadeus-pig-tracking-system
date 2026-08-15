@@ -110,7 +110,7 @@ def record_sale_payment_state(sale_id, payload=None, database_url=None, *, actor
 
 _SALE_PAYMENT_SELECT = """select sale_status,payment_status,payment_method,
         payment_date,received_total,net_total,net_settlement_payable,
-        sale_channel,notes
+        sale_channel,notes,buyer_name,destination,external_reference
     from public.sales_transactions where sale_id=%s"""
 
 
@@ -133,7 +133,9 @@ def _proposed_payment(sale_id, payload, actor_id):
         if paid_at is None: errors.append("payment_date is required for received money.")
     return {"payment_status": status, "payment_method": method,
             "received_amount": received, "payment_date": paid_at,
-            "actor_id": actor}, errors
+            "actor_id": actor,
+            "expected_counterparty": str(payload.get("expected_counterparty") or "").strip(),
+            "expected_invoice_reference": str(payload.get("expected_invoice_reference") or "").strip()}, errors
 
 
 def _blocked_transition(sale_id, row, proposed):
@@ -143,6 +145,17 @@ def _blocked_transition(sale_id, row, proposed):
     if str(row[0]) == "Cancelled":
         return {"success": False, "status": "cancelled_sale",
                 "writes_to_supabase": False}, 409
+    expected_counterparty = proposed.get("expected_counterparty")
+    expected_invoice = proposed.get("expected_invoice_reference")
+    if expected_counterparty or expected_invoice:
+        if len(row) < 12:
+            return {"success": False, "status": "payment_transaction_identity_changed",
+                    "writes_to_supabase": False}, 409
+        current_counterparty = str(row[9] or row[10] or "").strip()
+        if (current_counterparty != expected_counterparty
+                or str(row[11] or "").strip() != expected_invoice):
+            return {"success": False, "status": "payment_transaction_identity_changed",
+                    "writes_to_supabase": False}, 409
     due = Decimal(str(row[6] if row[6] is not None else row[5]))
     received = proposed["received_amount"]
     status = proposed["payment_status"]

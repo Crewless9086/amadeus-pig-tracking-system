@@ -39,6 +39,14 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "durable_claim_truth_loaded":False,"current_segment_consumed":None,
           "segment_consumption_proven":False,"recovery_required":True},503
     if claimed.get("status")=="protected_callback_completed_delivery_retry":
+        if claimed.get("action_kind")=="sam_sale_payment":
+            result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
+            return {"handled":True,**result,"specialist":"SAM",
+              "mission_id":claimed["mission_id"],
+              "card_mission_id":str(result.get("card_mission_id") or claimed["mission_id"]),
+              "reply_markup":{"inline_keyboard":[]},
+              "owner_visible_completion_policy":"verified_edit_or_new_message",
+              "writes_to_supabase":False},200
         from modules.oom_sakkie.rootline_protected_irrigation import protected_card_mission_id
         result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
         answer=_irrigation_answer(result,claimed)
@@ -53,6 +61,12 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
             claimed["answer"]=("Send the corrected facts when ready; nothing was recorded."
                 if claimed["status"]=="protected_preview_change_requested" else
                 "Cancelled. Nothing was recorded.")
+            if claimed.get("action_kind")=="sam_sale_payment":
+                bound=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
+                claimed.update({"specialist":"SAM",
+                  "card_mission_id":claimed["mission_id"]+":PAYMENT:"+str(bound.get("payment_preview_digest") or "")[:24].upper(),
+                  "reply_markup":{"inline_keyboard":[]},
+                  "owner_visible_completion_policy":"verified_edit_or_new_message"})
         return {"handled":True,**claimed,"writes_farm_data":False,"suppress_owner_delivery":claimed.get("status")=="protected_callback_replayed_noop"},status
     claimed["callback_token"]=data.split(":")[1]
     if claimed["action_kind"]=="beacon_private_album_finish":
@@ -141,6 +155,21 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
             result={**canonical_result,"answer":f"Recorded the confirmed facts for {row_count} animals exactly once.",
               "mission_id":claimed["mission_id"],"card_mission_id":claimed["mission_id"],
               "reply_markup":{"inline_keyboard":[]},"owner_visible_completion_policy":"verified_edit_or_new_message"}
+        else:
+            contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        return {"handled":True,**result},result_status
+    if claimed["action_kind"]=="sam_sale_payment":
+        from modules.oom_sakkie.sam_payment_owner_runtime import execute_claimed_sale_payment
+        result,result_status=execute_claimed_sale_payment(claimed,connect_factory=connect_factory)
+        if result.get("success") is True:
+            completion=complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            result=completion.get("result") if isinstance(completion.get("result"),dict) else result
+            if completion.get("replayed") is True:
+                result={**result,"answer":"","suppress_owner_delivery":True,
+                    "writes_to_supabase":False,"status":"sale_payment_replayed_noop"}
+        elif result_status >= 500 or result.get("status")=="payment_state_write_failed":
+            return {"handled":True,**result,"status":"sale_payment_recovery_pending",
+                "recovery_required":True},503
         else:
             contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         return {"handled":True,**result},result_status
