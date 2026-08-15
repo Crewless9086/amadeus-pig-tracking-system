@@ -2102,6 +2102,8 @@ def project_mating_overview(rows, state_rows, today=None):
             "boar_current_pen_name": _text(boar.get("current_pen_name")),
             "mating_date": _date_text(row.get("mating_date")),
             "mating_method": _text(row.get("mating_method")),
+            "mating_pen_id": _text(row.get("mating_pen_id")),
+            "mating_pen_name": _text(row.get("mating_pen_name")),
             "exposure_group": _text(row.get("exposure_group")),
             "expected_pregnancy_check_date": _date_text(expected_check),
             "pregnancy_check_date": _date_text(row.get("pregnancy_check_date")),
@@ -2157,9 +2159,29 @@ def project_mating_overview(rows, state_rows, today=None):
 def get_mating_overview(connect_factory=None):
     rows = _fetch_all(
         """
-        select *
-        from public.mating_events
-        order by mating_date desc nulls last, mating_id desc
+        select mating.*,
+               placement.to_pen_id as mating_pen_id,
+               placement.to_pen_name as mating_pen_name
+        from public.mating_events mating
+        left join lateral (
+            select location.to_pen_id, pen.pen_name as to_pen_name
+            from public.pig_breeding_exposure_events exposure
+            join public.pig_location_events location
+              on location.pig_id = exposure.sow_pig_id
+             and location.move_date = exposure.occurred_on
+             and location.group_batch_id = exposure.exposure_group_identity
+            left join public.pens pen on pen.pen_id = location.to_pen_id
+            where exposure.exposure_identity = mating.source_exposure_identity
+              and exposure.exposure_group_identity = mating.exposure_group_identity
+              and exposure.event_kind = 'started'
+              and exposure.sow_pig_id = mating.sow_pig_id
+              and location.reason_for_move = 'Breeding exposure placement'
+              and location.source = 'herdmaster_breeding_placement'
+            order by location.move_date asc, location.created_at asc,
+                     location.location_event_id asc
+            limit 1
+        ) placement on true
+        order by mating.mating_date desc nulls last, mating.mating_id desc
         """,
         connect_factory=connect_factory,
     )

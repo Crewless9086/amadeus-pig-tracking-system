@@ -5,6 +5,10 @@
   margin-top: 2mm;
 }
 
+.pwr-birth-identity {
+  grid-template-columns: 1fr 1fr 2.3fr;
+}
+
 .pwr-animal-heading label:first-child input {
   height: 7mm;
   font: 700 15px Georgia, serif;
