@@ -143,11 +143,19 @@
   `static/js/breedingAnalyticsDetail.js`; current routes/readers are
   `modules/pig_weights/mating_routes.py`, `modules/pig_weights/mating_service.py`
   and `modules/pig_weights/farm_supabase_read_service.py`.
+- Authoritative versioned backend: `modules/pig_weights/herdmaster_full_lifecycle_merit.py`,
+  `load_full_lifecycle_merit_evidence` / `get_full_lifecycle_merit` in
+  `farm_supabase_read_service.py`, and the owner-read
+  `/api/pig-weights/breeding-analytics/v1/full-lifecycle*` routes. PR #905
+  deployed this stable, zero-write contract.
 - Retained worktrees at heads `68cf41c4...` and `c1702487...` plus open PR #823
   are historical design/test evidence only and must not be merged or revived.
-- Rule: later HERDMASTER work owns the canonical read packet and statistical
+- Rule: HERDMASTER owns the deployed canonical read packet and statistical
   semantics; later CODEX UI work owns rendering only after Control Tower assigns
   disjoint files. Neither slice creates a genetic ledger, score or farm fact.
+- Current page JavaScript still consumes the legacy aggregate. The mission
+  remains `WORKING` until CODEX renders the versioned packet and authenticated
+  owner-visible production proof passes without farm writes.
 
 ## Oom Sakkie owner-request lifecycle
 
