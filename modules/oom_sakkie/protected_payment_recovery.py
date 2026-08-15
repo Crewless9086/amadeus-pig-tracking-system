@@ -146,19 +146,21 @@ class _RecoveryStore:
         return dict(zip(keys, values))
 
     def release(self, token, cycle_id, now, status, result):
-        retry = now + timedelta(seconds=INTERVAL_SECONDS)
+        heartbeat = datetime.now(timezone.utc)
+        retry = heartbeat + timedelta(seconds=INTERVAL_SECONDS)
         with self.connect() as db:
             with db.cursor() as cur:
                 cur.execute("""update app_private.oom_protected_payment_recovery_leases
                   set lease_until=%s,heartbeat_at=%s,last_status=%s,last_result=%s::jsonb
                   where callback_token=%s and cycle_id=%s""",
-                  (now if status == "completed" else retry, now, status,
+                  (heartbeat if status == "completed" else retry, heartbeat, status,
                    json.dumps(result, sort_keys=True), token, cycle_id))
 
     def finish_cycle(self, cycle_id, now, result):
+        completed = datetime.now(timezone.utc)
         with self.connect() as db:
             with db.cursor() as cur:
                 cur.execute("""update app_private.oom_protected_payment_recovery_cycles
                   set heartbeat_at=%s,completed_at=%s,status=%s,result=%s::jsonb
                   where cycle_id=%s and worker_id=%s""",
-                  (now, now, result["status"], json.dumps(result, sort_keys=True), cycle_id, WORKER_ID))
+                  (completed, completed, result["status"], json.dumps(result, sort_keys=True), cycle_id, WORKER_ID))
