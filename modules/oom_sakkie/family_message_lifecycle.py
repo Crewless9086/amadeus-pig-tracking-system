@@ -49,6 +49,32 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     delivered = next((row for row in events if row.get("state") == "delivered"), None)
     latest = next((row for row in reversed(events) if row.get("state") in {"delivered", "updated"}), delivered)
     card_id = str((latest or {}).get("telegram_message_id") or "")
+    immutable_initial_card = (
+        specialist == "BEACON_MEDIA"
+        and result.get("status") == "media_album_received"
+        and result.get("owner_visible_card_policy") == "immutable_initial_card"
+    )
+    if immutable_initial_card and latest:
+        exact_card_binding = (
+            str(latest.get("mission_id") or "") == mission_id
+            and str(latest.get("card_mission_id") or "") == card_mission_id
+            and str(latest.get("specialist_identity") or "") == specialist
+            and str(latest.get("owner_user_id") or "")
+                == str(parsed.get("telegram_user_id") or "")
+            and str(latest.get("chat_id") or "")
+                == str(parsed.get("telegram_chat_id") or "")
+            and bool(card_id)
+        )
+        if not exact_card_binding:
+            return {"success": False,
+                "status": "family_message_immutable_card_binding_conflict",
+                "mission_id": mission_id, "card_mission_id": card_mission_id,
+                "telegram_sends": 0, "telegram_edits": 0}
+        return {"success": True,
+            "status": "family_message_immutable_card_replayed_noop",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_message_id": card_id,
+            "telegram_sends": 0, "telegram_edits": 0}
     inbound_binding = _inbound_binding(parsed, specialist)
     material_update = _material_update_authorized(parsed, result, specialist,
         mission_id, card_mission_id)
@@ -99,7 +125,9 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
                 "telegram_sends": 0, "telegram_edits": 0}
-    if provider_replay and exclusive_completion:
+    exclusive_completion_restore = bool(provider_replay and exclusive_completion
+        and str((latest or {}).get("text_sha256") or "") != text_sha)
+    if provider_replay and exclusive_completion and not exclusive_completion_restore:
         return {"success": True, "status": "family_message_completion_replayed_noop",
             "mission_id": mission_id, "card_mission_id": card_mission_id,
             "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
@@ -120,7 +148,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 0}
         return _deliver_visible_notification(parsed, payload, text, mission_id,
             card_mission_id, card_id, text_sha, store, sender, prior_edits=0)
-    if provider_replay and not material_update and not contextual_delivery_resume:
+    if (provider_replay and not material_update and not contextual_delivery_resume
+            and not exclusive_completion_restore):
         return {"success": True, "status": "family_message_provider_replay_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
@@ -132,6 +161,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
 
     if card_id:
         update_id = card_mission_id + "-UPDATE-" + text_sha[:20].upper()
+        if exclusive_completion_restore:
+            update_id += "-MONOTONIC-RESTORE-2"
         prior_update = [row for row in events
             if str(row.get("event_id") or "").startswith(update_id)]
         ambiguous_edit = any(row.get("state") == "contained"

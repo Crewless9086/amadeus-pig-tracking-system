@@ -246,6 +246,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             receipt_mission = str(intake.get("receipt_mission_id") or "")
             delivery = deliver_family_result(
                 parsed, {"answer": receipt_text, "status": "media_album_received",
+                         "owner_visible_card_policy": "immutable_initial_card",
                          "writes_farm_data": False, "hardware_commands": 0},
                 specialist="BEACON_MEDIA", mission_id=receipt_mission,
                 card_mission_id=receipt_mission,
