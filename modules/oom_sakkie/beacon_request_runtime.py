@@ -81,9 +81,10 @@ def build_current_beacon_proposal(opportunities, media_payload):
     if not isinstance(opportunities, Mapping) or opportunities.get("success") is not True:
         raise ValueError("canonical_opportunity_evidence_required")
     cards = [row for row in opportunities.get("cards") or [] if isinstance(row, Mapping)]
+    all_cards = cards
     cards = [row for row in cards if row.get("status") == "ready_for_owner_review"]
     if not cards:
-        raise ValueError("current_marketing_priority_unavailable")
+        return _current_evidence_request(all_cards, opportunities)
     card = cards[0]
     cap = int((card.get("capacity_calculation") or {}).get("demand_cap") or 0)
     evidence_id = str(card.get("card_id") or "")
@@ -116,6 +117,31 @@ def build_current_beacon_proposal(opportunities, media_payload):
     return prepare_marketing_proposal(objective, _project_media(media_payload, objective["media_tags"]), draft)
 
 
+def _current_evidence_request(cards, opportunities):
+    blockers = sorted({str(item) for card in cards for item in card.get("blockers") or []})
+    evidence = [{"card_id": str(card.get("card_id") or ""),
+        "category": str(card.get("category") or ""), "status": str(card.get("status") or ""),
+        "observed_at": str((card.get("provenance") or {}).get("observed_at") or ""),
+        "demand_cap": int((card.get("capacity_calculation") or {}).get("demand_cap") or 0),
+        "blockers": list(card.get("blockers") or [])} for card in cards]
+    packet = {"contract_version": "beacon_marketing_evidence_request_v1",
+        "packet_type": "marketing_evidence_request", "status": "needs_current_commercial_evidence",
+        "objective": "Choose the next profitable, supportable farm marketing campaign",
+        "audience": "Unknown until quantified current buyer demand or an owner-selected awareness objective exists",
+        "factual_evidence": evidence, "available_media": "Not evaluated because no supportable commercial objective exists",
+        "missing_media": "No media request is justified until the commercial objective is supported",
+        "intended_channel": "No channel recommended yet", "recommended_copy": "Withheld: no supported availability or demand claim",
+        "expected_commercial_value": "Avoid spending owner attention or public trust on an offer with zero evidenced demand cap",
+        "performance_measurement": "After a supported campaign exists, record reach, qualified enquiries, conversions and attributable gross sales",
+        "missing_evidence": blockers,
+        "decision_options": ["wait_for_quantified_demand", "prepare_non_availability_awareness_campaign"],
+        "protected_owner_decision": "Wait for quantified buyer demand, or choose a non-availability farm-awareness objective",
+        "authority": dict(ZERO)}
+    packet["packet_id"] = "BEACON-EVIDENCE-" + _digest({"generated_at": opportunities.get("generated_at"),
+        "evidence": evidence})[:24].upper()
+    return packet
+
+
 def _project_media(payload, tags):
     items = payload.get("items") if isinstance(payload, Mapping) and payload.get("success") is True else []
     projected = []
@@ -140,7 +166,19 @@ def _project_media(payload, tags):
 
 def render_beacon_packet(packet, *, language="en"):
     af = str(language).casefold().startswith("af")
-    if packet.get("packet_type") == "missing_media_request":
+    if packet.get("packet_type") == "marketing_evidence_request":
+        blockers = ", ".join(packet.get("missing_evidence") or [])
+        lines = ["<b>BEACON — CURRENT EVIDENCE REQUEST</b>", "",
+            f"<b>Objective:</b> {html.escape(str(packet.get('objective') or ''))}",
+            f"<b>Audience:</b> {html.escape(str(packet.get('audience') or ''))}",
+            f"<b>Supported current evidence:</b> {html.escape(json.dumps(packet.get('factual_evidence') or [], sort_keys=True))}",
+            f"<b>Missing evidence:</b> {html.escape(blockers)}",
+            f"<b>Media:</b> {html.escape(str(packet.get('available_media') or ''))}; {html.escape(str(packet.get('missing_media') or ''))}",
+            f"<b>Channel/copy:</b> {html.escape(str(packet.get('intended_channel') or ''))}; {html.escape(str(packet.get('recommended_copy') or ''))}",
+            f"<b>Expected value:</b> {html.escape(str(packet.get('expected_commercial_value') or ''))}",
+            f"<b>Measure later:</b> {html.escape(str(packet.get('performance_measurement') or ''))}",
+            f"<b>One protected decision:</b> {html.escape(str(packet.get('protected_owner_decision') or ''))}."]
+    elif packet.get("packet_type") == "missing_media_request":
         shot = (packet.get("shot_list") or [{}])[0]
         lines = ["<b>BEACON — PRESIESE MEDIA-VERSOEK</b>" if af else "<b>BEACON — PRECISE MEDIA REQUEST</b>", "",
             f"<b>{'Doel' if af else 'Objective'}:</b> {html.escape(str(packet.get('objective') or ''))}",

@@ -69,6 +69,16 @@ def test_missing_media_is_precise_and_afrikaans_rendered():
     assert "Aanbevole kanaal/kopie:" in answer and "Meet later:" in answer
 
 
+def test_missing_commercial_evidence_returns_precise_decision_packet_not_error():
+    packet = build_current_beacon_proposal(opportunity(ready=False), media())
+    assert packet["packet_type"] == "marketing_evidence_request"
+    assert "no_quantified" not in " ".join(packet["missing_evidence"]) or packet["missing_evidence"]
+    answer = render_beacon_packet(packet)
+    assert "CURRENT EVIDENCE REQUEST" in answer
+    assert "One protected decision" in answer
+    assert packet["authority"]["publishes"] is False
+
+
 def test_provider_replay_is_returned_without_second_owner_delivery():
     store, rows = memory_store()
     authority = issue_gateway_owner_authority("42", "42")
