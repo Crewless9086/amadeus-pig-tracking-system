@@ -113,7 +113,8 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             "answer": str(active.get("question") or "Could you clarify that answer?")[:240],
             "requires_visible_notification": True, "question_count": 1, **ZERO}, 409
     bound = bind_gateway_owner_authority(authority, "farm_manager_round")
-    if bound is None:
+    if (bound is None or str(bound.owner_user_id) != str(parsed.get("telegram_user_id") or "")
+            or str(bound.private_chat_id) != str(parsed.get("telegram_chat_id") or "")):
         return {"handled": True, "success": False,
             "status": "manager_question_authority_denied",
             "answer": "I could not safely bind that reply to the active farm question.",
@@ -135,6 +136,7 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         str((active.get("question_binding") or {}).get("task_id") or ""), dedupe_key))
     event_id = "OOM-MANAGER-QUESTION-" + sha256(
         f"{question_identity}|{generation}".encode()).hexdigest()[:24].upper()
+    completion_event_id = event_id + "-COMPLETED"
     facts = _semantic_facts(semantic)
     clarification = str(getattr(semantic, "clarification_question", "") or "").strip()
     partial = bool(getattr(semantic, "needs_clarification", False) and clarification)
@@ -145,6 +147,8 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
     try:
         existing = ((event_loader)(event_id) if event_loader is not None else
                     _load_manager_question_record(event_id) if event_store is None else {})
+        completed = ((event_loader)(completion_event_id) if event_loader is not None else
+                    _load_manager_question_record(completion_event_id) if event_store is None else {})
     except Exception as exc:
         return {"handled": True, "success": False,
             "status": "manager_question_receipt_lookup_unavailable",
@@ -152,19 +156,20 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             "answer": ("I received the reply, but could not safely check its durable receipt. "
                        "Nothing was applied; exact recovery remains available."),
             "requires_visible_notification": True, **ZERO}, 503
-    if existing:
-        if existing.get("provider_binding") != binding:
+    terminal = completed or (existing if existing.get("status") != "dispatch_claimed" else {})
+    if terminal:
+        if terminal.get("provider_binding") != binding:
             return {"handled": True, "success": False,
                 "status": "manager_question_concurrent_reply_conflict",
                 "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
                 "requires_visible_notification": True, **ZERO}, 409
-        recovered = (existing.get("downstream_result")
-            if isinstance(existing.get("downstream_result"), dict) else None)
+        recovered = (terminal.get("downstream_result")
+            if isinstance(terminal.get("downstream_result"), dict) else None)
         if recovered:
             return {**recovered, "handled": True,
                 "manager_question_status": "manager_question_reply_replay_recovered",
                 "manager_question_event_id": event_id,
-                "records_audit_trace": True}, int(existing.get("downstream_status") or 200)
+                "records_audit_trace": True}, int(terminal.get("downstream_status") or 200)
         return {"handled": True, "success": True,
             "status": "manager_question_reply_replay_suppressed", "answer": "",
             "suppress_owner_delivery": True, **ZERO}, 200
@@ -199,6 +204,36 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
     downstream = None
     downstream_status = 200
     if expected_domain == "rootline" and semantic_domain == "rootline":
+        store = event_store or manager_question_event_store
+        if existing:
+            if existing.get("provider_binding") != binding:
+                return {"handled": True, "success": False,
+                    "status": "manager_question_concurrent_reply_conflict",
+                    "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
+                    "requires_visible_notification": True, **ZERO}, 409
+            return {"handled": True, "success": True,
+                "status": "manager_question_reply_replay_suppressed", "answer": "",
+                "suppress_owner_delivery": True, **ZERO}, 200
+        else:
+            claim = {**record, "status": "dispatch_claimed",
+                "claim_started_at": datetime.now(timezone.utc).isoformat()}
+            claimed = store(event_id, claim)
+            if not isinstance(claimed, dict) or claimed.get("success") is not True:
+                return {"handled": True, "success": False,
+                    "status": "manager_question_receipt_unavailable",
+                    "answer": ("I received the reply, but could not durably claim it. "
+                               "Nothing was applied; exact recovery remains available."),
+                    "requires_visible_notification": True, **ZERO}, 503
+            if claimed.get("created") is False:
+                prior = claimed.get("record") if isinstance(claimed.get("record"), dict) else {}
+                if prior.get("provider_binding") != binding:
+                    return {"handled": True, "success": False,
+                        "status": "manager_question_concurrent_reply_conflict",
+                        "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
+                        "requires_visible_notification": True, **ZERO}, 409
+                return {"handled": True, "success": True,
+                    "status": "manager_question_reply_replay_suppressed", "answer": "",
+                    "suppress_owner_delivery": True, **ZERO}, 200
         from modules.oom_sakkie.operational_specialist_intake import (
             handle_operational_specialist_message,
         )
@@ -206,11 +241,33 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             parsed, authority)
         if not downstream.get("handled"):
             return {"handled": False, **ZERO}, 200
-        record["downstream_result"] = dict(downstream)
-        record["downstream_status"] = int(downstream_status)
+        completion = {**record, "event_id": completion_event_id,
+            "status": "recorded", "downstream_result": dict(downstream),
+            "downstream_status": int(downstream_status)}
+        stored = store(completion_event_id, completion)
+        if not isinstance(stored, dict) or stored.get("success") is not True:
+            retained_identity = {key: downstream.get(key) for key in
+                ("specialist_identity", "mission_id", "card_mission_id",
+                 "provider_message_id", "provider_timestamp")
+                if downstream.get(key) is not None}
+            return {"handled": True, "success": False,
+                "status": "manager_question_receipt_unavailable",
+                "answer": ("ROOTLINE retained the attributable update, but the linked manager receipt "
+                           "is not yet proven. Exact recovery will reconcile this same provider identity; "
+                           "no hardware command was issued."),
+                "downstream_retention_possible": True,
+                "requires_visible_notification": True, **retained_identity, **ZERO}, 503
+        return {**downstream, "handled": True,
+            "manager_question_status": "manager_question_reply_recorded",
+            "manager_question_event_id": event_id,
+            "records_audit_trace": True}, downstream_status
     stored = (event_store or manager_question_event_store)(event_id, record)
     if not isinstance(stored, dict) or stored.get("success") is not True:
         downstream_applied = downstream is not None
+        retained_identity = ({key: downstream.get(key) for key in
+            ("specialist_identity", "mission_id", "card_mission_id",
+             "provider_message_id", "provider_timestamp")
+            if downstream is not None and downstream.get(key) is not None})
         return {"handled": True, "success": False,
             "status": "manager_question_receipt_unavailable",
             "answer": (("ROOTLINE retained the attributable update, but the linked manager receipt "
@@ -219,7 +276,7 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
                        ("I received the reply, but could not prove its durable receipt. "
                         "Nothing was applied; recovery must use this same provider message identity.")),
             "downstream_retention_possible": downstream_applied,
-            "requires_visible_notification": True, **ZERO}, 503
+            "requires_visible_notification": True, **retained_identity, **ZERO}, 503
     if stored.get("created") is False:
         existing = stored.get("record") if isinstance(stored.get("record"), dict) else {}
         if existing.get("provider_binding") == binding:
@@ -237,11 +294,6 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             "status": "manager_question_concurrent_reply_conflict",
             "answer": "I kept the first attributable reply to this farm question; I did not overwrite it.",
             "requires_visible_notification": True, **ZERO}, 409
-    if downstream is not None:
-        return {**downstream, "handled": True,
-            "manager_question_status": "manager_question_reply_recorded",
-            "manager_question_event_id": event_id,
-            "records_audit_trace": True}, downstream_status
     if partial:
         answer = clarification
         status = "manager_question_partial_reply_recorded"

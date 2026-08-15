@@ -66,7 +66,7 @@ def test_exact_reply_binds_group_evidence_and_replay_is_silent():
 
 @patch("modules.oom_sakkie.operational_specialist_intake.handle_operational_specialist_message")
 def test_morning_card_rootline_update_records_manager_receipt_before_canonical_dispatch(dispatch):
-    dispatch.return_value = ({"handled": True, "success": True,
+    downstream = ({"handled": True, "success": True,
         "status": "specialist_accepted", "specialist_identity": "ROOTLINE",
         "mission_id": "ROOTLINE-1", "card_mission_id": "ROOTLINE-1",
         "answer": "Water evidence retained; ROOTLINE will reassess.",
@@ -87,13 +87,19 @@ def test_morning_card_rootline_update_records_manager_receipt_before_canonical_d
         message="3600", reply="")
     inbound["semantic"] = rootline.as_hint()
     state = memory()
+    def after_claim(*_args, **_kwargs):
+        assert len(state.rows) == 1
+        assert next(iter(state.rows.values()))["status"] == "dispatch_claimed"
+        return downstream
+    dispatch.side_effect = after_claim
     value, status = handle_manager_question_reply(inbound,
         issue_gateway_owner_authority(OWNER, OWNER), rootline,
         question=card, event_store=state, event_loader=lambda key: state.rows.get(key, {}))
-    receipt = next(iter(state.rows.values()))
+    receipt = next(row for row in state.rows.values() if row["status"] == "recorded")
     assert status == 200 and value["manager_question_status"] == "manager_question_reply_recorded"
     assert receipt["manager_card_message_id"] == "3599"
     assert receipt["provider_message_id"] == "3600"
+    assert len(state.rows) == 2
     assert len(receipt["semantic_facts"]["observation_facts"]) == 3
     replay, replay_status = handle_manager_question_reply(inbound,
         issue_gateway_owner_authority(OWNER, OWNER), rootline,
@@ -128,14 +134,12 @@ def test_morning_card_rootline_update_records_manager_receipt_before_canonical_d
 
 
 @patch("modules.oom_sakkie.operational_specialist_intake.handle_operational_specialist_message")
-def test_rootline_success_manager_receipt_failure_is_truthful_and_exactly_recoverable(dispatch):
+def test_rootline_success_manager_receipt_failure_retains_identity_and_replay_is_silent(dispatch):
     first_downstream = {"handled": True, "success": True, "status": "specialist_accepted",
         "specialist_identity": "ROOTLINE", "mission_id": "ROOTLINE-2",
         "card_mission_id": "ROOTLINE-2", "answer": "Evidence retained.",
         "writes_farm_data": True, "hardware_commands": 0}
-    dispatch.side_effect = [(first_downstream, 200),
-        ({**first_downstream, "status": "operational_replay_suppressed",
-          "replay_suppressed": True}, 200)]
+    dispatch.return_value = (first_downstream, 200)
     card = {"daily_identity": "OOM-DAILY-FARM-MANAGER-2026-08-15",
         "telegram_message_id": "3599", "presented_at": NOW.isoformat(),
         "question": "Contextual update to the delivered morning farm plan",
@@ -147,19 +151,21 @@ def test_rootline_success_manager_receipt_failure_is_truthful_and_exactly_recove
     state = memory(); attempts = {"count": 0}
     def recovering_store(identity, record):
         attempts["count"] += 1
-        if attempts["count"] == 1:
+        if attempts["count"] == 2:
             return {"success": False, "created": False}
         return state(identity, record)
     failed, failed_status = handle_manager_question_reply(inbound,
         issue_gateway_owner_authority(OWNER, OWNER), rootline,
         question=card, event_store=recovering_store, event_loader=lambda _key: {})
-    recovered, recovered_status = handle_manager_question_reply(inbound,
+    replay, replay_status = handle_manager_question_reply(inbound,
         issue_gateway_owner_authority(OWNER, OWNER), rootline,
         question=card, event_store=recovering_store, event_loader=lambda key: state.rows.get(key, {}))
     assert failed_status == 503 and failed["downstream_retention_possible"] is True
+    assert failed["specialist_identity"] == "ROOTLINE"
+    assert failed["mission_id"] == failed["card_mission_id"] == "ROOTLINE-2"
     assert "ROOTLINE retained" in failed["answer"] and "Nothing was applied" not in failed["answer"]
-    assert recovered_status == 200 and recovered["replay_suppressed"] is True
-    assert len(state.rows) == 1 and dispatch.call_count == 2
+    assert replay_status == 200 and replay["suppress_owner_delivery"] is True
+    assert len(state.rows) == 1 and dispatch.call_count == 1
 
 
 def test_afrikaans_non_reply_continuation_binds_same_active_question():
@@ -178,6 +184,14 @@ def test_unrelated_direct_specialist_request_is_not_stolen_by_manager_question()
         semantic(continuation=False, domain="rootline"),
         question=question(), event_store=memory())
     assert status == 200 and value["handled"] is False
+
+
+def test_manager_question_rejects_authority_not_bound_to_provider_principal():
+    value, status = handle_manager_question_reply(parsed(),
+        issue_gateway_owner_authority("99", "99"), semantic(),
+        question=question(), event_store=lambda *_: pytest.fail("must not persist"))
+    assert status == 403 and value["status"] == "manager_question_authority_denied"
+    assert value["writes_farm_data"] is False
 
 
 def test_unrelated_direct_request_replying_to_plan_card_is_not_stolen():

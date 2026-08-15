@@ -125,7 +125,7 @@ def _contextual_delivery_terminal(outcome):
                   and review_json->'family_message_lifecycle'->>'text_sha256'=%s
                   and review_json->'family_message_lifecycle'->>'state'=any(%s)""",
                 (mission_id, card_id, provider_id, answer_sha, list(terminal_states)))
-            return int(cursor.fetchone()[0]) == 1
+            return int(cursor.fetchone()[0]) >= 1
 _ROOTLINE_PRESENCE = re.compile(
     r"\bB and C valve area\b.*\bobserve both camps\b.*\bintervene immediately\b.*\bsupervised commissioning\b",
     re.I,
