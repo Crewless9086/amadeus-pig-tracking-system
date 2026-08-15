@@ -1,5 +1,23 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - Autonomous-agent operational reality gate
+
+- Corrected a cross-system Control Tower failure in which deployed source, web
+  health and terminal-invoked production canaries could be mistaken for a live
+  autonomous specialist.
+- Required every agent handover to prove its autonomous trigger, durable worker,
+  heartbeat, last independent result, next cycle, authority mode and continued
+  operation after the development terminal is released.
+- Added honest non-operational classifications including `deployed-dormant`,
+  `invocation-only`, `event-waiting`, `scheduler-degraded`,
+  `authority-disabled` and `Unknown`.
+- Required failed cards, messages, conversations, jobs, segments and canaries
+  to become immutable historical evidence after reusable repair; fresh
+  acceptance must use current canonical evidence and a new execution identity.
+- Added one mandatory Control Tower feedback and continuation template for all
+  present and future specialists. This governance change grants no runtime,
+  provider, farm, customer, hardware, n8n or Google Sheets authority.
+
 ## 2026-08-14 - HERDMASTER daily cohort evidence prepared
 
 - Added a versioned read-only HERDMASTER producer for the eligible tagged

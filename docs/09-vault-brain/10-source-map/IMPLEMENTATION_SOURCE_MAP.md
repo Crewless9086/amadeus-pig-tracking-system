@@ -61,6 +61,11 @@
   issued. Every owner message and terminal report also triggers an all-terminal
   dispatch sweep so idle terminals receive the next eligible existing mission
   without making the owner act as dispatcher.
+- Mandatory cross-system terminal/agent truth template:
+  `docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`. It requires
+  separate web/API, worker, trigger, heartbeat, last/next cycle, authority,
+  terminal-invoked and terminal-independent evidence and enforces a fresh
+  execution identity after contained historical attempts.
 - Canonical channel contract:
   `docs/09-vault-brain/07-standards/CHANNEL_INVARIANT_CANONICAL_ACTION_STANDARD.md`.
 - Runtime truth: Supabase-backed domain events, projections, missions, claims,
