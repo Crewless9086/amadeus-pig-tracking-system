@@ -150,6 +150,35 @@ Exit: core farm management, Telegram and schedules operate with n8n unavailable.
 Exit: the farm computer can be replaced without changing actions or losing data,
 and temporary internet loss does not create duplicate farm or hardware effects.
 
+### Standing authority and minimum-owner operation
+
+The runtime target is delegation, not a permanent approval queue. One approved
+authority envelope must be durable, versioned and available to every action in
+the canonical spine. Equivalent later cycles inside that envelope execute from
+fresh Supabase, provider and governed sensor truth without another owner gate.
+
+Each domain runtime must expose:
+
+- a stable standing-authority identity, version, scope, limits and revocation
+  state;
+- a deterministic `inside_standing_authority` decision before execution;
+- fresh evidence health, conflict and staleness checks owned by the runtime;
+- zero routine owner confirmations for work inside the envelope;
+- one concise exception only when authority would expand or evidence is truly
+  unavailable from an approved source; and
+- an owner-interaction counter tied to the complete business journey.
+
+Missing automation is never converted into owner labour. A manual observation,
+presence statement, approval card or terminal-created fact cannot be a permanent
+dependency for routine operation when the programme already assigns that fact to
+a sensor, provider, scheduler or specialist. Such a dependency is repaired as a
+systemic journey defect before the capability is called autonomous.
+
+Exit: closing every development terminal leaves routine approved work running;
+ordinary cycles require no owner approval; exceptions identify the exact new
+authority or unavailable physical fact; and replay cannot create another owner
+request or effect.
+
 ### Phase 6 — Controlled learning and optimisation (ongoing after reliable spine)
 
 - Bind recommendations to outcome chains and financial results.

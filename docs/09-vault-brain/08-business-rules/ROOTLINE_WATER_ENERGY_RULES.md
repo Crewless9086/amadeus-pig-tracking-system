@@ -81,6 +81,15 @@ Forecast rain, locally observed rain, and captured useful water are different ev
 - Fresh local-station readings are authoritative evidence of conditions observed at the farm.
 - A local rain reading can prove detected rainfall under the active freshness rules.
 - It still does not prove how much useful water entered the tanks.
+- Routine autonomous B/C dry release is machine-evidenced. It requires the
+  governed local station to be healthy and fresh, a fresh forecast, an
+  automatically calculated continuous zero-rain interval of at least 30
+  minutes, at least two durable boundary readings, and no missing or
+  conflicting reading in that interval. Owner review, manual visible-rain
+  confirmation, and per-cycle approval are not routine execution gates.
+- Rain above the active threshold produces Hold. Stale, unhealthy, missing or
+  conflicting local/forecast evidence also fails closed; standing authority
+  does not bypass these weather gates.
 
 ### Captured Water
 

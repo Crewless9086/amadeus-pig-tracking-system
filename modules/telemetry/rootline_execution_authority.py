@@ -15,7 +15,7 @@ from modules.telemetry.rootline_irrigation_job_contract import (
 from modules.telemetry.rootline_device_registry import rootline_device_registry
 
 MAX_SECONDS = 3599
-CONTRACT_VERSION = "rootline_execution_eligibility.v2"
+CONTRACT_VERSION = "rootline_execution_eligibility.v3"
 STANDING_AUTHORITY = "owner_approved_routine_irrigation_v1"
 
 
