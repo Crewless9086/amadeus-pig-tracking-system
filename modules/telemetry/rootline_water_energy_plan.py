@@ -372,19 +372,36 @@ def read_current_water_energy_evidence(
 
     now = _as_za(now or datetime.now(timezone.utc))
     selected = str(operating_date or now.date().isoformat())[:10]
-    power_packet, _ = get_current_power_state(database_url=database_url)
-    weather_packet, _ = get_current_weather_state(database_url=database_url)
-    forecast_packet, _ = get_weather_forecast(days=3, database_url=database_url)
-    advisor, _ = get_rootline_daily_advisor(selected, now=now)
-    balances=read_latest_zone_water_balances(database_url,now=now)
+    # These sources are independent read models. Loading them serially can add
+    # several individually bounded database waits and exceed the enclosing web
+    # worker deadline before protected execution reaches its claim boundary.
+    # Keep each source's own timeout/fail-closed contract while bounding the
+    # aggregate latency to the slowest source instead of their sum.
+    from modules.telemetry.rootline_bounded_read_group import run_bounded_read_group
+    readers = {
+        "power": lambda: get_current_power_state(database_url=database_url),
+        "weather": lambda: get_current_weather_state(database_url=database_url),
+        "forecast": lambda: get_weather_forecast(days=3, database_url=database_url),
+        "advisor": lambda: get_rootline_daily_advisor(selected, now=now),
+        "balances": lambda: read_latest_zone_water_balances(database_url, now=now),
+        "history": lambda: _read_historical_context(database_url),
+        "irrigation_history": lambda: _read_recent_irrigation_history(database_url, now),
+        "tanks": lambda: _read_latest_tank_observation(database_url),
+    }
+    loaded = run_bounded_read_group(readers,max_workers=3,deadline_seconds=20)
+    power_packet, _ = loaded["power"]
+    weather_packet, _ = loaded["weather"]
+    forecast_packet, _ = loaded["forecast"]
+    advisor, _ = loaded["advisor"]
+    balances = loaded["balances"]
     advisor_zones=deepcopy(advisor.get("zones", []))
     for zone in advisor_zones:
         if isinstance(zone,dict):
             zone["water_balance"]=_dict(balances.get("zones")).get(
                 str(zone.get("zone_id")),{"status":UNAVAILABLE})
-    history = _read_historical_context(database_url)
-    irrigation_history = _read_recent_irrigation_history(database_url, now)
-    tanks = _read_latest_tank_observation(database_url)
+    history = loaded["history"]
+    irrigation_history = loaded["irrigation_history"]
+    tanks = loaded["tanks"]
     database_failures = [str(packet.get("error_type")) for packet in (
         power_packet, weather_packet, forecast_packet, history, tanks, balances)
         if isinstance(packet, dict) and packet.get("error_type")]

@@ -182,8 +182,14 @@ def get_rootline_daily_advisor(
         advisor_date or (now or datetime.now(ZA_TZ)).astimezone(ZA_TZ).date().isoformat()
     )[:10]
     reader = brief_reader or (lambda: get_rootline_daily_brief(selected_date))
-    brief = _safe_read(reader)
-    policy_packet = _safe_read_policy(policy_reader or list_policy_review)
+    # The brief and active policy are independent read models. Load them in
+    # parallel so their bounded waits cannot accumulate inside an owner
+    # callback worker.
+    from modules.telemetry.rootline_bounded_read_group import run_bounded_read_group
+    loaded = run_bounded_read_group({"brief":lambda:_safe_read(reader),
+        "policy":lambda:_safe_read_policy(policy_reader or list_policy_review)},
+        max_workers=2)
+    brief=loaded["brief"];policy_packet=loaded["policy"]
     active_policy = (
         policy_packet.get("active_policy")
         if isinstance(policy_packet, dict)

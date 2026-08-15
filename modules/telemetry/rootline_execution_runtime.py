@@ -197,8 +197,17 @@ def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,
 
 def _current(evidence_loader, readback, token_store, source, database_url, now,
              store=rootline_irrigation_execution_store):
-    evidence, operating_date, generated_at = evidence_loader(
-        database_url=database_url, now=now)
+    try:
+        from modules.telemetry.rootline_bounded_read_group import (
+            RootlineReadGroupDeadlineExceeded,
+        )
+        evidence, operating_date, generated_at = evidence_loader(
+            database_url=database_url,now=now)
+    except Exception as exc:
+        if isinstance(exc, RootlineReadGroupDeadlineExceeded):
+            raise RootlineExecutionStoreUnavailable(
+                "load_current_water_energy_evidence") from exc
+        raise
     history = evidence.get("irrigation_history") if isinstance(evidence, dict) else None
     if ((isinstance(history, dict) and history.get("status") == "Unavailable")
             or (isinstance(evidence, dict) and evidence.get("database_read_failures"))):

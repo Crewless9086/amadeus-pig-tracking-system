@@ -1,9 +1,10 @@
 import unittest
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
 from app import app
-from modules.telemetry.rootline_daily_brief import build_rootline_daily_brief
+from modules.telemetry.rootline_daily_brief import build_rootline_daily_brief,get_rootline_daily_brief
 
 
 def evidence(**overrides):
@@ -23,6 +24,19 @@ def evidence(**overrides):
 
 
 class RootlineDailyBriefTests(unittest.TestCase):
+    def test_independent_readers_start_concurrently(self):
+        barrier=threading.Barrier(4);threads=set();guard=threading.Lock()
+        def reader():
+            with guard: threads.add(threading.get_ident())
+            barrier.wait(timeout=1)
+            return {"success":False}
+        packet,status=get_rootline_daily_brief("2026-08-15",readers={
+            name:reader for name in ("weather_current","weather_today","forecast",
+                "power","irrigation","rollups")})
+        self.assertEqual(status,200)
+        self.assertEqual(len(threads),4)
+        self.assertTrue(packet["authority"]["hardware_control_performed"] is False)
+
     def build(self, **overrides):
         return build_rootline_daily_brief(evidence(**overrides), "2026-07-25")
 
