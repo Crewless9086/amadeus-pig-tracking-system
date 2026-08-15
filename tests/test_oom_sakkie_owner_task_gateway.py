@@ -139,7 +139,7 @@ class OwnerTaskGatewayTests(unittest.TestCase):
         self.assertEqual(prior_member_replay[0]["delivery"]["telegram_sends"],0)
         self.assertEqual(prior_member_replay[0]["delivery"]["telegram_edits"],0)
         self.assertEqual(prior_member_replay[0]["delivery"]["status"],
-                         "media_album_completed_receipt_replay_noop")
+                         "family_message_immutable_card_replayed_noop")
         self.assertEqual(edits[0][1],"4001")
         self.assertEqual(edits[0][3],{"inline_keyboard":[]})
         self.assertEqual(mock_complete.call_count,2)
