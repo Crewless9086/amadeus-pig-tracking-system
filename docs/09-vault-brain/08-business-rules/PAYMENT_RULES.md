@@ -9,3 +9,6 @@ amount due. A partial payment preserves the actual lesser amount. Preview
 writes nothing; confirmation rechecks locked Supabase state and binds replay to
 the preserved digest. Legacy direct payment updates fail closed. Telegram may
 link to review but must not claim recording before canonical readback.
+New sales start `Unpaid`; they cannot smuggle receipt state through creation.
+A later partial receipt may advance only to a greater cumulative received
+amount, and settlement becomes `Paid` only when that total equals amount due.

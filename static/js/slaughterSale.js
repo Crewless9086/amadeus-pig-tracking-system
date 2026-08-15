@@ -12,7 +12,7 @@ const paymentMethodSelect = document.getElementById("payment_method");
 const saleStatusSelect = document.getElementById("sale_status");
 const createdByInput = document.getElementById("created_by");
 const notesInput = document.getElementById("notes");
-const submitButtons = Array.from(document.querySelectorAll(".submit-button"));
+const submitButtons = Array.from(document.querySelectorAll("#slaughter_sale_form .submit-button"));
 const transactionsBody = document.getElementById("slaughter_transactions_body");
 const transactionCount = document.getElementById("slaughter_transactions_count");
 const transactionSearch = document.getElementById("slaughter_search");
@@ -604,6 +604,14 @@ async function submitUpdatePayment(event) {
 
     pendingPaymentPreview = { requestPayload, previewDigest: data.preview_digest };
     const preview = data.preview || {};
+    if (data.confirmation_required === false) {
+      pendingPaymentPreview = null;
+      paymentPreview.textContent = `Canonical payment state already matches: ${preview.payment_status}, R${preview.received_amount || "0.00"}. No payment action is needed.`;
+      paymentPreview.classList.remove("hidden");
+      confirmPaymentButton.classList.add("hidden");
+      showMessage("Payment state already matches canonical truth. Nothing was recorded.", "success");
+      return;
+    }
     paymentPreview.textContent = `Confirm ${preview.payment_status}: received R${preview.received_amount || "0.00"} of R${preview.amount_due}, by ${preview.payment_method || "unchanged"} on ${preview.payment_date || "unchanged"}. No payment has been recorded yet.`;
     paymentPreview.classList.remove("hidden");
     confirmPaymentButton.classList.remove("hidden");

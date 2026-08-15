@@ -32,6 +32,9 @@
   receipts equal canonical amount due; partial receipts retain actual amount.
 - Bound replay to the preserved preview digest, failed the legacy direct route
   closed, and limited Oom Sakkie wording to review/preview.
+- Independent review additionally closed paid-at-creation bypass, enabled a
+  monotonic partial-to-full settlement, and suppressed confirmation for an
+  already-matching canonical payment state.
 - Source and regression evidence only. No payment, customer, Telegram, n8n or
   Google Sheets effect occurred; deployment and genuine proof remain separate.
 

@@ -35,6 +35,11 @@ def preview_sale_payment_state(sale_id, payload=None, database_url=None, *, acto
         if blocked:
             return blocked
         preview = _payment_preview(sale_id, row, proposed)
+        if _is_exact_transition(row, proposed):
+            return {"success": True, "status": "payment_state_already_recorded",
+                    "preview": preview, "preview_digest": _preview_digest(preview),
+                    "confirmation_required": False,
+                    "writes_to_supabase": False}, 200
         return {"success": True, "status": "payment_state_preview_ready",
                 "preview": preview, "preview_digest": _preview_digest(preview),
                 "confirmation_required": True, "writes_to_supabase": False}, 200
@@ -68,10 +73,7 @@ def record_sale_payment_state(sale_id, payload=None, database_url=None, *, actor
                 blocked = _blocked_transition(sale_id, row, proposed)
                 if blocked:
                     return blocked
-                exact = (str(row[1] or "") == status
-                         and (None if row[4] is None else Decimal(str(row[4]))) == target_received
-                         and str(row[2] or "") == (method if status != "Unpaid" else str(row[2] or ""))
-                         and _date(row[3]) == (paid_at if status != "Unpaid" else _date(row[3])))
+                exact = _is_exact_transition(row, proposed)
                 if exact:
                     if f"preview {confirmed_digest}" not in str(row[8] or ""):
                         return {"success": False,
@@ -154,16 +156,29 @@ def _blocked_transition(sale_id, row, proposed):
     if status in {"Deposit_Paid", "Part_Paid"} and received >= due:
         return {"success": False, "status": "partial_amount_must_be_below_amount_due",
                 "amount_due": str(due), "writes_to_supabase": False}, 409
-    exact = (str(row[1] or "") == status
-             and (None if row[4] is None else Decimal(str(row[4]))) == received
-             and str(row[2] or "") == (proposed["payment_method"] if status != "Unpaid" else str(row[2] or ""))
-             and _date(row[3]) == (proposed["payment_date"] if status != "Unpaid" else _date(row[3])))
+    exact = _is_exact_transition(row, proposed)
     existing = (row[4] not in (None, 0, Decimal("0"))
                 or str(row[1] or "") in {"Deposit_Paid", "Part_Paid", "Paid"})
     if existing and not exact:
-        return {"success": False, "status": "existing_receipt_requires_governed_correction",
-                "writes_to_supabase": False}, 409
+        current_status = str(row[1] or "")
+        current_received = Decimal(str(row[4] or 0))
+        forward_partial = (current_status == "Deposit_Paid"
+                           and status in {"Deposit_Paid", "Part_Paid"})
+        forward_part = current_status == "Part_Paid" and status == "Part_Paid"
+        forward_paid = current_status in {"Deposit_Paid", "Part_Paid"} and status == "Paid"
+        if not ((forward_partial or forward_part or forward_paid)
+                and received is not None and received > current_received):
+            return {"success": False, "status": "existing_receipt_requires_governed_correction",
+                    "writes_to_supabase": False}, 409
     return None
+
+
+def _is_exact_transition(row, proposed):
+    status = proposed["payment_status"]
+    return (str(row[1] or "") == status
+            and (None if row[4] is None else Decimal(str(row[4]))) == proposed["received_amount"]
+            and str(row[2] or "") == (proposed["payment_method"] if status != "Unpaid" else str(row[2] or ""))
+            and _date(row[3]) == (proposed["payment_date"] if status != "Unpaid" else _date(row[3])))
 
 
 def _payment_preview(sale_id, row, proposed):

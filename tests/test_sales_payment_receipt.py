@@ -161,3 +161,33 @@ def test_confirmation_digest_mismatch_fails_before_update():
             actor_id="owner:charl")
     assert status == 409 and result["status"] == "payment_preview_stale_or_mismatched"
     assert cursor.execute.call_count == 1 and result["writes_to_supabase"] is False
+
+
+def test_partial_receipt_can_progress_to_full_cumulative_settlement():
+    row = ("Completed", "Part_Paid", "EFT", date(2026, 8, 12),
+           Decimal("1000.00"), Decimal("4470.51"), Decimal("4470.51"),
+           "Auction", "first partial receipt")
+    request = confirmed(payload(), row, "SALE-AUCT")
+    cursor = Mock(); cursor.fetchone.side_effect = [row,
+        ("SALE-AUCT", "Paid", "EFT", date(2026, 8, 12), Decimal("4470.51"),
+         Decimal("4470.51"), Decimal("4470.51"), "Auction")]
+    with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
+        result, status = record_sale_payment_state(
+            "SALE-AUCT", request, database_url="postgresql://example",
+            actor_id="owner:charl")
+    assert status == 200 and result["status"] == "payment_state_recorded"
+    assert result["received_amount"] == "4470.51"
+    assert cursor.execute.call_count == 2
+
+
+def test_exact_state_preview_is_read_only_and_needs_no_confirmation():
+    row = ("Completed", "Paid", "EFT", date(2026, 8, 12), Decimal("4470.51"),
+           Decimal("4470.51"), Decimal("4470.51"), "Auction", "")
+    cursor = Mock(); cursor.fetchone.return_value = row
+    with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
+        result, status = preview_sale_payment_state(
+            "SALE-AUCT", payload(), database_url="postgresql://example",
+            actor_id="owner:charl")
+    assert status == 200 and result["status"] == "payment_state_already_recorded"
+    assert result["confirmation_required"] is False
+    assert result["writes_to_supabase"] is False and cursor.execute.call_count == 1
