@@ -1268,3 +1268,14 @@
 - Granted observation eligibility only to the exact paused, non-runnable
   `CMQ-20260813-05` bootstrap admission. The 86 classified legacy records and
   all unapproved current candidates remain non-runnable.
+
+## 2026-08-15 - Full-lifecycle genetic merit backend truth reconciled
+
+- Reconfirmed merged PR #905 as the single authoritative HERDMASTER backend;
+  retained PR #823 and historical lifetime-merit worktrees as evidence only.
+- Repeated authenticated production herd and Tyson-profile reads returned
+  stable versioned semantics, explicit denominators and Limited confidence,
+  correction lineage, non-causation language, nullable unsupported growth and
+  finance, and `writes_performed:false`; eight canonical counts were unchanged.
+- Recorded that current owner pages still consume the legacy aggregate.
+  HMQ-20260813-04 remains `WORKING`; CODEX UI owns the next rendering-only slice.
