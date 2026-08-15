@@ -123,6 +123,15 @@ def test_one_water_level_routes_independently_without_demanding_both():
     assert status==200 and len(value["observations"])==1
     assert value["observations"][0]["kind"]=="storage_level"
 
+def test_plain_storage_fraction_and_visible_c_need_are_both_retained():
+    value,status=handle_operational_specialist_message(
+        operational("Reservoir is 4/4 and Storage is 4/4.\nC camp do need water"),
+        issue_gateway_owner_authority("42","42"),now=NOW,
+        rootline_operations_dispatcher=lambda _context:operational_result(recommendation="Reassess"))
+    assert status==200 and value["visible_irrigation_need_zone"]=="C12345"
+    assert [(row["kind"],row["value"]) for row in value["observations"]]==[
+        ("reservoir_level","4/4"),("storage_level","4/4")]
+
 
 @pytest.mark.parametrize("text,language,facts", [
     ("Storage tanks and Reservoir is full", "en", [{"subject":"storage_tanks","state":"FULL"},{"subject":"reservoir","state":"FULL"}]),
