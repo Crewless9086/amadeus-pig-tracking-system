@@ -319,6 +319,9 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "rank": None,
         "weekly_obligation": obligation,
         "water_balance":water_balance or {"status":"Unavailable"},
+        "water_credit":_dict(zone.get("water_credit")) or {
+            "status":"Unknown","delivered_volume_litres":"Unknown",
+            "dependency":"measured_volume_or_supported_calibration_required"},
         **AUTHORITY,
     }
 

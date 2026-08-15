@@ -56,6 +56,7 @@ def test_projects_existing_canonical_rails_without_sheet_fallback(*_mocks):
     assert result["zones"][0]["effective_rainfall_mm"] == 0.7
     assert result["zones"][0]["remaining_supported_water_need_mm"] == 6.3
     assert result["zones"][1]["decision"] == "Not Due"
+    assert result["zones"][0]["water_credit"]["delivered_volume_litres"] == "Unknown"
 
 
 def test_missing_database_is_precise_and_never_uses_legacy_sheet():

@@ -323,7 +323,8 @@ class WaterEnergyPlanTests(unittest.TestCase):
             result = _read_recent_irrigation_history(
                 "postgresql://production-shaped", NOW
             )
-        sql, params = cursor.execute.call_args.args
+        sql, params = next(call.args for call in cursor.execute.call_args_list
+                           if "from public.irrigation_events" in call.args[0])
         self.assertIn("public.irrigation_events", sql)
         self.assertEqual(params, ("PLANNING_EPOCH_STARTED",))
         self.assertTrue(connection.read_only)

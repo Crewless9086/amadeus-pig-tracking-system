@@ -35,6 +35,10 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
     try:
         with connect() as connection:
             with connection.cursor() as cursor:
+                cursor.execute("""select credit_json
+                    from public.irrigation_water_credit_events
+                    order by created_at,credit_id""")
+                credit_rows = [row[0] for row in cursor.fetchall()]
                 cursor.execute("select clock_timestamp()")
                 snapshot_cutoff = _aware(cursor.fetchone()[0])
                 cursor.execute("""select irrigation_event_id,event_at,event_type,zone_id,
@@ -43,7 +47,11 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
                     where zone_id in ('B12345','C12345') or event_type=%s
                     order by event_at,irrigation_event_id""", (EPOCH_EVENT,))
                 rows = cursor.fetchall()
-        return project_canonical_irrigation_history(rows, snapshot_cutoff=min(now, snapshot_cutoff))
+        result = project_canonical_irrigation_history(rows, snapshot_cutoff=min(now, snapshot_cutoff))
+        from modules.telemetry.rootline_water_credit import project_water_credits
+        result["water_credits"] = project_water_credits(credit_rows)
+        _attach_water_credits(result)
+        return result
     except Exception as exc:
         return _unavailable(exc.__class__.__name__)
 
@@ -93,6 +101,18 @@ def project_canonical_irrigation_history(rows, *, snapshot_cutoff):
     return {"status": "Available", "contract_version": CONTRACT,
             "snapshot_cutoff": cutoff.isoformat(), "zones": zones,
             "delivered_volume_inferred": False, "flow_inferred": False}
+
+
+def _attach_water_credits(history):
+    credits = (history.get("water_credits") or {}).get("by_execution") or {}
+    for zone in (history.get("zones") or {}).values():
+        for event in zone.get("events") or []:
+            credit = credits.get(event.get("execution_id"))
+            event["water_credit"] = ({"status": "Available", "credit_id": credit["credit_id"],
+                "delivered_volume_litres": credit["delivered_volume_litres"],
+                "credit_method": credit["credit_method"]} if credit else {
+                "status": "Unknown", "delivered_volume_litres": "Unknown",
+                "dependency": "measured_volume_or_supported_calibration_required"})
 
 
 def build_typed_history_event(*, event_id, event_at, event_type, zone_id, details,

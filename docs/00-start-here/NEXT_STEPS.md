@@ -1,5 +1,19 @@
 # Next Steps
 
+## ROOTLINE RMQ-20260813-05 — Water-Credit Lifecycle
+
+Current mission: implement and deploy the append-only, measurement-qualified
+water-credit lifecycle over canonical ROOTLINE executions and accepted physical
+evidence. Delivered litres remain Unknown until a supported measurement or
+governed calibration exists; runtime and normal-flow confirmation are not volume.
+
+Queued successor after RMQ-05 reaches a released or dependency-idle boundary:
+the existing OOM SAKKIE `farm_manager` delegated-principal interface for Anton.
+That separate mission must use neutral `unapproved upstream/shared-control`
+safety terminology. It must remove “mother valve” from positive commissioning
+examples, must not invent unknown topology or sequencing, and must not start
+before RMQ-05 releases its overlapping ROOTLINE/runtime dependency.
+
 Control Tower uses `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md` as
 the canonical owner-facing terminal queue. Every terminal feedback must update
 mission, terminal, deployed-runtime, worktree and next-action truth before
