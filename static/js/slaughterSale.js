@@ -517,8 +517,8 @@ function openUpdatePanel(saleId, currentTotal, itemCount = 1) {
 
   receivedAmountGroup.classList.toggle("hidden", !paymentDeepLinkMode);
   updateReceivedAmountInput.required = paymentDeepLinkMode && updatePaymentStatusSelect.value !== "Unpaid";
-  updateReceivedAmountInput.value = paymentDeepLinkMode && updatePaymentStatusSelect.value === "Paid"
-    ? updateLineTotalInput.value : "";
+  updateReceivedAmountInput.value = paymentDeepLinkMode && updatePaymentStatusSelect.value !== "Unpaid"
+    ? (transaction.received_total ?? (updatePaymentStatusSelect.value === "Paid" ? updateLineTotalInput.value : "")) : "";
   updateLineTotalInput.readOnly = paymentDeepLinkMode;
   submitUpdateButton.textContent = paymentDeepLinkMode ? "Preview Payment" : "Save Payment Update";
   invalidatePaymentPreview();
@@ -602,7 +602,8 @@ async function submitUpdatePayment(event) {
       throw new Error(message);
     }
 
-    pendingPaymentPreview = { requestPayload, previewDigest: data.preview_digest };
+    pendingPaymentPreview = { requestPayload, previewDigest: data.preview_digest,
+      confirmationToken: data.confirmation_token };
     const preview = data.preview || {};
     if (data.confirmation_required === false) {
       pendingPaymentPreview = null;
@@ -633,6 +634,7 @@ async function confirmPaymentPreview() {
       body: JSON.stringify({
         ...pendingPaymentPreview.requestPayload,
         confirmed_preview_digest: pendingPaymentPreview.previewDigest,
+        confirmation_token: pendingPaymentPreview.confirmationToken,
       }),
     });
     const data = await response.json();

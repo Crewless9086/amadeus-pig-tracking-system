@@ -160,6 +160,7 @@ def test_confirmation_digest_mismatch_fails_before_update():
             "SALE-AUCT", request, database_url="postgresql://example",
             actor_id="owner:charl")
     assert status == 409 and result["status"] == "payment_preview_stale_or_mismatched"
+    assert "current_preview_digest" not in result
     assert cursor.execute.call_count == 1 and result["writes_to_supabase"] is False
 
 

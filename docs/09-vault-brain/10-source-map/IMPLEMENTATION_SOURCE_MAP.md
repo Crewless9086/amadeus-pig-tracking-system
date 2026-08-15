@@ -645,7 +645,9 @@ Current built Supabase-backed surface:
 - legacy references: `docs/03-google-sheets/sheets/SALES_STOCK_TOTALS.md`, `docs/04-n8n/workflows/ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
 - payment rule: `modules/sales/sales_payment_receipt.py` owns the single
   Supabase-backed preview/confirm action and rechecks its digest under a row
-  lock. `templates/slaughter-sale.html` and `static/js/slaughterSale.js` expose
+  lock. `modules/sales/sales_transaction_routes.py` requires strict owner-admin
+  access and a 15-minute server-signed sale/actor/digest token from preview.
+  `templates/slaughter-sale.html` and `static/js/slaughterSale.js` expose
   no direct-save payment path. Oom Sakkie presents review/preview only until
   canonical confirmation exists.
 

@@ -85,7 +85,6 @@ def record_sale_payment_state(sale_id, payload=None, database_url=None, *, actor
                 preview = _payment_preview(sale_id, row, proposed)
                 if confirmed_digest != _preview_digest(preview):
                     return {"success": False, "status": "payment_preview_stale_or_mismatched",
-                            "current_preview_digest": _preview_digest(preview),
                             "writes_to_supabase": False}, 409
                 note = _note(row[8], proposed["actor_id"], status, target_received,
                              method, paid_at, confirmed_digest)

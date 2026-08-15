@@ -35,6 +35,9 @@
 - Independent review additionally closed paid-at-creation bypass, enabled a
   monotonic partial-to-full settlement, and suppressed confirmation for an
   already-matching canonical payment state.
+- Follow-up review removed digest disclosure, required strict owner-admin
+  access plus a short-lived signed preview token, and restored canonical
+  received-total display for existing partial receipts.
 - Source and regression evidence only. No payment, customer, Telegram, n8n or
   Google Sheets effect occurred; deployment and genuine proof remain separate.
 

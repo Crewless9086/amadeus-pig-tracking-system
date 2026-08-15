@@ -1,7 +1,8 @@
 import ipaddress
 import os
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, current_app, jsonify, render_template, request
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from modules.pig_weights.pig_weights_service import get_sales_availability
 from modules.auth.owner_access import (
     owner_admin_principal,
@@ -416,31 +417,74 @@ def sales_transaction_payment_update(sale_id):
 
 @sales_bp.route("/sales-transactions/<sale_id>/payment-state/preview", methods=["POST"])
 def sales_transaction_payment_state_preview(sale_id):
-    denied = require_owner_admin_access()
+    denied = require_strict_owner_admin_access()
     if denied:
         return denied
-    principal = owner_admin_principal()
+    principal = strict_owner_admin_principal()
     if not principal:
         return jsonify({"success": False, "status": "owner_identity_required",
                         "writes_to_supabase": False}), 403
     result, status_code = preview_sale_payment_state(
         sale_id, request.get_json(silent=True) or {}, actor_id=principal)
+    if status_code == 200 and result.get("confirmation_required") is True:
+        token = _payment_confirmation_token(
+            sale_id, principal, result.get("preview_digest"))
+        if not token:
+            return jsonify({"success": False,
+                            "status": "payment_confirmation_signing_unavailable",
+                            "writes_to_supabase": False}), 503
+        result["confirmation_token"] = token
     return jsonify(result), status_code
 
 
 @sales_bp.route("/sales-transactions/<sale_id>/payment-state/confirm", methods=["POST"])
 def sales_transaction_payment_state_update(sale_id):
-    denied = require_owner_admin_access()
+    denied = require_strict_owner_admin_access()
     if denied:
         return denied
-    principal = owner_admin_principal()
+    principal = strict_owner_admin_principal()
     if not principal:
         return jsonify({"success": False, "status": "owner_identity_required",
                         "writes_to_supabase": False}), 403
     payload = request.get_json(silent=True) or {}
+    token_status = _validate_payment_confirmation_token(
+        payload.pop("confirmation_token", ""), sale_id, principal,
+        payload.get("confirmed_preview_digest"))
+    if token_status != "valid":
+        return jsonify({"success": False, "status": token_status,
+                        "writes_to_supabase": False}), 409
     result, status_code = record_sale_payment_state(
         sale_id, payload, actor_id=principal)
     return jsonify(result), status_code
+
+
+def _payment_confirmation_serializer():
+    secret = current_app.secret_key
+    return (URLSafeTimedSerializer(secret, salt="sales-payment-confirmation-v1")
+            if secret else None)
+
+
+def _payment_confirmation_token(sale_id, actor_id, preview_digest):
+    serializer = _payment_confirmation_serializer()
+    if not serializer or not preview_digest:
+        return ""
+    return serializer.dumps({"sale_id": sale_id, "actor_id": actor_id,
+                             "preview_digest": preview_digest})
+
+
+def _validate_payment_confirmation_token(token, sale_id, actor_id, preview_digest):
+    serializer = _payment_confirmation_serializer()
+    if not serializer or not token or not preview_digest:
+        return "payment_confirmation_token_required"
+    try:
+        bound = serializer.loads(str(token), max_age=900)
+    except SignatureExpired:
+        return "payment_confirmation_token_expired"
+    except BadSignature:
+        return "payment_confirmation_token_invalid"
+    expected = {"sale_id": sale_id, "actor_id": actor_id,
+                "preview_digest": preview_digest}
+    return "valid" if bound == expected else "payment_confirmation_token_mismatched"
 
 
 @sales_bp.route("/sales-transactions/<sale_id>/confirm-pig-exits", methods=["POST"])
