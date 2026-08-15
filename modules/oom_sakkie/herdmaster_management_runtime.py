@@ -30,8 +30,17 @@ def consume_current_herdmaster_management(*, authority: Any, owner_user_id: str,
         return _contained("authenticated_manager_context_denied", now)
     try:
         observations = (observation_loader or _load_observations)(str(owner_user_id))
-        active = (active_loader(str(owner_user_id)) if active_loader is not None
-                  else _load_active_lifecycles(str(owner_user_id), include_terminal=True))
+        if active_loader is not None:
+            active = active_loader(str(owner_user_id))
+        else:
+            projected = _load_active_lifecycles(str(owner_user_id), include_terminal=True)
+            # This consumer needs canonical death closures to suppress stale
+            # mortality work. Other terminal dispositions remain retired but
+            # are not reinterpreted as mortality closure evidence.
+            active = [row for row in projected if
+                str(row.get("state") or "").strip().casefold()
+                    not in {"completed", "closed", "handled"}
+                or row.get("mortality_closed") is True]
         prior = (prior_loader or _load_prior_consumptions)(
             str(owner_user_id), str(auth["context"].get("digest") or ""))
         canonical = canonical_loader()

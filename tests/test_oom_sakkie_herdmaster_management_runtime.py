@@ -85,6 +85,23 @@ def test_default_management_runtime_loads_terminal_closure_projection(monkeypatc
     assert result["status"]=="herdmaster_management_round_consumed", result
     assert result["binding"]["active_case_deduplication_state"]["active_pig_ids"]==()
 
+
+def test_default_management_runtime_retires_nonmortality_terminal_projection(monkeypatch):
+    import modules.oom_sakkie.herdmaster_management_runtime as runtime
+    projected=[{"pig_id":"PIG-SOLD","lifecycle_id":"SOLD-CASE",
+        "state":"completed","mortality_closed":False,
+        "closure_reason":"canonical_terminal_pig_state","canonical_status":"Sold",
+        "canonical_on_farm":False}]
+    monkeypatch.setattr(runtime,"_load_active_lifecycles",
+        lambda owner,include_terminal=False: projected)
+    result=consume_current_herdmaster_management(
+        authority=issue_gateway_owner_authority(OWNER,OWNER),owner_user_id=OWNER,now=NOW,
+        canonical_loader=canonical,observation_loader=lambda _owner:observations(),
+        prior_loader=lambda _owner,_context:[],
+        recorder=lambda _value:{"success":True,"created":True})
+    assert result["status"]=="herdmaster_management_round_consumed", result
+    assert result["binding"]["active_case_deduplication_state"]["active_pig_ids"]==()
+
 def test_authenticated_runtime_consumes_and_records_existing_store_binding_once():
     recorded=[]
     result=consume_current_herdmaster_management(authority=issue_gateway_owner_authority(OWNER,OWNER),
