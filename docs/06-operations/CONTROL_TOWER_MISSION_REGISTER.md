@@ -289,7 +289,10 @@ Detailed HERDMASTER evidence remains in
   routed it correctly, but Render lacked the BEACON activation configuration
   and the shared gateway let generic owner context run before typed media.
   Repair, reviewed release, bounded recovery and fresh deployed proof remain.
-- `BMQ-20260813-03` — queued library/public-use separation.
+- `BMQ-20260813-03` — `source-active` private Library/public-use separation.
+  It reuses the completed eight-photo Bella album and one canonical append-only
+  media decision rail. Deployment and a genuine owner button/readback remain;
+  the terminal must not manufacture the decision. BMQ-20260813-05 follows.
 - `BMQ-20260813-04` — `business-complete`; deployed Oom Sakkie returned one
   current text-only awareness proposal exactly once with zero publication,
   spend, customer, farm, hardware, n8n or Sheets effect. Retain its identities

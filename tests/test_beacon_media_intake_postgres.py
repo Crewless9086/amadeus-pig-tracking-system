@@ -12,6 +12,9 @@ DATABASE_URL = os.getenv("BEACON_WEEKLY_REVIEW_POSTGRES_URL", "").strip()
 MIGRATION = Path(
     "supabase/migrations/202607270001_create_beacon_media_intake.sql"
 )
+ALBUM_REVIEW_MIGRATION = Path(
+    "supabase/migrations/202608150008_add_beacon_album_review_envelope.sql"
+)
 
 
 @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL is required")
@@ -26,6 +29,17 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         migration = MIGRATION.read_text(encoding="utf-8")
         with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            for role in ("anon", "authenticated", "service_role"):
+                cursor.execute(
+                    "select 1 from pg_roles where rolname=%s",
+                    (role,),
+                )
+                if not cursor.fetchone():
+                    cursor.execute(f'create role "{role}" nologin')
+            cursor.execute("create schema if not exists app_private")
+            cursor.execute("""create table if not exists app_private.migration_log(
+                migration_id text primary key, description text not null default '',
+                applied_at timestamptz not null default now())""")
             cursor.execute(base)
             cursor.execute(creative)
             for table in (
@@ -41,6 +55,7 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
                 cursor.execute(f"drop table if exists public.{table} cascade")
             cursor.execute("drop function if exists public.prevent_beacon_media_intake_mutation() cascade")
             cursor.execute(migration)
+            cursor.execute(ALBUM_REVIEW_MIGRATION.read_text(encoding="utf-8"))
 
     def setUp(self):
         with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
@@ -285,10 +300,14 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
             group_id,
             {
                 "event_type": "library_accepted",
+                "contract_version": "beacon_private_album_review_v1",
+                "album_digest": "0" * 64,
+                "subject_owner_principal": "telegram-owner:" + "c" * 64,
+                "subject_chat_hmac": "b" * 64,
                 "owner_action_id": "premature-album-review",
                 "expected_predecessors": {},
             },
-            "owner-admin:one",
+            "telegram-owner:" + "c" * 64,
         )
         self.assertEqual(
             (premature_status, premature["status"]),
@@ -310,6 +329,84 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
             "owner_principal": "telegram-owner:" + "c" * 64,
         })
         self.assertEqual((replay_status, replay["created_count"]), (200, 0))
+
+        packet, packet_status = store.album_review(group_id)
+        self.assertEqual(packet_status, 200, packet)
+        self.assertFalse(packet["public_use_eligible"])
+        self.assertTrue(all(not item["public_use_checks"]["typed_review_contract"]
+                            for item in packet["ordered_media"]))
+        wrong_owner, wrong_owner_status = store.review_group(
+            group_id,
+            {
+                "event_type": "library_accepted",
+                "contract_version": packet["contract_version"],
+                "album_digest": packet["album_digest"],
+                "owner_action_id": "wrong-owner-album",
+                "subject_owner_principal": "telegram-owner:" + "f" * 64,
+                "subject_chat_hmac": "b" * 64,
+                "expected_predecessors": {},
+            },
+            "telegram-owner:" + "f" * 64,
+        )
+        self.assertEqual(
+            (wrong_owner_status, wrong_owner["status"]),
+            (403, "media_group_review_owner_binding_mismatch"),
+        )
+        accepted, accepted_status = store.review_group(
+            group_id,
+            {
+                "event_type": "library_accepted",
+                "contract_version": packet["contract_version"],
+                "album_digest": packet["album_digest"],
+                "owner_action_id": "accept-exact-album",
+                "subject_owner_principal": "telegram-owner:" + "c" * 64,
+                "subject_chat_hmac": "b" * 64,
+                "expected_predecessors": {
+                    item["binary_asset_id"]: item["library_event_id"]
+                    for item in packet["ordered_media"]
+                },
+            },
+            "telegram-owner:" + "c" * 64,
+        )
+        self.assertEqual((accepted_status, accepted["created_count"]), (201, 3))
+        accepted_replay, accepted_replay_status = store.review_group(
+            group_id,
+            {
+                "event_type": "library_accepted",
+                "contract_version": packet["contract_version"],
+                "album_digest": packet["album_digest"],
+                "owner_action_id": "accept-exact-album",
+                "subject_owner_principal": "telegram-owner:" + "c" * 64,
+                "subject_chat_hmac": "b" * 64,
+                "expected_predecessors": {
+                    item["binary_asset_id"]: item["library_event_id"]
+                    for item in packet["ordered_media"]
+                },
+            },
+            "telegram-owner:" + "c" * 64,
+        )
+        self.assertEqual((accepted_replay_status, accepted_replay["created_count"]), (200, 0))
+        with psycopg.connect(DATABASE_URL) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """select album_position,album_review_contract_version,album_digest_sha256,
+                          album_decision_type,approved_use_scope,understanding_event_id
+                   from public.beacon_media_library_events
+                   where intake_group_id=%s order by album_position""",
+                (group_id,),
+            )
+            envelopes = cursor.fetchall()
+        self.assertEqual([row[0] for row in envelopes], [1, 2, 3])
+        self.assertTrue(all(row[1] == packet["contract_version"] for row in envelopes))
+        self.assertTrue(all(row[2] == packet["album_digest"] for row in envelopes))
+        expected_understanding = {
+            item["album_position"]: item["understanding_event_id"]
+            for item in packet["ordered_media"]
+        }
+        self.assertEqual(
+            {row[0]: row[5] for row in envelopes}, expected_understanding
+        )
+        self.assertTrue(all(row[3] == "library" and row[4] is None and row[5]
+                            for row in envelopes))
 
     def test_partial_album_cannot_be_completed(self):
         store = IntakeStore(DATABASE_URL)
@@ -337,6 +434,20 @@ class BeaconMediaIntakePostgresTests(unittest.TestCase):
             "storage_path": "telegram/review/one.jpg",
             "thumbnail_storage_path": "telegram-thumbnails/review/one.jpg",
             "thumbnail_sha256": "8" * 64,
+            "classification": {
+                "classification": "private_farm_photo",
+                "public_use_approved": False,
+                "public_use_review": {
+                    "contract_version": "beacon_public_use_review_v1",
+                    "privacy_clear": True,
+                    "animal_welfare_clear": True,
+                    "brand_clear": True,
+                    "meta_organic_awareness_suitable": True,
+                    "people_and_identifiers_clear": True,
+                    "location_disclosure_clear": True,
+                    "health_and_sales_claims_clear": True,
+                },
+            },
         }
         finalized, status = store.finalize(envelope, identity, media)
         self.assertEqual(status, 201, finalized)

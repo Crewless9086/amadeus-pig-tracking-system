@@ -403,6 +403,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             parsed,protected_result,specialist=str(protected_result.get("specialist") or "HERDMASTER"),
             mission_id=str(protected_result.get("mission_id") or ""),
             card_mission_id=str(protected_result.get("card_mission_id") or protected_result.get("mission_id") or "")))
+        if protected_result.get("callback_token") and not protected_result.get("suppress_owner_delivery"):
+            delivery=_bind_protected_preview_card(protected_result,delivery)
         body,_=_gateway_result(protected_result.get("success") is True,
           str(protected_result.get("status") or "protected_action_contained"),policy,protected_status)
         body.update({"telegram_user_id":parsed["telegram_user_id"],"telegram_chat_id":parsed["telegram_chat_id"],
@@ -452,9 +454,12 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                     {"success": True, "telegram_sends": 0, "telegram_edits": 0,
                      "status": "owner_delivery_suppressed_replay"}
                     if beacon_result.get("suppress_owner_delivery") else
-                    deliver_family_result(parsed, beacon_result, specialist="BEACON",
+                    deliver_family_result(parsed, beacon_result,
+                        specialist=str(beacon_result.get("specialist") or "BEACON"),
                         mission_id=str(beacon_result.get("mission_id") or ""),
                         card_mission_id=str(beacon_result.get("card_mission_id") or "")))
+        if beacon_result.get("callback_token") and not delivery_disabled_proof and not beacon_result.get("suppress_owner_delivery"):
+            delivery=_bind_protected_preview_card(beacon_result,delivery)
         body, _ = _gateway_result(delivery.get("success") is True,
             str(beacon_result.get("status") or "beacon_request_contained"), policy, beacon_status)
         body.update({"telegram_user_id": parsed["telegram_user_id"],

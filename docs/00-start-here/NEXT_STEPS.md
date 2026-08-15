@@ -539,6 +539,16 @@ autonomous authority.
 - Integrate the reviewed bounded provider-read correction from `fix/sam-bounded-inbox-reconciliation` only after independent commercial/CX and backend/security/privacy/authority approval.
 - After exact deployment, refresh authoritative chronology and summary evidence. Treat conversation 2101/inbound 777634477 as a fresh candidate only if it remains latest, unanswered, open-window, claim-free, ordinary Level 1 and free of protected decisions.
 - Never retry the contained HTTP 503 execution; it created no claim or provider attempt.
+# BEACON private album review — BMQ-20260813-03
+
+- Integrate and deploy the exact completed-album Library/Public Use review
+  candidate through the serialized lane.
+- Present the genuine eight-photo Bella contact sheet from deployed BEACON.
+  The terminal must not press a button or manufacture an owner decision.
+- Keep Library Accept/Reject, Public Use Approve/Decline, Campaign Review and
+  Publication separate. Proceed to BMQ-20260813-05 only after a genuine bound
+  owner choice has one canonical append-only readback.
+
 # Oom Sakkie family access (source-only, 2026-08-08)
 
 - Keep Mum and Dad unconfigured until Charl supplies each exact Telegram identity and confirms an individual role/permission preview.
