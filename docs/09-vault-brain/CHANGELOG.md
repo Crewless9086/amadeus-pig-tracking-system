@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - BEACON awareness proposal proven in deployed runtime
+
+- Merged PR #942 and verified the exact Render merge before invoking one fresh
+  authenticated delivery-disabled awareness request.
+- Returned one owner-useful text-only Facebook proposal with audience, angle,
+  exact safe copy, SAM routing, measurement and Approve/Correct/Decline.
+- Proved one canonical provider-bound result across direct/concurrent replay and
+  zero Telegram, Meta, customer, spend, farm, media, hardware, n8n or Sheets
+  effects. BEACON remains request-driven; no autonomous scheduler is claimed.
+
 ## 2026-08-15 - BEACON awareness objective retention repaired
 
 - Preserved the stable Oom Sakkie semantic intent `live_stock_awareness` into
