@@ -1,9 +1,12 @@
 import threading
+from unittest.mock import patch
 
 from modules.oom_sakkie.beacon_request_runtime import (
     build_current_beacon_proposal, handle_beacon_request, render_beacon_packet)
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
-from modules.oom_sakkie.telegram_gateway import _delivery_disabled_internal_proof
+from modules.oom_sakkie.telegram_gateway import (
+    _delivery_disabled_internal_proof, handle_telegram_gateway_message)
+from modules.oom_sakkie.semantic_front_door import SemanticInterpretation
 
 
 def opportunity(ready=True):
@@ -123,3 +126,25 @@ def test_delivery_disabled_proof_requires_both_authenticated_mode_shape_and_bmq_
     assert _delivery_disabled_internal_proof({"internal_proof_identity": "BMQ-20260813-04-PROOF"}, headers)
     assert not _delivery_disabled_internal_proof({}, headers)
     assert not _delivery_disabled_internal_proof({"internal_proof_identity": "BMQ-20260813-04-PROOF"}, {})
+
+
+@patch("modules.oom_sakkie.telegram_gateway.deliver_family_result")
+@patch("modules.oom_sakkie.telegram_gateway.interpret_owner_message")
+def test_delivery_disabled_proof_contains_unresolved_semantics_before_any_delivery(interpret, deliver):
+    interpret.return_value = SemanticInterpretation(domain="general", intent="unclear",
+        message_kind="request", needs_clarification=True)
+    env = {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "g" * 40,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "42",
+        "OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"}
+    payload = {"internal_proof_identity": "BMQ-20260813-04-PROOF",
+        "message": {"message_id": 99, "date": 1785790000, "text": "marketing",
+            "from": {"id": 42}, "chat": {"id": 42, "type": "private"}}}
+    with patch.dict("os.environ", env, clear=True), patch(
+            "modules.oom_sakkie.telegram_gateway.recover_contextual_specialist_replay", return_value=None):
+        result, status = handle_telegram_gateway_message(payload,
+            headers={"Authorization": "Bearer " + "g" * 40,
+                "X-Oom-Sakkie-Delivery-Mode": "disabled-internal-proof"})
+    assert status == 422 and result["delivery"]["telegram_sends"] == 0
+    deliver.assert_not_called()
