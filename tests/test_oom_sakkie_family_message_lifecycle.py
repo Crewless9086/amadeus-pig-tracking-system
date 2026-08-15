@@ -223,6 +223,53 @@ def test_orphaned_exclusive_completion_edit_claim_gets_one_idempotent_recovery()
     assert len(memory.sent)==1 and len(memory.edited)==1
 
 
+def test_completed_card_regressed_by_unbound_prior_member_is_restored_once():
+    memory=Memory();mission="OOM-BEACON-MEDIA-RESTORE"
+    receipt={**RESULT,"answer":"Album started. Complete it when ready."}
+    completed={**RESULT,"status":"completed","answer":"Album complete.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    first=deliver_family_result(PARSED,receipt,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    middle={**PARSED,"provider_message_id":"501"}
+    deliver_family_result(middle,receipt,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    final={**PARSED,"provider_message_id":"504"}
+    done=deliver_family_result(final,completed,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    regressed=deliver_family_result(middle,receipt,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    restored=deliver_family_result(final,completed,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(final,completed,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    assert first["telegram_sends"]==1 and done["telegram_edits"]==1
+    assert regressed["telegram_edits"]==1 and restored["telegram_edits"]==1
+    assert restored["status"]=="family_message_completion_card_updated"
+    assert replay["telegram_edits"]==0 and len(memory.sent)==1
+
+
+def test_immutable_beacon_album_receipt_never_replaces_existing_card():
+    memory=Memory();mission="OOM-BEACON-MEDIA-IMMUTABLE"
+    receipt={**RESULT,"status":"media_album_received","answer":"Album started.",
+        "owner_visible_card_policy":"immutable_initial_card"}
+    first=deliver_family_result(PARSED,receipt,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result({**PARSED,"provider_message_id":"501"},receipt,
+        specialist="BEACON_MEDIA",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert first["telegram_sends"]==1
+    assert replay["status"]=="family_message_immutable_card_replayed_noop"
+    assert replay["telegram_sends"]==replay["telegram_edits"]==0
+    assert memory.edited==[]
+
+
 def test_waiting_question_updates_card_and_creates_one_visible_notification():
     memory=Memory();mission="OOM-ROOTLINE-WAIT"
     deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
