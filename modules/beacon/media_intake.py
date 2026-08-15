@@ -377,7 +377,7 @@ def complete_telegram_album(payload, *, environ=None, database_url=None, receipt
         return _result(False, "album_completion_code_required", policy), 400
     identity = {
         "chat_hmac": _keyed(source, "chat", chat_id),
-        "owner_principal": _keyed(source, "owner", user_id),
+        "owner_principal": f"telegram-owner:{_keyed(source, 'owner', user_id)}",
     }
     completed, status = IntakeStore(database_url).complete_album_by_code(
         identity, completion_code
