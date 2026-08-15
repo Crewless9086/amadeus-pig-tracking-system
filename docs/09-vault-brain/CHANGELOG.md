@@ -1,5 +1,19 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - Deployed-agent execution ownership enforced
+
+- Added a mandatory Agent Execution Ownership Gate after a SAM development
+  terminal generated a correct BKB settlement preview that should have been
+  delivered by the deployed Oom Sakkie/SAM runtime through Telegram.
+- Required every operational prompt and handover to identify the deployed actor,
+  genuine trigger, owner channel, terminal-permitted role, forbidden terminal
+  substitutions and agent-origin proof.
+- Classified terminal-created previews, cards, provider messages, confirmations,
+  business writes and hardware operations as terminal-invoked test evidence that
+  cannot establish an operating agent or Business completion.
+- Retained SMQ-20260813-05 as WORKING; its terminal-generated preview/token must
+  remain contained until a fresh deployed-agent Telegram journey succeeds.
+
 ## 2026-08-15 - BEACON historical four-photo album recovered and replay sealed
 
 - Recovered n8n executions 64570-64573 only through the deployed authenticated
