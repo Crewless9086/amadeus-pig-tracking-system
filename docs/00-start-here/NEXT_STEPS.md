@@ -586,9 +586,11 @@ complete.
   payment actions use one owner-authenticated zero-write preview followed by
   digest-bound confirmation against locked Supabase truth. Full receipts equal
   canonical amount due; partial receipts retain the actual lesser amount.
-  Telegram says review/preview only. Deploy after exact-head review, then prove
-  the read-only preview against genuine existing sale truth. Do not confirm
-  anything until genuine bank/cash evidence exists.
+  Telegram says review/preview only. PR #946 is live at merge `5a414e6c`; an
+  authenticated preview of a genuine existing unpaid Livestock sale returned
+  `payment_state_already_recorded`, no confirmation token, zero writes and
+  unchanged before/after Supabase readback. Wait for genuine bank/cash evidence
+  before the first protected confirmation; do not manufacture it.
 
 ## Oom Sakkie durable morning runtime — 2026-08-13
 

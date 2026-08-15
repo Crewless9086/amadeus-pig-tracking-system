@@ -41,6 +41,17 @@
 - Source and regression evidence only. No payment, customer, Telegram, n8n or
   Google Sheets effect occurred; deployment and genuine proof remain separate.
 
+### Deployment and safe genuine preview
+
+- PR #946 merged as `5a414e6c5857df5c9eb44ac3847f573d80077c9f`;
+  Render deploy `dep-da03eqm7bikc73bmc240` reached `live` on that exact commit.
+- One authenticated preview used an existing genuine unpaid Livestock sale and
+  returned `payment_state_already_recorded`, `confirmation_required=false`, no
+  confirmation token and `writes_to_supabase=false`. Payment status, received
+  total, payment date and `updated_at` were identical before and after.
+- No payment was claimed or confirmed and no Telegram/customer/n8n/Sheets
+  effect occurred. Mission acceptance waits for genuine receipt evidence.
+
 ## 2026-08-15 - Idle-terminal dispatch made a response closure gate
 
 - Recorded the Control Tower failure that left eligible HERDMASTER and SAM
