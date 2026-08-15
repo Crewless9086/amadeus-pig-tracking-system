@@ -435,7 +435,7 @@ def _draft_options(facts, selected_asset=None):
             "title": "Warm farm story",
             "draft_copy": (
                 "A small moment from life at Amadeus Farm. These curious piglets "
-                "remind us how much patient daily care goes into every healthy start.\n\n"
+                "remind us how much patient daily care shapes everyday farm life.\n\n"
                 "Follow the farm journey for more honest moments from behind the scenes."
             ),
         },

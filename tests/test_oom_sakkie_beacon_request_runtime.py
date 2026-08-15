@@ -2,7 +2,8 @@ import threading
 from unittest.mock import patch
 
 from modules.oom_sakkie.beacon_request_runtime import (
-    build_current_beacon_proposal, handle_beacon_request, render_beacon_packet)
+    build_current_beacon_proposal, build_live_stock_awareness_proposal,
+    handle_beacon_request, render_beacon_packet)
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.telegram_gateway import (
     _delivery_disabled_internal_proof, handle_telegram_gateway_message)
@@ -26,11 +27,34 @@ def media(accepted=True, public=False):
         "thumbnail_url": "/private/thumb", "observation": {"tags": ["live_stock", "weaner"]}}]}
 
 
+def public_awareness_media(trusted=True):
+    return {"success": True, "items": [{"binary_asset_id": "BEACON-BINARY-1",
+        "beacon_asset_id": "BEACON-ASSET-1", "content_sha256": ("b" * 64 if trusted else "not-a-hash"),
+        "observed_mime_type": "image/jpeg", "latest_library_event": "library_accepted",
+        "current_library_accept_event_id": "LIBRARY-ACCEPT-1",
+        "current_public_use_event_id": "PUBLIC-USE-1", "effective_public_use_approved": True,
+        "private_storage_proof_id": "BEACON-BINARY-1:readback:" + "b" * 64,
+        "observation": {"tags": ["live_stock", "piglets"]}}]}
+
+
 def parsed(text="Please prepare the current marketing proposal", language="en"):
     return {"telegram_user_id": "42", "telegram_chat_id": "42", "provider_message_id": "9001",
         "provider_timestamp": "2026-08-14T08:01:00+00:00", "text": text,
         "semantic": {"domain": "beacon", "intent": "current_marketing_proposal", "message_kind": "request",
             "language": language, "needs_clarification": False}}
+
+
+def awareness_candidate(media_status="media_gap"):
+    media_value = ({"status": "approved_media_selected", "asset_id": "PUBLIC-ASSET-1",
+        "media_type": "image", "content_sha256": "b" * 64,
+        "content_hash_provenance": "server_computed_on_upload", "public_use_approved": True}
+        if media_status == "approved" else {"status": "media_gap"})
+    return {"success": True, "owner_review_packet": {"packet_id": "SOURCE-PACKET",
+        "audience": "People interested in responsible local livestock and farm life",
+        "draft_copy": ("A small moment from life at Amadeus Farm. Patient daily care matters.\n\n"
+            "Follow the farm journey for more honest moments from behind the scenes."),
+        "media": media_value, "public_livestock_policy": {
+            "policy_version": "beacon_public_livestock_awareness_only_v1"}}}
 
 
 def memory_store():
@@ -77,6 +101,63 @@ def test_missing_commercial_evidence_returns_precise_decision_packet_not_error()
     assert "CURRENT EVIDENCE REQUEST" in answer
     assert "One protected decision" in answer
     assert packet["authority"]["publishes"] is False
+
+
+def test_exact_failed_awareness_instruction_survives_semantics_and_zero_demand():
+    exact_failed_instruction = "Prepare a non-availability farm-awareness campaign."
+    request = parsed(exact_failed_instruction)
+    request["semantic"]["intent"] = "live_stock_awareness"
+    store, _ = memory_store()
+    result, status = handle_beacon_request(request, issue_gateway_owner_authority("42", "42"),
+        opportunity_loader=lambda: opportunity(ready=False),
+        content_evidence_loader=lambda **kwargs: {"canonical": kwargs["opportunity_result"]},
+        content_candidate_builder=lambda evidence: awareness_candidate(), event_store=store)
+    assert status == 200
+    assert result["proposal"]["packet_type"] == "live_stock_awareness_proposal"
+    assert result["proposal"]["capacity_context"]["sam_quantified_buyer_demand"] == 0
+    assert result["proposal"]["capacity_context"]["sale_availability_inferred"] is False
+    assert "Safe draft copy" in result["answer"]
+    assert "Approve / Correct / Decline" in result["answer"]
+    assert "no_quantified_uncommitted_live_stock_demand" not in result["answer"]
+    assert "{" not in result["answer"]
+
+
+def test_awareness_selects_only_public_hash_verified_media_or_text_only():
+    approved = build_live_stock_awareness_proposal(
+        opportunity(ready=False), awareness_candidate("approved"), public_awareness_media())
+    assert approved["media"]["status"] == "approved_public_media_selected"
+    assert approved["media"]["content_sha256"] == "b" * 64
+    text_only = build_live_stock_awareness_proposal(opportunity(ready=False), awareness_candidate(), media())
+    assert text_only["media"]["status"] == "text_only"
+    assert "portrait photo or short vertical video" in text_only["media"]["request"]
+    assert text_only["authority"]["publishes"] is False
+
+
+def test_awareness_afrikaans_response_is_natural_and_hides_internal_media_ids():
+    packet = build_live_stock_awareness_proposal(opportunity(False), awareness_candidate(),
+        public_awareness_media(), language="af")
+    answer = render_beacon_packet(packet, language="af")
+    assert "PLAASBEWUSTHEIDSVOORSTEL" in answer
+    assert "Teikengehoor" in answer and "Veilige konsepkopie" in answer
+    assert "Keur goed / Korrigeer / Wys af" in answer
+    assert "Volg die plaas se reis" in answer
+    assert "BEACON-ASSET-1" not in answer and "SHA-256" not in answer
+
+
+def test_invalid_public_media_lineage_falls_back_to_safe_text_only():
+    packet = build_live_stock_awareness_proposal(
+        opportunity(False), awareness_candidate("approved"), public_awareness_media(trusted=False))
+    assert packet["media"]["status"] == "text_only"
+
+
+def test_incomplete_demand_and_demand_shaped_capacity_preserve_unknown():
+    evidence = opportunity(False)
+    evidence["cards"][0]["capacity_calculation"].update({"available_after_buffers": 7})
+    evidence["cards"][0]["demand_summary"] = {"qualified_units": 0, "unknown_quantity_records": 1}
+    evidence["cards"][0]["blockers"] = ["unknown_live_stock_demand_quantity"]
+    packet = build_live_stock_awareness_proposal(evidence, awareness_candidate(), media())
+    assert packet["capacity_context"]["herdmaster_safe_fulfilment_capacity"] == "Unknown"
+    assert packet["capacity_context"]["sam_quantified_buyer_demand"] == "Unknown"
 
 
 def test_provider_replay_is_returned_without_second_owner_delivery():
