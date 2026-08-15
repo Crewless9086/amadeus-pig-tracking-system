@@ -12,7 +12,7 @@ import os
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
 from modules.oom_sakkie.bounded_postgres_read import (
-    connect_bounded_postgres, connect_bounded_read,
+    connect_bounded_rootline_postgres,
 )
 
 EVENT_SOURCE = "oom_sakkie_manager_question_reply"
@@ -321,7 +321,7 @@ def manager_question_event_store(event_id, record):
         "decision_json": {}, "facts_json": {}, "customer_message_excerpt": "",
         "sam_reply_excerpt": ""})
     result, status = record_sam_live_stock_review_event(event,
-        connect_factory=lambda: connect_bounded_postgres(
+        connect_factory=lambda: connect_bounded_rootline_postgres(
             read_only=False, connect_deadline_seconds=3))
     created = result.get("created", status < 300)
     existing = record if created else _load_manager_question_record(event_id)
@@ -332,7 +332,8 @@ def manager_question_event_store(event_id, record):
 def _load_manager_question_record(event_id):
     if not str(os.environ.get("DATABASE_URL") or "").strip():
         return {}
-    with connect_bounded_read() as connection:
+    with connect_bounded_rootline_postgres(
+            read_only=True, connect_deadline_seconds=3) as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select review_json->'manager_question_reply'
                 from public.sam_live_stock_conversation_review_events
@@ -344,7 +345,8 @@ def _load_manager_question_record(event_id):
 def _load_questions(owner, chat):
     if not str(os.environ.get("DATABASE_URL") or "").strip():
         return []
-    with connect_bounded_read() as connection:
+    with connect_bounded_rootline_postgres(
+            read_only=True, connect_deadline_seconds=3) as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select q.body, coalesce(p.partials, '[]'::jsonb)
                 from (select daily.review_json->'daily_farm_manager' as body,
