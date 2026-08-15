@@ -54,6 +54,56 @@ Pages, forms, dashboards, ledgers, packets, and canaries are supporting audit, t
 
 Oom Sakkie should become the ordinary owner interface wherever practical. Specialist agents must perform the underlying reconciliation and work rather than sending Charl through multiple disconnected pages and forms.
 
+## Standing Authority And Owner-Burden Gate
+
+Charl's default operating intent is delegated operation with the least reasonable
+owner effort. Approval of a governed policy, authority envelope, channel, device,
+budget cap, safety boundary or mission outcome is standing authority for every
+later routine cycle inside that unchanged envelope. A scheduler, specialist or
+protected action must not convert standing authority into per-cycle approval.
+
+Before asking Charl for any fact, review, confirmation, presence statement or
+button press, Control Tower and the owning agent must prove all of the following:
+
+1. the requested input cannot be obtained from fresh canonical, provider or
+   governed sensor evidence;
+2. the action is outside existing standing authority, or crosses an explicit
+   protected boundary that cannot be delegated safely;
+3. the request is the smallest exact decision needed and will not be requested
+   again for later equivalent cycles;
+4. every safe investigation, reconciliation and preparation step is already
+   complete; and
+5. the owner interaction closes a real decision rather than compensating for a
+   missing worker, trigger, adapter, evidence collector or runtime capability.
+
+Routine observation, planning, scheduling, prioritisation, weather assessment,
+reassessment, canonical reconciliation, approved farm operation, follow-up and
+reporting must execute without owner approval when they remain inside standing
+authority. Governed local sensor and provider evidence is operational truth when
+fresh, healthy and non-conflicting; an agent must not demand a human observation
+of the same fact merely because a manual confirmation field exists.
+
+Owner input remains appropriate for a genuinely new or expanded authority
+envelope; an unapproved material rule change; an uncommissioned device or
+topology; expenditure, publication, customer commitment or irreversible action
+outside approved caps; a strategic choice with materially different outcomes;
+or a physical fact for which no governed evidence source exists. These are
+exception boundaries, not the normal operating loop.
+
+Any repeated or avoidable owner gate is an `owner_burden_systemic_defect`. The
+mission remains `WORKING`; the responsible terminal repairs the shared journey
+and the deployed agent proves a fresh terminal-independent cycle. Control Tower
+must not label the condition `OWNER_HOLD`, ask Charl to repeat the action, or
+accept a narrow per-event bypass. Three repeated owner attempts are an absolute
+stop, not the threshold at which avoidable burden first becomes acceptable.
+
+Every operating-agent handover must report its `standing_authority_id`, exact
+scope and limits, whether the current action is inside it, the number of owner
+interactions requested in the journey, and why each was irreducible. An agent is
+not operationally ready when ordinary work still depends on a terminal, owner
+observation, recurring approval or manually manufactured evidence that its
+approved runtime should obtain itself.
+
 ## Semantic-First Agentic Operation
 
 Authenticated natural conversation must be understood semantically by the approved LLM front door with bounded current context. Keyword, regex, menu, sheet-era or intent-table classifiers must not override, reinterpret or silently replace a valid semantic decision. Deterministic code remains authoritative for identity, canonical evidence, typed specialist dispatch, calculations, protected confirmation, replay protection, writes, provider delivery and physical safety; it is not the owner-language brain.
