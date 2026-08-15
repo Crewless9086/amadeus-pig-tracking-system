@@ -35,6 +35,21 @@ Control Tower must:
    `NEW_MISSION`, `WAIT_FOR_INPUT` or `CLOSE`;
 9. only then return the assessment and continuation prompt to Charl.
 
+Before assigning or reporting any autonomous specialist mission, Control Tower
+must also apply the Agent Operational Reality Gate. Record web/API state,
+background-worker state, autonomous trigger, heartbeat, last independent cycle,
+next cycle, authority mode, last terminal-invoked cycle and terminal-independent
+continuity separately. If these facts are absent, use `deployed-dormant`,
+`invocation-only`, `event-waiting`, `scheduler-degraded`, `authority-disabled`
+or `Unknown`; never record the agent as working merely because source is
+deployed or a terminal is testing it.
+
+After a contained execution has exposed a reusable defect and that repair is
+deployed, seal the old execution identities as historical non-replayable
+evidence. The next acceptance must use current canonical evidence and one fresh
+execution identity. Do not keep a historical card, message, customer,
+conversation, job, segment or canary as the active operating loop.
+
 Every feedback transaction must additionally normalize the whole mission to one
 shared lifecycle state: `WORKING`, `REVIEW_HOLD`, `RELEASE_HOLD`, `OWNER_HOLD`,
 `EXTERNAL_HOLD`, `CONTAINED` or `BUSINESS_COMPLETE`. Technical milestones such as
@@ -80,6 +95,9 @@ Charl immediately.
 
 If this transaction cannot be persisted safely, Control Tower must explicitly
 say the register was not updated. Conversation memory alone is not tracking.
+
+Use `docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md` for every
+new terminal feedback packet and every Control Tower continuation prompt.
 
 ## Current control board
 
