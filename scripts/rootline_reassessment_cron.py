@@ -49,10 +49,12 @@ def run(*, environ=None, now=None, opener=None) -> dict:
     token = str(source.get("OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN") or "").strip()
     owners = [part.strip() for part in str(
         source.get("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS") or "").split(",") if part.strip()]
-    if not url.startswith("https://") or len(token) < 32 or len(owners) != 1:
+    owner = str(source.get("ROOTLINE_REASSESSMENT_OWNER_USER_ID") or "").strip()
+    if (not url.startswith("https://") or len(token) < 32 or not owner
+            or owner not in owners):
         return {"success": False, "status": "rootline_scheduler_configuration_invalid",
                 "hardware_commands": 0, "telegram_sends": 0}
-    payload = build_payload(now or datetime.now(timezone.utc), owners[0])
+    payload = build_payload(now or datetime.now(timezone.utc), owner)
     request = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), method="POST",
         headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
     try:
