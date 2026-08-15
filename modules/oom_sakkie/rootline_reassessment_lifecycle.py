@@ -16,21 +16,40 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     if not isinstance(current, Mapping) or current.get("success") is not True:
         return _contained("rootline_reassessment_unavailable")
     material = _material_digest(current)
-    binding = hashlib.sha256(f"{owner_user_id}|{chat_id}|{material}".encode()).hexdigest()
+    # Material decisions can legitimately recur on a later operating date.
+    # Date-scope the notification identity so a recurring decision cannot
+    # alias an older delivered packet and fail its immutable date binding.
+    operating_date = str(current.get("operating_date") or "")
+    binding = hashlib.sha256(
+        f"{owner_user_id}|{chat_id}|{operating_date}|{material}".encode()
+    ).hexdigest()
     identity = "OOM-ROOTLINE-REASSESS-" + binding[:24].upper()
+    legacy_binding = hashlib.sha256(
+        f"{owner_user_id}|{chat_id}|{material}".encode()
+    ).hexdigest()
+    legacy_identity = "OOM-ROOTLINE-REASSESS-" + legacy_binding[:24].upper()
     observation = _typed_observation(current, owner_user_id, chat_id, material)
     observed = state_store("record_observation", observation["identity"], observation)
     if not isinstance(observed, Mapping) or observed.get("success") is not True:
         return _contained("rootline_reassessment_observation_unproven")
     delivered = state_store("load_delivered", f"{owner_user_id}|{chat_id}", None) or {}
-    if delivered.get("material_digest") == material:
+    current_identity = state_store("load_identity", identity, None) or {}
+    if (delivered.get("material_digest") == material
+            and (str(delivered.get("operating_date") or "") == operating_date
+                 or (not str(delivered.get("operating_date") or "") and current_identity))):
         return {**_result("rootline_reassessment_unchanged", material, notify=False),
                 "next_due_at": _declared_next_due(current),
                 "evidence_cutoff": str(current.get("evidence_cutoff") or "")}
+    legacy = state_store("load_identity", legacy_identity, None) or {}
+    legacy_state = str(legacy.get("delivery_state") or "")
+    if legacy and str(legacy.get("operating_date") or "") == operating_date:
+        identity = legacy_identity
+    elif legacy_state in {"pending", "ambiguous"}:
+        return _contained("rootline_reassessment_legacy_delivery_unresolved")
     packet = {"identity": identity, "owner_user_id": owner_user_id, "chat_id": chat_id,
               "trigger": trigger, "material_digest": material,
               "result_id": str(current.get("result_id") or ""),
-              "operating_date": str(current.get("operating_date") or ""),
+              "operating_date": operating_date,
               "evidence_generation": str(current.get("generation") or current.get("evidence_cutoff") or ""),
               "evidence_cutoff": str(current.get("evidence_cutoff") or ""),
               "next_reassessment_at": _declared_next_due(current),
@@ -40,8 +59,10 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
     if not isinstance(recorded, Mapping) or recorded.get("success") is not True:
         return _contained("rootline_reassessment_persistence_unproven")
     existing = state_store("load_identity", identity, None) or packet
-    if any(str(existing.get(key) or "") != str(packet.get(key) or "")
-           for key in ("owner_user_id", "chat_id", "material_digest", "operating_date")):
+    if (any(str(existing.get(key) or "") != str(packet.get(key) or "")
+            for key in ("owner_user_id", "chat_id", "material_digest"))
+            or (str(existing.get("operating_date") or "")
+                and str(existing.get("operating_date")) != operating_date)):
         return _contained("rootline_reassessment_binding_conflict")
     delivery_state = str(existing.get("delivery_state") or "pending")
     if delivery_state == "delivered":
@@ -50,6 +71,7 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
         return _contained("rootline_reassessment_delivery_ambiguous")
     status = "rootline_reassessment_changed" if recorded.get("created") is not False else "rootline_reassessment_delivery_pending"
     return {**_result(status, material, notify=True), "notification_identity": identity,
+            "operating_date": operating_date,
             "next_due_at": _declared_next_due(current),
             "evidence_cutoff": str(current.get("evidence_cutoff") or ""),
             "answer": packet["answer"]}
@@ -57,16 +79,24 @@ def reassess_rootline(*, owner_user_id: str, chat_id: str, trigger: str,
 
 def record_reassessment_delivery(*, identity: str, owner_user_id: str, chat_id: str,
                                  material_digest: str, delivery: Mapping[str, Any],
+                                 operating_date: str = "",
                                  state_store: Callable[[str, str, Any], Any]):
     if delivery.get("provider_delivery_confirmed") is True and delivery.get("provider_message_id"):
         payload = {"owner_user_id": owner_user_id, "chat_id": chat_id,
-                   "material_digest": material_digest, "delivery_state": "delivered",
+                   "material_digest": material_digest,
+                   "delivery_state": "delivered",
                    "provider_message_id": str(delivery["provider_message_id"]),
                    "provider_timestamp": str(delivery.get("provider_timestamp") or "")}
+        if operating_date:
+            payload["operating_date"] = operating_date
         return state_store("mark_delivered", identity, payload)
     if delivery.get("provider_delivery_ambiguous") is True:
-        return state_store("mark_ambiguous", identity, {"owner_user_id": owner_user_id,
-            "chat_id": chat_id, "material_digest": material_digest, "delivery_state": "ambiguous"})
+        payload = {"owner_user_id": owner_user_id,
+            "chat_id": chat_id, "material_digest": material_digest,
+            "delivery_state": "ambiguous"}
+        if operating_date:
+            payload["operating_date"] = operating_date
+        return state_store("mark_ambiguous", identity, payload)
     return {"success": False, "status": "delivery_not_proven", "delivery_state": "pending"}
 
 
