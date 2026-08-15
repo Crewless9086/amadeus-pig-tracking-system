@@ -33,9 +33,10 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
             os.environ,
             {
                 "CHARLIE_CORE_EXECUTION_MODE": "observe_only",
+                "CHARLIE_SHADOW_CONTROL_TOWER_ENABLED": "true",
                 "SUPABASE_SERVICE_ROLE_KEY": "must-not-cross",
                 "PROVIDER_KEY": "must-not-cross",
-                "DATABASE_URL": "must-not-cross",
+                "DATABASE_URL": "postgresql://user:pass@aws-0.pooler.supabase.com:5432/postgres",
             },
             clear=False,
         ):
@@ -55,7 +56,14 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertTrue(
             str(popen.call_args.args[0][-1]).endswith("charlie_observe_only_runner.py")
         )
-        self.assertNotIn("DATABASE_URL", popen.call_args.kwargs["env"])
+        self.assertEqual(
+            popen.call_args.kwargs["env"]["DATABASE_URL"],
+            "postgresql://user:pass@aws-0.pooler.supabase.com:6543/postgres",
+        )
+        self.assertEqual(
+            popen.call_args.kwargs["env"]["CHARLIE_SHADOW_CONTROL_TOWER_ENABLED"],
+            "true",
+        )
         self.assertNotIn("SUPABASE_SERVICE_ROLE_KEY", popen.call_args.kwargs["env"])
         self.assertNotIn("PROVIDER_KEY", popen.call_args.kwargs["env"])
         self.assertTrue(

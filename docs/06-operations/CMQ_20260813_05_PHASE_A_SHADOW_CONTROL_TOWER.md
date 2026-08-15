@@ -70,3 +70,8 @@ The signed minimal observation child runs that durable Shadow polling loop; it
 no longer stops at the ownership-handshake heartbeat. The child imports no
 execution bridge or provider runtime and exposes no mission-pickup, notification,
 release-watching, Codex-execution or PR-merge path.
+
+Its supervisor passes only the transaction-pooled canonical `DATABASE_URL` and
+the Shadow observation flag in addition to signed process identity and basic OS
+variables. Provider, Telegram, execution, release and farm credentials remain
+outside the observation child.
