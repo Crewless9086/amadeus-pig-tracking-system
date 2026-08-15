@@ -192,6 +192,37 @@ def test_later_natural_result_edits_same_card_and_replay_is_silent():
     assert replay["telegram_edits"]==0 and len(memory.edited)==1
 
 
+def test_orphaned_exclusive_completion_edit_claim_gets_one_idempotent_recovery():
+    memory=Memory();mission="OOM-BEACON-MEDIA-ALBUM"
+    deliver_family_result(PARSED,RESULT,specialist="BEACON_MEDIA",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    follow_parsed={**PARSED,"provider_message_id":"504"}
+    completion={**RESULT,"status":"completed","answer":"Album complete.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    interrupted=True
+    def crash_after_claim(action,identity,payload):
+        nonlocal interrupted
+        result=memory.store(action,identity,payload)
+        if (action=="record" and payload.get("state")=="update_attempted"
+                and interrupted):
+            interrupted=False
+            raise RuntimeError("process stopped after edit claim")
+        return result
+    with pytest.raises(RuntimeError):
+        deliver_family_result(follow_parsed,completion,specialist="BEACON_MEDIA",
+            mission_id=mission,card_mission_id=mission,event_store=crash_after_claim,
+            sender=memory.send,editor=memory.edit)
+    recovered=deliver_family_result(follow_parsed,completion,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(follow_parsed,completion,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    assert recovered["status"]=="family_message_completion_card_updated"
+    assert recovered["telegram_edits"]==1 and replay["telegram_edits"]==0
+    assert len(memory.sent)==1 and len(memory.edited)==1
+
+
 def test_waiting_question_updates_card_and_creates_one_visible_notification():
     memory=Memory();mission="OOM-ROOTLINE-WAIT"
     deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,

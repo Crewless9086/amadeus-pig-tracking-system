@@ -258,6 +258,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             intake_status < 400 and isinstance(recovery, dict)
             and recovery.get("complete_album") is True
             and str(intake.get("completion_code") or "")
+            and delivery.get("success") is True
+            and str(delivery.get("telegram_message_id") or "")
         ):
             recovery_completed, recovery_status = complete_telegram_album({
                 "chat_id": parsed["telegram_chat_id"],
