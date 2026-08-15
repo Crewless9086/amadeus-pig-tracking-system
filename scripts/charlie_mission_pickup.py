@@ -137,16 +137,20 @@ def main():
     args = parser.parse_args()
 
     if args.observe_only:
-        while not SUPERVISOR_STOP_PATH.exists():
-            write_runner_heartbeat({
-                "status": "observe_only_ready",
-                "active_status": "observe_only",
-                "current_action": "ownership_handshake_only",
-            })
-            time.sleep(0.2)
-        return 0
-
-    if args.watch:
+        result, status_code = watch_for_mission(
+            status=args.status,
+            limit=args.limit,
+            dry_run=False,
+            notify=False,
+            interval_seconds=args.interval_seconds,
+            continuous=True,
+            execute_codex=False,
+            watch_release=False,
+            auto_close_no_release=False,
+            auto_merge_pr=False,
+            release_verify_url="",
+        )
+    elif args.watch:
         result, status_code = watch_for_mission(
             status=args.status,
             limit=args.limit,
