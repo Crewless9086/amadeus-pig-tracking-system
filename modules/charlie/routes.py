@@ -78,6 +78,12 @@ from modules.charlie.executive_store import executive_scorecard, list_capability
 from modules.charlie.concurrency_control import revision_truth
 from modules.charlie.private_policy import private_policy
 from modules.charlie.private_runtime import handle_private_telegram_webhook
+from modules.charlie.private_runtime import handle_authenticated_private_action
+from modules.charlie.control_tower_feedback import (
+    ACTION as CONTROL_TOWER_FEEDBACK_ACTION,
+    MISSION_ID as CONTROL_TOWER_MISSION_ID,
+    control_tower_feedback_readback,
+)
 from modules.charlie.private_stream import stream_private_turn
 from modules.charlie.private_voice import synthesize_private_speech, transcribe_web_audio
 from modules.charlie.private_store import decide_bundle, private_owner_snapshot
@@ -284,6 +290,45 @@ def charlie_private_decision_route(bundle_id):
     result, status_code = decide_bundle(bundle_id, decision)
     PRIVATE_DASHBOARD_CACHE.update({"expires_at": 0.0, "packet": None})
     return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/control-tower/feedback", methods=["POST"])
+def charlie_control_tower_feedback_route():
+    """Strict owner-private producer for canonical Control Tower feedback."""
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "status": "control_tower_feedback_mapping_required"}), 400
+    policy = private_policy()
+    if not policy.get("enabled"):
+        return jsonify({"success": False, "status": "private_charlie_not_ready"}), 503
+    authentication_payload = {
+        "message": {
+            "from": {"id": int(policy["owner_user_id"])},
+            "chat": {"id": int(policy["owner_chat_id"]), "type": "private"},
+        }
+    }
+    action = {**payload, "action": CONTROL_TOWER_FEEDBACK_ACTION}
+    result, status = handle_authenticated_private_action(
+        action,
+        authentication_payload,
+        {"X-Telegram-Bot-Api-Secret-Token": policy["secret"]},
+        existing_mission_id=CONTROL_TOWER_MISSION_ID,
+    )
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/control-tower/feedback", methods=["GET"])
+def charlie_control_tower_feedback_readback_route():
+    """Strict owner-private identity-only lifecycle readback."""
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    result, status = control_tower_feedback_readback(
+        str(request.args.get("feedback_transaction_id") or "").strip())
+    return jsonify(result), status
 
 
 @charlie_bp.route("/charlie/build-relay/missions", methods=["GET"])
