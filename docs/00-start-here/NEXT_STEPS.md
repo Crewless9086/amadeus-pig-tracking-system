@@ -582,6 +582,13 @@ complete.
 - Business completion still requires fresh provider proof of the scheduled
   plan, natural contextual reply and direct specialist request. A genuine
   payment journey remains waiting if no payment has actually arrived.
+- Existing mission `SMQ-20260813-05` owns the bounded payment correction: all
+  payment actions use one owner-authenticated zero-write preview followed by
+  digest-bound confirmation against locked Supabase truth. Full receipts equal
+  canonical amount due; partial receipts retain the actual lesser amount.
+  Telegram says review/preview only. Deploy after exact-head review, then prove
+  the read-only preview against genuine existing sale truth. Do not confirm
+  anything until genuine bank/cash evidence exists.
 
 ## Oom Sakkie durable morning runtime — 2026-08-13
 

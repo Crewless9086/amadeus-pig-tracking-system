@@ -40,8 +40,8 @@ from modules.sales.sales_transaction_lifecycle import (
     reconcile_closed_slaughter_pig_exits,
 )
 from modules.sales.sales_transaction_read import get_sales_transaction, list_sales_transactions
-from modules.sales.sales_transaction_update import update_slaughter_sale_payment
-from modules.sales.sales_payment_receipt import record_sale_payment_state
+from modules.sales.sales_payment_receipt import (
+    preview_sale_payment_state, record_sale_payment_state)
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
 from modules.sales.butcher_truth_board import get_butcher_truth_board
 from modules.sales.meat_fulfillment import (
@@ -408,15 +408,27 @@ def sales_transaction_cancel(sale_id):
 
 @sales_bp.route("/sales-transactions/<sale_id>/payment", methods=["PATCH"])
 def sales_transaction_payment_update(sale_id):
+    return jsonify({"success": False,
+                    "status": "payment_state_requires_preview_confirmation",
+                    "preview_path": f"/api/sales-transactions/{sale_id}/payment-state/preview",
+                    "writes_to_supabase": False}), 409
+
+
+@sales_bp.route("/sales-transactions/<sale_id>/payment-state/preview", methods=["POST"])
+def sales_transaction_payment_state_preview(sale_id):
     denied = require_owner_admin_access()
     if denied:
         return denied
-    payload = request.get_json(silent=True) or {}
-    result, status_code = update_slaughter_sale_payment(sale_id, payload)
+    principal = owner_admin_principal()
+    if not principal:
+        return jsonify({"success": False, "status": "owner_identity_required",
+                        "writes_to_supabase": False}), 403
+    result, status_code = preview_sale_payment_state(
+        sale_id, request.get_json(silent=True) or {}, actor_id=principal)
     return jsonify(result), status_code
 
 
-@sales_bp.route("/sales-transactions/<sale_id>/payment-state", methods=["PATCH"])
+@sales_bp.route("/sales-transactions/<sale_id>/payment-state/confirm", methods=["POST"])
 def sales_transaction_payment_state_update(sale_id):
     denied = require_owner_admin_access()
     if denied:

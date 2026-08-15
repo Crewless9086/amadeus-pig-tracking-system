@@ -25,6 +25,8 @@ const updateSaleLabel = document.getElementById("slaughter_update_sale_label");
 const updateSaleIdInput = document.getElementById("update_sale_id");
 const updateItemCountInput = document.getElementById("update_item_count");
 const updateLineTotalInput = document.getElementById("update_line_total");
+const receivedAmountGroup = document.getElementById("received_amount_group");
+const updateReceivedAmountInput = document.getElementById("update_received_amount");
 const updatePaymentStatusSelect = document.getElementById("update_payment_status");
 const updatePaymentMethodSelect = document.getElementById("update_payment_method");
 const updatePaymentDateInput = document.getElementById("update_payment_date");
@@ -34,6 +36,8 @@ const updateCarcassHelper = document.getElementById("update_carcass_helper");
 const updateByInput = document.getElementById("update_by");
 const updateReasonInput = document.getElementById("update_reason");
 const submitUpdateButton = document.getElementById("submit_slaughter_update");
+const confirmPaymentButton = document.getElementById("confirm_payment_update");
+const paymentPreview = document.getElementById("payment_preview");
 const closeUpdatePanelButton = document.getElementById("close_slaughter_update_panel");
 
 let allPigs = [];
@@ -41,6 +45,7 @@ let allTransactions = [];
 let pigRowCounter = 0;
 let paymentDeepLinkOpened = false;
 let paymentDeepLinkMode = false;
+let pendingPaymentPreview = null;
 
 function setTodayDate() {
   const today = new Date();
@@ -103,7 +108,8 @@ function setSubmitting(isSubmitting) {
 
 function setUpdateSubmitting(isSubmitting) {
   submitUpdateButton.disabled = isSubmitting;
-  submitUpdateButton.textContent = isSubmitting ? "Saving..." : "Save Payment Update";
+  confirmPaymentButton.disabled = isSubmitting;
+  submitUpdateButton.textContent = isSubmitting ? "Working..." : (paymentDeepLinkMode ? "Preview Payment" : "Save Payment Update");
 }
 
 function money(value) {
@@ -259,7 +265,7 @@ function renderTransactions(rows) {
       ? `<span class="muted-text">${isCancelled ? "Cancelled" : "Closed"}</span>`
       : `
         <div class="inline-action-group table-action-group">
-          <button type="button" class="small-action-button table-action-button" data-update-sale-id="${item.sale_id}" data-current-total="${item.net_total ?? ""}" data-item-count="${item.item_count ?? 0}">Update</button>
+          <button type="button" class="small-action-button table-action-button" data-update-sale-id="${item.sale_id}" data-current-total="${item.net_settlement_payable ?? item.net_total ?? ""}" data-item-count="${item.item_count ?? 0}">Review Payment</button>
           <button type="button" class="small-action-button table-action-button" data-cancel-sale-id="${item.sale_id}">Cancel</button>
         </div>
       `;
@@ -346,7 +352,7 @@ async function openPaymentDeepLinkOnce() {
     return;
   }
   paymentDeepLinkOpened = true;
-  paymentDeepLinkMode = new URLSearchParams(window.location.search).get("payment_only") === "1";
+  paymentDeepLinkMode = true;
   const amountDue = transaction.net_settlement_payable ?? transaction.net_total;
   openUpdatePanel(saleId, amountDue, transaction.item_count);
 }
@@ -509,6 +515,14 @@ function openUpdatePanel(saleId, currentTotal, itemCount = 1) {
     : "Optional actual carcass weight from the butcher.";
   if (count > 1) updateCarcassWeightInput.value = "";
 
+  receivedAmountGroup.classList.toggle("hidden", !paymentDeepLinkMode);
+  updateReceivedAmountInput.required = paymentDeepLinkMode && updatePaymentStatusSelect.value !== "Unpaid";
+  updateReceivedAmountInput.value = paymentDeepLinkMode && updatePaymentStatusSelect.value === "Paid"
+    ? updateLineTotalInput.value : "";
+  updateLineTotalInput.readOnly = paymentDeepLinkMode;
+  submitUpdateButton.textContent = paymentDeepLinkMode ? "Preview Payment" : "Save Payment Update";
+  invalidatePaymentPreview();
+
   updatePanel.classList.remove("hidden");
   updateLineTotalInput.focus();
   updatePanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -517,6 +531,13 @@ function openUpdatePanel(saleId, currentTotal, itemCount = 1) {
 function closeUpdatePanel() {
   updatePanel.classList.add("hidden");
   updateForm.reset();
+}
+
+function invalidatePaymentPreview() {
+  pendingPaymentPreview = null;
+  paymentPreview.classList.add("hidden");
+  paymentPreview.textContent = "";
+  confirmPaymentButton.classList.add("hidden");
 }
 
 function buildUpdatePayload() {
@@ -562,17 +583,15 @@ async function submitUpdatePayment(event) {
   setUpdateSubmitting(true);
 
   try {
-    const endpoint = paymentDeepLinkMode
-      ? `/api/sales-transactions/${encodeURIComponent(saleId)}/payment-state`
-      : `/api/sales-transactions/${encodeURIComponent(saleId)}/payment`;
-    const requestPayload = paymentDeepLinkMode ? {
+    const endpoint = `/api/sales-transactions/${encodeURIComponent(saleId)}/payment-state/preview`;
+    const requestPayload = {
       payment_status: payload.payment_status,
       payment_method: payload.payment_method,
       payment_date: payload.payment_date,
-      received_amount: payload.payment_status === "Unpaid" ? 0 : payload.line_total,
-    } : payload;
+      received_amount: payload.payment_status === "Unpaid" ? 0 : Number(updateReceivedAmountInput.value),
+    };
     const response = await fetch(endpoint, {
-      method: "PATCH",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestPayload),
     });
@@ -583,11 +602,39 @@ async function submitUpdatePayment(event) {
       throw new Error(message);
     }
 
-    showMessage(`Payment updated: ${saleId}`, "success");
+    pendingPaymentPreview = { requestPayload, previewDigest: data.preview_digest };
+    const preview = data.preview || {};
+    paymentPreview.textContent = `Confirm ${preview.payment_status}: received R${preview.received_amount || "0.00"} of R${preview.amount_due}, by ${preview.payment_method || "unchanged"} on ${preview.payment_date || "unchanged"}. No payment has been recorded yet.`;
+    paymentPreview.classList.remove("hidden");
+    confirmPaymentButton.classList.remove("hidden");
+    showMessage("Payment preview ready. Check it, then confirm the exact payment.", "success");
+  } catch (error) {
+    showMessage(error.message || "Could not update payment.", "error");
+  } finally {
+    setUpdateSubmitting(false);
+  }
+}
+
+async function confirmPaymentPreview() {
+  if (!pendingPaymentPreview) return;
+  const saleId = updateSaleIdInput.value;
+  setUpdateSubmitting(true);
+  try {
+    const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/payment-state/confirm`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...pendingPaymentPreview.requestPayload,
+        confirmed_preview_digest: pendingPaymentPreview.previewDigest,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.errors ? data.errors.join(" ") : (data.message || "Could not confirm payment."));
+    showMessage(`Payment recorded: ${saleId}`, "success");
     closeUpdatePanel();
     await loadTransactions();
   } catch (error) {
-    showMessage(error.message || "Could not update payment.", "error");
+    invalidatePaymentPreview();
+    showMessage(error.message || "Could not confirm payment.", "error");
   } finally {
     setUpdateSubmitting(false);
   }
@@ -597,6 +644,7 @@ transactionsBody.addEventListener("click", (event) => {
   const updateButton = event.target.closest("[data-update-sale-id]");
   if (updateButton) {
     event.stopPropagation();
+    paymentDeepLinkMode = true;
     openUpdatePanel(
       updateButton.dataset.updateSaleId,
       updateButton.dataset.currentTotal,
@@ -661,6 +709,7 @@ clearFiltersButton.addEventListener("click", () => {
   applyTransactionFilters();
 });
 updateForm.addEventListener("submit", submitUpdatePayment);
+confirmPaymentButton.addEventListener("click", confirmPaymentPreview);
 closeUpdatePanelButton.addEventListener("click", closeUpdatePanel);
 updatePaymentStatusSelect.addEventListener("change", () => {
   if (updatePaymentStatusSelect.value === "Paid") {
@@ -669,6 +718,15 @@ updatePaymentStatusSelect.addEventListener("change", () => {
   } else if (updateSaleStatusSelect.value === "Completed") {
     updateSaleStatusSelect.value = "Confirmed";
   }
+  if (paymentDeepLinkMode) {
+    updateReceivedAmountInput.required = updatePaymentStatusSelect.value !== "Unpaid";
+    updateReceivedAmountInput.value = updatePaymentStatusSelect.value === "Paid" ? updateLineTotalInput.value : "";
+    invalidatePaymentPreview();
+  }
+});
+[updateReceivedAmountInput, updatePaymentMethodSelect, updatePaymentDateInput].forEach((input) => {
+  input.addEventListener("input", invalidatePaymentPreview);
+  input.addEventListener("change", invalidatePaymentPreview);
 });
 
 setTodayDate();

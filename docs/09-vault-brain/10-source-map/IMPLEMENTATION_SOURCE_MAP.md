@@ -637,12 +637,17 @@ Current built gated surface:
 
 Current built Supabase-backed surface:
 
-- routes: `/orders`, `/orders/new`, `/sales-dashboard`, `/sales-availability`, `/api/orders`, `/api/sales-transactions`, `/api/sales-transactions/<sale_id>/payment-state`, `/api/pig-weights/sales-dashboard`;
+- routes: `/orders`, `/orders/new`, `/sales-dashboard`, `/sales-availability`, `/api/orders`, `/api/sales-transactions`, `/api/sales-transactions/<sale_id>/payment-state/preview`, `/api/sales-transactions/<sale_id>/payment-state/confirm`, `/api/pig-weights/sales-dashboard`; the former direct `/payment` mutation fails closed;
 - code: `modules/orders/*`, `modules/sales/sales_transaction_*`, `modules/sales/sales_payment_receipt.py`, `modules/pig_weights/pig_weights_service.py`;
 - UI: `templates/orders.html`, `templates/order-detail.html`, `templates/add-order.html`, `templates/sales-dashboard.html`, `templates/sales-availability.html`;
 - tests: `tests/test_order_routes.py`, `tests/test_order_service_*.py`, `tests/test_sales_transaction_*.py`;
 - migrations: `supabase/migrations/202605210002_create_order_sales_tables.sql`, `202605210003_create_sales_transaction_tables.sql`, `202605210004_add_sales_transaction_payment_date.sql`;
 - legacy references: `docs/03-google-sheets/sheets/SALES_STOCK_TOTALS.md`, `docs/04-n8n/workflows/ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- payment rule: `modules/sales/sales_payment_receipt.py` owns the single
+  Supabase-backed preview/confirm action and rechecks its digest under a row
+  lock. `templates/slaughter-sale.html` and `static/js/slaughterSale.js` expose
+  no direct-save payment path. Oom Sakkie presents review/preview only until
+  canonical confirmation exists.
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 

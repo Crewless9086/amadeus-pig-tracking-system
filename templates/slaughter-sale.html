@@ -170,6 +170,13 @@
             <div class="form-group">
               <label for="update_line_total">Final Amount</label>
               <input type="number" step="0.01" inputmode="decimal" id="update_line_total" class="no-spinner" required />
+              <div class="field-helper">Canonical final total; a full payment must equal this amount.</div>
+            </div>
+
+            <div class="form-group hidden" id="received_amount_group">
+              <label for="update_received_amount">Actual Amount Received</label>
+              <input type="number" step="0.01" inputmode="decimal" id="update_received_amount" class="no-spinner" />
+              <div class="field-helper">Enter the money actually received. Partial payments must be below the final amount.</div>
             </div>
 
             <div class="form-group">
@@ -230,7 +237,9 @@
 
           <div class="form-actions form-actions-primary">
             <button type="submit" id="submit_slaughter_update" class="submit-button">Save Payment Update</button>
+            <button type="button" id="confirm_payment_update" class="submit-button hidden">Confirm Exact Payment</button>
           </div>
+          <div id="payment_preview" class="field-helper hidden" role="status"></div>
         </form>
       </section>
 

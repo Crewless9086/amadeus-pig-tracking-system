@@ -240,7 +240,11 @@ Detailed HERDMASTER evidence remains in
 - `SMQ-20260813-01` — queued retained-context Front Door routing.
 - `SMQ-20260813-03` — waits for controlled pilot prerequisites.
 - `SMQ-20260813-04` — queued Meat shared-context reconciliation.
-- `SMQ-20260813-05` — queued protected sales/payment visibility.
+- `SMQ-20260813-05` — `source_active` protected sales/payment visibility:
+  one Supabase-backed preview/digest-confirm rail replaces direct payment-state
+  mutation, partial receipts retain actual amount, and Telegram remains
+  review-only. Deployment and one genuine evidence-backed payment confirmation
+  remain outstanding; no payment/customer evidence may be manufactured.
 - `SMQ-20260813-06` — blocked by CORE Phase 0 replacement proof.
 
 ### BEACON
