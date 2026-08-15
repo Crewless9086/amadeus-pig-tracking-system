@@ -1,5 +1,21 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - Standing authority and minimum-owner operation enforced
+
+- Clarified that an approved policy, device, channel, cap or safety envelope is
+  durable standing authority for later equivalent routine cycles, not a reason
+  to ask the owner again.
+- Added an irreducible-owner-input test and classified avoidable approvals,
+  duplicate observations and terminal-manufactured runtime facts as
+  `owner_burden_systemic_defect` while the outcome mission remains `WORKING`.
+- Required every operating-agent handover to report authority identity and
+  scope, owner-interaction count, governed evidence sources and why any owner
+  request could not be eliminated.
+- Recorded RMQ-20260813-04 as the first acceptance case after a mandatory human
+  dry-release review blocked autonomous irrigation despite fresh local weather.
+  The correction must preserve automatic weather and hardware fail-closed
+  protection while removing recurring owner confirmation.
+
 ## 2026-08-15 - BEACON four-photo intake incident reconciled
 
 - Correlated n8n executions 64570-64573 to one Telegram media group and proved

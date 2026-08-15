@@ -75,6 +75,12 @@ script or a synthetic canary cannot by itself establish autonomous operation.
 - Database/farm/customer/provider/hardware changes:
 - n8n or Google Sheets authority added: no / explain violation
 - Protected authority used:
+- Standing authority ID, version, scope and limits:
+- Current action inside standing authority: yes / no / Unknown
+- Owner interactions requested in this complete journey:
+- Irreducible reason for each owner interaction:
+- Governed evidence source used instead of owner observation:
+- Owner-burden systemic defect present: no / exact shared journey defect
 - Replay and concurrency result:
 
 ## Closeout and next action
@@ -137,3 +143,12 @@ Every continuation prompt for an intended autonomous agent must say:
 > immutable evidence and use a fresh current execution identity after repair.
 > Keep one canonical action spine, Supabase truth and no new n8n or Google
 > Sheets business authority.
+
+It must also say:
+
+> Use durable standing authority for every equivalent routine cycle. Do not ask
+> Charl to confirm a fact available from fresh canonical, provider or governed
+> sensor evidence, and do not turn a missing trigger, worker, adapter or evidence
+> collector into owner labour. Classify any avoidable or repeated approval as an
+> owner-burden systemic defect and repair the reusable journey before requesting
+> another owner action.
