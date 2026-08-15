@@ -65,6 +65,19 @@ for (const viewport of [
           schedule: false, advertise: false, boost: false, spend: false,
         }, 201);
       }
+      if (url.pathname.endsWith("/groups/BEACON-INTAKE-GROUP-ALBUM/review")) {
+        return json(route, {
+          success: true, contract_version: "beacon_private_album_review_v1",
+          intake_group_id: "BEACON-INTAKE-GROUP-ALBUM", album_digest: "d".repeat(64),
+          owner_context: "Ms. Piggy and her litter; capture date unknown.", stored_count: 3,
+          library_state: "pending_or_mixed", public_use_state: "not_approved",
+          public_use_eligible: true,
+          ordered_media: intakeItems().map((item) => ({
+            album_position: item.album_position, binary_asset_id: item.binary_asset_id,
+            content_sha256: String(item.album_position).repeat(64), library_event_id: "",
+          })),
+        });
+      }
       return json(route, { success: true, status: "media_intakes_listed", items: intakeItems() });
     });
     await page.route("**/api/beacon/**", async (route) => {
@@ -103,10 +116,11 @@ for (const viewport of [
     await expect(sheet).toContainText("Ms. Piggy and her litter");
     await expect(sheet).toContainText("Capture");
     await expect(sheet).toContainText("Unknown");
-    await expect(sheet).toContainText("Library Accept");
-    await expect(sheet).toContainText("Public-use Approve");
-    await expect(sheet).toContainText("Reject");
-    await expect(sheet).toContainText("Archive");
+    await expect(sheet).toContainText("Accept to Library");
+    await expect(sheet).toContainText("Reject from Library");
+    await expect(sheet.getByText("Approve Public Use", { exact: true })).toHaveCount(0);
+    await expect(sheet.getByText("Decline Public Use", { exact: true })).toHaveCount(0);
+    await expect(sheet).toContainText("Campaign Review; Publication");
     await expect(sheet).toContainText("Edit owner context");
     await expect(page.locator("#beacon_intake_boundary")).toContainText(
       "animal identity, ownership, health, availability, location, or capture date"

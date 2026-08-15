@@ -185,6 +185,7 @@ def _payload(parsed, context, source):
         "For a request to prepare farm-awareness, non-availability livestock content, or a farm story that must not sell, "
         "use domain beacon and the stable intent live_stock_awareness. Preserve that intent on English, Afrikaans, mixed-language "
         "and contextual follow-up requests; zero buyer demand does not change the awareness intent into a sales campaign. "
+        "For requests to view, review, accept or reject private farm media or a completed album, use domain beacon and stable intent private_media_library_review. Preserve it for English, Afrikaans, paraphrases and bounded follow-ups. "
         "Treat broad requests such as 'what is the plan for today?', 'what needs attention today?', or their Afrikaans "
         "equivalents as manager_round and do not ask which domain. Treat a one-word domain reply as a continuation "
         "when recent context shows a clarification: Animals/Diere maps to herd_management, Irrigation/Besproeiing "

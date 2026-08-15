@@ -113,9 +113,33 @@ class BeaconMediaIntakeRouteTests(unittest.TestCase):
             self.assertFalse(body[key])
 
     @patch.dict(os.environ, OWNER_ENV, clear=True)
+    @patch("modules.oom_sakkie.routes.private_album_review")
+    def test_owner_read_can_load_exact_private_album_review(self, review):
+        self.login("read")
+        review.return_value = ({
+            "success": True,
+            "contract_version": "beacon_private_album_review_v1",
+            "intake_group_id": "GROUP",
+            "album_digest": "d" * 64,
+            "stored_count": 8,
+            "ordered_media": [],
+            "publish": False,
+        }, 200)
+        response = self.client.get(
+            "/api/oom-sakkie/beacon/media-intakes/groups/GROUP/review",
+            environ_base={"REMOTE_ADDR": "10.0.0.8"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["stored_count"], 8)
+        review.assert_called_once_with("GROUP")
+
+    @patch.dict(os.environ, OWNER_ENV, clear=True)
     @patch("modules.oom_sakkie.routes.record_media_group_review")
-    def test_owner_admin_can_record_atomic_album_review(self, record):
+    @patch("modules.oom_sakkie.routes.canonical_media_group_owner_binding")
+    def test_owner_admin_can_record_atomic_album_review(self, binding, record):
         self.login("admin")
+        binding.return_value=({"success":True,"owner_principal":"telegram-owner:CANONICAL",
+            "chat_hmac":"h"*64},200)
         record.return_value = ({
             "success": True,
             "status": "media_group_review_recorded",
@@ -131,12 +155,15 @@ class BeaconMediaIntakeRouteTests(unittest.TestCase):
             "/api/oom-sakkie/beacon/media-intakes/groups/GROUP/review",
             json={
                 "event_type": "library_accepted",
+                "contract_version": "beacon_private_album_review_v1",
+                "album_digest": "d" * 64,
                 "owner_principal": "browser-spoof-must-not-be-used",
             },
             environ_base={"REMOTE_ADDR": "10.0.0.8"},
         )
         self.assertEqual(response.status_code, 201)
-        self.assertTrue(record.call_args.args[2].startswith("owner-admin:"))
+        self.assertEqual(record.call_args.args[2],"telegram-owner:CANONICAL")
+        self.assertEqual(record.call_args.args[1]["subject_chat_hmac"],"h"*64)
         self.assertNotEqual(
             record.call_args.args[2], "browser-spoof-must-not-be-used"
         )

@@ -134,6 +134,23 @@ def test_completed_irrigation_callback_retries_delivery_without_execution(monkey
     assert result["reply_markup"]=={"inline_keyboard":[]}
 
 
+def test_completed_beacon_media_callback_retries_delivery_without_decision_write(monkeypatch):
+    prior={"success":True,"status":"private_media_review_recorded",
+      "answer":"Library decision recorded once.","mission_id":"GROUP:LIBRARY",
+      "card_mission_id":"GROUP:LIBRARY","callback_token":"followup",
+      "reply_markup":{"inline_keyboard":[[{"text":"Approve Public Use",
+        "callback_data":"oompa:followup:confirm"}]]}}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_completed_delivery_retry",
+      "action_kind":"beacon_media_review","mission_id":"GROUP:LIBRARY",
+      "preview_digest":"d"*64,"result":prior},200))
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority())
+    assert status==200 and result["delivery_recovery_required"] is True
+    assert result["callback_token"]=="followup" and result["writes_farm_data"] is False
+    assert result["answer"]=="Library decision recorded once."
+
+
 def test_irrigation_exception_retains_executing_claim_for_provider_retry(monkeypatch):
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
       "success":True,"status":"protected_callback_claimed","callback_token":"opaque",

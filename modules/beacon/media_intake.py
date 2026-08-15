@@ -36,6 +36,8 @@ RETIRED_SHA256_ENV = "BEACON_TELEGRAM_MEDIA_RETIRED_SHA256"
 RECOVERY_CONTEXT_TOKEN_ENV = "BEACON_TELEGRAM_MEDIA_RECOVERY_CONTEXT_TOKEN"
 SIGNING_SECRET_ENVS = ("OWNER_SESSION_SECRET", "SECRET_KEY")
 CONTRACT_VERSION = "beacon_media_intake_v1"
+ALBUM_REVIEW_CONTRACT_VERSION = "beacon_private_album_review_v1"
+PUBLIC_USE_REVIEW_CONTRACT_VERSION = "beacon_public_use_review_v1"
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_THUMBNAIL_BYTES = 1024 * 1024
 MAX_IMAGE_DIMENSION = 12000
@@ -59,6 +61,24 @@ AUTHORITY = {
     "spend": False,
     "business_data_mutation": False,
 }
+
+
+def _public_use_review_checks(observation, confidence_state, observer_version):
+    observation=observation if isinstance(observation,dict) else {}
+    review=observation.get("public_use_review")
+    review=review if isinstance(review,dict) else {}
+    return {
+        "typed_review_contract": review.get("contract_version")==PUBLIC_USE_REVIEW_CONTRACT_VERSION,
+        "evidence_qualified": confidence_state in {"evidence_supported","owner_confirmed"},
+        "reviewer_version_bound": bool(str(observer_version or "").strip()),
+        "privacy_review_clear": review.get("privacy_clear") is True,
+        "animal_welfare_review_clear": review.get("animal_welfare_clear") is True,
+        "brand_review_clear": review.get("brand_clear") is True,
+        "meta_organic_awareness_suitable": review.get("meta_organic_awareness_suitable") is True,
+        "people_and_identifiers_clear": review.get("people_and_identifiers_clear") is True,
+        "location_disclosure_clear": review.get("location_disclosure_clear") is True,
+        "health_and_sales_claims_clear": review.get("health_and_sales_claims_clear") is True,
+    }
 
 
 def media_intake_policy(environ=None):
@@ -418,6 +438,19 @@ def complete_claimed_telegram_album(preview, *, owner_user_id, private_chat_id,
         identity, str((preview or {}).get("canonical_digest") or ""))
 
 
+def telegram_media_owner_principal(owner_user_id, *, environ=None):
+    source=environ if environ is not None else os.environ
+    return f"telegram-owner:{_keyed(source,'owner',str(owner_user_id or ''))}"
+
+
+def telegram_media_owner_binding(owner_user_id, private_chat_id, *, environ=None):
+    source=environ if environ is not None else os.environ
+    return {
+        "owner_principal": f"telegram-owner:{_keyed(source,'owner',str(owner_user_id or ''))}",
+        "chat_hmac": _keyed(source,"chat",str(private_chat_id or "")),
+    }
+
+
 def list_media_intakes(*, database_url=None, limit=50, environ=None):
     result, status = IntakeStore(database_url).list(limit)
     if status < 400:
@@ -431,6 +464,40 @@ def list_media_intakes(*, database_url=None, limit=50, environ=None):
                 if token else ""
             )
     return result, status
+
+
+def private_album_review(intake_group_id, *, database_url=None, environ=None):
+    """Return one exact private album review packet; never grants authority."""
+    result, status = IntakeStore(database_url).album_review(intake_group_id)
+    if status < 400:
+        for item in result.get("ordered_media", []):
+            binary_id = item.get("binary_asset_id")
+            token = _thumbnail_token(binary_id, environ) if binary_id and item.get("thumbnail_available") else None
+            item["thumbnail_url"] = (
+                f"/api/oom-sakkie/beacon/media-intakes/{urllib_parse.quote(binary_id, safe='')}/thumbnail"
+                f"?expires={token['expires']}&token={token['token']}" if token else ""
+            )
+    return result, status
+
+
+def latest_private_album_review(*, owner_user_id="", private_chat_id="", database_url=None, environ=None):
+    store=IntakeStore(database_url)
+    binding=telegram_media_owner_binding(owner_user_id,private_chat_id,environ=environ)
+    try:
+        with store._connect() as connection, connection.cursor() as cursor:
+            cursor.execute("""select g.intake_group_id from public.beacon_media_intake_groups g
+              where exists(select 1 from public.beacon_media_intake_events e
+                where e.intake_group_id=g.intake_group_id and e.event_type='album_completed')
+              and g.owner_principal=%s and g.private_chat_identity_hmac=%s
+              order by g.intake_at desc,g.intake_group_id desc limit 1""",
+              (binding["owner_principal"],binding["chat_hmac"]))
+            row=cursor.fetchone()
+    except Exception as exc:
+        return {"success":False,"status":"private_album_review_unavailable",
+            "error_type":exc.__class__.__name__,**AUTHORITY},503
+    if not row:
+        return {"success":False,"status":"private_album_not_found",**AUTHORITY},404
+    return private_album_review(row[0],database_url=database_url,environ=environ)
 
 
 def read_private_thumbnail(
@@ -469,6 +536,10 @@ def record_media_group_review(intake_group_id, decision, owner_principal, *, dat
     )
 
 
+def canonical_media_group_owner_binding(intake_group_id, *, database_url=None):
+    return IntakeStore(database_url).group_owner_binding(intake_group_id)
+
+
 class IntakeStore:
     def __init__(self, database_url=None):
         self.database_url = str(
@@ -483,6 +554,20 @@ class IntakeStore:
         except ImportError as exc:
             raise IntakeFailure("media_intake_postgres_dependency_missing", 500) from exc
         return psycopg.connect(self.database_url, connect_timeout=10)
+
+    def group_owner_binding(self, intake_group_id):
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("""select owner_principal,private_chat_identity_hmac
+                  from public.beacon_media_intake_groups where intake_group_id=%s""",
+                  (str(intake_group_id or "")[:120],))
+                row=cursor.fetchone()
+            if not row:
+                return {"success":False,"status":"private_album_not_found"},404
+            return {"success":True,"owner_principal":row[0],"chat_hmac":row[1]},200
+        except Exception as exc:
+            return {"success":False,"status":"private_album_owner_binding_unavailable",
+                "error_type":exc.__class__.__name__},503
 
     def source_status(self, envelope, identity):
         try:
@@ -1112,6 +1197,74 @@ class IntakeStore:
         except Exception as exc:
             return {"success": False, "status": "private_thumbnail_read_failed", "error_type": exc.__class__.__name__}, 500
 
+    def album_review(self, intake_group_id):
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("""select g.owner_explanation,
+                    exists(select 1 from public.beacon_media_intake_events e
+                      where e.intake_group_id=g.intake_group_id and e.event_type='album_completed')
+                    from public.beacon_media_intake_groups g where g.intake_group_id=%s""",
+                    (str(intake_group_id or "")[:120],))
+                group = cursor.fetchone()
+                if not group:
+                    return {"success":False,"status":"private_album_not_found",**AUTHORITY},404
+                cursor.execute("""select m.album_position,b.binary_asset_id,b.content_sha256,
+                    b.storage_readback_sha256,b.storage_path,b.thumbnail_storage_path,
+                    l.beacon_asset_id,o.observation_event_id,o.observer_version,
+                    coalesce(o.observation_json,'{}'::jsonb),
+                    coalesce(o.confidence_state,'unavailable'),le.event_type,le.library_event_id,
+                    coalesce(pe.event_type='approved_public_use',false),pe.event_id
+                  from public.beacon_media_intake_album_members m
+                  join public.beacon_media_intake_items i using(intake_group_id,intake_item_id)
+                  join public.beacon_media_source_links l using(intake_item_id)
+                  join public.beacon_media_binaries b using(binary_asset_id)
+                  left join lateral(select observation_event_id,observer_version,observation_json,confidence_state
+                    from public.beacon_media_understanding_events where binary_asset_id=b.binary_asset_id
+                    order by observed_at desc limit 1)o on true
+                  left join lateral(select event_type,library_event_id
+                    from public.beacon_media_library_events where binary_asset_id=b.binary_asset_id
+                      and event_type in('library_accepted','library_rejected','archived')
+                    order by recorded_at desc,library_event_id desc limit 1)le on true
+                  left join lateral(select event_type,event_id from public.beacon_media_asset_events
+                    where asset_id=l.beacon_asset_id and event_type in('approved_public_use','rejected_public_use')
+                    order by created_at desc,event_id desc limit 1)pe on true
+                  where m.intake_group_id=%s order by m.album_position""",(intake_group_id,))
+                rows=cursor.fetchall()
+            if not group[1] or not rows:
+                return {"success":False,"status":"private_album_completion_required",**AUTHORITY},409
+            media=[]
+            for row in rows:
+                observation=row[9] if isinstance(row[9],dict) else {}
+                checks={
+                    "verified_hash_lineage":bool(row[2] and row[2]==row[3] and row[4]),
+                    "private_thumbnail_available":bool(row[5]),
+                    **_public_use_review_checks(observation,row[10],row[8]),
+                }
+                media.append({"album_position":row[0],"binary_asset_id":row[1],
+                    "content_sha256":row[2],"beacon_asset_id":row[6],"observation":observation,
+                    "understanding_event_id":row[7] or "","observer_version":row[8] or "",
+                    "observation_confidence":row[10],"library_state":row[11] or "not_reviewed",
+                    "library_event_id":row[12] or "","public_use_approved":bool(row[13]),
+                    "public_use_event_id":row[14] or "","thumbnail_available":bool(row[5]),
+                    "public_use_checks":checks,"public_use_eligible":all(checks.values())})
+            digest=_canonical_sha({"contract_version":ALBUM_REVIEW_CONTRACT_VERSION,
+                "intake_group_id":intake_group_id,"owner_context":str(group[0] or ""),
+                "ordered_media":[{"position":item["album_position"],"binary_asset_id":item["binary_asset_id"],
+                  "content_sha256":item["content_sha256"],
+                  "understanding_event_id":item["understanding_event_id"]} for item in media]})
+            return {"success":True,"status":"private_album_review_ready",
+                "contract_version":ALBUM_REVIEW_CONTRACT_VERSION,"intake_group_id":intake_group_id,
+                "owner_context":str(group[0] or ""),"album_digest":digest,
+                "stored_count":len(media),"ordered_media":media,
+                "library_state":"accepted" if all(x["library_state"]=="library_accepted" for x in media) else
+                  "rejected" if all(x["library_state"]=="library_rejected" for x in media) else "pending_or_mixed",
+                "public_use_state":"approved" if all(x["public_use_approved"] for x in media) else "not_approved",
+                "public_use_eligible":all(x["public_use_eligible"] for x in media),
+                "later_actions":{"campaign_review":False,"publication":False},**AUTHORITY},200
+        except Exception as exc:
+            return {"success":False,"status":"private_album_review_unavailable",
+                "error_type":exc.__class__.__name__,**AUTHORITY},503
+
     def review(self, binary_asset_id, decision, owner_principal):
         decision = decision if isinstance(decision, dict) else {}
         event_type = str(decision.get("event_type") or "")
@@ -1143,21 +1296,39 @@ class IntakeStore:
                 "status": "media_review_owner_action_id_required",
                 **AUTHORITY,
             }, 400
+        if decision.get("contract_version") != ALBUM_REVIEW_CONTRACT_VERSION:
+            return {"success":False,"status":"media_group_review_contract_invalid",**AUTHORITY},400
+        expected_digest=str(decision.get("album_digest") or "")
+        if len(expected_digest)!=64:
+            return {"success":False,"status":"media_group_review_digest_required",**AUTHORITY},400
+        if event_type in {"library_rejected","archived","public_use_revoked"} and not str(decision.get("notes") or "").strip():
+            return {"success":False,"status":"media_review_reason_required",**AUTHORITY},400
         try:
             with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    ("beacon-album-review:"+str(intake_group_id),))
                 cursor.execute(
-                    """select exists (
-                         select 1 from public.beacon_media_intake_events
-                         where intake_group_id=%s and event_type='album_completed'
-                       )""",
+                    """select g.owner_principal,g.private_chat_identity_hmac,exists (
+                         select 1 from public.beacon_media_intake_events e
+                         where e.intake_group_id=g.intake_group_id and e.event_type='album_completed'
+                       ) from public.beacon_media_intake_groups g
+                       where g.intake_group_id=%s for update""",
                     (intake_group_id,),
                 )
-                if not cursor.fetchone()[0]:
+                group_binding=cursor.fetchone()
+                if not group_binding or not group_binding[2]:
                     return {
                         "success": False,
                         "status": "media_group_completion_required_before_review",
                         **AUTHORITY,
                     }, 409
+                expected_subject=str(decision.get("subject_owner_principal") or "")
+                expected_chat=str(decision.get("subject_chat_hmac") or "")
+                if (not expected_subject or not expected_chat
+                        or expected_subject!=str(group_binding[0])
+                        or expected_chat!=str(group_binding[1])
+                        or str(owner_principal)!=str(group_binding[0])):
+                    return {"success":False,"status":"media_group_review_owner_binding_mismatch",**AUTHORITY},403
                 cursor.execute(
                     """select count(*),count(l.binary_asset_id)
                        from public.beacon_media_intake_items i
@@ -1173,14 +1344,47 @@ class IntakeStore:
                         **AUTHORITY,
                     }, 409
                 cursor.execute(
-                    """select distinct l.binary_asset_id
+                    """select m.album_position,l.binary_asset_id,b.content_sha256,
+                              coalesce(nullif(g.owner_explanation,''),''),
+                              o.observation_event_id,o.observer_version,
+                              coalesce(o.observation_json,'{}'::jsonb),coalesce(o.confidence_state,'unavailable')
                        from public.beacon_media_intake_items i
+                       join public.beacon_media_intake_groups g using(intake_group_id)
+                       join public.beacon_media_intake_album_members m using(intake_group_id,intake_item_id)
                        join public.beacon_media_source_links l using (intake_item_id)
-                       where i.intake_group_id=%s order by l.binary_asset_id""",
+                       join public.beacon_media_binaries b using(binary_asset_id)
+                       left join lateral(select observation_event_id,observer_version,observation_json,confidence_state
+                         from public.beacon_media_understanding_events where binary_asset_id=b.binary_asset_id
+                         order by observed_at desc limit 1)o on true
+                       where i.intake_group_id=%s order by m.album_position""",
                     (intake_group_id,),
                 )
-                binary_ids = [row[0] for row in cursor.fetchall()]
+                album_rows=cursor.fetchall()
+                digest=_canonical_sha({"contract_version":ALBUM_REVIEW_CONTRACT_VERSION,
+                    "intake_group_id":intake_group_id,"owner_context":str(album_rows[-1][3] or "") if album_rows else "",
+                    "ordered_media":[{"position":row[0],"binary_asset_id":row[1],"content_sha256":row[2],
+                      "understanding_event_id":row[4] or ""}
+                      for row in album_rows]})
+                if digest!=expected_digest:
+                    return {"success":False,"status":"media_group_review_snapshot_changed",**AUTHORITY},409
+                binary_ids = [row[1] for row in album_rows]
+                if event_type=="public_use_approved":
+                    cursor.execute("""select count(*) filter(where b.content_sha256=b.storage_readback_sha256
+                          and b.storage_path is not null and b.thumbnail_storage_path is not null),count(*)
+                      from public.beacon_media_intake_items i join public.beacon_media_source_links l using(intake_item_id)
+                      join public.beacon_media_binaries b using(binary_asset_id)
+                      where i.intake_group_id=%s""",(intake_group_id,))
+                    verified,total=cursor.fetchone()
+                    if verified!=total:
+                        return {"success":False,"status":"public_use_compliance_not_ready",**AUTHORITY},409
+                    for row in album_rows:
+                        checks=_public_use_review_checks(row[6],row[7],row[5])
+                        if not all(checks.values()):
+                            return {"success":False,"status":"public_use_compliance_not_ready",**AUTHORITY},409
                 created = replayed = 0
+                decision_type = "public_use" if event_type.startswith("public_use_") else "library"
+                positions = {row[1]: row[0] for row in album_rows}
+                understanding_events = {row[1]: row[4] for row in album_rows}
                 for binary_id in binary_ids:
                     group_action_id = str(
                         decision.get("owner_action_id") or ""
@@ -1194,6 +1398,16 @@ class IntakeStore:
                         "expected_predecessor_event_id": str(
                             expected_by_binary.get(binary_id) or ""
                         )[:160],
+                        "intake_group_id": str(intake_group_id),
+                        "album_review_contract_version": ALBUM_REVIEW_CONTRACT_VERSION,
+                        "album_digest_sha256": expected_digest,
+                        "album_position": positions[binary_id],
+                        "album_decision_type": decision_type,
+                        "understanding_event_id": understanding_events[binary_id],
+                        "approved_use_scope": (
+                            "organic_farm_awareness_only"
+                            if decision_type == "public_use" else None
+                        ),
                     }
                     result, status = self._review_cursor(
                         cursor, binary_id, item_decision, owner_principal
@@ -1229,18 +1443,49 @@ class IntakeStore:
         expected_predecessor = str(
             decision.get("expected_predecessor_event_id") or ""
         ).strip()[:160]
+        album_envelope = {
+            "intake_group_id": str(decision.get("intake_group_id") or "") or None,
+            "album_review_contract_version": str(
+                decision.get("album_review_contract_version") or ""
+            ) or None,
+            "album_digest_sha256": str(decision.get("album_digest_sha256") or "") or None,
+            "album_position": decision.get("album_position"),
+            "album_decision_type": str(decision.get("album_decision_type") or "") or None,
+            "approved_use_scope": str(decision.get("approved_use_scope") or "") or None,
+            "understanding_event_id": str(decision.get("understanding_event_id") or "") or None,
+        }
         if not owner_action_id:
             return {
                 "success": False,
                 "status": "media_review_owner_action_id_required",
                 **AUTHORITY,
             }, 400
-        cursor.execute(
-            """select binary_asset_id from public.beacon_media_binaries
-               where binary_asset_id=%s for update""",
-            (binary_asset_id,),
-        )
-        if not cursor.fetchone():
+        if album_envelope["understanding_event_id"]:
+            cursor.execute(
+                """select b.binary_asset_id,b.content_sha256,b.storage_readback_sha256,b.storage_path,
+                          b.thumbnail_storage_path,o.observation_event_id,o.observer_version,
+                          o.observation_json,o.confidence_state
+                   from public.beacon_media_binaries b
+                   join public.beacon_media_understanding_events o
+                     on o.binary_asset_id=b.binary_asset_id and o.observation_event_id=%s
+                   where b.binary_asset_id=%s for update of b""",
+                (album_envelope["understanding_event_id"],binary_asset_id),
+            )
+        else:
+            cursor.execute(
+                """select b.binary_asset_id,b.content_sha256,b.storage_readback_sha256,b.storage_path,
+                      b.thumbnail_storage_path,o.observation_event_id,o.observer_version,
+                      coalesce(o.observation_json,'{}'::jsonb),
+                      coalesce(o.confidence_state,'unavailable')
+               from public.beacon_media_binaries b
+               left join lateral(select observation_event_id,observer_version,observation_json,confidence_state
+                 from public.beacon_media_understanding_events where binary_asset_id=b.binary_asset_id
+                 order by observed_at desc limit 1)o on true
+                   where b.binary_asset_id=%s for update of b""",
+                (binary_asset_id,),
+            )
+        binary=cursor.fetchone()
+        if not binary:
             return {
                 "success": False,
                 "status": "canonical_binary_required",
@@ -1272,6 +1517,7 @@ class IntakeStore:
                     "owner_principal": owner_principal,
                     "owner_action_id": owner_action_id,
                     "predecessor_event_id": expected_predecessor or None,
+                    **album_envelope,
                 })
                 if prior_action == (event_type, prior_identity):
                     return {
@@ -1295,6 +1541,7 @@ class IntakeStore:
             "notes": notes, "owner_principal": owner_principal,
             "owner_action_id": owner_action_id,
             "predecessor_event_id": expected_predecessor or None,
+            **album_envelope,
         })
         event_id = _stable_id(
             "BEACON-LIBRARY-EVENT",
@@ -1312,6 +1559,10 @@ class IntakeStore:
                 return {"success": True, "status": "media_review_replay_withheld", "created_count": 0, **AUTHORITY}, 200
             return {"success": False, "status": "media_review_identity_conflict", "created_count": 0, **AUTHORITY}, 409
         if event_type == "public_use_approved":
+            checks=_public_use_review_checks(binary[7],binary[8],binary[6])
+            if (not binary[1] or binary[1]!=binary[2] or not binary[3] or not binary[4]
+                    or not binary[5] or not all(checks.values())):
+                return {"success":False,"status":"public_use_compliance_not_ready",**AUTHORITY},409
             cursor.execute(
                 """select event_type from public.beacon_media_library_events
                    where binary_asset_id=%s
@@ -1344,11 +1595,20 @@ class IntakeStore:
             """insert into public.beacon_media_library_events
                (library_event_id,binary_asset_id,event_type,owner_principal,
                 owner_action_id,decision_identity_sha256,notes,
-                predecessor_event_id,public_use_approved)
-               values (%s,%s,%s,%s,%s,%s,%s,%s,false)""",
+                predecessor_event_id,public_use_approved,intake_group_id,
+                album_review_contract_version,album_digest_sha256,album_position,
+                album_decision_type,approved_use_scope,understanding_event_id)
+               values (%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 event_id, binary_asset_id, event_type, owner_principal,
                 owner_action_id, identity, notes, predecessor_id,
+                album_envelope["intake_group_id"],
+                album_envelope["album_review_contract_version"],
+                album_envelope["album_digest_sha256"],
+                album_envelope["album_position"],
+                album_envelope["album_decision_type"],
+                album_envelope["approved_use_scope"],
+                album_envelope["understanding_event_id"],
             ),
         )
         canonical_event_id = ""

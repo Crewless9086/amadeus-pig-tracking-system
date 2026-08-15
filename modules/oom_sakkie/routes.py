@@ -11,7 +11,9 @@ from modules.auth.owner_access import (
 )
 from modules.oom_sakkie.sam_payment_owner_runtime import present_sale_payment_preview
 from modules.beacon.media_intake import (
+    canonical_media_group_owner_binding,
     list_media_intakes,
+    private_album_review,
     read_private_thumbnail,
     record_media_group_review,
     record_media_review,
@@ -364,6 +366,15 @@ def beacon_media_intakes():
     return jsonify(result), status_code
 
 
+@oom_sakkie_bp.route("/oom-sakkie/beacon/media-intakes/groups/<intake_group_id>/review", methods=["GET"])
+def beacon_media_intake_group_review_packet(intake_group_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = private_album_review(intake_group_id)
+    return jsonify(result), status_code
+
+
 @oom_sakkie_bp.route(
     "/oom-sakkie/beacon/media-intakes/<binary_asset_id>/thumbnail",
     methods=["GET"],
@@ -431,8 +442,14 @@ def beacon_media_intake_group_review(intake_group_id):
             "publish": False,
             "public_use_approved": False,
         }), 403
+    binding,binding_status=canonical_media_group_owner_binding(intake_group_id)
+    if binding_status>=400 or binding.get("success") is not True:
+        return jsonify(binding),binding_status
+    decision=request.get_json(silent=True) or {}
+    decision={**decision,"subject_owner_principal":binding["owner_principal"],
+        "subject_chat_hmac":binding["chat_hmac"]}
     result, status_code = record_media_group_review(
-        intake_group_id, request.get_json(silent=True) or {}, principal
+        intake_group_id, decision, binding["owner_principal"]
     )
     return jsonify(result), status_code
 

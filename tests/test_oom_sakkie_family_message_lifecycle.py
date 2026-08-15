@@ -223,6 +223,38 @@ def test_orphaned_exclusive_completion_edit_claim_gets_one_idempotent_recovery()
     assert len(memory.sent)==1 and len(memory.edited)==1
 
 
+def test_private_media_review_unconfirmed_edit_gets_one_bounded_recovery():
+    memory=Memory();mission="OOM-BEACON-MEDIA-REVIEW"
+    deliver_family_result(PARSED,RESULT,specialist="BEACON_MEDIA",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    callback={**PARSED,"provider_message_id":"505"}
+    recorded={**RESULT,"status":"private_media_review_recorded",
+        "answer":"Library decision recorded. Public Use remains separate.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message",
+        "delivery_recovery_required":True}
+    failed_once=True
+    def fail_first_edit(chat_id,message_id,text):
+        nonlocal failed_once
+        if failed_once:
+            failed_once=False
+            return {"success":False,"telegram_message_id":message_id}
+        return memory.edit(chat_id,message_id,text)
+    contained=deliver_family_result(callback,recorded,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=fail_first_edit)
+    recovered=deliver_family_result(callback,recorded,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=fail_first_edit)
+    replay=deliver_family_result(callback,recorded,specialist="BEACON_MEDIA",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=fail_first_edit)
+    assert contained["status"]=="family_message_update_contained"
+    assert recovered["status"]=="family_message_completion_card_updated"
+    assert recovered["telegram_edits"]==1
+    assert replay["telegram_sends"]==replay["telegram_edits"]==0
+    assert len(memory.sent)==1 and len(memory.edited)==1
+
+
 def test_completed_card_regressed_by_unbound_prior_member_is_restored_once():
     memory=Memory();mission="OOM-BEACON-MEDIA-RESTORE"
     receipt={**RESULT,"answer":"Album started. Complete it when ready."}
