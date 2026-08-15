@@ -572,6 +572,7 @@ def _advise_zone(
         if isinstance(active_policy, dict)
         else UNKNOWN
     )
+    dry_release_proven = False
     if not weather_fresh:
         reasons.append("Fresh current weather is required.")
     if not forecast_fresh:
@@ -599,14 +600,9 @@ def _advise_zone(
             "Current advice time is missing, malformed or conflicts with the "
             "operating date; the daylight gate is Needs Data."
         )
-    elif not _dry_release_proven(
-        release_evidence,
-        live_rain_rule.get("release_policy"),
-        rain_rate,
-        weather.get("last_reading_at"),
-        advisor_date,
-        evaluated_at,
-    ):
+    elif not (dry_release_proven := _dry_release_proven(
+        release_evidence, live_rain_rule.get("release_policy"), rain_rate,
+        weather.get("last_reading_at"), advisor_date, evaluated_at)):
         recommendation = "Hold"
         eligibility = "Hold"
         reasons.append(
@@ -642,6 +638,7 @@ def _advise_zone(
         "priority": "equal_owner_selection_on_conflict",
         "eligibility_today": eligibility,
         "recommendation": recommendation,
+        "live_rain_release_proven": dry_release_proven,
         "proposed_runtime_minutes": None,
         "proposed_runtime_status": UNAVAILABLE,
         "runtime_suppressed_by": [

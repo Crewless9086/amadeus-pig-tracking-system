@@ -63,6 +63,10 @@ def decision(**changes):
         "rank":1,"weekly_obligation":{"status":"available","delivery_debt_days":2,
                                         "remaining_weekly_obligation_days":4}}]}
     evidence={"weather":{"observed_at":NOW.isoformat(),"rain_rate_mm_h":0,"rain_today_mm":0},
+              "irrigation":{"source":"rootline_daily_advisor",
+                  "advisor_generated_at":NOW.isoformat(),
+                  "advisor_operating_date":"2026-08-05",
+                  "zones":[{"zone_id":"B12345","live_rain_release_proven":True}]},
               "tanks":{"observed_at":NOW.isoformat(),"reservoir_state":"FULL","reservoir_fraction":1.0}}
     controller={"device_id":"100204e9bc","online":True,"firmware":"3.8.2",
         "actuation_configuration_safe":True,"timers_enabled":False,"scenes_enabled":False,

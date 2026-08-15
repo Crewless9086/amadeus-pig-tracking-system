@@ -422,6 +422,8 @@ def read_current_water_energy_evidence(
             "zones": advisor_zones,
             "active_zone": None,
             "source": "rootline_daily_advisor",
+            "advisor_generated_at": str(advisor.get("generated_at") or ""),
+            "advisor_operating_date": str(advisor.get("operating_date") or ""),
             "adaptive_management": {
                 "enabled": True,
                 "contract_version": "rootline_adaptive_irrigation_v1",

@@ -20,6 +20,10 @@ def inputs(*, rain=0, zone="B12345", debt=2, controller_changes=None,
           "candidate_tasks":[task]}
     evidence={"weather":{"observed_at":weather_at.isoformat(),"rain_rate_mm_h":rain,
                          "rain_today_mm":rain},
+              "irrigation":{"source":"rootline_daily_advisor",
+                  "advisor_generated_at":NOW.isoformat(),
+                  "advisor_operating_date":"2026-08-08",
+                  "zones":[{"zone_id":zone,"live_rain_release_proven":True}]},
               "tanks":{"observed_at":water_at.isoformat(),"reservoir_state":"FULL",
                        "reservoir_fraction":1.0}}
     controller={"device_id":"100204e9bc","online":True,"firmware":"3.8.2",
@@ -55,6 +59,22 @@ def test_rain_hold_and_stale_or_conflicting_evidence_create_no_authority():
         value=build_execution_eligibility(plan=plan,evidence=evidence,
                                            controller=controller,now=NOW)
         assert value["eligible"] is False and value["command_authority"] is False
+
+
+def test_missing_or_unproven_governed_rain_release_creates_no_authority():
+    for irrigation in ({}, {"source":"rootline_daily_advisor",
+            "advisor_generated_at":NOW.isoformat(),
+            "advisor_operating_date":"2026-08-08",
+            "zones":[{"zone_id":"B12345","live_rain_release_proven":False}]},
+            {"source":"rootline_daily_advisor",
+             "advisor_generated_at":(NOW-timedelta(minutes=31)).isoformat(),
+             "advisor_operating_date":"2026-08-08",
+             "zones":[{"zone_id":"B12345","live_rain_release_proven":True}]}):
+        plan,evidence,controller=inputs(); evidence["irrigation"]=irrigation
+        value=build_execution_eligibility(plan=plan,evidence=evidence,
+                                           controller=controller,now=NOW)
+        assert value["status"]=="live_rain_release_not_proven"
+        assert value["eligible"] is False and value["hardware_control"] is False
 
 
 def test_missing_governed_total_duration_fails_closed():
