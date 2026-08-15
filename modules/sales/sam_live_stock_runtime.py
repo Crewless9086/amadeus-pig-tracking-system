@@ -43,6 +43,7 @@ from modules.sales.sam_live_stock_contextual_sales import (
 )
 from modules.sales.sam_livestock_offer_loop import build_canonical_livestock_offer
 from modules.sales.sam_customer_front_door import interpret_customer_front_door
+from modules.sales.sam_customer_context import load_canonical_customer_context
 from modules.sales.sam_live_stock_availability_observation import (
     resolve_authoritative_availability,
 )
@@ -198,6 +199,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     intake_context_loader=None,
     conversation_history_loader=None,
     conversation_identity_loader=None,
+    customer_context_loader=None,
     availability_loader=None,
     availability_evidence=None,
     pricing_projection=None,
@@ -284,6 +286,27 @@ def handle_sam_live_stock_chatwoot_inbound(
         conversation_history_loader=conversation_history_loader,
         environ=source,
     )
+    try:
+        canonical_customer_context = (
+            customer_context_loader(inbound)
+            if customer_context_loader is not None
+            else load_canonical_customer_context(inbound)
+        )
+    except Exception as exc:
+        canonical_customer_context = {
+            "success": False,
+            "status": "canonical_customer_context_read_failed",
+            "error_type": exc.__class__.__name__,
+            "interest": {},
+            "read_only": True,
+            "writes_performed": False,
+        }
+    if canonical_customer_context.get("interest"):
+        general_context["prior_sales_context"] = _merge_prior_context_packets(
+            general_context.get("prior_sales_context") or {},
+            canonical_customer_context,
+        )
+    general_context["canonical_customer_context"] = canonical_customer_context
     contextual_route = resolve_contextual_sales_route(
         inbound,
         facts,
@@ -369,6 +392,9 @@ def handle_sam_live_stock_chatwoot_inbound(
                 "inbox_id": inbound.get("inbox_id") or "",
                 "message_id": inbound.get("message_id") or "",
                 "last_inbound_at": inbound.get("last_inbound_at") or "",
+                "customer_name": inbound.get("customer_name") or "",
+                "customer_phone": inbound.get("customer_phone") or "",
+                "channel": inbound.get("channel") or "",
                 "chronology_current": (
                     inbound.get("chronology_current") is True
                 ),
@@ -467,6 +493,12 @@ def handle_sam_live_stock_chatwoot_inbound(
         availability_evidence=availability_evidence,
         environ=source,
     )
+    if canonical_customer_context.get("interest"):
+        context_packet["prior_context"] = _merge_prior_context_packets(
+            context_packet.get("prior_context") or {},
+            canonical_customer_context,
+        )
+    context_packet["canonical_customer_context"] = canonical_customer_context
     level1_inbound = bind_authoritative_conversation_evidence(
         inbound,
         context_packet.get("chatwoot_authority_messages") or [],
