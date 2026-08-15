@@ -88,9 +88,9 @@ def recover_contextual_specialist_replay(parsed, *, replay_loader=None, delivery
 
 
 def _load_contextual_provider_replay(provider_message_id):
-    import psycopg
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-        connection.read_only = True
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+    with connect_bounded_rootline_postgres(
+            read_only=True, connect_deadline_seconds=3) as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select review_json->'rootline_operational_intake'
                 from public.sam_live_stock_conversation_review_events
@@ -106,7 +106,7 @@ def _load_contextual_provider_replay(provider_message_id):
 
 
 def _contextual_delivery_terminal(outcome):
-    import psycopg
+    from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
     mission_id = str((outcome or {}).get("mission_id") or "")
     card_id = str((outcome or {}).get("card_mission_id") or "")
     provider_id = str((outcome or {}).get("provider_message_id") or "")
@@ -115,8 +115,8 @@ def _contextual_delivery_terminal(outcome):
         return False
     terminal_states = (("notification_delivered",) if outcome.get("requires_visible_notification") is True
                        else ("delivered", "updated"))
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-        connection.read_only = True
+    with connect_bounded_rootline_postgres(
+            read_only=True, connect_deadline_seconds=3) as connection:
         with connection.cursor() as cursor:
             cursor.execute("""select count(*)
                 from public.sam_live_stock_conversation_review_events
@@ -127,7 +127,7 @@ def _contextual_delivery_terminal(outcome):
                   and review_json->'family_message_lifecycle'->>'text_sha256'=%s
                   and review_json->'family_message_lifecycle'->>'state'=any(%s)""",
                 (mission_id, card_id, provider_id, answer_sha, list(terminal_states)))
-            return int(cursor.fetchone()[0]) == 1
+            return int(cursor.fetchone()[0]) >= 1
 _ROOTLINE_PRESENCE = re.compile(
     r"\bB and C valve area\b.*\bobserve both camps\b.*\bintervene immediately\b.*\bsupervised commissioning\b",
     re.I,
@@ -695,11 +695,13 @@ def _apply_write_truth(result, observation_result, write_truth):
 def _operation_event_store(action, identity, payload):
     if not str(os.environ.get("DATABASE_URL") or "").strip():
         raise RuntimeError("durable_rootline_operational_store_required")
-    import psycopg
+    from modules.oom_sakkie.bounded_postgres_read import (
+        connect_bounded_rootline_postgres,
+    )
     event_source = "oom_sakkie_rootline_operational_intake"
     if action == "load":
-        with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as connection:
-            connection.read_only = True
+        with connect_bounded_rootline_postgres(
+                read_only=True, connect_deadline_seconds=3) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""select review_json->'rootline_operational_intake'
                     from public.sam_live_stock_conversation_review_events
@@ -715,7 +717,9 @@ def _operation_event_store(action, identity, payload):
     event["review_json"] = {"rootline_operational_intake": dict(payload)}
     event["decision_json"] = {}; event["facts_json"] = {}
     event["customer_message_excerpt"] = ""; event["sam_reply_excerpt"] = ""
-    result, status = record_sam_live_stock_review_event(event)
+    result, status = record_sam_live_stock_review_event(event,
+        connect_factory=lambda: connect_bounded_rootline_postgres(
+            read_only=False, connect_deadline_seconds=3))
     return {**result, "success": status < 400 and result.get("success") is True,
             "created": result.get("created", result.get("success") is True)}
 

@@ -64,6 +64,110 @@ def test_exact_reply_binds_group_evidence_and_replay_is_silent():
     assert replay["suppress_owner_delivery"] is True and replay["answer"] == ""
 
 
+@patch("modules.oom_sakkie.operational_specialist_intake.handle_operational_specialist_message")
+def test_morning_card_rootline_update_records_manager_receipt_before_canonical_dispatch(dispatch):
+    downstream = ({"handled": True, "success": True,
+        "status": "specialist_accepted", "specialist_identity": "ROOTLINE",
+        "mission_id": "ROOTLINE-1", "card_mission_id": "ROOTLINE-1",
+        "answer": "Water evidence retained; ROOTLINE will reassess.",
+        "writes_farm_data": True, "hardware_commands": 0}, 200)
+    card = {"daily_identity": "OOM-DAILY-FARM-MANAGER-2026-08-15",
+        "telegram_message_id": "3599", "presented_at": NOW.isoformat(),
+        "question": "Contextual update to the delivered morning farm plan",
+        "question_binding": {"task_id": "OOM-DAILY-FARM-MANAGER-2026-08-15:contextual-update",
+            "dedupe_key": "OOM-DAILY-FARM-MANAGER-2026-08-15:contextual-update",
+            "domain": "rootline", "contextual_card_recovery": True}}
+    rootline = SemanticInterpretation(domain="rootline", intent="water_observation",
+        message_kind="observation", continuation=True,
+        observation="Reservoir 4/4, storage 4/4, and C Camp needs water.",
+        observation_facts=({"subject": "reservoir", "value": "4/4"},
+            {"subject": "storage", "value": "4/4"},
+            {"subject": "C Camp", "needs_water": True}), confidence=.99)
+    inbound = parsed("Reservoir is 4/4 and Storage is 4/4. C Camp needs water",
+        message="3600", reply="")
+    inbound["semantic"] = rootline.as_hint()
+    state = memory()
+    def after_claim(*_args, **_kwargs):
+        assert len(state.rows) == 1
+        assert next(iter(state.rows.values()))["status"] == "dispatch_claimed"
+        return downstream
+    dispatch.side_effect = after_claim
+    value, status = handle_manager_question_reply(inbound,
+        issue_gateway_owner_authority(OWNER, OWNER), rootline,
+        question=card, event_store=state, event_loader=lambda key: state.rows.get(key, {}))
+    receipt = next(row for row in state.rows.values() if row["status"] == "recorded")
+    assert status == 200 and value["manager_question_status"] == "manager_question_reply_recorded"
+    assert receipt["manager_card_message_id"] == "3599"
+    assert receipt["provider_message_id"] == "3600"
+    assert len(state.rows) == 2
+    assert len(receipt["semantic_facts"]["observation_facts"]) == 3
+    replay, replay_status = handle_manager_question_reply(inbound,
+        issue_gateway_owner_authority(OWNER, OWNER), rootline,
+        question=card, event_store=state, event_loader=lambda key: state.rows.get(key, {}))
+    assert replay_status == 200
+    assert replay["manager_question_status"] == "manager_question_reply_replay_recovered"
+    assert replay["answer"] == value["answer"]
+    dispatch.assert_called_once()
+    from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+    lifecycle = []
+    def lifecycle_store(action, identity, payload):
+        if action == "load":
+            return [row for row in lifecycle if row.get("card_mission_id") == identity]
+        created = not any(row.get("event_id") == identity for row in lifecycle)
+        if created:
+            lifecycle.append(dict(payload))
+        return {"success": True, "created": created}
+    sends = []
+    def sender(_chat, _text):
+        sends.append(True)
+        return {"success": True, "telegram_message_id": "3601",
+            "provider_timestamp": NOW.isoformat()}
+    first_delivery = deliver_family_result(inbound, value, specialist="ROOTLINE",
+        mission_id=value["mission_id"], card_mission_id=value["card_mission_id"],
+        event_store=lifecycle_store, sender=sender)
+    replay_delivery = deliver_family_result(inbound, replay, specialist="ROOTLINE",
+        mission_id=replay["mission_id"], card_mission_id=replay["card_mission_id"],
+        event_store=lifecycle_store, sender=sender)
+    assert first_delivery["telegram_sends"] == 1
+    assert replay_delivery["telegram_sends"] == replay_delivery["telegram_edits"] == 0
+    assert len(sends) == 1
+
+
+@patch("modules.oom_sakkie.operational_specialist_intake.handle_operational_specialist_message")
+def test_rootline_success_manager_receipt_failure_retains_identity_and_replay_is_silent(dispatch):
+    first_downstream = {"handled": True, "success": True, "status": "specialist_accepted",
+        "specialist_identity": "ROOTLINE", "mission_id": "ROOTLINE-2",
+        "card_mission_id": "ROOTLINE-2", "answer": "Evidence retained.",
+        "writes_farm_data": True, "hardware_commands": 0}
+    dispatch.return_value = (first_downstream, 200)
+    card = {"daily_identity": "OOM-DAILY-FARM-MANAGER-2026-08-15",
+        "telegram_message_id": "3599", "presented_at": NOW.isoformat(),
+        "question": "Contextual update to the delivered morning farm plan",
+        "question_binding": {"task_id": "OOM-DAILY-FARM-MANAGER-2026-08-15:contextual-update",
+            "dedupe_key": "OOM-DAILY-FARM-MANAGER-2026-08-15:contextual-update", "domain": "rootline"}}
+    rootline = semantic(domain="rootline")
+    inbound = parsed("Reservoir 4/4 and storage 4/4", message="3600", reply="")
+    inbound["semantic"] = rootline.as_hint()
+    state = memory(); attempts = {"count": 0}
+    def recovering_store(identity, record):
+        attempts["count"] += 1
+        if attempts["count"] == 2:
+            return {"success": False, "created": False}
+        return state(identity, record)
+    failed, failed_status = handle_manager_question_reply(inbound,
+        issue_gateway_owner_authority(OWNER, OWNER), rootline,
+        question=card, event_store=recovering_store, event_loader=lambda _key: {})
+    replay, replay_status = handle_manager_question_reply(inbound,
+        issue_gateway_owner_authority(OWNER, OWNER), rootline,
+        question=card, event_store=recovering_store, event_loader=lambda key: state.rows.get(key, {}))
+    assert failed_status == 503 and failed["downstream_retention_possible"] is True
+    assert failed["specialist_identity"] == "ROOTLINE"
+    assert failed["mission_id"] == failed["card_mission_id"] == "ROOTLINE-2"
+    assert "ROOTLINE retained" in failed["answer"] and "Nothing was applied" not in failed["answer"]
+    assert replay_status == 200 and replay["suppress_owner_delivery"] is True
+    assert len(state.rows) == 1 and dispatch.call_count == 1
+
+
 def test_afrikaans_non_reply_continuation_binds_same_active_question():
     value, status = handle_manager_question_reply(
         parsed("Hulle eet, drink en beweeg normaal", reply=""),
@@ -80,6 +184,14 @@ def test_unrelated_direct_specialist_request_is_not_stolen_by_manager_question()
         semantic(continuation=False, domain="rootline"),
         question=question(), event_store=memory())
     assert status == 200 and value["handled"] is False
+
+
+def test_manager_question_rejects_authority_not_bound_to_provider_principal():
+    value, status = handle_manager_question_reply(parsed(),
+        issue_gateway_owner_authority("99", "99"), semantic(),
+        question=question(), event_store=lambda *_: pytest.fail("must not persist"))
+    assert status == 403 and value["status"] == "manager_question_authority_denied"
+    assert value["writes_farm_data"] is False
 
 
 def test_unrelated_direct_request_replying_to_plan_card_is_not_stolen():
@@ -136,6 +248,23 @@ def test_bounded_read_sets_acquisition_query_and_lock_deadlines():
     assert "statement_timeout=3000" in calls[0][1]["options"]
     assert "lock_timeout=1000" in calls[0][1]["options"]
     assert statements==[]
+
+
+def test_bounded_read_has_hard_wall_clock_deadline_and_late_cleanup():
+    import time
+    from modules.oom_sakkie import bounded_postgres_read as bounded
+    late = type("Late", (), {"closed": False,
+        "close": lambda self: setattr(self, "closed", True)})()
+    started = time.monotonic()
+    with pytest.raises(bounded.RootlineConnectionDeadlineExceeded):
+        bounded.connect_bounded_read(database_url="postgresql://stalled",
+            connect=lambda *_args, **_kwargs: (time.sleep(.08), late)[1],
+            connect_deadline_seconds=.02)
+    assert time.monotonic() - started < .06
+    deadline = time.monotonic() + .3
+    while not late.closed and time.monotonic() < deadline:
+        time.sleep(.01)
+    assert late.closed is True
 
 
 def test_bounded_write_uses_same_deadlines_without_read_only_mode():
