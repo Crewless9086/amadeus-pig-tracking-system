@@ -1,6 +1,6 @@
 # BEACON BMQ-20260813-04 handover
 
-Mission lifecycle state: WORKING
+Mission lifecycle state: BUSINESS_COMPLETE
 
 Owner-visible outcome: an authenticated natural Oom Sakkie request returns one
 current evidence-backed BEACON proposal or one precise media request exactly
@@ -82,25 +82,42 @@ internal proof identity. It is honored only for the semantic BEACON result and
 bypasses provider delivery while leaving canonical result persistence/replay
 active. It grants no publication, send, spend, media-use or farm authority.
 
-Technical stage reached: awareness objective-retention source correction and
-focused regressions green; independent reviews, PR/CI, exact-head integration,
-deployment and fresh authenticated production proof remain.
+Technical stage reached: PR #942 merged as
+`3db13e5f924dd1343f6843cd0bebd872e454a48c`; required CI passed and Render
+deploy `dep-da02h2gu01pc73er4k8g` loaded that exact merge.
 
-Deployed-agent state: unchanged until reviewed integration and deployment.
+Deployed-agent state: the Oom Sakkie web/API runtime is live at the exact merge.
+BEACON is request-driven/event-waiting, not an autonomous scheduler. The
+authenticated semantic front door and specialist adapter remain available
+after this development terminal closes; no recurring BEACON trigger or worker
+heartbeat is claimed.
 
-Provider/canonical/physical evidence: no production request has yet been made;
-no business outcome is claimed.
+Provider/canonical/physical evidence: fresh delivery-disabled provider identity
+`202608150411` and proof identity
+`BMQ-20260813-04-AWARENESS-PROOF-20260815-01` returned proposal
+`BEACON-AWARENESS-3EB89F3316C0D28A5BA4B94E` under mission
+`OOM-BEACON-REQUEST-6E696B196B656D9D243362AB`, digest
+`5d30e84ca6ec5551d5cab4a7371f5d728f04b01cd5547697c6064f94b6f04414`.
+One direct and two concurrent replays returned the same identities. Canonical
+readback found exactly one request row. Telegram sends/edits, provider
+mutations, Meta/publication execution, customer sends, spend, farm/media
+writes, hardware commands, n8n and Sheets effects were zero. The production
+publication-authorization table is absent, reported `unavailable`; no physical
+media or commercial outcome is inferred.
 
-Remaining acceptance journey: reviewed PR and CI; wait for ROOTLINE's P0
-serialized lane if occupied; integrate/deploy at exact head; invoke one
-delivery-disabled genuine authenticated internal request; prove one useful
-canonical result and zero replay duplication/effects; reconcile closeout.
+Remaining acceptance journey: none for this bounded proposal mission. Any
+later public post, schedule, boost, spend, customer commitment, private-media
+use or farm write remains a separate protected journey. Broader scheduler,
+automated media intake, Meta performance ingestion and boost automation remain
+sequenced later outcomes.
 
-Exact hold and unblock condition: none while source/review work remains.
+Exact hold and unblock condition: none; future publication requires a separate
+exact protected owner authorization.
 
 Safe work exhausted before hold: not applicable.
 
 Owner repetition requested: no.
 
-Terminal/worktree closeout: active; preserve until operational proof and final
-reconciliation.
+Terminal/worktree closeout: released-retain after documentation integration;
+branch history is pushed and merged, worktree is clean, and the preserved
+`C:\tmp\beacon-marketing-proposal-loop` worktree remains unchanged evidence.
