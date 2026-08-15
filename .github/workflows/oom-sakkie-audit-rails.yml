@@ -92,8 +92,8 @@ jobs:
 
       - name: Apply Oom Sakkie audit migrations
         run: |
-          python scripts/apply_supabase_migration.py supabase/migrations/202607190001_create_operational_event_fabric.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202605210001_foundation_migration_log.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607190001_create_operational_event_fabric.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202605210005_create_telemetry_power_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202605220001_create_telemetry_weather_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202605230001_create_irrigation_tables.sql
