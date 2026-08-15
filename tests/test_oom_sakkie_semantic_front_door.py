@@ -45,6 +45,28 @@ def test_semantic_front_door_is_llm_first_but_has_zero_authority():
     assert not policy["can_send"] and not policy["can_control_hardware"]
 
 
+@pytest.mark.parametrize("text,language,continuation", [
+    ("Prepare a non-availability farm-awareness campaign.", "en", False),
+    ("Berei asseblief 'n plaasbewustheidsveldtog voor wat niks te koop aanbied nie.", "af", False),
+    ("Let's doen net 'n farm story, geen verkope nie.", "mixed", False),
+    ("Ja, daardie plaasstorie.", "af", True),
+])
+def test_awareness_semantic_family_preserves_stable_intent(text, language, continuation):
+    captured = {}
+    def open_request(request, timeout):
+        captured.update(json.loads(request.data.decode()))
+        return _HttpResponse(_response(_semantic("beacon", "live_stock_awareness",
+            message_kind="request", language=language, continuation=continuation)))
+    result = interpret_owner_message({"text": text, "provider_message_id": "AWARENESS-1"},
+        environ={"OOM_SAKKIE_SEMANTIC_FRONT_DOOR_ENABLED": "1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "test", "OPENAI_API_KEY": "secret"},
+        context_loader=lambda parsed: ({"recent_turns": [{"semantic_domain": "beacon",
+            "semantic_intent": "live_stock_awareness"}]} if continuation else {}), http_open=open_request)
+    assert result.domain == "beacon" and result.intent == "live_stock_awareness"
+    assert result.language == language and result.continuation is continuation
+    assert "stable intent live_stock_awareness" in captured["messages"][0]["content"]
+
+
 def test_english_death_update_is_typed_as_herd_evidence():
     result = parse_semantic_response(_response(_semantic("herd_health", "death_report",
         entity_refs=["Pig 127"], continuation=True,

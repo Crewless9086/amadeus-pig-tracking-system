@@ -30,6 +30,28 @@ Library Accept remains distinct from public-use approval, and even a media row
 whose public-use state is true is projected into this internal proposal with
 no public-use, publication, customer-send, spend, or farm-write authority.
 
+The 15 August awareness attempt is retained as failed regression evidence and
+must never be replayed. Its exact owner instruction was:
+
+> Prepare a non-availability farm-awareness campaign.
+
+The systemic defect was that the authenticated semantic lane persisted its
+intent but the BEACON adapter discarded it and always selected the
+demand-qualified commercial builder. The repaired adapter preserves the stable
+`live_stock_awareness` semantic intent into the existing
+`modules/beacon/content_operations.py` awareness builder. Zero quantified SAM
+demand no longer blocks awareness. SAM buyer demand is displayed separately;
+HERDMASTER safe-fulfilment capacity remains `Unknown` until a canonical
+demand-independent source is wired. Neither animal counts nor awareness copy
+establish sale availability.
+
+Awareness media selection uses the existing current effective public-use and
+server-computed SHA-256 lineage checks. If no asset qualifies, the result is a
+safe text-only Facebook proposal with one optional precise photo/video request.
+The owner response contains no raw JSON or internal blocker codes and provides
+Audience, story angle, channel, exact copy, media, SAM attribution/routing,
+qualified-lead/conversion/sale/profit measurement, and Approve/Correct/Decline.
+
 The response names the objective, audience, evidence, available or missing
 media, channel, copy and CTA, expected value, later measurement, and one owner
 decision. Missing suitable media produces one subject/angle/orientation/purpose
@@ -60,9 +82,9 @@ internal proof identity. It is honored only for the semantic BEACON result and
 bypasses provider delivery while leaving canonical result persistence/replay
 active. It grants no publication, send, spend, media-use or farm authority.
 
-Technical stage reached: source implementation and focused/broader regressions
-green; independent reviews, PR/CI, exact-head integration, deployment and fresh
-authenticated production proof remain.
+Technical stage reached: awareness objective-retention source correction and
+focused regressions green; independent reviews, PR/CI, exact-head integration,
+deployment and fresh authenticated production proof remain.
 
 Deployed-agent state: unchanged until reviewed integration and deployment.
 

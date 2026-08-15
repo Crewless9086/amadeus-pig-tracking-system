@@ -265,6 +265,7 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
         )
         self.assertTrue(all(zone["recommendation"] == "Needs Data" for zone in result["zones"]))
         self.assertTrue(all(zone["eligibility_today"] == "Needs Data" for zone in result["zones"]))
+        self.assertTrue(all(zone["live_rain_release_proven"] is True for zone in result["zones"]))
         self.assertTrue(
             all(zone["proposed_runtime_status"] == "Unavailable" for zone in result["zones"])
         )
@@ -414,6 +415,7 @@ class RootlineDailyAdvisorTests(unittest.TestCase):
                 brief, "2026-07-27", active_policy=active_policy_v2()
             )
             self.assertTrue(all(zone["recommendation"] == "Hold" for zone in result["zones"]))
+            self.assertTrue(all(zone["live_rain_release_proven"] is False for zone in result["zones"]))
 
     def test_release_evidence_is_bound_to_current_observation_date_and_time(self):
         brief = daily_brief()

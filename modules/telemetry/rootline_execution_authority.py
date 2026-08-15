@@ -37,6 +37,18 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     if not candidates:
         return _none("planner_hold_or_no_dispatchable_zone")
     _, zone, task = min(candidates, key=lambda row: (row[0], row[1]))
+    irrigation = evidence.get("irrigation") if isinstance(evidence.get("irrigation"), dict) else {}
+    advisor_zones = irrigation.get("zones") if isinstance(irrigation.get("zones"), list) else []
+    advisor_zone = next((row for row in advisor_zones
+        if isinstance(row, dict) and row.get("zone_id") == zone), None)
+    advisor_at = _timestamp(irrigation.get("advisor_generated_at"))
+    if (irrigation.get("source") != "rootline_daily_advisor"
+            or irrigation.get("advisor_operating_date") != str(plan.get("operating_date") or "")[:10]
+            or advisor_at is None or now < advisor_at
+            or now - advisor_at > timedelta(minutes=30)
+            or not advisor_zone
+            or advisor_zone.get("live_rain_release_proven") is not True):
+        return _none("live_rain_release_not_proven")
     weather = evidence.get("weather") if isinstance(evidence.get("weather"), dict) else {}
     weather_time = _timestamp(weather.get("observed_at"))
     if (weather_time is None or now - weather_time > timedelta(minutes=30)
@@ -126,6 +138,10 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "observed_weather": {"observed_at": weather_time.isoformat(),
             "rain_rate_mm_h": _number(weather.get("rain_rate_mm_h")),
             "rain_today_mm": _number(weather.get("rain_today_mm"))},
+        "live_rain_release": {"source": "rootline_daily_advisor",
+            "advisor_generated_at": advisor_at.isoformat(),
+            "advisor_operating_date": irrigation["advisor_operating_date"],
+            "zone_id": zone, "proven": True},
         "water_evidence": {"observed_at": water_time.isoformat(),
             "reservoir_state": tanks.get("reservoir_state"),
             "reservoir_fraction": tanks.get("reservoir_fraction"),
