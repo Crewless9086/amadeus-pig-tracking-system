@@ -132,6 +132,11 @@ def prepare_command_contract(payload, *, now=None, inventory=None):
     water = _object(payload, "water_infrastructure_evidence")
     safety = _object(payload, "safety_interlocks")
     blockers = _blockers(zone, weather, power, water, safety, duration, now, expires_at)
+    planning_warnings = []
+    if weather.get("forecast_availability") != "Available":
+        planning_warnings.append("forecast_unavailable")
+    if weather.get("forecast_freshness") != "fresh":
+        planning_warnings.append("forecast_stale")
     canonical = {
         "generation": generation,
         "daily_plan_id": daily_plan_id,
@@ -145,6 +150,7 @@ def prepare_command_contract(payload, *, now=None, inventory=None):
         "created_at": created_at.isoformat(),
         "expires_at": expires_at.isoformat(),
         "weather_evidence": weather,
+        "planning_warnings": sorted(set(planning_warnings)),
         "power_evidence": power,
         "water_infrastructure_evidence": water,
         "controller_actuator_inventory": zone,
@@ -567,10 +573,6 @@ def _blockers(zone, weather, power, water, safety, duration, now, expires_at):
         blockers.append("weather_unavailable")
     if weather.get("freshness") != "fresh":
         blockers.append("weather_stale")
-    if weather.get("forecast_availability") != "Available":
-        blockers.append("forecast_unavailable")
-    if weather.get("forecast_freshness") != "fresh":
-        blockers.append("forecast_stale")
     if power.get("availability") != "Available":
         blockers.append("power_unavailable")
     if power.get("freshness") != "fresh":

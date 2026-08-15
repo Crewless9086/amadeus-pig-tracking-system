@@ -78,6 +78,14 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         self.assertTrue(all(row["decision"] == "Hold" for row in result.values()))
         self.assertTrue(all("Fresh local evidence records rain" in row["reason"] for row in result.values()))
 
+    def test_stale_forecast_degrades_planning_confidence_without_deferring_execution(self):
+        item = evidence()
+        item["forecast"]["observed_at"] = (NOW - timedelta(hours=7)).isoformat()
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))
+        self.assertTrue(all(row["decision"] == "Run now" for row in result.values()))
+        self.assertTrue(all(row["planning_warnings"] == ["forecast_stale"] for row in result.values()))
+        self.assertTrue(all(row["confidence"] != "high" for row in result.values()))
+
     def test_low_soc_urgent_water_can_justify_grid_exposure(self):
         item = evidence()
         item["power"].update(battery_soc_pct=35, solar_power_w=0, load_power_w=900)
