@@ -269,7 +269,8 @@ class BeaconMediaIntakeTests(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(result["album_state"], "awaiting_explicit_owner_completion")
         self.assertEqual(len(receipts), 1)
-        self.assertIn("/beacon-complete ABC123", receipts[0][1])
+        self.assertIn("Finish Album", receipts[0][1])
+        self.assertNotIn("/beacon-complete", receipts[0][1])
         self.assertNotIn("album-1", receipts[0][1])
 
     def test_bounded_recovery_context_requires_exact_token_and_album(self):

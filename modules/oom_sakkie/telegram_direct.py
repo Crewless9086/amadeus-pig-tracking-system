@@ -23,7 +23,6 @@ from modules.oom_sakkie.telegram_gateway import (
     parse_telegram_gateway_payload,
 )
 from modules.beacon.media_intake import (
-    complete_telegram_album,
     handle_telegram_media_intake,
     media_intake_policy,
     telegram_media_envelope,
@@ -271,21 +270,6 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
         body["telegram_user_id"] = parsed["telegram_user_id"]
         return body, status_code
-
-    if parsed["text"].strip().lower().startswith("/beacon-complete "):
-        completion_code = parsed["text"].strip().split(maxsplit=1)[1].strip()
-
-        def receipt_sender(chat_id, text):
-            result, _ = send_owner_telegram_reply(
-                chat_id=chat_id, text=text, environ=environ
-            )
-            return result
-
-        return complete_telegram_album({
-            "chat_id": parsed["telegram_chat_id"],
-            "owner_user_id": parsed["telegram_user_id"],
-            "completion_code": completion_code,
-        }, environ=environ, receipt_sender=receipt_sender)
 
     owner_task, owner_task_status = handle_owner_task_input(
         payload,

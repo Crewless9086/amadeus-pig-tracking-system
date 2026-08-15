@@ -57,6 +57,28 @@ def test_proven_replay_is_silent_and_has_no_effects(monkeypatch):
     assert result["writes_farm_data"] is False
 
 
+def test_beacon_finish_callback_returns_private_summary_and_separate_later_actions(monkeypatch):
+    preview={"contract_version":"beacon_private_album_finish_v1",
+        "intake_group_id":"BEACON-INTAKE-GROUP-ONE","canonical_digest":"d"*64,
+        "stored_count":4,"completion_code":"INTERNAL","owner_context":"Molly, litter size eight"}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+        "success":True,"status":"protected_callback_claimed","callback_token":"opaque",
+        "action_kind":"beacon_private_album_finish","mission_id":"BEACON-INTAKE-GROUP-ONE",
+        "preview_payload":preview},200))
+    import modules.beacon.media_intake as intake
+    monkeypatch.setattr(intake,"complete_claimed_telegram_album",lambda *args,**kwargs:({
+        "success":True,"status":"album_completed","received_count":4,"attention_count":0,
+        "owner_context":"Molly, litter size eight","contact_sheet_available":True},201))
+    monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:{
+        "completed":True,"replayed":False,"result":args[1]})
+    result,status=runtime.handle_protected_action_input(
+        {**parsed(""),"reply_to_message_id":"4001","callback_data":"oompa:opaque:confirm"},authority())
+    assert status==201 and result["specialist"]=="BEACON_MEDIA"
+    assert "4 stored photographs" in result["answer"] and "Molly" in result["answer"]
+    assert "Accept to Library" in result["answer"] and "Approve Public Use" in result["answer"]
+    assert result["reply_markup"]=={"inline_keyboard":[]}
+
+
 def test_recovered_grouped_executor_completed_replay_is_silent(monkeypatch):
     payload={"contract_version":"canonical_grouped_weight_movement_preview_v1",
         "effective_date":"2026-08-13","rows":[{"pig_id":"PIG-1","weight_kg":"64.4"}],
