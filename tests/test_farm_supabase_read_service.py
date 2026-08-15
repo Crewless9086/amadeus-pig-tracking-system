@@ -1512,6 +1512,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             "boar_tag_number": "B1",
             "mating_date": date(2026, 5, 1),
             "mating_method": "Natural",
+            "mating_pen_id": "PEN-MATING",
+            "mating_pen_name": "Mating Pen",
             "exposure_group": "G1",
             "expected_pregnancy_check_date": date(2026, 5, 22),
             "pregnancy_check_date": date(2026, 5, 22),
@@ -1550,6 +1552,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(matings[0]["mating_id"], "MAT-1")
         self.assertEqual(matings[0]["mating_status"], "Farrowed")
         self.assertEqual(matings[0]["sow_current_pen_name"], "Sow Pen")
+        self.assertEqual(matings[0]["mating_pen_id"], "PEN-MATING")
+        self.assertEqual(matings[0]["mating_pen_name"], "Mating Pen")
         self.assertEqual(analytics["source"]["mating_source"], "supabase_canonical")
         self.assertEqual(analytics["summary"]["mating_count"], 1)
         self.assertEqual(analytics["sows"][0]["average_born_alive"], 10.0)
@@ -1578,6 +1582,25 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(row["exposure_planned_removal_status"],"Upcoming")
         self.assertEqual(row["expected_farrowing_window_start"],"2026-12-04")
         self.assertEqual(row["pregnancy_status"],"Unknown")
+
+    def test_mating_pen_projection_uses_only_attributable_exposure_placement(self):
+        rows = [{"mating_id":"MAT-1","sow_pig_id":"SOW-1",
+                 "mating_pen_id":"PEN-4","mating_pen_name":"Paringshok 4"},
+                {"mating_id":"MAT-2","sow_pig_id":"SOW-2"}]
+        state = [{"pig_id":"SOW-1","current_pen_id":"LIVE-1","current_pen_name":"Live 1"},
+                 {"pig_id":"SOW-2","current_pen_id":"LIVE-2","current_pen_name":"Live 2"}]
+        projected = farm_supabase_read_service.project_mating_overview(rows, state)
+        self.assertEqual(projected[0]["mating_pen_name"], "Paringshok 4")
+        self.assertEqual(projected[1]["mating_pen_name"], "")
+        with patch.object(farm_supabase_read_service, "_fetch_all", return_value=[] ) as fetch, \
+             patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[]):
+            farm_supabase_read_service.get_mating_overview()
+        sql = fetch.call_args.args[0]
+        self.assertIn("exposure.exposure_identity = mating.source_exposure_identity", sql)
+        self.assertIn("location.move_date = exposure.occurred_on", sql)
+        self.assertIn("location.group_batch_id = exposure.exposure_group_identity", sql)
+        self.assertIn("location.reason_for_move = 'Breeding exposure placement'", sql)
+        self.assertIn("location.source = 'herdmaster_breeding_placement'", sql)
 
     def test_canonical_name_wins_but_historical_name_conflict_is_explicit(self):
         row={"mating_id":"MAT-1","sow_pig_id":"PIG-2026-069E","sow_tag_number":"Olivia",

@@ -701,44 +701,57 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         cancel_transaction.assert_called_once()
 
     def test_sales_transaction_payment_update_route_calls_update_service(self):
-        service_result = {
-            "success": True,
-            "status": "updated",
-            "sale_id": "SALE-1",
-            "source": {
-                "source": "supabase",
-                "writes_to_sheets": False,
-                "writes_to_supabase": True,
-            },
-        }
-
-        with patch.object(
-            sales_transaction_routes,
-            "update_slaughter_sale_payment",
-            return_value=(service_result, 200),
-        ) as update_transaction:
-            response = self.client.patch("/api/sales-transactions/SALE-1/payment", json={
-                "updated_by": "Charl",
-                "line_total": 1500,
-            })
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json(), service_result)
-        update_transaction.assert_called_once()
+        response = self.client.patch("/api/sales-transactions/SALE-1/payment", json={
+            "updated_by": "Charl", "line_total": 1500})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"],
+                         "payment_state_requires_preview_confirmation")
+        self.assertFalse(response.get_json()["writes_to_supabase"])
 
     def test_sales_transaction_payment_state_route_is_owner_governed(self):
         service_result = {"success": True, "status": "payment_state_recorded"}
-        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
-            sales_transaction_routes, "owner_admin_principal", return_value="owner:charl"), patch.object(
+        with patch.object(sales_transaction_routes, "require_strict_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "strict_owner_admin_principal", return_value="owner:charl"), patch.object(
+            sales_transaction_routes, "_validate_payment_confirmation_token", return_value="valid"), patch.object(
             sales_transaction_routes, "record_sale_payment_state",
             return_value=(service_result, 200)) as service:
-            response = self.client.patch(
-                "/api/sales-transactions/SALE-1/payment-state",
-                json={"updated_by": "Charl", "payment_status": "Paid"})
+            response = self.client.post(
+                "/api/sales-transactions/SALE-1/payment-state/confirm",
+                json={"payment_status": "Paid", "confirmed_preview_digest": "a" * 64,
+                      "confirmation_token": "signed-preview"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
         service.assert_called_once_with("SALE-1", {
-            "updated_by": "Charl", "payment_status": "Paid"}, actor_id="owner:charl")
+            "payment_status": "Paid", "confirmed_preview_digest": "a" * 64}, actor_id="owner:charl")
+
+    def test_sales_transaction_payment_preview_is_owner_governed_and_read_only(self):
+        service_result = {"success": True, "status": "payment_state_preview_ready",
+                          "confirmation_required": True, "preview_digest": "a" * 64,
+                          "writes_to_supabase": False}
+        with patch.object(sales_transaction_routes, "require_strict_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "strict_owner_admin_principal", return_value="owner:charl"), patch.object(
+            sales_transaction_routes, "preview_sale_payment_state",
+            return_value=(service_result, 200)) as service:
+            response = self.client.post(
+                "/api/sales-transactions/SALE-1/payment-state/preview",
+                json={"payment_status": "Part_Paid", "received_amount": "1000.00"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["writes_to_supabase"])
+        self.assertTrue(response.get_json()["confirmation_token"])
+        service.assert_called_once_with("SALE-1", {
+            "payment_status": "Part_Paid", "received_amount": "1000.00"}, actor_id="owner:charl")
+
+    def test_payment_confirm_rejects_missing_preview_token_before_service(self):
+        with patch.object(sales_transaction_routes, "require_strict_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "strict_owner_admin_principal", return_value="owner:charl"), patch.object(
+            sales_transaction_routes, "record_sale_payment_state") as service:
+            response = self.client.post(
+                "/api/sales-transactions/SALE-1/payment-state/confirm",
+                json={"payment_status": "Paid", "confirmed_preview_digest": "a" * 64})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"],
+                         "payment_confirmation_token_required")
+        service.assert_not_called()
 
     def test_sales_transaction_confirm_pig_exits_route_calls_lifecycle_service(self):
         service_result = {

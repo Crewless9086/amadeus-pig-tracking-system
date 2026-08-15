@@ -100,5 +100,9 @@ question.
 Daily presentation is limited to three do-today items and three watch items.
 Sale attention resolves human customer/outlet, amount and payment truth and
 links to the existing canonical transaction. The owner-governed payment-state
-rail changes only receipt state/amount/method/date; it does not rewrite BKB
-invoice, VAT, commission, settlement-payable or item-price facts.
+rail first previews the actual received amount against current amount due, then
+requires authenticated digest-bound confirmation. Full receipt equals amount
+due; partial receipt retains the actual lesser amount. Only confirmation
+changes receipt state/amount/method/date, and it does not rewrite BKB invoice,
+VAT, commission, settlement-payable or item-price facts. Telegram describes
+payment-evidence review until canonical readback exists.

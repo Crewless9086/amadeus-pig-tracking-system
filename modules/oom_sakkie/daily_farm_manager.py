@@ -248,8 +248,8 @@ def build_sale_watch_result(rows, *, now=None, language="en"):
                   f"Uitstaande: {', '.join(missing) or 'finale verifikasie'}.")
                 if af else (f"{stream}: {amount_text} {amount_kind}; payment is {payment or 'Unknown'} {due}. "
                             f"Outstanding: {', '.join(missing) or 'final verification'}.")),
-            next_action=((f"Werk die ontvangde bedrag, metode en datum by: {action_url}")
-                if af else f"Record the received amount, method and date: {action_url}"),
+            next_action=((f"Hersien betalingsbewys; slegs voorskou eerste: {action_url}")
+                if af else f"Review payment evidence; preview only first: {action_url}"),
             assignee="charl", state=WorkState.DUE_TODAY,
             authority=Authority.OWNER_DECISION, provenance=provenance,
             business_value=115, due_at=datetime.combine(sale_date, datetime.min.time(), SAST)))

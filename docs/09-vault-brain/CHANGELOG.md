@@ -34,6 +34,24 @@
 - Added the exact failed 15 August instruction as non-replay regression
   evidence and removed raw JSON/internal blocker codes from owner rendering.
 
+## 2026-08-15 - Protected sale-payment preview/confirmation prepared
+
+- Continued existing mission `SMQ-20260813-05` without creating another sales
+  or payment authority.
+- Replaced direct sale-payment mutation with one authenticated zero-write
+  preview and digest-bound confirmation against locked Supabase state. Full
+  receipts equal canonical amount due; partial receipts retain actual amount.
+- Bound replay to the preserved preview digest, failed the legacy direct route
+  closed, and limited Oom Sakkie wording to review/preview.
+- Independent review additionally closed paid-at-creation bypass, enabled a
+  monotonic partial-to-full settlement, and suppressed confirmation for an
+  already-matching canonical payment state.
+- Follow-up review removed digest disclosure, required strict owner-admin
+  access plus a short-lived signed preview token, and restored canonical
+  received-total display for existing partial receipts.
+- Source and regression evidence only. No payment, customer, Telegram, n8n or
+  Google Sheets effect occurred; deployment and genuine proof remain separate.
+
 ## 2026-08-15 - Idle-terminal dispatch made a response closure gate
 
 - Recorded the Control Tower failure that left eligible HERDMASTER and SAM
