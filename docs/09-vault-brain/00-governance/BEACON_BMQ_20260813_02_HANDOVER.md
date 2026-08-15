@@ -49,10 +49,35 @@ authority is introduced.
 
 ## Remaining acceptance
 
-Complete review/CI/PR, verify the serialized release lane, deploy exact merge,
-set the complete fail-closed Render policy, recover the four immutable provider
-updates only through the deployed gateway, remove the temporary recovery token,
-complete the album through the deployed boundary, and prove four ordered private
-objects/thumbnails, one group/contact sheet, one provider receipt and silent
-direct/concurrent replay. Then obtain one fresh genuine album through the normal
-event trigger before BUSINESS_COMPLETE.
+Reviewed PRs #949, #950, #953 and #954 are merged. Render revision
+`509171e476ae3488b638403975c08f6f3f81cba6` loaded the complete fail-closed
+policy. The temporary exact-group recovery token was removed and the same
+revision restarted after recovery; normal event intake remains enabled.
+
+The deployed authenticated gateway recovered all four historical provider
+updates into group `BEACON-INTAKE-GROUP-1FCFA32ABAC219E62E5CD415`. Canonical
+readback proves positions 1-4, the four incident SHA-256 values above, four
+private `beacon-raw-intake` objects, four thumbnails, one album-completed event
+and owner context including Molly, litter size eight and 11 August 2026. The
+family lifecycle delivered one receipt as Telegram message 3626. A replay
+exposed and then the reviewed lifecycle repair corrected a completed-card
+regression; one bounded restoration edit returned message 3626 to completion.
+Subsequent direct and concurrent replay produced zero sends, edits, media,
+records or protected effects. No Library Accept, public-use, campaign,
+publication, customer, spend, farm, n8n or Sheets effect occurred.
+
+This is historical terminal-invoked recovery evidence, not a fresh autonomous
+acceptance epoch. BMQ-20260813-02 remains WORKING until Charl sends one genuinely
+new four-photo album in the existing private Oom Sakkie Telegram conversation.
+The normal GateKeeper event trigger must independently create one new immutable
+group, preserve order/context, store four private objects and thumbnails,
+present the contact sheet, deliver one completion receipt and make exact replay
+silent without a development-terminal invocation.
+
+Standing authority ID: `BMQ-20260813-02-OWNER-DIRECTION-20260815`. Scope:
+private original-owner photo intake, hashing, private storage, one receipt and
+owner review presentation. Limits: no Library Accept, public-use, campaign,
+publication, customer contact, spend or farm write. The historical recovery
+used zero new owner interactions. One fresh four-photo album is now the single
+irreducible owner interaction because terminal-created or historical input
+cannot prove the normal provider event journey.
