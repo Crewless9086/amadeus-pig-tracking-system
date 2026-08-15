@@ -23,7 +23,8 @@ def inputs(*, rain=0, zone="B12345", debt=2, controller_changes=None,
               "irrigation":{"source":"rootline_daily_advisor",
                   "advisor_generated_at":NOW.isoformat(),
                   "advisor_operating_date":"2026-08-08",
-                  "zones":[{"zone_id":zone,"live_rain_release_proven":True}]},
+                  "zones":[{"zone_id":zone,"live_rain_release_proven":True,
+                            "forecast_planning_quality":"fresh","planning_warnings":[]}]},
               "tanks":{"observed_at":water_at.isoformat(),"reservoir_state":"FULL",
                        "reservoir_fraction":1.0}}
     controller={"device_id":"100204e9bc","online":True,"firmware":"3.8.2",
@@ -50,6 +51,20 @@ def test_fresh_dry_debt_creates_one_typed_single_use_artifact():
     assert value["command_mapping"]=={"channel":1,"on":"irrigation_1_ch1_on",
                                        "off":"irrigation_1_ch1_off"}
     assert validate_execution_eligibility(value,now=NOW)==value
+
+
+def test_stale_forecast_warning_is_digest_bound_but_does_not_block_execution():
+    plan,evidence,controller=inputs()
+    evidence["irrigation"]["zones"][0].update(
+        forecast_planning_quality="degraded",
+        planning_warnings=["forecast_stale_or_unavailable"],
+    )
+    value=build_execution_eligibility(plan=plan,evidence=evidence,
+                                      controller=controller,now=NOW)
+    assert value["eligible"] is True
+    assert value["contract_version"] == "rootline_execution_eligibility.v4"
+    assert value["live_rain_release"]["forecast_planning_quality"] == "degraded"
+    assert value["live_rain_release"]["planning_warnings"] == ["forecast_stale_or_unavailable"]
 
 
 def test_rain_hold_and_stale_or_conflicting_evidence_create_no_authority():
