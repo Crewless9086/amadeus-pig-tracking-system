@@ -293,10 +293,16 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         return result, 503
     completed = next((row for row in reversed(prior) if row.get("state") == "completed"), None)
     recoverable = False
+    recovery_cause = None
     if completed and isinstance(completed.get("outcome"), Mapping):
         recoverable = (completed["outcome"].get("systemic_exception") == "rootline_canonical_observation_bridge_failed"
                        and completed["outcome"].get("writes_farm_data") is False
                        and observations and _same_source_context(completed.get("context"), context))
+        if recoverable:
+            recovery_cause = "rootline_canonical_observation_bridge_failed"
+        elif _partial_observation_recovery_allowed(completed, context):
+            recoverable = True
+            recovery_cause = "rootline_partial_observation_omission"
         replay_compatible = _same_replay_context(completed.get("context"), context)
         if completed.get("context") != context and not recoverable and not replay_compatible:
             result = _contained(parsed, "rootline_operational_replay_binding_conflict", now)
@@ -326,10 +332,19 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         result["answer"] = "<b>IRRIGATION FOLLOW-UP CONTAINED</b>\n\nThe current handover is already being processed. No irrigation command was sent."
         return result, 202
     try:
-        observation_result = dict(observation_writer(context, write_bound) or {}) if observation_writer else {}
+        write_context = context
+        if recovery_cause == "rootline_partial_observation_omission":
+            prior_kinds = {row.get("kind") for row in completed["context"].get("observations") or ()
+                           if isinstance(row, Mapping)}
+            write_context = {**context, "observations": [row for row in observations
+                                                          if row.get("kind") not in prior_kinds]}
+        observation_result = dict(observation_writer(write_context, write_bound) or {}) if observation_writer else {}
     except Exception:
         observation_result = {}
     write_truth = _canonical_write_truth(observation_result)
+    if (recovery_cause == "rootline_partial_observation_omission"
+            and not _missing_observation_readback_valid(write_context, observation_result)):
+        write_truth = None
     if (observation_result.get("success") is not True
             or observation_result.get("contract_version") != "rootline_owner_observation_bridge_v1"
             or write_truth is None):
@@ -400,7 +415,7 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
             "contract_version": "oom_rootline_observation_recovery_v1"}
         outcome["binding"] = binding
         outcome["material_recomposition_authority"] = {
-            "from_systemic_exception": "rootline_canonical_observation_bridge_failed",
+            "from_systemic_exception": recovery_cause,
             "to_contract": "oom_rootline_observation_recovery_v1",
             "provider_binding_digest": _digest(binding),
             "prior_result_digest": str(completed["outcome"].get("result_digest") or ""),
@@ -789,6 +804,46 @@ def _same_source_context(left, right):
 def _same_replay_context(left, right):
     return (_same_source_context(left, right)
             and left.get("observations") == right.get("observations"))
+
+
+def _partial_observation_recovery_allowed(completed, current):
+    prior = completed.get("context") if isinstance(completed, Mapping) else None
+    outcome = completed.get("outcome") if isinstance(completed, Mapping) else None
+    if (not isinstance(prior, Mapping) or not isinstance(outcome, Mapping)
+            or not _same_source_context(prior, current)
+            or outcome.get("success") is not True
+            or outcome.get("status") != "specialist_accepted"
+            or outcome.get("hardware_commands") != 0):
+        return False
+    if (outcome.get("protected_actions_performed") is not False
+            or outcome.get("sends_telegram") is not False
+            or outcome.get("writes_farm_data") is not True):
+        return False
+    def keyed(rows):
+        return {str(row.get("kind") or ""): (row.get("numerator"), row.get("denominator"))
+                for row in (rows or ()) if isinstance(row, Mapping)}
+    old, new = keyed(prior.get("observations")), keyed(current.get("observations"))
+    if not old or len(new) <= len(old) or any(new.get(kind) != value for kind, value in old.items()):
+        return False
+    canonical = outcome.get("canonical_observation")
+    readback = canonical.get("readback") if isinstance(canonical, Mapping) else None
+    proven = {str(row.get("kind") or ""): tuple(row.get("fraction") or ())
+              for row in (readback or ()) if isinstance(row, Mapping)}
+    labels = {"reservoir_level": "reservoir", "storage_level": "storage"}
+    return all(proven.get(labels.get(kind, "")) == tuple(value) for kind, value in old.items())
+
+
+def _missing_observation_readback_valid(context, result):
+    expected = {"reservoir_level": "reservoir", "storage_level": "storage"}
+    rows = context.get("observations") if isinstance(context, Mapping) else None
+    readback = result.get("readback") if isinstance(result, Mapping) else None
+    if not isinstance(rows, list) or not rows or not isinstance(readback, list):
+        return False
+    wanted = {(expected.get(row.get("kind")), row.get("numerator"), row.get("denominator"))
+              for row in rows if isinstance(row, Mapping)}
+    actual = {(row.get("kind"), *(tuple(row.get("fraction") or (None, None))[:2]))
+              for row in readback if isinstance(row, Mapping)}
+    return None not in {item[0] for item in wanted} and actual == wanted
 
 
 def _time(value):

@@ -669,6 +669,47 @@ def test_recoverable_zero_write_containment_advances_same_mission_once():
     assert first["material_recomposition_authority"]["prior_result_digest"]=="a"*64
     assert second["replay_suppressed"] is True
 
+def test_same_provider_strict_superset_recovers_only_previously_omitted_storage():
+    item=operational("Reservoir is 4/4 and Storage is 4/4.")
+    mission=operational_specialist_intake._mission(item)
+    content=__import__("hashlib").sha256(item["text"].encode()).hexdigest()
+    reservoir={"kind":"reservoir_level","value":"4/4","numerator":4,"denominator":4,
+        "provider_message_id":"3213","observed_at":NOW.isoformat()}
+    old_context={"contract_version":"oom_rootline_operational_dispatch_v1","mission_id":mission,
+        "owner_user_id":"42","chat_id":"42","provider_message_id":"3213","provider_timestamp":NOW.isoformat(),
+        "observations":[reservoir],"visible_irrigation_need_zone":None,"semantic_observation":"",
+        "semantic_intent":"","content_sha256":content,
+        "authority":{"farm_observation_write":False,"hardware_control":False,"telegram_send":False,
+                     "automatic_on_retry":False}}
+    old_outcome={"success":True,"status":"specialist_accepted","hardware_commands":0,
+        "protected_actions_performed":False,"sends_telegram":False,"writes_farm_data":True,
+        "result_digest":"b"*64,"canonical_observation":{"success":True,
+            "readback":[{"kind":"reservoir","fraction":[4,4]}]}}
+    events={"old-claim":{"event_id":"old-claim","mission_id":mission,"state":"claimed","context":old_context},
+        "old-complete":{"event_id":"old-complete","mission_id":mission,"state":"completed",
+                        "context":old_context,"outcome":old_outcome}}
+    def store(action, identity, payload):
+        if action=="load": return list(events.values())
+        if identity in events:return {"success":True,"created":False}
+        events[identity]=dict(payload);return {"success":True,"created":True}
+    def writer(context, _authority):
+        assert [(row["kind"],row["value"]) for row in context["observations"]]==[
+            ("storage_level","4/4")]
+        return {"success":True,"contract_version":"rootline_owner_observation_bridge_v1",
+            "status":"recorded","created":True,"canonical_writes":1,
+            "observation_ids":["ROOTLINE-TANK-STORAGE"],
+            "observation_generation":"G","readback":[{"kind":"storage","fraction":[4,4]}]}
+    result,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,rootline_observation_writer=writer,operation_store=store,
+        rootline_operations_dispatcher=lambda _:operational_result(recommendation="Reassess"))
+    assert status==200 and result["writes_farm_data"] is True
+    assert result["material_recomposition_authority"]["from_systemic_exception"]==(
+        "rootline_partial_observation_omission")
+    assert len([row for row in events.values() if row["state"]=="completed"])==2
+    assert operational_specialist_intake._missing_observation_readback_valid(
+        {"observations":[{"kind":"storage_level","numerator":4,"denominator":4}]},
+        {"readback":[]}) is False
+
 def test_unavailable_operational_adapter_is_visible_and_never_falls_to_v1():
     value,status=handle_operational_specialist_message(operational(),issue_gateway_owner_authority("42","42"),
         now=NOW,rootline_operations_dispatcher=None)
