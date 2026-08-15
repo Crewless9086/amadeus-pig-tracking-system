@@ -385,6 +385,18 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "delivery_disabled_internal_proof": delivery_disabled_proof,
             "writes": False})
         return body, beacon_status if delivery.get("success") else 202
+    if delivery_disabled_proof:
+        body, _ = _gateway_result(False, "delivery_disabled_proof_semantic_unresolved", policy, 422)
+        body.update({"telegram_user_id": parsed["telegram_user_id"],
+            "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+            "answer": "", "delivery": {"success": True,
+                "status": "authenticated_internal_delivery_disabled",
+                "telegram_sends": 0, "telegram_edits": 0, "provider_mutations": 0},
+            "records_audit_trace": False,
+            "reply_transport": "authenticated_internal_delivery_disabled",
+            "delivery_disabled_internal_proof": True, "sends_telegram": False,
+            "writes": False})
+        return body, 422
 
     breeding_result, breeding_status = handle_grouped_breeding_message(parsed, gateway_authority)
     if breeding_result.get("handled"):
