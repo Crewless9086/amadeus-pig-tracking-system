@@ -755,3 +755,19 @@ Current Stage 4 surface:
 - `modules/telemetry/rootline_irrigation_coordinator.py` and
   `modules/telemetry/rootline_irrigation_execution_store.py` — single-use
   auxiliary start, shutdown recovery and physical-outcome evidence.
+
+## Standing authority and owner-burden control
+
+- `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`
+  defines one-time delegated standing authority, the irreducible-owner-input
+  test and `owner_burden_systemic_defect` classification.
+- `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md` requires durable
+  authority identity, runtime evidence ownership and zero routine confirmation
+  inside an approved envelope.
+- `docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md` makes every
+  agent and terminal report authority scope, owner-interaction count and why any
+  requested owner work could not be eliminated.
+- ROOTLINE acceptance is owned by existing mission `RMQ-20260813-04`; the
+  systemic correction must remove recurring human dry-release evidence while
+  retaining automatic weather health, freshness, conflict, rain and hardware
+  fail-closed boundaries.

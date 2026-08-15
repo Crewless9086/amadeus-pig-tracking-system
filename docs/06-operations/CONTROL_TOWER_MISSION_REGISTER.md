@@ -359,6 +359,8 @@ result appear known earlier.
 
 ## New owner findings
 
+| 2026-08-15 | Control Tower standing-authority and owner-burden correction | Owner reaffirmed that the system exists to remove routine work and that governed agents have standing permission to operate inside approved policies. ROOTLINE nevertheless encoded manual visible-rain confirmation and explicit owner review as mandatory dry-release evidence, proving that the Agent Operational Reality Gate did not prevent an autonomous trigger from remaining dependent on recurring owner labour. | Extend the existing Agent Operational Reality Gate lineage across the Mission Standard, Runtime Programme, handover, register, source map and changelog. Treat routine approvals, duplicate observations and terminal-manufactured evidence as systemic journey defects. Use RMQ-20260813-04 as the first runtime acceptance: fresh healthy local weather evidence must govern routine B/C rain release without per-cycle owner approval, while real rain, stale/conflicting evidence, controller safety and uncommissioned topology remain fail-closed. |
+
 Before dispatch, record the mission ID, deployed owner, development terminal,
 priority, dependency, dispatch truth, preserved acceptance outcome and whether
 Charl should send anything now. A finding remains until owner-visible completion

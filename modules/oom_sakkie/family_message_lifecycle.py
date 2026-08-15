@@ -136,10 +136,16 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             if str(row.get("event_id") or "").startswith(update_id)]
         ambiguous_edit = any(row.get("state") == "contained"
             and row.get("reason") == "telegram_edit_unconfirmed" for row in prior_update)
-        if ambiguous_edit and exclusive_completion:
+        orphaned_edit_claim = (
+            any(row.get("state") == "update_attempted" for row in prior_update)
+            and not any(row.get("state") in {"updated", "contained"}
+                        for row in prior_update)
+        )
+        if (ambiguous_edit or orphaned_edit_claim) and exclusive_completion:
             # Editing the same provider card to the same text with empty
             # buttons is idempotent. Permit one separately claimed recovery
-            # attempt; never send a replacement card.
+            # attempt after either an unconfirmed edit or a process stop after
+            # the claim; never send a replacement card.
             update_id += "-RECOVERY-2"
         if ambiguous_edit and result.get("requires_visible_notification") is True:
             # Never retry the ambiguous edit. A must-notice lifecycle question
