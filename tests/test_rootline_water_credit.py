@@ -160,6 +160,19 @@ def test_disposable_postgres_one_credit_per_execution_and_conflict():
         measurement=evidence, recorded_at=NOW)
     first = append_water_credit(value, url); replay = append_water_credit(value, url)
     assert first["created"] is True and replay["created"] is False
+    mismatched = {key: item for key, item in value.items() if key != "status"}
+    mismatched["credit_id"] = "ROOTLINE-WATER-CREDIT-" + uuid.uuid4().hex[:24].upper()
+    mismatched["volume_evidence_sha256"] = "f" * 64
+    digest_material = {key: item for key, item in mismatched.items() if key != "credit_sha256"}
+    mismatched["credit_sha256"] = sha256(json.dumps(digest_material, sort_keys=True,
+        separators=(",", ":"), default=str).encode()).hexdigest()
+    with psycopg.connect(url, connect_timeout=10) as connection:
+        with connection.cursor() as cursor, pytest.raises(psycopg.Error,
+                match="canonical ROOTLINE volume evidence missing or mismatched"):
+            cursor.execute("select public.rootline_append_water_credit_event(%s,%s,%s,%s,%s,%s::jsonb)",
+                (mismatched["credit_id"], mismatched["execution_id"], mismatched["zone_id"],
+                 mismatched["physical_acceptance_sha256"], mismatched["credit_sha256"],
+                 json.dumps(mismatched, sort_keys=True, separators=(",", ":"))))
     changed = {**value, "delivered_volume_litres": 101}
     changed["credit_sha256"] = "0" * 64
     assert validate_water_credit(changed) is False

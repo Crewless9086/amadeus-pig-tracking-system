@@ -55,14 +55,6 @@ create or replace function public.rootline_append_water_volume_evidence(
 ) returns boolean language plpgsql security definer set search_path=public,pg_temp as $$
 declare stored public.irrigation_water_volume_evidence%rowtype;
 begin
-  if not exists(select 1 from public.irrigation_water_volume_evidence e
-      where e.evidence_id=p_credit->>'volume_evidence_id'
-        and e.zone_id=p_zone_id
-        and e.evidence_type=p_credit->>'credit_method'
-        and e.evidence_sha256=p_credit->>'volume_evidence_sha256'
-        and (e.evidence_json->>'verified')::boolean is true) then
-    raise exception 'canonical ROOTLINE volume evidence missing or mismatched';
-  end if;
   insert into public.irrigation_water_volume_evidence(
     evidence_id,evidence_type,zone_id,evidence_sha256,evidence_json)
   values(p_evidence_id,p_evidence_type,p_zone_id,p_evidence_sha256,p_evidence)
@@ -88,6 +80,14 @@ begin
     or p_credit->>'physical_acceptance_sha256' is distinct from p_acceptance_sha256
     or p_credit->>'credit_sha256' is distinct from p_credit_sha256 then
     raise exception 'invalid ROOTLINE water credit';
+  end if;
+  if not exists(select 1 from public.irrigation_water_volume_evidence e
+      where e.evidence_id=p_credit->>'volume_evidence_id'
+        and e.zone_id=p_zone_id
+        and e.evidence_type=p_credit->>'credit_method'
+        and e.evidence_sha256=p_credit->>'volume_evidence_sha256'
+        and (e.evidence_json->>'verified')::boolean is true) then
+    raise exception 'canonical ROOTLINE volume evidence missing or mismatched';
   end if;
   insert into public.irrigation_water_credit_events(
     credit_id,execution_id,zone_id,physical_acceptance_sha256,volume_evidence_id,
