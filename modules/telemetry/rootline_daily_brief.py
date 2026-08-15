@@ -28,7 +28,13 @@ def get_rootline_daily_brief(brief_date=None, readers=None):
         "irrigation": lambda: get_irrigation_status(selected_date),
         "rollups": lambda: get_daily_rollup_compare(selected_date),
     }
-    evidence = {name: _safe_read(reader) for name, reader in readers.items()}
+    # Daily brief sources are independent read models. Their individual
+    # database deadlines must not accumulate past an enclosing callback's
+    # worker deadline.
+    from modules.telemetry.rootline_bounded_read_group import run_bounded_read_group
+    evidence = run_bounded_read_group(
+        {name:lambda reader=reader:_safe_read(reader)
+         for name,reader in readers.items()},max_workers=4)
     return build_rootline_daily_brief(evidence, selected_date), 200
 
 
