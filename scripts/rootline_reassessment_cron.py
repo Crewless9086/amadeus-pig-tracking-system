@@ -66,6 +66,7 @@ def run(*, environ=None, now=None, opener=None) -> dict:
                 "hardware_commands": 0, "telegram_sends": 0}
     return {"success": result.get("success") is True,
             "status": str(result.get("status") or "rootline_scheduler_response_invalid"),
+            "scheduled_underlying_status": str(result.get("scheduled_underlying_status") or ""),
             "schedule_identity": str(result.get("schedule_identity") or ""),
             "next_due_at": str(result.get("next_due_at") or ""),
             "hardware_commands": int(result.get("hardware_commands") or 0),
