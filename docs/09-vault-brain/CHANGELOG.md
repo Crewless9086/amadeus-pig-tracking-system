@@ -1,5 +1,19 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - Sale-payment confirmation joined the deployed Telegram rail
+
+- Continued `SMQ-20260813-05` and retained the earlier terminal-created preview
+  as zero-write regression evidence only; its signed session/token artifact was
+  destroyed without confirmation or payment effect.
+- Added a reusable SAM payment adapter to Oom Sakkie's existing provider-bound
+  family-message and protected callback claims, with exactly one Confirm/Cancel
+  card, current-state re-preview and the existing locked Supabase writer.
+- Bound owner, provider card, sale, counterparty, invoice, amount, method, date
+  and preview digest; cancel and sequential/concurrent replay create no payment
+  or repeat Telegram message.
+- Source and tests only at this entry; live provider delivery and genuine owner
+  callback remain separate acceptance evidence.
+
 ## 2026-08-15 - BEACON historical four-photo album recovered and replay sealed
 
 - Recovered n8n executions 64570-64573 only through the deployed authenticated

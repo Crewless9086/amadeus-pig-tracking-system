@@ -20,7 +20,7 @@ def build_buttons(token, *, grouped=False):
 
 def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                  provider_message_id, evidence_generation, preview_payload,
-                 ttl_minutes=30, connect_factory=None):
+                 ttl_minutes=30, connect_factory=None, supersede_active=True):
     digest=canonical_preview_digest(action_kind,preview_payload)
     token=secrets.token_urlsafe(12).replace("-","").replace("_","")[:16]
     expires=datetime.now(timezone.utc)+timedelta(minutes=ttl_minutes)
@@ -41,8 +41,14 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                   "preview_digest":digest,"expires_at":prior[2].isoformat(),
                   "preview_card_message_id":str(prior[8] or "")}
             raise RuntimeError("protected_claim_identity_or_state_conflict")
-        cur.execute("""update app_private.oom_protected_action_claims set status='changed'
-          where mission_id=%s and status='active'""",(mission_id,))
+        if not supersede_active:
+            cur.execute("""select 1 from app_private.oom_protected_action_claims
+              where mission_id=%s and status='active' limit 1""", (mission_id,))
+            if cur.fetchone():
+                raise RuntimeError("protected_claim_active_preview_conflict")
+        else:
+            cur.execute("""update app_private.oom_protected_action_claims set status='changed'
+              where mission_id=%s and status='active'""",(mission_id,))
         cur.execute("""insert into app_private.oom_protected_action_claims(
           callback_token,action_kind,owner_user_id,private_chat_id,mission_id,provider_message_id,
           preview_digest,evidence_generation,preview_payload,expires_at)
@@ -97,11 +103,17 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         if str(row[10])!=str(source_card_message_id or ""):
             return {"success":False,"status":"protected_callback_card_mismatch"},409
         if row[7]=="completed":
-            if row[0]=="rootline_irrigation_segment":
+            if row[0] in {"rootline_irrigation_segment", "sam_sale_payment"}:
                 return {"success":True,"status":"protected_callback_completed_delivery_retry",
                   "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
                   "result":row[9],"telegram_sends":0,"telegram_edits":0},200
             return {"success":True,"status":"protected_callback_replayed_noop","result":row[9],"telegram_sends":0,"telegram_edits":0},200
+        if row[7] in {"cancelled", "changed"}:
+            return {"success":True,
+              "status":"protected_preview_cancelled" if row[7]=="cancelled" else "protected_preview_change_requested",
+              "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
+              "preview_payload":row[6],"preview_card_message_id":str(row[10] or ""),
+              "telegram_sends":0,"telegram_edits":0},200
         if row[7]=="executing":
             if action!="confirm":
                 return {"success":False,"status":"protected_callback_stale"},409
@@ -126,7 +138,9 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
             return {"success":False,"status":"protected_callback_expired"},409
         if action in {"change","cancel"}:
             cur.execute("update app_private.oom_protected_action_claims set status=%s,confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s",("changed" if action=="change" else "cancelled",provider_message_id,provider_timestamp,token))
-            return {"success":True,"status":"protected_preview_change_requested" if action=="change" else "protected_preview_cancelled","mission_id":row[3]},200
+            return {"success":True,"status":"protected_preview_change_requested" if action=="change" else "protected_preview_cancelled",
+              "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
+              "preview_payload":row[6],"preview_card_message_id":str(row[10] or "")},200
         cur.execute("update app_private.oom_protected_action_claims set status='executing',confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s and status='active'",(provider_message_id,provider_timestamp,token))
         return {"success":True,"status":"protected_callback_claimed","callback_token":token,"action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],"evidence_generation":row[5],"preview_payload":row[6]},200
 

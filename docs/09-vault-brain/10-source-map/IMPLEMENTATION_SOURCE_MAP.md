@@ -653,6 +653,11 @@ Current built Supabase-backed surface:
   `static/js/slaughterSaleDetail.js`; auctions render as `Livestock — Auction`
   and use that same protected service. Oom Sakkie links to this canonical
   surface and presents review/preview only until canonical confirmation exists.
+  `modules/oom_sakkie/sam_payment_owner_runtime.py` adapts the same service to
+  the existing protected-action claim, family-delivery and callback rail.
+  `modules/oom_sakkie/protected_action_runtime.py` rechecks the exact digest
+  before invoking the sole writer; `/api/oom-sakkie/sales/payment-preview` is
+  the strict-owner deployed-runtime entry and does not itself record money.
 
 ### Pig Allocation And Herdmaster Purpose Intelligence
 
