@@ -37,7 +37,8 @@ groups/items, none from this four-photo incident.
 ## Correction boundary
 
 `modules/oom_sakkie/telegram_gateway.py` and the retained direct path now admit
-typed media and `/beacon-complete` before generic context. `media_intake.py`
+typed media before generic context and route completion only through the bound
+Finish Album callback; the legacy typed command is disabled. `media_intake.py`
 projects captions from append-only evidence regardless of concurrent arrival,
 supports one temporary token-bound exact-group recovery context supplement,
 and returns a group-stable receipt identity. The existing family-message
