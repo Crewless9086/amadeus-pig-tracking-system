@@ -6,7 +6,8 @@ from scripts.rootline_reassessment_cron import build_payload, run
 NOW=datetime(2026,8,15,7,28,41,tzinfo=timezone.utc)
 ENV={"ROOTLINE_REASSESSMENT_SCHEDULER_URL":"https://example.test/api/oom-sakkie/management/rootline/reassess",
      "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*32,
-     "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42"}
+     "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"41,42,43",
+     "ROOTLINE_REASSESSMENT_OWNER_USER_ID":"42"}
 
 class Response:
     def __init__(self,payload): self.payload=payload
@@ -37,7 +38,8 @@ def test_cron_calls_only_authenticated_existing_application_spine():
 def test_missing_or_ambiguous_identity_fails_without_network():
     for changes in ({"ROOTLINE_REASSESSMENT_SCHEDULER_URL":"http://bad"},
                     {"OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"short"},
-                    {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42,43"}):
+                    {"ROOTLINE_REASSESSMENT_OWNER_USER_ID":""},
+                    {"ROOTLINE_REASSESSMENT_OWNER_USER_ID":"99"}):
         result=run(environ={**ENV,**changes},now=NOW,
                    opener=lambda *_a,**_k: (_ for _ in ()).throw(AssertionError("network")))
         assert result=={"success":False,"status":"rootline_scheduler_configuration_invalid",
