@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import json
 import os
+import re
 
 from services.database_service import DATABASE_URL_ENV
 
@@ -75,7 +76,16 @@ def record_sale_payment_state(sale_id, payload=None, database_url=None, *, actor
                     return blocked
                 exact = _is_exact_transition(row, proposed)
                 if exact:
-                    if f"preview {confirmed_digest}" not in str(row[8] or ""):
+                    evidence = row[12] if len(row) > 12 and isinstance(row[12], dict) else {}
+                    evidence_sha = str(row[13] or "") if len(row) > 13 else ""
+                    expected_evidence, expected_evidence_sha = _payment_evidence(
+                        sale_id, proposed, confirmed_digest)
+                    canonical_evidence_sha = sha256(json.dumps(evidence, sort_keys=True,
+                        separators=(",", ":")).encode()).hexdigest() if evidence else ""
+                    if (not re.fullmatch(r"[0-9a-f]{64}", confirmed_digest)
+                            or evidence != expected_evidence
+                            or evidence_sha != expected_evidence_sha
+                            or evidence_sha != canonical_evidence_sha):
                         return {"success": False,
                                 "status": "existing_receipt_requires_governed_correction",
                                 "writes_to_supabase": False}, 409
@@ -90,14 +100,19 @@ def record_sale_payment_state(sale_id, payload=None, database_url=None, *, actor
                             "writes_to_supabase": False}, 409
                 note = _note(row[8], proposed["actor_id"], status, target_received,
                              method, paid_at, confirmed_digest)
+                evidence, evidence_sha = _payment_evidence(
+                    sale_id, proposed, confirmed_digest)
                 cursor.execute("""update public.sales_transactions set
                         received_total=%s,payment_status=%s,payment_method=%s,
-                        payment_date=%s,notes=%s,updated_at=now()
+                        payment_date=%s,notes=%s,payment_received_evidence_json=%s::jsonb,
+                        payment_evidence_sha256=%s,updated_at=now()
                     where sale_id=%s returning sale_id,payment_status,payment_method,
                         payment_date,received_total,net_total,net_settlement_payable,
                         sale_channel""",
                     (target_received, status, method if status != "Unpaid" else row[2],
-                     paid_at if status != "Unpaid" else None, note, sale_id))
+                     paid_at if status != "Unpaid" else None, note,
+                     json.dumps(evidence, sort_keys=True) if evidence else None,
+                     evidence_sha, sale_id))
                 updated = cursor.fetchone()
         return {"success": True, "status": "payment_state_recorded", "created": True,
             **_receipt_readback(updated[0], row[0], updated[1], updated[2],
@@ -110,7 +125,8 @@ def record_sale_payment_state(sale_id, payload=None, database_url=None, *, actor
 
 _SALE_PAYMENT_SELECT = """select sale_status,payment_status,payment_method,
         payment_date,received_total,net_total,net_settlement_payable,
-        sale_channel,notes,buyer_name,destination,external_reference
+        sale_channel,notes,buyer_name,destination,external_reference,
+        payment_received_evidence_json,payment_evidence_sha256
     from public.sales_transactions where sale_id=%s"""
 
 
@@ -246,6 +262,24 @@ def _receipt_readback(sale_id, sale_status, payment_status, payment_method,
 
 def _preview_digest(preview):
     return sha256(json.dumps(preview, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _payment_evidence(sale_id, proposed, confirmed_digest):
+    if proposed["payment_status"] == "Unpaid":
+        return None, None
+    evidence = {"version": "canonical_sale_payment_evidence_v1",
+        "source": "protected_owner_confirmation", "sale_id": sale_id,
+        "payment_status": proposed["payment_status"],
+        "received_amount": str(proposed["received_amount"]),
+        "payment_method": proposed["payment_method"],
+        "payment_date": proposed["payment_date"].isoformat(),
+        "actor_id": proposed["actor_id"],
+        "counterparty": proposed.get("expected_counterparty") or None,
+        "invoice_reference": proposed.get("expected_invoice_reference") or None,
+        "confirmed_preview_digest": confirmed_digest}
+    digest = sha256(json.dumps(evidence, sort_keys=True,
+        separators=(",", ":")).encode()).hexdigest()
+    return evidence, digest
 
 
 def _money(value):

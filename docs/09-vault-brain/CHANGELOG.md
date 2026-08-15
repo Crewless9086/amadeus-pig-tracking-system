@@ -1,5 +1,12 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - Canonical payment writer supplies governed auction evidence
+
+- Continued `SMQ-20260813-05` after the genuine owner callback failed closed on
+  the existing auction evidence constraint. The shared writer now records the
+  exact protected digest evidence atomically with full or cumulative partial
+  receipt state; the retained executing claim remains the recovery identity.
+
 ## 2026-08-15 - All-terminal dispatch sweep made a Mission Standard closure gate
 
 - Promoted the existing handover-template sweep into the canonical Agentic

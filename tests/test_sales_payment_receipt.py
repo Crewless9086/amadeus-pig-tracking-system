@@ -61,6 +61,8 @@ def test_bkb_paid_receipt_preserves_invoice_accounting_and_records_only_payment_
     assert result["fully_reconciled"] is True
     update_sql = cursor.execute.call_args_list[1].args[0].lower()
     assert "received_total" in update_sql
+    assert "payment_received_evidence_json" in update_sql
+    assert "payment_evidence_sha256" in update_sql
     assert "gross_total" not in update_sql and "net_total=" not in update_sql
     assert "sales_transaction_items" not in update_sql
 
@@ -84,7 +86,12 @@ def test_exact_payment_replay_is_noop():
         "Completed", "Paid", "EFT", date(2026, 8, 12), Decimal("4470.51"),
         Decimal("4470.51"), Decimal("4470.51"), "Auction", "")
     request = confirmed(payload(), row_without_note, "SALE-AUCT")
-    row = (*row_without_note[:8], f"recorded from preview {request['confirmed_preview_digest']}")
+    proposed, _ = _proposed_payment("SALE-AUCT", request, "owner:charl")
+    from modules.sales.sales_payment_receipt import _payment_evidence
+    evidence, evidence_sha = _payment_evidence(
+        "SALE-AUCT", proposed, request["confirmed_preview_digest"])
+    row = (*row_without_note[:8], f"recorded from preview {request['confirmed_preview_digest']}",
+        None, None, None, evidence, evidence_sha)
     cursor = Mock(); cursor.fetchone.return_value = row
     with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
         result, status = record_sale_payment_state(
