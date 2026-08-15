@@ -30,6 +30,15 @@ VALID_PAYLOAD = {
 
 
 class SalesTransactionCreateTests(unittest.TestCase):
+    def test_create_rejects_received_payment_state_outside_protected_flow(self):
+        for payment_status in ("Deposit_Paid", "Part_Paid", "Paid"):
+            payload = {**VALID_PAYLOAD, "payment_status": payment_status}
+            result, status_code = create_sales_transaction(
+                payload, database_url="postgresql://example")
+            self.assertEqual(status_code, 400)
+            self.assertIn("new sales must start Unpaid", " ".join(result["errors"]))
+            self.assertFalse(result["source"]["writes_to_supabase"])
+
     def test_create_requires_created_by(self):
         payload = dict(VALID_PAYLOAD)
         payload["created_by"] = ""

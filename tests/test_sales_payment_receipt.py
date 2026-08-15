@@ -3,7 +3,9 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
-from modules.sales.sales_payment_receipt import record_sale_payment_state
+from modules.sales.sales_payment_receipt import (
+    _payment_preview, _preview_digest, _proposed_payment,
+    preview_sale_payment_state, record_sale_payment_state)
 
 
 def _driver(cursor):
@@ -21,25 +23,36 @@ def payload(amount="4470.51", status="Paid"):
         "received_amount": amount}
 
 
+def confirmed(value, row, sale_id="SALE-1"):
+    proposed, errors = _proposed_payment(sale_id, value, "owner:charl")
+    assert not errors
+    return {**value, "confirmed_preview_digest": _preview_digest(
+        _payment_preview(sale_id, row, proposed))}
+
+
 def test_received_money_requires_amount_method_and_date():
     result, status = record_sale_payment_state("SALE-1", {
         "updated_by": "Charl", "payment_status": "Paid"},
         database_url="postgresql://example", actor_id="owner:charl")
     assert status == 400 and result["status"] == "validation_failed"
-    assert len(result["errors"]) == 3 and result["writes_to_supabase"] is False
+    assert len(result["errors"]) == 4 and result["writes_to_supabase"] is False
 
 
 @patch.dict(os.environ, {"DATABASE_URL": "postgresql://example"}, clear=True)
 def test_bkb_paid_receipt_preserves_invoice_accounting_and_records_only_payment_state():
     cursor = Mock()
-    cursor.fetchone.side_effect = [
-        ("Completed", "Unknown", "EFT", None, None, Decimal("4470.51"),
+    row = ("Completed", "Unknown", "EFT", None, None, Decimal("4470.51"),
          Decimal("4470.51"), "Auction", "Invoice S-EE02-2710"),
+    row = row[0]
+    cursor.fetchone.side_effect = [
+        row,
         ("SALE-AUCT", "Paid", "EFT", date(2026, 8, 12), Decimal("4470.51"),
          Decimal("4470.51"), Decimal("4470.51"), "Auction"),
     ]
     with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
-        result, status = record_sale_payment_state("SALE-AUCT", payload(), actor_id="owner:charl")
+        result, status = record_sale_payment_state("SALE-AUCT", confirmed(
+            payload(), row, "SALE-AUCT"), database_url="postgresql://example",
+            actor_id="owner:charl")
     assert status == 200 and result["status"] == "payment_state_recorded"
     assert result["received_amount"] == "4470.51"
     update_sql = cursor.execute.call_args_list[1].args[0].lower()
@@ -50,24 +63,43 @@ def test_bkb_paid_receipt_preserves_invoice_accounting_and_records_only_payment_
 
 @patch.dict(os.environ, {"DATABASE_URL": "postgresql://example"}, clear=True)
 def test_paid_amount_must_equal_canonical_due_and_writes_zero():
-    cursor = Mock(); cursor.fetchone.return_value = (
+    row = (
         "Completed", "Unpaid", "Cash", None, None, Decimal("2250.00"),
         None, None, "")
+    cursor = Mock(); cursor.fetchone.return_value = row
     with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
-        result, status = record_sale_payment_state("SALE-1", payload("2200.00"), actor_id="owner:charl")
+        result, status = record_sale_payment_state("SALE-1", confirmed(
+            payload("2200.00"), row), actor_id="owner:charl")
     assert status == 409 and result["status"] == "paid_amount_must_equal_amount_due"
     assert cursor.execute.call_count == 1 and result["writes_to_supabase"] is False
 
 
 @patch.dict(os.environ, {"DATABASE_URL": "postgresql://example"}, clear=True)
 def test_exact_payment_replay_is_noop():
-    cursor = Mock(); cursor.fetchone.return_value = (
+    row_without_note = (
         "Completed", "Paid", "EFT", date(2026, 8, 12), Decimal("4470.51"),
         Decimal("4470.51"), Decimal("4470.51"), "Auction", "")
+    request = confirmed(payload(), row_without_note, "SALE-AUCT")
+    row = (*row_without_note[:8], f"recorded from preview {request['confirmed_preview_digest']}")
+    cursor = Mock(); cursor.fetchone.return_value = row
     with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
-        result, status = record_sale_payment_state("SALE-AUCT", payload(), actor_id="owner:charl")
+        result, status = record_sale_payment_state(
+            "SALE-AUCT", request, actor_id="owner:charl")
     assert status == 200 and result["status"] == "payment_state_replay_noop"
     assert result["created"] is False and cursor.execute.call_count == 1
+
+
+def test_preexisting_exact_receipt_without_bound_digest_is_not_claimed_as_replay():
+    row = ("Completed", "Paid", "EFT", date(2026, 8, 12), Decimal("4470.51"),
+           Decimal("4470.51"), Decimal("4470.51"), "Auction", "legacy receipt")
+    cursor = Mock(); cursor.fetchone.return_value = row
+    with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
+        result, status = record_sale_payment_state("SALE-AUCT", confirmed(
+            payload(), row, "SALE-AUCT"), database_url="postgresql://example",
+            actor_id="owner:charl")
+    assert status == 409
+    assert result["status"] == "existing_receipt_requires_governed_correction"
+    assert cursor.execute.call_count == 1
 
 
 def test_unpaid_records_no_receipt_and_never_infers_money():
@@ -90,12 +122,73 @@ def test_existing_paid_receipt_cannot_be_rewritten_as_partial_or_changed_evidenc
         {**payload(), "payment_date": "2026-08-13"},
         {**payload(), "payment_method": "Cash"},
     ):
-        cursor = Mock(); cursor.fetchone.return_value = (
+        row = (
             "Completed", "Paid", "EFT", date(2026, 8, 12), Decimal("4470.51"),
             Decimal("4470.51"), Decimal("4470.51"), "Auction", "")
+        cursor = Mock(); cursor.fetchone.return_value = row
         with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
             result, status = record_sale_payment_state(
-                "SALE-AUCT", changed, actor_id="owner:charl")
+                "SALE-AUCT", confirmed(changed, row, "SALE-AUCT"), actor_id="owner:charl")
         assert status == 409
         assert result["status"] == "existing_receipt_requires_governed_correction"
         assert cursor.execute.call_count == 1 and result["writes_to_supabase"] is False
+
+
+def test_preview_is_zero_write_and_partial_preserves_actual_received_amount():
+    row = ("Completed", "Unpaid", "EFT", None, None, Decimal("4470.51"),
+           Decimal("4470.51"), "Auction", "")
+    cursor = Mock(); cursor.fetchone.return_value = row
+    partial = payload("1000.00", "Part_Paid")
+    with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
+        result, status = preview_sale_payment_state(
+            "SALE-AUCT", partial, database_url="postgresql://example",
+            actor_id="owner:charl")
+    assert status == 200 and result["status"] == "payment_state_preview_ready"
+    assert result["preview"]["received_amount"] == "1000.00"
+    assert result["preview"]["amount_due"] == "4470.51"
+    assert result["writes_to_supabase"] is False
+    assert cursor.execute.call_count == 1
+
+
+def test_confirmation_digest_mismatch_fails_before_update():
+    row = ("Completed", "Unpaid", "EFT", None, None, Decimal("4470.51"),
+           Decimal("4470.51"), "Auction", "")
+    cursor = Mock(); cursor.fetchone.return_value = row
+    request = {**payload(), "confirmed_preview_digest": "0" * 64}
+    with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
+        result, status = record_sale_payment_state(
+            "SALE-AUCT", request, database_url="postgresql://example",
+            actor_id="owner:charl")
+    assert status == 409 and result["status"] == "payment_preview_stale_or_mismatched"
+    assert "current_preview_digest" not in result
+    assert cursor.execute.call_count == 1 and result["writes_to_supabase"] is False
+
+
+def test_partial_receipt_can_progress_to_full_cumulative_settlement():
+    row = ("Completed", "Part_Paid", "EFT", date(2026, 8, 12),
+           Decimal("1000.00"), Decimal("4470.51"), Decimal("4470.51"),
+           "Auction", "first partial receipt")
+    request = confirmed(payload(), row, "SALE-AUCT")
+    cursor = Mock(); cursor.fetchone.side_effect = [row,
+        ("SALE-AUCT", "Paid", "EFT", date(2026, 8, 12), Decimal("4470.51"),
+         Decimal("4470.51"), Decimal("4470.51"), "Auction")]
+    with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
+        result, status = record_sale_payment_state(
+            "SALE-AUCT", request, database_url="postgresql://example",
+            actor_id="owner:charl")
+    assert status == 200 and result["status"] == "payment_state_recorded"
+    assert result["received_amount"] == "4470.51"
+    assert cursor.execute.call_count == 2
+
+
+def test_exact_state_preview_is_read_only_and_needs_no_confirmation():
+    row = ("Completed", "Paid", "EFT", date(2026, 8, 12), Decimal("4470.51"),
+           Decimal("4470.51"), Decimal("4470.51"), "Auction", "")
+    cursor = Mock(); cursor.fetchone.return_value = row
+    with patch.dict("sys.modules", {"psycopg": _driver(cursor)}):
+        result, status = preview_sale_payment_state(
+            "SALE-AUCT", payload(), database_url="postgresql://example",
+            actor_id="owner:charl")
+    assert status == 200 and result["status"] == "payment_state_already_recorded"
+    assert result["confirmation_required"] is False
+    assert result["writes_to_supabase"] is False and cursor.execute.call_count == 1
