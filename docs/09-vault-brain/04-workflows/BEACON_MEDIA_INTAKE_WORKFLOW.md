@@ -41,6 +41,9 @@ or a second manual Farm App upload.
 8. The authenticated browser shows the ordered private contact sheet. Telegram
    shows the bound decision plus a direct contact-sheet link; both resolve the
    same canonical album generation and decision state.
+   A deployed BEACON worker observes completed pending albums from Supabase and
+   presents this choice on the proven existing album card. A browser packet
+   alone is not evidence that Telegram delivery occurred.
 9. Charl first chooses Library Accept or Reject. Public Use Approve or Decline
    is a later, separate choice and is shown only after compliance checks pass.
 10. Campaign Review and Publication remain later separate decisions.

@@ -59,6 +59,50 @@ class ProtectedBreedingClaimPostgresTests(unittest.TestCase):
         self.assertEqual(replay["telegram_sends"], 0)
         self.assertEqual(replay["telegram_edits"], 0)
 
+    def test_exact_expired_active_claim_is_rearmed_without_new_token_or_card(self):
+        mission="MISSION-"+self.suffix
+        payload={"contract_version":"beacon_private_album_review_v1","album_digest":"d"*64}
+        claim=create_claim(action_kind="beacon_media_review",owner_user_id="5721652188",
+            private_chat_id="5721652188",mission_id=mission,provider_message_id="CANONICAL-"+self.suffix,
+            evidence_generation="d"*64,preview_payload=payload,ttl_minutes=1,
+            connect_factory=self.connect)
+        self.assertTrue(bind_claim_card(claim["callback_token"],"3637",connect_factory=self.connect))
+        with self.connect() as db,db.cursor() as cur:
+            cur.execute("update app_private.oom_protected_action_claims set expires_at=now()-interval '1 minute' where callback_token=%s",
+                (claim["callback_token"],))
+        rearmed=create_claim(action_kind="beacon_media_review",owner_user_id="5721652188",
+            private_chat_id="5721652188",mission_id=mission,provider_message_id="CANONICAL-"+self.suffix,
+            evidence_generation="d"*64,preview_payload=payload,ttl_minutes=10080,
+            connect_factory=self.connect)
+        self.assertEqual(rearmed["status"],"protected_claim_rearmed")
+        self.assertEqual(rearmed["callback_token"],claim["callback_token"])
+        self.assertEqual(rearmed["preview_card_message_id"],"3637")
+        with self.connect() as db,db.cursor() as cur:
+            cur.execute("update app_private.oom_protected_action_claims set status='expired' where callback_token=%s",
+                (claim["callback_token"],))
+        clicked_expired=create_claim(action_kind="beacon_media_review",owner_user_id="5721652188",
+            private_chat_id="5721652188",mission_id=mission,provider_message_id="CANONICAL-"+self.suffix,
+            evidence_generation="d"*64,preview_payload=payload,ttl_minutes=10080,
+            connect_factory=self.connect)
+        self.assertEqual(clicked_expired["status"],"protected_claim_rearmed")
+        self.assertEqual(clicked_expired["callback_token"],claim["callback_token"])
+
+    def test_expired_non_beacon_claim_is_not_rearmed(self):
+        mission="MISSION-"+self.suffix
+        payload={"plan":"protected"}
+        claim=create_claim(action_kind="rootline_irrigation_segment",owner_user_id="5721652188",
+            private_chat_id="5721652188",mission_id=mission,provider_message_id="MSG-"+self.suffix,
+            evidence_generation="GEN-"+self.suffix,preview_payload=payload,ttl_minutes=1,
+            connect_factory=self.connect)
+        with self.connect() as db,db.cursor() as cur:
+            cur.execute("update app_private.oom_protected_action_claims set status='expired' where callback_token=%s",
+                (claim["callback_token"],))
+        with self.assertRaises(RuntimeError):
+            create_claim(action_kind="rootline_irrigation_segment",owner_user_id="5721652188",
+                private_chat_id="5721652188",mission_id=mission,provider_message_id="MSG-"+self.suffix,
+                evidence_generation="GEN-"+self.suffix,preview_payload=payload,ttl_minutes=30,
+                connect_factory=self.connect)
+
     def test_exact_executing_receipt_can_be_recovered_but_other_identity_cannot(self):
         mission = "MISSION-" + self.suffix
         provider = "MSG-" + self.suffix

@@ -12,6 +12,12 @@ processes Charl's genuine bound decision.
 The development terminal may deploy and observe, but may not press a button or
 create an owner decision.
 
+Hierarchical reconciliation on 15 August found that the browser packet was a
+child artifact, not proof of the parent owner-visible outcome: no protected
+Library claim, Telegram card lifecycle or provider message identity existed.
+The mission therefore remained WORKING; Charl was not asked to search for an
+unproven button or repeat any album action.
+
 ## Deployed boundary
 
 PR #979 exact reconciled head `70864a95` merged as
@@ -27,6 +33,13 @@ migrations, both named checks and all seven album-envelope columns.
 - Telegram semantic requests use the authenticated shared gateway and one
   protected callback claim. Buttons expose no command, token, digest or storage
   identity. Approve and Decline have the same crash-safe replay behavior.
+- The current source candidate adds a production-owned BEACON private-review worker.
+  Existing media-intake enablement is its authority gate; completed-album
+  canonical time/group evidence is its trigger, and durable protected claims
+  plus the family lifecycle arbitrate restarts and scaled workers. It presents
+  the pending Library choice by editing the proven existing album card, then
+  binds the callback to the provider-confirmed message identity. It creates no
+  owner decision or protected downstream effect.
 - Group decisions append to the existing media-library event rail. Each event
   carries the exact album, contract version, snapshot digest, ordered position,
   binary/content hash, decision type, predecessor and owner action identity.
@@ -53,8 +66,10 @@ Authenticated production readback proves the deployed Farm App resolves
 Bella's genuine packet: eight ordered members, eight valid content hashes,
 eight retrievable private thumbnails, retained Bella context, Library pending,
 Public Use not approved/ineligible, and Campaign Review/Publication false.
-The terminal performed zero writes, Telegram sends or edits and did not create
-an owner choice. BMQ-20260813-03 remains WORKING until Charl naturally opens
-the review and makes a real bound button decision whose canonical readback is
-proved exactly once. Synthetic or terminal-created decisions are not business
-evidence. BMQ-20260813-05 follows only after this boundary completes.
+The earlier terminal performed zero writes, Telegram sends or edits and did not
+create an owner choice. That readback did not deliver the Telegram review.
+BMQ-20260813-03 remains WORKING until this worker is reviewed, merged, deployed
+and provider evidence proves one bound Bella Library card. It may then become
+OWNER_HOLD on Charl's natural choice; Business completion still requires the
+deployed callback, exactly-once decision readback and visible acknowledgement.
+Synthetic or terminal-created decisions are not business evidence.
