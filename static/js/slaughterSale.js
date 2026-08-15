@@ -119,6 +119,12 @@ function money(value) {
   return `R${Number(value).toFixed(2)}`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
+  })[character]);
+}
+
 function updatePigRowHelper(row) {
   const select = row.querySelector(".slaughter-pig-select");
   const helper = row.querySelector(".pig-row-helper");
@@ -259,33 +265,38 @@ function renderTransactions(rows) {
   transactionCount.textContent = `Showing ${rows.length} of ${allTransactions.length} slaughter transactions.`;
 
   transactionsBody.innerHTML = rows.map((item) => {
+    const saleId = escapeHtml(item.sale_id);
+    const buyerName = escapeHtml(item.buyer_name || "-");
+    const destination = escapeHtml(item.destination || "No destination");
+    const saleStatus = escapeHtml(item.sale_status || "-");
+    const paymentStatus = escapeHtml(item.payment_status || "-");
     const isCancelled = item.sale_status === "Cancelled";
     const isClosed = isCancelled || item.sale_status === "Completed" || item.payment_status === "Paid";
     const action = isClosed
       ? `<span class="muted-text">${isCancelled ? "Cancelled" : "Closed"}</span>`
       : `
         <div class="inline-action-group table-action-group">
-          <button type="button" class="small-action-button table-action-button" data-update-sale-id="${item.sale_id}" data-current-total="${item.net_settlement_payable ?? item.net_total ?? ""}" data-item-count="${item.item_count ?? 0}">Review Payment</button>
-          <button type="button" class="small-action-button table-action-button" data-cancel-sale-id="${item.sale_id}">Cancel</button>
+          <button type="button" class="small-action-button table-action-button" data-update-sale-id="${saleId}" data-current-total="${escapeHtml(item.net_settlement_payable ?? item.net_total ?? "")}" data-item-count="${escapeHtml(item.item_count ?? 0)}">Review Payment</button>
+          <button type="button" class="small-action-button table-action-button" data-cancel-sale-id="${saleId}">Cancel</button>
         </div>
       `;
     const rowClass = isCancelled ? ' class="muted-row"' : "";
     const statusClass = isCancelled ? "status-pill status-pill-muted" : "status-pill";
     return `
-      <tr${rowClass} data-sale-row="${item.sale_id}" tabindex="0">
+      <tr${rowClass} data-sale-row="${saleId}" tabindex="0">
         <td>
-          <strong>${item.sale_id || "-"}</strong>
-          <span class="table-subtext">${formatDate(item.sale_date)}</span>
+          <strong>${saleId || "-"}</strong>
+          <span class="table-subtext">${escapeHtml(formatDate(item.sale_date))}</span>
         </td>
         <td>
-          <strong>${item.buyer_name || "-"}</strong>
-          <span class="table-subtext">${item.destination || "No destination"}</span>
+          <strong>${buyerName}</strong>
+          <span class="table-subtext">${destination}</span>
         </td>
-        <td><span class="${statusClass}">${item.sale_status || "-"}</span></td>
-        <td><span class="${statusClass}">${item.payment_status || "-"}</span></td>
+        <td><span class="${statusClass}">${saleStatus}</span></td>
+        <td><span class="${statusClass}">${paymentStatus}</span></td>
         <td>
           <strong>${money(item.net_total)}</strong>
-          <span class="table-subtext">${item.item_count ?? "-"} pig${Number(item.item_count) === 1 ? "" : "s"}</span>
+          <span class="table-subtext">${escapeHtml(item.item_count ?? "-")} pig${Number(item.item_count) === 1 ? "" : "s"}</span>
         </td>
         <td>${action}</td>
       </tr>
@@ -548,8 +559,8 @@ function buildUpdatePayload() {
   if (Number.isNaN(lineTotal) || lineTotal < 0) {
     throw new Error("Final amount must be a valid number.");
   }
-  if (updatePaymentStatusSelect.value === "Paid" && !updatePaymentDateInput.value) {
-    throw new Error("Payment date is required when payment status is Paid.");
+  if (updatePaymentStatusSelect.value !== "Unpaid" && !updatePaymentDateInput.value) {
+    throw new Error("Payment date is required when money was received.");
   }
   if (carcassWeight !== null && Number.isNaN(carcassWeight)) {
     throw new Error("Carcass weight must be a valid number or blank.");
