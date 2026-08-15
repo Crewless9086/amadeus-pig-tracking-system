@@ -774,3 +774,14 @@ Current Stage 4 surface:
   systemic correction must remove recurring human dry-release evidence while
   retaining automatic weather health, freshness, conflict, rain and hardware
   fail-closed boundaries.
+
+## Agent execution ownership control
+
+- `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`
+  forbids terminal output from substituting for deployed-agent operational work.
+- `docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md` requires the
+  deployed actor, genuine trigger, real owner channel, terminal permissions,
+  forbidden substitutions and agent-origin proof in every operational handover.
+- `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md` binds effects to the
+  canonical deployed worker and preserves terminal-created output only as
+  synthetic or recovery evidence.
