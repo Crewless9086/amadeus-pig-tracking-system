@@ -1,5 +1,15 @@
 # Vault Brain Changelog
 
+## 2026-08-16 - Bella Private Library acceptance is business-complete
+
+- Charl's genuine callback `6127564955095599565` accepted exact Bella album
+  `BEACON-INTAKE-GROUP-CA51E98A7B4ABC3D5369DB73` into the Private Library.
+- Delayed canonical and provider readback remained one completed claim, one
+  album action, eight ordered private asset events, eight originals and
+  thumbnails, and one delivered acknowledgement (`3663`), with no replay.
+- Public Use, Campaign Review and Publication remain unauthorized. The separate
+  OMQ-20260813-05 BEACON status-routing defect remains unresolved.
+
 ## 2026-08-15 - BEACON Library review gains its missing runtime trigger
 
 - Hierarchical reconciliation corrected the earlier claim: Bella's canonical
