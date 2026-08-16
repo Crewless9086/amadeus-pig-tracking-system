@@ -205,6 +205,16 @@ When an operational agent encounters a missing capability or software defect, Oo
 
 This file is the durable control-tower standard. It defines how Charl, the control-tower assistant, and specialist terminals keep one shared direction while implementation proceeds in isolated workspaces.
 
+Every Control Tower assessment must also completely read and execute the ordered
+checklist in
+`docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md`.
+That protocol is the mandatory operational companion to this Standard; it does
+not replace, summarize or override this controlling doctrine. Every target
+terminal must return the current
+`docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`. Missing,
+untracked, stale or unread operational protocol/template evidence blocks a
+Control Tower dispatch rather than permitting remembered or fallback procedure.
+
 The control tower must:
 
 1. maintain the current business outcome and the measurable goal for each active specialist;
