@@ -33,7 +33,7 @@ def test_simulated_future_mother_valve_needs_governed_commissioned_contract():
     registry = rootline_device_registry()
     future = deepcopy(registry["B12345"])
     future.update(identity="MOTHER-VALVE-1", device_id="SIMULATED-MOTHER-CONTROLLER",
-        device_name="Simulated future mother valve", channel=3,
+        device_name="Unapproved upstream shared-control output", channel=3,
         on_event="simulated_mother_ch3_on", off_event="simulated_mother_ch3_off",
         commissioning_id="ROOTLINE-COMMISSION-SIMULATED-MOTHER",
         commissioning_generation=1, commissioned=True)
