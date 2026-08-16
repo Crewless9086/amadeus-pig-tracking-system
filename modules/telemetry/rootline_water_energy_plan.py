@@ -1085,6 +1085,8 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                 if key in evidence_zone:
                     zone[key] = deepcopy(evidence_zone[key])
             canonical = _dict(history_zones.get(str(item.get("zone_id") or "")))
+            if canonical.get("incomplete_parent_job"):
+                zone["incomplete_parent_job"] = deepcopy(canonical["incomplete_parent_job"])
             zone["completion_events"] = [{
                 "completed_at": event.get("event_at_sast"), "state": "Completed",
                 "shutdown_verified": event.get("shutdown_verified") is True,
@@ -1144,6 +1146,7 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                 "requested_total_duration_minutes": decision[
                     "requested_total_duration_minutes"],
                 "expected_segment_count": decision["expected_segment_count"],
+                "incomplete_parent_job": deepcopy(decision.get("incomplete_parent_job")),
                 "max_execution_minutes": 60,
                 "fresh_decision_before_second_segment": True,
                 "simultaneous_with_other_zone": False,

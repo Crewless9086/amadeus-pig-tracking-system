@@ -35,6 +35,26 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
                 and int(task.get("planned_duration_minutes") or 0) in range(1, 61)):
             candidates.append((int(task.get("rank") or 999), zone, task))
     if not candidates:
+        unresolved = [task for task in tasks
+            if isinstance(task.get("incomplete_parent_job"), dict)]
+        if unresolved:
+            task = sorted(unresolved, key=lambda item: str(item.get("task_id")))[0]
+            parent = task["incomplete_parent_job"]
+            job = parent.get("job") if isinstance(parent.get("job"), dict) else {}
+            material = {"contract_version": "rootline_irrigation_job_resolution.v1",
+                "resolution": "Deferred", "job_id": job.get("job_id"),
+                "job_sha256": job.get("job_sha256"), "zone_id": job.get("zone_id"),
+                "operating_date": job.get("operating_date"),
+                "current_segment": (parent.get("projection") or {}).get("current_segment"),
+                "expected_segment_count": job.get("expected_segment_count"),
+                "cumulative_verified_runtime_seconds": (parent.get("projection") or {}).get("cumulative_verified_runtime_seconds"),
+                "remaining_seconds": parent.get("remaining_seconds"),
+                "reason": task.get("reason"), "source_plan_generation": plan.get("evidence_generation")}
+            digest = _digest(material)
+            return {"success": True, "status": "durable_parent_job_deferred",
+                "eligible": False, "command_authority": False, "hardware_control": False,
+                "job_resolution": {**material, "resolution_sha256": digest,
+                    "execution_id": "ROOTLINE-JOB-RESOLUTION-" + digest[:24].upper()}}
         return _none("planner_hold_or_no_dispatchable_zone")
     _, zone, task = min(candidates, key=lambda row: (row[0], row[1]))
     irrigation = evidence.get("irrigation") if isinstance(evidence.get("irrigation"), dict) else {}
@@ -90,11 +110,20 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     if requested_minutes <= 0 or expected_segments <= 0:
         return _none("governed_total_duration_unavailable")
     requested_total_seconds = requested_minutes * 60
-    job = build_irrigation_job(zone_id=zone, operating_date=operating_date,
+    parent = task.get("incomplete_parent_job") if isinstance(task.get("incomplete_parent_job"), dict) else {}
+    parent_job = parent.get("job") if isinstance(parent.get("job"), dict) else None
+    job = (dict(parent_job) if parent_job else build_irrigation_job(
+        zone_id=zone, operating_date=operating_date,
         requested_total_seconds=requested_total_seconds,
         maximum_segment_seconds=MAX_SECONDS, plan_identity=plan_generation,
         requested_total_minutes=requested_minutes,
-        expected_segment_count=expected_segments)
+        expected_segment_count=expected_segments))
+    if (job.get("zone_id") != zone
+            or int(job.get("requested_total_seconds") or 0) != requested_total_seconds
+            or int(job.get("expected_segment_count") or 0) != expected_segments):
+        return _none("durable_parent_job_binding_invalid")
+    plan_generation = job["plan_identity"]
+    operating_date = job["operating_date"]
     try:
         segment = project_next_segment(job, job_event_reader(job["job_id"]) or (),
             rearm_readback_off=True)

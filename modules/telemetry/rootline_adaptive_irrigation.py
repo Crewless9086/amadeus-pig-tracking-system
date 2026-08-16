@@ -229,6 +229,9 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     completed_today = (sufficient_latest is not None
                        and sufficient_latest.astimezone(ZA_TZ).date() == now.date())
     segment = _dict(zone.get("latest_segment"))
+    parent = _dict(zone.get("incomplete_parent_job"))
+    parent_projection = _dict(parent.get("projection"))
+    parent_job = _dict(parent.get("job"))
     if (segment.get("state") in {"Active", "Stopped", "Failed", "ambiguous_outcome"}
             and segment.get("shutdown_verified") is not True):
         decision = "recovery required"
@@ -240,7 +243,8 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         decision = "Reassess after segment one"
         reason = "Segment one completed and shutdown is verified; a new evidence generation must decide segment two."
         score = _need_score(need, latest, zone, now, obligation)
-    elif completed_today and correction.get("another_segment_needed") is not True:
+    elif (completed_today and not parent_job
+          and correction.get("another_segment_needed") is not True):
         decision, reason, score = "Completed", "A completed irrigation is recorded for this zone today.", 0
     elif (latest is not None and latest.astimezone(ZA_TZ).date() == now.date()
           and sufficient_latest is None):
@@ -256,6 +260,14 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     else:
         score = _need_score(need, latest, zone, now, obligation)
         decision, reason = _classify(score, need, policy, weather, water, power, now)
+    if parent_job and parent_projection.get("status") == "segment_ready":
+        score = _need_score(need, latest, zone, now, obligation)
+        decision, reason = _classify(score, need, policy, weather, water, power, now)
+        if decision in {"Run now", "Run later"}:
+            reason = "Continue the durable parent irrigation objective after verified segment OFF and fresh reassessment."
+    elif parent_job and parent_projection.get("status") == "conflicting_incomplete_parent_jobs":
+        decision, reason = "Needs Data", (
+            "Conflicting durable parent jobs must be reconciled before this zone can execute.")
     if water_balance.get("status")=="Available" and water_balance.get("ledger_current") is True:
         effect=water_balance.get("obligation_effect")
         fraction=max(0.0,min(1.0,_number(water_balance.get("partial_obligation_credit")) or 0.0))
@@ -301,8 +313,11 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "preferred_window": window,
         "max_segment_minutes": 60,
         "proposed_segment_minutes": 60 if decision in {"Run now", "Run later"} else None,
-        "requested_total_duration_minutes": 120 if decision in {"Run now", "Run later"} else None,
-        "expected_segment_count": 2 if decision in {"Run now", "Run later"} else None,
+        "requested_total_duration_minutes": (parent_job.get("requested_total_minutes")
+            if parent_job else (120 if decision in {"Run now", "Run later"} else None)),
+        "expected_segment_count": (parent_job.get("expected_segment_count")
+            if parent_job else (2 if decision in {"Run now", "Run later"} else None)),
+        "incomplete_parent_job": parent or None,
         "fresh_decision_before_second_segment": True,
         "shutdown_verification_required": True,
         "simultaneous_with_other_zone": False,
