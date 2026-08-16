@@ -506,6 +506,11 @@ autonomous authority.
 
 ## P3 Planned Build
 
+- OMQ-20260813-05 specialist-status relevance — queued owner-observed Telegram
+  defect, deliberately not started. `Any news from Beacon` returned an unrelated
+  farm-awareness proposal. Later parity work must make status/news intent return
+  current BEACON state and pending decisions without manufacturing a proposal or
+  approval request.
 - HMQ-20260816-01 HERDMASTER Allocation Opportunity Operating Loop — owner-
   approved queue entry, deliberately not started. Reuse the existing allocation
   engine and alert API; add autonomous material-change/scheduled evaluation,

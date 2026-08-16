@@ -277,6 +277,16 @@ Detailed HERDMASTER evidence remains in
   historical reply `3588` remains unretained and unreplayed.
 - `OMQ-20260813-04` — waits for next genuine specialist request.
 - `OMQ-20260813-05` — queued browser/Telegram/voice canonical parity.
+- `OMQ-20260813-05` latest owner-observed defect — queued, do not start while
+  higher-priority operational work is active. At 2026-08-16 07:25 SAST Charl
+  asked Oom Sakkie, `Any news from Beacon`; the deployed Telegram path answered
+  with a new `BEACON — FARM-AWARENESS PROPOSAL` and Approve/Correct/Decline
+  choices instead of current BEACON status. Preserve this genuine message as
+  acceptance evidence for specialist-status intent precedence: a status/news
+  question must return current mission, pending owner decisions, recent results,
+  blockers and next automatic action; it must not create a proposal or approval
+  request unless Charl asks for one. Reconcile this later within OMQ-05's shared
+  canonical action/status contract rather than creating another OOM router.
 - `HERDMASTER-NATURAL-HEALTH-LOSS-1/OOM-INTAKE-SLICE-1` —
   `stage2_operational_readiness_waiting_genuine_acceptance`: PR #898 is live as
   `43b91712`; authenticated routing, canonical chronology/evidence and the real
