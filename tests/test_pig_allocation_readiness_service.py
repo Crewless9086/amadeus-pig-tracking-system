@@ -8,6 +8,18 @@ from modules.pig_weights import pig_weights_service
 from modules.pig_weights import purpose_correction_batch_service
 
 
+def purpose_batch_envelope(decisions, effects=None, return_to=""):
+    effects = effects or []
+    return {
+        "contract_version": purpose_correction_batch_service.CONTRACT_VERSION,
+        "decisions": decisions,
+        "effects": effects,
+        "preview_digest": purpose_correction_batch_service._preview_digest(
+            decisions, effects, return_to),
+        "return_to": return_to or None,
+    }
+
+
 class PigAllocationReadinessServiceTests(unittest.TestCase):
     def setUp(self):
         self._supabase_available_patch = patch.object(
@@ -915,8 +927,9 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 self.calls.append(sql)
 
             def fetchone(self):
-                if "select status, decisions_json" in self.last_sql:
-                    return ("owner_approved", decisions, purpose_correction_batch_service._decision_hash(decisions), approved_at, "owner-admin:test")
+                if "select status,decisions_json" in self.last_sql:
+                    effects = [{"pig_id": "PIG-1", "tag_number": "123", "old_purpose": "Grow_Out", "new_purpose": "Meat", "reason": "Fresh weight", "note": "Owner reviewed", "status": "Active", "on_farm": True, "latest_weight_date": "2026-07-21", "latest_weight_kg": 63.0}]
+                    return ("owner_approved", purpose_batch_envelope(decisions, effects), purpose_correction_batch_service._decision_hash(decisions), approved_at, "owner-admin:test", "owner-admin:test", None)
                 return None
 
             def fetchall(self):
@@ -968,7 +981,9 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 self.calls.append(sql)
 
             def fetchone(self):
-                return ("draft", [], purpose_correction_batch_service._decision_hash([]), None, None)
+                return ("draft", purpose_batch_envelope([]),
+                        purpose_correction_batch_service._decision_hash([]),
+                        None, None, "owner-admin:test", None)
 
         class Connection:
             def __init__(self):
@@ -1014,13 +1029,14 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 self.calls.append(sql)
 
             def fetchone(self):
-                if "select status, decisions_json" in self.last_sql:
-                    return ("owner_approved", decisions, purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 1, tzinfo=timezone.utc), "owner-admin:test")
+                if "select status,decisions_json" in self.last_sql:
+                    effects = [{"pig_id": "PIG-STALE", "tag_number": "", "old_purpose": "Grow_Out", "new_purpose": "Meat", "reason": "Old signal", "note": "", "status": "Active", "on_farm": True, "latest_weight_date": "2026-06-21", "latest_weight_kg": 63.0}]
+                    return ("owner_approved", purpose_batch_envelope(decisions, effects), purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 1, tzinfo=timezone.utc), "owner-admin:test", "owner-admin:test", None)
                 return None
 
             def fetchall(self):
-                if "from public.pigs pig" in self.last_sql:
-                    return [("PIG-STALE", "Active", True, "Grow_Out", date(2026, 6, 21), 63.0)]
+                if "from public.current_canonical_pigs pig" in self.last_sql:
+                    return [("PIG-STALE", "", "Active", True, "Grow_Out", date(2026, 6, 21), 63.0)]
                 return []
 
         class Connection:
@@ -1068,13 +1084,14 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 self.calls.append(sql)
 
             def fetchone(self):
-                if "select status, decisions_json" in self.last_sql:
-                    return ("owner_approved", decisions, purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-admin:test")
+                if "select status,decisions_json" in self.last_sql:
+                    effects = [{"pig_id": "PIG-MISSING-WEIGHT", "tag_number": "", "old_purpose": "Grow_Out", "new_purpose": "Meat", "reason": "Incomplete signal", "note": "", "status": "Active", "on_farm": True, "latest_weight_date": None, "latest_weight_kg": None}]
+                    return ("owner_approved", purpose_batch_envelope(decisions, effects), purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-admin:test", "owner-admin:test", None)
                 return None
 
             def fetchall(self):
-                if "from public.pigs pig" in self.last_sql:
-                    return [("PIG-MISSING-WEIGHT", "Active", True, "Grow_Out", None, None)]
+                if "from public.current_canonical_pigs pig" in self.last_sql:
+                    return [("PIG-MISSING-WEIGHT", "", "Active", True, "Grow_Out", None, None)]
                 return []
 
         class Connection:
@@ -1123,8 +1140,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 self.calls.append(sql)
 
             def fetchone(self):
-                if "select status, decisions_json" in self.last_sql:
-                    return ("owner_approved", tampered_decisions, purpose_correction_batch_service._decision_hash(approved_decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-admin:test")
+                if "select status,decisions_json" in self.last_sql:
+                    return ("owner_approved", purpose_batch_envelope(tampered_decisions), purpose_correction_batch_service._decision_hash(approved_decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-admin:test", "owner-admin:test", None)
                 return None
 
         class Connection:

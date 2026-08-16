@@ -76,7 +76,9 @@ class PurposeCorrectionBatchPostgresTests(unittest.TestCase):
         with psycopg.connect(self.url) as db:
             db.execute("drop trigger if exists purpose_test_reject_update on public.pigs")
             db.execute("delete from public.operational_events where aggregate_id=any(%s)", (self.cleanup_ids,))
-            db.execute("delete from public.pig_purpose_correction_batches where exists (select 1 from jsonb_array_elements(decisions_json) item where item->>'pig_id'=any(%s))", (self.cleanup_ids,))
+            db.execute("""delete from public.pig_purpose_correction_batches where exists (
+                select 1 from jsonb_array_elements(coalesce(decisions_json->'decisions',decisions_json)) item
+                where item->>'pig_id'=any(%s))""", (self.cleanup_ids,))
             db.execute("delete from public.pig_weight_events where pig_id=any(%s)", (self.cleanup_ids,))
             db.execute("delete from public.pigs where pig_id=any(%s)", (self.cleanup_ids,))
 
@@ -121,6 +123,11 @@ class PurposeCorrectionBatchPostgresTests(unittest.TestCase):
         self.assertEqual(len(executed["canonical_readback"]), 2)
         self.assertTrue(all(row["purpose"] == "Sale" for row in executed["canonical_readback"]))
         self.assertEqual(replay["rows_updated"], 0)
+        cross_owner, cross_status = execute_correction_batch(
+            batch_id, actor_id="owner-admin:different", today=date(2026, 8, 16),
+            connect_factory=lambda _url: psycopg.connect(self.url))
+        self.assertEqual(cross_status, 403)
+        self.assertEqual(cross_owner["status"], "correction_batch_owner_mismatch")
         with psycopg.connect(self.url) as db:
             self.assertEqual(db.execute("select count(*) from public.operational_events where aggregate_id=any(%s)", (self.ids,)).fetchone()[0], 2)
 
@@ -142,6 +149,41 @@ class PurposeCorrectionBatchPostgresTests(unittest.TestCase):
         with psycopg.connect(self.url) as db:
             self.assertEqual([row[0] for row in db.execute("select purpose from public.pigs where pig_id=any(%s) order by pig_id", (self.ids,))], ["Unknown", "Unknown"])
             self.assertEqual(db.execute("select count(*) from public.operational_events where aggregate_id=any(%s)", (self.ids,)).fetchone()[0], 0)
+
+    def test_stale_confirmed_snapshot_and_conflicting_idempotency_fail_closed(self):
+        key = f"purpose-stale-{self.suffix}"
+        with patch.dict(os.environ, {"OWNER_SESSION_SECRET": "postgres-purpose-secret"}):
+            batch_id = self.prepare(key)
+            changed = [{**item, "purpose": "Grow_Out"} for item in self.decisions()]
+            preview, preview_status = preview_correction_batch(
+                changed, actor_id="owner-admin:postgres",
+                return_to="/orders/ORD-2026-A6EC6D",
+                connect_factory=lambda _url: psycopg.connect(self.url))
+            self.assertEqual(preview_status, 200)
+            conflict, conflict_status = create_correction_batch(
+                changed, idempotency_key=key, actor_id="owner-admin:postgres",
+                confirmation_binding=preview["confirmation_binding"],
+                return_to="/orders/ORD-2026-A6EC6D",
+                connect_factory=lambda _url: psycopg.connect(self.url))
+            self.assertEqual(conflict_status, 409)
+            self.assertEqual(conflict["status"], "correction_batch_idempotency_conflict")
+            with psycopg.connect(self.url) as db:
+                db.execute("update public.pigs set purpose='Meat' where pig_id=%s", (self.ids[0],))
+            stale, stale_status = execute_correction_batch(
+                batch_id, actor_id="owner-admin:postgres", today=date(2026, 8, 16),
+                connect_factory=lambda _url: psycopg.connect(self.url))
+        self.assertEqual(stale_status, 409)
+        self.assertEqual(stale["status"], "correction_batch_preview_stale_or_altered")
+        self.assertEqual(stale["rows_updated"], 0)
+        with psycopg.connect(self.url) as db:
+            purposes = dict(db.execute(
+                "select pig_id,purpose from public.pigs where pig_id=any(%s)",
+                (self.ids,)).fetchall())
+            self.assertEqual(purposes[self.ids[0]], "Meat")
+            self.assertEqual(purposes[self.ids[1]], "Unknown")
+            self.assertEqual(db.execute(
+                "select count(*) from public.operational_events where aggregate_id=any(%s)",
+                (self.ids,)).fetchone()[0], 0)
 
 
 if __name__ == "__main__":

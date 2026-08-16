@@ -169,14 +169,27 @@ def create_correction_batch(decisions, *, idempotency_key, actor_id,
                 preview_digest = _preview_digest(clean, effects, return_to)
                 if not _valid_confirmation(confirmation_binding, preview_digest, actor_id):
                     return {"success": False, "status": "exact_preview_confirmation_required", "writes_to_sheets": False}, 409
+                envelope = {
+                    "contract_version": CONTRACT_VERSION,
+                    "decisions": clean,
+                    "effects": effects,
+                    "preview_digest": preview_digest,
+                    "return_to": return_to or None,
+                }
                 cursor.execute("""insert into public.pig_purpose_correction_batches
                     (batch_id, idempotency_key, status, decisions_json, decision_hash, created_by)
                     values (%s,%s,'draft',%s::jsonb,%s,%s)
-                    on conflict (idempotency_key) do nothing returning batch_id,status""", (batch_id, key, json.dumps(clean), digest, actor_id))
+                    on conflict (idempotency_key) do nothing returning batch_id,status""", (batch_id, key, json.dumps(envelope), digest, actor_id))
                 row = cursor.fetchone()
                 if not row:
-                    cursor.execute("select batch_id,status from public.pig_purpose_correction_batches where idempotency_key=%s", (key,))
+                    cursor.execute("""select batch_id,status,decisions_json,decision_hash,created_by
+                        from public.pig_purpose_correction_batches where idempotency_key=%s""", (key,))
                     row = cursor.fetchone()
+                    stored = row[2] if isinstance(row[2], dict) else json.loads(row[2])
+                    if (stored != envelope or str(row[3] or "") != digest
+                            or str(row[4] or "") != actor_id):
+                        return {"success": False, "status": "correction_batch_idempotency_conflict",
+                                "writes_to_sheets": False}, 409
                 return {"success": True, "status": "correction_batch_created" if row[0] == batch_id else "correction_batch_duplicate", "batch_id": row[0], "batch_status": row[1], "preview_digest": preview_digest, "return_to": return_to or None, "writes_to_sheets": False}, 201 if row[0] == batch_id else 200
     except Exception:
         return {"success": False, "status": "correction_batch_store_unavailable", "writes_to_sheets": False}, 503
@@ -211,13 +224,25 @@ def execute_correction_batch(batch_id, *, actor_id, connect_factory=None, today=
                 cursor.execute("set transaction isolation level serializable")
                 cursor.execute("select pg_advisory_xact_lock(hashtextextended(%s,0))",
                                ("purpose-correction:" + to_clean_string(batch_id),))
-                cursor.execute("select status, decisions_json, decision_hash, owner_approved_at, owner_approved_by from public.pig_purpose_correction_batches where batch_id=%s for update", (batch_id,))
+                cursor.execute("""select status,decisions_json,decision_hash,owner_approved_at,
+                    owner_approved_by,created_by,executed_by
+                    from public.pig_purpose_correction_batches where batch_id=%s for update""", (batch_id,))
                 batch = cursor.fetchone()
                 if not batch:
                     return {"success": False, "status": "correction_batch_not_found"}, 404
-                status, decisions, digest, approved_at, approved_by = batch
+                status, stored_payload, digest, approved_at, approved_by, created_by, executed_by = batch
+                if str(created_by or "") != actor_id or (approved_by and str(approved_by) != actor_id):
+                    return {"success": False, "status": "correction_batch_owner_mismatch",
+                            "writes_to_sheets": False, "writes_to_supabase": False}, 403
+                envelope = stored_payload if isinstance(stored_payload, dict) else json.loads(stored_payload)
+                if not isinstance(envelope, dict) or envelope.get("contract_version") != CONTRACT_VERSION:
+                    return {"success": False, "status": "correction_batch_preview_binding_missing",
+                            "writes_to_sheets": False, "writes_to_supabase": False}, 409
+                decisions = envelope.get("decisions")
                 if status == "executed":
-                    decisions = decisions if isinstance(decisions, list) else json.loads(decisions)
+                    if str(executed_by or "") != actor_id:
+                        return {"success": False, "status": "correction_batch_owner_mismatch",
+                                "writes_to_sheets": False, "writes_to_supabase": False}, 403
                     pig_ids = [item["pig_id"] for item in decisions]
                     cursor.execute("select pig_id,coalesce(tag_number,''),coalesce(purpose,''),status,on_farm from public.pigs where pig_id=any(%s) order by pig_id", (pig_ids,))
                     readback = [{"pig_id": row[0], "tag_number": row[1], "purpose": row[2],
@@ -229,10 +254,6 @@ def execute_correction_batch(batch_id, *, actor_id, connect_factory=None, today=
                             "writes_to_sheets": False, "writes_to_supabase": False}, 200
                 if status != "owner_approved" or not approved_at or not approved_by:
                     return {"success": False, "status": "correction_batch_not_owner_approved"}, 409
-                if str(approved_by) != actor_id:
-                    return {"success": False, "status": "correction_batch_owner_mismatch",
-                            "writes_to_sheets": False, "writes_to_supabase": False}, 403
-                decisions = decisions if isinstance(decisions, list) else json.loads(decisions)
                 clean_decisions, decision_errors = _decisions(decisions)
                 if decision_errors or clean_decisions != decisions or _decision_hash(clean_decisions) != str(digest or ""):
                     return {
@@ -243,6 +264,13 @@ def execute_correction_batch(batch_id, *, actor_id, connect_factory=None, today=
                 decisions = clean_decisions
                 pig_ids = [item["pig_id"] for item in decisions]
                 loaded = _load_pigs(cursor, pig_ids, lock=True)
+                current_effects = _snapshot(decisions, loaded) if set(loaded) == set(pig_ids) else []
+                if (current_effects != envelope.get("effects")
+                        or _preview_digest(decisions, current_effects, envelope.get("return_to") or "")
+                        != envelope.get("preview_digest")):
+                    return {"success": False, "status": "correction_batch_preview_stale_or_altered",
+                            "rows_updated": 0, "writes_to_sheets": False,
+                            "writes_to_supabase": False}, 409
                 pigs = {pig_id: (row[0], row[2], row[3], row[4], row[5], row[6])
                         for pig_id, row in loaded.items()}
                 errors = []
