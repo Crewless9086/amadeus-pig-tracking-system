@@ -5,6 +5,7 @@ from flask import Blueprint, Response, jsonify, request
 
 from modules.auth.owner_access import (
     owner_admin_principal,
+    owner_session_is_valid,
     require_owner_admin_access,
     require_owner_read_access,
     require_strict_owner_admin_access,
@@ -157,6 +158,14 @@ MEAT_FOLLOWUP_SEND_MIN_TOKEN_CHARS = 32
 
 def _require_review_access():
     if is_review_request_allowed(request.remote_addr):
+        return None
+    body, status_code = review_access_denied_response(request.remote_addr)
+    return jsonify(body), status_code
+
+
+def _require_runtime_review_packet_access():
+    """Allow the existing local reviewer or an authenticated owner-read session."""
+    if is_review_request_allowed(request.remote_addr) or owner_session_is_valid("read"):
         return None
     body, status_code = review_access_denied_response(request.remote_addr)
     return jsonify(body), status_code
@@ -803,7 +812,7 @@ def oom_sakkie_agent_dispatch_rail_blueprint():
 
 @oom_sakkie_bp.route("/oom-sakkie/agents/runtime-review-packet", methods=["GET"])
 def oom_sakkie_agent_runtime_review_packet():
-    denied = _require_review_access()
+    denied = _require_runtime_review_packet_access()
     if denied:
         return denied
     packet = get_agent_runtime_review_packet()

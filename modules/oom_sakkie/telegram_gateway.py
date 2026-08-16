@@ -18,6 +18,11 @@ from modules.oom_sakkie.herdmaster_breeding_exposure_runtime import handle_group
 from modules.oom_sakkie.semantic_front_door import interpret_owner_message, semantic_front_door_policy
 from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline, record_reassessment_delivery
 from modules.oom_sakkie.family_access import FamilyRole, family_access_policy, resolve_family_principal
+from modules.oom_sakkie.family_runtime import handle_family_runtime_message
+from modules.oom_sakkie.family_specialist_adapters import (
+    family_replay_store, herdmaster_family_observation, load_family_question,
+    load_family_summary, retain_family_question_reply, rootline_family_handoff,
+)
 from modules.oom_sakkie.herdmaster_auction_runtime import handle_auction_confirmation
 from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
 from modules.oom_sakkie.herdmaster_request_runtime import (
@@ -252,7 +257,28 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if family_principal.role is FamilyRole.UNKNOWN_SENDER:
         return _gateway_result(False, "telegram_family_identity_not_authorized", policy, 403)
     if family_principal.role is not FamilyRole.OWNER:
-        return _gateway_result(False, "telegram_family_lifecycle_not_enabled", policy, 503)
+        family_result, family_status = handle_family_runtime_message(parsed, family_principal,
+            summary_loader=load_family_summary,
+            observation_adapter=herdmaster_family_observation,
+            contextual_loader=load_family_question,
+            contextual_adapter=retain_family_question_reply,
+            rootline_adapter=rootline_family_handoff,
+            replay_store=family_replay_store)
+        delivery = (deliver_family_result(parsed, family_result, specialist="OOM_SAKKIE_FAMILY")
+                    if str(family_result.get("answer") or "").strip()
+                    else {"success": True, "status": "family_private_denial_no_delivery",
+                          "telegram_sends": 0, "telegram_edits": 0})
+        body, _ = _gateway_result(family_result.get("success") is True,
+            str(family_result.get("status") or "family_request_contained"), policy, family_status)
+        body.update({"message": family_result, "answer": family_result.get("answer", ""),
+            "delivery": delivery,
+            "records_audit_trace": family_result.get("audit_trace_recorded") is True,
+            "reply_transport": "backend_handles_family_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": family_result.get("writes_farm_data") is True,
+            "hardware_commands": int(family_result.get("hardware_commands") or 0),
+            "physical_controls_enabled": int(family_result.get("hardware_commands") or 0) > 0})
+        return body, family_status if delivery.get("success") else 202
 
     media = telegram_media_envelope(payload)
     if media is not None:

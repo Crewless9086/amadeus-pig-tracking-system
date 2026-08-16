@@ -31,7 +31,7 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
                                  evidence_loader=read_current_water_energy_evidence,
                                  readback=read_current_device, clock=None,
                                  owner_user_id="", chat_id="", next_reassessment_at="",
-                                 observation_store=None):
+                                 observation_store=None, expected_artifact=None):
     source = environ if environ is not None else os.environ
     clock = clock or (lambda: datetime.now(timezone.utc))
     now = _aware(now or clock())
@@ -61,6 +61,9 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
     if not isinstance(recorded, dict) or recorded.get("success") is not True:
         return {**_safe("canonical_observation_persistence_unproven"), "success": False}
     artifact = initial["artifact"]
+    if expected_artifact is not None and not _same_delegated_execution(
+            expected_artifact, artifact):
+        return _safe("delegated_execution_eligibility_changed")
     if artifact.get("eligible") is not True:
         blocked = _technical_block_alert(initial, artifact, store, notify,
                                          next_reassessment_at)
@@ -99,6 +102,18 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
         commissioning_reader=lambda _identity: commissioning, store=store,
         transport=transport, notify=notify, outcome_reader=outcome_reader,
         eligibility_revalidator=revalidate, now=now, clock=clock)
+
+
+def _same_delegated_execution(expected, current):
+    """Bind a delegated caller to the exact freshly rebuilt segment authority."""
+    keys = ("contract_version", "authority_source", "job_id", "job_sha256",
+        "zone_id", "channel", "segment_identity", "current_segment",
+        "segment_requested_seconds", "requested_total_duration_seconds",
+        "governed_executable_duration_seconds", "expected_segment_count",
+        "plan_generation", "source_plan_generation", "consumption_key")
+    return (isinstance(expected, dict) and isinstance(current, dict)
+        and expected.get("eligible") is True and current.get("eligible") is True
+        and all(expected.get(key) == current.get(key) for key in keys))
 
 
 def run_protected_rootline_segment(*, expected_artifact, notify, environ=None,

@@ -25,10 +25,20 @@ PROTECTED_CAPABILITIES = frozenset({
 })
 REPORTER_CAPABILITIES = frozenset({"farm_observation", "active_follow_up"})
 READ_ONLY_CAPABILITY = "explicit_summary"
+FARM_MANAGER_CAPABILITIES = frozenset({
+    *REPORTER_CAPABILITIES,
+    "welfare_hold", "welfare_escalation", "herdmaster_management_input",
+    "herdmaster_reassessment", "found_dead_observation",
+    "irrigation_start", "irrigation_continue", "irrigation_reschedule", "irrigation_pause", "irrigation_stop",
+})
+DELEGATED_ROOTLINE_CAPABILITIES = frozenset({
+    "irrigation_start", "irrigation_continue", "irrigation_reschedule", "irrigation_pause", "irrigation_stop",
+})
 
 
 class FamilyRole(str, Enum):
     OWNER = "owner"
+    FARM_MANAGER = "farm_manager"
     TRUSTED_FAMILY_REPORTER = "trusted_family_reporter"
     READ_ONLY_FAMILY_MEMBER = "read_only_family_member"
     UNKNOWN_SENDER = "unknown_sender"
@@ -46,6 +56,7 @@ class FamilyPrincipal:
     authorized_by_user_id: str
     authorized_at: str
     binding_digest: str
+    language: str = "af"
 
     @property
     def authenticated(self) -> bool:
@@ -96,6 +107,8 @@ def resolve_family_principal(parsed: Mapping[str, Any], environ: Mapping[str, st
         return FamilyPrincipal(user_id, chat_id, FamilyRole.OWNER, "charl",
             frozenset({"*"}), frozenset({"*"}), "configured-owner",
             owner_id, "configured", _digest({"owner_user_id": owner_id}))
+    if not family_access_policy(environ)["configuration_valid"]:
+        return _unknown(user_id, chat_id)
     rows = _bindings(environ)
     matching = [record for record in rows if _clean(record.get("telegram_user_id")) == user_id]
     family_matches = [record for record in rows if _clean(record.get("family_key")).lower()
@@ -153,6 +166,13 @@ def authorize_family_message(principal: FamilyPrincipal, parsed: Mapping[str, An
         return FamilyAccessDecision(allowed,
             "attributable_family_observation" if allowed else "family_reporting_not_permitted",
             principal, attribution, may_read_private_context=allowed,
+                                    replay_identity=replay_identity)
+    if capability in FARM_MANAGER_CAPABILITIES:
+        allowed = (principal.is_owner or
+            (principal.role is FamilyRole.FARM_MANAGER and capability in principal.permissions))
+        return FamilyAccessDecision(allowed,
+            "delegated_family_authority" if allowed else "family_authority_not_delegated",
+            principal, attribution, may_read_private_context=allowed,
             replay_identity=replay_identity)
     if capability == READ_ONLY_CAPABILITY:
         domain = _clean(summary_domain).lower()
@@ -174,7 +194,7 @@ def family_access_policy(environ: Mapping[str, str]) -> dict[str, Any]:
     principals = [item for item in principals if item is not None]
     identities = [item.telegram_user_id for item in principals]
     families = [item.family_key for item in principals]
-    valid = len(principals) == len(rows) and len(identities) == len(set(identities)) \
+    valid = _bindings_structurally_valid(environ) and len(principals) == len(rows) and len(identities) == len(set(identities)) \
         and len(families) == len(set(families))
     return {
         "contract_version": "oom_sakkie_family_access_v1",
@@ -200,24 +220,30 @@ def _principal_from_record(record: Mapping[str, Any], owner_id: str, chat_id: st
     authorized_at = _clean(record.get("authorized_at"))
     revoked_at = _clean(record.get("revoked_at"))
     family_key = _clean(record.get("family_key")).lower()
-    if (role not in {FamilyRole.TRUSTED_FAMILY_REPORTER, FamilyRole.READ_ONLY_FAMILY_MEMBER}
+    if (role not in {FamilyRole.FARM_MANAGER, FamilyRole.TRUSTED_FAMILY_REPORTER,
+                     FamilyRole.READ_ONLY_FAMILY_MEMBER}
             or not owner_id or authorized_by != owner_id or not user_id
             or user_id == owner_id or user_id != chat_id or family_key not in {"mum", "dad"}
             or not authorization_id or not _effective_timestamp(authorized_at) or revoked_at):
         return None
     permissions = frozenset(_clean(item) for item in record.get("permissions", []) if _clean(item))
     summaries = frozenset(_clean(item).lower() for item in record.get("summary_domains", []) if _clean(item))
-    allowed_permissions = REPORTER_CAPABILITIES | {READ_ONLY_CAPABILITY}
+    language = _clean(record.get("language")).lower()
+    allowed_permissions = FARM_MANAGER_CAPABILITIES | {READ_ONLY_CAPABILITY}
     if not permissions <= allowed_permissions:
         return None
+    if language != "af":
+        return None
     if role is FamilyRole.READ_ONLY_FAMILY_MEMBER and permissions - {READ_ONLY_CAPABILITY}:
+        return None
+    if role is FamilyRole.TRUSTED_FAMILY_REPORTER and permissions - (REPORTER_CAPABILITIES | {READ_ONLY_CAPABILITY}):
         return None
     canonical = {"telegram_user_id": user_id, "role": role.value, "family_key": family_key,
         "permissions": sorted(permissions), "summary_domains": sorted(summaries),
         "authorization_id": authorization_id, "authorized_by_user_id": authorized_by,
-        "authorized_at": authorized_at}
+        "authorized_at": authorized_at, "language": language}
     return FamilyPrincipal(user_id, chat_id, role, family_key, permissions, summaries,
-        authorization_id, authorized_by, authorized_at, _digest(canonical))
+        authorization_id, authorized_by, authorized_at, _digest(canonical), language)
 
 
 def _owner_id(environ: Mapping[str, str]) -> str:
@@ -234,6 +260,14 @@ def _bindings(environ: Mapping[str, str]) -> list[Mapping[str, Any]]:
     except (TypeError, ValueError, json.JSONDecodeError):
         return []
     return [item for item in value if isinstance(item, Mapping)] if isinstance(value, list) else []
+
+
+def _bindings_structurally_valid(environ: Mapping[str, str]) -> bool:
+    try:
+        value = json.loads(str(environ.get(FAMILY_BINDINGS_ENV) or "").strip() or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    return isinstance(value, list) and all(isinstance(item, Mapping) for item in value)
 
 
 def _effective_timestamp(value: str) -> bool:

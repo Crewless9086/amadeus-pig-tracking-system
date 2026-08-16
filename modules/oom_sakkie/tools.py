@@ -18,6 +18,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_jarvis_owner_review_packet,
     get_jarvis_product_progress,
     get_jarvis_safety_gate_board,
+    restricted_canonical_review_readback,
     get_learning_influence_consumption_audit_rail_blueprint,
     get_learning_influence_consumption_readiness,
     get_learning_influence_consumer_design_packet,
@@ -2224,7 +2225,7 @@ def jarvis_owner_review_packet_handler(_args):
         "success": True,
         "status": "ok",
         "summary": summary,
-        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "links": [{"label": "Canonical CORE Review Queue", "href": "/charlie"}],
         "stale_warnings": [
             "Owner review packet is assembled locally. It does not call Claude, GitHub, or any external review service."
         ],
@@ -2263,7 +2264,7 @@ def learning_influence_consumption_readiness_handler(_args):
         "success": True,
         "status": "ok",
         "summary": summary,
-        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "links": [{"label": "Canonical CORE Review Queue", "href": "/charlie"}],
         "stale_warnings": [],
         "safety_notes": [
             "Learning consumption readiness is read-only. It does not consume proposals, apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
@@ -2298,7 +2299,7 @@ def learning_influence_consumption_audit_rail_blueprint_handler(_args):
         "success": True,
         "status": "ok",
         "summary": summary,
-        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "links": [{"label": "Canonical CORE Review Queue", "href": "/charlie"}],
         "stale_warnings": [],
         "safety_notes": [
             "Learning consumption audit rail status is read-only. It does not consume proposals, apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
@@ -2333,7 +2334,7 @@ def learning_influence_consumer_design_packet_handler(_args):
         "success": True,
         "status": "ok",
         "summary": summary,
-        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "links": [{"label": "Canonical CORE Review Queue", "href": "/charlie"}],
         "stale_warnings": [],
         "safety_notes": [
             "Learning influence consumer design packet is read-only. The reviewed consumer can produce a review-note artifact only; it does not apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
@@ -2467,7 +2468,7 @@ def agent_activation_preflight_handler(_args):
         "links": [
             {
                 "label": "Claude Review Handoff",
-                "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
+                "href": "/charlie",
             }
         ],
         "stale_warnings": [],
@@ -2579,7 +2580,8 @@ def agent_dispatch_decision_rail_blueprint_handler(_args):
 
 
 def agent_runtime_review_packet_handler(_args):
-    packet = get_agent_runtime_review_packet()
+    packet = get_agent_runtime_review_packet(
+        review_reader=restricted_canonical_review_readback)
     summary = (
         "Agent runtime review packet is ready for bulk Claude review. "
         "It bundles {} read-only source payload(s), but live dispatch stays off."
@@ -2606,7 +2608,8 @@ def agent_runtime_review_packet_handler(_args):
 
 
 def dispatch_runtime_review_packet_handler(_args):
-    packet = get_agent_runtime_review_packet()
+    packet = get_agent_runtime_review_packet(
+        review_reader=restricted_canonical_review_readback)
     dispatch_status = dispatch_decision_status_handler({})
     status_counts = (dispatch_status.get("llm_context") or {}).get("counts") or {}
     summary = (

@@ -1,7 +1,7 @@
 from modules.oom_sakkie.rootline_protected_irrigation import ACTION_KIND,build_preview_payload,execute_claimed_segment,protected_card_mission_id
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 def artifact(**changes):
- value={"contract_version":"rootline_execution_eligibility.v4","job_id":"JOB-1","job_sha256":"a"*64,"zone_id":"B12345","channel":1,"segment_identity":"SEG-1","current_segment":1,"segment_requested_seconds":3599,"requested_total_duration_seconds":7200,"governed_executable_duration_seconds":7198,"plan_generation":"PLAN-1","controller_safety_generation":"SAFE-1","eligibility_sha256":"b"*64,"expected_segment_count":2,"maximum_duration_seconds":3599};value.update(changes);return value
+ value={"contract_version":"rootline_execution_eligibility.v5","job_id":"JOB-1","job_sha256":"a"*64,"zone_id":"B12345","channel":1,"segment_identity":"SEG-1","current_segment":1,"segment_requested_seconds":3599,"requested_total_duration_seconds":7200,"governed_executable_duration_seconds":7198,"plan_generation":"PLAN-1","controller_safety_generation":"SAFE-1","eligibility_sha256":"b"*64,"expected_segment_count":2,"maximum_duration_seconds":3599};value.update(changes);return value
 def claim(payload=None):
  payload=payload or build_preview_payload(artifact(),mission_id="RMQ-20260813-04");return {"preview_payload":payload,"preview_digest":canonical_preview_digest(ACTION_KIND,payload),"mission_id":"RMQ-20260813-04","callback_token":"opaque"}
 def parsed():return {"telegram_user_id":"1","telegram_chat_id":"1"}

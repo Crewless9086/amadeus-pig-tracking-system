@@ -226,6 +226,16 @@ inference.
 
 ## Delivery Roadmap
 
+## Borehole 1 MINI R4 intake boundary
+
+Provider discovery currently identifies reported device `1002851416`, SONOFF MINI R4,
+displayed as `Boorgat 1 Krag Toevoer`, logical channel 1. This is a registry identity only:
+it has no approved ON/OFF event binding, no enabled authority flag and no commissioned
+physical outcome. Its commissioning contract must prove a bounded native fail-OFF,
+power restoration OFF, timers/scenes/interlocks disabled, current provider OFF, no ON
+retry, and separately observed pump start, water flow, pump stop and stopped flow.
+Electrical state alone never proves pumping or water delivery.
+
 | Phase | Outcome and gate |
 | ---: | --- |
 | 1 | Read-only Daily Brief. Report built/merged/deployed/configured/operational separately; zero hardware authority. |

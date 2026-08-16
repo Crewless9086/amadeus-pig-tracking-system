@@ -195,6 +195,50 @@ def test_contextual_commissioning_reply_binds_existing_specialist_before_observa
     assert value["hardware_commands"]==0 and len(calls)==1
 
 
+def test_exact_mixer_readiness_outranks_generic_rootline_water_power_semantics():
+    item={**operational(
+        "I am at the fertilizer valves and ready for the five-minute Mixer CH2 commissioning test."),
+        "provider_message_id":"3599","semantic":{
+            "domain":"rootline","intent":"rootline_advice","message_kind":"observation",
+            "continuation":False,"observation":"Owner is ready at fertilizer valves.",
+            "observation_facts":[],"language":"en","needs_clarification":False}}
+    pending=lambda _:[{"mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "card_mission_id":"OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "owner_user_id":"42","chat_id":"42","specialist_identity":"ROOTLINE",
+        "task_state":"waiting_for_input","telegram_message_id":"3480",
+        "delivery_provider_timestamp":NOW.isoformat(),
+        "contextual_task_kind":"fertilizer_commissioning"}]
+    calls=[]
+    def followup(context,now=None):
+        calls.append(context)
+        return {"success":True,"contract_version":"rootline_fertilizer_commissioning_followup_v1",
+            "status":"waiting_for_input","answer":"Protected Mixer confirmation is ready.",
+            "authority":{"configuration_write":False,"hardware_control":False,
+                         "farm_write":False,"telegram_send":False},
+            "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=pending,contextual_specialist_dispatcher=followup,
+        rootline_operations_dispatcher=lambda *_:pytest.fail("generic ROOTLINE planning consumed commissioning readiness"),
+        rootline_observation_writer=lambda *_:pytest.fail("generic observation writer consumed commissioning readiness"))
+    assert status==200 and value["contextual_task_kind"]=="fertilizer_commissioning"
+    assert value["mission_id"]=="OOM-ROOTLINE-FERTILIZER-CONFIG-20260809"
+    assert len(calls)==1 and value["hardware_commands"]==0
+
+
+def test_exact_mixer_readiness_without_one_current_context_is_contained_not_generic():
+    item={**operational(
+        "I am at the fertilizer valves and ready for the five-minute Mixer CH2 commissioning test."),
+        "provider_message_id":"3599","semantic":{
+            "domain":"rootline","intent":"rootline_advice","message_kind":"observation",
+            "continuation":False,"observation":"Owner is ready.","observation_facts":[],
+            "language":"en","needs_clarification":False}}
+    value,status=handle_operational_specialist_message(item,issue_gateway_owner_authority("42","42"),
+        now=NOW,pending_specialist_loader=lambda _:[],
+        rootline_operations_dispatcher=lambda *_:pytest.fail("generic ROOTLINE planning consumed commissioning readiness"))
+    assert status==200 and value["systemic_exception"]=="fertilizer_commissioning_context_not_current"
+    assert value["hardware_commands"]==0 and value["writes_farm_data"] is False
+
+
 def test_multiple_pending_specialist_questions_do_not_enter_observation_writer():
     item={**operational("Done; at the valves now"),"semantic":{
         "domain":"rootline","intent":"status_update","message_kind":"observation",

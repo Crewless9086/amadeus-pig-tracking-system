@@ -1108,18 +1108,21 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             "power": deepcopy(power),
             "local_weather": deepcopy(weather),
             "forecast": deepcopy(forecast),
-            "water": ({
+            "water": {
                 "observed_at": (
                     tanks.get("reservoir_observed_at")
-                    or (tanks.get("observed_at")
-                        if reservoir_amount is not None
-                        else None)
+                    or tanks.get("observed_at")
                 ),
-                "reservoir_available": (
+                "reservoir_available": ((
                     tank_state.get("reservoir") in {"fresh", "aging"}
                     and (_number(reservoir_amount) or 0) > 0
-                ),
-            } if reservoir_amount is not None else {}),
+                ) if reservoir_amount is not None else None),
+                "insufficient_water": tanks.get("insufficient_water") is True,
+                "dry_supply": tanks.get("dry_supply") is True,
+                "supply_fault": tanks.get("supply_fault") is True,
+                "evidence_conflict": tanks.get("evidence_conflict") is True,
+                "storage_replenishment_assumed_required": True,
+            },
             "policy": {
                 "season": _irrigation_season(now),
                 "target_days_per_week": 4,
@@ -1155,6 +1158,7 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                 "stale_incomplete_parent_jobs": deepcopy(
                     decision.get("stale_incomplete_parent_jobs")),
                 "contained_parent_jobs": deepcopy(decision.get("contained_parent_jobs")),
+                "standing_water_policy": deepcopy(decision.get("standing_water_policy")),
                 "max_execution_minutes": 60,
                 "fresh_decision_before_second_segment": True,
                 "simultaneous_with_other_zone": False,
@@ -1162,6 +1166,9 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                 "actuation_blocked": True,
                 "command_created": False,
             })
+            if tank_state.get("reservoir") not in {"fresh", "aging"}:
+                task["dependencies"] = list(dict.fromkeys([
+                    *task.get("dependencies", []), "water_observation_unavailable"]))
             tasks.append(task)
         return tasks
     zones = irrigation.get("zones") if isinstance(irrigation.get("zones"), list) else []

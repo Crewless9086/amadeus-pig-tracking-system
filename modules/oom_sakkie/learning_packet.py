@@ -14,7 +14,7 @@ DEFAULT_FILES = [
     "templates/oom-sakkie.html",
     "static/js/oomSakkie.js",
     "static/css/main.css",
-    "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
+    "modules/oom_sakkie/canonical_review_readback.py",
     "docs/00-start-here/CURRENT_STATE.md",
     "docs/00-start-here/NEXT_STEPS.md",
 ]
@@ -250,7 +250,7 @@ def _brief(packet):
         "- Keep the change read-only unless the owner explicitly approves a separate write path.",
         "- Preserve backend-as-brain and the existing safety policy.",
         "- Add or update tests for the exact owner phrase or failure pattern.",
-        "- Update CURRENT_STATE, NEXT_STEPS, and CLAUDE_REVIEW_HANDOFF if behavior changes.",
+        "- Use canonical Supabase mission/review readback; the historical review pointer grants no authority.",
         "",
         "## Files To Inspect",
     ]
