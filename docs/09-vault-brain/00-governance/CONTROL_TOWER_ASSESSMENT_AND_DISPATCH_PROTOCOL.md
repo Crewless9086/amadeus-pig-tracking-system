@@ -162,6 +162,64 @@ Each must be one of:
 
 An open process without fresh progress cannot satisfy `ACTIVE`.
 
+The sweep is an eligibility and sequencing audit, not an instruction to keep
+every terminal busy. An idle terminal with safe work may still be deliberately
+held when dispatching it would increase programme WIP, owner relay labour or
+distance from terminal-independent agent operation.
+
+## 8A. Strategic autonomy and global WIP gate
+
+Before any dispatch, classify the proposed work as exactly one of:
+
+- `OPERATING_SPINE`: removes owner relay/coordination or establishes durable
+  trigger, identity, authority, action, evidence, supervision or recovery used
+  across agents;
+- `CURRENT_BLOCKER`: the smallest bounded repair preventing an already selected
+  deployed-agent acceptance journey;
+- `EXPANSION`: a new capability, document, UI, campaign or specialist feature
+  that does not unblock the selected operating spine now.
+
+Control Tower must optimize for less owner work and more terminal-independent
+deployed-agent operation, not terminal utilization, commit count or parallel
+feature throughput.
+
+When the durable register declares `AUTONOMY_RECOVERY_MODE`:
+
+- permit at most three simultaneous development implementation tracks across
+  all terminals;
+- deployed event-waiting operation does not consume a development WIP slot;
+- fill slots first with `OPERATING_SPINE`, then with one exact
+  `CURRENT_BLOCKER`; do not dispatch `EXPANSION`;
+- preserve and checkpoint existing dirty expansion work, then hold it without
+  interruption or deletion;
+- do not replace a blocked strategic track with unrelated feature work merely
+  to keep a terminal busy;
+- one feedback assessment may select at most one new or continued development
+  dispatch unless a separately proven incident requires containment;
+- every dispatch must name the owner action it permanently removes, the
+  terminal-independent acceptance proof, and why the work is not an isolated
+  terminal substitute;
+- count prompt pasting, repeated observations, manual status checks, owner
+  confirmations and cross-terminal relays as owner labour;
+- reject a plan whose net effect adds recurring owner labour without an
+  explicit temporary bound and removal trigger.
+
+The register must name the occupied WIP slots, frozen missions and exit
+criteria. Recovery mode may end only when current evidence proves:
+
+1. CORE can durably deliver, supervise and close a bounded development mission
+   without Charl relaying terminal prompts;
+2. OOM SAKKIE preserves one canonical actor/action context across the selected
+   owner/family ingress and completes one protected action journey without
+   owner aliasing;
+3. at least one specialist completes a fresh genuine provider- or
+   physical-world cycle through the deployed runtime without a development
+   terminal manufacturing the outcome; and
+4. the measured owner-relay burden is lower than at recovery-mode entry.
+
+Source, tests, PRs and deployment do not satisfy these exit criteria by
+themselves.
+
 ## 9. Dispatch decision
 
 Choose exactly one:
@@ -214,6 +272,8 @@ Terminal truth: active | idle | released | stopped | Unknown - evidence
 Runtime truth: autonomous | event-waiting | invocation-only | dormant |
   degraded | authority-disabled | Unknown - last/next cycle
 Mission: ID - lifecycle - owner-visible outcome remaining
+Strategic WIP: slot and class | FROZEN - reason
+Owner workload delta: current manual steps -> target manual steps; removal proof
 Release lane: free | held - owner, process/ledger proof, trigger
 Collision/worktrees: clear | blocked - preservation result
 Owner repetition: none | prohibited after repeated failure | exact fresh need
