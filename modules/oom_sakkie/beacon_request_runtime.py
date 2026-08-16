@@ -177,7 +177,6 @@ def _public_awareness_media(payload):
                 and tags.intersection({"live_stock", "livestock", "piglet", "piglets", "litter", "weaner", "farm_life"})):
             return {"status": "approved_public_media_selected",
                 "asset_id": str(row.get("beacon_asset_id") or row.get("binary_asset_id") or ""),
-                "effective_public_use_approved": True,
                 "media_type": str(row.get("observed_mime_type") or "farm media"),
                 "content_sha256": digest,
                 "storage_readback_proof_id": str(row["private_storage_proof_id"]),
