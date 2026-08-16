@@ -174,6 +174,15 @@ def test_prior_date_parent_is_deferred_and_never_regains_command_authority():
     assert result["job_resolution"]["operating_date"]=="2026-08-07"
 
 
+def test_contained_parent_defense_in_depth_rejects_run_now_task():
+    plan,evidence,controller=inputs()
+    plan["candidate_tasks"][0]["contained_parent_jobs"]=[{"job":{"job_id":"CONTAINED"}}]
+    result=build_execution_eligibility(plan=plan,evidence=evidence,
+        controller=controller,now=NOW)
+    assert result["eligible"] is False and result["hardware_control"] is False
+    assert result["status"]=="planner_hold_or_no_dispatchable_zone"
+
+
 def test_controller_drift_or_unexpected_output_creates_no_authority():
     plan,evidence,controller=inputs()
     controller["channels"][1]["output_state"]="ON"

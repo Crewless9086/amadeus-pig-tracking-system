@@ -267,7 +267,8 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     else:
         score = _need_score(need, latest, zone, now, obligation)
         decision, reason = _classify(score, need, policy, weather, water, power, now)
-    if parent_job and parent_projection.get("status") == "segment_ready":
+    if (not contained_parents and parent_job
+            and parent_projection.get("status") == "segment_ready"):
         score = _need_score(need, latest, zone, now, obligation)
         decision, reason = _classify(score, need, policy, weather, water, power, now)
         if decision in {"Run now", "Run later"}:

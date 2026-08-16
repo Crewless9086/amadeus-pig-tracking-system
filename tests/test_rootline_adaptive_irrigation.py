@@ -161,6 +161,18 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         self.assertIsNone(result["proposed_segment_minutes"])
         self.assertFalse(result["command_authority"])
 
+    def test_containment_dominates_simultaneous_segment_ready_parent(self):
+        item=evidence()
+        item["zones"][0].update(
+            contained_parent_jobs=[{"job":{"job_id":"CONTAINED"},
+                "projection":{"status":"segment_contained"}}],
+            incomplete_parent_job={"job":{"job_id":"READY","requested_total_minutes":120,
+                "expected_segment_count":2},"projection":{"status":"segment_ready",
+                "current_segment":2,"remaining_seconds":3599},"remaining_seconds":3599})
+        result=zones(build_adaptive_irrigation_decisions(item,now=NOW))["B12345"]
+        self.assertEqual(result["decision"],"recovery required")
+        self.assertIsNone(result["proposed_segment_minutes"])
+
     def test_unchanged_decision_suppresses_duplicate_notification(self):
         result = build_adaptive_irrigation_decisions(evidence(), now=NOW)
         first = notification_projection(result)
