@@ -17,6 +17,12 @@ from modules.sales.sam_live_stock_evaluation import (
 
 
 TABLE = "sam_response_class_authority_events"
+ONE_CLARIFICATION_CLASS = "one_clarification"
+ONE_CLARIFICATION_ENVELOPE_VERSION = "sam_livestock_one_clarification_v1"
+OWNER_PROMOTABLE_CLASSES = (ONE_CLARIFICATION_CLASS,)
+AUTHORIZABLE_CLASSES = tuple(dict.fromkeys(
+    (*INITIAL_PREAUTHORIZED_CLASSES, *OWNER_PROMOTABLE_CLASSES)
+))
 CONTROLLER_ENABLED_ENV = "SAM_RESPONSE_CLASS_AUTHORITY_CONTROLLER_ENABLED"
 GLOBAL_KILL_SWITCH_ENV = "SAM_RESPONSE_CLASS_AUTHORITY_GLOBAL_ENABLED"
 CLASS_SWITCH_PREFIX = "SAM_RESPONSE_CLASS_"
@@ -84,8 +90,8 @@ def build_authority_event(
     reason = str(reason or "").strip()[:500]
     evaluation = dict(evaluation or {})
     evidence = dict(evaluation.get("evidence") or {})
-    if response_class not in INITIAL_PREAUTHORIZED_CLASSES:
-        raise ValueError("response_class_outside_initial_envelope")
+    if response_class not in AUTHORIZABLE_CLASSES:
+        raise ValueError("response_class_outside_authorizable_envelope")
     if decision not in ALLOWED_DECISIONS:
         raise ValueError("authority_decision_invalid")
     if actor_type not in {"owner", "server", "charlie"}:
@@ -105,7 +111,8 @@ def build_authority_event(
     class_clear = _truthy(source.get(class_switch_env(response_class)))
     prior_id = str((prior_event or {}).get("authority_event_id") or "")
     effective_at = now
-    expires_at = now + timedelta(days=max(1, min(int(lifetime_days), 30)))
+    maximum_days = 7 if response_class == ONE_CLARIFICATION_CLASS else 30
+    expires_at = now + timedelta(days=max(1, min(int(lifetime_days), maximum_days)))
     canonical = {
         "response_class": response_class,
         "evidence_window_hash": window_hash,
@@ -280,7 +287,7 @@ def evaluate_and_persist_candidates(
     persisted = []
     failures = []
     write = recorder or record_authority_event
-    for response_class in INITIAL_PREAUTHORIZED_CLASSES:
+    for response_class in AUTHORIZABLE_CLASSES:
         row = evaluation["classes"][response_class]
         prior = latest.get(response_class) or {}
         decision = ""
@@ -311,7 +318,7 @@ def evaluate_and_persist_candidates(
         evaluation=evaluation,
         persisted=persisted,
         failures=failures,
-        bounded_class_count=len(INITIAL_PREAUTHORIZED_CLASSES),
+        bounded_class_count=len(AUTHORIZABLE_CLASSES),
         runtime_authority_changed=False,
     )
 
@@ -535,7 +542,7 @@ def resolve_runtime_authority(
     blockers = []
     if not _truthy(source.get(CONTROLLER_ENABLED_ENV)):
         blockers.append("controller_disabled")
-    if response_class not in INITIAL_PREAUTHORIZED_CLASSES:
+    if response_class not in AUTHORIZABLE_CLASSES:
         blockers.append("class_outside_authorized_envelope")
     if current_message_class != response_class:
         blockers.append("current_message_class_mismatch")
@@ -561,11 +568,20 @@ def resolve_runtime_authority(
     elif event.get("decision") not in OPERATING_STATES:
         blockers.append("persistent_state_not_promoted")
     else:
+        if event.get("evaluator_version") != EVALUATOR_VERSION:
+            blockers.append("authority_policy_version_mismatch")
+        effective_at = _parse_time(event.get("effective_at"))
+        if effective_at is None or effective_at > now:
+            blockers.append("authority_not_yet_effective")
         expires_at = _parse_time(event.get("expires_at"))
         if expires_at is None or expires_at <= now:
             blockers.append("authority_expired")
         envelope = event.get("authorized_envelope")
-        if not isinstance(envelope, dict) or response_class not in envelope.get("response_classes", []):
+        try:
+            validated = _validated_envelope(response_class, envelope or {})
+        except (TypeError, ValueError):
+            validated = {}
+        if not validated or validated != envelope:
             blockers.append("persistent_envelope_mismatch")
     return _result(
         "runtime_authority_allowed" if not blockers else "runtime_authority_withheld",
@@ -589,7 +605,7 @@ def authority_visibility_report(
         for row in latest_events if isinstance(row, Mapping)
     }
     classes = {}
-    for response_class in INITIAL_PREAUTHORIZED_CLASSES:
+    for response_class in AUTHORIZABLE_CLASSES:
         row = evaluation["classes"][response_class]
         state = latest.get(response_class, {})
         blockers = [
@@ -628,13 +644,85 @@ def _validated_envelope(response_class: str, envelope: Mapping[str, Any]) -> dic
     classes = sorted({_clean_class(value) for value in envelope.get("response_classes", [])})
     if not classes:
         return {}
-    if any(value not in INITIAL_PREAUTHORIZED_CLASSES for value in classes):
+    if any(value not in AUTHORIZABLE_CLASSES for value in classes):
         raise ValueError("envelope_contains_excluded_class")
     if response_class not in classes:
         raise ValueError("response_class_not_in_envelope")
+    if response_class == ONE_CLARIFICATION_CLASS:
+        return _validated_one_clarification_envelope(envelope, classes)
     return {
         "version": str(envelope.get("version") or "sam_low_risk_envelope_v1"),
         "response_classes": classes,
+        "claim_free_only": True,
+        "consequential_actions": False,
+    }
+
+
+def _validated_one_clarification_envelope(envelope, classes):
+    required = {
+        "version", "policy_version", "response_classes", "maximum_duration_days",
+        "transition_sequence", "eligible_inbound", "permitted_content",
+        "required_evidence", "delivery", "follow_up", "exclusions",
+        "claim_free_only", "consequential_actions",
+    }
+    if set(envelope) != required:
+        raise ValueError("one_clarification_envelope_fields_invalid")
+    expected = one_clarification_envelope()
+    candidate = _json_safe(dict(envelope))
+    candidate["response_classes"] = classes
+    if candidate != expected:
+        raise ValueError("one_clarification_envelope_contract_mismatch")
+    return candidate
+
+
+def one_clarification_envelope() -> dict[str, Any]:
+    """Return the immutable, claim-free owner-promotable envelope."""
+    return {
+        "version": ONE_CLARIFICATION_ENVELOPE_VERSION,
+        "policy_version": EVALUATOR_VERSION,
+        "response_classes": [ONE_CLARIFICATION_CLASS],
+        "maximum_duration_days": 7,
+        "transition_sequence": ["candidate", "canary_authorized", "promoted"],
+        "eligible_inbound": {
+            "genuine_chatwoot": True,
+            "post_activation": True,
+            "exact_latest_inbound": True,
+            "identity_certain": True,
+            "typed_lane": "livestock",
+            "reply_window_healthy": True,
+            "one_unanswered_customer_fact": True,
+        },
+        "permitted_content": {
+            "neutral_acknowledgement": True,
+            "maximum_questions": 1,
+            "question_bound_to_missing_fact": True,
+            "retained_customer_language": True,
+            "commercial_statements": False,
+        },
+        "required_evidence": {
+            "canonical_context_healthy": True,
+            "stock_healthy": True,
+            "pricing_healthy": True,
+            "eligibility_healthy": True,
+            "identity_and_chronology_healthy": True,
+            "unknown_internal_evidence_action": "quarantine_no_send",
+        },
+        "delivery": {
+            "unique_claim_before_provider_call": True,
+            "maximum_provider_attempts": 1,
+            "automatic_retry": False,
+            "provider_acceptance_terminal": False,
+            "terminal_states": ["provider_delivered", "provider_read"],
+            "uncertain_outcome": "quarantine_no_retry",
+            "replay_provider_calls": 0,
+        },
+        "follow_up": {"retained_state": "awaiting_customer", "proactive_send": False},
+        "exclusions": [
+            "historical_backlog", "closing_or_thanks", "customer_opt_out",
+            "complaint_or_dispute", "sensitive_or_welfare", "protected_action",
+            "commercially_binding_instruction", "uncertain_identity",
+            "unsupported_internal_evidence", "provider_uncertainty",
+        ],
         "claim_free_only": True,
         "consequential_actions": False,
     }

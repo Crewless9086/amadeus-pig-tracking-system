@@ -3,6 +3,8 @@ from pathlib import Path
 import unittest
 import uuid
 
+from modules.sales.sam_response_class_authority import one_clarification_envelope
+
 
 class SamResponseClassAuthorityPostgresTests(unittest.TestCase):
     @classmethod
@@ -176,6 +178,70 @@ class SamResponseClassAuthorityPostgresTests(unittest.TestCase):
                     )
                 cursor.execute("rollback to savepoint duplicate")
             connection.rollback()
+
+    def test_one_clarification_envelope_round_trips_without_schema_change(self):
+        suffix = uuid.uuid4().hex
+        envelope = one_clarification_envelope()
+        with self.psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.sam_response_class_authority_events (
+                      authority_event_id,response_class,evidence_window_id,
+                      evidence_window_hash,evaluator_version,decision,
+                      authorized_envelope_json,actor_type,actor_id,reason,
+                      effective_at,expires_at
+                    ) values (%s,'one_clarification',%s,%s,
+                      'sam_response_class_graduation_v2','candidate',%s::jsonb,
+                      'server','test','disposable envelope round trip',
+                      now(),now()+interval '7 days')
+                    returning authorized_envelope_json
+                    """,
+                    (f"SAM-AUTH-{suffix}", f"SAM-WINDOW-{suffix}", suffix,
+                     self.psycopg.types.json.Jsonb(envelope)),
+                )
+                self.assertEqual(cursor.fetchone()[0], envelope)
+            connection.rollback()
+
+    def test_one_clarification_prior_transition_is_unique_under_concurrency_contract(self):
+        suffix = uuid.uuid4().hex
+        prior = f"SAM-AUTH-PRIOR-{suffix}"
+        with self.psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.sam_response_class_authority_events (
+                      authority_event_id,response_class,evidence_window_id,
+                      evidence_window_hash,evaluator_version,decision,
+                      actor_type,actor_id,reason,effective_at,expires_at
+                    ) values (%s,'one_clarification',%s,%s,
+                      'sam_response_class_graduation_v2','candidate',
+                      'server','test','candidate',now(),now()+interval '7 days')
+                    """,
+                    (prior, f"SAM-WINDOW-{suffix}", suffix),
+                )
+                for index, decision in enumerate(("canary_authorized", "promoted")):
+                    cursor.execute("savepoint transition")
+                    try:
+                        cursor.execute(
+                            """
+                            insert into public.sam_response_class_authority_events (
+                              authority_event_id,response_class,evidence_window_id,
+                              evidence_window_hash,evaluator_version,decision,prior_event_id,
+                              actor_type,actor_id,reason,effective_at,expires_at
+                            ) values (%s,'one_clarification',%s,%s,
+                              'sam_response_class_graduation_v2',%s,%s,
+                              'owner','test','transition',now(),now()+interval '7 days')
+                            """,
+                            (f"SAM-AUTH-NEXT-{index}-{suffix}", f"SAM-NEXT-{index}-{suffix}",
+                             f"{index}-{suffix}", decision, prior),
+                        )
+                        if index:
+                            self.fail("second transition from the same prior was accepted")
+                    except self.psycopg.errors.UniqueViolation:
+                        self.assertEqual(index, 1)
+                        cursor.execute("rollback to savepoint transition")
+                connection.rollback()
 
 
 if __name__ == "__main__":
