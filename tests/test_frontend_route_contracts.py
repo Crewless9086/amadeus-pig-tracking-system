@@ -1976,6 +1976,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         js = Path("static/js/breedingAnalyticsDetail.js").read_text(encoding="utf-8")
 
         self.assertIn("Teeldier-merietebewyse", template)
+        self.assertIn("farmDashboardV2.css", template)
+        self.assertIn("{% include '_farm_nav.html' %}", template)
+        self.assertIn('class="farm-app-shell merit-app-shell"', template)
+        self.assertIn('class="operations-page merit-operations"', template)
         self.assertIn('id="breeding_detail_back_link"', template)
         self.assertIn('id="merit_detail_interpretation"', template)
         self.assertIn('id="merit_detail_lineage"', template)
