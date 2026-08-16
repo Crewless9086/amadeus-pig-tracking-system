@@ -214,6 +214,15 @@ The control tower must:
 5. close achieved goals explicitly, preserve the operational proof, and promote the next highest-value outcome;
 6. keep Oom Sakkie moving toward the single ordinary interface for Charl and the family.
 
+Control Tower-owned governance, mission logging, collision reconciliation,
+dispatch-ledger maintenance and prompt preparation are performed by the Control
+Tower itself. The Control Tower must never invent a separate visible
+`CONTROL TOWER` development terminal or ask Charl to relay a prompt to itself.
+If source changes are required, the Control Tower must either perform the
+authorized bounded change in an isolated worktree or assign it to an existing,
+verified development terminal whose identity, mission, worktree and current
+availability are known. A prepared label is not a terminal identity.
+
 Terminal agents must not treat the control tower as permission to wait after every routine step. Within one approved mission, they must continue through safe discovery, implementation, tests, review, integration preparation, verification preparation, and documentation handover. They return only for a genuine authority boundary, a real collision, a material owner fact or decision, or the completed measurable outcome.
 
 ## Active Work And Prompt Deduplication
@@ -388,6 +397,7 @@ Do not change governance merely to appear busy. One isolated wording preference 
 
 | Improvement | Status | Why it matters | Verification |
 |---|---|---|---|
+| Perform Control Tower-owned governance and dispatch work directly; never invent a Control Tower terminal or ask Charl to relay work back to the Control Tower | Adopted | Prevents circular delegation, fictional terminal ownership and repeated avoidable owner coordination | Every future handoff names a real verified specialist terminal, says SEND NOTHING, or records that Control Tower performed its own bounded governance work |
 | Maintain one forward mission pipeline from every specialist's complete documented scope and promote the next eligible mission without waiting for Charl | Adopted | Keeps terminals building toward genuinely useful complete agents while preserving deployed-agent ownership and reducing manual dispatch work | Every handover names the next mission, later outcomes and promotion trigger; later terminal releases produce an automatic non-colliding dispatch or evidenced no-safe-work result |
 | Check the active mission and last instruction before generating a continuation prompt; use CONTINUE, ADDENDUM, NEW MISSION, PARALLEL MISSION, or WAIT | Adopted | Prevents duplicated prompts, restarts, and confusion while terminals are already working | Verify on subsequent feedback that already-running work receives “send nothing” rather than a repeated prompt |
 | Report both bounded component progress and readiness for the full intended agent role | Adopted | Prevents source PRs and isolated proofs from overstating how much work the agent actually performs for the family | Verify future progress summaries distinguish technical stage from real working autonomy |
