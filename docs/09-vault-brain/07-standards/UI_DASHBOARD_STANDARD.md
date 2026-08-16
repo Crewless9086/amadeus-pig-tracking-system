@@ -2,6 +2,8 @@
 
 Owner dashboards must help Charl decide quickly. They must not bury decisions, hide buttons, overflow, or look like raw technical dumps.
 
+All Amadeus Farm operational-page facelifts must also follow `AMADEUS_FARM_UI_FACELIFT_STANDARD.md`. The live dashboard and approved descendant pages are the visual baseline; never approximate them from an older checkout or substitute a second component system.
+
 ## Required Dashboard Principles
 
 - Put critical owner actions directly where the decision appears.
