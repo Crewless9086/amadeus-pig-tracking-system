@@ -663,7 +663,9 @@ Current built gated surface:
   worker candidate selects a completed owner-bound album whose Library state is
   still pending, verifies its existing provider-confirmed album card, creates
   or re-arms one exact-generation protected claim, and uses the family lifecycle
-  for one replay-safe card edit. It remains source truth until merged/deployed;
+  for one replay-safe card edit. PRs #985/#987 are deployed at merge
+  `b32e32757`; the worker provider-confirmed the Bella review on existing
+  Telegram message `3637`, and a later autonomous poll was effect-free;
   `202608150007_allow_beacon_media_review_claims.sql` admits the bound callback;
   `202608150008_add_beacon_album_review_envelope.sql` adds exact album/version/
   digest/order/type/scope evidence to historical-compatible events. Public Use
