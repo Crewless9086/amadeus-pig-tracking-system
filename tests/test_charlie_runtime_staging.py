@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import json
 import subprocess
 import tempfile
@@ -82,12 +83,21 @@ class RuntimeStagingTests(unittest.TestCase):
         self._write("supervisor.json", {"status": "supervisor_stopped"})
         self._write("watchdog.json", {"status": "governed_stop_active"})
         self.receipt = root / "receipt.json"
-        self.receipt.write_text(json.dumps({
+        self.receipt_key = b"isolated-control-tower-receipt-key-32-bytes-minimum"
+        (self.state / "validation-receipt.key").write_bytes(self.receipt_key)
+        receipt = {
             "version": RECEIPT_VERSION, "source_commit": SOURCE, "status": "passed",
+            "issuer": "control_tower_isolated_validator_v1",
             "focused_passed": 9, "full_suite_passed": 57,
             "isolation": {"boundary": "disposable_process_boundary",
                           "host_processes_visible": False, "outside_boundary_targets": 0},
-        }), encoding="utf-8")
+        }
+        receipt["signature_hmac_sha256"] = hmac.new(
+            self.receipt_key,
+            json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        self.receipt.write_text(json.dumps(receipt), encoding="utf-8")
 
     def tearDown(self):
         self.temp.cleanup()
@@ -123,6 +133,17 @@ class RuntimeStagingTests(unittest.TestCase):
         values.update(changes)
         return plan_runtime_staging(**values)
 
+    def _failed_lane(self):
+        plan = self._plan()
+        self.git.fail_execution_switch = True
+        self.git.fail_runtime_restore = True
+        with self.assertRaisesRegex(RuntimeStagingError, "git_staging_failed"):
+            stage_runtime(plan, task_reader=self._task, runner=self.git,
+                          git_safety_checker=self._safe_git)
+        self.git.fail_execution_switch = False
+        self.git.fail_runtime_restore = False
+        return read_staging_state(self.state)
+
     def test_plan_is_zero_effect_and_records_exact_rollback(self):
         before = (dict(self.git.heads), (self.state / "runtime-manifest.json").read_bytes())
         plan = self._plan()
@@ -134,6 +155,13 @@ class RuntimeStagingTests(unittest.TestCase):
     def test_plan_rejects_bad_receipt_digest(self):
         with self.assertRaisesRegex(RuntimeStagingError, "sealed_receipt_digest_mismatch"):
             self._plan(receipt_sha256="0" * 64)
+
+    def test_plan_rejects_forged_receipt_even_with_matching_digest(self):
+        receipt = json.loads(self.receipt.read_text())
+        receipt["full_suite_passed"] = 999
+        self.receipt.write_text(json.dumps(receipt), encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeStagingError, "isolated_validation_receipt_not_authorized"):
+            self._plan()
 
     def test_plan_rejects_dirty_or_contradictory_worktree(self):
         self.git.dirty.add(str(self.runtime.resolve()))
@@ -212,6 +240,23 @@ class RuntimeStagingTests(unittest.TestCase):
                           git_safety_checker=self._safe_git)
         self.assertEqual(self.git.heads[str(self.runtime.resolve())], RUNTIME)
 
+    def test_manifest_drift_during_switches_fails_and_recovers(self):
+        plan = self._plan()
+        calls = 0
+        def changing_task():
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self._write("runtime-manifest.json", {
+                    "version": "concurrent", "promoted_commit": MANIFEST,
+                    "runtime_root": str(self.runtime.resolve()),
+                })
+            return self._task()
+        with self.assertRaisesRegex(RuntimeStagingError, "runtime_manifest_changed_during_staging"):
+            stage_runtime(plan, task_reader=changing_task, runner=self.git,
+                          git_safety_checker=self._safe_git)
+        self.assertEqual(self.git.heads[str(self.runtime.resolve())], RUNTIME)
+
     def test_modified_plan_digest_fails_before_lane_acquisition(self):
         plan = self._plan()
         plan["source_ref"] = "3" * 40
@@ -240,16 +285,8 @@ class RuntimeStagingTests(unittest.TestCase):
         self.assertEqual(self.git.heads[str(self.runtime.resolve())], RUNTIME)
 
     def test_failed_recovery_retains_lane_then_explicit_recovery_clears_it(self):
-        plan = self._plan()
-        self.git.fail_execution_switch = True
-        self.git.fail_runtime_restore = True
-        with self.assertRaisesRegex(RuntimeStagingError, "git_staging_failed"):
-            stage_runtime(plan, task_reader=self._task, runner=self.git,
-                          git_safety_checker=self._safe_git)
-        state = read_staging_state(self.state)
+        state = self._failed_lane()
         self.assertEqual(state["status"], "release_lane_recovery_required")
-        self.git.fail_execution_switch = False
-        self.git.fail_runtime_restore = False
         recovered = recover_runtime_staging(
             state_root=self.state, lane_id=state["lane"]["lane_id"],
             rollback_sha256=state["rollback_sha256"], task_reader=self._task,
@@ -257,6 +294,24 @@ class RuntimeStagingTests(unittest.TestCase):
         )
         self.assertEqual(recovered["status"], "runtime_staging_recovered")
         self.assertEqual(read_staging_state(self.state)["status"], "no_active_release_lane")
+
+    def test_recovery_rejects_dirty_worktree_and_manifest_drift(self):
+        state = self._failed_lane()
+        self.git.dirty.add(str(self.runtime.resolve()))
+        with self.assertRaisesRegex(RuntimeStagingError, "runtime_worktree_dirty"):
+            recover_runtime_staging(
+                state_root=self.state, lane_id=state["lane"]["lane_id"],
+                rollback_sha256=state["rollback_sha256"], task_reader=self._task,
+                runner=self.git, git_safety_checker=self._safe_git,
+            )
+        self.git.dirty.clear()
+        self._write("runtime-manifest.json", {"unrelated": "mutation"})
+        with self.assertRaisesRegex(RuntimeStagingError, "manifest_state_not_authorized_for_recovery"):
+            recover_runtime_staging(
+                state_root=self.state, lane_id=state["lane"]["lane_id"],
+                rollback_sha256=state["rollback_sha256"], task_reader=self._task,
+                runner=self.git, git_safety_checker=self._safe_git,
+            )
 
     def test_receipt_changed_after_plan_fails_before_mutation(self):
         plan = self._plan()

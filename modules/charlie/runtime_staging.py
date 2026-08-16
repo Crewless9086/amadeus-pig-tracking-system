@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -38,6 +39,10 @@ def plan_runtime_staging(
         lambda value: Path(value).resolve(), (runtime_root, execution_root, state_root)
     )
     _validate_target_roots(runtime_root, execution_root, state_root)
+    git_safety = {
+        "runtime": (git_safety_checker or inspect_git_checkout_safety)(runtime_root, runner),
+        "execution": (git_safety_checker or inspect_git_checkout_safety)(execution_root, runner),
+    }
     resolved = _git(runtime_root, ["rev-parse", "--verify", f"{source_ref}^{{commit}}"], runner)
     if resolved != source_ref:
         raise RuntimeStagingError("source_ref_resolution_mismatch", resolved=resolved)
@@ -66,7 +71,8 @@ def plan_runtime_staging(
     if receipt_digest != str(receipt_sha256).lower():
         raise RuntimeStagingError("sealed_receipt_digest_mismatch")
     receipt = _read_json(receipt_path, "isolated_validation_receipt_invalid")
-    _validate_receipt(receipt, source_ref)
+    receipt_key_path = state_root / "validation-receipt.key"
+    _validate_receipt(receipt, source_ref, _read_receipt_key(receipt_key_path))
     _validate_expected_rollback(
         runtime, execution, manifest, expected_runtime_head,
         expected_execution_head, expected_manifest_commit,
@@ -84,10 +90,6 @@ def plan_runtime_staging(
         raise RuntimeStagingError("exact_scheduled_task_digest_required")
     if task_sha256 != str(expected_task_sha256).lower():
         raise RuntimeStagingError("scheduled_task_digest_mismatch")
-    git_safety = {
-        "runtime": (git_safety_checker or inspect_git_checkout_safety)(runtime_root, runner),
-        "execution": (git_safety_checker or inspect_git_checkout_safety)(execution_root, runner),
-    }
     rollback = {
         "version": STAGING_VERSION,
         "runtime": runtime,
@@ -101,6 +103,7 @@ def plan_runtime_staging(
         "task_ownership": task,
         "task_ownership_sha256": task_sha256,
         "git_checkout_safety_sha256": _payload_sha256(git_safety),
+        "receipt_key_sha256": _sha256(receipt_key_path),
     }
     if not all((runtime.get("head"), execution.get("head"), manifest.get("promoted_commit"))):
         raise RuntimeStagingError("rollback_identity_incomplete")
@@ -152,9 +155,12 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
     try:
         if _sha256(plan["receipt_path"]) != plan["receipt_sha256"]:
             raise RuntimeStagingError("sealed_receipt_changed")
+        receipt_key_path = state_root / "validation-receipt.key"
+        if _sha256(receipt_key_path) != plan["rollback"]["receipt_key_sha256"]:
+            raise RuntimeStagingError("validation_receipt_authority_changed")
         _validate_receipt(
             _read_json(plan["receipt_path"], "isolated_validation_receipt_invalid"),
-            source_ref,
+            source_ref, _read_receipt_key(receipt_key_path),
         )
         task = (task_reader or read_watchdog_task)()
         _validate_task(task, runtime_root)
@@ -192,6 +198,11 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
         task_after = (task_reader or read_watchdog_task)()
         if _payload_sha256(task_after) != plan["rollback"]["task_ownership_sha256"]:
             raise RuntimeStagingError("scheduled_task_ownership_changed")
+        if _sha256(state_root / "runtime-manifest.json") != plan["rollback"]["manifest_sha256"]:
+            raise RuntimeStagingError("runtime_manifest_changed_during_staging")
+        if _sha256(state_root / "supervisor.stop") != plan["rollback"]["stop_marker_sha256"]:
+            raise RuntimeStagingError("governed_stop_marker_changed")
+        _validate_governed_state_unchanged(state_root, plan["rollback"])
         manifest = {
             "version": "charlie_core_runtime_v1",
             "promoted_commit": source_ref,
@@ -232,6 +243,7 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
             "error_type": exc.__class__.__name__, "failed_at": _now(),
             "rollback_path": str(rollback_path), "watchdog_action": "none",
             "rollback_recovery": recovery_error or {"status": "not_required_or_completed"},
+            "observed_manifest_sha256": _optional_sha256(state_root / "runtime-manifest.json"),
         }
         _atomic_json(result_path, failure)
         raise
@@ -308,14 +320,29 @@ def recover_runtime_staging(
         raise RuntimeStagingError("scheduled_task_ownership_changed")
     for root in (runtime_root, execution_root):
         (git_safety_checker or inspect_git_checkout_safety)(root, runner)
+        _worktree_identity(root, runner)
     if _sha256(state_root / "supervisor.stop") != rollback.get("stop_marker_sha256"):
         raise RuntimeStagingError("governed_stop_marker_changed")
     _validate_governed_state_unchanged(state_root, rollback)
+    current_manifest_sha256 = _sha256(state_root / "runtime-manifest.json")
+    allowed_manifest_digests = {rollback.get("manifest_sha256")}
+    failure_path = state_root / "promotion-ledger" / f"{lane_id}-result.json"
+    if failure_path.is_file():
+        failure = _read_json(failure_path, "staging_failure_evidence_invalid")
+        if failure.get("lane_id") != lane_id or failure.get("success") is not False:
+            raise RuntimeStagingError("staging_failure_evidence_invalid")
+        allowed_manifest_digests.add(failure.get("observed_manifest_sha256"))
+    if current_manifest_sha256 not in allowed_manifest_digests:
+        raise RuntimeStagingError("manifest_state_not_authorized_for_recovery")
     recovery_plan = {
         "runtime_root": str(runtime_root), "execution_root": str(execution_root),
         "state_root": str(state_root), "rollback": rollback,
     }
     _restore_rollback(recovery_plan, runner)
+    if _worktree_identity(runtime_root, runner) != rollback["runtime"]:
+        raise RuntimeStagingError("runtime_recovery_readback_mismatch")
+    if _worktree_identity(execution_root, runner) != rollback["execution"]:
+        raise RuntimeStagingError("execution_recovery_readback_mismatch")
     result = {
         "version": STAGING_VERSION, "success": True,
         "status": "runtime_staging_recovered", "lane_id": lane_id,
@@ -330,10 +357,19 @@ def recover_runtime_staging(
     return result
 
 
-def _validate_receipt(receipt, source_ref):
+def _validate_receipt(receipt, source_ref, receipt_key):
     isolation = receipt.get("isolation") if isinstance(receipt.get("isolation"), dict) else {}
+    signature = str(receipt.get("signature_hmac_sha256") or "").lower()
+    unsigned = {key: value for key, value in receipt.items() if key != "signature_hmac_sha256"}
+    expected_signature = hmac.new(
+        receipt_key,
+        json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
     if (
         receipt.get("version") != RECEIPT_VERSION
+        or receipt.get("issuer") != "control_tower_isolated_validator_v1"
+        or not hmac.compare_digest(signature, expected_signature)
         or receipt.get("source_commit") != source_ref
         or receipt.get("status") != "passed"
         or isolation.get("boundary") != "disposable_process_boundary"
@@ -343,6 +379,16 @@ def _validate_receipt(receipt, source_ref):
         or int(receipt.get("full_suite_passed") or 0) <= 0
     ):
         raise RuntimeStagingError("isolated_validation_receipt_not_authorized")
+
+
+def _read_receipt_key(path):
+    try:
+        key = Path(path).read_bytes()
+    except OSError as exc:
+        raise RuntimeStagingError("validation_receipt_authority_unavailable") from exc
+    if len(key) < 32:
+        raise RuntimeStagingError("validation_receipt_authority_invalid")
+    return key
 
 
 def _validate_task(rows, runtime_root):
@@ -485,6 +531,13 @@ def _sha256(path):
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
     except OSError as exc:
         raise RuntimeStagingError("required_evidence_unreadable", path=str(path)) from exc
+
+
+def _optional_sha256(path):
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
 
 
 def _payload_sha256(payload):

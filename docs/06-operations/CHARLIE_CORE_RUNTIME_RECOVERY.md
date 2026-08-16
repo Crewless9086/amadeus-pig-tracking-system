@@ -41,7 +41,10 @@ watchdog registration, and CORE startup. It consumes a full 40-character commit
 and the SHA-256 of an immutable JSON validation receipt produced in a disposable
 process boundary. The receipt binds the exact commit and records positive focused
 and full-suite results, no host-process visibility, and zero targets outside the
-boundary.
+boundary. It must also carry issuer `control_tower_isolated_validator_v1` and a
+valid HMAC-SHA-256 made with the independently provisioned
+`validation-receipt.key` in the state directory. A caller-supplied file hash alone
+is never validation authority.
 
 Both `plan` and `stage` require the exact current runtime, execution, and manifest
 commit identities. This makes a deliberately retained mismatch explicit instead
@@ -56,6 +59,11 @@ manifest. It never clears the stop, registers/enables/invokes the watchdog, or
 starts/stops CORE. Failure after the first switch restores both prior worktree
 heads and the exact prior manifest bytes; the durable ledger retains the lane,
 rollback, and result records for review.
+
+The lane and evidence files are flushed before use and after replacement. A local
+administrator or non-compliant writer can still race filesystem metadata outside
+the cooperative lane; therefore staging requires the existing protected state
+directory/ACL and is not a hostile-host security boundary.
 
 Example read-only planning shape (values must come from independently verified
 evidence, never from mutable aliases):
