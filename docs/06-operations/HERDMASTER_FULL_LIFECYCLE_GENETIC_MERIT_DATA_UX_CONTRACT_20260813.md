@@ -299,6 +299,19 @@ units, cutoff, sample size, missing count and source limitation.
 
 ## 8. Deployed backend read model
 
+The named-animal packet keeps two deliberately separate mating collections:
+
+- `individual_mating_summaries` is an ordered one-row-per-attributable-mating projection carrying
+  exact mating, sow, boar, partner, chronology and supported litter identity. It must not infer
+  conception, pregnancy, service dates or litter attribution when the canonical binding is absent.
+- `partner_comparisons` remains a `unique_partner_litter_aggregates` structure. Its row count is a
+  unique-partner aggregate count and must never be presented as the number of mating records.
+
+Resolved offspring identities additionally carry nullable canonical `current_status`, `purpose`,
+`on_farm`, per-field evidence state and litter attribution. Missing or conflicting operational facts
+remain `Unknown`; summary counts disclose known coverage and never substitute zero for absent facts.
+CODEX UI renders these fields and backend ordering verbatim without recalculating livestock facts.
+
 HERDMASTER owns this capability list. The deployed v1 provides items 1-5, 7
 and 9 within the explicit evidence limitations below; items 6 and 8 remain
 pending backend capabilities and must stay nullable until implemented:
