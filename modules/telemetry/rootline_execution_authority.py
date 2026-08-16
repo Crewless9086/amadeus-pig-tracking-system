@@ -15,7 +15,7 @@ from modules.telemetry.rootline_irrigation_job_contract import (
 from modules.telemetry.rootline_device_registry import rootline_device_registry
 
 MAX_SECONDS = 3599
-CONTRACT_VERSION = "rootline_execution_eligibility.v4"
+CONTRACT_VERSION = "rootline_execution_eligibility.v5"
 STANDING_AUTHORITY = "owner_approved_routine_irrigation_v1"
 
 
@@ -88,9 +88,19 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     reservoir_ok = (str(tanks.get("reservoir_state") or "").upper() in {"OK", "FULL"}
                     or _number(tanks.get("reservoir_fraction")) >= .25
                     or _number(tanks.get("reservoir_reported_count")) > 0)
-    if (water_time is None or now < water_time or now-water_time > timedelta(hours=24)
-            or not reservoir_ok):
-        return _none("water_evidence_not_fresh_and_adequate")
+    water_current = (water_time is not None and not now < water_time
+                     and now-water_time <= timedelta(hours=24))
+    explicit_water_fault = water_current and any(tanks.get(key) is True for key in (
+        "insufficient_water", "dry_supply", "supply_fault", "evidence_conflict"))
+    explicit_current_shortage = water_current and not reservoir_ok
+    if explicit_water_fault or explicit_current_shortage:
+        return _none("current_water_shortage_or_fault")
+    water_policy = {"contract_version": "rootline_standing_water_policy.v1",
+        "mode": ("fresh_available" if water_current and reservoir_ok
+                 else "standing_owner_policy_no_current_contradiction"),
+        "water_assumed_available": True,
+        "storage_replenishment_assumed_required": True,
+        "current_contradictory_evidence": False}
     obligation = task.get("weekly_obligation") if isinstance(task.get("weekly_obligation"), dict) else {}
     if (obligation.get("status") != "available"
             or int(obligation.get("delivery_debt_days") or 0) <= 0):
@@ -146,7 +156,8 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "zone_id": zone, "job_id": job["job_id"],
         "segment_number": segment["segment_number"],
     })[:24].upper()
-    cutoff = max(weather_time, water_time, controller_status["retrieved_at"])
+    cutoff = max(value for value in (
+        weather_time, water_time, controller_status["retrieved_at"]) if value is not None)
     notification = "ROOTLINE-IRRIGATION-NOTIFY-" + _digest({
         "plan": plan_generation, "zone": zone, "cutoff": cutoff.isoformat()})[:24].upper()
     material = {
@@ -181,10 +192,11 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
             "zone_id": zone, "proven": True,
             "forecast_planning_quality": advisor_zone.get("forecast_planning_quality"),
             "planning_warnings": list(advisor_zone.get("planning_warnings") or [])},
-        "water_evidence": {"observed_at": water_time.isoformat(),
+        "water_evidence": {"observed_at": water_time.isoformat() if water_time else None,
             "reservoir_state": tanks.get("reservoir_state"),
             "reservoir_fraction": tanks.get("reservoir_fraction"),
-            "reservoir_reported_count": tanks.get("reservoir_reported_count")},
+            "reservoir_reported_count": tanks.get("reservoir_reported_count"),
+            "standing_policy": water_policy},
         "controller_safety_generation": controller_status["generation"],
         "provider_output_state": controller_status["outputs"],
         "controller_response_digest": controller_status["response_digest"],

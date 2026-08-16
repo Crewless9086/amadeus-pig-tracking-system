@@ -62,18 +62,50 @@ def test_stale_forecast_warning_is_digest_bound_but_does_not_block_execution():
     value=build_execution_eligibility(plan=plan,evidence=evidence,
                                       controller=controller,now=NOW)
     assert value["eligible"] is True
-    assert value["contract_version"] == "rootline_execution_eligibility.v4"
+    assert value["contract_version"] == "rootline_execution_eligibility.v5"
     assert value["live_rain_release"]["forecast_planning_quality"] == "degraded"
     assert value["live_rain_release"]["planning_warnings"] == ["forecast_stale_or_unavailable"]
 
 
-def test_rain_hold_and_stale_or_conflicting_evidence_create_no_authority():
-    for changes in ({"rain":.25},{"weather_at":NOW-timedelta(minutes=31)},
-                    {"water_at":NOW-timedelta(hours=25)},{"debt":0}):
+def test_rain_hold_stale_weather_and_debt_create_no_authority():
+    for changes in ({"rain":.25},{"weather_at":NOW-timedelta(minutes=31)},{"debt":0}):
         plan,evidence,controller=inputs(**changes)
         value=build_execution_eligibility(plan=plan,evidence=evidence,
                                            controller=controller,now=NOW)
         assert value["eligible"] is False and value["command_authority"] is False
+
+
+def test_missing_or_stale_tank_count_uses_standing_water_policy_without_inventing_volume():
+    for tanks in ({}, {"observed_at":(NOW-timedelta(hours=25)).isoformat()}):
+        plan,evidence,controller=inputs(); evidence["tanks"]=tanks
+        value=build_execution_eligibility(plan=plan,evidence=evidence,
+                                           controller=controller,now=NOW)
+        assert value["eligible"] is True
+        assert value["water_evidence"]["standing_policy"]["mode"]=="standing_owner_policy_no_current_contradiction"
+        assert value["water_evidence"]["reservoir_fraction"] is None
+
+
+def test_fresh_shortage_or_explicit_supply_fault_still_fails_closed():
+    for tanks in (
+        {"observed_at":NOW.isoformat(),"reservoir_state":"EMPTY","reservoir_fraction":0},
+        {"observed_at":NOW.isoformat(),"dry_supply":True},
+        {"observed_at":NOW.isoformat(),"supply_fault":True},
+        {"observed_at":NOW.isoformat(),"evidence_conflict":True}):
+        plan,evidence,controller=inputs(); evidence["tanks"]=tanks
+        value=build_execution_eligibility(plan=plan,evidence=evidence,
+                                           controller=controller,now=NOW)
+        assert value["status"]=="current_water_shortage_or_fault"
+        assert value["eligible"] is False and value["hardware_control"] is False
+
+
+def test_stale_fault_flag_does_not_override_standing_policy_without_current_truth():
+    plan,evidence,controller=inputs()
+    evidence["tanks"]={"observed_at":(NOW-timedelta(hours=25)).isoformat(),
+                       "dry_supply":True}
+    value=build_execution_eligibility(plan=plan,evidence=evidence,
+                                       controller=controller,now=NOW)
+    assert value["eligible"] is True
+    assert value["water_evidence"]["standing_policy"]["mode"]=="standing_owner_policy_no_current_contradiction"
 
 
 def test_missing_or_unproven_governed_rain_release_creates_no_authority():

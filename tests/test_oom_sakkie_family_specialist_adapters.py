@@ -73,7 +73,7 @@ def test_rootline_reviewed_interface_reloads_authority_and_returns_sealed_outcom
     digest=hashlib.sha256(json.dumps(base,sort_keys=True,separators=(",",":")).encode()).hexdigest()
     auth={**base,"active":True,"revoked_at":None,"owner_authority":False,
           "authorization_digest":digest}
-    artifact={"contract_version":"rootline_execution_eligibility.v4","status":"execution_eligible",
+    artifact={"contract_version":"rootline_execution_eligibility.v5","status":"execution_eligible",
         "authority_source":"owner_approved_routine_irrigation_v1","zone_id":"B12345",
         "plan_generation":"PLAN-1","maximum_duration_seconds":3599,"command_authority":True,
         "hardware_control":True,"execution_id":"EXEC-1","eligibility_sha256":"b"*64,

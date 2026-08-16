@@ -15,6 +15,16 @@ def build_irrigation_job(*,zone_id,operating_date,requested_total_seconds,maximu
 def project_next_segment(job,events,rearm_readback_off=False):
  job=_validate(job); completed={}; active_by_segment={}
  for row in [dict(x) for x in (events or ()) if isinstance(x,dict) and x.get("job_id")==job["job_id"]]:
+  if row.get("action")=="record_job_resolution" and row.get("resolution")=="Cancelled":
+   if (row.get("job_sha256")!=job["job_sha256"] or row.get("zone_id")!=job["zone_id"]
+       or row.get("terminal") is not True or row.get("provider_off_verified") is not True
+       or row.get("fabricated_runtime_seconds")!=0 or row.get("water_credit_created") is not False
+       or not _valid_cancellation_digest(row)):
+    raise IrrigationJobError("terminal_cancellation_binding_invalid")
+   return {"status":"job_cancelled","command_authority":False,"job_id":job["job_id"],
+       "current_segment":row.get("current_segment"),
+       "cumulative_verified_runtime_seconds":int(row.get("cumulative_verified_runtime_seconds") or 0),
+       "remaining_seconds":0,"cancellation_identity":row.get("execution_id")}
   number=int(row.get("segment_number") or 0)
   if row.get("state") in {"claimed","Active"}: active_by_segment.setdefault(number,[]).append(row)
   if row.get("state")=="Completed":
@@ -66,3 +76,13 @@ def _pos(v,e):
  if v<=0: raise IrrigationJobError(e)
  return v
 def _digest(v): return hashlib.sha256(json.dumps(v,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest()
+def _valid_cancellation_digest(row):
+ keys=("contract_version","resolution","terminal","mission_id","job_id","job_sha256",
+  "zone_id","current_segment","expected_segment_count","cumulative_verified_runtime_seconds",
+  "cancelled_unverified_remaining_seconds","remaining_seconds","provider_off_verified",
+  "provider_off_evidence_digest","provider_off_observed_at","fabricated_runtime_seconds",
+  "water_credit_created","next_attempt_requires_fresh_execution_identity","reason")
+ material={key:row.get(key) for key in keys}; digest=_digest(material)
+ return (row.get("contract_version")=="rootline_parent_job_terminal_resolution.v1"
+  and row.get("resolution_sha256")==digest
+  and row.get("execution_id")=="ROOTLINE-JOB-CANCELLATION-"+digest[:24].upper())

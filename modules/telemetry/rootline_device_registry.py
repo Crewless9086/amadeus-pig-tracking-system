@@ -67,6 +67,23 @@ _DEVICES = {
         "authority_flag": "ROOTLINE_FERTILIZER_MIXING_ENABLED",
         "dependencies": ["injection_off", "verified_shutdown", "daily_verified_minutes_cap"],
     },
+    "BOREHOLE-1-MINI-R4-CH1": {
+        "collection": "irrigation_auxiliary_devices",
+        "device_type": "borehole_pump_power", "physical_name": "Borehole 1 power",
+        "provider": "ewelink", "provider_account_binding": "ewelink_owner_account",
+        "manufacturer": "SONOFF", "model": "MINIR4", "firmware_observed": "1.2.0",
+        "device_id": "1002851416", "device_name": "Boorgat 1 Krag Toevoer", "channel": 1,
+        "on_event": None, "off_event": None, "command_binding_status": "unapproved",
+        "energy_relevance": "major_pump_load", "native_fail_stop_seconds": None,
+        "native_fail_stop_verified": False, "power_restoration_state": "OFF",
+        "timers_enabled": "Unknown", "scenes_enabled": "Unknown",
+        "interlock_enabled": "Unknown", "output_state": "OFF",
+        "commissioning_generation": None, "commissioned": False,
+        "authority_flag": "ROOTLINE_BOREHOLE_ENABLED",
+        "dependencies": ["exact_provider_binding", "native_fail_off_proof",
+            "all_conflicting_paths_disabled", "physical_pump_start_and_water_flow",
+            "physical_pump_stop_and_flow_stop"],
+    },
 }
 
 
@@ -131,6 +148,8 @@ def validate_device_registry(registry=None):
         bindings.add(binding)
         for field in ("on_event", "off_event"):
             event = str(row.get(field) or "")
+            if not event and row.get("commissioned") is False:
+                continue
             if not event or event in events:
                 raise ValueError("rootline_device_event_collision")
             events.add(event)
@@ -146,6 +165,7 @@ def source_authority_defaults(environ=None):
             "ROOTLINE_FERTILIZER_MIXING_ENABLED")),
         "ROOTLINE_FERTILIZER_INJECTION_ENABLED": _true(source.get(
             "ROOTLINE_FERTILIZER_INJECTION_ENABLED")),
+        "ROOTLINE_BOREHOLE_ENABLED": _true(source.get("ROOTLINE_BOREHOLE_ENABLED")),
     }
 
 

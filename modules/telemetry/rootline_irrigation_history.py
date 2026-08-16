@@ -156,7 +156,7 @@ def _attach_parent_jobs(history, rows):
             projection = project_next_segment(job, events, rearm_readback_off=True)
         except Exception:
             projection = {"status": "canonical_job_history_invalid", "command_authority": False}
-        if projection.get("status") == "job_completed":
+        if projection.get("status") in {"job_completed", "job_cancelled"}:
             continue
         completed_segments = [row for row in events
             if row.get("action") == "record_completed"

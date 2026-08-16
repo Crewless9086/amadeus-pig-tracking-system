@@ -301,9 +301,10 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         if decision != "recovery required":
             decision = "Needs Data"
             reason = "Conflicting completion evidence must be reconciled before this zone can execute."
-    if decision in {"Run now", "Run later"} and not _fresh_adequate_water(water, now):
-        decision = "Needs Data"
-        reason = "Current water availability is required before this water-dependent execution; other planning remains available."
+    standing_water = _standing_water_policy(water, now)
+    if decision in {"Run now", "Run later"} and standing_water["blocks_irrigation"]:
+        decision = "Hold"
+        reason = standing_water["reason"]
     if (_observed_rain(weather, now) and decision != "recovery required"
             and obligation["status"] != "conflicting"):
         decision = "Hold"
@@ -335,6 +336,7 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "simultaneous_with_other_zone": False,
         "grid_exposure_may_be_justified": urgent and not gravity_fed,
         "evidence_gaps": gaps,
+        "standing_water_policy": standing_water,
         "planning_warnings": [gap for gap in gaps if gap in {
             "forecast_unavailable", "forecast_stale",
         }],
@@ -475,9 +477,28 @@ def _policy(value):
     }
 
 
-def _fresh_adequate_water(water, now):
-    return (_freshness(water, now, 24 * 60) == "fresh"
-            and water.get("reservoir_available") is True)
+def _standing_water_policy(water, now):
+    """Owner policy: absence is not a shortage; current adverse truth still blocks."""
+    water = _dict(water)
+    freshness = _freshness(water, now, 24 * 60)
+    explicit_fault = freshness == "fresh" and any(water.get(key) is True for key in (
+        "insufficient_water", "dry_supply", "supply_fault", "evidence_conflict"))
+    fresh_shortage = freshness == "fresh" and water.get("reservoir_available") is False
+    if explicit_fault or fresh_shortage:
+        return {"contract_version": "rootline_standing_water_policy.v1",
+            "mode": "explicit_current_shortage_or_fault", "water_assumed_available": False,
+            "storage_replenishment_assumed_required": True, "blocks_irrigation": True,
+            "reason": ("Current canonical evidence reports insufficient water, a dry supply, "
+                       "or a conflicting supply fault; irrigation remains held.")}
+    return {"contract_version": "rootline_standing_water_policy.v1",
+        "mode": ("fresh_available" if freshness == "fresh"
+                 and water.get("reservoir_available") is True
+                 else "standing_owner_policy_no_current_contradiction"),
+        "water_assumed_available": True,
+        "storage_replenishment_assumed_required": True,
+        "blocks_irrigation": False,
+        "reason": ("Ordinary commissioned B/C irrigation assumes water available unless "
+                   "current canonical shortage or supply-fault evidence contradicts it.")}
 
 
 def _observed_rain(weather, now):
