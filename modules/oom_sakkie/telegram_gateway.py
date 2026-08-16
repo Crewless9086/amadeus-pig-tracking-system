@@ -377,6 +377,26 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if gateway_authority is not None:
         replay_result = recover_contextual_specialist_replay(parsed)
         if replay_result and replay_result.get("handled"):
+            if (str(replay_result.get("status") or "") == "specialist_accepted"
+                    and str(replay_result.get("next_specialist_step") or "") ==
+                        "supervised_fertilizer_mixer_proof"):
+                from modules.oom_sakkie.rootline_protected_mixer import create_mixer_preview
+                replay_result = create_mixer_preview(owner_result=replay_result,
+                    parsed=parsed, gateway_authority=gateway_authority)
+                delivery = deliver_family_result(parsed, replay_result,
+                    specialist="ROOTLINE",
+                    mission_id=str(replay_result.get("mission_id") or ""),
+                    card_mission_id=str(replay_result.get("card_mission_id") or ""))
+                delivery = _bind_protected_preview_card(replay_result, delivery)
+                body, _ = _gateway_result(delivery.get("success") is True,
+                    str(replay_result.get("status") or "contained"), policy, 200)
+                body.update({"telegram_user_id": parsed["telegram_user_id"],
+                    "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+                    "answer": replay_result.get("answer", ""), "message": replay_result,
+                    "delivery": delivery, "records_audit_trace": True,
+                    "reply_transport": "backend_handles_owner_task_delivery",
+                    "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+                return body, 200 if delivery.get("success") else 202
             if replay_result.get("delivery_recovery_required") is True:
                 delivery = deliver_family_result(parsed, replay_result,
                     specialist=str(replay_result.get("specialist_identity") or "OOM_SAKKIE"),
@@ -578,15 +598,13 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         if (str(operational_result.get("status") or "") == "specialist_accepted"
                 and str(operational_result.get("next_specialist_step") or "") ==
                     "supervised_fertilizer_mixer_proof"):
-            from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
-                continue_fertilizer_commissioning,
-            )
-            continued = continue_fertilizer_commissioning(
+            from modules.oom_sakkie.rootline_protected_mixer import create_mixer_preview
+            continued = create_mixer_preview(
                 owner_result=operational_result, parsed=parsed,
                 gateway_authority=gateway_authority)
             operational_result = {**operational_result, **continued,
-                "mission_id": operational_result.get("mission_id"),
-                "card_mission_id": operational_result.get("card_mission_id"),
+                "mission_id": continued.get("mission_id") or operational_result.get("mission_id"),
+                "card_mission_id": continued.get("card_mission_id") or operational_result.get("card_mission_id"),
                 "specialist_identity": "ROOTLINE"}
         answer = str(operational_result.get("answer") or "")
         if str(operational_result.get("status") or "") == "waiting_for_input":
@@ -609,6 +627,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                         specialist=str(operational_result.get("specialist_identity") or "OOM_SAKKIE"),
                         mission_id=str(operational_result.get("mission_id") or ""),
                         card_mission_id=str(operational_result.get("card_mission_id") or "")))
+        delivery = _bind_protected_preview_card(operational_result, delivery)
         body, _ = _gateway_result(
             delivery.get("success") is True,
             str(operational_result.get("status") or "contained"), policy, operational_status,
@@ -848,6 +867,32 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "writes_farm_data": False, "automatic_irrigation_authority": False,
                         "answer": ("The scheduled assessment could not load its durable context. "
                                    "No provider or hardware action was attempted.")}
+            try:
+                from modules.oom_sakkie.rootline_protected_mixer import (
+                    reassess_due_mixer_presence,
+                )
+                manager_owner = str(manual_payload.get("owner_user_id") or "")
+                manager_chat = str(manual_payload.get("chat_id") or "")
+                presence_recovery = reassess_due_mixer_presence(
+                    owner_user_id=manager_owner, private_chat_id=manager_chat,
+                    gateway_authority=issue_gateway_owner_authority(
+                        manager_owner, manager_chat), now=scheduler_now)
+                if presence_recovery.get("status") == "mixer_protected_preview_created":
+                    scheduler_parsed = {"telegram_user_id":manager_owner,
+                        "telegram_chat_id":manager_chat,
+                        "provider_message_id":"scheduled:mixer:" + str(
+                            manual_payload.get("trigger_id") or ""),
+                        "provider_timestamp":str(
+                            manual_payload.get("trigger_timestamp") or "")}
+                    presence_delivery = deliver(scheduler_parsed, presence_recovery,
+                        specialist="ROOTLINE", mission_id=presence_recovery["mission_id"],
+                        card_mission_id=presence_recovery["card_mission_id"])
+                    presence_delivery = _bind_protected_preview_card(
+                        presence_recovery, presence_delivery)
+                    return {**presence_recovery, "delivery":presence_delivery,
+                        "telegram_sends":int(presence_delivery.get("telegram_sends") or 0)}
+            except Exception:
+                pass
             mixer_recovery = {"status": "fertilizer_recovery_unproven",
                               "hardware_commands": 0, "telegram_sends": 0}
             try:
