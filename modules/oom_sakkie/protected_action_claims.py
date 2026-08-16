@@ -153,17 +153,24 @@ def load_reassessable_contained_presence_claim(*, action_kind, mission_id,
           confirmation_provider_timestamp,result_payload,expires_at,status
           from app_private.oom_protected_action_claims
           where action_kind=%s and mission_id=%s
-          and status in ('contained','executing','completed')
-          and owner_user_id=%s and private_chat_id=%s and provider_message_id=%s
+          and ((nullif(%s,'') is null and status in ('contained','executing'))
+            or (nullif(%s,'') is not null
+              and status in ('contained','executing','completed')))
+          and owner_user_id=%s and private_chat_id=%s
+          and (nullif(%s,'') is null or provider_message_id=%s)
           and expires_at>now() order by created_at desc limit 2 for update""",
-          (str(action_kind),str(mission_id),str(owner_user_id),
-           str(private_chat_id),str(provider_message_id)))
+          (str(action_kind),str(mission_id),str(provider_message_id),
+           str(provider_message_id),str(owner_user_id),
+           str(private_chat_id),str(provider_message_id),str(provider_message_id)))
         rows=cur.fetchall()
         if len(rows)!=1:return None
         row=rows[0]
         result=row[6] if isinstance(row[6],dict) else {}
         if row[8]=="completed":
-            return {"success":False,"status":"mixer_presence_reassessment_consumed"}
+            return {"success":True,
+                "status":"mixer_presence_reassessment_completed_delivery_retry",
+                "callback_token":row[0],"preview_payload":row[3],
+                "preview_digest":row[1],"result":result}
         valid_hold=(result.get("status")=="commissioning_specific_hold"
             and result.get("next_reassessment")=="next_scheduler_tick"
             and int(result.get("hardware_commands") or 0)==0
