@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.oom_sakkie.protected_action_claims import load_active_child_claim
@@ -167,3 +168,11 @@ def test_retained_inbound_recovers_committed_preview_before_fresh_rebuild(monkey
         prepare=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not rebuild")))
     assert result["callback_token"] == "EXISTING"
     assert result["hardware_commands"] == result["provider_control_calls"] == 0
+
+def test_migration_admits_both_mixer_claim_kinds_and_preserves_existing_spine():
+    sql = Path("supabase/migrations/202608160002_allow_rootline_mixer_protected_claims.sql").read_text()
+    for kind in ("rootline_fertilizer_mixer_commissioning",
+            "rootline_fertilizer_mixer_presence_refresh", "rootline_irrigation_segment",
+            "sam_sale_payment", "beacon_media_review"):
+        assert f"'{kind}'" in sql
+    assert "revoke all on app_private.oom_protected_action_claims" in sql
