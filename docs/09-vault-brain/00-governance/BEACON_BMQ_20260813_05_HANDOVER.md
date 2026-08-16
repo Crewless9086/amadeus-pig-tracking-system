@@ -1,57 +1,76 @@
 # Control Tower feedback — BMQ-20260813-05
 
-## Governance verification
+## Governance and mission identity
 
-- Mission state: `WORKING / SOURCE_RECONCILIATION_REQUIRED`.
+- Mission: BMQ-20260813-05, protected publication and later truthful performance.
+- State: `WORKING / PR_REVIEW` after source review; not Business complete.
 - Worktree: `C:\tmp\beacon-bmq-20260813-05-publication-performance-20260816`.
 - Branch: `feat/beacon-bmq-20260813-05-publication-performance`.
-- Verified branch HEAD after non-destructive main reconciliation: `cdebba2f92e657764e5da7aeed6d695aeb917863`.
-- Authoritative `origin/main`: `2da19d628f137fa85ce41bcce44e25509369bfb3`; divergence before the source candidate: ahead 4, behind 0.
-- The Mission Standard, Control Tower protocol, canonical Runtime Programme and feedback template are tracked, blob/filesystem identical to authoritative main and were read completely. Their identities are retained in the terminal handover.
+- Initial candidate checkpoint: `c5345b82` preserves every previously dirty/untracked byte.
+- Approved implementation commit: `669b1e50`.
+- Reconciled code HEAD before this handover update: `3a57a0e374152e0d46a2756f2a6f3e795edb0ab3`.
+- Authoritative base: `origin/main` `9c09a8ec512deca7c1307a4f25cde3509a08118b`; divergence at that point: ahead 8, behind 0.
+- Main merges were non-destructive. The overlapping main changes were ROOTLINE protected-action extensions; the merge preserved both action families and produced no semantic BEACON collision.
 
-## Mission and business outcome
+The tracked Mission Standard, Control Tower protocol, canonical Runtime Programme and feedback template were read completely and remained blob/filesystem-identical to authoritative main. Exact identities are reported in the terminal closeout.
 
-Control Tower authorised design of a distinct canonical Facebook organic text-only review/publication class. The bounded source outcome is not yet accepted: the class must enter the existing protected owner-decision and publication rails without weakening the media-bearing class or creating a competing ledger.
+## Outcome delivered in source
 
-## Terminal action and source state
+The source adds the explicit class `beacon_facebook_organic_text_only_review/v1`. It is not a media packet with missing media:
 
-The terminal fetched main, preserved all existing commits/worktrees, merged main without reset/rebase/stash, and created a five-file uncommitted candidate. The candidate:
+- canonical media is exactly empty and any supplied media is rejected;
+- proposal/result and source actor identity, Facebook page/channel, exact caption, locale, audience, purpose, evidence/Unknowns, non-availability boundary, SAM attribution/routing, livestock policy and seven-day expiry are immutable-digest bound;
+- all performance measures remain `Unknown` until genuine evidence exists;
+- publication, provider call, scheduling, spend, boost, customer commitment and farm-write authority remain false.
 
-- defines `beacon_facebook_organic_text_only_review/v1` with exact empty media, no owner-confirmed media subject and no media claim;
-- digest-binds proposal/result identity, source owner/chat/provider identity, Facebook page, exact caption, locale, audience/purpose, evidence and Unknowns, non-availability boundary, SAM routing, policy result, seven-day review expiry, zero-effect authority and performance Unknowns;
-- rejects non-empty media, unsupported channels, scheduling, sale-availability inference, missing evidence and drift;
-- supplies the existing executor envelope fields while keeping owner confirmation, authorization generation and execution identity empty and execution unauthorized;
-- branches the existing weekly decision and organic binding functions only for the explicit text-only class; the legacy media-bearing route remains the default;
-- adds a read-only server-owned loader over the existing durable BMQ-04 Supabase result event instead of adding a table or caller-authoritative packet loader.
+The implementation reuses the existing Supabase-backed BMQ-04 result event, weekly owner-decision table, organic publication binding/authorization, protected Oom claim rail, family-message lifecycle, execution identity and existing provider-result/performance path. It creates no competing decision ledger, publication coordinator, Telegram gateway or provider executor. The existing media-bearing weekly class remains the default and retains its approved-media, public-use and owner-confirmed-subject requirements.
 
-## Evidence classification
+## Oom Sakkie protected review journey
 
-- Source fact: the candidate exists only as dirty local source and tests.
-- Canonical fact: authoritative main contains the existing media-bearing weekly decision, binding, authorization, execution and performance rails; it does not contain this candidate.
-- Runtime-loaded fact: none. No deployment occurred.
-- Supabase fact: no query or mutation was performed from this design turn. The source loader targets the existing BMQ-04 append-only result event; production compatibility remains unproven.
-- Provider fact: none. Meta and Telegram were not called.
-- Owner-visible fact: none. No preview, button, message, edit or decision was produced.
-- Physical fact: retained worktrees were inventoried read-only and none was changed or deleted by this mission.
+Authenticated semantic intent `text_only_publication_review` loads the latest server-reconstructed eligible packet and creates one owner/private-chat-bound protected card claim. The claim binds the packet/proposal digest, exact page/channel/caption, expiry, inbound provider identity, delivered Telegram card and callback replay identity.
 
-## Verification and review
+The source card presents EN or natural AF chrome for English/Afrikaans/mixed requests while preserving the exact reviewed caption:
 
-Focused regression result: 103 unit tests passed across the new class, BMQ-04 proposal builder, existing weekly review/decision, organic binding/authorization, execution identity and Facebook campaign provider-rejection/ambiguity behavior. `git diff --check` has only repository line-ending warnings.
+- **Approve / Keur goed** appends only the immutable weekly owner approval. It does not publish and does not authorize provider execution.
+- **Correct / Korrigeer** uses the existing protected correction return, records no weekly decision and asks for the corrected facts; a successor immutable packet/digest is required.
+- **Decline / Wys af** appends the bounded rejection and creates no publication authority.
 
-Independent first-round review blocked acceptance. Immediate defects identified in that review—missing digest-bound public-livestock policy, caller-injected canonical loader, target-page drift and missing executor fields—were corrected after the review. The corrected head has not yet passed a fresh independent review. The larger remaining source boundary is the authenticated Oom Sakkie owner/chat/card claim and callback adapter: a boolean declaration is not authority, and no source route yet binds `Approve / Correct / Decline` to the exact card and durable weekly decision without creating a competing action spine.
+Wrong owner/chat/card/digest, stale, substituted, missing-selection and expired callbacks fail closed. Same-receipt callback races resolve to one claimed plus one recovered invocation; the unique weekly decision and claim completion make replay effect-free. Ambiguous decision persistence leaves the claim recoverable rather than falsely containing a possibly committed decision. Owner-visible completion uses the existing bounded family edit/recovery lifecycle.
 
-## Collision and effects
+## Verification and independent review
 
-Open BEACON PRs are historical or unrelated; no active BMQ-05 implementation collision was found. BMQ-02, BMQ-03, BMQ-04 and OMQ-05 worktrees/evidence remain separate and preserved.
+Final reconciled local command result: **225 passed, 3 environment-dependent PostgreSQL skips, 29 subtests passed**. The CI workflow applies the new private action-kind migration and runs semantic ingress, packet/adapter, protected runtime, family lifecycle, weekly decision PostgreSQL and disposable-PostgreSQL claim/replay gates.
 
-Effects used: local source writes, local tests, Git fetch/merge and read-only GitHub/worktree inspection. Effects not used: deployment, owner preview, Telegram send/edit, callback, Meta/provider call, publication, scheduling, customer contact, spend, private-media authority, farm/hardware write, n8n mutation or Google Sheets mutation.
+The disposable-PostgreSQL test writes a unique durable BMQ-04-shaped result, reconstructs the exact packet, creates and card-binds the real claim, races two callbacks with one provider receipt, records/re-reads one weekly decision, and proves claim completion replay. It makes no provider or farm call.
+
+Independent architecture/governance, security/privacy/data-integrity and commercial/Oom owner-journey reviews approved the source before the final conflict-free main merge. Final exact-head re-review remains required after this handover commit; PR creation is conditional on that pass.
+
+## Reality and evidence classification
+
+- Terminal/source fact: source, migrations, tests and CI definition exist on this branch.
+- Canonical main fact: none of the BMQ-05 changes are merged yet.
+- Runtime-loaded fact: none; deployment is forbidden in this mission.
+- Supabase fact: no production read or write was performed. The new migration is source-only and unapplied to production.
+- Provider fact: no Telegram or Meta call, message, edit, post, schedule or receipt was produced.
+- Owner-visible fact: no preview or decision was presented; the renderer and buttons are test/source evidence only.
+- Physical fact: all dirty, unique and historical worktrees were preserved; no reset, rebase, stash, deletion or overwrite was used.
+
+## Effects and authority used
+
+Used: Git fetch/merge/checkpoint/commit, local source edits, local tests, read-only PR/worktree inspection, independent read-only reviews.
+
+Not used: deployment, release lane, owner impersonation, owner preview, callback invocation, provider publication, scheduling, customer contact, spend, public-use approval, private-media approval, performance ingestion, farm/hardware write, n8n mutation or Google Sheets mutation.
+
+## Collision and pipeline
+
+No active BEACON PR implements this exact class. Historical BEACON PRs remain evidence only. BMQ-02 intake, BMQ-03 Library/public-use, BMQ-04 proposal generation and OMQ-05 status parity remain separate. This source establishes the protected text-only review boundary only.
 
 ## Remaining acceptance journey
 
-Before PR creation, the source must add or reuse an exact protected-action kind that binds authenticated owner, private chat, provider card, packet digest, expiry and replay identity; maps visible `Approve / Correct / Decline` to the existing immutable weekly decision semantics; keeps correction as a successor packet; and proves decision replay/concurrency plus restart and delivery recovery without provider publication. It must then pass fresh architecture/governance, security/privacy/replay, commercial/brand and Oom Sakkie journey review.
+Source closeout requires final exact-head reviews, one source-only PR and required CI. Stop before merge or deployment.
 
-Later business completion remains separate: reviewed deployment, one fresh genuine owner decision, exactly one provider-confirmed organic Facebook publication, replay silence, and truthful later performance readback.
+Business completion later requires reviewed deployment, one fresh genuine owner review, a separately authorized exact organic publication, exactly one provider-confirmed Facebook receipt, silent replay and truthful later reach/engagement/SAM lead/conversion/completed-sale/gross-profit readback. Unknown remains Unknown where unsupported.
 
 ## Recommended Control Tower classification
 
-`WORKING / SOURCE_RECONCILIATION_REQUIRED` — not `PR_REVIEW`, `OWNER_HOLD` or `BUSINESS_COMPLETE`. Preserve the dirty worktree as `ACTIVE_UNCOMMITTED_CANDIDATE`; do not open a PR until the protected owner-decision boundary is implemented and exact-head reviews pass.
+`WORKING / PR_REVIEW` once exact-head review and CI are green. This is not `OWNER_HOLD`, runtime acceptance or `BUSINESS_COMPLETE`.
