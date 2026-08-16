@@ -33,6 +33,7 @@ from modules.charlie.process_ownership import (
     validate_termination,
     verify_controller_acknowledgement,
 )
+from modules.charlie.repository_guard import RepositoryOperationLock
 from modules.charlie.secret_redaction import redact_payload
 
 
@@ -353,7 +354,31 @@ def record_emergency_cleanup_refusal(operation, requested_pid, log_path=None):
     return packet
 
 
+def _runner_controller_lock_path():
+    return RUNNER_DIR / "controller-start.lock"
+
+
 def start_runner(status_override=None, respect_stop_marker=True, execution_mode=EXECUTION_MODE_ORDINARY):
+    lock = RepositoryOperationLock(_runner_controller_lock_path(), stale_seconds=300)
+    acquired, owner = lock.acquire()
+    if not acquired:
+        return {
+            "success": False,
+            "status": "runner_controller_start_in_progress",
+            "owner_pid": owner.get("pid"),
+        }, 409
+    try:
+        return _start_runner_unlocked(
+            status_override=status_override,
+            respect_stop_marker=respect_stop_marker,
+            execution_mode=execution_mode,
+        )
+    finally:
+        lock.release()
+
+
+def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
+                           execution_mode=EXECUTION_MODE_ORDINARY):
     execution_mode = str(execution_mode or "").strip().lower()
     if execution_mode not in EXECUTION_MODES:
         return {"success": False, "status": "execution_mode_invalid"}, 400
@@ -973,6 +998,87 @@ def stop_runner():
     }
     _write_stop_evidence(supervisor, tree, result)
     return result, 200
+
+
+def resume_observe_only_runner():
+    """Clear a completed governed stop and start one observation-only runner."""
+    if emergency_process_cleanup_disabled():
+        refusal = record_emergency_cleanup_refusal(
+            "resume_observe_only_runner", "all"
+        )
+        return {"success": False, **refusal}, 423
+    if not process_termination_enabled():
+        return {"success": False, "status": "process_termination_not_enabled"}, 423
+    lock = RepositoryOperationLock(_runner_controller_lock_path(), stale_seconds=300)
+    acquired, owner = lock.acquire()
+    if not acquired:
+        return {"success": False, "status": "runner_controller_start_in_progress",
+                "owner_pid": owner.get("pid")}, 409
+    archive = None
+    try:
+        if not SUPERVISOR_STOP_PATH.exists():
+            return {"success": False, "status": "governed_stop_marker_required"}, 409
+        status = runner_status(include_ledger=False)
+        if status.get("active") or status.get("process_alive"):
+            return {"success": False, "status": "governed_resume_refused_live_runner"}, 409
+        if status.get("orphan_processes"):
+            return {"success": False, "status": "governed_resume_refused_orphan_process"}, 409
+        supervisor = _read_json(SUPERVISOR_PATH)
+        if not _verified_stopped_observe_only_supervisor(supervisor):
+            return {"success": False, "status": "governed_resume_stop_evidence_required"}, 409
+        archive = SUPERVISOR_STOP_PATH.with_name(
+            f"{SUPERVISOR_STOP_PATH.name}.cleared-{uuid.uuid4().hex}"
+        )
+        try:
+            SUPERVISOR_STOP_PATH.replace(archive)
+        except OSError as exc:
+            return {"success": False, "status": "governed_stop_marker_archive_failed",
+                    "error_type": exc.__class__.__name__}, 503
+        result, status_code = _start_runner_unlocked(
+            status_override=status,
+            execution_mode=EXECUTION_MODE_OBSERVE_ONLY,
+        )
+        if status_code >= 400:
+            try:
+                if archive.exists() and not SUPERVISOR_STOP_PATH.exists():
+                    archive.replace(SUPERVISOR_STOP_PATH)
+            except OSError:
+                return {"success": False,
+                        "status": "governed_resume_start_failed_marker_restore_failed",
+                        "start_result": result}, 503
+            return {"success": False, "status": "governed_resume_start_failed",
+                    "start_result": result}, status_code
+        return {**result, "status": "observe_only_runner_resumed",
+                "cleared_stop_marker_evidence": str(archive)}, status_code
+    finally:
+        lock.release()
+
+
+def _verified_stopped_observe_only_supervisor(supervisor):
+    packet = supervisor if isinstance(supervisor, dict) else {}
+    acknowledgement = packet.get("controller_final_acknowledgement")
+    if not isinstance(acknowledgement, dict):
+        return False
+    unsigned = {
+        key: value for key, value in acknowledgement.items() if key != "signature"
+    }
+    generation = str(packet.get("generation") or "")
+    revision = str(packet.get("intended_execution_revision") or "")
+    return bool(
+        str(packet.get("status") or "") == "supervisor_stopped"
+        and str(packet.get("execution_mode") or "") == EXECUTION_MODE_OBSERVE_ONLY
+        and generation
+        and revision
+        and str(acknowledgement.get("generation") or "") == generation
+        and str(acknowledgement.get("revision") or "") == revision
+        and str(acknowledgement.get("execution_mode") or "")
+        == EXECUTION_MODE_OBSERVE_ONLY
+        and verify_controller_acknowledgement(
+            unsigned,
+            acknowledgement.get("signature"),
+            str(packet.get("controller_public_key") or ""),
+        )
+    )
 
 
 def _write_stop_evidence(supervisor, tree, result):

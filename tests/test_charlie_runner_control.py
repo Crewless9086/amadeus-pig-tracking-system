@@ -25,6 +25,27 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
         "revision": revision, "startup_nonce": startup_nonce,
         "process_role": "test_launcher",
     }
+
+
+def stopped_observe_only_supervisor():
+    private_key, public_key = process_ownership.generate_controller_signing_key()
+    acknowledgement = {
+        "status": "current_process_tree_acknowledged",
+        "generation": "stopped-generation",
+        "revision": "stopped-revision",
+        "execution_mode": runner_control.EXECUTION_MODE_OBSERVE_ONLY,
+    }
+    acknowledgement["signature"] = process_ownership.sign_controller_acknowledgement(
+        acknowledgement, private_key
+    )
+    return {
+        "status": "supervisor_stopped",
+        "generation": "stopped-generation",
+        "intended_execution_revision": "stopped-revision",
+        "execution_mode": runner_control.EXECUTION_MODE_OBSERVE_ONLY,
+        "controller_public_key": public_key,
+        "controller_final_acknowledgement": acknowledgement,
+    }
     interpreter = {
         **root, "pid": int(root_pid) + 1, "parent_pid": root_pid,
         "creation_time": "interpreter-created",
@@ -45,6 +66,135 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    @patch("modules.charlie.runner_control._start_runner_unlocked")
+    @patch("modules.charlie.runner_control.runner_status")
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
+    def test_governed_resume_archives_stop_and_starts_observe_only(
+        self, _disabled, _enabled, status, start
+    ):
+        status.return_value = {
+            "active": False, "process_alive": False, "orphan_processes": []
+        }
+        start.return_value = ({"success": True, "status": "runner_started"}, 200)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ):
+            runner_control.SUPERVISOR_STOP_PATH.write_text("stop-evidence", encoding="utf-8")
+            runner_control.SUPERVISOR_PATH.write_text(
+                json.dumps(stopped_observe_only_supervisor()), encoding="utf-8"
+            )
+            result, code = runner_control.resume_observe_only_runner()
+            archived = Path(result["cleared_stop_marker_evidence"])
+            self.assertFalse(runner_control.SUPERVISOR_STOP_PATH.exists())
+            self.assertEqual(archived.read_text(encoding="utf-8"), "stop-evidence")
+        self.assertEqual(code, 200)
+        self.assertEqual(result["status"], "observe_only_runner_resumed")
+        start.assert_called_once_with(
+            status_override=status.return_value,
+            execution_mode=runner_control.EXECUTION_MODE_OBSERVE_ONLY,
+        )
+
+    @patch("modules.charlie.runner_control._start_runner_unlocked")
+    @patch("modules.charlie.runner_control.runner_status")
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
+    def test_governed_resume_restores_stop_marker_when_start_fails(
+        self, _disabled, _enabled, status, start
+    ):
+        status.return_value = {
+            "active": False, "process_alive": False, "orphan_processes": []
+        }
+        start.return_value = ({"success": False, "status": "start_failed"}, 503)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ):
+            runner_control.SUPERVISOR_STOP_PATH.write_text("stop-evidence", encoding="utf-8")
+            runner_control.SUPERVISOR_PATH.write_text(
+                json.dumps(stopped_observe_only_supervisor()), encoding="utf-8"
+            )
+            result, code = runner_control.resume_observe_only_runner()
+            self.assertEqual(
+                runner_control.SUPERVISOR_STOP_PATH.read_text(encoding="utf-8"),
+                "stop-evidence",
+            )
+            self.assertFalse(list(Path(tmp).glob("supervisor.stop.cleared-*")))
+        self.assertEqual(code, 503)
+        self.assertEqual(result["status"], "governed_resume_start_failed")
+
+    @patch("modules.charlie.runner_control._start_runner_unlocked")
+    @patch("modules.charlie.runner_control.runner_status")
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
+    def test_governed_resume_refuses_live_runner(
+        self, _disabled, _enabled, status, start
+    ):
+        status.return_value = {
+            "active": True, "process_alive": True, "orphan_processes": []
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ):
+            runner_control.SUPERVISOR_STOP_PATH.write_text("stop", encoding="utf-8")
+            result, code = runner_control.resume_observe_only_runner()
+        self.assertEqual(code, 409)
+        self.assertEqual(result["status"], "governed_resume_refused_live_runner")
+        start.assert_not_called()
+
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
+    @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
+    def test_governed_resume_serializes_against_normal_start(
+        self, _disabled, _enabled
+    ):
+        entered = threading.Event()
+        release = threading.Event()
+        calls = []
+
+        def starting(**kwargs):
+            calls.append(kwargs)
+            entered.set()
+            release.wait(5)
+            return {"success": True, "status": "runner_started"}, 200
+
+        status = {"active": False, "process_alive": False, "orphan_processes": []}
+        outcome = {}
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "RUNNER_DIR", Path(tmp)
+        ), patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            runner_control, "runner_status", return_value=status
+        ), patch.object(
+            runner_control, "_start_runner_unlocked", side_effect=starting
+        ):
+            runner_control.SUPERVISOR_STOP_PATH.write_text("stop", encoding="utf-8")
+            runner_control.SUPERVISOR_PATH.write_text(
+                json.dumps(stopped_observe_only_supervisor()), encoding="utf-8"
+            )
+            worker = threading.Thread(
+                target=lambda: outcome.setdefault(
+                    "resume", runner_control.resume_observe_only_runner()
+                )
+            )
+            worker.start()
+            self.assertTrue(entered.wait(5))
+            competing, competing_code = runner_control.start_runner(
+                status_override=status,
+                execution_mode=runner_control.EXECUTION_MODE_OBSERVE_ONLY,
+            )
+            release.set()
+            worker.join(5)
+        self.assertEqual(competing_code, 409)
+        self.assertEqual(competing["status"], "runner_controller_start_in_progress")
+        self.assertEqual(outcome["resume"][1], 200)
+        self.assertEqual(len(calls), 1)
+
     def test_observe_only_active_state_is_reported_truthfully(self):
         self.assertEqual(
             runner_control._runner_operating_state(
