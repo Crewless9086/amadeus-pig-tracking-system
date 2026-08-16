@@ -46,6 +46,11 @@ from modules.pig_weights.herdmaster_breeding_exposure_recovery import (
     build_grouped_preview,
     execute_grouped_preview,
 )
+from modules.pig_weights.herdmaster_live_transfer_contract import build_live_transfer_contract
+from modules.pig_weights.herdmaster_transfer_evidence_action import (
+    execute_evidence_action,
+    preview_evidence_action,
+)
 from services.database_service import DATABASE_URL_ENV
 from modules.pig_weights.mating_validation import (
     validate_new_mating_payload,
@@ -309,6 +314,75 @@ def full_lifecycle_merit_animal(pig_id):
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, private"
     return response, 200 if result.get("success") else 404
+
+
+def _transfer_request_identity(payload=None):
+    payload = payload if isinstance(payload, dict) else {}
+    order_id = str(payload.get("order_id") or request.args.get("order_id") or "").strip()
+    pig_ids = payload.get("pig_ids") or request.args.getlist("pig_id")
+    pig_ids = [str(value or "").strip() for value in pig_ids if str(value or "").strip()]
+    if not order_id or not pig_ids or len(pig_ids) != len(set(pig_ids)) or len(pig_ids) > 20:
+        raise ValueError("live_transfer_identity_invalid")
+    return pig_ids, order_id
+
+
+@mating_bp.route("/live-transfer-evidence/v1", methods=["GET"])
+def live_transfer_evidence_read():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    try:
+        pig_ids, order_id = _transfer_request_identity()
+        packet = build_live_transfer_contract(pig_ids, order_id, as_of=_merit_cutoff())
+    except ValueError as exc:
+        return jsonify({"success": False, "status": str(exc), "writes_performed": False}), 400
+    except Exception:
+        return jsonify({"success": False, "status": "live_transfer_evidence_unavailable",
+                        "writes_performed": False}), 503
+    response = jsonify({"success": True, "packet": packet, "writes_performed": False})
+    response.headers["Cache-Control"] = "no-store, private"
+    return response
+
+
+@mating_bp.route("/live-transfer-evidence/v1/preview", methods=["POST"])
+def live_transfer_evidence_preview():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    try:
+        pig_ids, order_id = _transfer_request_identity(payload)
+        packet = build_live_transfer_contract(pig_ids, order_id, as_of=date.today())
+    except ValueError as exc:
+        return jsonify({"success": False, "status": str(exc), "writes_performed": False}), 400
+    except Exception:
+        return jsonify({"success": False, "status": "live_transfer_evidence_unavailable",
+                        "writes_performed": False}), 503
+    result, status = preview_evidence_action(
+        packet, payload.get("answers"), actor_id=strict_owner_admin_principal())
+    return jsonify(result), status
+
+
+@mating_bp.route("/live-transfer-evidence/v1/execute", methods=["POST"])
+def live_transfer_evidence_execute():
+    denied = require_strict_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    try:
+        pig_ids, order_id = _transfer_request_identity(payload)
+        packet = build_live_transfer_contract(pig_ids, order_id, as_of=date.today())
+    except ValueError as exc:
+        return jsonify({"success": False, "status": str(exc), "writes_performed": False}), 400
+    except Exception:
+        return jsonify({"success": False, "status": "live_transfer_evidence_unavailable",
+                        "writes_performed": False}), 503
+    result, status = execute_evidence_action(
+        packet, payload.get("answers"), actor_id=strict_owner_admin_principal(),
+        idempotency_key=payload.get("idempotency_key"),
+        confirmation_binding=payload.get("confirmation_binding"),
+    )
+    return jsonify(result), status
 
 
 def _build_breeding_attention_packets(proposed_observation=None):

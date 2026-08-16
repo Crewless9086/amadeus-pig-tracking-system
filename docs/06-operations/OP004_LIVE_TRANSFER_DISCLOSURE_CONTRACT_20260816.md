@@ -57,16 +57,15 @@ The exact unresolved pairs are:
 
 The rows have identical clinical signatures within each pair but distinct identities and timestamps.
 That cannot establish whether they are duplicated records or separate administrations. An attributable
-owner or treating veterinary professional must state the physical fact for each pair. The current
-`pig_medical_events` schema contains neither predecessor nor supersession fields. The append-only
-`pig_observation_events.supersedes_observation_event_id` rail can preserve factual correction evidence
-for the same pig, but cannot govern or rewrite a medical event. Any future medical correction must add
-governed append-only medical lineage rather than delete, merge, update, or suppress these rows.
+owner or treating veterinary professional must state the physical fact for each pair. The deployed
+`pig_medical_events` schema contains neither predecessor nor supersession fields. This release candidate
+adds reusable append-only `pig_medical_correction_events`, binding same-pig original/retained events,
+resolution, factual basis, actor, idempotency and correction supersession. Effective corrections govern
+the current projection while every original medical row remains immutable and visible in history.
 
-The existing line is reported as `existing_line_blocks_duplicate`. The SAM writer checks existing active
-lines, but the database has no unique active `(order_id, pig_id)` constraint. Any later writer work is
-blocked on SAM adding transaction-safe canonical uniqueness or locking; this contract creates no second
-line, reservation, or allocation.
+The existing line is reported as `existing_line_blocks_duplicate`. The SAM writer retains its active-line
+check, and this release candidate adds a partial unique active `(order_id, pig_id)` index after production
+reconciliation proved zero conflicting pairs. This contract creates no second line, reservation or allocation.
 
 Tag 151, Pig ID `PIG-2026-B156`, is Active, on farm, and purpose Sale. Its latest canonical
 weight is 4.0 kg on 2026-08-11 (`2_to_4_Kg`), which does not match the order's `5_to_6_Kg`
@@ -125,6 +124,22 @@ canonical medical evidence changes the digest, marks prior disclosure/document v
 and requires a new snapshot and acknowledgement without mutating the medical event or history.
 No snapshot or acknowledgement is created in this stage.
 
+## Consolidated protected evidence action
+
+`herdmaster_live_transfer_evidence_action_v1` presents one request containing both Tag 123 treatment
+pairs and Tag 151's five current non-diagnostic assessment axes. Each pair accepts exactly one of:
+one administration recorded twice, two separate administrations, or Unknown/requires veterinary review.
+A duplicate answer must identify the retained event; HERDMASTER never chooses it.
+
+The actor-bound signed preview expires after 30 minutes. Execution is serializable, advisory-locked and
+exactly-once. It appends medical correction events and one existing-rail pig observation atomically,
+then returns canonical readback. Replay writes zero rows. It cannot update pigs, medical events, orders,
+prices, reservations, allocations or withdrawal. A partial unique active `(order_id, pig_id)` index
+prevents a second live order line transactionally.
+
+Any separately priced Tag 151 line remains a later SAM-owned protected commercial action. HERDMASTER
+supplies the ZAR 350 versus ZAR 400 consequence but cannot add the line or change the order.
+
 ## Source ownership and handover boundary
 
 - HERDMASTER owns canonical livestock calculations, evidence/provenance, conflicts, Unknowns,
@@ -141,7 +156,7 @@ table, production configuration, pig/order change, document, or buyer acknowledg
 ## Zero-write production proof
 
 The exact live packet digest at the 2026-08-16 cutoff is
-`638f13ea803846a95aa8f3d21cc4d9084cb81c5bcad25a5d56b3a12c6b649826`.
+`2756c41b94b81394a090664a59e5d6d917083602004c82767d6762bdd4e508fa`.
 Before and after the bounded read, canonical row counts were identical: pigs 301,
 pig medical events 479, orders 31, order lines 135, order documents 35, and operational events 12.
 The read therefore created no purpose event, order membership, reservation, price, document,

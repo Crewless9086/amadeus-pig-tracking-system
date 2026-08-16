@@ -18,6 +18,7 @@ from modules.sales.sam_pricing import resolve_live_stock_price_rule
 CONTRACT_VERSION = "herdmaster_live_transfer_disclosure_v1"
 WORDING_VERSION = "livestock_treatment_disclosure_en_v1"
 DISCLOSURE_SNAPSHOT_VERSION = "livestock_disclosure_snapshot_v1"
+EVIDENCE_ACTION_VERSION = "herdmaster_live_transfer_evidence_action_v1"
 DOCUMENT_TARGETS = (
     "Loading Sheet",
     "Removal Certificate",
@@ -120,7 +121,7 @@ def _sale_category(weight):
     return None
 
 
-def _treatment_evidence(events):
+def _treatment_evidence(events, *, resolved_separate_ids=()):
     normalized, issues = [], []
     seen = set()
     clinical_signatures = {}
@@ -168,7 +169,8 @@ def _treatment_evidence(events):
             issues.append({"medical_event_id": identity, "conflict": "withdrawal_date_arithmetic_mismatch"})
         signature = (event["product_id"] or event["product"], event["treatment_date"],
                      event["dose"], event["dose_unit"], event["withdrawal_end_date"])
-        if signature in clinical_signatures:
+        if (signature in clinical_signatures
+                and not ({identity, clinical_signatures[signature]} <= set(resolved_separate_ids))):
             issues.append({"medical_event_id": identity, "conflict": "possible_duplicate_treatment_evidence",
                            "other_medical_event_id": clinical_signatures[signature]})
         else:
@@ -182,6 +184,15 @@ def _treatment_evidence(events):
               if state == "Unknown" else
               "Canonical treatment evidence is incomplete or conflicting.")
     return normalized, _axis(state, reason, [row["medical_event_id"] for row in normalized]), issues
+
+
+def _effective_medical_corrections(rows, as_of):
+    eligible = [row for row in rows if _date(row.get("recorded_at"))
+                and _date(row.get("recorded_at")) <= as_of]
+    superseded = {_text(row.get("supersedes_correction_event_id")) for row in eligible
+                  if _text(row.get("supersedes_correction_event_id"))}
+    current = [row for row in eligible if _text(row.get("correction_event_id")) not in superseded]
+    return current, eligible, sorted(superseded)
 
 
 def _medical_ambiguity(events, conflicts):
@@ -267,11 +278,59 @@ def _order_line_protection(pig, order, lines):
                  else "conflicting_duplicate_lines" if len(active) > 1 else "no_existing_line",
         "active_line_count": len(active),
         "active_order_line_ids": [_text(row.get("order_line_id")) for row in active],
-        "database_unique_order_pig_constraint": False,
+        "database_unique_order_pig_constraint": bool(order.get("active_pig_line_unique_guard")),
         "writer_dependency": (
-            "SAM must retain its existing-line check and add transaction-safe canonical uniqueness/locking "
+            "SAM must retain its existing-line check and the transaction-safe canonical uniqueness guard "
             "before any future line action; this read contract creates no line, reservation or allocation."
         ),
+    }
+
+
+def _consolidated_evidence_request(results, order):
+    by_tag = {row["identity"]["tag_number"]: row for row in results}
+    tag123, tag151 = by_tag.get("123"), by_tag.get("151")
+    pairs = list((tag123 or {}).get("medical_ambiguity", {}).get("event_pairs") or [])
+    return {
+        "action_version": EVIDENCE_ACTION_VERSION,
+        "status": "protected_owner_evidence_required",
+        "owner_interaction_count": 1,
+        "order_id": _text(order.get("order_id")),
+        "medical_pair_questions": [{
+            "pig_id": (tag123 or {}).get("identity", {}).get("pig_id"),
+            "tag_number": "123",
+            "event_ids": pair["medical_event_ids"],
+            "product": pair["product"],
+            "treatment_date": pair["treatment_date"],
+            "recorded_at": pair["recorded_at"],
+            "dose": pair["dose"],
+            "dose_unit": pair["dose_unit"],
+            "choices": ["one_administration_recorded_twice", "two_separate_administrations",
+                        "Unknown_requires_veterinary_review"],
+        } for pair in pairs],
+        "live_transfer_assessment": {
+            "pig_id": (tag151 or {}).get("identity", {}).get("pig_id"),
+            "tag_number": "151",
+            "instruction": "Record current attributable observations only; do not diagnose.",
+            "fields": {
+                "fit_for_transport": ["fit", "unfit", "Unknown"],
+                "quarantine": ["clear", "active", "Unknown"],
+                "infectious_or_notifiable_disease_restriction": ["none_known", "concern_present", "Unknown"],
+                "veterinary_movement_stop": ["none_known", "active", "Unknown"],
+                "serious_welfare_or_health_hold": ["clear", "active", "Unknown"],
+            },
+        },
+        "fixed_readback": {
+            "tag_123_order_line_ids": (tag123 or {}).get("order_line_duplication_protection", {}).get("active_order_line_ids", []),
+            "tag_151_food_chain": (tag151 or {}).get("food_chain_eligibility"),
+            "tag_151_price_band": (tag151 or {}).get("price_band_compatibility"),
+        },
+        "confirmation_effects": [
+            "Append medical correction/resolution events without changing original medical rows.",
+            "Append one attributable live-transfer assessment on the existing pig observation rail.",
+            "Return canonical purpose, live-transfer, food-chain, disclosure, price-band and order-line readback for both pigs.",
+        ],
+        "prohibited_effects": ["change_order", "change_price", "create_order_line", "reserve_or_allocate",
+                               "rewrite_medical_event", "clear_food_chain_withdrawal"],
     }
 
 
@@ -306,17 +365,61 @@ def _within_cutoff(row, effective_field, recorded_field, as_of):
     return bool(effective and recorded and effective <= as_of and recorded <= as_of)
 
 
-def _effective_observation_projection(rows, as_of):
+def _effective_observation_rows(rows, as_of):
     eligible = [row for row in rows if _within_cutoff(row, "observed_at", "recorded_at", as_of)]
     superseded = {_text(row.get("supersedes_observation_event_id")) for row in eligible
                   if _text(row.get("supersedes_observation_event_id"))}
     current = [row for row in eligible
                if _text(row.get("observation_event_id")) not in superseded]
+    return current, eligible, superseded
+
+
+def _effective_observation_projection(rows, as_of):
+    current, eligible, superseded = _effective_observation_rows(rows, as_of)
     return {
         "current_event_ids": [_text(row.get("observation_event_id")) for row in current],
         "history_event_ids": [_text(row.get("observation_event_id")) for row in eligible],
         "superseded_event_ids": sorted(superseded),
     }
+
+
+def _transfer_assessment_axes(rows, as_of):
+    current, _history, _superseded = _effective_observation_rows(rows, as_of)
+    assessments = [row for row in current
+                   if isinstance(row.get("measurements_json"), dict)
+                   and row["measurements_json"].get("contract_version") == EVIDENCE_ACTION_VERSION]
+    if not assessments:
+        return {}
+    latest = max(assessments, key=lambda row: (
+        _text(row.get("observed_at")), _text(row.get("recorded_at")),
+        _text(row.get("observation_event_id"))))
+    values = latest["measurements_json"]
+    evidence = [_text(latest.get("observation_event_id"))]
+    rules = {
+        "fit_for_transport": ("fit", "unfit"),
+        "quarantine": ("clear", "active"),
+        "notifiable_or_infectious_disease": ("none_known", "concern_present"),
+        "veterinary_movement_stop": ("none_known", "active"),
+        "serious_health_or_welfare_hold": ("clear", "active"),
+    }
+    source_fields = {
+        "notifiable_or_infectious_disease": "infectious_or_notifiable_disease_restriction",
+        "serious_health_or_welfare_hold": "serious_welfare_or_health_hold",
+    }
+    projected = {}
+    for axis_name, (clear_value, blocked_value) in rules.items():
+        value = _text(values.get(source_fields.get(axis_name, axis_name))) or "Unknown"
+        if value == blocked_value:
+            projected[axis_name] = _axis("blocked", f"Current attributable assessment reports {value}.", evidence)
+        elif value == clear_value:
+            projected[axis_name] = _axis(
+                "Unknown",
+                f"Owner assessment reports {value}, but this is not verified veterinary or competent-authority clearance.",
+                evidence,
+            )
+        else:
+            projected[axis_name] = _axis("Unknown", "Current attributable assessment records this axis as Unknown.", evidence)
+    return projected
 
 
 def _missing_current_gate(name):
@@ -404,13 +507,24 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
     observations = list(snapshot.get("observation_events") or [])
     movements = list(snapshot.get("location_events") or [])
     price_rows = list(snapshot.get("price_rows") or [])
+    medical_corrections = list(snapshot.get("medical_correction_events") or [])
     results = []
     for pig in list(snapshot.get("pigs") or []):
         pig_id = _text(pig.get("pig_id"))
         pig_medical = [row for row in medical if _text(row.get("pig_id")) == pig_id]
         governed_medical = [row for row in pig_medical
                             if _within_cutoff(row, "treatment_date", "created_at", as_of)]
-        events, completeness, conflicts = _treatment_evidence(governed_medical)
+        current_corrections, correction_history, superseded_corrections = _effective_medical_corrections(
+            [row for row in medical_corrections if _text(row.get("pig_id")) == pig_id], as_of)
+        correction_by_original = {_text(row.get("original_medical_event_id")): row
+                                  for row in current_corrections}
+        effective_medical = [row for row in governed_medical
+                             if _text(correction_by_original.get(_text(row.get("medical_event_id")), {}).get("resolution"))
+                             != "duplicate_record"]
+        separate_ids = {event_id for event_id, row in correction_by_original.items()
+                        if _text(row.get("resolution")) == "separate_administration"}
+        events, completeness, conflicts = _treatment_evidence(
+            effective_medical, resolved_separate_ids=separate_ids)
         history_events, _, _ = _treatment_evidence(governed_medical)
         ambiguity = _medical_ambiguity(events, conflicts)
         food_chain, active = _food_chain(events, as_of, completeness)
@@ -426,6 +540,8 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
                 "fit_for_transport", "quarantine", "notifiable_or_infectious_disease",
                 "veterinary_movement_stop", "serious_health_or_welfare_hold")
         }
+        independent.update(_transfer_assessment_axes(
+            [row for row in observations if _text(row.get("pig_id")) == pig_id], as_of))
         purpose = _text(pig.get("purpose")) or "Unknown"
         status = _text(pig.get("status")) or "Unknown"
         on_farm = pig.get("on_farm") if pig.get("on_farm") is not None else None
@@ -471,10 +587,16 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
             "treatment_evidence_conflicts": conflicts,
             "medical_ambiguity": ambiguity,
             "medical_correction_authority": {
-                "state": "missing_for_medical_events",
-                "medical_schema_supports_supersession": False,
+                "state": ("available_append_only" if snapshot.get("medical_correction_rail_available")
+                          else "migration_pending"),
+                "medical_schema_supports_supersession": bool(
+                    snapshot.get("medical_correction_rail_available")
+                ),
                 "existing_append_only_observation_supersession": True,
-                "boundary": "pig_observation_events may preserve a factual correction statement, but it cannot supersede or rewrite pig_medical_events.",
+                "boundary": "pig_medical_correction_events governs effective medical projection without rewriting pig_medical_events.",
+                "current_correction_event_ids": [_text(row.get("correction_event_id")) for row in current_corrections],
+                "correction_history_event_ids": [_text(row.get("correction_event_id")) for row in correction_history],
+                "superseded_correction_event_ids": superseded_corrections,
             },
             "current_purpose_eligibility": purpose_axis,
             "active_on_farm_eligibility": active_axis,
@@ -541,9 +663,10 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
             "Tag 123 requires factual or veterinary resolution of each same-signature treatment pair and a governed append-only medical correction rail before its effective medical state can change.",
             "Tag 151 requires current attributable transport-fitness, quarantine, disease, veterinary movement-stop and serious welfare/health evidence.",
             "Tag 151's 2_to_4_Kg line would depart from the order's 5_to_6_Kg request and therefore requires a later protected SAM commercial preview; no order change is authorized here.",
-            "SAM must enforce transaction-safe no-duplicate order-line semantics before any later line creation.",
+            "SAM must retain the canonical transaction-safe active order/pig uniqueness guard and lock before any later line creation.",
         ],
     }
+    packet["consolidated_evidence_request"] = _consolidated_evidence_request(results, order)
     packet["packet_digest"] = _digest(packet)
     return packet
 
@@ -599,10 +722,29 @@ def load_live_transfer_snapshot(pig_ids, order_id, *, connect_factory=None):
             from public.sales_pricing where active=true
             order by sale_category,weight_band,sex,effective_from desc,created_at desc
         """).fetchall()
+        correction_table = connection.execute(
+            "select to_regclass('public.pig_medical_correction_events')"
+        ).fetchone()
+        correction_table_value = (next(iter(correction_table.values()))
+                                  if isinstance(correction_table, dict)
+                                  else correction_table[0] if correction_table else None)
+        corrections = (connection.execute("""
+                select * from public.pig_medical_correction_events where pig_id=any(%s)
+                order by pig_id,recorded_at,correction_event_id
+            """, (list(pig_ids),)).fetchall()
+            if correction_table_value is not None else [])
+        unique_guard = connection.execute(
+            "select to_regclass('public.order_lines_one_active_pig_per_order_idx')"
+        ).fetchone()
+        unique_guard_value = (next(iter(unique_guard.values())) if isinstance(unique_guard, dict)
+                              else unique_guard[0] if unique_guard else None)
+        order = dict(orders[0])
+        order["active_pig_line_unique_guard"] = unique_guard_value is not None
     return {"pigs": list(pigs), "medical_events": list(medical),
-            "order": dict(orders[0]), "order_lines": list(lines),
+            "order": order, "order_lines": list(lines),
             "observation_events": list(observations), "location_events": list(locations),
-            "price_rows": list(prices)}
+            "price_rows": list(prices), "medical_correction_events": list(corrections),
+            "medical_correction_rail_available": correction_table_value is not None}
 
 
 def build_live_transfer_contract(pig_ids, order_id, *, as_of=None, connect_factory=None):

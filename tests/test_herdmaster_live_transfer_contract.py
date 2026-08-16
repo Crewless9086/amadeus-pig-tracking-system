@@ -10,7 +10,7 @@ from modules.pig_weights.herdmaster_live_transfer_contract import (
 ORDER = {
     "order_id": "ORD-2026-A6EC6D", "order_status": "Draft",
     "approval_status": "Pending", "requested_weight_range": "5_to_6_Kg",
-    "requested_quantity": 2,
+    "requested_quantity": 2, "active_pig_line_unique_guard": True,
 }
 
 
@@ -52,6 +52,8 @@ def snapshot():
              "sex": None, "unit_price": 400, "currency": "ZAR", "active": True,
              "effective_from": "2026-05-21T00:00:00+00:00", "created_at": "2026-05-21T00:00:00+00:00"},
         ],
+        "medical_correction_events": [],
+        "medical_correction_rail_available": True,
         "medical_events": [
             medical("MED-9123C224", "PIG-2026-A643", "Ecomectin 1%", "2026-07-06", "2026-08-03", 28,
                     created="2026-07-06T19:18:15+00:00"),
@@ -125,12 +127,12 @@ def test_duplicate_treatment_evidence_fails_closed_without_hiding_order_line():
         "MED-9123C224", "MED-F924E93D"
     ]
     assert "veterinary professional" in row["medical_ambiguity"]["required_resolution"]
-    assert row["medical_correction_authority"]["medical_schema_supports_supersession"] is False
+    assert row["medical_correction_authority"]["medical_schema_supports_supersession"] is True
     protection = row["order_line_duplication_protection"]
     assert protection["state"] == "existing_line_blocks_duplicate"
     assert protection["active_line_count"] == 1
     assert protection["active_order_line_ids"] == ["OL-2026-01E24C"]
-    assert protection["database_unique_order_pig_constraint"] is False
+    assert protection["database_unique_order_pig_constraint"] is True
 
 
 def test_changed_medical_evidence_changes_disclosure_and_packet_digest_without_mutation():
@@ -178,6 +180,17 @@ def test_document_and_acknowledgement_contracts_are_design_only_and_append_only_
     assert acknowledgement["status"] == "design_only_not_created"
     assert "order_line_id" in acknowledgement["append_only_binding"]
     assert "history is never rewritten" in acknowledgement["medical_change_rule"]
+    request = packet["consolidated_evidence_request"]
+    assert request["owner_interaction_count"] == 1
+    assert len(request["medical_pair_questions"]) == 1
+    assert request["medical_pair_questions"][0]["choices"] == [
+        "one_administration_recorded_twice", "two_separate_administrations",
+        "Unknown_requires_veterinary_review",
+    ]
+    assert request["live_transfer_assessment"]["fields"]["fit_for_transport"] == [
+        "fit", "unfit", "Unknown"
+    ]
+    assert "change_order" in request["prohibited_effects"]
 
 
 def test_future_or_wrong_sex_price_rule_cannot_create_a_false_commercial_option():
@@ -235,6 +248,46 @@ def test_duplicate_active_order_lines_fail_closed_with_every_identity():
         "OL-2026-01E24C", "OL-2026-DUPLICATE"
     ]
     assert row["order_line_duplication_protection"]["state"] == "conflicting_duplicate_lines"
+
+
+def test_append_only_medical_corrections_govern_current_without_hiding_original_history():
+    evidence = snapshot()
+    evidence["medical_correction_events"] = [{
+        "correction_event_id": "MEDCOR-DUP", "pig_id": "PIG-2026-A643",
+        "original_medical_event_id": "MED-F924E93D",
+        "retained_medical_event_id": "MED-9123C224", "resolution": "duplicate_record",
+        "recorded_at": "2026-08-16T10:00:00+00:00", "supersedes_correction_event_id": None,
+    }]
+    row = by_tag(compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16)))["123"]
+
+    assert "MED-F924E93D" not in {item["medical_event_id"] for item in row["canonical_treatment_events"]}
+    assert "MED-F924E93D" in {item["medical_event_id"] for item in row["canonical_treatment_history"]}
+    assert row["medical_correction_authority"]["current_correction_event_ids"] == ["MEDCOR-DUP"]
+
+
+def test_attributable_transfer_assessment_governs_each_axis_but_not_food_chain_or_order():
+    evidence = snapshot()
+    evidence["observation_events"] = [{
+        "observation_event_id": "OBS-TRANSFER", "pig_id": "PIG-2026-B156",
+        "observed_at": "2026-08-16T09:00:00+00:00", "recorded_at": "2026-08-16T09:00:00+00:00",
+        "supersedes_observation_event_id": None,
+        "measurements_json": {
+            "contract_version": "herdmaster_live_transfer_evidence_action_v1",
+            "fit_for_transport": "fit", "quarantine": "clear",
+            "infectious_or_notifiable_disease_restriction": "none_known",
+            "veterinary_movement_stop": "none_known",
+            "serious_welfare_or_health_hold": "clear",
+        },
+    }]
+    row = by_tag(compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16)))["151"]
+
+    assert row["livestock_transfer_eligibility"]["state"] == "Unknown"
+    assert "not verified veterinary" in row["fit_for_transport"]["reason"]
+    assert row["food_chain_eligibility"]["state"] == "blocked"
+    assert row["current_order_eligibility"]["state"] == "blocked"
+    assert all(row[name]["evidence_ids"] == ["OBS-TRANSFER"] for name in (
+        "fit_for_transport", "quarantine", "notifiable_or_infectious_disease",
+        "veterinary_movement_stop", "serious_health_or_welfare_hold"))
 
 
 def test_missing_or_arithmetic_conflicting_withdrawal_never_becomes_food_chain_clear():
@@ -295,6 +348,7 @@ def test_loader_uses_one_repeatable_read_read_only_snapshot_and_no_write_sql():
     class Cursor:
         def __init__(self, rows): self.rows = rows
         def fetchall(self): return self.rows
+        def fetchone(self): return self.rows[0] if self.rows else None
 
     class Connection:
         def __init__(self): self.calls = []
@@ -319,6 +373,12 @@ def test_loader_uses_one_repeatable_read_read_only_snapshot_and_no_write_sql():
                 return Cursor(snapshot()["location_events"])
             if "from public.sales_pricing" in normalized:
                 return Cursor(snapshot()["price_rows"])
+            if "to_regclass('public.pig_medical_correction_events')" in normalized:
+                return Cursor([("pig_medical_correction_events",)])
+            if "to_regclass('public.order_lines_one_active_pig_per_order_idx')" in normalized:
+                return Cursor([("order_lines_one_active_pig_per_order_idx",)])
+            if "from public.pig_medical_correction_events" in normalized:
+                return Cursor(snapshot()["medical_correction_events"])
             raise AssertionError(normalized)
 
     connection = Connection()
