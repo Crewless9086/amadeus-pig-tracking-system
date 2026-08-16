@@ -76,6 +76,10 @@ def _event_id(action, body):
         material = f"{execution}:CLAIM"
     elif action == "claim_notification":
         material = f"{execution}:NOTIFY:{body.get('notification_state')}"
+    elif (action == "record_job_resolution"
+            and body.get("contract_version") == "rootline_parent_job_terminal_resolution.v1"
+            and body.get("resolution") == "Cancelled"):
+        material = f"{body.get('job_id')}:{body.get('job_sha256')}:CANCELLED"
     elif action in {"claim_off_attempt", "claim_auxiliary_off_attempt"}:
         material = f"{execution}:OFF:{int(body.get('attempt') or 0)}"
     else:
