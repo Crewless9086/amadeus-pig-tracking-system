@@ -13,6 +13,7 @@ from modules.charlie.runner_control import (
     EXECUTION_MODE_OBSERVE_ONLY,
     EXECUTION_MODE_ORDINARY,
     cleanup_runner_environment,
+    resume_observe_only_runner,
     runner_status,
     start_runner,
     stop_runner,
@@ -33,7 +34,9 @@ def _load_runner_dotenv():
 def main():
     _load_runner_dotenv()
     parser = argparse.ArgumentParser(description="Control the local CHARLIE mission pickup runner.")
-    parser.add_argument("action", choices=["status", "start", "stop", "cleanup"])
+    parser.add_argument("action", choices=[
+        "status", "start", "stop", "cleanup", "resume-observe-only",
+    ])
     parser.add_argument("--observe-only", action="store_true")
     args = parser.parse_args()
 
@@ -45,6 +48,8 @@ def main():
                 else EXECUTION_MODE_ORDINARY
             )
         )
+    elif args.action == "resume-observe-only":
+        result, status_code = resume_observe_only_runner()
     elif args.observe_only:
         result, status_code = {
             "success": False,
