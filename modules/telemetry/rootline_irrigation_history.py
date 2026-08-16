@@ -164,15 +164,28 @@ def _attach_parent_jobs(history, rows):
             and row.get("shutdown_verified") is True]
         contained = [row for row in events if row.get("action") in {
             "contain_zone", "record_ambiguous_shutdown"}]
-        if contained and not completed_segments:
+        if contained:
             zone = str(job.get("zone_id") or "")
+            contained_ids = {str(row.get("execution_id") or "") for row in contained}
+            prior_events = [row for row in events if not (
+                str(row.get("execution_id") or "") in contained_ids
+                and row.get("action") in {"claim_before_on", "mark_active",
+                    "contain_zone", "record_ambiguous_shutdown"})]
+            try:
+                prior = project_next_segment(job, prior_events, rearm_readback_off=True)
+            except Exception:
+                prior = {"current_segment": None,
+                    "cumulative_verified_runtime_seconds": None,
+                    "remaining_seconds": None}
             if zone in ZONES:
                 contained_by_zone[zone].append({"job": job,
                     "projection": {"status": "segment_contained",
-                        "command_authority": False, "current_segment": 1,
-                        "cumulative_verified_runtime_seconds": 0},
-                    "completed_segment_count": 0,
-                    "remaining_seconds": job.get("governed_executable_seconds"),
+                        "command_authority": False,
+                        "current_segment": prior.get("current_segment"),
+                        "cumulative_verified_runtime_seconds": prior.get(
+                            "cumulative_verified_runtime_seconds")},
+                    "completed_segment_count": len(completed_segments),
+                    "remaining_seconds": prior.get("remaining_seconds"),
                     "resolution_reason": "segment_contained_without_verified_shutdown_or_runtime"})
             continue
         # A never-started eligibility is not a continuing parent. Continuity

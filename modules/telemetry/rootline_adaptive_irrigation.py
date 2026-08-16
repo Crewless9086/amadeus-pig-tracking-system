@@ -232,7 +232,14 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     parent = _dict(zone.get("incomplete_parent_job"))
     parent_projection = _dict(parent.get("projection"))
     parent_job = _dict(parent.get("job"))
-    if (segment.get("state") in {"Active", "Stopped", "Failed", "ambiguous_outcome"}
+    contained_parents = [item for item in zone.get("contained_parent_jobs", [])
+        if isinstance(item, dict)]
+    if contained_parents:
+        decision = "recovery required"
+        reason = ("A contained parent execution has unverified shutdown or runtime; "
+                  "the zone cannot start a new job until governed recovery resolves it.")
+        score = _need_score(need, latest, zone, now, obligation)
+    elif (segment.get("state") in {"Active", "Stopped", "Failed", "ambiguous_outcome"}
             and segment.get("shutdown_verified") is not True):
         decision = "recovery required"
         reason = "Shutdown is not verified; contain this zone and use bounded state-setting OFF recovery before reuse."

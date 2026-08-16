@@ -151,6 +151,16 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         self.assertEqual(result["incomplete_parent_job"]["job"]["job_id"], "JOB-1")
         self.assertEqual(result["requested_total_duration_minutes"], 120)
 
+    def test_contained_parent_blocks_new_same_zone_job(self):
+        item=evidence()
+        item["zones"][0]["contained_parent_jobs"]=[{"job":{"job_id":"JOB-CONTAINED"},
+            "projection":{"status":"segment_contained","command_authority":False},
+            "remaining_seconds":7198}]
+        result=zones(build_adaptive_irrigation_decisions(item,now=NOW))["B12345"]
+        self.assertEqual(result["decision"],"recovery required")
+        self.assertIsNone(result["proposed_segment_minutes"])
+        self.assertFalse(result["command_authority"])
+
     def test_unchanged_decision_suppresses_duplicate_notification(self):
         result = build_adaptive_irrigation_decisions(evidence(), now=NOW)
         first = notification_projection(result)

@@ -242,3 +242,28 @@ def test_contained_segment_parent_is_explicit_but_never_dispatchable():
     assert parent["remaining_seconds"]==7198
     assert parent["projection"]["command_authority"] is False
     assert parent["resolution_reason"]=="segment_contained_without_verified_shutdown_or_runtime"
+
+
+def test_second_segment_containment_preserves_first_runtime_and_defers_residual():
+    history=project_canonical_irrigation_history([epoch("C12345")],snapshot_cutoff=NOW)
+    job=build_irrigation_job(zone_id="C12345",operating_date="2026-08-05",
+        requested_total_seconds=7200,requested_total_minutes=120,
+        maximum_segment_seconds=3599,expected_segment_count=2,plan_identity="PLAN-TWO")
+    one=project_next_segment(job,[])
+    complete={"action":"record_completed","job_id":job["job_id"],"segment_number":1,
+        "segment_identity":one["segment_identity"],"execution_id":"EXEC-ONE",
+        "state":"Completed","verified_runtime_seconds":3599,"shutdown_verified":True}
+    two=project_next_segment(job,[complete],rearm_readback_off=True)
+    rows=[{"action":"record_eligibility",**job,
+        "requested_total_duration_seconds":7200,"requested_total_duration_minutes":120,
+        "governed_executable_duration_seconds":7198,"plan_generation":"PLAN-TWO"},complete,
+        {"action":"claim_before_on","job_id":job["job_id"],"segment_number":2,
+         "segment_identity":two["segment_identity"],"execution_id":"EXEC-TWO","state":"claimed"},
+        {"action":"contain_zone","job_id":job["job_id"],"segment_number":2,
+         "execution_id":"EXEC-TWO","state":"ambiguous","shutdown_verified":False}]
+    _attach_parent_jobs(history,rows)
+    parent=history["zones"]["C12345"]["contained_parent_jobs"][0]
+    assert parent["completed_segment_count"]==1
+    assert parent["projection"]["current_segment"]==2
+    assert parent["projection"]["cumulative_verified_runtime_seconds"]==3599
+    assert parent["remaining_seconds"]==3599
