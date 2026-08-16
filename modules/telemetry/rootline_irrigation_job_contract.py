@@ -83,6 +83,8 @@ def _valid_cancellation_digest(row):
   "provider_off_evidence_digest","provider_off_observed_at","fabricated_runtime_seconds",
   "water_credit_created","next_attempt_requires_fresh_execution_identity","reason")
  material={key:row.get(key) for key in keys}; digest=_digest(material)
+ identity=hashlib.sha256(
+  f"{row.get('job_id')}|{row.get('job_sha256')}|Cancelled".encode()).hexdigest()
  return (row.get("contract_version")=="rootline_parent_job_terminal_resolution.v1"
   and row.get("resolution_sha256")==digest
-  and row.get("execution_id")=="ROOTLINE-JOB-CANCELLATION-"+digest[:24].upper())
+  and row.get("execution_id")=="ROOTLINE-JOB-CANCELLATION-"+identity[:24].upper())
