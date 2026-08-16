@@ -500,6 +500,32 @@ def latest_private_album_review(*, owner_user_id="", private_chat_id="", databas
     return private_album_review(row[0],database_url=database_url,environ=environ)
 
 
+def latest_pending_private_album_review(*, owner_user_id="", private_chat_id="",
+                                        database_url=None, environ=None):
+    """Return the newest completed album whose Library decision is still pending."""
+    store=IntakeStore(database_url)
+    binding=telegram_media_owner_binding(owner_user_id,private_chat_id,environ=environ)
+    try:
+        with store._connect() as connection, connection.cursor() as cursor:
+            cursor.execute("""select g.intake_group_id from public.beacon_media_intake_groups g
+              where exists(select 1 from public.beacon_media_intake_events e
+                where e.intake_group_id=g.intake_group_id and e.event_type='album_completed')
+              and g.owner_principal=%s and g.private_chat_identity_hmac=%s
+              order by g.intake_at desc,g.intake_group_id desc""",
+              (binding["owner_principal"],binding["chat_hmac"]))
+            rows=cursor.fetchall()
+    except Exception as exc:
+        return {"success":False,"status":"private_album_review_unavailable",
+            "error_type":exc.__class__.__name__,**AUTHORITY},503
+    for row in rows:
+        packet,status=private_album_review(row[0],database_url=database_url,environ=environ)
+        if status>=500:
+            return packet,status
+        if status<400 and packet.get("library_state")=="pending_or_mixed":
+            return packet,status
+    return {"success":False,"status":"private_album_pending_review_not_found",**AUTHORITY},404
+
+
 def read_private_thumbnail(
     binary_asset_id, *, token="", expires="", database_url=None, environ=None
 ):
@@ -1202,6 +1228,8 @@ class IntakeStore:
             with self._connect() as connection, connection.cursor() as cursor:
                 cursor.execute("""select g.owner_explanation,
                     exists(select 1 from public.beacon_media_intake_events e
+                      where e.intake_group_id=g.intake_group_id and e.event_type='album_completed'),
+                    (select max(e.recorded_at) from public.beacon_media_intake_events e
                       where e.intake_group_id=g.intake_group_id and e.event_type='album_completed')
                     from public.beacon_media_intake_groups g where g.intake_group_id=%s""",
                     (str(intake_group_id or "")[:120],))
@@ -1255,6 +1283,7 @@ class IntakeStore:
             return {"success":True,"status":"private_album_review_ready",
                 "contract_version":ALBUM_REVIEW_CONTRACT_VERSION,"intake_group_id":intake_group_id,
                 "owner_context":str(group[0] or ""),"album_digest":digest,
+                "album_completed_at":group[2].isoformat() if group[2] else "",
                 "stored_count":len(media),"ordered_media":media,
                 "library_state":"accepted" if all(x["library_state"]=="library_accepted" for x in media) else
                   "rejected" if all(x["library_state"]=="library_rejected" for x in media) else "pending_or_mixed",
