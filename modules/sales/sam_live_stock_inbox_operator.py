@@ -681,6 +681,14 @@ def _inspect_and_operate(
                 + conversation_id
             )
     queue_relevant = bool(livestock or exact_claim)
+    operation_disposition = str(result.get("_operation_disposition") or "")
+    if operation_disposition not in {
+        "shadow_proposed",
+        "shadow_no_reply",
+        "shadow_proposal_replay_suppressed",
+        "pre_activation_backlog_observed",
+    }:
+        operation_disposition = ""
     return {
         **identity,
         "conversation_id": conversation_id,
@@ -689,7 +697,7 @@ def _inspect_and_operate(
         "eligible": eligible,
         "selected_for_processing": selected_for_processing,
         "disposition": (
-            "processed"
+            operation_disposition or "processed"
             if selected_for_processing
             else "deferred_to_next_autonomous_cycle"
             if eligible

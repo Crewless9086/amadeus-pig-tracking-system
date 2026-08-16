@@ -49,7 +49,8 @@ def run_sam_live_stock_operating_cycle(*, environ=None, now=None, store=None,
         if store.proposal_exists(identity):
             return {"success": True, "processed": False, "sent": False,
                     "status": "shadow_proposal_replay_suppressed",
-                    "sam_decision": {}, "_operation_status_code": 200}
+                    "sam_decision": {}, "_operation_status_code": 200,
+                    "_operation_disposition": "shadow_proposal_replay_suppressed"}
         try:
             inbound_at = datetime.fromtimestamp(
                 int(payload.get("created_at") or 0), timezone.utc
@@ -59,7 +60,8 @@ def run_sam_live_stock_operating_cycle(*, environ=None, now=None, store=None,
         if inbound_at < activated_at:
             return {"success": True, "processed": False, "sent": False,
                     "status": "shadow_pre_activation_backlog_observed",
-                    "sam_decision": {}, "_operation_status_code": 200}
+                    "sam_decision": {}, "_operation_status_code": 200,
+                    "_operation_disposition": "pre_activation_backlog_observed"}
         result = _compose_shadow_proposal(payload, source)
         decision = result.get("sam_decision") if isinstance(result.get("sam_decision"), dict) else {}
         reply = str(decision.get("suggested_reply_text") or "")
@@ -75,6 +77,7 @@ def run_sam_live_stock_operating_cycle(*, environ=None, now=None, store=None,
         }
         store.record_proposal(proposal)
         proposals.append(proposal)
+        result["_operation_disposition"] = proposal["status"]
         return result
 
     operator = operator or _canonical_operator
