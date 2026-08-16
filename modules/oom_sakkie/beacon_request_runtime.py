@@ -43,6 +43,18 @@ def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
         return {"handled": False}, 200
     if str(semantic.get("intent") or "") == "private_media_library_review":
         return present_private_media_review(parsed)
+    if str(semantic.get("intent") or "") == "text_only_publication_review":
+        from modules.beacon.text_only_organic_review import load_text_only_owner_review
+        from modules.oom_sakkie.beacon_text_publication_review_runtime import (
+            present_text_only_publication_review,
+        )
+        packet = load_text_only_owner_review("")
+        if packet.get("review_status") != "awaiting_exact_owner_review":
+            return {"handled": True, "success": False,
+                "status": str(packet.get("status") or "text_only_canonical_packet_unavailable"),
+                "answer": "BEACON could not load a current canonical text-only publication review. No decision, publication or provider action occurred.",
+                **ZERO}, 409
+        return present_text_only_publication_review(packet, parsed)
     binding = {"owner": owner, "chat": chat, "provider_message_id": provider_id,
         "provider_timestamp": provider_time, "content_digest": _digest(parsed.get("text") or ""),
         "semantic_domain": "beacon", "semantic_intent": str(semantic.get("intent") or ""),

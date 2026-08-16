@@ -271,7 +271,7 @@ def load_text_only_owner_review(packet_id, *, database_url=None, environ=None):
             result, page_id=page_id, page_name=page_name,
             now=created_at if isinstance(created_at, datetime) else None,
         )
-        if packet.get("packet_id") == packet_id:
+        if not packet_id or packet.get("packet_id") == packet_id:
             return packet
     return _withheld("text_only_canonical_packet_not_found")
 

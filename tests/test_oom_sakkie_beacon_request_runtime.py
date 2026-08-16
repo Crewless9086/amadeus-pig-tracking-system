@@ -44,6 +44,23 @@ def parsed(text="Please prepare the current marketing proposal", language="en"):
             "language": language, "needs_clarification": False}}
 
 
+def test_text_only_publication_review_intent_enters_protected_presenter(monkeypatch):
+    request=parsed("Review the current text-only Facebook post")
+    request["semantic"]["intent"]="text_only_publication_review"
+    packet={"review_status":"awaiting_exact_owner_review","packet_id":"PACKET"}
+    monkeypatch.setattr("modules.beacon.text_only_organic_review.load_text_only_owner_review",
+        lambda packet_id:packet)
+    calls=[]
+    monkeypatch.setattr(
+        "modules.oom_sakkie.beacon_text_publication_review_runtime.present_text_only_publication_review",
+        lambda value,parsed_value:calls.append((value,parsed_value)) or ({
+          "success":True,"status":"text_only_publication_review_ready",
+          "handled":True,"answer":"Review","posts_publicly":False},200))
+    result,status=handle_beacon_request(request,issue_gateway_owner_authority("42","42"))
+    assert status==200 and result["status"]=="text_only_publication_review_ready"
+    assert calls==[(packet,request)] and result["posts_publicly"] is False
+
+
 def awareness_candidate(media_status="media_gap"):
     media_value = ({"status": "approved_media_selected", "asset_id": "PUBLIC-ASSET-1",
         "media_type": "image", "content_sha256": "b" * 64,

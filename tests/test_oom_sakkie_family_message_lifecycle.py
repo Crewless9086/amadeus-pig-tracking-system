@@ -257,6 +257,35 @@ def test_private_media_review_unconfirmed_edit_gets_one_bounded_recovery():
     assert len(memory.sent)==1 and len(memory.edited)==1
 
 
+def test_text_only_decision_unconfirmed_edit_gets_one_bounded_recovery():
+    memory=Memory();mission="BEACON-TEXT-PACKET"
+    deliver_family_result(PARSED,RESULT,specialist="BEACON",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    callback={**PARSED,"provider_message_id":"text-review-callback"}
+    recorded={**RESULT,"status":"text_only_owner_decision_recorded",
+        "answer":"Approved exact packet only; nothing published.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message",
+        "delivery_recovery_required":True}
+    failed=True
+    def fail_once(chat_id,message_id,text):
+        nonlocal failed
+        if failed:
+            failed=False;return {"success":False,"telegram_message_id":message_id}
+        return memory.edit(chat_id,message_id,text)
+    first=deliver_family_result(callback,recorded,specialist="BEACON",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=fail_once)
+    recovered=deliver_family_result(callback,recorded,specialist="BEACON",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=fail_once)
+    replay=deliver_family_result(callback,recorded,specialist="BEACON",
+        mission_id=mission,card_mission_id=mission,event_store=memory.store,
+        sender=memory.send,editor=fail_once)
+    assert first["status"]=="family_message_update_contained"
+    assert recovered["status"]=="family_message_completion_card_updated"
+    assert replay["telegram_sends"]==replay["telegram_edits"]==0
+
+
 def test_private_media_review_presentation_edits_album_card_once_and_replay_is_silent():
     memory=Memory();group="BEACON-INTAKE-GROUP-BELLA"
     receipt={**RESULT,"status":"completed","answer":"8 photos received — processing complete.",

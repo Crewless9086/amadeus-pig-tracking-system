@@ -151,6 +151,70 @@ def test_completed_beacon_media_callback_retries_delivery_without_decision_write
     assert result["answer"]=="Library decision recorded once."
 
 
+def test_text_only_approve_records_decision_but_never_calls_provider(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_claimed","callback_token":"opaque",
+      "action_kind":"beacon_text_only_publication_review","mission_id":"PACKET",
+      "preview_digest":"d"*64,"evidence_generation":"e"*64,
+      "preview_payload":{"contract_version":"beacon_facebook_organic_text_only_review/v1"}},200))
+    import modules.oom_sakkie.beacon_text_publication_review_runtime as review
+    executions=[];completed=[]
+    monkeypatch.setattr(review,"execute_text_only_publication_review",
+      lambda *args,**kwargs:executions.append(args) or ({"success":True,
+        "status":"text_only_owner_decision_recorded","answer":"Recorded",
+        "posts_publicly":False,"calls_meta":False,"spends_money":False},201))
+    monkeypatch.setattr(runtime,"complete_claim",lambda *args,**kwargs:completed.append(args) or {
+      "completed":True,"replayed":False,"result":args[1]})
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority())
+    assert status==201 and len(executions)==1 and len(completed)==1
+    assert result["posts_publicly"] is False and result["calls_meta"] is False
+    assert result["spends_money"] is False
+
+
+def test_completed_text_only_callback_recovers_delivery_without_decision_or_provider(monkeypatch):
+    prior={"success":True,"status":"text_only_owner_decision_recorded",
+      "answer":"Approved exact packet; nothing published.","mission_id":"PACKET",
+      "card_mission_id":"PACKET","posts_publicly":False,"calls_meta":False}
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_completed_delivery_retry",
+      "action_kind":"beacon_text_only_publication_review","mission_id":"PACKET",
+      "preview_digest":"d"*64,"result":prior},200))
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority())
+    assert status==200 and result["delivery_recovery_required"] is True
+    assert result["posts_publicly"] is False and result["calls_meta"] is False
+    assert result["answer"]==prior["answer"]
+
+
+def test_text_only_correct_returns_to_correction_without_decision_or_provider(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_preview_change_requested",
+      "action_kind":"beacon_text_only_publication_review","mission_id":"PACKET",
+      "preview_digest":"d"*64,"preview_payload":{"packet_id":"PACKET"},
+      "preview_card_message_id":"700"},200))
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:change"},authority())
+    assert status==200 and result["status"]=="protected_preview_change_requested"
+    assert "corrected facts" in result["answer"] and result["writes_farm_data"] is False
+
+
+def test_text_only_ambiguous_decision_store_failure_keeps_claim_recoverable(monkeypatch):
+    monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
+      "success":True,"status":"protected_callback_claimed","callback_token":"opaque",
+      "action_kind":"beacon_text_only_publication_review","mission_id":"PACKET",
+      "preview_digest":"d"*64,"evidence_generation":"e"*64,
+      "preview_payload":{},"selected_action":"approve"},200))
+    import modules.oom_sakkie.beacon_text_publication_review_runtime as review
+    monkeypatch.setattr(review,"execute_text_only_publication_review",lambda *a,**k:({
+      "success":False,"status":"weekly_owner_review_persistence_failed",
+      "posts_publicly":False,"calls_meta":False},503))
+    contained=[];monkeypatch.setattr(runtime,"contain_claim",lambda *a,**k:contained.append(a))
+    result,status=runtime.handle_protected_action_input(
+      {**parsed(""),"callback_data":"oompa:opaque:confirm"},authority())
+    assert status==503 and result["recovery_required"] is True and contained==[]
+
+
 def test_irrigation_exception_retains_executing_claim_for_provider_retry(monkeypatch):
     monkeypatch.setattr(runtime,"claim_callback",lambda *args,**kwargs:({
       "success":True,"status":"protected_callback_claimed","callback_token":"opaque",

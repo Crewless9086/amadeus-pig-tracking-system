@@ -157,6 +157,8 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202608130002_allow_rootline_irrigation_protected_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608150003_allow_beacon_album_finish_protected_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608150007_allow_beacon_media_review_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608160002_allow_rootline_mixer_protected_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608160003_allow_beacon_text_publication_review_claims.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608150008_add_beacon_album_review_envelope.sql
 
       - name: Run Beacon weekly owner-decision permission gates
@@ -240,7 +242,10 @@ jobs:
           SAM_MEAT_DEADLINE_POSTGRES_URL: ${{ env.DATABASE_URL }}
         run: python -m unittest tests.test_sam_meat_truth_snapshot_postgres
       - name: Run Oom Sakkie audit-rail suite with live checks enabled
-        run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book tests.test_meat_match_engine tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_sales_conversation_learning tests.test_beacon_media_library tests.test_beacon_campaign tests.test_beacon_media_intake tests.test_beacon_media_intake_routes
+        run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book tests.test_meat_match_engine tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_sales_conversation_learning tests.test_beacon_media_library tests.test_beacon_campaign tests.test_beacon_media_intake tests.test_beacon_media_intake_routes tests.test_beacon_text_only_organic_review tests.test_oom_sakkie_beacon_text_publication_review_runtime
+
+      - name: Run BEACON protected text-only callback and replay gates
+        run: python -m pytest tests/test_oom_sakkie_beacon_request_runtime.py tests/test_oom_sakkie_protected_action_runtime.py tests/test_oom_sakkie_family_message_lifecycle.py tests/test_beacon_weekly_owner_review_decisions_postgres.py tests/test_beacon_text_only_protected_claims_postgres.py -q
 
       - name: Check Oom Sakkie JavaScript syntax
         run: |

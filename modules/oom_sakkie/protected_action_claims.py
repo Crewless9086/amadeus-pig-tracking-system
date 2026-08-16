@@ -168,7 +168,8 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         if row[7]=="completed":
             if row[0] in {"rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
                     "rootline_fertilizer_mixer_presence_refresh",
-                    "sam_sale_payment", "beacon_media_review"}:
+                    "sam_sale_payment", "beacon_media_review",
+                    "beacon_text_only_publication_review"}:
                 return {"success":True,"status":"protected_callback_completed_delivery_retry",
                   "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
                   "result":row[9],"telegram_sends":0,"telegram_edits":0},200
@@ -181,7 +182,11 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
               "telegram_sends":0,"telegram_edits":0},200
         if row[7]=="executing":
             recoverable_decline = row[0]=="beacon_media_review" and action=="cancel"
-            if action!="confirm" and not recoverable_decline:
+            recoverable_text_decision = (
+                row[0]=="beacon_text_only_publication_review"
+                and action=="cancel"
+            )
+            if action!="confirm" and not recoverable_decline and not recoverable_text_decision:
                 return {"success":False,"status":"protected_callback_stale"},409
             cur.execute("""select confirmation_provider_message_id,
               confirmation_provider_timestamp from app_private.oom_protected_action_claims
@@ -198,12 +203,21 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
               "callback_token":token,"action_kind":row[0],"mission_id":row[3],
               "preview_digest":row[4],"evidence_generation":row[5],
               "preview_payload":row[6],"recovered_executing_receipt":True,
-              **({"selected_action":"decline"} if recoverable_decline else {})},200
+              **({"selected_action":"decline"} if recoverable_decline else {}),
+              **({"selected_action":"decline"} if recoverable_text_decision else {}),
+              **({"selected_action":"approve"}
+                 if row[0]=="beacon_text_only_publication_review" and action=="confirm" else {})},200
         if row[7]!="active":return {"success":False,"status":"protected_callback_stale"},409
         if row[8]<=datetime.now(timezone.utc):
             cur.execute("update app_private.oom_protected_action_claims set status='expired' where callback_token=%s",(token,))
             return {"success":False,"status":"protected_callback_expired"},409
         if action in {"change","cancel"}:
+            if row[0]=="beacon_text_only_publication_review" and action=="cancel":
+                cur.execute("update app_private.oom_protected_action_claims set status='executing',confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s and status='active'",(provider_message_id,provider_timestamp,token))
+                return {"success":True,"status":"protected_callback_claimed","callback_token":token,
+                  "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
+                  "evidence_generation":row[5],"preview_payload":row[6],
+                  "selected_action":"decline"},200
             if row[0]=="beacon_media_review" and action=="cancel":
                 cur.execute("update app_private.oom_protected_action_claims set status='executing',confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s and status='active'",(provider_message_id,provider_timestamp,token))
                 return {"success":True,"status":"protected_callback_claimed","callback_token":token,
@@ -214,7 +228,8 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
               "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
               "preview_payload":row[6],"preview_card_message_id":str(row[10] or "")},200
         cur.execute("update app_private.oom_protected_action_claims set status='executing',confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s and status='active'",(provider_message_id,provider_timestamp,token))
-        return {"success":True,"status":"protected_callback_claimed","callback_token":token,"action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],"evidence_generation":row[5],"preview_payload":row[6]},200
+        return {"success":True,"status":"protected_callback_claimed","callback_token":token,"action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],"evidence_generation":row[5],"preview_payload":row[6],
+          **({"selected_action":"approve"} if row[0]=="beacon_text_only_publication_review" else {})},200
 
 def complete_claim(token, result, *, connect_factory=None):
     with (connect_factory() if connect_factory else _connect()) as db:

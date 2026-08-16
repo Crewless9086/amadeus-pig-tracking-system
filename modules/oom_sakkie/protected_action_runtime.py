@@ -39,6 +39,13 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "durable_claim_truth_loaded":False,"current_segment_consumed":None,
           "segment_consumption_proven":False,"recovery_required":True},503
     if claimed.get("status")=="protected_callback_completed_delivery_retry":
+        if claimed.get("action_kind")=="beacon_text_only_publication_review":
+            result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
+            return {"handled":True,**result,"specialist":"BEACON",
+              "mission_id":str(result.get("mission_id") or claimed["mission_id"]),
+              "card_mission_id":str(result.get("card_mission_id") or claimed["mission_id"]),
+              "owner_visible_completion_policy":"verified_edit_or_new_message",
+              "delivery_recovery_required":True,"writes_farm_data":False},200
         if claimed.get("action_kind")=="beacon_media_review":
             result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
             return {"handled":True,**result,"specialist":"BEACON_MEDIA",
@@ -83,6 +90,12 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
             claimed["answer"]=("Send the corrected facts when ready; nothing was recorded."
                 if claimed["status"]=="protected_preview_change_requested" else
                 "Cancelled. Nothing was recorded.")
+            if claimed.get("action_kind")=="beacon_text_only_publication_review":
+                preview=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
+                if preview.get("ui_language")=="af":
+                    claimed["answer"]=("Stuur die gekorrigeerde besonderhede wanneer gereed; niks is aangeteken nie."
+                        if claimed["status"]=="protected_preview_change_requested" else
+                        "Gekanselleer. Niks is aangeteken nie.")
             if claimed.get("action_kind")=="sam_sale_payment":
                 bound=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
                 claimed.update({"specialist":"SAM",
@@ -131,6 +144,30 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
                     "suppress_owner_delivery":True,"telegram_sends":0,"telegram_edits":0,
                     "writes_farm_data":False},200
             return {"handled":True,**result,"writes_farm_data":False},result_status
+        contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        return {"handled":True,**result,"writes_farm_data":False,
+            "suppress_owner_delivery":True},result_status
+    if claimed["action_kind"]=="beacon_text_only_publication_review":
+        from modules.oom_sakkie.beacon_text_publication_review_runtime import (
+            execute_text_only_publication_review,
+        )
+        result,result_status=execute_text_only_publication_review(claimed,parsed)
+        if result.get("success") is True:
+            completed=complete_claim(claimed["callback_token"],result,
+                connect_factory=connect_factory)
+            canonical=completed.get("result") if isinstance(completed.get("result"),dict) else result
+            if completed.get("replayed"):
+                return {"handled":True,**canonical,"answer":"",
+                    "suppress_owner_delivery":True,"telegram_sends":0,
+                    "telegram_edits":0,"writes_farm_data":False},200
+            return {"handled":True,**canonical,"writes_farm_data":False},result_status
+        if result_status >= 500 or result.get("status") in {
+                "weekly_owner_review_persistence_unavailable",
+                "weekly_owner_review_persistence_failed",
+                "text_only_canonical_store_unavailable"}:
+            return {"handled":True,**result,"status":"text_only_decision_recovery_pending",
+                "recovery_required":True,"writes_farm_data":False,
+                "suppress_owner_delivery":True},503
         contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
         return {"handled":True,**result,"writes_farm_data":False,
             "suppress_owner_delivery":True},result_status
