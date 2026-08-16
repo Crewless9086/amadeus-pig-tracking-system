@@ -1801,7 +1801,8 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["review_guard"]["dispatch_enabled"])
         self.assertFalse(data["review_guard"]["writes"])
         self.assertEqual(data["payloads"]["dispatch_blueprint"]["summary_status"], "blueprint_only_no_dispatch")
-        self.assertIn("CLAUDE_REVIEW_HANDOFF.md", data["claude_prompt"])
+        self.assertIn("canonical CORE mission review readback", data["claude_prompt"])
+        self.assertEqual(data["canonical_review"]["source"], "supabase:charlie_missions.metadata.review_packet")
 
     def test_agent_runtime_review_packet_route_denies_non_local_review_access(self):
         response = self.client.get(

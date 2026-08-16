@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
+from modules.oom_sakkie.canonical_review_readback import get_canonical_review_readback
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
@@ -16,8 +17,8 @@ REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
 
 
 CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9EE"
-CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
-CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
+CURRENT_REVIEW_SOURCE = "supabase:charlie_missions.metadata.review_packet"
+CURRENT_REVIEW_PROMPT = "Review the current canonical CORE mission review readback."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
     "mode": "recorded_operator_evidence_only",
     "recorded_at_utc": "2026-06-14T17:08:00Z",
@@ -1369,7 +1370,7 @@ def get_agent_dispatch_decision_rail_blueprint():
     }
 
 
-def get_agent_runtime_review_packet():
+def get_agent_runtime_review_packet(review_reader=get_canonical_review_readback):
     status = get_agent_runtime_status()
     readiness = get_agent_runtime_readiness()
     contracts = get_agent_operating_contracts()
@@ -1386,6 +1387,7 @@ def get_agent_runtime_review_packet():
         "unlock_readiness": unlock.get("mode"),
         "dispatch_blueprint": dispatch_blueprint.get("mode"),
     }
+    canonical_review = review_reader()
     return {
         "success": True,
         "mode": "agent_runtime_review_packet_only",
@@ -1415,16 +1417,19 @@ def get_agent_runtime_review_packet():
             "unlock_readiness": unlock,
             "dispatch_blueprint": dispatch_blueprint,
         },
-        "claude_prompt": "Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.",
+        "canonical_review": canonical_review,
+        "review_source": CURRENT_REVIEW_SOURCE,
+        "claude_prompt": CURRENT_REVIEW_PROMPT,
         "next_gate": "bulk_claude_review_before_dispatch_decision_rail_implementation",
     }
 
 
-def get_jarvis_owner_review_packet():
+def get_jarvis_owner_review_packet(review_reader=None):
     progress = get_jarvis_product_progress()
     command_center = get_agent_command_center()
     safety_gates = get_jarvis_safety_gate_board()
-    runtime_review = get_agent_runtime_review_packet()
+    runtime_review = get_agent_runtime_review_packet(
+        review_reader=review_reader or restricted_canonical_review_readback)
     learning_consumption = get_learning_influence_consumption_readiness()
     consumption_audit_rail = get_learning_influence_consumption_audit_rail_blueprint()
     consumer_design = get_learning_influence_consumer_design_packet()
@@ -1438,6 +1443,7 @@ def get_jarvis_owner_review_packet():
         "locked_gate_count": safety_gates.get("locked_count", 0),
         "manual_check_count": safety_gates.get("manual_check_count", 0),
     }
+
     return {
         "success": True,
         "mode": "jarvis_owner_review_packet_only",
@@ -1453,8 +1459,9 @@ def get_jarvis_owner_review_packet():
         "review_readiness": readiness,
         "current_review": {
             "scope": CURRENT_CLAUDE_REVIEW_SCOPE,
-            "handoff_file": CURRENT_CLAUDE_REVIEW_HANDOFF,
-            "claude_prompt": CURRENT_CLAUDE_REVIEW_PROMPT,
+            "canonical_review": runtime_review.get("canonical_review"),
+            "review_source": CURRENT_REVIEW_SOURCE,
+            "claude_prompt": CURRENT_REVIEW_PROMPT,
             "focus": list(CURRENT_CLAUDE_REVIEW_FOCUS),
             "ci_evidence": [dict(item) for item in CURRENT_CLAUDE_REVIEW_CI_EVIDENCE],
             "ci_evidence_policy": dict(CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY),
@@ -1480,9 +1487,23 @@ def get_jarvis_owner_review_packet():
             "learning_influence_consumption_audit_rail_blueprint": consumption_audit_rail,
             "learning_influence_consumer_design_packet": consumer_design,
         },
-        "claude_prompt": CURRENT_CLAUDE_REVIEW_PROMPT,
+        "claude_prompt": CURRENT_REVIEW_PROMPT,
         "owner_instruction": "Use this as a read-only review checklist. Do not treat it as approval to unlock runtime authority.",
         "next_gate": "owner_and_claude_review_before_any_runtime_authority_change",
+    }
+
+
+def restricted_canonical_review_readback():
+    """Identity-free result for the general Oom Sakkie message/tool surface."""
+    return {
+        "success": False,
+        "status": "canonical_review_restricted",
+        "state": "Unknown",
+        "source": CURRENT_REVIEW_SOURCE,
+        "mission_count": 0,
+        "missions": [],
+        "historical_pointer_loaded": False,
+        "historical_pointer_authority": False,
     }
 
 
