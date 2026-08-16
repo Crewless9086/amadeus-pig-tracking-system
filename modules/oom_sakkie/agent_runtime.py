@@ -1429,7 +1429,7 @@ def get_jarvis_owner_review_packet(review_reader=None):
     command_center = get_agent_command_center()
     safety_gates = get_jarvis_safety_gate_board()
     runtime_review = get_agent_runtime_review_packet(
-        review_reader=review_reader or _restricted_canonical_review_readback)
+        review_reader=review_reader or restricted_canonical_review_readback)
     learning_consumption = get_learning_influence_consumption_readiness()
     consumption_audit_rail = get_learning_influence_consumption_audit_rail_blueprint()
     consumer_design = get_learning_influence_consumer_design_packet()
@@ -1493,7 +1493,7 @@ def get_jarvis_owner_review_packet(review_reader=None):
     }
 
 
-def _restricted_canonical_review_readback():
+def restricted_canonical_review_readback():
     """Identity-free result for the general Oom Sakkie message/tool surface."""
     return {
         "success": False,

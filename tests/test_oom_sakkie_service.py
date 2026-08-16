@@ -3578,6 +3578,10 @@ def literal_false_is_allowed():
         self.assertEqual(result["llm_context"]["review_packet"]["summary_status"], "ready_for_bulk_claude_review_not_live_dispatch")
         self.assertFalse(result["llm_context"]["review_packet"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["review_packet"]["writes_enabled"])
+        canonical_review = result["llm_context"]["review_packet"]["canonical_review"]
+        self.assertEqual(canonical_review["status"], "canonical_review_restricted")
+        self.assertEqual(canonical_review["mission_count"], 0)
+        self.assertEqual(canonical_review["missions"], [])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
 
     @patch("modules.oom_sakkie.tools.dispatch_decision_status_handler")
@@ -3621,6 +3625,10 @@ def literal_false_is_allowed():
         self.assertFalse(result["llm_context"]["runs_specialist_tools"])
         self.assertFalse(result["llm_context"]["writes"])
         self.assertFalse(result["llm_context"]["applies_runtime_change"])
+        canonical_review = result["llm_context"]["review_packet"]["canonical_review"]
+        self.assertEqual(canonical_review["status"], "canonical_review_restricted")
+        self.assertEqual(canonical_review["mission_count"], 0)
+        self.assertEqual(canonical_review["missions"], [])
 
     @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
     def test_agent_activation_plan_tool_is_read_only(self, mock_results):
