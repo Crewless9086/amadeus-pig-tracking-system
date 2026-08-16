@@ -426,6 +426,29 @@ def test_orphaned_visible_question_edit_claim_is_not_retried_and_gets_one_notice
     assert len(memory.edited)==0 and len(memory.sent)==2
 
 
+def test_exact_prior_update_from_different_inbound_gets_current_notice_without_reedit():
+    memory=Memory();mission="OOM-ROOTLINE-WAIT-OLD-UPDATE"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    follow={**RESULT,"answer":"Are you back at the fertilizer valves now?",
+        "requires_visible_notification":False}
+    old=deliver_family_result({**PARSED,"provider_message_id":"old-provider"},follow,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert old["telegram_edits"]==1
+    current={**follow,"requires_visible_notification":True,"question_count":1}
+    recovered=deliver_family_result({**PARSED,"provider_message_id":"retained-presence"},current,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result({**PARSED,"provider_message_id":"retained-presence"},current,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert recovered["status"]=="family_message_card_updated_and_notified"
+    assert recovered["telegram_edits"]==0 and recovered["telegram_sends"]==1
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
+    assert len(memory.edited)==1 and len(memory.sent)==2
+
+
 def test_context_recovery_projection_is_not_mistaken_for_provider_delivery():
     memory=Memory();mission="OOM-ROOTLINE-CONTEXT-RECOVERY"
     deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,

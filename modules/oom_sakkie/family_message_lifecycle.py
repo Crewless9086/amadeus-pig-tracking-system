@@ -199,6 +199,30 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
                 "telegram_sends": 0, "telegram_edits": 0}
+    if (card_id and result.get("requires_visible_notification") is True):
+        update_id = card_mission_id + "-UPDATE-" + text_sha[:20].upper()
+        prior_update = [row for row in events
+            if str(row.get("event_id") or "").startswith(update_id)]
+        if any(row.get("state") == "updated" for row in prior_update):
+            # The exact presentation was already provider-confirmed under an
+            # earlier inbound identity. Do not edit it again; the current
+            # must-notice lifecycle gets only its separately claimed notice.
+            notification_id = card_mission_id + "-VISIBLE-WAIT-" + text_sha[:20].upper()
+            notification_events = [row for row in events
+                if str(row.get("event_id") or "").startswith(notification_id)]
+            if any(row.get("state") == "notification_delivered"
+                    for row in notification_events):
+                return {"success": True, "status": "family_message_replayed_noop",
+                    "mission_id": mission_id, "card_mission_id": card_mission_id,
+                    "telegram_message_id": card_id,
+                    "telegram_sends": 0, "telegram_edits": 0}
+            if notification_events:
+                return {"success": False, "status": "family_message_notification_ambiguous",
+                    "mission_id": mission_id, "card_mission_id": card_mission_id,
+                    "telegram_message_id": card_id,
+                    "telegram_sends": 0, "telegram_edits": 0}
+            return _deliver_visible_notification(parsed, payload, text, mission_id,
+                card_mission_id, card_id, text_sha, store, sender, prior_edits=0)
     if latest and str(latest.get("text_sha256") or "") == text_sha:
         return {"success": True, "status": "family_message_replayed_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
