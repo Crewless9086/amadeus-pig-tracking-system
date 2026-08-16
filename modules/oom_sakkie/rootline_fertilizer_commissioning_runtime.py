@@ -25,6 +25,126 @@ MISSION_ID = "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809"
 CONTRACT_VERSION = "oom_rootline_fertilizer_commissioning_runtime.v1"
 
 
+def prepare_fertilizer_commissioning(*, owner_result, parsed, gateway_authority=None,
+                                     now=None, environ=None, store=None,
+                                     token_store=None, transport=None,
+                                     power_loader=None, acceptance_loader=None):
+    """Build current Mixer eligibility without crossing the controller edge."""
+    now = _aware(now or datetime.now(timezone.utc))
+    store = store or rootline_irrigation_execution_store
+    if not _bound(owner_result, parsed, gateway_authority):
+        return _result("commissioning_context_unproven")
+    if (acceptance_loader or _load_exact_acceptance)(owner_result, parsed) is not True:
+        return _result("commissioning_acceptance_receipt_unproven")
+    observed = _time(parsed.get("provider_timestamp"))
+    if observed is None or not 0 <= (now - observed).total_seconds() <= 300:
+        return _result("commissioning_presence_expired")
+    if owner_result.get("ready_for_supervised_proof") is not True:
+        return dict(owner_result)
+    source = environ if environ is not None else os.environ
+    token_store = token_store or PostgresOAuthTokenStore()
+    transport = transport or RootlineIFTTTTransport(token_store=token_store, environ=source)
+    if store("load_active_auxiliary", None):
+        return _result("commissioning_active_execution_conflict")
+    try:
+        eligibility, context = _current_mixer_eligibility(
+            parsed=parsed, now=now, store=store, transport=transport,
+            power_loader=power_loader)
+    except Exception:
+        return _result("commissioning_current_evidence_unavailable")
+    if eligibility.get("eligible") is not True:
+        return _hold(eligibility.get("status"))
+    return {"success": True, "handled": True,
+        "status": "commissioning_protected_preview_ready",
+        "eligibility": eligibility, "current_context": context,
+        "hardware_commands": 0, "provider_control_calls": 0,
+        "writes_farm_data": False, "injection_enabled": False,
+        "contract_version": CONTRACT_VERSION}
+
+
+def execute_protected_fertilizer_commissioning(*, eligibility, parsed, now=None,
+                                                environ=None, store=None,
+                                                token_store=None, transport=None,
+                                                power_loader=None):
+    """Delegate one confirmed, exactly bound Mixer artifact to the existing spine."""
+    from modules.telemetry.rootline_auxiliary_management import validate_auxiliary_eligibility
+    now = _aware(now or datetime.now(timezone.utc))
+    store = store or rootline_irrigation_execution_store
+    try:
+        history = store("load_auxiliary_history", MIXER_ID)
+    except Exception:
+        return _result("commissioning_history_readback_unavailable")
+    terminal = _exact_completed_execution(eligibility, history)
+    if terminal is not None:
+        return _finalize({"success": True, "status": "auxiliary_completed",
+            "hardware_commands": 0, "provider_control_calls": 0,
+            "execution": terminal}, store)
+    artifact = validate_auxiliary_eligibility(eligibility, now=now)
+    if (not artifact or artifact.get("auxiliary_device_id") != MIXER_ID
+            or artifact.get("device_id") != DEVICE_ID or artifact.get("channel") != 2
+            or artifact.get("maximum_duration_seconds") != 300):
+        return _result("commissioning_protected_binding_mismatch")
+    source = environ if environ is not None else os.environ
+    token_store = token_store or PostgresOAuthTokenStore()
+    transport = transport or RootlineIFTTTTransport(token_store=token_store, environ=source)
+    active = store("load_active_auxiliary", None)
+    if active:
+        exact_active = (isinstance(active, dict)
+            and active.get("execution_id") == artifact.get("execution_id")
+            and active.get("consumption_key") == artifact.get("consumption_key")
+            and active.get("auxiliary_device_id") == MIXER_ID
+            and active.get("device_id") == DEVICE_ID
+            and active.get("channel") == 2)
+        if not exact_active:
+            return _result("commissioning_active_execution_conflict")
+        outcome = advance_auxiliary_execution(eligibility={}, store=store,
+            transport=transport, revalidate=lambda _artifact: {}, now=now)
+        return _finalize(outcome, store)
+    try:
+        current_safety = transport.read_safety_configuration(device_id=DEVICE_ID, channel=2)
+        current_power = (power_loader or _load_power)(now)
+        history = store("load_auxiliary_history", MIXER_ID)
+    except Exception:
+        return _result("commissioning_current_evidence_unavailable")
+    if not isinstance(history, list):
+        return _result("commissioning_history_readback_unavailable")
+    context = _mixer_context(parsed, now, current_safety, current_power, history)
+
+    consumed = {"value": False}
+    def authorize_once(**edge):
+        approved = (not consumed["value"]
+            and edge.get("device_id") == DEVICE_ID and edge.get("channel") == 2
+            and edge.get("idempotency_key") == artifact["execution_id"] + ":ON")
+        if approved:
+            consumed["value"] = True
+        return approved
+    transport.auxiliary_on_authorizer = authorize_once
+    def revalidate(_artifact):
+        safety = transport.read_safety_configuration(device_id=DEVICE_ID, channel=2)
+        power = (power_loader or _load_power)(now)
+        return _mixer_context(parsed, now, safety, power,
+            store("load_auxiliary_history", MIXER_ID))
+    try:
+        outcome = advance_auxiliary_execution(eligibility=artifact, store=store,
+            transport=transport, revalidate=revalidate, now=now)
+    finally:
+        transport.auxiliary_on_authorizer = None
+    return _finalize(outcome, store)
+
+
+def _exact_completed_execution(eligibility, history):
+    if not isinstance(eligibility, dict) or not isinstance(history, list):
+        return None
+    matches = [row for row in history if isinstance(row, dict)
+        and row.get("state") == "Completed" and row.get("shutdown_verified") is True
+        and row.get("execution_id") == eligibility.get("execution_id")
+        and row.get("consumption_key") == eligibility.get("consumption_key")
+        and row.get("auxiliary_device_id") == MIXER_ID
+        and row.get("device_id") == DEVICE_ID and row.get("channel") == 2
+        and row.get("maximum_duration_seconds") == 300]
+    return matches[0] if len(matches) == 1 else None
+
+
 def continue_fertilizer_commissioning(*, owner_result, parsed, gateway_authority=None, now=None,
                                       environ=None, store=None, token_store=None,
                                       transport=None, power_loader=None,
@@ -198,15 +318,52 @@ def _bound(result, parsed, authority):
 
 
 def _load_power(now):
-    from modules.telemetry.rootline_water_energy_plan import read_current_water_energy_evidence
-    evidence, _date, generated = read_current_water_energy_evidence(now=now)
-    power = evidence.get("power") if isinstance(evidence, dict) else {}
-    if isinstance(power, dict) and isinstance(power.get("current"), dict):
-        power = power["current"]
+    # Mixer commissioning reads only the canonical power projection. Tank,
+    # irrigation, weather and forecast projections are deliberately out of scope.
+    from modules.telemetry.power_service import get_current_power_state
+    packet, _status = get_current_power_state(database_url=os.environ.get("DATABASE_URL"))
+    power = packet.get("current") if isinstance(packet, dict) else {}
     soc = _number(power.get("battery_soc_pct")); solar = _number(power.get("solar_power_w"))
     grid = _number(power.get("grid_power_w"))
     suitable = None if None in (soc, solar, grid) else not (soc < 50 and solar < 1200 and grid <= 0)
-    return {"suitable": suitable, "generation": str(generated), "observed_at": power.get("observed_at")}
+    generation = sha256(json.dumps(power, sort_keys=True, default=str).encode()).hexdigest()
+    return {"suitable": suitable, "generation": generation,
+        "observed_at": power.get("observed_at")}
+
+
+def _current_mixer_eligibility(*, parsed, now, store, transport, power_loader=None):
+    safety = transport.read_safety_configuration(device_id=DEVICE_ID, channel=2)
+    power = (power_loader or _load_power)(now)
+    history = store("load_auxiliary_history", MIXER_ID)
+    if not isinstance(history, list):
+        raise RuntimeError("commissioning_history_readback_unavailable")
+    context = _mixer_context(parsed, now, safety, power, history)
+    eligibility = build_auxiliary_eligibility(
+        task={"auxiliary_device_id": MIXER_ID}, safety=safety, context=context,
+        flags={"ROOTLINE_FERTILIZER_MIXING_ENABLED": True}, now=now)
+    return eligibility, context
+
+
+def _mixer_context(parsed, now, safety, power, history):
+    completed = [row for row in history if _time(row.get("completed_at"))
+        and _time(row.get("completed_at")).date() == now.date()
+        and row.get("shutdown_verified") is True]
+    minutes = sum(float(row.get("verified_runtime_seconds") or 0) / 60
+                  for row in completed)
+    generation = sha256(json.dumps({
+        "mission_id": MISSION_ID,
+        "provider_message_id": str(parsed.get("provider_message_id") or ""),
+        "provider_timestamp": str(parsed.get("provider_timestamp") or ""),
+        "controller_generation": safety.get("controller_safety_generation"),
+        "controller_digest": safety.get("response_digest"),
+        "power_generation": power.get("generation"),
+    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return {"plan_generation": generation, "injection_active": False,
+        "verified_mixing_minutes_today": minutes,
+        "verified_mixing_sessions_today": len(completed),
+        "mixing_history_complete_through": now.isoformat(),
+        "power_suitable": power.get("suitable") is True,
+        "prior_shutdown_unverified": False}
 
 
 def _evaluation_time(initial, deterministic):

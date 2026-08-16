@@ -54,6 +54,15 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
               "reply_markup":{"inline_keyboard":[]},
               "owner_visible_completion_policy":"verified_edit_or_new_message",
               "writes_to_supabase":False},200
+        if claimed.get("action_kind")=="rootline_fertilizer_mixer_commissioning":
+            from modules.oom_sakkie.rootline_protected_mixer import protected_card_mission_id
+            result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
+            return {"handled":True,**result,"specialist":"ROOTLINE",
+              "mission_id":claimed["mission_id"],
+              "card_mission_id":protected_card_mission_id(claimed["preview_digest"]),
+              "reply_markup":{"inline_keyboard":[]},
+              "owner_visible_completion_policy":"verified_edit_or_new_message",
+              "delivery_recovery_required":True},200
         from modules.oom_sakkie.rootline_protected_irrigation import protected_card_mission_id
         result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
         answer=_irrigation_answer(result,claimed)
@@ -146,6 +155,28 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "card_mission_id":protected_card_mission_id(claimed["preview_digest"],claimed["mission_id"]),
           "reply_markup":{"inline_keyboard":[]},
           "owner_visible_completion_policy":"verified_edit_or_new_message"},result_status
+    if claimed["action_kind"]=="rootline_fertilizer_mixer_commissioning":
+        from modules.oom_sakkie.rootline_protected_mixer import (
+            execute_claimed_mixer, protected_card_mission_id,
+        )
+        try:
+            result,result_status=execute_claimed_mixer(claimed,parsed=parsed)
+        except Exception as exc:
+            return {"handled":True,"success":False,
+                "status":"mixer_protected_recovery_pending",
+                "hardware_commands":None,"provider_control_calls":None,
+                "recovery_required":True,"error_type":type(exc).__name__},503
+        if result.get("success") is True and result.get("status") in {
+                "auxiliary_started","auxiliary_active","auxiliary_claim_in_progress",
+                "auxiliary_completed"}:
+            complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        elif int(result.get("hardware_commands") or 0)==0:
+            contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        return {"handled":True,**result,"specialist":"ROOTLINE",
+            "mission_id":claimed["mission_id"],
+            "card_mission_id":protected_card_mission_id(claimed["preview_digest"]),
+            "reply_markup":{"inline_keyboard":[]},
+            "owner_visible_completion_policy":"verified_edit_or_new_message"},result_status
     if claimed["action_kind"]=="grouped_weights":
         result,result_status=execute_grouped_weight_claim(claimed,actor_id=owner,connect_factory=connect_factory)
         if not result.get("success"):return {"handled":True,**result},result_status
