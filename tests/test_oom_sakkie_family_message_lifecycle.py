@@ -1,9 +1,11 @@
 from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Lock
+import hashlib
 import pytest
 
-from modules.oom_sakkie.family_message_lifecycle import bind_existing_card,bind_legacy_provider_request,deliver_family_result
+from modules.oom_sakkie.family_message_lifecycle import (_visible_notification_events,
+    bind_existing_card,bind_legacy_provider_request,deliver_family_result)
 
 
 def test_postgres_lifecycle_load_uses_bounded_transaction_read_only(monkeypatch):
@@ -447,6 +449,45 @@ def test_exact_prior_update_from_different_inbound_gets_current_notice_without_r
     assert recovered["telegram_edits"]==0 and recovered["telegram_sends"]==1
     assert replay["telegram_edits"]==replay["telegram_sends"]==0
     assert len(memory.edited)==1 and len(memory.sent)==2
+
+
+def test_same_notice_text_from_later_authenticated_inbound_is_not_old_notice_replay():
+    memory=Memory();mission="OOM-ROOTLINE-RECURRING-WAIT"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    notice={**RESULT,"answer":"Are you back at the fertilizer valves now?",
+        "requires_visible_notification":True,"question_count":1}
+    old=deliver_family_result({**PARSED,"provider_message_id":"old-provider"},notice,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    current=deliver_family_result({**PARSED,"provider_message_id":"current-provider"},notice,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result({**PARSED,"provider_message_id":"current-provider"},notice,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert old["telegram_sends"]==1
+    assert current["telegram_sends"]==1 and current["telegram_edits"]==0
+    assert replay["telegram_sends"]==replay["telegram_edits"]==0
+    assert len(memory.sent)==3
+
+
+def test_visible_notice_identity_uses_canonical_inbound_and_full_legacy_binding():
+    text_sha="a"*64
+    parsed={**PARSED,"provider_message_id":"same-provider","text":" Mixer   ready "}
+    canonical_replay={**parsed,"text":"Mixer ready"}
+    identity,events=_visible_notification_events([],"CARD",text_sha,parsed,"ROOTLINE")
+    replay_identity,replay_events=_visible_notification_events(
+        [],"CARD",text_sha,canonical_replay,"ROOTLINE")
+    assert identity==replay_identity and events==replay_events==[]
+    legacy_id="CARD-VISIBLE-WAIT-"+text_sha[:20].upper()+"-DELIVERED"
+    wrong_owner={"event_id":legacy_id,"state":"notification_delivered",
+        "provider_message_id":"same-provider","provider_timestamp":PARSED["provider_timestamp"],
+        "owner_user_id":"99","chat_id":"99","specialist_identity":"ROOTLINE",
+        "inbound_text_sha256":hashlib.sha256(b"Mixer ready").hexdigest()}
+    selected,legacy_events=_visible_notification_events(
+        [wrong_owner],"CARD",text_sha,canonical_replay,"ROOTLINE")
+    assert selected==identity and legacy_events==[]
 
 
 def test_context_recovery_projection_is_not_mistaken_for_provider_delivery():
