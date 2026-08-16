@@ -127,11 +127,26 @@ def test_exact_binding_and_replay_identity_are_stable_and_change_with_provider_i
 def test_afrikaans_protected_intents_and_ambiguous_text_never_reach_observation_adapter():
     _, anton = principal("1002", "Pig 11 is sick")
     for text in ("Bevestig die dood", "Behandel haar met medikasie", "Dek die sog",
-                 "Verander die lewensiklus", "Doen sommer iets"):
+                 "Verander die lewensiklus"):
         item = parsed("1002", text); calls = []
         result, status = handle_family_runtime_message(item, anton,
             observation_adapter=lambda **_: calls.append(1) or {}, replay_store=claims())
         assert status == 403 and calls == [] and result["status"] == "family_capability_denied"
+
+
+def test_unclassified_manager_request_asks_one_precise_afrikaans_question_without_loading_context():
+    item, anton = principal("1002", "Wat kort my aandag?")
+    calls = []
+    result, status = handle_family_runtime_message(item, anton,
+        summary_loader=lambda **_: calls.append("summary"),
+        observation_adapter=lambda **_: calls.append("observation"),
+        contextual_loader=lambda **_: calls.append("context"),
+        replay_store=lambda *_: calls.append("claim"))
+    assert status == 200 and result["status"] == "family_clarification_required"
+    assert result["language"] == "af" and result["audit_trace_recorded"] is False
+    assert result["writes_farm_data"] is False and result["hardware_commands"] == 0
+    assert result["answer"].count("?") == 1 and "plaaswaarneming" in result["answer"]
+    assert calls == []
 
 
 def test_faulty_adapter_cannot_cross_mutation_or_hardware_boundary():

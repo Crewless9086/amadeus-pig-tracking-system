@@ -55,6 +55,12 @@ def handle_family_runtime_message(parsed: Mapping[str, Any], principal: FamilyPr
         "binding_digest": principal.binding_digest,
         "replay_identity": decision.replay_identity,
         "audit_trace_recorded": False, **ZERO}
+    if (capability == "unsupported_family_capability"
+            and principal.role is FamilyRole.FARM_MANAGER
+            and not IRRIGATION_ACTION_SHAPED.search(str(parsed.get("text") or ""))):
+        return {**base, **_contained("family_clarification_required"),
+            "answer": ("Wil jy plaas-, kudde-, welstand-, teel-, water-, weer- of "
+                       "kragbewyse sien, of wil jy 'n plaaswaarneming rapporteer?")}, 200
     if not decision.allowed:
         return {**base, **_contained("family_capability_denied", success=False),
             "answer": "Ek kan nie dié versoek met hierdie familieprofiel uitvoer nie."}, 403
