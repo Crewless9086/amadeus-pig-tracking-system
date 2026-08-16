@@ -12,6 +12,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from services.database_service import DATABASE_URL_ENV
+from modules.sales.sam_pricing import resolve_live_stock_price_rule
 
 
 CONTRACT_VERSION = "herdmaster_live_transfer_disclosure_v1"
@@ -222,22 +223,11 @@ def _price_band_contract(pig, order, price_rows, as_of):
     pig_band = _weight_band(weight)
     category = _sale_category(weight)
     requested = _text(order.get("requested_weight_range")) or None
-    pig_sex = _text(pig.get("sex")).lower()
-    matches = []
-    for row in price_rows:
-        effective_from = _date(row.get("effective_from"))
-        effective_to = _date(row.get("effective_to"))
-        price_sex = _text(row.get("sex")).lower()
-        if (_text(row.get("sale_category")) == category
-                and _text(row.get("weight_band")) == pig_band
-                and row.get("active") is not False
-                and (effective_from is None or effective_from <= as_of)
-                and (effective_to is None or effective_to >= as_of)
-                and (not price_sex or price_sex == pig_sex)):
-            matches.append(row)
-    matches.sort(key=lambda row: (_text(row.get("effective_from")), _text(row.get("created_at")),
-                                  _text(row.get("pricing_id"))), reverse=True)
-    price = matches[0] if matches else None
+    rule = resolve_live_stock_price_rule(
+        category, pig_band, _text(pig.get("sex")), as_of=as_of.isoformat(),
+        price_entries=price_rows,
+    )
+    price = rule if rule.get("found") else None
     compatible = bool(pig_band and requested and pig_band == requested)
     return {
         "state": "compatible" if compatible else "incompatible" if pig_band and requested else "Unknown",
@@ -251,7 +241,7 @@ def _price_band_contract(pig, order, price_rows, as_of):
             "unit_price": _number(price.get("unit_price")),
             "currency": _text(price.get("currency")) or None,
             "effective_from": _text(price.get("effective_from")) or None,
-            "source": "Supabase sales_pricing",
+            "source": price.get("source") or "Supabase sales_pricing",
         } if price else None),
         "commercial_consequence": (
             "The pig matches the order header band. Any line price still requires SAM's protected order action."
@@ -281,7 +271,13 @@ def _order_line_protection(pig, order, lines):
     }
 
 
-def _food_chain(events, as_of):
+def _food_chain(events, as_of, completeness):
+    if completeness["state"] != "complete":
+        return _axis(
+            "Unknown" if completeness["state"] == "Unknown" else "conflicting",
+            "Food-chain eligibility cannot be affirmed because applicable treatment withdrawal evidence is missing, invalid, or conflicting.",
+            completeness.get("evidence_ids") or [],
+        ), []
     active = [row for row in events if _date(row.get("withdrawal_end_date"))
               and _date(row.get("withdrawal_end_date")) >= as_of]
     if active:
@@ -298,6 +294,28 @@ def _food_chain(events, as_of):
             [row["medical_event_id"] for row in events],
         ), []
     return _axis("Unknown", "Food-chain eligibility is Unknown because attributable treatment evidence is absent."), []
+
+
+def _within_cutoff(row, effective_field, recorded_field, as_of):
+    effective = _date(row.get(effective_field))
+    recorded = _date(row.get(recorded_field))
+    return bool(effective and recorded and effective <= as_of and recorded <= as_of)
+
+
+def _effective_observation_projection(rows, as_of):
+    eligible = [row for row in rows if _within_cutoff(row, "observed_at", "recorded_at", as_of)]
+    superseded = {_text(row.get("supersedes_observation_event_id")) for row in eligible
+                  if _text(row.get("supersedes_observation_event_id"))}
+    current = [row for row in eligible
+               if _text(row.get("observation_event_id")) not in superseded]
+    return {
+        "current_event_ids": [_text(row.get("observation_event_id")) for row in current],
+        "history_event_ids": [_text(row.get("observation_event_id")) for row in eligible],
+        "superseded_event_ids": sorted(superseded),
+        "excluded_future_or_undated_event_ids": [
+            _text(row.get("observation_event_id")) for row in rows if row not in eligible
+        ],
+    }
 
 
 def _missing_current_gate(name):
@@ -317,6 +335,13 @@ def _order_axis(pig, order, lines):
                 and _text(line.get("line_status")).lower() not in {"cancelled", "removed"}]
     requested_band = _text(order.get("requested_weight_range"))
     current_band = _weight_band(_number(pig.get("current_weight_kg")))
+    if len(matching) > 1:
+        ids = [_text(line.get("order_line_id")) for line in matching]
+        return _axis(
+            "conflicting_duplicate_lines",
+            f"Pig has {len(matching)} active lines on order {_text(order.get('order_id'))}; canonical order eligibility fails closed until SAM reconciles them.",
+            ids,
+        )
     if matching:
         line = matching[0]
         return _axis(
@@ -381,10 +406,16 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
     results = []
     for pig in list(snapshot.get("pigs") or []):
         pig_id = _text(pig.get("pig_id"))
-        events, completeness, conflicts = _treatment_evidence(
-            [row for row in medical if _text(row.get("pig_id")) == pig_id])
+        pig_medical = [row for row in medical if _text(row.get("pig_id")) == pig_id]
+        governed_medical = [row for row in pig_medical
+                            if _within_cutoff(row, "treatment_date", "created_at", as_of)]
+        excluded_medical = [row for row in pig_medical if row not in governed_medical]
+        events, completeness, conflicts = _treatment_evidence(governed_medical)
+        history_events, _, _ = _treatment_evidence(pig_medical)
         ambiguity = _medical_ambiguity(events, conflicts)
-        food_chain, active = _food_chain(events, as_of)
+        food_chain, active = _food_chain(events, as_of, completeness)
+        observation_projection = _effective_observation_projection(
+            [row for row in observations if _text(row.get("pig_id")) == pig_id], as_of)
         independent = {
             name: _missing_current_gate(name) for name in (
                 "fit_for_transport", "quarantine", "notifiable_or_infectious_disease",
@@ -448,8 +479,7 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
             "canonical_dependency_evidence": {
                 "health_and_welfare": {
                     "authority": "pig_observation_events",
-                    "current_event_ids": [_text(row.get("observation_event_id")) for row in observations
-                                          if _text(row.get("pig_id")) == pig_id],
+                    **observation_projection,
                     "limitation": "No typed current clearance event is present; narrative absence cannot prove clearance.",
                 },
                 "movement": {
@@ -465,6 +495,10 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
                 },
             },
             "canonical_treatment_events": events,
+            "canonical_treatment_history": history_events,
+            "excluded_future_or_undated_medical_event_ids": [
+                _text(row.get("medical_event_id")) for row in excluded_medical
+            ],
             "treatment_disclosure": disclosure,
         })
     packet = {

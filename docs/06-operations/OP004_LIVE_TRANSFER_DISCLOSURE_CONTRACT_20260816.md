@@ -141,7 +141,7 @@ table, production configuration, pig/order change, document, or buyer acknowledg
 ## Zero-write production proof
 
 The exact live packet digest at the 2026-08-16 cutoff is
-`d153d3e95aeb65466c560c586e2b529855110a578db43c8ba13f0b697e00ec35`.
+`95204dc99054d95e313661464321ecaf6ea2811dbd875807e835b6f1999a059a`.
 Before and after the bounded read, canonical row counts were identical: pigs 301,
 pig medical events 479, orders 31, order lines 135, order documents 35, and operational events 12.
 The read therefore created no purpose event, order membership, reservation, price, document,

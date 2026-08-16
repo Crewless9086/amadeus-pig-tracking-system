@@ -193,6 +193,82 @@ def test_future_or_wrong_sex_price_rule_cannot_create_a_false_commercial_option(
     assert "No authoritative separate price rule" in row["price_band_compatibility"]["commercial_consequence"]
 
 
+def test_sam_price_specificity_and_exclusive_end_boundary_are_preserved():
+    evidence = snapshot()
+    evidence["pigs"][1]["sex"] = "Male"
+    base = evidence["price_rows"][0]
+    evidence["price_rows"] = [
+        {**base, "pricing_id": "PRICE-EXACT-MALE", "sex": "Male", "unit_price": 325,
+         "effective_from": "2026-05-01", "effective_to": None},
+        {**base, "pricing_id": "PRICE-NEWER-ANY", "sex": None, "unit_price": 350,
+         "effective_from": "2026-06-01", "effective_to": None},
+        {**base, "pricing_id": "PRICE-ENDED", "sex": "Male", "unit_price": 999,
+         "effective_from": "2026-07-01", "effective_to": "2026-08-16"},
+    ]
+    row = by_tag(compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16)))["151"]
+
+    assert row["price_band_compatibility"]["separate_price_rule"]["pricing_id"] == "PRICE-EXACT-MALE"
+    assert row["price_band_compatibility"]["separate_price_rule"]["unit_price"] == 325
+
+
+def test_duplicate_active_order_lines_fail_closed_with_every_identity():
+    evidence = snapshot()
+    evidence["order_lines"].append({
+        **evidence["order_lines"][0], "order_line_id": "OL-2026-DUPLICATE"
+    })
+    row = by_tag(compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16)))["123"]
+
+    assert row["current_order_eligibility"]["state"] == "conflicting_duplicate_lines"
+    assert row["current_order_eligibility"]["evidence_ids"] == [
+        "OL-2026-01E24C", "OL-2026-DUPLICATE"
+    ]
+    assert row["order_line_duplication_protection"]["state"] == "conflicting_duplicate_lines"
+
+
+def test_missing_or_arithmetic_conflicting_withdrawal_never_becomes_food_chain_clear():
+    for change in (
+        {"withdrawal_end_date": None},
+        {"withdrawal_end_date": "2026-08-04"},
+    ):
+        evidence = snapshot()
+        evidence["medical_events"] = [
+            {**row, **change} if row["pig_id"] == "PIG-2026-A643" else row
+            for row in evidence["medical_events"]
+        ]
+        row = by_tag(compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16)))["123"]
+        assert row["food_chain_eligibility"]["state"] == "conflicting"
+        assert "cannot be affirmed" in row["food_chain_eligibility"]["reason"]
+
+
+def test_cutoff_and_observation_supersession_govern_current_without_hiding_history():
+    evidence = snapshot()
+    evidence["medical_events"].append(
+        medical("MED-FUTURE", "PIG-2026-B156", "Ecomectin 1%",
+                "2026-08-17", "2026-09-14", 28, created="2026-08-17T08:00:00+00:00")
+    )
+    evidence["observation_events"] = [
+        {"observation_event_id": "OBS-OLD", "pig_id": "PIG-2026-B156",
+         "observed_at": "2026-08-14T08:00:00+00:00", "recorded_at": "2026-08-14T09:00:00+00:00",
+         "supersedes_observation_event_id": None},
+        {"observation_event_id": "OBS-NEW", "pig_id": "PIG-2026-B156",
+         "observed_at": "2026-08-15T08:00:00+00:00", "recorded_at": "2026-08-15T09:00:00+00:00",
+         "supersedes_observation_event_id": "OBS-OLD"},
+        {"observation_event_id": "OBS-FUTURE", "pig_id": "PIG-2026-B156",
+         "observed_at": "2026-08-17T08:00:00+00:00", "recorded_at": "2026-08-17T09:00:00+00:00",
+         "supersedes_observation_event_id": None},
+    ]
+    row = by_tag(compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16)))["151"]
+    health = row["canonical_dependency_evidence"]["health_and_welfare"]
+
+    assert health["current_event_ids"] == ["OBS-NEW"]
+    assert health["history_event_ids"] == ["OBS-OLD", "OBS-NEW"]
+    assert health["superseded_event_ids"] == ["OBS-OLD"]
+    assert health["excluded_future_or_undated_event_ids"] == ["OBS-FUTURE"]
+    assert row["excluded_future_or_undated_medical_event_ids"] == ["MED-FUTURE"]
+    assert "MED-FUTURE" not in {item["medical_event_id"] for item in row["canonical_treatment_events"]}
+    assert "MED-FUTURE" in {item["medical_event_id"] for item in row["canonical_treatment_history"]}
+
+
 def test_loader_uses_one_repeatable_read_read_only_snapshot_and_no_write_sql():
     class Cursor:
         def __init__(self, rows): self.rows = rows
