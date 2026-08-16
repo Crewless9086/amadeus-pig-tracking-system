@@ -1993,6 +1993,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         standard = Path("docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md").read_text(encoding="utf-8")
 
         self.assertIn("herdmaster_human_identity_v1", detail_js)
+        self.assertIn('data.identity_contract_version!=="herdmaster_human_identity_v1"', herd_js)
         self.assertIn("row.identity?.destination", herd_js)
         self.assertIn("partner_identity", detail_js)
         self.assertIn("litter_identity", detail_js)
