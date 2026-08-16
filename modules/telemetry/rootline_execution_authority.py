@@ -30,7 +30,12 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     for task in tasks:
         task_id = str(task.get("task_id") or "")
         zone = task_id.removeprefix("irrigation_")
-        if (zone in zones and task.get("zone_decision") == "Run now"
+        parent = task.get("incomplete_parent_job") if isinstance(
+            task.get("incomplete_parent_job"), dict) else {}
+        parent_job = parent.get("job") if isinstance(parent.get("job"), dict) else {}
+        parent_date_current = (not parent_job or parent_job.get("operating_date") ==
+            str(plan.get("operating_date") or "")[:10])
+        if (zone in zones and parent_date_current and task.get("zone_decision") == "Run now"
                 and task.get("recommendation") == "Recommend"
                 and int(task.get("planned_duration_minutes") or 0) in range(1, 61)):
             candidates.append((int(task.get("rank") or 999), zone, task))

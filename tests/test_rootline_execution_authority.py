@@ -156,6 +156,24 @@ def test_incomplete_parent_hold_is_explicit_digest_bound_deferment():
     assert result["command_authority"] is False and result["hardware_control"] is False
 
 
+def test_prior_date_parent_is_deferred_and_never_regains_command_authority():
+    plan,evidence,controller=inputs()
+    task=plan["candidate_tasks"][0]
+    task["incomplete_parent_job"]={"job":{"contract_version":"rootline_irrigation_job.v1",
+        "job_id":"HISTORICAL-JOB","job_sha256":"a"*64,"zone_id":"B12345",
+        "operating_date":"2026-08-07","requested_total_seconds":7200,
+        "requested_total_minutes":120,"governed_executable_seconds":7198,
+        "maximum_segment_seconds":3599,"expected_segment_count":2,"plan_identity":"OLD"},
+        "projection":{"status":"segment_ready","current_segment":2,
+            "cumulative_verified_runtime_seconds":3599,"remaining_seconds":3599},
+        "remaining_seconds":3599}
+    result=build_execution_eligibility(plan=plan,evidence=evidence,
+        controller=controller,now=NOW)
+    assert result["status"]=="durable_parent_job_deferred"
+    assert result["eligible"] is False and result["hardware_control"] is False
+    assert result["job_resolution"]["operating_date"]=="2026-08-07"
+
+
 def test_controller_drift_or_unexpected_output_creates_no_authority():
     plan,evidence,controller=inputs()
     controller["channels"][1]["output_state"]="ON"

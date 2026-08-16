@@ -154,9 +154,17 @@ def _attach_parent_jobs(history, rows):
             projection = {"status": "canonical_job_history_invalid", "command_authority": False}
         if projection.get("status") == "job_completed":
             continue
+        completed_segments = [row for row in events
+            if row.get("action") == "record_completed"
+            and row.get("state") == "Completed"
+            and row.get("shutdown_verified") is True]
+        # A never-started eligibility is not a continuing parent. Continuity
+        # begins only after a canonical segment completed and proved shutdown.
+        if not completed_segments:
+            continue
         zone = str(job.get("zone_id") or "")
         candidate = {"job": job, "projection": projection,
-            "completed_segment_count": max(0, int(projection.get("current_segment") or 1) - 1),
+            "completed_segment_count": len(completed_segments),
             "remaining_seconds": projection.get("remaining_seconds")}
         if zone in ZONES:
             if zone in by_zone:
