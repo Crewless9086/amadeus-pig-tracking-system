@@ -2,6 +2,15 @@
 
 Status: mandatory cross-system handover contract
 
+Controlling references:
+
+- `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`
+- `docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md`
+
+The terminal must read both controlling files completely before returning this
+packet. Control Tower must execute the protocol and append its separate Check
+Receipt; merely receiving this template is not an assessment.
+
 Use this template for CORE, OOM SAKKIE, ROOTLINE, HERDMASTER, SAM, BEACON,
 CODEX UI and every future specialist. Do not omit sections because a terminal
 performed only source work. Use `Unknown`, `none` or `not applicable` rather
@@ -10,10 +19,13 @@ than inferring evidence.
 ## Governance preflight
 
 - Worktree, branch and HEAD:
+- Upstream and ahead/behind current authoritative main:
 - Mission Standard tracked blob, filesystem SHA-256, physical lines and read completely:
+- Control Tower Protocol tracked blob, filesystem SHA-256, physical lines and read completely:
 - Canonical Runtime Programme tracked blob, filesystem SHA-256, physical lines and read completely:
 - Authoritative-main comparison:
 - Worktree status and preservation classification:
+- Feedback evidence observation time:
 
 ## Mission identity and owner outcome
 
@@ -31,6 +43,8 @@ than inferring evidence.
 - Worktree, branch and current action:
 - Last terminal-invoked production/test cycle:
 - What stops when this terminal closes:
+- Fresh progress evidence since the last feedback (commit/diff/artifact/heartbeat):
+- Why any open process is active work rather than an idle shell:
 
 ## Deployed agent operational reality
 
@@ -106,6 +120,8 @@ script or a synthetic canary cannot by itself establish autonomous operation.
   NEW_MISSION / WAIT_FOR_INPUT / CLOSE
 - Exact next terminal:
 - Expected owner-visible result:
+- Serialized release lane owner, process/ledger proof and release trigger:
+- Durable mission-register update proposed:
 
 ## Mandatory forward mission pipeline
 
