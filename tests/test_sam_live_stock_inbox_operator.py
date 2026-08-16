@@ -112,6 +112,25 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         self.assertEqual(item["disposition"], "terminal_customer_close_no_reply")
         self.assertEqual(packet["customers_answered"], 0)
 
+    def test_shadow_operation_projects_truthful_non_send_disposition(self):
+        row = self.row("1")
+        row["last_non_activity_message"] = {
+            "id": 101, "created_at": 100, "message_type": 0, "private": False,
+        }
+        packet = operate_livestock_inbox(
+            environ={}, conversation_page_loader=lambda _page: self.page([row]),
+            history_loader=lambda _cid, _env: (
+                self.history("101", "I want five weaned piglets"), 200),
+            claim_exists=lambda _cid, _mid: False,
+            inbound_processor=lambda _payload: {
+                "processed": False, "sent": False, "sam_decision": {},
+                "_operation_disposition": "pre_activation_backlog_observed",
+            },
+        )
+        self.assertEqual(packet["dispositions"][0]["disposition"],
+                         "pre_activation_backlog_observed")
+        self.assertEqual(packet["customers_answered"], 0)
+
     def test_canonical_evidence_prefetch_overlaps_remaining_inventory_pages(self):
         evidence_started = threading.Event()
         captured = []
