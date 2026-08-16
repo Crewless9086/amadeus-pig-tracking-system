@@ -26,6 +26,7 @@ MANIFEST = "d84ab1a4" + "0" * 32
 class FakeGit:
     def __init__(self, runtime, execution):
         self.heads = {str(runtime): RUNTIME, str(execution): EXECUTION}
+        self.branches = {str(runtime): "main", str(execution): "main"}
         self.dirty = set()
         self.fail_execution_switch = False
         self.fail_runtime_restore = False
@@ -43,7 +44,7 @@ class FakeGit:
         elif args[:2] == ["rev-parse", "HEAD"]:
             stdout = self.heads[root] + "\n"
         elif args[:2] == ["branch", "--show-current"]:
-            stdout = "main\n"
+            stdout = self.branches[root] + "\n"
         elif args[:2] == ["rev-parse", "--verify"]:
             stdout = args[2].removesuffix("^{commit}") + "\n"
         elif args[0] == "rev-parse" and args[1].startswith("refs/heads/"):
@@ -51,16 +52,19 @@ class FakeGit:
         elif args[:2] == ["switch", "--detach"]:
             if root != self.execution and self.partial_runtime_failure and args[2] == SOURCE:
                 self.heads[root] = SOURCE
+                self.branches[root] = ""
                 returncode = 1
             elif root == self.execution and self.fail_execution_switch and args[2] == SOURCE:
                 returncode = 1
             else:
                 self.heads[root] = args[2]
+                self.branches[root] = ""
         elif args[:1] == ["switch"]:
             if root != self.execution and self.fail_runtime_restore:
                 returncode = 1
             else:
                 self.heads[root] = RUNTIME if root != self.execution else EXECUTION
+                self.branches[root] = args[1]
         else:
             returncode = 1
         return subprocess.CompletedProcess(command, returncode, stdout, "")
@@ -290,6 +294,7 @@ class RuntimeStagingTests(unittest.TestCase):
         recovered = recover_runtime_staging(
             state_root=self.state, lane_id=state["lane"]["lane_id"],
             rollback_sha256=state["rollback_sha256"], task_reader=self._task,
+            failure_result_sha256=state["failure_result_sha256"],
             runner=self.git, git_safety_checker=self._safe_git,
         )
         self.assertEqual(recovered["status"], "runtime_staging_recovered")
@@ -302,6 +307,7 @@ class RuntimeStagingTests(unittest.TestCase):
             recover_runtime_staging(
                 state_root=self.state, lane_id=state["lane"]["lane_id"],
                 rollback_sha256=state["rollback_sha256"], task_reader=self._task,
+                failure_result_sha256=state["failure_result_sha256"],
                 runner=self.git, git_safety_checker=self._safe_git,
             )
         self.git.dirty.clear()
@@ -310,8 +316,28 @@ class RuntimeStagingTests(unittest.TestCase):
             recover_runtime_staging(
                 state_root=self.state, lane_id=state["lane"]["lane_id"],
                 rollback_sha256=state["rollback_sha256"], task_reader=self._task,
+                failure_result_sha256=state["failure_result_sha256"],
                 runner=self.git, git_safety_checker=self._safe_git,
             )
+
+    def test_recovery_rejects_clean_unrelated_runtime_or_execution(self):
+        for target in (self.runtime, self.execution):
+            with self.subTest(target=target.name):
+                state = self._failed_lane()
+                self.git.heads[str(target.resolve())] = "4" * 40
+                with self.assertRaisesRegex(RuntimeStagingError, "worktree_state_not_authorized_for_recovery"):
+                    recover_runtime_staging(
+                        state_root=self.state, lane_id=state["lane"]["lane_id"],
+                        rollback_sha256=state["rollback_sha256"],
+                        failure_result_sha256=state["failure_result_sha256"],
+                        task_reader=self._task, runner=self.git,
+                        git_safety_checker=self._safe_git,
+                    )
+                (self.state / "release-staging.lock").unlink()
+                self.git.heads[str(self.runtime.resolve())] = RUNTIME
+                self.git.heads[str(self.execution.resolve())] = EXECUTION
+                self.git.branches[str(self.runtime.resolve())] = "main"
+                self.git.branches[str(self.execution.resolve())] = "main"
 
     def test_receipt_changed_after_plan_fails_before_mutation(self):
         plan = self._plan()

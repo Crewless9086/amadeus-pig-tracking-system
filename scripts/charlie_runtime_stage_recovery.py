@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--state-root", required=True)
     parser.add_argument("--lane-id")
     parser.add_argument("--rollback-sha256")
+    parser.add_argument("--failure-result-sha256")
     args = parser.parse_args()
     try:
         if args.action == "readback":
@@ -30,6 +31,7 @@ def main():
             result = recover_runtime_staging(
                 state_root=args.state_root, lane_id=args.lane_id,
                 rollback_sha256=args.rollback_sha256,
+                failure_result_sha256=args.failure_result_sha256,
             )
     except RuntimeStagingError as exc:
         result = {"success": False, "status": exc.status, **exc.evidence}

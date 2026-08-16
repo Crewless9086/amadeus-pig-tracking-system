@@ -94,9 +94,12 @@ python -B scripts\charlie_runtime_stage_recovery.py readback --state-root <state
 
 If readback reports `release_lane_recovery_required`, a separately authorized
 recovery must bind the exact lane ID and rollback-file SHA-256 it returned. The
-`recover` action verifies the task, stop evidence, Git checkout safety and every
-rollback readback; it retains the lane on any incomplete recovery. Recovery does
-not start CORE or alter the scheduled task.
+`recover` action must also receive the failure-result SHA-256 when readback reports
+one. It accepts only the recorded rollback identities or the detached lane source,
+and only an original or digest-bound interrupted manifest. It verifies clean
+worktrees, the task, stop evidence, Git checkout safety and every rollback
+readback; it retains the lane on any incomplete recovery. Recovery does not start
+CORE or alter the scheduled task.
 
 ## Read-only audit
 

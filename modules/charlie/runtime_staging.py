@@ -244,6 +244,7 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
             "rollback_path": str(rollback_path), "watchdog_action": "none",
             "rollback_recovery": recovery_error or {"status": "not_required_or_completed"},
             "observed_manifest_sha256": _optional_sha256(state_root / "runtime-manifest.json"),
+            "rollback_sha256": _optional_sha256(rollback_path),
         }
         _atomic_json(result_path, failure)
         raise
@@ -286,6 +287,7 @@ def read_staging_state(state_root):
     if not re.fullmatch(r"[0-9a-f]{32}", lane_id):
         raise RuntimeStagingError("release_lane_invalid")
     rollback_path = state_root / "promotion-ledger" / f"{lane_id}-rollback.json"
+    result_path = state_root / "promotion-ledger" / f"{lane_id}-result.json"
     return {
         "success": True,
         "status": "release_lane_recovery_required",
@@ -294,11 +296,13 @@ def read_staging_state(state_root):
         "lane_sha256": _sha256(lane_path),
         "rollback_path": str(rollback_path),
         "rollback_sha256": _sha256(rollback_path),
+        "failure_result_path": str(result_path) if result_path.is_file() else None,
+        "failure_result_sha256": _sha256(result_path) if result_path.is_file() else None,
     }
 
 
 def recover_runtime_staging(
-    *, state_root, lane_id, rollback_sha256, task_reader=None,
+    *, state_root, lane_id, rollback_sha256, failure_result_sha256=None, task_reader=None,
     runner=subprocess.run, git_safety_checker=None,
 ):
     state_root = Path(state_root).resolve()
@@ -318,9 +322,17 @@ def recover_runtime_staging(
     _validate_task(task, runtime_root)
     if _payload_sha256(task) != rollback.get("task_ownership_sha256"):
         raise RuntimeStagingError("scheduled_task_ownership_changed")
-    for root in (runtime_root, execution_root):
+    current_identities = {}
+    for name, root in (("runtime", runtime_root), ("execution", execution_root)):
         (git_safety_checker or inspect_git_checkout_safety)(root, runner)
-        _worktree_identity(root, runner)
+        current = _worktree_identity(root, runner)
+        allowed = (
+            rollback[name],
+            {"root": str(root), "head": lane["source_ref"], "branch": ""},
+        )
+        if current not in allowed:
+            raise RuntimeStagingError("worktree_state_not_authorized_for_recovery", worktree=name)
+        current_identities[name] = current
     if _sha256(state_root / "supervisor.stop") != rollback.get("stop_marker_sha256"):
         raise RuntimeStagingError("governed_stop_marker_changed")
     _validate_governed_state_unchanged(state_root, rollback)
@@ -328,8 +340,16 @@ def recover_runtime_staging(
     allowed_manifest_digests = {rollback.get("manifest_sha256")}
     failure_path = state_root / "promotion-ledger" / f"{lane_id}-result.json"
     if failure_path.is_file():
+        actual_failure_digest = _sha256(failure_path)
+        if actual_failure_digest != str(failure_result_sha256 or "").lower():
+            raise RuntimeStagingError("failure_result_digest_mismatch")
         failure = _read_json(failure_path, "staging_failure_evidence_invalid")
-        if failure.get("lane_id") != lane_id or failure.get("success") is not False:
+        if (
+            failure.get("lane_id") != lane_id or failure.get("source_ref") != lane.get("source_ref")
+            or failure.get("success") is not False
+            or str(Path(str(failure.get("rollback_path") or "")).resolve()) != str(Path(evidence["rollback_path"]).resolve())
+            or failure.get("rollback_sha256") != evidence["rollback_sha256"]
+        ):
             raise RuntimeStagingError("staging_failure_evidence_invalid")
         allowed_manifest_digests.add(failure.get("observed_manifest_sha256"))
     if current_manifest_sha256 not in allowed_manifest_digests:
