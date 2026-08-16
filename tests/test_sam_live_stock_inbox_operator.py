@@ -129,6 +129,8 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         )
         self.assertEqual(packet["dispositions"][0]["disposition"],
                          "pre_activation_backlog_observed")
+        self.assertFalse(packet["dispositions"][0]["eligible"])
+        self.assertFalse(packet["dispositions"][0]["selected_for_processing"])
         self.assertEqual(packet["customers_answered"], 0)
 
     def test_canonical_evidence_prefetch_overlaps_remaining_inventory_pages(self):
