@@ -75,6 +75,8 @@ from modules.oom_sakkie.family_activation_runtime import start_family_access_act
 start_family_access_activation()
 from modules.oom_sakkie.beacon_media_review_worker import start_private_media_review_worker
 start_private_media_review_worker()
+from modules.sales.sam_live_stock_operating_loop import start_sam_live_stock_operating_loop
+start_sam_live_stock_operating_loop()
 
 
 @app.context_processor
