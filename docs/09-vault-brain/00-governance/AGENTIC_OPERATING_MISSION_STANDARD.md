@@ -215,6 +215,14 @@ terminal must return the current
 untracked, stale or unread operational protocol/template evidence blocks a
 Control Tower dispatch rather than permitting remembered or fallback procedure.
 
+The companion protocol's Strategic Autonomy And Global WIP Gate is mandatory.
+An all-terminal sweep identifies truth and eligibility; it does not create a
+duty to keep every terminal busy. Control Tower must prefer the smallest set of
+development missions that removes owner labour and produces terminal-independent
+deployed-agent operation. A deliberately frozen eligible mission is compliant
+when the durable register records the WIP cap, priority outcome and promotion
+trigger.
+
 The control tower must:
 
 1. maintain the current business outcome and the measurable goal for each active specialist;
@@ -261,7 +269,7 @@ Before giving a prompt to Charl:
 - never resend a substantially identical mission to a terminal that is still working;
 - never turn confirming evidence into a duplicate task;
 - prefer a short addendum when only one fact changed;
-- if the priority terminal is already working correctly, look for one useful disjoint parallel mission for another idle terminal;
+- if the priority terminal is already working correctly, dispatch disjoint parallel work only when the global WIP gate permits it and the work measurably removes owner labour or advances terminal-independent deployed-agent operation;
 - if no useful disjoint work exists, say so plainly rather than manufacturing infrastructure work;
 - preserve completed source-ready work without repeatedly polling or reopening it;
 - do not treat an unavailable optional improvement as a blocker to the current supported business outcome.
@@ -326,12 +334,14 @@ enable that specialist's deployed runtime when this can be done within existing
 mission scope and standing authority.
 
 The Control Tower response is incomplete if it silently leaves an eligible
-terminal idle, omits a named terminal, reports a prepared prompt as delivered,
-or asks Charl to notice that a dependency cleared. No safe prompt should be
-manufactured merely to fill a terminal, and active terminals must not be
-interrupted to maximize utilization. The compact all-terminal closure receipt
-must remain visible in Control Tower status and reconciliation responses so
-Charl can verify enforcement without maintaining the register himself.
+terminal unclassified, omits a named terminal, reports a prepared prompt as
+delivered, or asks Charl to notice that a dependency cleared. An eligible
+terminal may be explicitly `FROZEN - STRATEGIC WIP` with the occupied WIP slots
+and promotion trigger recorded. No safe prompt should be manufactured merely to
+fill a terminal, and active terminals must not be interrupted to maximize
+utilization. The compact all-terminal closure receipt must remain visible in
+Control Tower status and reconciliation responses so Charl can verify
+enforcement without maintaining the register himself.
 
 ### Forward Mission Pipeline And Full-Scope Completion
 
