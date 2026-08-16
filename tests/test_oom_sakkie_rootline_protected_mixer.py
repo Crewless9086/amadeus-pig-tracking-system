@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
-from modules.oom_sakkie.protected_action_claims import load_active_child_claim
+from modules.oom_sakkie.protected_action_claims import (load_active_child_claim,
+    load_reassessable_contained_presence_claim)
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.rootline_protected_mixer import (ACTION_KIND,
     PRESENCE_ACTION_KIND, build_preview_payload, create_presence_refresh_notice,
@@ -168,6 +169,95 @@ def test_retained_inbound_recovers_committed_preview_before_fresh_rebuild(monkey
         prepare=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not rebuild")))
     assert result["callback_token"] == "EXISTING"
     assert result["hardware_commands"] == result["provider_control_calls"] == 0
+
+def test_transient_contained_ready_press_reassesses_without_another_owner_action(monkeypatch):
+    presence_payload = {"contract_version": "oom_rootline_mixer_presence_refresh.v1",
+        "mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "owner_user_id": "5721652188", "private_chat_id": "5721652188",
+        "lost_presence_provider_message_id": "3676",
+        "lost_presence_provider_timestamp": NOW.isoformat(),
+        "lost_presence_text_sha256": "a" * 64, "specialist_identity": "ROOTLINE",
+        "next_specialist_step": "supervised_fertilizer_mixer_proof"}
+    retained = {"success": True, "callback_token": "PARENT",
+        "action_kind": PRESENCE_ACTION_KIND,
+        "mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "preview_payload": presence_payload,
+        "preview_digest": canonical_preview_digest(PRESENCE_ACTION_KIND, presence_payload),
+        "confirmation_provider_message_id": "READY-CALLBACK",
+        "confirmation_provider_timestamp": NOW.isoformat()}
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_presence_claim",
+        lambda **_kwargs: None)
+    monkeypatch.setattr(
+        "modules.oom_sakkie.protected_action_claims.load_reassessable_contained_presence_claim",
+        lambda **_kwargs: retained)
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_child_claim",
+        lambda **_kwargs: None)
+    monkeypatch.setattr("modules.oom_sakkie.rootline_protected_mixer.create_claim",
+        lambda **kwargs: {"success": True, "callback_token": "CHILD",
+            "preview_digest": canonical_preview_digest(
+                kwargs["action_kind"], kwargs["preview_payload"]),
+            "expires_at": "2026-08-16T13:40:32+00:00"})
+    completed = []
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.complete_claim",
+        lambda token, result, **_kwargs: completed.append((token, result["status"])))
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.contain_claim",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("successful reassessment must be consumed")))
+    calls = []
+    def prepare(**kwargs):
+        calls.append(kwargs["parsed"]["provider_message_id"])
+        if len(calls) == 1:
+            return {"success": False, "status": "commissioning_presence_expired",
+                "hardware_commands": 0, "provider_control_calls": 0}
+        return {"success": True, "status": "commissioning_protected_preview_ready",
+            "eligibility": artifact(), "hardware_commands": 0,
+            "provider_control_calls": 0}
+    result = create_mixer_preview(owner_result={"handled": True,
+        "status": "specialist_accepted", "specialist_identity": "ROOTLINE",
+        "mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "card_mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "next_specialist_step": "supervised_fertilizer_mixer_proof",
+        "ready_for_supervised_proof": True,
+        "authority": {"configuration_write": False, "hardware_control": False,
+            "farm_write": False, "telegram_send": False}}, parsed=parsed(),
+        gateway_authority=issue_gateway_owner_authority("5721652188", "5721652188"),
+        prepare=prepare, now=NOW)
+    assert calls == ["3676", "READY-CALLBACK"]
+    assert result["status"] == "mixer_protected_preview_created"
+    assert result["callback_token"] == "CHILD"
+    assert result["hardware_commands"] == result["provider_control_calls"] == 0
+    assert completed == [("PARENT", "mixer_protected_preview_created")]
+
+def test_contained_presence_transition_holds_cursor_lock_through_update():
+    statements = []
+    hold = {"status": "commissioning_specific_hold",
+        "next_reassessment": "next_scheduler_tick", "hardware_commands": 0,
+        "provider_control_calls": 0}
+    row = ("PARENT", "d" * 64, "GEN", {"contract_version":
+        "oom_rootline_mixer_presence_refresh.v1"}, "READY-CALLBACK", NOW,
+        hold, NOW + timedelta(hours=1), "contained")
+    class Cursor:
+        closed = False
+        rowcount = 1
+        def __enter__(self): return self
+        def __exit__(self, *_args): self.closed = True
+        def execute(self, sql, params):
+            if self.closed: raise AssertionError("execute after cursor close")
+            statements.append((sql, params))
+        def fetchall(self): return [row]
+    class Connection:
+        def __init__(self): self.cur = Cursor()
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return self.cur
+    result = load_reassessable_contained_presence_claim(action_kind=PRESENCE_ACTION_KIND,
+        mission_id="OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        owner_user_id="5721652188", private_chat_id="5721652188",
+        provider_message_id="3676", connect_factory=Connection)
+    assert result["callback_token"] == "PARENT"
+    assert len(statements) == 2
+    assert "for update" in statements[0][0].lower()
+    assert "set status='executing'" in statements[1][0]
 
 def test_migration_admits_both_mixer_claim_kinds_and_preserves_existing_spine():
     sql = Path("supabase/migrations/202608160002_allow_rootline_mixer_protected_claims.sql").read_text()

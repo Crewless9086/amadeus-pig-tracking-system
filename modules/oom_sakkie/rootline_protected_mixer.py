@@ -45,6 +45,19 @@ def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
     prepared = prepare(owner_result=owner_result, parsed=parsed,
         gateway_authority=gateway_authority, now=now, **runtime_overrides)
     if prepared.get("status") == "commissioning_presence_expired":
+        from modules.oom_sakkie.protected_action_claims import (
+            load_reassessable_contained_presence_claim,
+        )
+        retained = load_reassessable_contained_presence_claim(
+            action_kind=PRESENCE_ACTION_KIND, mission_id=MISSION_ID,
+            owner_user_id=str(parsed.get("telegram_user_id") or ""),
+            private_chat_id=str(parsed.get("telegram_chat_id") or ""),
+            provider_message_id=str(parsed.get("provider_message_id") or ""),
+            connect_factory=connect_factory)
+        if retained is not None:
+            return _resume_retained_presence(retained, parsed=parsed,
+                gateway_authority=gateway_authority, connect_factory=connect_factory,
+                prepare=prepare, now=now, **runtime_overrides)
         return create_presence_refresh_notice(owner_result=owner_result, parsed=parsed,
             connect_factory=connect_factory)
     if prepared.get("status") != "commissioning_protected_preview_ready":
@@ -74,6 +87,66 @@ def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
         "card_mission_id": protected_card_mission_id(claim["preview_digest"]),
         "preview_payload": payload, "hardware_commands": 0,
         "provider_control_calls": 0, "writes_farm_data": False}
+
+
+def reassess_due_mixer_presence(*, owner_user_id, private_chat_id, gateway_authority,
+                                connect_factory=None, prepare=None, now=None,
+                                **runtime_overrides):
+    """Scheduler-owned recovery of one retained confirmed transient Mixer Hold."""
+    from modules.oom_sakkie.protected_action_claims import (
+        load_reassessable_contained_presence_claim,
+    )
+    retained = load_reassessable_contained_presence_claim(
+        action_kind=PRESENCE_ACTION_KIND, mission_id=MISSION_ID,
+        owner_user_id=str(owner_user_id), private_chat_id=str(private_chat_id),
+        provider_message_id="", connect_factory=connect_factory)
+    if retained is None:
+        return _safe("no_reassessable_mixer_presence")
+    parsed = {"telegram_user_id":str(owner_user_id),
+        "telegram_chat_id":str(private_chat_id)}
+    return _resume_retained_presence(retained, parsed=parsed,
+        gateway_authority=gateway_authority, connect_factory=connect_factory,
+        prepare=prepare, now=now, **runtime_overrides)
+
+
+def _resume_retained_presence(retained, *, parsed, gateway_authority,
+                              connect_factory=None, prepare=None, now=None,
+                              **runtime_overrides):
+    if retained.get("success") is not True:
+        return _safe(str(retained.get("status")
+            or "mixer_presence_reassessment_unavailable"))
+    if retained.get("status") == "mixer_presence_reassessment_completed_delivery_retry":
+        result = retained.get("result") if isinstance(retained.get("result"), dict) else {}
+        payload = result.get("preview_payload") if isinstance(
+            result.get("preview_payload"), dict) else {}
+        if (result.get("status") != "mixer_protected_preview_created"
+                or result.get("hardware_commands") != 0
+                or int(result.get("provider_control_calls") or 0) != 0
+                or payload.get("mission_id") != MISSION_ID
+                or payload.get("owner_user_id") != str(parsed.get("telegram_user_id") or "")
+                or payload.get("private_chat_id") != str(parsed.get("telegram_chat_id") or "")
+                or payload.get("presence_refresh_claim_token")
+                    != retained.get("callback_token")
+                or canonical_preview_digest(ACTION_KIND, payload)
+                    != result.get("preview_digest")):
+            return _safe("mixer_presence_completed_delivery_binding_mismatch")
+        return {**result, "hardware_commands":0,"provider_control_calls":0,
+            "writes_farm_data":False}
+    confirmation = {**parsed,
+        "provider_message_id":retained["confirmation_provider_message_id"],
+        "provider_timestamp":retained["confirmation_provider_timestamp"],
+        "text":"protected retained Mixer presence confirmation"}
+    recovered, _ = execute_presence_refresh(retained, parsed=confirmation,
+        gateway_authority=gateway_authority, connect_factory=connect_factory,
+        prepare=prepare, now=now, **runtime_overrides)
+    from modules.oom_sakkie.protected_action_claims import complete_claim, contain_claim
+    if recovered.get("success") is True:
+        complete_claim(retained["callback_token"], recovered,
+            connect_factory=connect_factory)
+    else:
+        contain_claim(retained["callback_token"], recovered,
+            connect_factory=connect_factory)
+    return recovered
 
 
 def _existing_mixer_preview(prior, parsed):

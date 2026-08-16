@@ -143,6 +143,58 @@ def load_active_presence_claim(*, action_kind, mission_id, owner_user_id,
         "expires_at":rows[0][2].isoformat(),"preview_payload":rows[0][3],
         "preview_card_message_id":str(rows[0][4] or "")}
 
+def load_reassessable_contained_presence_claim(*, action_kind, mission_id,
+        owner_user_id, private_chat_id, provider_message_id, connect_factory=None):
+    """Recover one confirmed, still-current transient Hold without another press."""
+    with (connect_factory() if connect_factory else _connect()) as db:
+      with db.cursor() as cur:
+        cur.execute("""select callback_token,preview_digest,evidence_generation,
+          preview_payload,confirmation_provider_message_id,
+          confirmation_provider_timestamp,result_payload,expires_at,status
+          from app_private.oom_protected_action_claims
+          where action_kind=%s and mission_id=%s
+          and ((nullif(%s,'') is null and status in ('contained','executing'))
+            or (nullif(%s,'') is not null
+              and status in ('contained','executing','completed')))
+          and owner_user_id=%s and private_chat_id=%s
+          and (nullif(%s,'') is null or provider_message_id=%s)
+          and expires_at>now() order by created_at desc limit 2 for update""",
+          (str(action_kind),str(mission_id),str(provider_message_id),
+           str(provider_message_id),str(owner_user_id),
+           str(private_chat_id),str(provider_message_id),str(provider_message_id)))
+        rows=cur.fetchall()
+        if len(rows)!=1:return None
+        row=rows[0]
+        result=row[6] if isinstance(row[6],dict) else {}
+        if row[8]=="completed":
+            return {"success":True,
+                "status":"mixer_presence_reassessment_completed_delivery_retry",
+                "callback_token":row[0],"preview_payload":row[3],
+                "preview_digest":row[1],"result":result}
+        valid_hold=(result.get("status")=="commissioning_specific_hold"
+            and result.get("next_reassessment")=="next_scheduler_tick"
+            and int(result.get("hardware_commands") or 0)==0
+            and int(result.get("provider_control_calls") or 0)==0)
+        recovering=(row[8]=="executing"
+            and result.get("status")=="mixer_presence_reassessment_claimed")
+        if ((row[8]!="contained" or not valid_hold) and not recovering
+                or not str(row[4] or "").strip() or row[5] is None):
+            return None
+        if row[8]=="contained":
+            claimed={"success":False,"status":"mixer_presence_reassessment_claimed",
+                "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+            cur.execute("""update app_private.oom_protected_action_claims
+              set status='executing',result_payload=%s::jsonb where callback_token=%s
+              and status='contained'""",(json.dumps(claimed,sort_keys=True),row[0]))
+            if cur.rowcount!=1:return None
+        return {"success":True,"status":"protected_contained_reassessment_recovered",
+            "callback_token":row[0],"action_kind":str(action_kind),
+            "mission_id":str(mission_id),"preview_digest":row[1],
+            "evidence_generation":row[2],"preview_payload":row[3],
+            "confirmation_provider_message_id":str(row[4]),
+            "confirmation_provider_timestamp":row[5].isoformat(),
+            "expires_at":row[7].isoformat(),"result":result}
+
 def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_message_id,
                    provider_timestamp, source_card_message_id="", connect_factory=None):
     data=str(callback_data or "")
