@@ -689,13 +689,19 @@ def _inspect_and_operate(
         "pre_activation_backlog_observed",
     }:
         operation_disposition = ""
+    shadow_contained = operation_disposition in {
+        "shadow_proposal_replay_suppressed",
+        "pre_activation_backlog_observed",
+    }
     return {
         **identity,
         "conversation_id": conversation_id,
         "inbound_message_id": inbound_id,
         "queue_relevant": queue_relevant,
-        "eligible": eligible,
-        "selected_for_processing": selected_for_processing,
+        "eligible": bool(eligible and not shadow_contained),
+        "selected_for_processing": bool(
+            selected_for_processing and not shadow_contained
+        ),
         "disposition": (
             operation_disposition or "processed"
             if selected_for_processing
