@@ -1062,7 +1062,7 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             "zone_id", "visible_need", "visible_need_observed_at",
             "visible_need_source", "completion_events",
             "completed_days_last_7_days", "latest_segment", "owner_correction",
-            "water_balance", "stale_incomplete_parent_jobs",
+            "water_balance", "stale_incomplete_parent_jobs", "contained_parent_jobs",
         }
         history_zones = _dict(irrigation_history.get("zones"))
         evidence_zones = {
@@ -1090,6 +1090,8 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
             if canonical.get("stale_incomplete_parent_jobs"):
                 zone["stale_incomplete_parent_jobs"] = deepcopy(
                     canonical["stale_incomplete_parent_jobs"])
+            if canonical.get("contained_parent_jobs"):
+                zone["contained_parent_jobs"] = deepcopy(canonical["contained_parent_jobs"])
             zone["completion_events"] = [{
                 "completed_at": event.get("event_at_sast"), "state": "Completed",
                 "shutdown_verified": event.get("shutdown_verified") is True,
@@ -1152,6 +1154,7 @@ def _irrigation_tasks(irrigation, irrigation_history, reserve, rain,
                 "incomplete_parent_job": deepcopy(decision.get("incomplete_parent_job")),
                 "stale_incomplete_parent_jobs": deepcopy(
                     decision.get("stale_incomplete_parent_jobs")),
+                "contained_parent_jobs": deepcopy(decision.get("contained_parent_jobs")),
                 "max_execution_minutes": 60,
                 "fresh_decision_before_second_segment": True,
                 "simultaneous_with_other_zone": False,
