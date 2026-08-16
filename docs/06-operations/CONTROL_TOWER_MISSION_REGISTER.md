@@ -223,6 +223,19 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
   CODEX UI implementation waits for this contract; no farm writes.
 - `HMQ-20260813-05` — waits for a genuine completed weight batch.
 - `HMQ-20260813-06` — waits for physical exposure separation.
+- `HMQ-20260816-01` — `queued_owner_deferred`: build the autonomous HERDMASTER
+  allocation-opportunity operating loop on the existing Pig Allocation read
+  model and alert API. Detect new or materially changed outlet/purpose findings,
+  including an explicit `live_sale_candidate` alert for every qualifying
+  unallocated Livestock Candidate; deliver one name/tag-first advisory through
+  the deployed HERDMASTER -> OOM SAKKIE owner channel; retain acknowledgement,
+  deferment and follow-up state; and suppress unchanged repetition. `Allocated`
+  remains reserved/order-linked and must never be marketed again. HERDMASTER
+  owns suitability, SAM owns approved customer work and BEACON owns approved
+  marketing preparation. No sale, reservation, customer message, public post,
+  purpose/lifecycle mutation or provider effect is authorized by this queued
+  mission. Do not dispatch or establish an implementation worktree until Control
+  Tower explicitly releases it after Charl's urgent operational work.
 
 Detailed HERDMASTER evidence remains in
 `docs/06-operations/HERDMASTER_OPEN_MISSION_REGISTER_20260812.md`.

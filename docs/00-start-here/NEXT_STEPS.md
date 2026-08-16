@@ -506,6 +506,14 @@ autonomous authority.
 
 ## P3 Planned Build
 
+- HMQ-20260816-01 HERDMASTER Allocation Opportunity Operating Loop — owner-
+  approved queue entry, deliberately not started. Reuse the existing allocation
+  engine and alert API; add autonomous material-change/scheduled evaluation,
+  explicit unallocated Livestock Candidate opportunity alerts, name/tag-first
+  OOM SAKKIE delivery and durable acknowledgement/follow-up without creating a
+  sale, reservation, customer send, public post or farm mutation. `Allocated`
+  means already reserved/order-linked and is excluded from marketing. Dispatch
+  only after Control Tower releases the higher-priority urgent operational work.
 - OP-004 Pig Allocation Purpose Review Workflow.
 - OP-005 Beacon Full-Width Command UI Plan.
 - OP-006 Pig Detail Full-Width Web View Plan.
