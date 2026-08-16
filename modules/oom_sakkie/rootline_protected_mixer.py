@@ -45,6 +45,36 @@ def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
     prepared = prepare(owner_result=owner_result, parsed=parsed,
         gateway_authority=gateway_authority, now=now, **runtime_overrides)
     if prepared.get("status") == "commissioning_presence_expired":
+        from modules.oom_sakkie.protected_action_claims import (
+            load_reassessable_contained_presence_claim,
+        )
+        retained = load_reassessable_contained_presence_claim(
+            action_kind=PRESENCE_ACTION_KIND, mission_id=MISSION_ID,
+            owner_user_id=str(parsed.get("telegram_user_id") or ""),
+            private_chat_id=str(parsed.get("telegram_chat_id") or ""),
+            provider_message_id=str(parsed.get("provider_message_id") or ""),
+            connect_factory=connect_factory)
+        if retained is not None:
+            if retained.get("success") is not True:
+                return _safe(str(retained.get("status")
+                    or "mixer_presence_reassessment_unavailable"))
+            confirmation = {**parsed,
+                "provider_message_id":retained["confirmation_provider_message_id"],
+                "provider_timestamp":retained["confirmation_provider_timestamp"],
+                "text":"protected retained Mixer presence confirmation"}
+            recovered, _ = execute_presence_refresh(retained, parsed=confirmation,
+                gateway_authority=gateway_authority, connect_factory=connect_factory,
+                prepare=prepare, now=now, **runtime_overrides)
+            from modules.oom_sakkie.protected_action_claims import (
+                complete_claim, contain_claim,
+            )
+            if recovered.get("success") is True:
+                complete_claim(retained["callback_token"], recovered,
+                    connect_factory=connect_factory)
+            else:
+                contain_claim(retained["callback_token"], recovered,
+                    connect_factory=connect_factory)
+            return recovered
         return create_presence_refresh_notice(owner_result=owner_result, parsed=parsed,
             connect_factory=connect_factory)
     if prepared.get("status") != "commissioning_protected_preview_ready":
