@@ -1,5 +1,26 @@
 # Next Steps
 
+## HERDMASTER — queued 17-day exposure interruption recovery
+
+Queue this under the existing
+`HERDMASTER_BREEDING_EXPOSURE_RECOVERY_AND_UNKNOWN_PARENT_PLAN_20260812.md`;
+do not create a duplicate mission. Dispatch only after the active OP-004
+terminal returns a safe feedback boundary.
+
+Current factual incident: Prince and Lolly's managed 17-day exposure ended
+early around 2026-08-15 because Prince appeared sick and was physically
+removed. No canonical interruption, diagnosis, pregnancy result, witnessed
+service, conception result, breeding hold or replacement exposure is assumed.
+
+The replacement journey must symmetrically interrupt an active exposure for a
+sow, boar, both animals or an external cause; preserve append-only history;
+apply individual breeding holds/releases without changing permanent Purpose;
+link factual health and movement evidence; and prepare a canonical replacement
+recommendation requiring Charl's protected approval. It must never require or
+invent standing heat, service, conception, pregnancy or fatherhood. The first
+owner preview must stop Prince/Lolly, hold Prince for a health concern, release
+Lolly for replacement selection and perform zero production mutation.
+
 ## ROOTLINE RMQ-20260813-05 — Water-Credit Lifecycle
 
 RMQ-20260813-05 reached its bounded current-world outcome: its append-only,
