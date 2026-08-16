@@ -221,6 +221,16 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
   then define one names-first, Unknown-safe, confidence/sample-size-aware,
   association-not-causation data/UX contract for herd and animal analytics.
   CODEX UI implementation waits for this contract; no farm writes.
+- `HMQ-20260813-04` latest handoff — `WORKING / OWNER_ACCEPTANCE_FAILED`,
+  HERDMASTER backend stage released to CODEX UI. Exact reviewed head `be735438`
+  in open PR #984 adds the read-only `herdmaster_human_identity_v1` enrichment;
+  CI and livestock/data-integrity/security reviews passed, canonical writes were
+  zero, and its five changed files are disjoint from urgent OP-004 purpose-review
+  repair files. PR #984 remains unmerged and undeployed. CODEX UI must produce
+  the exact desktop/390px Tyson preview and stop at `READY_FOR_OWNER_PREVIEW`;
+  merge/deployment require Charl's approval of that exact preview and revision.
+  The HERDMASTER terminal is released from this stage and may take disjoint urgent
+  OP-004 work without closing or superseding HMQ-04.
 - `HMQ-20260813-05` — waits for a genuine completed weight batch.
 - `HMQ-20260813-06` — waits for physical exposure separation.
 - `HMQ-20260816-01` — `queued_owner_deferred`: build the autonomous HERDMASTER
