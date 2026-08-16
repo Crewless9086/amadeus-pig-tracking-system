@@ -202,3 +202,24 @@ def test_eligibility_only_history_never_becomes_continuing_parent():
         "governed_executable_duration_seconds":7198,"plan_generation":"PLAN-OLD"}
     _attach_parent_jobs(history,[eligibility])
     assert "incomplete_parent_job" not in history["zones"]["B12345"]
+
+
+def test_current_parent_is_selected_and_older_parent_remains_explicit():
+    history=project_canonical_irrigation_history([epoch("C12345")],snapshot_cutoff=NOW)
+    rows=[]
+    for date,identity in (("2026-08-04","OLD"),("2026-08-05","CURRENT")):
+        job=build_irrigation_job(zone_id="C12345",operating_date=date,
+            requested_total_seconds=7200,requested_total_minutes=120,
+            maximum_segment_seconds=3599,expected_segment_count=2,plan_identity=identity)
+        segment=project_next_segment(job,[])
+        rows.extend([{"action":"record_eligibility",**job,
+            "requested_total_duration_seconds":7200,"requested_total_duration_minutes":120,
+            "governed_executable_duration_seconds":7198,"plan_generation":identity},
+            {"action":"record_completed","job_id":job["job_id"],"segment_number":1,
+             "segment_identity":segment["segment_identity"],"execution_id":"EXEC-"+identity,
+             "state":"Completed","verified_runtime_seconds":3599,"shutdown_verified":True}])
+    _attach_parent_jobs(history,rows)
+    zone=history["zones"]["C12345"]
+    assert zone["incomplete_parent_job"]["job"]["operating_date"]=="2026-08-05"
+    assert [item["job"]["operating_date"] for item in zone["stale_incomplete_parent_jobs"]]==[
+        "2026-08-04"]

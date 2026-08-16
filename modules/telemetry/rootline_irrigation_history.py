@@ -134,6 +134,9 @@ def _attach_parent_jobs(history, rows):
         if job_id:
             grouped.setdefault(job_id, []).append(row)
     by_zone = {}
+    stale_by_zone = {zone: [] for zone in ZONES}
+    cutoff = _timestamp(history.get("snapshot_cutoff"))
+    current_date = cutoff.astimezone(SAST).date().isoformat() if cutoff else None
     for events in grouped.values():
         authority = next((row for row in events
             if row.get("action") == "record_eligibility" and row.get("job_sha256")), None)
@@ -167,6 +170,9 @@ def _attach_parent_jobs(history, rows):
             "completed_segment_count": len(completed_segments),
             "remaining_seconds": projection.get("remaining_seconds")}
         if zone in ZONES:
+            if current_date and job.get("operating_date") != current_date:
+                stale_by_zone[zone].append(candidate)
+                continue
             if zone in by_zone:
                 by_zone[zone] = {"job": {"job_id": "conflicting_incomplete_parent_jobs",
                     "zone_id": zone}, "projection": {
@@ -176,6 +182,9 @@ def _attach_parent_jobs(history, rows):
                 by_zone[zone] = candidate
     for zone, value in by_zone.items():
         history["zones"][zone]["incomplete_parent_job"] = value
+    for zone, values in stale_by_zone.items():
+        if values:
+            history["zones"][zone]["stale_incomplete_parent_jobs"] = values
 
 
 def build_typed_history_event(*, event_id, event_at, event_type, zone_id, details,
