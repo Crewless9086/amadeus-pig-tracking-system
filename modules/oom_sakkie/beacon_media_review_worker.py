@@ -45,7 +45,7 @@ def run_private_media_review_cycle(*, environ=None, album_loader=None,
     events=list(lifecycle_loader(group_id) or [])
     completed=next((row for row in reversed(events)
         if row.get("state") in {"delivered","updated"}
-        and str(row.get("task_state") or "")=="completed"
+        and str(row.get("task_state") or "") in {"completed","album_completed"}
         and str(row.get("mission_id") or "")==group_id),None)
     latest=next((row for row in reversed(events)
         if row.get("state") in {"delivered","updated"}),None)
