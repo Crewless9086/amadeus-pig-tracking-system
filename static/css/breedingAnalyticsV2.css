@@ -6,3 +6,4 @@
 @media(max-width:600px){.merit-related-row{align-items:flex-start;display:grid;grid-template-columns:1fr auto}.merit-related-metrics{grid-column:1/-1;justify-content:flex-start}.merit-related-arrow{grid-column:2;grid-row:1}}
 .merit-operations{width:min(1220px,calc(100% - 36px))}.merit-page{max-width:1220px}.merit-operations .merit-hero{border-color:var(--farm-line)}.merit-operations .merit-hero h1{font-family:Georgia,serif;font-size:clamp(2rem,4vw,3.4rem);letter-spacing:-.035em}.merit-operations .merit-hero p{color:var(--farm-muted)}.merit-operations .merit-kicker{color:var(--farm-green)}
 @media(max-width:850px){.merit-operations{width:min(100% - 22px,1220px)}}
+@media(max-width:620px){.merit-app-shell .farm-nav-owner,.merit-app-shell .farm-nav-logout{display:none}}
