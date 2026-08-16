@@ -2,6 +2,7 @@ from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Lock
 import hashlib
+import os
 import pytest
 
 from modules.oom_sakkie.family_message_lifecycle import (_visible_notification_events,
@@ -31,7 +32,7 @@ def test_postgres_lifecycle_load_uses_bounded_transaction_read_only(monkeypatch)
     monkeypatch.setattr(bounded_postgres_read,"connect_bounded_rootline_postgres",
         lambda **kwargs:(calls.append(kwargs) or Connection()))
     assert family_message_lifecycle._event_store("load","CARD",None)==[{"event":"loaded"}]
-    assert calls==[{"database_url":None}]
+    assert calls==[{"database_url":os.environ.get("DATABASE_URL")}]
 
 
 PARSED={"telegram_user_id":"42","telegram_chat_id":"42",
