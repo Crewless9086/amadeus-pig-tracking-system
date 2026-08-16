@@ -1621,28 +1621,55 @@ def _contain_spawned_process(process, observed_tree):
             "observed_containment": observed,
         }
     descendants = inspect_descendant_processes(pid)
+    descendant_records = []
+    for descendant in descendants:
+        descendant_pid = int(descendant.get("pid") or 0)
+        structural_token = f"fresh-spawn-handle:{pid}"
+        record = make_ownership_record(
+            descendant,
+            structural_token,
+            "charlie-startup-containment",
+            structural_token,
+            "charlie_runner",
+        )
+        expected = {
+            field: record.get(field)
+            for field in (
+                "runner_generation", "mission_id", "execution_id", "ownership_type"
+            )
+        }
+        decision = validate_termination(
+            record,
+            expected,
+            inspect_process,
+            allow_current_descendant=True,
+        )
+        if descendant_pid <= 0 or not decision.get("authorized"):
+            return {
+                "success": False,
+                "reason": (
+                    f"spawned_descendant_identity_unverified:{descendant_pid}:"
+                    f"{decision.get('reason', 'invalid_pid')}"
+                ),
+                "pid": pid,
+                "observed_containment": observed,
+            }
+        descendant_records.append(record)
     descendant_identities = {
-        int(item.get("pid") or 0): str(item.get("creation_time") or "")
-        for item in descendants
-        if int(item.get("pid") or 0) > 0
+        int(record["pid"]): str(record["creation_time"])
+        for record in descendant_records
     }
     try:
         if os.name == "nt":
-            for descendant in reversed(descendants):
-                current = inspect_process(descendant.get("pid"))
-                if (
-                    isinstance(current, dict)
-                    and str(current.get("creation_time") or "")
-                    == str(descendant.get("creation_time") or "")
-                ):
-                    subprocess.run(
-                        ["taskkill", "/PID", str(descendant["pid"]), "/T", "/F"],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                        timeout=15,
-                        **background_run_kwargs(),
-                    )
+            for descendant in reversed(descendant_records):
+                subprocess.run(
+                    ["taskkill", "/PID", str(descendant["pid"]), "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=15,
+                    **background_run_kwargs(),
+                )
             subprocess.run(
                 ["taskkill", "/PID", str(pid), "/T", "/F"],
                 capture_output=True,
@@ -1690,7 +1717,8 @@ def _contain_spawned_process(process, observed_tree):
                 else "spawned_process_termination_not_verified"
             ),
             "pid": pid,
-            "descendant_pids": sorted(descendant_identities),
+            "captured_descendant_pids": sorted(descendant_identities),
+            "surviving_descendant_pids": sorted(survivors),
             "observed_containment": observed,
         }
     return {

@@ -941,14 +941,9 @@ class CharlieRunnerControlTests(unittest.TestCase):
         )
         process.wait.assert_called()
 
-    def test_exited_launcher_still_contains_and_verifies_captured_descendant(self):
+    def test_exited_launcher_does_not_authorize_descendant_pid_termination(self):
         process = Mock(pid=4321)
         process.poll.return_value = 1
-        descendant = {"pid": 4322, "creation_time": "child-created"}
-        child_inspections = iter([
-            {"pid": 4322, "creation_time": "child-created"},
-            None,
-        ])
         with patch.object(
             runner_control,
             "_contain_observed_tree",
@@ -956,23 +951,70 @@ class CharlieRunnerControlTests(unittest.TestCase):
         ), patch.object(
             runner_control,
             "inspect_descendant_processes",
-            side_effect=[[descendant], []],
-        ), patch.object(
+        ) as descendants, patch.object(
             runner_control,
             "inspect_process",
-            side_effect=lambda _pid: next(child_inspections),
-        ), patch.object(
-            runner_control.os, "name", "nt"
-        ), patch.object(
-            runner_control.subprocess, "run", return_value=Mock(returncode=0)
+        ) as inspect, patch.object(
+            runner_control.subprocess, "run"
         ) as terminate:
             result = runner_control._contain_spawned_process(process, {})
+
         self.assertTrue(result["success"])
-        self.assertEqual(result["descendant_pids"], [4322])
-        self.assertIn(
-            ["taskkill", "/PID", "4322", "/T", "/F"],
-            [call.args[0] for call in terminate.call_args_list],
-        )
+        self.assertEqual(result["reason"], "spawned_process_handle_already_exited")
+        self.assertNotIn("descendant_pids", result)
+        descendants.assert_not_called()
+        inspect.assert_not_called()
+        terminate.assert_not_called()
+
+    def test_spawned_descendant_identity_change_fails_closed_before_termination(self):
+        process = Mock(pid=4321)
+        process.poll.return_value = None
+        captured = {
+            "pid": 4322,
+            "parent_pid": 4321,
+            "creation_time": "child-created",
+            "executable_path": "C:/venv/python.exe",
+            "command_line": "python child.py",
+            "name": "python.exe",
+        }
+        baseline = {
+            **captured,
+            "ancestry": [
+                {"pid": 4321, "name": "python.exe", "command_line": "python parent.py"},
+                {"pid": os.getpid(), "name": "python.exe", "command_line": "python test.py"},
+            ],
+            "current_process_ancestry": [{"pid": os.getpid()}],
+            "inspection_complete": True,
+        }
+        mutations = {
+            "pid": 9999,
+            "parent_pid": 9999,
+            "creation_time": "reused-created",
+            "executable_path": "C:/other/python.exe",
+            "command_line": "python substituted.py",
+        }
+        for field, value in mutations.items():
+            with self.subTest(field=field), patch.object(
+                runner_control,
+                "_contain_observed_tree",
+                return_value={"success": False, "reason": "partial_observation"},
+            ), patch.object(
+                runner_control,
+                "inspect_descendant_processes",
+                return_value=[captured],
+            ), patch.object(
+                runner_control,
+                "inspect_process",
+                return_value={**baseline, field: value},
+            ), patch.object(runner_control.subprocess, "run") as terminate:
+                result = runner_control._contain_spawned_process(process, {})
+
+            self.assertFalse(result["success"])
+            self.assertTrue(result["reason"].startswith(
+                "spawned_descendant_identity_unverified:4322:"
+            ))
+            self.assertNotIn("descendant_pids", result)
+            terminate.assert_not_called()
 
     def test_atomic_state_replacement_preserves_previous_packet_on_replace_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1520,7 +1562,6 @@ class CharlieRunnerControlTests(unittest.TestCase):
             201,
         )
 
-    @patch("modules.charlie.runner_control._validate_tree_termination_authority")
     @patch("modules.charlie.runner_control._validate_tree_termination_authority")
     @patch("modules.charlie.runner_control._stop_process_tree")
     @patch("modules.charlie.runner_control.validate_process_tree")
