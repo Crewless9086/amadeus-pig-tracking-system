@@ -28,6 +28,7 @@ def _binding(user="1002", role="trusted_family_reporter", family="dad", permissi
     return {"telegram_user_id": user, "role": role, "family_key": family,
             "permissions": permissions or ["farm_observation", "active_follow_up"],
             "summary_domains": ["herd", "rootline"],
+            "language": "af",
             "authorization_id": "CHARL-FAMILY-AUTH-001",
             "authorized_by_user_id": OWNER, "authorized_at": "2026-08-08T08:00:00+02:00"}
 
@@ -91,6 +92,31 @@ def test_family_cannot_confirm_or_escalate_protected_authority():
         assert decision.may_confirm_protected_action is False
 
 
+def test_farm_manager_is_delegated_not_owner_and_cannot_cross_charl_only_boundary():
+    permissions = ["farm_observation", "active_follow_up", "explicit_summary",
+        "welfare_hold", "welfare_escalation", "found_dead_observation",
+        "herdmaster_management_input", "herdmaster_reassessment",
+        "irrigation_start", "irrigation_reschedule", "irrigation_pause", "irrigation_stop"]
+    binding = _binding(role="farm_manager", permissions=permissions)
+    principal = resolve_family_principal(_parsed("1002"), _env([binding]))
+    assert principal.role is FamilyRole.FARM_MANAGER and not principal.is_owner
+    assert principal.language == "af"
+    for capability in permissions:
+        assert authorize_family_message(principal, _parsed("1002"),
+            capability=capability, summary_domain="herd").allowed
+    for capability in ("mortality_confirmation", "treatment", "mating_execution",
+                       "hardware_exception", "permission_change", "payment"):
+        decision = authorize_family_message(principal, _parsed("1002"), capability=capability)
+        assert not decision.allowed and not decision.may_confirm_protected_action
+
+
+def test_permanent_afrikaans_binding_is_required_and_revocation_fails_closed():
+    missing = _binding(); missing.pop("language")
+    assert resolve_family_principal(_parsed("1002"), _env([missing])).role is FamilyRole.UNKNOWN_SENDER
+    revoked = _binding(); revoked["revoked_at"] = "2026-08-15T10:00:00+02:00"
+    assert resolve_family_principal(_parsed("1002"), _env([revoked])).role is FamilyRole.UNKNOWN_SENDER
+
+
 def test_read_only_member_gets_only_explicitly_scoped_summary():
     binding = _binding(role="read_only_family_member", family="mum",
                        permissions=["explicit_summary"])
@@ -137,19 +163,26 @@ def test_duplicate_or_malformed_authorization_configuration_fails_closed():
     assert resolve_family_principal(_parsed("1002"), _env(duplicate)).role is FamilyRole.UNKNOWN_SENDER
     malformed = _binding(); malformed["authorized_at"] = "someday"
     assert resolve_family_principal(_parsed("1002"), _env([malformed])).role is FamilyRole.UNKNOWN_SENDER
+    partly_malformed = json.dumps([_binding(), "invalid-row"])
+    env = {**_env(), "OOM_SAKKIE_FAMILY_ACCESS_BINDINGS_JSON": partly_malformed}
+    assert family_access_policy(env)["configuration_valid"] is False
+    assert resolve_family_principal(_parsed("1002"), env).role is FamilyRole.UNKNOWN_SENDER
 
 
-def test_gateway_never_issues_owner_task_or_owner_lifecycle_to_family_identity():
+def test_gateway_never_issues_owner_task_or_owner_authority_to_family_identity():
     env = {**_env([_binding()]), "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": f"{OWNER},1002",
            "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
            "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "g" * 40}
     payload = {"message": {"message_id": 4001, "date": 1786176000,
         "text": "Hy eet nog nie", "from": {"id": 1002, "first_name": "Charl"},
         "chat": {"id": 1002, "type": "private"}}}
-    with patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input") as owner_task:
+    with patch("modules.oom_sakkie.telegram_gateway.handle_owner_task_input") as owner_task, \
+         patch("modules.oom_sakkie.telegram_gateway.deliver_family_result",
+               return_value={"success": True, "telegram_sends": 1,
+                             "telegram_message_id": "9001"}):
         result, status = handle_telegram_gateway_message(
             payload, headers={"Authorization": "Bearer " + "g" * 40}, environ=env)
-    assert status == 503 and result["status"] == "telegram_family_lifecycle_not_enabled"
+    assert status == 403 and result["status"] == "family_capability_denied"
     assert result["writes"] is False and result["dispatch_enabled"] is False
     assert "family_keys" not in result["telegram_gateway"]["family_access"]
     owner_task.assert_not_called()
