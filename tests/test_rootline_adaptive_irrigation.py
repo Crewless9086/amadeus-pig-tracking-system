@@ -137,6 +137,20 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         self.assertTrue(result["fresh_decision_before_second_segment"])
         self.assertIsNone(result["proposed_segment_minutes"])
 
+    def test_completed_today_does_not_erase_incomplete_parent_job(self):
+        item = evidence()
+        item["zones"][0]["completion_events"] = [{"completed_at": NOW.isoformat(),
+            "state":"Completed","shutdown_verified":True,"objective_satisfied":True}]
+        item["zones"][0]["incomplete_parent_job"] = {"job":{
+            "job_id":"JOB-1","requested_total_minutes":120,"expected_segment_count":2},
+            "projection":{"status":"segment_ready","current_segment":2,
+                "cumulative_verified_runtime_seconds":3599,"remaining_seconds":3599},
+            "remaining_seconds":3599}
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))["B12345"]
+        self.assertNotEqual(result["decision"], "Completed")
+        self.assertEqual(result["incomplete_parent_job"]["job"]["job_id"], "JOB-1")
+        self.assertEqual(result["requested_total_duration_minutes"], 120)
+
     def test_unchanged_decision_suppresses_duplicate_notification(self):
         result = build_adaptive_irrigation_decisions(evidence(), now=NOW)
         first = notification_projection(result)

@@ -116,6 +116,64 @@ def test_persisted_completion_projects_exact_residual_segment_two():
     assert second["segment_identity"]!=first["segment_identity"]
 
 
+def test_refreshed_plan_preserves_durable_parent_identity_for_segment_two():
+    plan,evidence,controller=inputs()
+    first=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,now=NOW)
+    parent_job={"contract_version":"rootline_irrigation_job.v1",
+        "job_id":first["job_id"],"job_sha256":first["job_sha256"],"zone_id":"B12345",
+        "operating_date":first["operating_date"],"requested_total_seconds":7200,
+        "requested_total_minutes":120,"governed_executable_seconds":7198,
+        "maximum_segment_seconds":3599,"expected_segment_count":2,
+        "plan_identity":first["plan_generation"]}
+    event={"job_id":first["job_id"],"segment_number":1,
+        "segment_identity":first["segment_identity"],"execution_id":first["execution_id"],
+        "state":"Completed","verified_runtime_seconds":3599,"shutdown_verified":True}
+    refreshed=deepcopy(plan); refreshed["evidence_generation"]="REFRESHED"
+    refreshed["candidate_tasks"][0]["reason"]="Fresh evidence still supports continuation"
+    refreshed["candidate_tasks"][0]["incomplete_parent_job"]={"job":parent_job,
+        "projection":{"status":"segment_ready","current_segment":2,
+            "cumulative_verified_runtime_seconds":3599,"remaining_seconds":3599},
+        "remaining_seconds":3599}
+    second=build_execution_eligibility(plan=refreshed,evidence=evidence,
+        controller=controller,now=NOW,job_event_reader=lambda _:[event])
+    assert second["eligible"] is True and second["job_id"]==first["job_id"]
+    assert second["current_segment"]==2 and second["segment_requested_seconds"]==3599
+    assert second["cumulative_verified_runtime_seconds"]==3599
+
+
+def test_incomplete_parent_hold_is_explicit_digest_bound_deferment():
+    plan,evidence,controller=inputs()
+    task=plan["candidate_tasks"][0]
+    task.update(zone_decision="Hold",recommendation="Hold",planned_duration_minutes=None,
+        reason="Fresh local rain blocks continuation",
+        incomplete_parent_job={"job":{"job_id":"JOB-1","job_sha256":"a"*64,
+            "zone_id":"B12345","operating_date":"2026-08-08","expected_segment_count":2},
+            "projection":{"current_segment":2,"cumulative_verified_runtime_seconds":3599},
+            "remaining_seconds":3599})
+    result=build_execution_eligibility(plan=plan,evidence=evidence,controller=controller,now=NOW)
+    assert result["status"]=="durable_parent_job_deferred"
+    assert result["job_resolution"]["reason"]=="Fresh local rain blocks continuation"
+    assert result["command_authority"] is False and result["hardware_control"] is False
+
+
+def test_prior_date_parent_is_deferred_and_never_regains_command_authority():
+    plan,evidence,controller=inputs()
+    task=plan["candidate_tasks"][0]
+    task["incomplete_parent_job"]={"job":{"contract_version":"rootline_irrigation_job.v1",
+        "job_id":"HISTORICAL-JOB","job_sha256":"a"*64,"zone_id":"B12345",
+        "operating_date":"2026-08-07","requested_total_seconds":7200,
+        "requested_total_minutes":120,"governed_executable_seconds":7198,
+        "maximum_segment_seconds":3599,"expected_segment_count":2,"plan_identity":"OLD"},
+        "projection":{"status":"segment_ready","current_segment":2,
+            "cumulative_verified_runtime_seconds":3599,"remaining_seconds":3599},
+        "remaining_seconds":3599}
+    result=build_execution_eligibility(plan=plan,evidence=evidence,
+        controller=controller,now=NOW)
+    assert result["status"]=="durable_parent_job_deferred"
+    assert result["eligible"] is False and result["hardware_control"] is False
+    assert result["job_resolution"]["operating_date"]=="2026-08-07"
+
+
 def test_controller_drift_or_unexpected_output_creates_no_authority():
     plan,evidence,controller=inputs()
     controller["channels"][1]["output_state"]="ON"

@@ -1,6 +1,6 @@
 # BMQ-20260813-03 — Private Media Library Review
 
-Status: WORKING
+Status: OWNER_HOLD
 
 ## Outcome
 
@@ -26,6 +26,12 @@ architecture/governance, security/data-integrity and owner/Meta UX reviews
 passed. Render deployment `dep-da08ei8u01pc73eveds0` is live at that exact
 merge. Production migration-log and schema readback proves both BMQ-03
 migrations, both named checks and all seven album-envelope columns.
+
+PR #985 merged as `989469823c5d2dca59fb999d5a8670d8b53468f9` and deployed
+as `dep-da0aq57avr4c73eun9h0`. Production readback exposed the exact canonical
+completion-state alias `album_completed`; the reviewed two-line correction in
+PR #987 merged as `b32e32757cd7acd3b0f8f8ebdaac6541fd15dc85` and is live as
+`dep-da0lpltg1s2s73bl6ejg`.
 
 - The Farm App loads one exact completed-album packet with retained context,
   ordered thumbnails and simple Library Accept/Reject and Public Use
@@ -60,7 +66,7 @@ campaign or publication. Campaign Review and Publication remain later locked
 actions. This mission performs no public post, schedule, customer contact,
 spend, farm write, hardware command, n8n mutation or Google Sheets mutation.
 
-## Acceptance still required
+## Owner hold and remaining acceptance
 
 Authenticated production readback proves the deployed Farm App resolves
 Bella's genuine packet: eight ordered members, eight valid content hashes,
@@ -68,8 +74,18 @@ eight retrievable private thumbnails, retained Bella context, Library pending,
 Public Use not approved/ineligible, and Campaign Review/Publication false.
 The earlier terminal performed zero writes, Telegram sends or edits and did not
 create an owner choice. That readback did not deliver the Telegram review.
-BMQ-20260813-03 remains WORKING until this worker is reviewed, merged, deployed
-and provider evidence proves one bound Bella Library card. It may then become
-OWNER_HOLD on Charl's natural choice; Business completion still requires the
-deployed callback, exactly-once decision readback and visible acknowledgement.
-Synthetic or terminal-created decisions are not business evidence.
+The deployed worker independently derived trigger
+`canonical:album-completed:BEACON-INTAKE-GROUP-CA51E98A7B4ABC3D5369DB73`,
+created one active Library claim for digest `851c7491...f3421`, and provider-
+confirmed one edit of existing Telegram message `3637`. The claim binds eight
+ordered assets and message `3637`; Telegram provider evidence confirms that
+message `3637` presents Accept into Private Library / Decline album for Private
+Library and the separate authority boundary. A later
+poll produced no additional lifecycle, claim, storage or provider effect.
+
+Canonical readback remains eight members, eight distinct originals, eight hash
+readbacks, eight thumbnails, retained Bella context and zero Library decision
+events. BMQ-20260813-03 is therefore OWNER_HOLD on Charl's natural choice in
+Telegram message `3637`. Business completion still requires the deployed
+callback, exactly-once decision readback and visible acknowledgement. The
+terminal must not press or replay either button.

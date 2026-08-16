@@ -214,11 +214,17 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
         raise RootlineExecutionStoreUnavailable("load_canonical_irrigation_history")
     plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
     controller = readback(token_store=token_store, environ=source, now=now)
+    artifact = build_execution_eligibility(
+        plan=plan, evidence=evidence, controller=controller, now=now,
+        job_event_reader=lambda job_id: store("load_job_events", job_id))
+    resolution = artifact.get("job_resolution") if isinstance(artifact, dict) else None
+    if isinstance(resolution, dict):
+        recorded = store("record_job_resolution", resolution)
+        if not isinstance(recorded, dict) or recorded.get("success") is not True:
+            raise RootlineExecutionStoreUnavailable("record_job_resolution")
     return {"evidence": evidence, "plan": plan, "controller": controller,
             "operating_date": str(operating_date), "generated_at": generated_at,
-            "artifact": build_execution_eligibility(
-                plan=plan, evidence=evidence, controller=controller, now=now,
-                job_event_reader=lambda job_id: store("load_job_events", job_id))}
+            "artifact": artifact}
 
 
 def _commissioned_output(zone):

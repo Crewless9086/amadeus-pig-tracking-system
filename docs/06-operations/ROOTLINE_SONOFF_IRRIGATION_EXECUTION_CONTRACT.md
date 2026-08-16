@@ -72,5 +72,22 @@ concurrency evidence. Only a new eligible decision may create segment 2 with a
 new identity. Cancellation, changed need, rain, stale/conflicting evidence,
 manual isolation, another active zone, or failed shutdown prevents segment 2.
 
+## Durable parent-job continuity
+
+A segment-level completion and verified OFF prove only that segment and its
+containment. The canonical planner must load the immutable parent job and its
+append-only segment events on every reassessment. It projects requested and
+governed total runtime, expected and completed segment counts, cumulative
+verified runtime, the next segment number, and the remaining objective.
+
+`completed_today` cannot close a zone whose parent job remains incomplete. A
+fresh safe decision may authorize the exact residual segment with a new
+execution identity under the existing job identity. A Hold, rain boundary,
+conflict, stale evidence, or changed need instead appends a digest-bound
+`Deferred` or supported `Cancelled` resolution. It may not collapse into a
+generic no-dispatchable-zone result. Conflicting or invalid parent histories
+fail closed. Neither runtime nor normal flow creates litres or millimetres;
+water credit remains governed by separately measured or calibrated evidence.
+
 Implementation: `modules/telemetry/rootline_irrigation_execution_contract.py`.
 Acceptance: `tests/test_rootline_irrigation_execution_contract.py`.
