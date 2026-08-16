@@ -389,6 +389,19 @@ Charl may use ChatGPT for step-by-step setup, but the final authoritative mappin
 
 ## Authority Boundary
 
+### Standing water-availability policy for ordinary B/C irrigation
+
+Inside the already commissioned B/C envelope, absence or staleness of a tank-count
+observation is not evidence of insufficient supply and must not independently create a
+question or execution Hold. ROOTLINE assumes water is available unless Charl reports an
+insufficient supply or fresh canonical evidence proves a dry supply, supply fault or
+conflict. Any such current adverse evidence remains fail-closed. Storage is planned as
+requiring replenishment by default unless credible current evidence says otherwise.
+
+This assumption creates neither litres nor millimetres, does not create water credit, and
+does not authorize Borehole 1. Borehole actuation still requires its own commissioned
+provider identity, fail-OFF contract, conflict isolation and physical pump/water proof.
+
 These rules authorize observation, reasoning, adaptive planning and owner summaries. They document the owner-approved standing B/C envelope, but do not themselves enable its production runtime flag. Hardware configuration, activation and expansion remain separate protected decisions.
 
 They do not authorize outside that proven B/C envelope:

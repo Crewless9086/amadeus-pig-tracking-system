@@ -32,7 +32,7 @@ def fixture():
 def artifact():
     # Use validator injection seam by monkeypatching module validation; the tests
     # exercise ordering/binding while authority validation has its own suite.
-    return {"contract_version":"rootline_execution_eligibility.v4","status":"execution_eligible",
+    return {"contract_version":"rootline_execution_eligibility.v5","status":"execution_eligible",
       "authority_source":"owner_approved_routine_irrigation_v1","zone_id":"B12345",
       "plan_generation":"PLAN-1","maximum_duration_seconds":3599,"command_authority":True,
       "hardware_control":True,"execution_id":"ROOTLINE-EXECUTION-NEW",

@@ -132,6 +132,12 @@ _ROOTLINE_PRESENCE = re.compile(
     r"\bB and C valve area\b.*\bobserve both camps\b.*\bintervene immediately\b.*\bsupervised commissioning\b",
     re.I,
 )
+_FERTILIZER_COMMISSIONING_PRESENCE = re.compile(
+    r"\b(?:I\s+am|I'm)\s+(?:physically\s+)?(?:at|by)\s+the\s+fertili[sz]er\s+valves?\b"
+    r"(?=.*\bready\b)(?=.*\b(?:five[- ]minute|5[- ]minute|300[- ]second)\b)"
+    r"(?=.*\b(?:mixer|CH2)\b)(?=.*\bcommissioning(?:\s+test)?\b)",
+    re.I,
+)
 _ROOTLINE_OPERATIONAL = re.compile(
     r"\b(reservoir|storage tanks?|water level|[BC]\s*camps?|irrigat(?:e|ion)|needs?\s+(?:water|irrigation))\b",
     re.I,
@@ -158,6 +164,7 @@ def handle_operational_specialist_message(
     semantic_rootline_observation = (semantic.get("domain") == "rootline"
         and semantic.get("message_kind") in {"observation", "correction"}
         and not semantic.get("needs_clarification"))
+    commissioning_presence = bool(_FERTILIZER_COMMISSIONING_PRESENCE.search(text))
     pending = _pending_specialist_context(
         parsed, pending_specialist_loader or _load_pending_specialist_context)
     if pending and pending.get("binding_error"):
@@ -173,6 +180,15 @@ def handle_operational_specialist_message(
             parsed, gateway_authority, pending,
             contextual_specialist_dispatcher or assess_fertilizer_commissioning_reply,
             now, operation_store or _operation_event_store)
+    if commissioning_presence:
+        result = _contained(parsed, "fertilizer_commissioning_context_not_current",
+                            (now or datetime.now(timezone.utc)).astimezone(timezone.utc))
+        result.update({"handled": True, "success": True, "status": "waiting_for_input",
+            "answer": ("<b>FERTILIZER COMMISSIONING RETAINED</b>\n\n"
+                       "I recognized your Mixer commissioning readiness, but no single current protected "
+                       "commissioning context was available. No generic ROOTLINE plan consumed it and no "
+                       "hardware action was taken."), "question_count": 0})
+        return result, 200
     legacy_rootline_observation = not semantic_present and _ROOTLINE_OPERATIONAL.search(text)
     if (semantic_rootline_observation or legacy_rootline_observation) and not _ROOTLINE_PRESENCE.search(text):
         return _handle_rootline_operation(parsed, gateway_authority, rootline_operations_dispatcher,
@@ -444,8 +460,11 @@ def _pending_specialist_context(parsed, loader):
     continuation = semantic.get("continuation") is True
     intent = str(semantic.get("intent") or "").lower()
     message_kind = str(semantic.get("message_kind") or "").lower()
-    if domain != "rootline" or not (continuation or message_kind == "confirmation"
-            or intent in {"status_update", "commissioning_ready", "availability_confirmation"}):
+    exact_commissioning_presence = bool(_FERTILIZER_COMMISSIONING_PRESENCE.search(
+        str(parsed.get("text") or "")))
+    if not exact_commissioning_presence and (domain != "rootline" or not (
+            continuation or message_kind == "confirmation"
+            or intent in {"status_update", "commissioning_ready", "availability_confirmation"})):
         return None
     try:
         candidates = list(loader(parsed) or ())
