@@ -2,11 +2,30 @@ from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from modules.telemetry.rootline_execution_runtime import (
-    _current, run_protected_rootline_segment, run_rootline_execution_cycle,
+    _current, _persist_stale_parent_resolutions,
+    run_protected_rootline_segment, run_rootline_execution_cycle,
 )
 from modules.telemetry.rootline_irrigation_execution_store import RootlineExecutionStoreUnavailable
 
 NOW=datetime(2026,8,8,18,0,tzinfo=timezone.utc)
+
+
+def test_stale_parent_resolution_is_digest_bound_and_zero_control():
+    calls=[]
+    parent={"job":{"job_id":"JOB-OLD","job_sha256":"a"*64,"zone_id":"C12345",
+        "operating_date":"2026-08-07","expected_segment_count":2},
+        "projection":{"current_segment":2,"cumulative_verified_runtime_seconds":3599},
+        "remaining_seconds":3599}
+    current={"evidence_generation":"PLAN-CURRENT","candidate_tasks":[{
+        "task_id":"irrigation_C12345","stale_incomplete_parent_jobs":[parent]}]}
+    def store(action,payload):
+        calls.append((action,payload)); return {"success":True,"created":len(calls)==1}
+    _persist_stale_parent_resolutions(current,store)
+    _persist_stale_parent_resolutions(current,store)
+    assert [action for action,_ in calls]==["record_job_resolution","record_job_resolution"]
+    assert calls[0][1]==calls[1][1]
+    assert calls[0][1]["resolution"]=="Deferred"
+    assert calls[0][1]["remaining_seconds"]==3599
 
 
 def plan():

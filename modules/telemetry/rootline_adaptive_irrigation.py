@@ -318,6 +318,8 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "expected_segment_count": (parent_job.get("expected_segment_count")
             if parent_job else (2 if decision in {"Run now", "Run later"} else None)),
         "incomplete_parent_job": parent or None,
+        "stale_incomplete_parent_jobs": [dict(item) for item in
+            zone.get("stale_incomplete_parent_jobs", []) if isinstance(item, dict)],
         "fresh_decision_before_second_segment": True,
         "shutdown_verification_required": True,
         "simultaneous_with_other_zone": False,
