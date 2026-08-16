@@ -91,6 +91,33 @@ def bind_claim_card(token, card_message_id, *, connect_factory=None):
           (str(card_message_id),str(token),str(card_message_id)))
         return cur.rowcount==1
 
+def load_active_child_claim(*, action_kind, mission_id, parent_claim_token,
+                            owner_user_id, private_chat_id, connect_factory=None):
+    """Recover one already-committed child preview after a parent crash window."""
+    with (connect_factory() if connect_factory else _connect()) as db:
+      with db.cursor() as cur:
+        cur.execute("""select callback_token,preview_digest,expires_at,preview_payload,
+          preview_card_message_id from app_private.oom_protected_action_claims
+          where action_kind=%s and mission_id=%s and status='active'
+          and owner_user_id=%s and private_chat_id=%s
+          and preview_payload->>'presence_refresh_claim_token'=%s
+          order by created_at desc limit 2""",
+          (str(action_kind),str(mission_id),str(owner_user_id),str(private_chat_id),
+           str(parent_claim_token)))
+        rows=cur.fetchall()
+        if len(rows)==1 and rows[0][2] <= datetime.now(timezone.utc):
+            if rows[0][4]:
+                return {"success":False,"status":"protected_child_expired_bound"}
+            cur.execute("""update app_private.oom_protected_action_claims set status='expired'
+              where callback_token=%s and status='active' and preview_card_message_id is null
+              and expires_at<=now()""",(rows[0][0],))
+            return None
+    if len(rows)!=1:return None
+    return {"success":True,"status":"protected_claim_existing",
+        "callback_token":rows[0][0],"preview_digest":rows[0][1],
+        "expires_at":rows[0][2].isoformat(),"preview_payload":rows[0][3],
+        "preview_card_message_id":str(rows[0][4] or "")}
+
 def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_message_id,
                    provider_timestamp, source_card_message_id="", connect_factory=None):
     data=str(callback_data or "")
@@ -115,6 +142,7 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
             return {"success":False,"status":"protected_callback_card_mismatch"},409
         if row[7]=="completed":
             if row[0] in {"rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
+                    "rootline_fertilizer_mixer_presence_refresh",
                     "sam_sale_payment", "beacon_media_review"}:
                 return {"success":True,"status":"protected_callback_completed_delivery_retry",
                   "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
