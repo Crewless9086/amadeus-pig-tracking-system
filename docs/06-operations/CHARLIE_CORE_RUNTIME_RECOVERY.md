@@ -70,12 +70,25 @@ python -B scripts\charlie_runtime_stage.py plan `
   --receipt-sha256 <64-character-sha256> `
   --expected-runtime-head <40-character-commit> `
   --expected-execution-head <40-character-commit> `
-  --expected-manifest-commit <40-character-commit>
+  --expected-manifest-commit <40-character-commit> `
+  --expected-task-sha256 <independently-audited-action-sha256>
 ```
 
 Changing `plan` to `stage` is a separate authorized release action. Source review
 and CI do not authorize that action and do not prove runtime-loaded behavior or
 terminal-independent continuity.
+
+An interrupted lane is never inferred stale or stolen. Read it without effects:
+
+```powershell
+python -B scripts\charlie_runtime_stage_recovery.py readback --state-root <state-directory>
+```
+
+If readback reports `release_lane_recovery_required`, a separately authorized
+recovery must bind the exact lane ID and rollback-file SHA-256 it returned. The
+`recover` action verifies the task, stop evidence, Git checkout safety and every
+rollback readback; it retains the lane on any incomplete recovery. Recovery does
+not start CORE or alter the scheduled task.
 
 ## Read-only audit
 

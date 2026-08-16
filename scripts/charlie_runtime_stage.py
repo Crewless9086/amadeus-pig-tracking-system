@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--expected-runtime-head", required=True)
     parser.add_argument("--expected-execution-head", required=True)
     parser.add_argument("--expected-manifest-commit", required=True)
+    parser.add_argument("--expected-task-sha256", required=True)
     args = parser.parse_args()
     try:
         plan = plan_runtime_staging(
@@ -33,6 +34,7 @@ def main():
             expected_runtime_head=args.expected_runtime_head,
             expected_execution_head=args.expected_execution_head,
             expected_manifest_commit=args.expected_manifest_commit,
+            expected_task_sha256=args.expected_task_sha256,
         )
         result = plan if args.action == "plan" else stage_runtime(plan)
     except RuntimeStagingError as exc:

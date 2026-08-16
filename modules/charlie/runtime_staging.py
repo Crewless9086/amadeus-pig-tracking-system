@@ -29,6 +29,7 @@ def plan_runtime_staging(
     *, source_ref, runtime_root, execution_root, state_root, receipt_path,
     receipt_sha256, expected_runtime_head, expected_execution_head,
     expected_manifest_commit, task_reader=None, runner=subprocess.run,
+    expected_task_sha256=None, git_safety_checker=None,
 ):
     source_ref = str(source_ref or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{40}", source_ref):
@@ -36,6 +37,7 @@ def plan_runtime_staging(
     runtime_root, execution_root, state_root = map(
         lambda value: Path(value).resolve(), (runtime_root, execution_root, state_root)
     )
+    _validate_target_roots(runtime_root, execution_root, state_root)
     resolved = _git(runtime_root, ["rev-parse", "--verify", f"{source_ref}^{{commit}}"], runner)
     if resolved != source_ref:
         raise RuntimeStagingError("source_ref_resolution_mismatch", resolved=resolved)
@@ -53,6 +55,8 @@ def plan_runtime_staging(
     supervisor_path = state_root / "supervisor.json"
     watchdog_path = state_root / "watchdog.json"
     manifest = _read_json(manifest_path, "runtime_manifest_missing_or_invalid")
+    if str(Path(str(manifest.get("runtime_root") or "")).resolve()).casefold() != str(runtime_root).casefold():
+        raise RuntimeStagingError("manifest_runtime_root_mismatch")
     if not stop_path.is_file():
         raise RuntimeStagingError("governed_stop_marker_required")
     receipt_path = Path(receipt_path).resolve()
@@ -75,6 +79,15 @@ def plan_runtime_staging(
         raise RuntimeStagingError("watchdog_governed_stop_not_active")
     task = (task_reader or read_watchdog_task)()
     _validate_task(task, runtime_root)
+    task_sha256 = _payload_sha256(task)
+    if not re.fullmatch(r"[0-9a-f]{64}", str(expected_task_sha256 or "").lower()):
+        raise RuntimeStagingError("exact_scheduled_task_digest_required")
+    if task_sha256 != str(expected_task_sha256).lower():
+        raise RuntimeStagingError("scheduled_task_digest_mismatch")
+    git_safety = {
+        "runtime": (git_safety_checker or inspect_git_checkout_safety)(runtime_root, runner),
+        "execution": (git_safety_checker or inspect_git_checkout_safety)(execution_root, runner),
+    }
     rollback = {
         "version": STAGING_VERSION,
         "runtime": runtime,
@@ -86,11 +99,12 @@ def plan_runtime_staging(
         "supervisor_state_sha256": _sha256(supervisor_path),
         "watchdog_state_sha256": _sha256(watchdog_path),
         "task_ownership": task,
-        "task_ownership_sha256": _payload_sha256(task),
+        "task_ownership_sha256": task_sha256,
+        "git_checkout_safety_sha256": _payload_sha256(git_safety),
     }
     if not all((runtime.get("head"), execution.get("head"), manifest.get("promoted_commit"))):
         raise RuntimeStagingError("rollback_identity_incomplete")
-    return {
+    plan = {
         "success": True,
         "status": "runtime_staging_plan_ready",
         "source_ref": source_ref,
@@ -103,11 +117,17 @@ def plan_runtime_staging(
         "zero_effect": True,
         "watchdog_action": "none",
     }
+    plan["plan_sha256"] = _payload_sha256(plan)
+    return plan
 
 
-def stage_runtime(plan, *, task_reader=None, runner=subprocess.run):
+def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_checker=None):
     if not isinstance(plan, dict) or plan.get("status") != "runtime_staging_plan_ready":
         raise RuntimeStagingError("validated_staging_plan_required")
+    supplied_digest = plan.get("plan_sha256")
+    unsigned = {key: value for key, value in plan.items() if key != "plan_sha256"}
+    if supplied_digest != _payload_sha256(unsigned):
+        raise RuntimeStagingError("staging_plan_digest_mismatch")
     state_root = Path(plan["state_root"])
     runtime_root = Path(plan["runtime_root"])
     execution_root = Path(plan["execution_root"])
@@ -128,6 +148,7 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run):
     rollback_path = ledger_dir / f"{lane_id}-rollback.json"
     result_path = ledger_dir / f"{lane_id}-result.json"
     mutated = False
+    recovery_error = None
     try:
         if _sha256(plan["receipt_path"]) != plan["receipt_sha256"]:
             raise RuntimeStagingError("sealed_receipt_changed")
@@ -139,10 +160,18 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run):
         _validate_task(task, runtime_root)
         if _payload_sha256(task) != plan["rollback"]["task_ownership_sha256"]:
             raise RuntimeStagingError("scheduled_task_ownership_changed")
+        git_safety = {
+            "runtime": (git_safety_checker or inspect_git_checkout_safety)(runtime_root, runner),
+            "execution": (git_safety_checker or inspect_git_checkout_safety)(execution_root, runner),
+        }
+        if _payload_sha256(git_safety) != plan["rollback"]["git_checkout_safety_sha256"]:
+            raise RuntimeStagingError("git_checkout_safety_changed")
         runtime_now = _worktree_identity(runtime_root, runner)
         execution_now = _worktree_identity(execution_root, runner)
         if runtime_now != plan["rollback"]["runtime"] or execution_now != plan["rollback"]["execution"]:
             raise RuntimeStagingError("worktree_identity_changed_before_staging")
+        if _sha256(state_root / "runtime-manifest.json") != plan["rollback"]["manifest_sha256"]:
+            raise RuntimeStagingError("runtime_manifest_changed_before_staging")
         _atomic_json(rollback_path, {
             **plan["rollback"], "lane_id": lane_id, "source_ref": source_ref,
             "recorded_at": _now(), "status": "rollback_tuple_recorded",
@@ -150,8 +179,8 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run):
         if _sha256(state_root / "supervisor.stop") != plan["rollback"]["stop_marker_sha256"]:
             raise RuntimeStagingError("governed_stop_marker_changed")
         _validate_governed_state_unchanged(state_root, plan["rollback"])
-        _git_mutate(runtime_root, ["switch", "--detach", source_ref], runner)
         mutated = True
+        _git_mutate(runtime_root, ["switch", "--detach", source_ref], runner)
         _git_mutate(execution_root, ["switch", "--detach", source_ref], runner)
         if _git(runtime_root, ["rev-parse", "HEAD"], runner) != source_ref:
             raise RuntimeStagingError("runtime_revision_readback_mismatch")
@@ -188,7 +217,6 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run):
         _atomic_json(result_path, result)
         return result
     except Exception as exc:
-        recovery_error = None
         if mutated:
             try:
                 _restore_rollback(plan, runner)
@@ -208,10 +236,11 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run):
         _atomic_json(result_path, failure)
         raise
     finally:
-        try:
-            lane_path.replace(ledger_dir / f"{lane_id}-lane.json")
-        except OSError:
-            pass
+        if not mutated or recovery_error is None:
+            try:
+                lane_path.replace(ledger_dir / f"{lane_id}-lane.json")
+            except OSError:
+                pass
 
 
 def read_watchdog_task(runner=subprocess.run):
@@ -235,6 +264,72 @@ def read_watchdog_task(runner=subprocess.run):
     return rows if isinstance(rows, list) else [rows]
 
 
+def read_staging_state(state_root):
+    state_root = Path(state_root).resolve()
+    lane_path = state_root / "release-staging.lock"
+    if not lane_path.is_file():
+        return {"success": True, "status": "no_active_release_lane", "zero_effect": True}
+    lane = _read_json(lane_path, "release_lane_invalid")
+    lane_id = str(lane.get("lane_id") or "")
+    if not re.fullmatch(r"[0-9a-f]{32}", lane_id):
+        raise RuntimeStagingError("release_lane_invalid")
+    rollback_path = state_root / "promotion-ledger" / f"{lane_id}-rollback.json"
+    return {
+        "success": True,
+        "status": "release_lane_recovery_required",
+        "zero_effect": True,
+        "lane": lane,
+        "lane_sha256": _sha256(lane_path),
+        "rollback_path": str(rollback_path),
+        "rollback_sha256": _sha256(rollback_path),
+    }
+
+
+def recover_runtime_staging(
+    *, state_root, lane_id, rollback_sha256, task_reader=None,
+    runner=subprocess.run, git_safety_checker=None,
+):
+    state_root = Path(state_root).resolve()
+    evidence = read_staging_state(state_root)
+    lane = evidence.get("lane") or {}
+    if lane.get("lane_id") != lane_id:
+        raise RuntimeStagingError("release_lane_identity_mismatch")
+    if evidence.get("rollback_sha256") != str(rollback_sha256 or "").lower():
+        raise RuntimeStagingError("rollback_digest_mismatch")
+    rollback = _read_json(evidence["rollback_path"], "rollback_tuple_invalid")
+    if rollback.get("lane_id") != lane_id or rollback.get("source_ref") != lane.get("source_ref"):
+        raise RuntimeStagingError("rollback_lane_binding_mismatch")
+    runtime_root = Path(rollback.get("runtime", {}).get("root", "")).resolve()
+    execution_root = Path(rollback.get("execution", {}).get("root", "")).resolve()
+    _validate_target_roots(runtime_root, execution_root, state_root)
+    task = (task_reader or read_watchdog_task)()
+    _validate_task(task, runtime_root)
+    if _payload_sha256(task) != rollback.get("task_ownership_sha256"):
+        raise RuntimeStagingError("scheduled_task_ownership_changed")
+    for root in (runtime_root, execution_root):
+        (git_safety_checker or inspect_git_checkout_safety)(root, runner)
+    if _sha256(state_root / "supervisor.stop") != rollback.get("stop_marker_sha256"):
+        raise RuntimeStagingError("governed_stop_marker_changed")
+    _validate_governed_state_unchanged(state_root, rollback)
+    recovery_plan = {
+        "runtime_root": str(runtime_root), "execution_root": str(execution_root),
+        "state_root": str(state_root), "rollback": rollback,
+    }
+    _restore_rollback(recovery_plan, runner)
+    result = {
+        "version": STAGING_VERSION, "success": True,
+        "status": "runtime_staging_recovered", "lane_id": lane_id,
+        "runtime_head": rollback["runtime"]["head"],
+        "execution_head": rollback["execution"]["head"],
+        "manifest_sha256": rollback["manifest_sha256"],
+        "watchdog_action": "none", "core_started": False, "recovered_at": _now(),
+    }
+    ledger = state_root / "promotion-ledger"
+    _atomic_json(ledger / f"{lane_id}-recovery.json", result)
+    (state_root / "release-staging.lock").replace(ledger / f"{lane_id}-lane-recovered.json")
+    return result
+
+
 def _validate_receipt(receipt, source_ref):
     isolation = receipt.get("isolation") if isinstance(receipt.get("isolation"), dict) else {}
     if (
@@ -254,15 +349,24 @@ def _validate_task(rows, runtime_root):
     if not isinstance(rows, list) or len(rows) != 1:
         raise RuntimeStagingError("scheduled_task_ownership_ambiguous")
     row = rows[0] if isinstance(rows[0], dict) else {}
-    execute = Path(str(row.get("execute") or "")).name.casefold()
+    canonical_root = runtime_root.parent.parent
+    expected_execute = canonical_root / "venv" / "Scripts" / "pythonw.exe"
+    expected_watchdog = runtime_root / "scripts" / "charlie_runner_watchdog.py"
+    expected_env = canonical_root / ".env"
+    expected_arguments = (
+        '-c "from dotenv import load_dotenv; load_dotenv(r\'{0}\', override=True); '
+        "import runpy,sys; sys.argv=[r'{1}','--json']; "
+        "runpy.run_path(r'{1}', run_name='__main__')\""
+    ).format(expected_env, expected_watchdog)
+    execute = str(Path(str(row.get("execute") or "")).resolve()).casefold()
     working = str(Path(str(row.get("working_directory") or "")).resolve()).casefold()
     arguments = str(row.get("arguments") or "").casefold()
     if (
         row.get("task_name") != TASK_NAME or int(row.get("action_count") or 0) != 1
-        or execute != "pythonw.exe" or working != str(runtime_root).casefold()
-        or str(row.get("state") or "").casefold() == "running"
-        or "charlie_runner_watchdog.py" not in arguments
-        or str(runtime_root).casefold() not in arguments
+        or execute != str(expected_execute.resolve()).casefold()
+        or working != str(runtime_root).casefold()
+        or str(row.get("state") or "").casefold() not in {"ready", "disabled"}
+        or arguments != expected_arguments.casefold()
     ):
         raise RuntimeStagingError("scheduled_task_ownership_ambiguous")
 
@@ -286,12 +390,59 @@ def _validate_governed_state_unchanged(state_root, rollback):
 
 def _restore_rollback(plan, runner):
     rollback = plan["rollback"]
-    _git_mutate(Path(plan["runtime_root"]), ["switch", "--detach", rollback["runtime"]["head"]], runner)
-    _git_mutate(Path(plan["execution_root"]), ["switch", "--detach", rollback["execution"]["head"]], runner)
-    _atomic_bytes(
-        Path(plan["state_root"]) / "runtime-manifest.json",
-        base64.b64decode(rollback["manifest_bytes_b64"], validate=True),
+    errors = []
+    for name in ("runtime", "execution"):
+        identity = rollback[name]
+        try:
+            root = Path(identity["root"])
+            branch = identity.get("branch")
+            if branch:
+                if _git(root, ["rev-parse", f"refs/heads/{branch}"], runner) != identity["head"]:
+                    raise RuntimeStagingError("rollback_branch_moved", worktree=name)
+                _git_mutate(root, ["switch", branch], runner)
+            else:
+                _git_mutate(root, ["switch", "--detach", identity["head"]], runner)
+            if _git(root, ["rev-parse", "HEAD"], runner) != identity["head"]:
+                raise RuntimeStagingError("rollback_head_readback_mismatch", worktree=name)
+        except Exception as exc:
+            errors.append({"component": name, "status": getattr(exc, "status", exc.__class__.__name__)})
+    try:
+        _atomic_bytes(
+            Path(plan["state_root"]) / "runtime-manifest.json",
+            base64.b64decode(rollback["manifest_bytes_b64"], validate=True),
+        )
+        if _sha256(Path(plan["state_root"]) / "runtime-manifest.json") != rollback["manifest_sha256"]:
+            raise RuntimeStagingError("rollback_manifest_readback_mismatch")
+    except Exception as exc:
+        errors.append({"component": "manifest", "status": getattr(exc, "status", exc.__class__.__name__)})
+    if errors:
+        raise RuntimeStagingError("rollback_recovery_incomplete", errors=errors)
+
+
+def _validate_target_roots(runtime_root, execution_root, state_root):
+    if runtime_root == execution_root or runtime_root in execution_root.parents or execution_root in runtime_root.parents:
+        raise RuntimeStagingError("runtime_execution_roots_overlap")
+    if runtime_root != state_root / "core-runtime-current" or execution_root != state_root / "core-execution-current":
+        raise RuntimeStagingError("non_authoritative_staging_roots")
+
+
+def inspect_git_checkout_safety(root, runner=subprocess.run):
+    completed = runner(
+        ["git", "config", "--show-origin", "--get-regexp",
+         r"^(core\.hooksPath|core\.fsmonitor|filter\..*\.(process|smudge))$"],
+        cwd=str(root), capture_output=True, text=True, timeout=30, check=False,
     )
+    if completed.returncode not in (0, 1):
+        raise RuntimeStagingError("git_checkout_extensions_unreadable", root=str(root))
+    if completed.returncode == 0 and str(completed.stdout or "").strip():
+        raise RuntimeStagingError("git_executable_checkout_extension_present", root=str(root))
+    hook = _git(root, ["rev-parse", "--git-path", "hooks/post-checkout"], runner)
+    hook_path = Path(hook)
+    if not hook_path.is_absolute():
+        hook_path = root / hook_path
+    if hook_path.is_file():
+        raise RuntimeStagingError("git_post_checkout_hook_present", root=str(root))
+    return {"extensions": "none", "post_checkout_hook": "absent"}
 
 
 def _worktree_identity(root, runner):
@@ -311,7 +462,10 @@ def _git(root, args, runner):
 
 
 def _git_mutate(root, args, runner):
-    completed = runner(["git", *args], cwd=str(root), capture_output=True, text=True, timeout=60, check=False)
+    command = ["git", *args]
+    if args and args[0] == "switch":
+        command = ["git", "-c", "core.hooksPath=NUL", "-c", "core.fsmonitor=false", *args]
+    completed = runner(command, cwd=str(root), capture_output=True, text=True, timeout=60, check=False)
     if completed.returncode != 0:
         raise RuntimeStagingError("git_staging_failed", command=args)
 
@@ -345,6 +499,8 @@ def _exclusive_json(path, payload):
         raise RuntimeStagingError("release_lane_already_owned") from exc
     with os.fdopen(os.dup(descriptor), "w", encoding="utf-8") as stream:
         json.dump(payload, stream, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
     return descriptor
 
 
@@ -356,8 +512,13 @@ def _atomic_bytes(path, payload):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    temporary.write_bytes(payload)
+    with temporary.open("wb") as stream:
+        stream.write(payload)
+        stream.flush()
+        os.fsync(stream.fileno())
     os.replace(temporary, path)
+    with path.open("r+b") as stream:
+        os.fsync(stream.fileno())
 
 
 def _now():
