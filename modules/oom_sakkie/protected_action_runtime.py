@@ -63,6 +63,12 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
               "reply_markup":{"inline_keyboard":[]},
               "owner_visible_completion_policy":"verified_edit_or_new_message",
               "delivery_recovery_required":True},200
+        if claimed.get("action_kind")=="rootline_fertilizer_mixer_presence_refresh":
+            result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
+            return {"handled":True,**result,"specialist":"ROOTLINE",
+              "mission_id":claimed["mission_id"],
+              "owner_visible_completion_policy":"verified_edit_or_new_message",
+              "delivery_recovery_required":True},200
         from modules.oom_sakkie.rootline_protected_irrigation import protected_card_mission_id
         result=claimed.get("result") if isinstance(claimed.get("result"),dict) else {}
         answer=_irrigation_answer(result,claimed)
@@ -155,6 +161,22 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "card_mission_id":protected_card_mission_id(claimed["preview_digest"],claimed["mission_id"]),
           "reply_markup":{"inline_keyboard":[]},
           "owner_visible_completion_policy":"verified_edit_or_new_message"},result_status
+    if claimed["action_kind"]=="rootline_fertilizer_mixer_presence_refresh":
+        from modules.oom_sakkie.rootline_protected_mixer import execute_presence_refresh
+        try:
+            result,result_status=execute_presence_refresh(claimed,parsed=parsed,
+                gateway_authority=gateway_authority,connect_factory=connect_factory)
+        except Exception as exc:
+            return {"handled":True,"success":False,
+                "status":"mixer_presence_refresh_recovery_pending",
+                "hardware_commands":0,"provider_control_calls":0,
+                "recovery_required":True,"error_type":type(exc).__name__},503
+        if result.get("success") is True:
+            complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        else:
+            contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        return {"handled":True,**result,"specialist":"ROOTLINE",
+            "owner_visible_completion_policy":"verified_edit_or_new_message"},result_status
     if claimed["action_kind"]=="rootline_fertilizer_mixer_commissioning":
         from modules.oom_sakkie.rootline_protected_mixer import (
             execute_claimed_mixer, protected_card_mission_id,
