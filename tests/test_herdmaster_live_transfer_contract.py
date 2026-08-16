@@ -211,6 +211,17 @@ def test_sam_price_specificity_and_exclusive_end_boundary_are_preserved():
     assert row["price_band_compatibility"]["separate_price_rule"]["unit_price"] == 325
 
 
+def test_same_day_price_effective_timestamp_is_included_at_end_of_day_cutoff():
+    evidence = snapshot()
+    evidence["price_rows"] = [{
+        **evidence["price_rows"][0], "pricing_id": "PRICE-SAME-DAY",
+        "effective_from": "2026-08-16T12:00:00+00:00", "effective_to": None,
+    }]
+    row = by_tag(compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16)))["151"]
+
+    assert row["price_band_compatibility"]["separate_price_rule"]["pricing_id"] == "PRICE-SAME-DAY"
+
+
 def test_duplicate_active_order_lines_fail_closed_with_every_identity():
     evidence = snapshot()
     evidence["order_lines"].append({
@@ -241,6 +252,7 @@ def test_missing_or_arithmetic_conflicting_withdrawal_never_becomes_food_chain_c
 
 
 def test_cutoff_and_observation_supersession_govern_current_without_hiding_history():
+    baseline = compose_live_transfer_contract(snapshot(), as_of=date(2026, 8, 16))
     evidence = snapshot()
     evidence["medical_events"].append(
         medical("MED-FUTURE", "PIG-2026-B156", "Ecomectin 1%",
@@ -263,10 +275,15 @@ def test_cutoff_and_observation_supersession_govern_current_without_hiding_histo
     assert health["current_event_ids"] == ["OBS-NEW"]
     assert health["history_event_ids"] == ["OBS-OLD", "OBS-NEW"]
     assert health["superseded_event_ids"] == ["OBS-OLD"]
-    assert health["excluded_future_or_undated_event_ids"] == ["OBS-FUTURE"]
-    assert row["excluded_future_or_undated_medical_event_ids"] == ["MED-FUTURE"]
     assert "MED-FUTURE" not in {item["medical_event_id"] for item in row["canonical_treatment_events"]}
-    assert "MED-FUTURE" in {item["medical_event_id"] for item in row["canonical_treatment_history"]}
+    assert "MED-FUTURE" not in {item["medical_event_id"] for item in row["canonical_treatment_history"]}
+    evidence_without_future_observation = snapshot()
+    evidence_without_future_observation["observation_events"] = evidence["observation_events"][:2]
+    with_pre_cutoff_observations = compose_live_transfer_contract(
+        evidence_without_future_observation, as_of=date(2026, 8, 16))
+    with_future_evidence = compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16))
+    assert with_future_evidence["packet_digest"] == with_pre_cutoff_observations["packet_digest"]
+    assert baseline["packet_digest"] != with_pre_cutoff_observations["packet_digest"]
 
 
 def test_loader_uses_one_repeatable_read_read_only_snapshot_and_no_write_sql():

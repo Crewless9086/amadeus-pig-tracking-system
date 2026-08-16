@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 
 from services.database_service import DATABASE_URL_ENV
@@ -79,6 +79,10 @@ def _json_value(value):
 def _digest(value):
     material = json.dumps(value, sort_keys=True, separators=(",", ":"), default=_json_value)
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _cutoff_end(as_of):
+    return datetime.combine(as_of, time.max, tzinfo=timezone.utc)
 
 
 def _axis(state, reason, evidence_ids=()):
@@ -224,7 +228,7 @@ def _price_band_contract(pig, order, price_rows, as_of):
     category = _sale_category(weight)
     requested = _text(order.get("requested_weight_range")) or None
     rule = resolve_live_stock_price_rule(
-        category, pig_band, _text(pig.get("sex")), as_of=as_of.isoformat(),
+        category, pig_band, _text(pig.get("sex")), as_of=_cutoff_end(as_of).isoformat(),
         price_entries=price_rows,
     )
     price = rule if rule.get("found") else None
@@ -312,9 +316,6 @@ def _effective_observation_projection(rows, as_of):
         "current_event_ids": [_text(row.get("observation_event_id")) for row in current],
         "history_event_ids": [_text(row.get("observation_event_id")) for row in eligible],
         "superseded_event_ids": sorted(superseded),
-        "excluded_future_or_undated_event_ids": [
-            _text(row.get("observation_event_id")) for row in rows if row not in eligible
-        ],
     }
 
 
@@ -409,9 +410,8 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
         pig_medical = [row for row in medical if _text(row.get("pig_id")) == pig_id]
         governed_medical = [row for row in pig_medical
                             if _within_cutoff(row, "treatment_date", "created_at", as_of)]
-        excluded_medical = [row for row in pig_medical if row not in governed_medical]
         events, completeness, conflicts = _treatment_evidence(governed_medical)
-        history_events, _, _ = _treatment_evidence(pig_medical)
+        history_events, _, _ = _treatment_evidence(governed_medical)
         ambiguity = _medical_ambiguity(events, conflicts)
         food_chain, active = _food_chain(events, as_of, completeness)
         observation_projection = _effective_observation_projection(
@@ -496,9 +496,6 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
             },
             "canonical_treatment_events": events,
             "canonical_treatment_history": history_events,
-            "excluded_future_or_undated_medical_event_ids": [
-                _text(row.get("medical_event_id")) for row in excluded_medical
-            ],
             "treatment_disclosure": disclosure,
         })
     packet = {
