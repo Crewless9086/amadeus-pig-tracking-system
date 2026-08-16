@@ -232,7 +232,14 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     parent = _dict(zone.get("incomplete_parent_job"))
     parent_projection = _dict(parent.get("projection"))
     parent_job = _dict(parent.get("job"))
-    if (segment.get("state") in {"Active", "Stopped", "Failed", "ambiguous_outcome"}
+    contained_parents = [item for item in zone.get("contained_parent_jobs", [])
+        if isinstance(item, dict)]
+    if contained_parents:
+        decision = "recovery required"
+        reason = ("A contained parent execution has unverified shutdown or runtime; "
+                  "the zone cannot start a new job until governed recovery resolves it.")
+        score = _need_score(need, latest, zone, now, obligation)
+    elif (segment.get("state") in {"Active", "Stopped", "Failed", "ambiguous_outcome"}
             and segment.get("shutdown_verified") is not True):
         decision = "recovery required"
         reason = "Shutdown is not verified; contain this zone and use bounded state-setting OFF recovery before reuse."
@@ -260,7 +267,8 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
     else:
         score = _need_score(need, latest, zone, now, obligation)
         decision, reason = _classify(score, need, policy, weather, water, power, now)
-    if parent_job and parent_projection.get("status") == "segment_ready":
+    if (not contained_parents and parent_job
+            and parent_projection.get("status") == "segment_ready"):
         score = _need_score(need, latest, zone, now, obligation)
         decision, reason = _classify(score, need, policy, weather, water, power, now)
         if decision in {"Run now", "Run later"}:
@@ -318,6 +326,10 @@ def _zone_decision(zone_id, zone, policy, weather, forecast, water, power, now):
         "expected_segment_count": (parent_job.get("expected_segment_count")
             if parent_job else (2 if decision in {"Run now", "Run later"} else None)),
         "incomplete_parent_job": parent or None,
+        "stale_incomplete_parent_jobs": [dict(item) for item in
+            zone.get("stale_incomplete_parent_jobs", []) if isinstance(item, dict)],
+        "contained_parent_jobs": [dict(item) for item in
+            zone.get("contained_parent_jobs", []) if isinstance(item, dict)],
         "fresh_decision_before_second_segment": True,
         "shutdown_verification_required": True,
         "simultaneous_with_other_zone": False,

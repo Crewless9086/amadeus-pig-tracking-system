@@ -213,6 +213,7 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
             or (isinstance(evidence, dict) and evidence.get("database_read_failures"))):
         raise RootlineExecutionStoreUnavailable("load_canonical_irrigation_history")
     plan = build_water_energy_plan(evidence, operating_date, now=generated_at)
+    _persist_stale_parent_resolutions(plan, store)
     controller = readback(token_store=token_store, environ=source, now=now)
     artifact = build_execution_eligibility(
         plan=plan, evidence=evidence, controller=controller, now=now,
@@ -225,6 +226,37 @@ def _current(evidence_loader, readback, token_store, source, database_url, now,
     return {"evidence": evidence, "plan": plan, "controller": controller,
             "operating_date": str(operating_date), "generated_at": generated_at,
             "artifact": artifact}
+
+
+def _persist_stale_parent_resolutions(plan, store):
+    for task in (plan.get("candidate_tasks") or []):
+        if not isinstance(task, dict):
+            continue
+        deferred = [*(task.get("stale_incomplete_parent_jobs") or []),
+            *(task.get("contained_parent_jobs") or [])]
+        for parent in deferred:
+            job = parent.get("job") if isinstance(parent, dict) else None
+            projection = parent.get("projection") if isinstance(parent, dict) else None
+            if not isinstance(job, dict) or not isinstance(projection, dict):
+                raise RootlineExecutionStoreUnavailable("stale_parent_job_invalid")
+            material = {"contract_version": "rootline_irrigation_job_resolution.v1",
+                "resolution": "Deferred", "job_id": job.get("job_id"),
+                "job_sha256": job.get("job_sha256"), "zone_id": job.get("zone_id"),
+                "operating_date": job.get("operating_date"),
+                "current_segment": projection.get("current_segment"),
+                "expected_segment_count": job.get("expected_segment_count"),
+                "cumulative_verified_runtime_seconds": projection.get(
+                    "cumulative_verified_runtime_seconds"),
+                "remaining_seconds": parent.get("remaining_seconds"),
+                "reason": str(parent.get("resolution_reason") or
+                    "parent_operating_date_elapsed_before_remaining_objective_completed"),
+                "source_plan_generation": plan.get("evidence_generation")}
+            digest = _digest(material)
+            result = store("record_job_resolution", {**material,
+                "resolution_sha256": digest,
+                "execution_id": "ROOTLINE-JOB-RESOLUTION-" + digest[:24].upper()})
+            if not isinstance(result, dict) or result.get("success") is not True:
+                raise RootlineExecutionStoreUnavailable("record_stale_job_resolution")
 
 
 def _commissioned_output(zone):

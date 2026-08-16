@@ -2685,6 +2685,21 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Ongeklassifiseerde verkope", js)
         self.assertIn("closed-outcome-table", css)
 
+    def test_purpose_review_supports_one_bound_owner_confirmation(self):
+        group_js = Path("static/js/purposeReview.js").read_text(encoding="utf-8")
+        individual_js = Path("static/js/pigAllocation.js").read_text(encoding="utf-8")
+
+        for js in (group_js, individual_js):
+            self.assertIn("confirmation_binding", js)
+            self.assertIn("/correction-batches", js)
+            self.assertIn("/approve", js)
+            self.assertIn("/execute", js)
+            self.assertIn("remaining_blocker", js)
+        self.assertIn("queryBoundPurposeSelection", group_js)
+        self.assertIn('params.get("pig_ids")', group_js)
+        self.assertIn('params.get("purpose")', group_js)
+        self.assertIn("await submitPurposeDecisions(true)", group_js)
+
 
 if __name__ == "__main__":
     unittest.main()
