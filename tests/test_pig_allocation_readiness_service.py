@@ -8,6 +8,18 @@ from modules.pig_weights import pig_weights_service
 from modules.pig_weights import purpose_correction_batch_service
 
 
+def purpose_batch_envelope(decisions, effects=None, return_to=""):
+    effects = effects or []
+    return {
+        "contract_version": purpose_correction_batch_service.CONTRACT_VERSION,
+        "decisions": decisions,
+        "effects": effects,
+        "preview_digest": purpose_correction_batch_service._preview_digest(
+            decisions, effects, return_to),
+        "return_to": return_to or None,
+    }
+
+
 class PigAllocationReadinessServiceTests(unittest.TestCase):
     def setUp(self):
         self._supabase_available_patch = patch.object(
@@ -902,6 +914,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
             def __init__(self):
                 self.calls = []
                 self.last_sql = ""
+                self.rowcount = 1
 
             def __enter__(self):
                 return self
@@ -914,13 +927,16 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 self.calls.append(sql)
 
             def fetchone(self):
-                if "select status, decisions_json" in self.last_sql:
-                    return ("owner_approved", decisions, purpose_correction_batch_service._decision_hash(decisions), approved_at, "owner-1")
+                if "select status,decisions_json" in self.last_sql:
+                    effects = [{"pig_id": "PIG-1", "tag_number": "123", "old_purpose": "Grow_Out", "new_purpose": "Meat", "reason": "Fresh weight", "note": "Owner reviewed", "status": "Active", "on_farm": True, "latest_weight_date": "2026-07-21", "latest_weight_kg": 63.0}]
+                    return ("owner_approved", purpose_batch_envelope(decisions, effects), purpose_correction_batch_service._decision_hash(decisions), approved_at, "owner-admin:test", "owner-admin:test", None)
                 return None
 
             def fetchall(self):
-                if "from public.pigs pig" in self.last_sql:
-                    return [("PIG-1", "Active", True, "Grow_Out", date(2026, 7, 21), 63.0)]
+                if "from public.current_canonical_pigs pig" in self.last_sql:
+                    return [("PIG-1", "123", "Active", True, "Grow_Out", date(2026, 7, 21), 63.0)]
+                if "select pig_id,coalesce(tag_number" in self.last_sql:
+                    return [("PIG-1", "123", "Meat", "Active", True)]
                 return []
 
         class Connection:
@@ -965,7 +981,9 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 self.calls.append(sql)
 
             def fetchone(self):
-                return ("draft", [], purpose_correction_batch_service._decision_hash([]), None, None)
+                return ("draft", purpose_batch_envelope([]),
+                        purpose_correction_batch_service._decision_hash([]),
+                        None, None, "owner-admin:test", None)
 
         class Connection:
             def __init__(self):
@@ -1011,13 +1029,14 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 self.calls.append(sql)
 
             def fetchone(self):
-                if "select status, decisions_json" in self.last_sql:
-                    return ("owner_approved", decisions, purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 1, tzinfo=timezone.utc), "owner-1")
+                if "select status,decisions_json" in self.last_sql:
+                    effects = [{"pig_id": "PIG-STALE", "tag_number": "", "old_purpose": "Grow_Out", "new_purpose": "Meat", "reason": "Old signal", "note": "", "status": "Active", "on_farm": True, "latest_weight_date": "2026-06-21", "latest_weight_kg": 63.0}]
+                    return ("owner_approved", purpose_batch_envelope(decisions, effects), purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 1, tzinfo=timezone.utc), "owner-admin:test", "owner-admin:test", None)
                 return None
 
             def fetchall(self):
-                if "from public.pigs pig" in self.last_sql:
-                    return [("PIG-STALE", "Active", True, "Grow_Out", date(2026, 6, 21), 63.0)]
+                if "from public.current_canonical_pigs pig" in self.last_sql:
+                    return [("PIG-STALE", "", "Active", True, "Grow_Out", date(2026, 6, 21), 63.0)]
                 return []
 
         class Connection:
@@ -1065,13 +1084,14 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 self.calls.append(sql)
 
             def fetchone(self):
-                if "select status, decisions_json" in self.last_sql:
-                    return ("owner_approved", decisions, purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-1")
+                if "select status,decisions_json" in self.last_sql:
+                    effects = [{"pig_id": "PIG-MISSING-WEIGHT", "tag_number": "", "old_purpose": "Grow_Out", "new_purpose": "Meat", "reason": "Incomplete signal", "note": "", "status": "Active", "on_farm": True, "latest_weight_date": None, "latest_weight_kg": None}]
+                    return ("owner_approved", purpose_batch_envelope(decisions, effects), purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-admin:test", "owner-admin:test", None)
                 return None
 
             def fetchall(self):
-                if "from public.pigs pig" in self.last_sql:
-                    return [("PIG-MISSING-WEIGHT", "Active", True, "Grow_Out", None, None)]
+                if "from public.current_canonical_pigs pig" in self.last_sql:
+                    return [("PIG-MISSING-WEIGHT", "", "Active", True, "Grow_Out", None, None)]
                 return []
 
         class Connection:
@@ -1120,8 +1140,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 self.calls.append(sql)
 
             def fetchone(self):
-                if "select status, decisions_json" in self.last_sql:
-                    return ("owner_approved", tampered_decisions, purpose_correction_batch_service._decision_hash(approved_decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-admin:session")
+                if "select status,decisions_json" in self.last_sql:
+                    return ("owner_approved", purpose_batch_envelope(tampered_decisions), purpose_correction_batch_service._decision_hash(approved_decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-admin:test", "owner-admin:test", None)
                 return None
 
         class Connection:
@@ -1156,6 +1176,63 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertIn("new.decisions_json is distinct from old.decisions_json", sql)
         self.assertIn("new.decision_hash is distinct from old.decision_hash", sql)
         self.assertIn("before update on public.pig_purpose_correction_batches", sql)
+
+    def test_preview_binding_is_actor_state_and_return_path_bound(self):
+        decisions = [{"pig_id": "PIG-2026-A643", "purpose": "Sale", "reason": "Owner sale review", "note": "Tag 123"}]
+        canonical = {
+            "PIG-2026-A643": ("PIG-2026-A643", "123", "Active", True, "Unknown", date(2026, 8, 11), 5.6),
+        }
+
+        class Cursor:
+            rowcount = 1
+            def __init__(self): self.last_params = None
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def execute(self, _sql, params=None): self.last_params = params
+            def fetchone(self): return (self.last_params[0], "draft")
+
+        class Connection:
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def execute(self, *_args): pass
+            def cursor(self): return Cursor()
+
+        with patch.dict(os.environ, {"OWNER_SESSION_SECRET": "purpose-preview-test-secret"}), \
+             patch.object(purpose_correction_batch_service, "_load_pigs", return_value=canonical), \
+             patch.object(purpose_correction_batch_service, "_connect", return_value=Connection()):
+            preview, preview_status = purpose_correction_batch_service.preview_correction_batch(
+                decisions, actor_id="owner-admin:session-a", return_to="/orders/ORD-2026-A6EC6D")
+            created, created_status = purpose_correction_batch_service.create_correction_batch(
+                decisions, idempotency_key="purpose-tags-123-151", actor_id="owner-admin:session-a",
+                confirmation_binding=preview["confirmation_binding"], return_to="/orders/ORD-2026-A6EC6D")
+            cross_actor, cross_status = purpose_correction_batch_service.create_correction_batch(
+                decisions, idempotency_key="purpose-tags-123-151-b", actor_id="owner-admin:session-b",
+                confirmation_binding=preview["confirmation_binding"], return_to="/orders/ORD-2026-A6EC6D")
+            altered, altered_status = purpose_correction_batch_service.create_correction_batch(
+                [{**decisions[0], "purpose": "Breeding"}], idempotency_key="purpose-tags-123-151-c",
+                actor_id="owner-admin:session-a", confirmation_binding=preview["confirmation_binding"],
+                return_to="/orders/ORD-2026-A6EC6D")
+
+        self.assertEqual(preview_status, 200)
+        self.assertFalse(preview["writes_performed"])
+        self.assertEqual(created_status, 201)
+        self.assertEqual(created["preview_digest"], preview["preview_digest"])
+        self.assertEqual(cross_status, 409)
+        self.assertEqual(cross_actor["status"], "exact_preview_confirmation_required")
+        self.assertEqual(altered_status, 409)
+        self.assertEqual(altered["status"], "exact_preview_confirmation_required")
+
+    def test_preview_rejects_external_return_and_supabase_failure_visibly(self):
+        decision = [{"pig_id": "PIG-2026-B156", "purpose": "Sale"}]
+        external, external_status = purpose_correction_batch_service.preview_correction_batch(
+            decision, actor_id="owner-admin:session", return_to="https://evil.example/orders/1")
+        with patch.object(purpose_correction_batch_service, "_connect", side_effect=RuntimeError("supabase down")):
+            failed, failed_status = purpose_correction_batch_service.preview_correction_batch(
+                decision, actor_id="owner-admin:session")
+        self.assertEqual(external_status, 400)
+        self.assertEqual(external["status"], "correction_preview_invalid")
+        self.assertEqual(failed_status, 503)
+        self.assertEqual(failed["status"], "correction_batch_store_unavailable")
 
     def test_purpose_review_recheck_returns_no_write_packet(self):
         allocation_result = {
@@ -1489,7 +1566,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         from modules.pig_weights import pig_weights_routes
 
         denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
-        with patch.object(pig_weights_routes, "require_owner_admin_access", return_value=denied) as guard, \
+        with patch.object(pig_weights_routes, "require_correction_batch_owner_admin_access", return_value=denied) as guard, \
              patch.object(pig_weights_routes, "apply_purpose_review_queue_decisions") as apply_decisions:
             response = app.test_client().post(
                 "/api/pig-weights/purpose-review/apply",
@@ -1507,7 +1584,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
 
         payload = {"decisions": [{"pig_id": "PIG-1", "purpose": "Grow_Out"}], "dry_run": True}
         service_result = {"success": True, "dry_run": True}
-        with patch.object(pig_weights_routes, "require_owner_admin_access", return_value=None) as guard, \
+        with patch.object(pig_weights_routes, "require_correction_batch_owner_admin_access", return_value=None) as guard, \
+             patch.object(pig_weights_routes, "correction_batch_owner_admin_principal", return_value="owner-admin:session"), \
              patch.object(
                  pig_weights_routes,
                  "apply_purpose_review_queue_decisions",
@@ -1518,7 +1596,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
         guard.assert_called_once()
-        apply_decisions.assert_called_once_with(payload)
+        apply_decisions.assert_called_once_with(payload, actor_id="owner-admin:session")
 
     def test_correction_batch_route_forwards_server_bound_owner_principal(self):
         from app import app
