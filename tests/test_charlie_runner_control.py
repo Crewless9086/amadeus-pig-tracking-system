@@ -25,6 +25,23 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
         "revision": revision, "startup_nonce": startup_nonce,
         "process_role": "test_launcher",
     }
+    interpreter = {
+        **root, "pid": int(root_pid) + 1, "parent_pid": root_pid,
+        "creation_time": "interpreter-created",
+        "command_fingerprint": "interpreter-command",
+        "process_role": "test_interpreter",
+    }
+    return {
+        "success": True,
+        "tree": {
+            "version": "charlie_process_tree_v1",
+            "runner_generation": generation,
+            "root_pid": root_pid,
+            "root": root,
+            "members": [root, interpreter],
+        },
+        "validation": {"authorized": True, "member_pids": [root_pid, int(root_pid) + 1]},
+    }
 
 
 def stopped_observe_only_supervisor():
@@ -46,26 +63,74 @@ def stopped_observe_only_supervisor():
         "controller_public_key": public_key,
         "controller_final_acknowledgement": acknowledgement,
     }
-    interpreter = {
-        **root, "pid": int(root_pid) + 1, "parent_pid": root_pid,
-        "creation_time": "interpreter-created",
-        "command_fingerprint": "interpreter-command",
-        "process_role": "test_interpreter",
-    }
-    return {
-        "success": True,
-        "tree": {
-            "version": "charlie_process_tree_v1",
-            "runner_generation": generation,
-            "root_pid": root_pid,
-            "root": root,
-            "members": [root, interpreter],
-        },
-        "validation": {"authorized": True, "member_pids": [root_pid, int(root_pid) + 1]},
-    }
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    def test_termination_authority_requires_signed_exact_runner_tree(self):
+        tree = successful_bootstrap_observation(
+            100, generation="g", revision="r", startup_nonce="n"
+        )["tree"]
+        private_key, public_key = process_ownership.generate_controller_signing_key()
+        acknowledgement = {
+            "status": "current_process_tree_acknowledged",
+            "generation": "g",
+            "revision": "r",
+            "execution_mode": runner_control.EXECUTION_MODE_OBSERVE_ONLY,
+            "runner_tree_digest": process_ownership.process_tree_identity_digest(tree),
+            "runner_member_pids": [100, 101],
+        }
+        acknowledgement["signature"] = process_ownership.sign_controller_acknowledgement(
+            acknowledgement, private_key
+        )
+        supervisor = {
+            "generation": "g",
+            "intended_execution_revision": "r",
+            "execution_mode": runner_control.EXECUTION_MODE_OBSERVE_ONLY,
+            "controller_public_key": public_key,
+            "controller_final_acknowledgement": acknowledgement,
+        }
+
+        decision = runner_control._validate_tree_termination_authority(
+            supervisor, tree, target_kind="runner"
+        )
+
+        self.assertTrue(decision["authorized"])
+        self.assertEqual(decision["member_pids"], [100, 101])
+
+    def test_termination_authority_refuses_stale_or_substituted_tree(self):
+        tree = successful_bootstrap_observation(
+            100, generation="g", revision="r", startup_nonce="n"
+        )["tree"]
+        private_key, public_key = process_ownership.generate_controller_signing_key()
+        acknowledgement = {
+            "status": "current_process_tree_acknowledged",
+            "generation": "g",
+            "revision": "r",
+            "execution_mode": runner_control.EXECUTION_MODE_OBSERVE_ONLY,
+            "runner_tree_digest": process_ownership.process_tree_identity_digest(tree),
+            "runner_member_pids": [100, 101],
+        }
+        acknowledgement["signature"] = process_ownership.sign_controller_acknowledgement(
+            acknowledgement, private_key
+        )
+        substituted = json.loads(json.dumps(tree))
+        substituted["root"]["pid"] = os.getpid()
+        substituted["members"][0]["pid"] = os.getpid()
+        supervisor = {
+            "generation": "g",
+            "intended_execution_revision": "r",
+            "execution_mode": runner_control.EXECUTION_MODE_OBSERVE_ONLY,
+            "controller_public_key": public_key,
+            "controller_final_acknowledgement": acknowledgement,
+        }
+
+        decision = runner_control._validate_tree_termination_authority(
+            supervisor, substituted, target_kind="runner"
+        )
+
+        self.assertFalse(decision["authorized"])
+        self.assertEqual(decision["reason"], "controller_tree_runner_tree_digest_mismatch")
+
     @patch("modules.charlie.runner_control._start_runner_unlocked")
     @patch("modules.charlie.runner_control.runner_status")
     @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
@@ -1386,13 +1451,14 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "runner_process_ownership_not_proven")
         stop_tree.assert_not_called()
 
+    @patch("modules.charlie.runner_control._validate_tree_termination_authority")
     @patch("modules.charlie.runner_control._stop_process_tree")
     @patch("modules.charlie.runner_control.validate_process_tree")
     @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
     @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
     @patch("modules.charlie.runner_control.runner_status")
     def test_governed_stop_uses_launcher_tree_and_persists_evidence(
-        self, status, _disabled, _enabled, validate_tree, stop_tree
+        self, status, _disabled, _enabled, validate_tree, stop_tree, authority
     ):
         root_record = {
             "pid": 200,
@@ -1414,6 +1480,9 @@ class CharlieRunnerControlTests(unittest.TestCase):
             "member_pids": [200, 201],
         }
         stop_tree.return_value = {"authorized": True, "terminated": True, "pid": 200}
+        authority.return_value = {
+            "authorized": True, "reason": "controller_signed_exact_process_tree"
+        }
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1451,13 +1520,15 @@ class CharlieRunnerControlTests(unittest.TestCase):
             201,
         )
 
+    @patch("modules.charlie.runner_control._validate_tree_termination_authority")
+    @patch("modules.charlie.runner_control._validate_tree_termination_authority")
     @patch("modules.charlie.runner_control._stop_process_tree")
     @patch("modules.charlie.runner_control.validate_process_tree")
     @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
     @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
     @patch("modules.charlie.runner_control.runner_status")
     def test_governed_stop_handles_current_supervisor_before_runner_spawn(
-        self, status, _disabled, _enabled, validate_tree, stop_tree
+        self, status, _disabled, _enabled, validate_tree, stop_tree, authority
     ):
         root_record = {
             "pid": 100,
@@ -1482,6 +1553,9 @@ class CharlieRunnerControlTests(unittest.TestCase):
             "pid": 100, "member_pids": [100],
         }
         stop_tree.return_value = {"authorized": True, "terminated": True, "pid": 100}
+        authority.return_value = {
+            "authorized": True, "reason": "controller_signed_exact_process_tree"
+        }
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             supervisor_path = root / "supervisor.json"
@@ -1501,12 +1575,13 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["target_kind"], "supervisor")
         self.assertEqual(result["pids"], [100])
 
+    @patch("modules.charlie.runner_control._validate_tree_termination_authority")
     @patch("modules.charlie.runner_control.validate_process_tree")
     @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
     @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
     @patch("modules.charlie.runner_control.runner_status")
     def test_governed_stop_returns_and_persists_exact_tree_rejection(
-        self, status, _disabled, _enabled, validate_tree
+        self, status, _disabled, _enabled, validate_tree, authority
     ):
         record = {
             "pid": 200,
@@ -1523,6 +1598,9 @@ class CharlieRunnerControlTests(unittest.TestCase):
         validate_tree.return_value = {
             "authorized": False,
             "reason": "member_201_command_fingerprint_mismatch",
+        }
+        authority.return_value = {
+            "authorized": True, "reason": "controller_signed_exact_process_tree"
         }
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

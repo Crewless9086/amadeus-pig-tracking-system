@@ -928,6 +928,18 @@ def stop_runner():
         field: root.get(field)
         for field in ("runner_generation", "mission_id", "execution_id", "ownership_type")
     }
+    authority = _validate_tree_termination_authority(
+        supervisor, tree, target_kind=target_kind
+    )
+    if not authority["authorized"]:
+        result = {
+            "success": False,
+            "status": "runner_process_ownership_not_proven",
+            "reason": authority["reason"],
+            "pids": [],
+        }
+        _write_stop_evidence(supervisor, tree, result)
+        return result, 409
     decision = validate_process_tree(
         tree,
         expected,
@@ -998,6 +1010,76 @@ def stop_runner():
     }
     _write_stop_evidence(supervisor, tree, result)
     return result, 200
+
+
+def _validate_tree_termination_authority(supervisor, tree, *, target_kind):
+    """Require a controller signature over the exact tree before termination."""
+    packet = supervisor if isinstance(supervisor, dict) else {}
+    public_key = str(packet.get("controller_public_key") or "")
+    if target_kind == "runner":
+        acknowledgement = packet.get("controller_final_acknowledgement")
+        expected_status = "current_process_tree_acknowledged"
+        digest_field = "runner_tree_digest"
+        member_field = "runner_member_pids"
+    elif target_kind == "supervisor":
+        acknowledgement = packet.get("controller_acknowledgement")
+        expected_status = "supervisor_identity_acknowledged"
+        digest_field = "supervisor_tree_digest"
+        member_field = "member_pids"
+    else:
+        return {"authorized": False, "reason": "termination_target_kind_invalid"}
+    if not public_key or not isinstance(acknowledgement, dict):
+        return {"authorized": False, "reason": "controller_tree_authority_missing"}
+    unsigned = {
+        key: value for key, value in acknowledgement.items() if key != "signature"
+    }
+    if not verify_controller_acknowledgement(
+        unsigned, acknowledgement.get("signature"), public_key
+    ):
+        return {"authorized": False, "reason": "controller_tree_signature_invalid"}
+    bindings = {
+        "status": expected_status,
+        "generation": str(packet.get("generation") or ""),
+        "revision": str(packet.get("intended_execution_revision") or ""),
+        "execution_mode": str(
+            packet.get("execution_mode") or EXECUTION_MODE_ORDINARY
+        ),
+        digest_field: process_tree_identity_digest(tree),
+    }
+    if target_kind == "supervisor":
+        bindings["startup_nonce"] = str(packet.get("startup_nonce") or "")
+        bindings["revision"] = str(packet.get("intended_runtime_revision") or "")
+    mismatch = next(
+        (
+            field for field, expected in bindings.items()
+            if not expected or str(acknowledgement.get(field) or "") != expected
+        ),
+        "",
+    )
+    if mismatch:
+        return {
+            "authorized": False,
+            "reason": f"controller_tree_{mismatch}_mismatch",
+        }
+    member_pids = sorted({
+        int(item.get("pid") or 0)
+        for item in (tree.get("members") or [])
+        if isinstance(item, dict) and int(item.get("pid") or 0) > 0
+    })
+    try:
+        acknowledged_pids = sorted({
+            int(pid) for pid in (acknowledgement.get(member_field) or [])
+            if int(pid) > 0
+        })
+    except (TypeError, ValueError):
+        return {"authorized": False, "reason": "controller_tree_member_pids_invalid"}
+    if not member_pids or acknowledged_pids != member_pids:
+        return {"authorized": False, "reason": "controller_tree_member_pids_mismatch"}
+    return {
+        "authorized": True,
+        "reason": "controller_signed_exact_process_tree",
+        "member_pids": member_pids,
+    }
 
 
 def resume_observe_only_runner():
@@ -1518,6 +1600,24 @@ def _contain_spawned_process(process, observed_tree):
         return {
             "success": False,
             "reason": "spawned_process_handle_incomplete",
+            "observed_containment": observed,
+        }
+    # The retained Popen handle is the structural ownership proof for this
+    # exceptional startup-failure path.  A completed handle cannot authorize a
+    # PID-based kill: its numeric PID may already have been reused.
+    try:
+        if process.poll() is not None:
+            return {
+                "success": True,
+                "reason": "spawned_process_handle_already_exited",
+                "pid": pid,
+                "observed_containment": observed,
+            }
+    except (OSError, subprocess.SubprocessError):
+        return {
+            "success": False,
+            "reason": "spawned_process_handle_state_unverified",
+            "pid": pid,
             "observed_containment": observed,
         }
     descendants = inspect_descendant_processes(pid)
