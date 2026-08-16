@@ -6,7 +6,7 @@ from modules.oom_sakkie.protected_action_claims import load_active_child_claim
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.rootline_protected_mixer import (ACTION_KIND,
     PRESENCE_ACTION_KIND, build_preview_payload, create_presence_refresh_notice,
-    execute_claimed_mixer, execute_presence_refresh)
+    create_mixer_preview, execute_claimed_mixer, execute_presence_refresh)
 from modules.telemetry.rootline_auxiliary_management import build_auxiliary_eligibility
 
 NOW = datetime(2026, 8, 16, 13, 35, 32, tzinfo=timezone.utc)
@@ -82,6 +82,8 @@ def test_ready_button_mints_current_preview_without_actuation(monkeypatch):
             "expires_at": "2026-08-16T13:40:32+00:00"})
     monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_child_claim",
         lambda **_kwargs: None)
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_presence_claim",
+        lambda **_kwargs: None)
     old = parsed()
     old_payload = {"contract_version": "oom_rootline_mixer_presence_refresh.v1",
         "mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
@@ -145,3 +147,23 @@ def test_expired_unbound_child_is_atomically_retired_for_one_fresh_preview():
         private_chat_id="5721652188", connect_factory=Connection)
     assert child is None
     assert any("set status='expired'" in sql for sql, _params in statements)
+
+def test_retained_inbound_recovers_committed_preview_before_fresh_rebuild(monkeypatch):
+    payload = build_preview_payload(artifact(), parsed())
+    digest = canonical_preview_digest(ACTION_KIND, payload)
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_presence_claim",
+        lambda **_kwargs: {"success": True, "callback_token": "EXISTING",
+            "preview_digest": digest, "expires_at": "2026-08-16T13:40:32+00:00",
+            "preview_payload": payload, "preview_card_message_id": ""})
+    result = create_mixer_preview(owner_result={"handled": True,
+        "status": "specialist_accepted", "specialist_identity": "ROOTLINE",
+        "mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "card_mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "next_specialist_step": "supervised_fertilizer_mixer_proof",
+        "ready_for_supervised_proof": True,
+        "authority": {"configuration_write": False, "hardware_control": False,
+            "farm_write": False, "telegram_send": False}}, parsed=parsed(),
+        gateway_authority=issue_gateway_owner_authority("5721652188", "5721652188"),
+        prepare=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not rebuild")))
+    assert result["callback_token"] == "EXISTING"
+    assert result["hardware_commands"] == result["provider_control_calls"] == 0

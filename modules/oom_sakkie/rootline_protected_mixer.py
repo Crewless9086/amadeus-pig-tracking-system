@@ -27,6 +27,16 @@ BOUND_KEYS = ("contract_version", "eligibility_contract_version", "mission_id",
 def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
                          connect_factory=None, prepare=None,
                          parent_claim_token="", **runtime_overrides):
+    from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import _bound
+    if _bound(owner_result, parsed, gateway_authority):
+        from modules.oom_sakkie.protected_action_claims import load_active_presence_claim
+        prior = load_active_presence_claim(action_kind=ACTION_KIND, mission_id=MISSION_ID,
+            owner_user_id=str(parsed.get("telegram_user_id") or ""),
+            private_chat_id=str(parsed.get("telegram_chat_id") or ""),
+            provider_message_id=str(parsed.get("provider_message_id") or ""),
+            connect_factory=connect_factory)
+        if prior is not None:
+            return _existing_mixer_preview(prior, parsed)
     if prepare is None:
         from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
             prepare_fertilizer_commissioning,
@@ -64,6 +74,33 @@ def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
         "card_mission_id": protected_card_mission_id(claim["preview_digest"]),
         "preview_payload": payload, "hardware_commands": 0,
         "provider_control_calls": 0, "writes_farm_data": False}
+
+
+def _existing_mixer_preview(prior, parsed):
+    if prior.get("success") is not True:
+        return _safe(str(prior.get("status") or "mixer_preview_recovery_unavailable"))
+    payload = prior.get("preview_payload") if isinstance(prior.get("preview_payload"), dict) else {}
+    try:
+        rebuilt = build_preview_payload(payload.get("eligibility"), parsed)
+        if payload.get("presence_refresh_claim_token"):
+            rebuilt["presence_refresh_claim_token"] = payload["presence_refresh_claim_token"]
+    except (TypeError, ValueError):
+        return _safe("mixer_preview_recovery_binding_mismatch")
+    if (rebuilt != payload or canonical_preview_digest(ACTION_KIND, payload) != prior.get("preview_digest")):
+        return _safe("mixer_preview_recovery_binding_mismatch")
+    token = prior["callback_token"]
+    return {**prior, "success": True, "handled": True,
+        "status": "mixer_protected_preview_created",
+        "answer": ("<b>MIXER CH2 — SUPERVISED TEST</b>\n\n"
+            "Mixer CH2 is ready for one supervised five-minute test. "
+            "Nothing has started yet.\n\nConfirm / Cancel."),
+        "reply_markup": {"inline_keyboard": [[
+            {"text": "Confirm", "callback_data": f"{CALLBACK_PREFIX}{token}:confirm"},
+            {"text": "Cancel", "callback_data": f"{CALLBACK_PREFIX}{token}:cancel"}]]},
+        "requires_visible_notification": True, "question_count": 0,
+        "mission_id": MISSION_ID,
+        "card_mission_id": protected_card_mission_id(prior["preview_digest"]),
+        "hardware_commands": 0, "provider_control_calls": 0, "writes_farm_data": False}
 
 
 def create_presence_refresh_notice(*, owner_result, parsed, connect_factory=None):
