@@ -150,13 +150,8 @@ function offspringHtml(identities, currentName) {
 
 function offspringSummaryHtml(offspring) {
   const summary = offspring.operational_summary || {};
-  return metric("Nageslag aangeteken", num(summary.sample_size))
-    + metric("Identiteite opgelos", num(summary.resolved_identity_count))
-    + metric("Status bekend", num(summary.known_status_count))
-    + metric("Doel bekend", num(summary.known_purpose_count))
-    + metric("Op-plaas bekend", num(summary.known_on_farm_count))
-    + metric("Werpsel gekoppel", num(summary.known_litter_attribution_count))
-    + metric("Unknown / conflicting", num(summary.unknown_or_conflicting_operational_count));
+  return `<div class="merit-offspring-total">${metric("Totaal aangeteken", num(summary.sample_size))}</div>
+    <div class="merit-disposition-awaiting" role="note"><strong>Uitkomsverdeling wag op kanonieke klassifikasie</strong><p>HERDMASTER verskaf nog nie die bewysgebaseerde hoofuitkoms per nageslag nie. Huidige status en doel hieronder is nie bewys van 'n voltooide verkoop, verwerking of ander uitgang nie.</p></div>`;
 }
 
 function matingHtml(summaries, currentName) {
@@ -324,7 +319,7 @@ function renderProfile(data, row) {
     + ids("Medical events", (context.medical_events || []).map((value) => value.medical_event_id || value.event_id));
   const offspringIdentities = family.offspring_identities || offspring.identities || [];
   document.getElementById("merit_offspring_summary").innerHTML = offspringSummaryHtml(offspring);
-  document.getElementById("merit_offspring_scope").textContent = `Hierdie tabel wys die ${num(offspring.sample_size)} nageslagidentiteite en operasionele velde presies soos HERDMASTER dit verskaf. Unknown en conflicting bly sigbaar; assosiasie bewys nie oorsaaklikheid nie.`;
+  document.getElementById("merit_offspring_scope").textContent = `Hierdie tabel wys die ${num(offspring.sample_size)} nageslagidentiteite en huidige operasionele velde presies soos HERDMASTER dit verskaf. Unknown en conflicting bly sigbaar; huidige doel is nie 'n voltooide uitkoms nie.`;
   document.getElementById("merit_offspring_table").innerHTML = offspringHtml(offspringIdentities, displayName);
   document.getElementById("merit_detail_lineage").innerHTML = lineageHtml(data.lineage);
 }
