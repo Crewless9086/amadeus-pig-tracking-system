@@ -13,6 +13,12 @@ from modules.oom_sakkie.telegram_gateway import _reset_auth_rate_limit_for_tests
 TELEGRAM_TEST_TOKEN = "test-telegram-token-32-chars-minimum"
 TELEGRAM_DIRECT_SECRET = "test-telegram-direct-secret-32-chars"
 TELEGRAM_BOT_TOKEN = "1234567890:test-bot-token-for-unit-tests"
+OWNER_REVIEW_ENV = {
+    "OWNER_ACCESS_ENABLED": "true",
+    "OWNER_ACCESS_ALLOW_LOCAL_DEV": "false",
+    "OWNER_SESSION_SECRET": "owner-session-secret-for-runtime-review-tests",
+    "OWNER_READ_TOKEN": "owner-read-token-for-runtime-review-tests-1234",
+}
 
 
 def _fake_farm_attention_tool():
@@ -1813,6 +1819,39 @@ class OomSakkieRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
+
+    @patch.dict(os.environ, OWNER_REVIEW_ENV, clear=True)
+    @patch("modules.oom_sakkie.routes.get_agent_runtime_review_packet")
+    def test_agent_runtime_review_packet_route_accepts_authenticated_owner_read_session(self, mock_packet):
+        mock_packet.return_value = {
+            "success": True,
+            "mode": "agent_runtime_review_packet_only",
+            "canonical_review": {
+                "source": "supabase:charlie_missions.metadata.review_packet",
+                "mission_count": 1,
+                "missions": [{"mission_id": "OPAQUE-MISSION"}],
+            },
+        }
+        login = self.client.post(
+            "/owner/login",
+            data={"owner_token": OWNER_REVIEW_ENV["OWNER_READ_TOKEN"]},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        self.assertEqual(login.status_code, 302)
+
+        response = self.client.get(
+            "/api/oom-sakkie/agents/runtime-review-packet",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            data["canonical_review"]["source"],
+            "supabase:charlie_missions.metadata.review_packet",
+        )
+        self.assertEqual(data["canonical_review"]["mission_count"], 1)
+        mock_packet.assert_called_once_with()
 
     def test_agent_recommend_route_returns_non_dispatching_recommendation(self):
         response = self.client.post(
