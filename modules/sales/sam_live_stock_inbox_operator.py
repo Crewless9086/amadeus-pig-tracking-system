@@ -19,6 +19,7 @@ from modules.sales.sam_live_stock_runtime import (
     parse_chatwoot_inbound,
     resolve_contextual_sales_route,
     resolve_sam_general_inbound_identity,
+    is_natural_customer_close,
 )
 from modules.sales.sam_sales_router import classify_sam_sales_lane
 
@@ -574,10 +575,22 @@ def _inspect_and_operate(
         if parsed
         else {}
     )
+    natural_close = bool(
+        latest_incoming
+        and is_natural_customer_close(latest.get("content") or "")
+    )
     livestock = bool(
         raw_route.get("lane") == "live_stock_sales"
         and float(raw_route.get("confidence") or 0) >= 0.8
     ) or contextual.get("preserve_live_stock_lane") is True
+    if not livestock and latest_incoming and is_natural_customer_close(
+        latest.get("content") or ""
+    ):
+        livestock = any(
+            classify_sam_sales_lane(item.get("content") or "").get("lane")
+            == "live_stock_sales"
+            for item in messages[:-1]
+        )
     exact_claim = bool(
         inbound_id and claim_exists(conversation_id, inbound_id)
     )
@@ -590,6 +603,7 @@ def _inspect_and_operate(
         and livestock
         and open_window
         and not exact_claim
+        and not natural_close
     )
     selected_for_processing = bool(eligible and can_process)
     if selected_for_processing:
@@ -681,6 +695,8 @@ def _inspect_and_operate(
             if eligible
             else "already_claimed"
             if exact_claim
+            else "terminal_customer_close_no_reply"
+            if livestock and natural_close
             else "awaiting_customer"
             if livestock and not latest_incoming
             else "closed_window_reengagement_required"

@@ -81,6 +81,37 @@ class SamLiveStockInboxOperatorTests(unittest.TestCase):
         self.assertEqual(calls, ["1"])
         self.assertEqual(packet["customers_answered"], 1)
 
+    def test_natural_close_with_retained_livestock_context_is_terminal(self):
+        row = self.row("2101")
+        row["last_non_activity_message"] = {
+            "id": 797102915, "created_at": 100,
+            "message_type": 0, "private": False,
+        }
+        history = {
+            "success": True,
+            "status": "chatwoot_conversation_history_loaded",
+            "messages": [
+                {"id": 1, "created_at": 90, "message_type": 0,
+                 "private": False, "content": "I need weaned piglets"},
+                {"id": 2, "created_at": 95, "message_type": 1,
+                 "private": False, "content": "How many do you need?"},
+                {"id": 797102915, "created_at": 100, "message_type": 0,
+                 "private": False, "content": "Thank you, have a good day"},
+            ],
+        }
+        packet = operate_livestock_inbox(
+            environ={}, conversation_page_loader=lambda _page: self.page([row]),
+            history_loader=lambda _cid, _env: (history, 200),
+            claim_exists=lambda _cid, _mid: False,
+            inbound_processor=lambda _payload: self.fail(
+                "a terminal customer close must never reach the processor"
+            ),
+        )
+        item = packet["dispositions"][0]
+        self.assertFalse(item["eligible"])
+        self.assertEqual(item["disposition"], "terminal_customer_close_no_reply")
+        self.assertEqual(packet["customers_answered"], 0)
+
     def test_canonical_evidence_prefetch_overlaps_remaining_inventory_pages(self):
         evidence_started = threading.Event()
         captured = []

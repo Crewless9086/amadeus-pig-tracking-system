@@ -7613,6 +7613,11 @@ def _natural_close_signal(text):
     ))
 
 
+def is_natural_customer_close(text):
+    """Pure public guard shared by webhook and backlog operation."""
+    return _natural_close_signal(text)
+
+
 def _conversation_review_action(text, missing, escalation_reasons, blocked, reply, protected_action_reasons=None):
     if _natural_close_signal(text):
         return "no_reply_natural_close"
