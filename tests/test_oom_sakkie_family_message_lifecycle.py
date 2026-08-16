@@ -255,6 +255,29 @@ def test_private_media_review_unconfirmed_edit_gets_one_bounded_recovery():
     assert len(memory.sent)==1 and len(memory.edited)==1
 
 
+def test_private_media_review_presentation_edits_album_card_once_and_replay_is_silent():
+    memory=Memory();group="BEACON-INTAKE-GROUP-BELLA"
+    receipt={**RESULT,"status":"completed","answer":"8 photos received — processing complete.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    deliver_family_result(PARSED,receipt,specialist="BEACON_MEDIA",mission_id=group,
+        card_mission_id=group,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    trigger={**PARSED,"provider_message_id":"canonical:album-completed:"+group}
+    review={**RESULT,"status":"private_media_review_presented",
+        "answer":"Accept into Private Library or Decline album for Private Library.",
+        "reply_markup":{"inline_keyboard":[[{"text":"Accept into Private Library"}]]},
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    presented=deliver_family_result(trigger,review,specialist="BEACON_MEDIA",
+        mission_id=group+":LIBRARY",card_mission_id=group,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(trigger,review,specialist="BEACON_MEDIA",
+        mission_id=group+":LIBRARY",card_mission_id=group,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    assert presented["status"]=="family_message_completion_card_updated"
+    assert presented["telegram_message_id"]=="700" and presented["telegram_edits"]==1
+    assert replay["telegram_sends"]==replay["telegram_edits"]==0
+    assert len(memory.sent)==1 and len(memory.edited)==1
+
+
 def test_completed_card_regressed_by_unbound_prior_member_is_restored_once():
     memory=Memory();mission="OOM-BEACON-MEDIA-RESTORE"
     receipt={**RESULT,"answer":"Album started. Complete it when ready."}

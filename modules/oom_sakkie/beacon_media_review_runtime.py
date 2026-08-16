@@ -44,7 +44,7 @@ def _present_packet(packet, parsed, *, claim_creator=create_claim):
     if library!="accepted":
         decision_type="library"
         approve_event,decline_event="library_accepted","library_rejected"
-        approve_label,decline_label=("Aanvaar in Biblioteek","Verwerp — nie geskik nie") if af else ("Accept to Library","Reject — not suitable")
+        approve_label,decline_label=("Aanvaar in Privaat Biblioteek","Weier album vir Privaat Biblioteek") if af else ("Accept into Private Library","Decline album for Private Library")
         decline_reason="Owner selected: not suitable for the private Library." if not af else "Eienaar se keuse: nie geskik vir die privaat Biblioteek nie."
         boundary=("Biblioteek-aanvaarding hou die album privaat en gee geen Publieke Gebruik-, Veldtoghersiening- of Publikasiegesag nie."
             if af else "Library acceptance keeps the album private and grants no Public Use, Campaign Review or Publication authority.")
@@ -80,7 +80,7 @@ def _present_packet(packet, parsed, *, claim_creator=create_claim):
         private_chat_id=str(parsed.get("telegram_chat_id") or ""),
         mission_id=packet["intake_group_id"]+":"+decision_type.upper(),
         provider_message_id=str(parsed.get("provider_message_id") or ""),
-        evidence_generation=packet["album_digest"],preview_payload=preview,ttl_minutes=1440)
+        evidence_generation=packet["album_digest"],preview_payload=preview,ttl_minutes=10080)
     base_url=str(os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").strip().rstrip("/")
     if not base_url.startswith(("https://","http://")):
         raise RuntimeError("private_contact_sheet_url_unavailable")

@@ -21,6 +21,7 @@ let allowedPurposes = [];
 let selectedPigIds = new Set();
 let purposeOverrides = {};
 let pendingCorrectionBatchId = "";
+let latestPurposePreview = null;
 
 document.addEventListener("DOMContentLoaded", loadPurposeReview);
 
@@ -35,6 +36,20 @@ function escapeHtml(value) {
 
 function queryLitterId() {
   return new URLSearchParams(window.location.search).get("litter_id") || "";
+}
+
+function queryReturnTo() {
+  return new URLSearchParams(window.location.search).get("return_to") || "";
+}
+
+function queryBoundPurposeSelection() {
+  const params = new URLSearchParams(window.location.search);
+  const purpose = String(params.get("purpose") || "").trim();
+  const pigIds = String(params.get("pig_ids") || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return { purpose, pigIds };
 }
 
 function formatTagNumber(value) {
@@ -258,6 +273,46 @@ async function submitPurposeDecisions(dryRun) {
     showMessage("Select at least one row with an approval purpose.");
     return;
   }
+  if (!dryRun) {
+    if (!latestPurposePreview) {
+      showMessage("Preview the exact purpose changes before confirming them.");
+      return;
+    }
+    if (!window.confirm(`Confirm these exact ${decisions.length} purpose change(s) once? HERDMASTER will write Supabase atomically, read every pig back, and recalculate sale availability.`)) return;
+    try {
+      const key = `purpose-correction-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const created = await fetch("/api/pig-weights/purpose-review/correction-batches", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decisions, idempotency_key: key,
+          confirmation_binding: latestPurposePreview.confirmation_binding,
+          return_to: latestPurposePreview.return_to || "",
+        }),
+      });
+      const createdData = await created.json();
+      if (!created.ok || !createdData.success) throw new Error(createdData.message || createdData.status || "Correction batch creation failed.");
+      const batchId = createdData.batch_id;
+      const approved = await fetch(`/api/pig-weights/purpose-review/correction-batches/${encodeURIComponent(batchId)}/approve`, { method: "POST" });
+      const approvedData = await approved.json();
+      if (!approved.ok || !approvedData.success) throw new Error(approvedData.message || approvedData.status || "Owner approval was not recorded.");
+      const executed = await fetch(`/api/pig-weights/purpose-review/correction-batches/${encodeURIComponent(batchId)}/execute`, { method: "POST" });
+      const executedData = await executed.json();
+      if (!executed.ok || !executedData.success) throw new Error(executedData.message || executedData.status || "Correction batch was not executed.");
+      const results = (executedData.per_pig_results || []).map((item) =>
+        `${item.tag_number || item.pig_id}: ${item.available === true ? "available" : item.remaining_blocker || "eligibility Unknown"}`
+      ).join("; ");
+      const returnTo = latestPurposePreview.return_to;
+      latestPurposePreview = null;
+      selectedPigIds.clear();
+      showMessage(results || `Correction batch ${batchId} executed with canonical readback.`, "success");
+      await loadPurposeReview();
+      if (returnTo) window.location.assign(returnTo);
+    } catch (error) {
+      console.error("Purpose correction batch execution error:", error);
+      showMessage(error.message || "Could not execute the purpose correction batch.");
+    }
+    return;
+  }
   if (!dryRun && !window.confirm(`Create a correction batch for ${decisions.length} pig(s)? It will not change farm records until you explicitly approve and execute the saved batch.`)) {
     return;
   }
@@ -265,10 +320,11 @@ async function submitPurposeDecisions(dryRun) {
     if (dryRun) {
       const response = await fetch("/api/pig-weights/purpose-review/apply", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decisions, dry_run: dryRun }),
+        body: JSON.stringify({ decisions, dry_run: dryRun, return_to: queryReturnTo() }),
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error((data.errors || [data.message || "Purpose review preview failed."]).join(" "));
+      latestPurposePreview = data;
       showMessage(data.message || "Purpose review previewed. No records were changed.", "success");
       return;
     }
@@ -379,6 +435,17 @@ async function loadPurposeReview() {
       litterFilter.value = litterId;
     }
     applyFilters();
+    const bound = queryBoundPurposeSelection();
+    const knownIds = new Set(reviewRows.map((row) => row.pig_id));
+    if (bound.pigIds.length && allowedPurposes.includes(bound.purpose)
+        && bound.pigIds.every((pigId) => knownIds.has(pigId))) {
+      bound.pigIds.forEach((pigId) => {
+        selectedPigIds.add(pigId);
+        purposeOverrides[pigId] = bound.purpose;
+      });
+      applyFilters();
+      await submitPurposeDecisions(true);
+    }
   } catch (error) {
     console.error("Purpose review load error:", error);
     showMessage(error.message || "Something went wrong while loading purpose review.");
@@ -416,7 +483,7 @@ clearSelectedButton.addEventListener("click", () => {
 
 previewSelectedButton.addEventListener("click", () => submitPurposeDecisions(true));
 applySelectedButton.addEventListener("click", () => submitPurposeDecisions(false));
-approveBatchButton.addEventListener("click", approveAndExecuteSavedBatch);
+if (approveBatchButton) approveBatchButton.hidden = true;
 
 bodyEl.addEventListener("change", (event) => {
   const checkboxPigId = event.target.getAttribute("data-purpose-check");

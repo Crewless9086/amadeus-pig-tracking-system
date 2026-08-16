@@ -2,17 +2,21 @@
 
 ## ROOTLINE RMQ-20260813-05 — Water-Credit Lifecycle
 
-Current mission: implement and deploy the append-only, measurement-qualified
-water-credit lifecycle over canonical ROOTLINE executions and accepted physical
-evidence. Delivered litres remain Unknown until a supported measurement or
-governed calibration exists; runtime and normal-flow confirmation are not volume.
+RMQ-20260813-05 reached its bounded current-world outcome: its append-only,
+measurement-qualified water-credit lifecycle is deployed. Delivered litres
+remain Unknown until supported measurement or governed calibration exists;
+runtime and normal-flow confirmation are not volume.
 
-Queued successor after RMQ-05 reaches a released or dependency-idle boundary:
+Current incident mission RMQ-20260813-04 repairs durable multi-segment parent
+job continuity. It reaches a safe released boundary only when every required
+segment is completed or has an explicit evidence-backed resolution.
+
+Queued successor after RMQ-20260813-04 reaches that safe boundary:
 the existing OOM SAKKIE `farm_manager` delegated-principal interface for Anton.
 That separate mission must use neutral `unapproved upstream/shared-control`
 safety terminology. It must remove “mother valve” from positive commissioning
 examples, must not invent unknown topology or sequencing, and must not start
-before RMQ-05 releases its overlapping ROOTLINE/runtime dependency.
+before RMQ-04 releases its overlapping ROOTLINE/runtime dependency.
 
 Control Tower uses `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md` as
 the canonical owner-facing terminal queue. Every terminal feedback must update
@@ -638,3 +642,12 @@ complete.
   provider clock. The reviewed follow-up adds one Render UTC cron at 04:45,
   targeting the authenticated deployed entry point while retaining Supabase as
   the one daily claim and the in-process loop only as restart-safe redundancy.
+# BMQ-20260813-03 owner-visible Library decision — 2026-08-16
+
+- The deployed worker provider-confirmed Bella's exact Private Library choice
+  on existing Telegram message `3637`; delayed replay was effect-free.
+- Keep the mission OWNER_HOLD. Do not press or replay either button from a
+  terminal. Wait for Charl's natural Accept/Decline choice in message `3637`.
+- Business completion requires deployed callback execution, exactly-once
+  canonical decision readback and one visible acknowledgement, with Public Use,
+  Campaign Review and Publication still separate.

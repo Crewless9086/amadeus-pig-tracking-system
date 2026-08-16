@@ -155,6 +155,9 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202608060001_create_rootline_ewelink_oauth_vault.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608130001_serialize_rootline_ewelink_refresh.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202608130002_allow_rootline_irrigation_protected_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608150003_allow_beacon_album_finish_protected_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608150007_allow_beacon_media_review_claims.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202608150008_add_beacon_album_review_envelope.sql
 
       - name: Run Beacon weekly owner-decision permission gates
         env:

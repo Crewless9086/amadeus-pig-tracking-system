@@ -29,16 +29,27 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
         cur.execute("""select callback_token,status,expires_at,owner_user_id,private_chat_id,
           provider_message_id,evidence_generation,preview_payload,preview_card_message_id
           from app_private.oom_protected_action_claims
-          where action_kind=%s and mission_id=%s and preview_digest=%s""",
+          where action_kind=%s and mission_id=%s and preview_digest=%s for update""",
           (action_kind,mission_id,digest))
         prior=cur.fetchone()
         if prior:
             exact=(str(prior[3])==str(owner_user_id) and str(prior[4])==str(private_chat_id)
               and str(prior[5])==str(provider_message_id) and str(prior[6])==str(evidence_generation)
               and prior[7]==preview_payload)
-            if prior[1]=="active" and prior[2]>datetime.now(timezone.utc) and exact:
+            rearmable=(action_kind=="beacon_media_review"
+                and prior[1] in {"active","expired"} and exact)
+            if prior[1]=="active" and exact and prior[2]>datetime.now(timezone.utc):
                 return {"success":True,"status":"protected_claim_existing","callback_token":prior[0],
                   "preview_digest":digest,"expires_at":prior[2].isoformat(),
+                  "preview_card_message_id":str(prior[8] or "")}
+            if rearmable:
+                    cur.execute("""update app_private.oom_protected_action_claims
+                      set status='active',expires_at=%s where callback_token=%s
+                      and status in('active','expired')""",
+                      (expires,prior[0]))
+                    return {"success":True,"status":"protected_claim_rearmed",
+                  "callback_token":prior[0],"preview_digest":digest,
+                  "expires_at":expires.isoformat(),
                   "preview_card_message_id":str(prior[8] or "")}
             raise RuntimeError("protected_claim_identity_or_state_conflict")
         if not supersede_active:

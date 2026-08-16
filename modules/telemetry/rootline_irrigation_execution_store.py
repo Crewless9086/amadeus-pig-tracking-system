@@ -121,7 +121,7 @@ def _load(action, payload):
                     where event_source=%s
                       and review_json->'rootline_execution'->>'job_id'=%s
                       and review_json->'rootline_execution'->>'action'
-                          in ('claim_before_on','mark_active','record_completed')
+                          in ('claim_before_on','mark_active','record_completed','record_job_resolution')
                     order by created_at,review_event_id""", (EVENT_SOURCE, str(payload or "")))
                 return [row[0] if isinstance(row[0],dict) else json.loads(row[0])
                         for row in cursor.fetchall()]

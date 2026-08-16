@@ -1567,7 +1567,6 @@ def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_r
     if not isinstance(decisions, list) or not decisions:
         return {"success": False, "errors": ["At least one purpose review decision is required."]}, 400
 
-    pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
     requested_pig_ids = [
         to_clean_string(decision.get("pig_id", ""))
@@ -1647,16 +1646,6 @@ def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_r
             },
         }, 409
 
-    rows_updated = 0
-    writes_to_supabase = False
-    if not dry_run:
-        supabase_rows_updated = _try_supabase_pig_updates(updates)
-        if supabase_rows_updated is not None:
-            rows_updated = supabase_rows_updated
-            writes_to_supabase = True
-        else:
-            rows_updated = batch_update_rows_by_id(pig_master_sheet, updates)
-
     return {
         "success": True,
         "action": "apply_purpose_review_decisions",
@@ -1664,20 +1653,16 @@ def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_r
         "changed_by": changed_by,
         "approved_count": len(approved),
         "approved": approved,
-        "rows_updated": rows_updated,
+        "rows_updated": 0,
         "planned_updates": updates,
         "source": {
-            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
-            "writes_to_supabase": writes_to_supabase,
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
             "writes_orders": False,
             "writes_sales": False,
             "writes_slaughter": False,
         },
-        "message": (
-            f"Purpose review previewed for {len(approved)} pig(s)."
-            if dry_run
-            else f"Purpose review saved for {len(approved)} pig(s)."
-        ),
+        "message": f"Purpose review previewed for {len(approved)} pig(s).",
     }, 200
 
 

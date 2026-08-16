@@ -197,11 +197,12 @@ def purpose_review_queue():
 
 @pig_weights_bp.route("/purpose-review/apply", methods=["POST"])
 def purpose_review_apply():
-    denied = require_owner_admin_access()
+    denied = require_correction_batch_owner_admin_access()
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
-    result, status_code = apply_purpose_review_queue_decisions(payload)
+    result, status_code = apply_purpose_review_queue_decisions(
+        payload, actor_id=correction_batch_owner_admin_principal())
     return jsonify(result), status_code
 
 

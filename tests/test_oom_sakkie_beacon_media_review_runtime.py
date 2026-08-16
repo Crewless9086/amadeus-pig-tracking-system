@@ -14,7 +14,7 @@ def review_url(monkeypatch):
 def packet(*, library="pending_or_mixed", eligible=True):
     return {"success":True,"status":"private_album_review_ready",
         "contract_version":"beacon_private_album_review_v1","intake_group_id":"GROUP-BELLA",
-        "album_digest":"d"*64,"stored_count":8,
+        "album_digest":"d"*64,"album_completed_at":"2026-08-15T12:44:52+00:00","stored_count":8,
         "owner_context":"Bellas litter growing fast and coming along well",
         "library_state":library,"public_use_state":"not_approved","public_use_eligible":eligible,
         "later_actions":{"campaign_review":False,"publication":False},
@@ -38,6 +38,7 @@ def loader(value):
 def claim_creator(**kwargs):
     assert kwargs["action_kind"]=="beacon_media_review"
     assert len(kwargs["preview_payload"]["ordered_assets"])==8
+    assert kwargs["ttl_minutes"]==10080
     return {"callback_token":"opaque","preview_digest":"p"*64}
 
 
@@ -45,11 +46,11 @@ def test_library_review_is_owner_friendly_and_grants_no_public_authority():
     result,status=present_private_media_review(PARSED,
         album_loader=loader(packet()),claim_creator=claim_creator)
     assert status==200 and result["status"]=="private_media_review_presented"
-    assert "Accept to Library" in result["answer"] and "Public Use" in result["answer"]
+    assert "Accept into Private Library" in result["answer"] and "Public Use" in result["answer"]
     assert "digest" not in result["answer"].casefold() and "token" not in result["answer"].casefold()
     assert result["publishes"] is False and result["spends_money"] is False
     assert [b["text"] for b in result["reply_markup"]["inline_keyboard"][0]]==[
-        "Accept to Library","Reject — not suitable"]
+        "Accept into Private Library","Decline album for Private Library"]
     assert result["reply_markup"]["inline_keyboard"][1][0]["text"]=="View private contact sheet"
 
 
@@ -72,7 +73,7 @@ def test_afrikaans_review_is_natural_and_reason_is_owner_selected():
     assert "PRIVAAT MEDIA-HERSIENING" in result["answer"]
     assert "Behoue konteks" in result["answer"] and "Niks" not in result["answer"]
     labels=[button["text"] for row in result["reply_markup"]["inline_keyboard"] for button in row]
-    assert labels==["Aanvaar in Biblioteek","Verwerp — nie geskik nie","Bekyk privaat kontakblad"]
+    assert labels==["Aanvaar in Privaat Biblioteek","Weier album vir Privaat Biblioteek","Bekyk privaat kontakblad"]
     assert result["review_packet"]["later_actions"]=={"campaign_review":False,"publication":False}
 
 

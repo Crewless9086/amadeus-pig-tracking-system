@@ -60,7 +60,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             "completed", "grouped_weights_completed", "mortality_lifecycle_recorded",
             "payment_state_recorded", "payment_state_replay_noop",
             "protected_preview_cancelled", "protected_preview_change_requested",
-            "segment_started", "active_segment_owned", "private_media_review_recorded"
+            "segment_started", "active_segment_owned", "private_media_review_recorded",
+            "private_media_review_presented"
         }
     )
     if exclusive_completion and reply_markup is None:

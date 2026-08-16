@@ -1,5 +1,31 @@
 # Vault Brain Changelog
 
+## 2026-08-15 - BEACON Library review gains its missing runtime trigger
+
+- Hierarchical reconciliation corrected the earlier claim: Bella's canonical
+  browser packet existed, but no protected claim, Telegram lifecycle or
+  provider-confirmed Library card had been created.
+- Added a source candidate for an intake-gated private-review worker that uses
+  canonical album completion, the existing protected claim rail and family
+  lifecycle to edit the proven existing album card. Exact expired claims are
+  safely re-armed without changing token, snapshot or card binding.
+- The owner sees Accept into Private Library / Decline album for Private
+  Library, retained context and the private contact-sheet link. Public Use,
+  Campaign Review and Publication remain separate; no decision is manufactured.
+- Mission remains WORKING until exact-head deployment and provider-confirmed
+  presentation; it becomes OWNER_HOLD only on the exact delivered message.
+
+## 2026-08-16 - Bella Private Library choice is provider-confirmed
+
+- PRs #985/#987 are live at exact merge `b32e32757`; the deployed BEACON worker
+  independently consumed Bella's canonical album-completion trigger.
+- Existing Telegram message `3637` was provider-confirmed edited with one
+  exact owner/album/digest-bound Private Library choice. No terminal callback
+  or owner decision was created.
+- Delayed readback remained one claim and one confirmed edit with eight private
+  originals/hash readbacks/thumbnails and zero Library/Public Use/Campaign/
+  Publication decision. BMQ-20260813-03 is OWNER_HOLD on message `3637`.
+
 ## 2026-08-15 - CORE Shadow worker heartbeat retains independent cycle truth
 
 - Preserved the deployed observation worker's last Shadow cycle, poll count and
