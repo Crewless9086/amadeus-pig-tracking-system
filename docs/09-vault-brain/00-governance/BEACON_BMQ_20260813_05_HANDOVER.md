@@ -8,8 +8,8 @@
 - Branch: `feat/beacon-bmq-20260813-05-publication-performance`.
 - Initial candidate checkpoint: `c5345b82` preserves every previously dirty/untracked byte.
 - Approved implementation commit: `669b1e50`.
-- Reconciled code HEAD before this handover update: `3a57a0e374152e0d46a2756f2a6f3e795edb0ab3`.
-- Authoritative base: `origin/main` `9c09a8ec512deca7c1307a4f25cde3509a08118b`; divergence at that point: ahead 8, behind 0.
+- Reconciled code HEAD before the initial handover update: `3a57a0e374152e0d46a2756f2a6f3e795edb0ab3`.
+- After PR CI, authoritative main advanced again; the branch was non-destructively reconciled at `f046d3c0093c6a44da269f6dba528c496c1937a1` against `origin/main` `dc0b67cac1d6bb45198227fdf300e02416a94554`, ahead 11 and behind 0 before this documentation commit.
 - Main merges were non-destructive. The overlapping main changes were ROOTLINE protected-action extensions; the merge preserved both action families and produced no semantic BEACON collision.
 
 The tracked Mission Standard, Control Tower protocol, canonical Runtime Programme and feedback template were read completely and remained blob/filesystem-identical to authoritative main. Exact identities are reported in the terminal closeout.
@@ -43,7 +43,7 @@ Final reconciled local command result: **225 passed, 3 environment-dependent Pos
 
 The disposable-PostgreSQL test writes a unique durable BMQ-04-shaped result, reconstructs the exact packet, creates and card-binds the real claim, races two callbacks with one provider receipt, records/re-reads one weekly decision, and proves claim completion replay. It makes no provider or farm call.
 
-Independent architecture/governance, security/privacy/data-integrity and commercial/Oom owner-journey reviews approved the source before the final conflict-free main merge. Final exact-head re-review remains required after this handover commit; PR creation is conditional on that pass.
+Independent architecture/governance, security/privacy/data-integrity and commercial/Oom owner-journey reviews approved the source and the exact PR head. The first CI run exposed one environment-sensitive test expectation; its test-only correction was independently re-approved. All three required checks then passed. A final subsequent main reconciliation retained the BEACON action alongside ROOTLINE's shared protected-action changes and was re-tested locally; final exact-head re-review is recorded in the terminal closeout.
 
 ## Reality and evidence classification
 
@@ -67,7 +67,7 @@ No active BEACON PR implements this exact class. Historical BEACON PRs remain ev
 
 ## Remaining acceptance journey
 
-Source closeout requires final exact-head reviews, one source-only PR and required CI. Stop before merge or deployment.
+Source-only PR `#1024` is open. Required CI passed on the reviewed pre-final-reconciliation head and is required to rerun on the final pushed head. Stop before merge or deployment.
 
 Business completion later requires reviewed deployment, one fresh genuine owner review, a separately authorized exact organic publication, exactly one provider-confirmed Facebook receipt, silent replay and truthful later reach/engagement/SAM lead/conversion/completed-sale/gross-profit readback. Unknown remains Unknown where unsupported.
 
