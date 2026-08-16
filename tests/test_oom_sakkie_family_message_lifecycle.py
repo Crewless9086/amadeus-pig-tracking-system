@@ -397,6 +397,35 @@ def test_ambiguous_edit_is_never_retried_but_one_visible_question_is_sent():
     assert notice["clarification_question"]=="Are you at the fertilizer valves now?"
 
 
+def test_orphaned_visible_question_edit_claim_is_not_retried_and_gets_one_notice():
+    memory=Memory();mission="OOM-ROOTLINE-WAIT-ORPHAN"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    follow_parsed={**PARSED,"provider_message_id":"retained-expired-presence"}
+    follow={**RESULT,"answer":"Are you back at the fertilizer valves now?",
+        "requires_visible_notification":True,"question_count":1}
+    stopped=True
+    def stop_after_edit_claim(action,identity,payload):
+        nonlocal stopped
+        result=memory.store(action,identity,payload)
+        if action=="record" and payload.get("state")=="update_attempted" and stopped:
+            stopped=False
+            raise RuntimeError("worker stopped after edit claim")
+        return result
+    with pytest.raises(RuntimeError):
+        deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+            card_mission_id=mission,event_store=stop_after_edit_claim,
+            sender=memory.send,editor=memory.edit)
+    recovered=deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert recovered["status"]=="family_message_card_updated_and_notified"
+    assert recovered["telegram_edits"]==0 and recovered["telegram_sends"]==1
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
+    assert len(memory.edited)==0 and len(memory.sent)==2
+
+
 def test_context_recovery_projection_is_not_mistaken_for_provider_delivery():
     memory=Memory();mission="OOM-ROOTLINE-CONTEXT-RECOVERY"
     deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,

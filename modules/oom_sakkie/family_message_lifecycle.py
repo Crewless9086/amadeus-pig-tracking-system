@@ -223,9 +223,12 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             # attempt after either an unconfirmed edit or a process stop after
             # the claim; never send a replacement card.
             update_id += "-RECOVERY-2"
-        if ambiguous_edit and result.get("requires_visible_notification") is True:
+        if ((ambiguous_edit or orphaned_edit_claim)
+                and result.get("requires_visible_notification") is True):
             # Never retry the ambiguous edit. A must-notice lifecycle question
-            # gets one separately claimed provider notification instead.
+            # gets one separately claimed provider notification instead. The
+            # same rule applies when the worker stopped after the edit claim:
+            # provider edit truth is then ambiguous and must not be retried.
             notification_id = card_mission_id + "-VISIBLE-WAIT-" + text_sha[:20].upper()
             notification_events = [row for row in events
                 if str(row.get("event_id") or "").startswith(notification_id)]
