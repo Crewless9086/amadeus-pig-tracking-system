@@ -119,6 +119,54 @@ function identityGroup(title, identities) {
     : `<p>${UNKNOWN}</p>`}</div>`;
 }
 
+function naturalParts(value) {
+  return String(value || "").toLowerCase().split(/(\d+)/).map((part) => /^\d+$/.test(part) ? Number(part) : part);
+}
+
+function naturalIdentityCompare(left, right) {
+  const a = naturalParts(left.tag_number || left.name || left.technical_identity?.pig_id);
+  const b = naturalParts(right.tag_number || right.name || right.technical_identity?.pig_id);
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    if (a[index] === b[index]) continue;
+    if (a[index] === undefined) return -1;
+    if (b[index] === undefined) return 1;
+    if (typeof a[index] === typeof b[index]) return a[index] < b[index] ? -1 : 1;
+    return String(a[index]).localeCompare(String(b[index]));
+  }
+  return 0;
+}
+
+function offspringState(identity = {}) {
+  return text(identity.current_status || identity.status);
+}
+
+function offspringHtml(identities, currentName) {
+  const rows = [...(identities || [])].filter(Boolean).sort((left, right) => {
+    const rank = (value) => String(value.on_farm ?? "").toLowerCase() === "true" || String(value.current_status || value.status || "").toLowerCase() === "active" ? 0 : known(value.current_status || value.status || value.on_farm) ? 1 : 2;
+    return rank(left) - rank(right) || naturalIdentityCompare(left, right);
+  });
+  if (!rows.length) return `<div class="merit-empty">Geen kanonieke nageslagidentiteite is beskikbaar nie.</div>`;
+  return `<div class="merit-table-wrap"><table class="merit-table merit-offspring-table"><thead><tr><th>Tag / Naam</th><th>Huidige status</th><th>Doel</th><th>Werpsel</th></tr></thead><tbody>${rows.map((identity) => {
+    const base = safeDestination(identity.destination, "animal");
+    const href = base ? withReturn(base, `Terug na ${currentName} se profiel`) : "";
+    const pigId = identity.technical_identity?.pig_id || identity.pig_id;
+    const label = identity.tag_number || identity.name || "Naam/Tag onbekend";
+    const identityCell = `<strong>${esc(label)}</strong>${identity.tag_number && identity.name ? `<span>${esc(identity.name)}</span>` : ""}${pigId ? `<small>Pig-ID ${esc(pigId)}</small>` : ""}`;
+    const contents = `<td data-label="Tag / Naam">${href ? `<a href="${esc(href)}" aria-label="Open ${esc(label)} se profiel">${identityCell}</a>` : identityCell}</td><td data-label="Huidige status">${esc(offspringState(identity))}</td><td data-label="Doel">${esc(text(identity.purpose))}</td><td data-label="Werpsel">${esc(text(identity.litter_identity?.display_name || identity.litter_id))}</td>`;
+    return `<tr>${contents}</tr>`;
+  }).join("")}</tbody></table></div>`;
+}
+
+function offspringSummaryHtml(offspring, outcomes) {
+  const summary = offspring.summary || offspring.status_summary || {};
+  return metric("Toeskryfbare werpsels", num(outcomes.observed_litter_count))
+    + metric("Nageslag aangeteken", num(offspring.sample_size))
+    + metric("Aktief op plaas", num(summary.active_on_farm))
+    + metric("Verkoop / toegeken", num(summary.sold_or_allocated))
+    + metric("Oorlede", num(summary.deceased))
+    + metric("Ander / onbekend", num(summary.other_or_unknown));
+}
+
 function ids(title, values) {
   const list = (values || []).filter(Boolean);
   return `<div class="merit-context-card"><h3>${esc(title)}</h3>${list.length
@@ -256,12 +304,19 @@ function renderProfile(data, row) {
     + item("Missing evidence", interpretation.missing_evidence)
     + item("Next review", interpretation.next_review);
   renderMetrics({ outcomes, opportunities, offspring, growth, finance, confidence, inputs });
-  document.getElementById("merit_detail_partners").innerHTML = partnerHtml(row.partner_comparisons || [], displayName);
-  document.getElementById("merit_detail_trend").innerHTML = trendHtml(row.time_trend || [], displayName);
+  const partners = row.partner_comparisons || [];
+  const trend = [...(row.time_trend || [])].sort((left, right) => String(right.period || "").localeCompare(String(left.period || "")));
+  document.getElementById("merit_partner_count").textContent = `(${num(opportunities.observed_count)})`;
+  document.getElementById("merit_litter_count").textContent = `(${num(outcomes.observed_litter_count)})`;
+  document.getElementById("merit_detail_partners").innerHTML = partnerHtml(partners, displayName);
+  document.getElementById("merit_detail_trend").innerHTML = trendHtml(trend, displayName);
   document.getElementById("merit_detail_context").innerHTML = identityGroup("Ouers", [family.dam_identity, family.sire_identity])
-    + identityGroup("Nageslag", family.offspring_identities || offspring.identities)
     + ids("Effective observations", (context.observations || []).map((value) => value.observation_event_id))
     + ids("Medical events", (context.medical_events || []).map((value) => value.medical_event_id || value.event_id));
+  const offspringIdentities = family.offspring_identities || offspring.identities || [];
+  document.getElementById("merit_offspring_summary").innerHTML = offspringSummaryHtml(offspring, outcomes);
+  document.getElementById("merit_offspring_scope").textContent = `Hierdie is die ondersteunde HERDMASTER-steekproef van ${num(offspring.sample_size)} nageslag. Status-, doel- en werpselverdeling bly Onbekend waar dit nie in die kanonieke pakket verskaf word nie; assosiasie bewys nie oorsaaklikheid nie.`;
+  document.getElementById("merit_offspring_table").innerHTML = offspringHtml(offspringIdentities, displayName);
   document.getElementById("merit_detail_lineage").innerHTML = lineageHtml(data.lineage);
 }
 
