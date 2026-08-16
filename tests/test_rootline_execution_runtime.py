@@ -27,6 +27,12 @@ def test_stale_parent_resolution_is_digest_bound_and_zero_control():
     assert calls[0][1]["resolution"]=="Deferred"
     assert calls[0][1]["remaining_seconds"]==3599
 
+    contained={**parent,
+        "resolution_reason":"segment_contained_without_verified_shutdown_or_runtime"}
+    _persist_stale_parent_resolutions({"evidence_generation":"PLAN-CURRENT",
+        "candidate_tasks":[{"contained_parent_jobs":[contained]}]},store)
+    assert calls[-1][1]["reason"]=="segment_contained_without_verified_shutdown_or_runtime"
+
 
 def plan():
     return {"evidence_generation":"PLAN-GEN-1","operating_date":"2026-08-08",
