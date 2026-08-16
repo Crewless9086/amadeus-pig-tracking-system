@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime
+import hashlib
+import json
 from statistics import median
 from urllib.parse import quote, unquote, urlencode
 
@@ -91,6 +93,12 @@ def _identity(row=None, *, pig_id=None, role=None, canonical_resolved=True):
     primary = name or tag or "Unknown"
     presentation_state = "named" if name else ("tag_fallback" if tag else "unknown")
     animal_type = _text(row.get("animal_type")) or None
+    status_conflict = bool(row.get("status_conflict"))
+    purpose_conflict = bool(row.get("purpose_conflict"))
+    on_farm_conflict = bool(row.get("on_farm_conflict"))
+    current_status = None if status_conflict else (_text(row.get("status")) or None)
+    purpose = None if purpose_conflict else (_text(row.get("purpose")) or None)
+    on_farm = None if on_farm_conflict or row.get("on_farm") is None else bool(row.get("on_farm"))
     resolved_role = _text(role) or animal_type or None
     route_segment = _safe_route_segment(pig_id)
     destination = _destination(
@@ -113,6 +121,14 @@ def _identity(row=None, *, pig_id=None, role=None, canonical_resolved=True):
         "technical_identity": {"pig_id": pig_id or None},
         "role": resolved_role,
         "animal_type": animal_type,
+        "current_status": current_status,
+        "purpose": purpose,
+        "on_farm": on_farm,
+        "operational_evidence_state": {
+            "current_status": "conflicting" if status_conflict else ("supported" if current_status else "Unknown"),
+            "purpose": "conflicting" if purpose_conflict else ("supported" if purpose else "Unknown"),
+            "on_farm": "conflicting" if on_farm_conflict else ("supported" if on_farm is not None else "Unknown"),
+        },
         "canonical_identity_resolved": bool(canonical_resolved),
         "destination": destination,
     }
@@ -126,6 +142,10 @@ def _effective(rows, id_key, supersedes_key):
         "superseded_event_ids": sorted(superseded),
         "events": rows,
     }
+
+
+def _stable_rows(rows, *fields):
+    return sorted(rows, key=lambda row: tuple(_text(row.get(field)) for field in fields))
 
 
 def _confidence(cohorts, outcome_eligible, outcome_total, context_present, context_total,
@@ -186,8 +206,19 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
         medical_all = [r for r in medical_all if _date(r.get("treatment_date")) and _date(r.get("treatment_date")) <= cutoff]
     else:
         litters_all, observations_all, lifecycle_all = litters_raw, observations_raw, lifecycle_raw
+    litters_all = _stable_rows(litters_all, "farrowing_date", "litter_id")
+    observations_all = _stable_rows(
+        observations_all, "observed_at", "recorded_at", "observation_event_id")
+    lifecycle_all = _stable_rows(
+        lifecycle_all, "effective_at", "recorded_at", "lifecycle_event_id")
+    matings_all = _stable_rows(matings_all, "mating_date", "mating_id")
+    weights_all = _stable_rows(weights_all, "weight_date", "weight_event_id")
+    medical_all = _stable_rows(medical_all, "treatment_date", "created_at", "medical_event_id")
     litters, litter_lineage = _effective(litters_all, "litter_id", "supersedes_litter_id")
-    litter_lineage["events"] = [dict(row) for row in snapshot.get("litter_history", litters_raw)]
+    litter_lineage["events"] = _stable_rows(
+        [dict(row) for row in snapshot.get("litter_history", litters_raw)],
+        "farrowing_date", "litter_id", "retained_litter_id",
+    )
     historical_superseded = {
         _text(row.get("litter_id")) for row in litter_lineage["events"]
         if row.get("is_superseded") is True
@@ -334,12 +365,55 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
             partner_identity = resolved_identity(
                 partner, role="boar" if key == "sow_pig_id" else "sow")
             pairings.append({
+                "structure": "unique_partner_litter_aggregate",
                 "partner_pig_id": partner, "observed_litter_count": len(pair_cohorts),
                 "eligible_litter_count": len(pair_eligible),
                 "survival_rate": pair_weaned / pair_born if pair_born else None,
                 "partner_identity": partner_identity,
                 "destination": partner_identity["destination"],
             })
+        litter_by_mating = defaultdict(list)
+        litter_by_id = {_text(item.get("litter_id")): item for item in cohorts if _text(item.get("litter_id"))}
+        for litter in cohorts:
+            if _text(litter.get("mating_id")):
+                litter_by_mating[_text(litter.get("mating_id"))].append(litter)
+        individual_matings = []
+        for mating in opportunities:
+            mating_id = _text(mating.get("mating_id"))
+            explicit_litter_id = _text(mating.get("related_litter_id"))
+            candidate_litters = []
+            if explicit_litter_id in litter_by_id:
+                candidate_litters.append(litter_by_id[explicit_litter_id])
+            candidate_litters.extend(litter_by_mating.get(mating_id, []))
+            candidate_litters = list({ _text(item.get("litter_id")): item for item in candidate_litters }.values())
+            matched_litters = [item for item in candidate_litters if (
+                _text(item.get("sow_pig_id")) and _text(item.get("sow_pig_id")) == _text(mating.get("sow_pig_id"))
+                and _text(item.get("boar_pig_id")) and _text(item.get("boar_pig_id")) == _text(mating.get("boar_pig_id"))
+                and (not _text(item.get("mating_id")) or not mating_id
+                     or _text(item.get("mating_id")) == mating_id)
+                and (not explicit_litter_id or _text(item.get("litter_id")) == explicit_litter_id)
+            )]
+            binding_conflict = bool(candidate_litters) and len(matched_litters) != 1
+            litter_identity = (resolved_litter_identity(matched_litters[0], return_pig_id=pid)
+                               if len(matched_litters) == 1 and not binding_conflict else None)
+            partner_id = _text(mating.get(partner_key)) if key else ""
+            individual_matings.append({
+                "structure": "individual_attributable_mating_summary",
+                "mating_id": mating_id or None,
+                "mating_date": _date(mating.get("mating_date")).isoformat() if _date(mating.get("mating_date")) else None,
+                "chronology_identity": {"mating_id": mating_id or None,
+                                        "effective_date": _date(mating.get("mating_date")).isoformat() if _date(mating.get("mating_date")) else None},
+                "sow_identity": resolved_identity(mating.get("sow_pig_id"), role="sow"),
+                "boar_identity": resolved_identity(mating.get("boar_pig_id"), role="boar"),
+                "partner_identity": resolved_identity(
+                    partner_id, role="boar" if key == "sow_pig_id" else "sow") if partner_id else _identity(role="Unknown", canonical_resolved=False),
+                "litter_identity": litter_identity,
+                "litter_attribution_state": ("supported" if litter_identity else
+                                             "conflicting" if binding_conflict else "Unknown"),
+                "recorded_status": _text(mating.get("pregnancy_status") or mating.get("status")) or None,
+            })
+        individual_matings.sort(key=lambda item: (
+            item["mating_date"] is None, item["mating_date"] or "", item["mating_id"] or ""))
         trend = []
         for litter in cohorts:
             litter_identity = resolved_litter_identity(litter, return_pig_id=pid)
@@ -351,10 +425,36 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
                 "destination": litter_identity["destination"],
                 "survival_rate": governed_litter_outcome(litter)["survival_rate"],
             })
+        def offspring_identity(child):
+            projected = resolved_identity(child.get("pig_id"), role="offspring")
+            child_litter_id = _text(child.get("litter_id"))
+            attributable = litter_by_id.get(child_litter_id)
+            projected["litter_attribution"] = (
+                resolved_litter_identity(attributable, return_pig_id=pid) if attributable else {
+                    "litter_id": child_litter_id or None, "display_name": child_litter_id or "Unknown",
+                    "presentation_state": "unknown", "technical_identity": {"litter_id": child_litter_id or None},
+                    "sow_identity": _identity(role="sow", canonical_resolved=False),
+                    "destination": _destination("litter_detail", "", "Litter detail unavailable"),
+                })
+            projected["litter_attribution_state"] = "supported" if attributable else "Unknown"
+            return projected
+
         offspring_identities = sorted(
-            (resolved_identity(child.get("pig_id"), role="offspring") for child in offspring),
+            (offspring_identity(child) for child in offspring),
             key=lambda item: (item["display_name"].lower(), item["pig_id"]),
         )
+        offspring_summary = {
+            "resolved_identity_count": sum(item["canonical_identity_resolved"] for item in offspring_identities),
+            "sample_size": len(offspring_identities),
+            "known_status_count": sum(item["current_status"] is not None for item in offspring_identities),
+            "known_purpose_count": sum(item["purpose"] is not None for item in offspring_identities),
+            "known_on_farm_count": sum(item["on_farm"] is not None for item in offspring_identities),
+            "known_litter_attribution_count": sum(item["litter_attribution_state"] == "supported" for item in offspring_identities),
+            "unknown_or_conflicting_operational_count": sum(
+                any(state != "supported" for state in item["operational_evidence_state"].values())
+                for item in offspring_identities
+            ),
+        }
         dam_identity = resolved_identity(
             parent.get("mother_pig_id") or parent.get("dam_pig_id"), role="dam")
         sire_identity = resolved_identity(
@@ -369,15 +469,22 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
                 "eligible_complete_through_count": len(complete_opportunities),
                 "missing_outcome_count": len(opportunities) - len(complete_opportunities),
             },
+            "individual_mating_summaries": individual_matings,
             "time_trend": trend,
             "offspring": {
                 "sample_size": len(offspring),
                 "pig_ids": sorted(_text(c.get("pig_id")) for c in offspring),
                 "identities": offspring_identities,
+                "operational_summary": offspring_summary,
             },
             "offspring_growth": {"observed_weight_count": len(weights), "median_weight_kg": None, "comparable_window": None, "limitation": "Comparable-age or days-since-weaning binding is not yet supported by complete evidence."},
             "partner_pig_ids": partners,
             "partner_comparisons": pairings,
+            "partner_comparisons_semantics": {
+                "structure": "unique_partner_litter_aggregates",
+                "aggregate_count": len(pairings),
+                "not_individual_mating_records": True,
+            },
             "family_relationships": {
                 "dam_pig_id": _text(parent.get("mother_pig_id") or parent.get("dam_pig_id")) or None,
                 "sire_pig_id": _text(parent.get("father_pig_id") or parent.get("sire_pig_id")) or None,
@@ -442,7 +549,7 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
         lifecycle_lineage["events"] = [r for r in lifecycle_lineage["events"] if _text(r.get("pig_id")) in attributable_pigs]
         observation_lineage["superseded_event_ids"] = sorted({_text(r.get("supersedes_observation_event_id")) for r in observation_lineage["events"] if r.get("supersedes_observation_event_id")})
         lifecycle_lineage["superseded_event_ids"] = sorted({_text(r.get("supersedes_lifecycle_event_id")) for r in lifecycle_lineage["events"] if r.get("supersedes_lifecycle_event_id")})
-    return {
+    packet = {
         "success": True,
         "contract_version": CONTRACT_VERSION,
         "identity_contract_version": "herdmaster_human_identity_v1",
@@ -460,3 +567,7 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
         "association_boundary": "Parent-associated outcomes are associations qualified by management, health, season, feed, environment and evidence gaps; they do not prove genetic causation.",
         "writes_performed": False,
     }
+    packet["semantic_digest"] = hashlib.sha256(json.dumps(
+        packet, sort_keys=True, separators=(",", ":"), default=str
+    ).encode("utf-8")).hexdigest()
+    return packet
