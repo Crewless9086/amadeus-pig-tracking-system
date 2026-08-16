@@ -1486,7 +1486,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "what needs attention today",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1506,10 +1506,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         mock_handle.assert_called_once_with({
             "text": "what needs attention today",
             "channel": "telegram_read_only",
-            "session_id": "telegram-67890",
+            "session_id": "telegram-12345",
         })
         mock_send.assert_called_once_with(
-            chat_id="67890",
+            chat_id="12345",
             text=result["telegram_text"],
             environ=None,
         )
@@ -1531,7 +1531,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "/help",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1572,7 +1572,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "callback_query": {
                     "data": "sam_live_review_approve:SAM-LIVE-REVIEW-ABC123",
                     "from": {"id": 12345},
-                    "message": {"message_id": 99, "chat": {"id": 67890}},
+                    "message": {"message_id": 99, "chat": {"id": 12345, "type": "private"}},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1611,7 +1611,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "callback_query": {
                     "data": "sam_live_review_approve:SAM-LIVE-REVIEW-ABC123",
                     "from": {"id": 12345},
-                    "message": {"message_id": 99, "chat": {"id": 67890}},
+                    "message": {"message_id": 99, "chat": {"id": 12345, "type": "private"}},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1675,7 +1675,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "/brief",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1686,7 +1686,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         mock_handle.assert_called_once_with({
             "text": "daily command brief",
             "channel": "telegram_read_only",
-            "session_id": "telegram-67890",
+            "session_id": "telegram-12345",
         })
         self.assertIn("Brief answer.", result["telegram_text"])
         self.assertIn("Check: jarvis_daily_command_brief", result["telegram_text"])
@@ -1724,7 +1724,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "/offer",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1735,7 +1735,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         mock_handle.assert_called_once_with({
             "text": "sales offer brief",
             "channel": "telegram_read_only",
-            "session_id": "telegram-67890",
+            "session_id": "telegram-12345",
         })
         self.assertIn("Sales Offer Brief", result["telegram_text"])
         self.assertIn("Owner-review draft only", result["telegram_text"])
@@ -1773,7 +1773,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "/draft",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1784,7 +1784,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         mock_handle.assert_called_once_with({
             "text": "sales customer draft",
             "channel": "telegram_read_only",
-            "session_id": "telegram-67890",
+            "session_id": "telegram-12345",
         })
         self.assertIn("Customer Draft", result["telegram_text"])
         self.assertIn("Nothing was sent to customers", result["telegram_text"])
@@ -1822,7 +1822,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "/ledger",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1833,7 +1833,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         mock_handle.assert_called_once_with({
             "text": "ledger sales agent",
             "channel": "telegram_read_only",
-            "session_id": "telegram-67890",
+            "session_id": "telegram-12345",
             "allow_specialist_llm": True,
         })
         self.assertIn("Ledger Sales Agent", result["telegram_text"])
@@ -1874,7 +1874,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "/approve_campaign",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1918,7 +1918,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "/drafts",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -1929,7 +1929,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         mock_handle.assert_called_once_with({
             "text": "customer outreach drafts",
             "channel": "telegram_read_only",
-            "session_id": "telegram-67890",
+            "session_id": "telegram-12345",
         })
         self.assertIn("Customer Outreach Draft Queue", result["telegram_text"])
         self.assertIn("known meat buyers", result["telegram_text"])
@@ -1960,7 +1960,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "message": {
                     "text": "what needs attention today",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
