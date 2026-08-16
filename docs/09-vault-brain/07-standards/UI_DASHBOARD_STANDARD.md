@@ -17,6 +17,16 @@ Owner dashboards must help Charl decide quickly. They must not bury decisions, h
 - Dashboard work is not review-ready until real desktop/laptop and mobile visual evidence exists for the changed page.
 - Attached reference screenshots must be cited and compared against the built screen.
 
+## Human-first identity and owner preview gate
+
+- Present the canonical animal or person name first, a meaningful tag second, and internal IDs last as muted technical evidence.
+- Never use an internal ID as the primary owner-facing identity. When both name and tag are unavailable, show an explicit unknown identity label and retain the ID only as technical evidence.
+- Resolve relationship identities through the canonical provider contract; do not make owners interpret raw relationship IDs.
+- Use only validated internal destinations supplied by the owning backend when that contract provides them. Reject malformed, external, protocol-relative, backslash-normalized and unrelated destinations.
+- An owner-visible UI candidate must be classified `READY_FOR_OWNER_PREVIEW` with its exact combined source revision, local URL, desktop/mobile evidence and proportional interaction coverage.
+- Do not merge or deploy a preview-gated candidate until Charl approves that exact preview and exact source revision.
+- Any subsequent source change invalidates the visual approval and requires a fresh exact-revision preview.
+
 ## CHARLIE Dashboard Requirements
 
 The `/charlie` dashboard must show:

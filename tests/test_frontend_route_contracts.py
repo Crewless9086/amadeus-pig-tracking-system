@@ -1987,6 +1987,27 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertNotIn("?? 0", js)
         self.assertNotIn('method: "POST"', js)
 
+    def test_breeding_analytics_uses_human_identity_and_backend_destinations(self):
+        herd_js = Path("static/js/breedingAnalytics.js").read_text(encoding="utf-8")
+        detail_js = Path("static/js/breedingAnalyticsDetail.js").read_text(encoding="utf-8")
+        standard = Path("docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md").read_text(encoding="utf-8")
+
+        self.assertIn("herdmaster_human_identity_v1", detail_js)
+        self.assertIn("row.identity?.destination", herd_js)
+        self.assertIn("partner_identity", detail_js)
+        self.assertIn("litter_identity", detail_js)
+        self.assertIn("offspring_identities", detail_js)
+        self.assertIn("Naam/Tag onbekend", detail_js)
+        self.assertIn("Geen tag", detail_js)
+        self.assertIn("Terug na ${currentName} se profiel", detail_js)
+        self.assertIn("safeDestination", detail_js)
+        self.assertIn("destination.route_identity", detail_js)
+        self.assertNotIn("Partner Pig-ID", detail_js)
+        self.assertNotIn("family.offspring_pig_ids", detail_js)
+        self.assertNotIn('method: "POST"', detail_js)
+        self.assertIn("name first", standard)
+        self.assertIn("READY_FOR_OWNER_PREVIEW", standard)
+
     def test_weight_form_shows_current_pen_helper_without_changing_payload(self):
         template = Path("templates/pig-weights.html").read_text(encoding="utf-8")
         js = Path("static/js/pigWeights.form.js").read_text(encoding="utf-8")
