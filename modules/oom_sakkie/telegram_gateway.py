@@ -895,6 +895,32 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "writes_farm_data": False, "automatic_irrigation_authority": False,
                         "answer": ("The scheduled assessment could not load its durable context. "
                                    "No provider or hardware action was attempted.")}
+            try:
+                from modules.oom_sakkie.rootline_protected_mixer import (
+                    reassess_due_mixer_presence,
+                )
+                manager_owner = str(manual_payload.get("owner_user_id") or "")
+                manager_chat = str(manual_payload.get("chat_id") or "")
+                presence_recovery = reassess_due_mixer_presence(
+                    owner_user_id=manager_owner, private_chat_id=manager_chat,
+                    gateway_authority=issue_gateway_owner_authority(
+                        manager_owner, manager_chat), now=scheduler_now)
+                if presence_recovery.get("status") == "mixer_protected_preview_created":
+                    scheduler_parsed = {"telegram_user_id":manager_owner,
+                        "telegram_chat_id":manager_chat,
+                        "provider_message_id":"scheduled:mixer:" + str(
+                            manual_payload.get("trigger_id") or ""),
+                        "provider_timestamp":str(
+                            manual_payload.get("trigger_timestamp") or "")}
+                    presence_delivery = deliver(scheduler_parsed, presence_recovery,
+                        specialist="ROOTLINE", mission_id=presence_recovery["mission_id"],
+                        card_mission_id=presence_recovery["card_mission_id"])
+                    presence_delivery = _bind_protected_preview_card(
+                        presence_recovery, presence_delivery)
+                    return {**presence_recovery, "delivery":presence_delivery,
+                        "telegram_sends":int(presence_delivery.get("telegram_sends") or 0)}
+            except Exception:
+                pass
             mixer_recovery = {"status": "fertilizer_recovery_unproven",
                               "hardware_commands": 0, "telegram_sends": 0}
             try:

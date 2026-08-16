@@ -34,6 +34,12 @@ than inferring evidence.
 - Explicit non-outcomes:
 - Lifecycle state:
 - Remaining acceptance journey:
+- Strategic class: `OPERATING_SPINE` / `CURRENT_BLOCKER` / `EXPANSION`:
+- Recovery-mode WIP slot: 1 / 2 / 3 / frozen / not applicable:
+- Exact recurring owner action this mission removes:
+- Current owner manual steps and target manual steps:
+- Terminal-independent proof that closes the workload reduction:
+- Why this is deployed-agent enablement rather than terminal substitution:
 
 ## Terminal state
 
@@ -106,6 +112,8 @@ script or a synthetic canary cannot by itself establish autonomous operation.
 - Irreducible reason for each owner interaction:
 - Governed evidence source used instead of owner observation:
 - Owner-burden systemic defect present: no / exact shared journey defect
+- Owner workload delta achieved this turn: none / exact manual step removed
+- New recurring owner labour introduced: none / exact temporary labour and removal trigger
 - Replay and concurrency result:
 
 ## Closeout and next action
