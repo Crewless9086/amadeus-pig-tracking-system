@@ -144,6 +144,10 @@ function ownerValue(value) {
   return known(value) ? String(value) : "Onbekend";
 }
 
+function ownerNum(value) {
+  return known(value) && !Number.isNaN(Number(value)) ? String(value) : "Onbekend";
+}
+
 function offspringHtml(identities, currentName) {
   const rows = [...(identities || [])].filter(Boolean).sort((left, right) => {
     const rank = (value) => String(value.on_farm ?? "").toLowerCase() === "true" || String(value.current_status || value.status || "").toLowerCase() === "active" ? 0 : known(value.current_status || value.status || value.on_farm) ? 1 : 2;
@@ -163,12 +167,12 @@ function offspringHtml(identities, currentName) {
 
 function offspringSummaryHtml(offspring, outcomes) {
   const summary = offspring.summary || offspring.status_summary || {};
-  return metric("Toeskryfbare werpsels", ownerValue(outcomes.observed_litter_count))
-    + metric("Nageslag aangeteken", ownerValue(offspring.sample_size))
-    + metric("Aktief op plaas", ownerValue(summary.active_on_farm))
-    + metric("Verkoop / toegeken", ownerValue(summary.sold_or_allocated))
-    + metric("Oorlede", ownerValue(summary.deceased))
-    + metric("Ander / onbekend", ownerValue(summary.other_or_unknown));
+  return metric("Toeskryfbare werpsels", ownerNum(outcomes.observed_litter_count))
+    + metric("Nageslag aangeteken", ownerNum(offspring.sample_size))
+    + metric("Aktief op plaas", ownerNum(summary.active_on_farm))
+    + metric("Verkoop / toegeken", ownerNum(summary.sold_or_allocated))
+    + metric("Oorlede", ownerNum(summary.deceased))
+    + metric("Ander / onbekend", ownerNum(summary.other_or_unknown));
 }
 
 function ids(title, values) {
