@@ -15,7 +15,7 @@ def packet(*, state="pending_or_mixed"):
 
 
 def completed_card(_group):
-    return [{"state":"updated","task_state":"completed","mission_id":"GROUP-BELLA",
+    return [{"state":"updated","task_state":"album_completed","mission_id":"GROUP-BELLA",
         "card_mission_id":"GROUP-BELLA","specialist_identity":"BEACON_MEDIA",
         "owner_user_id":"100","chat_id":"100","telegram_message_id":"3637"}]
 
