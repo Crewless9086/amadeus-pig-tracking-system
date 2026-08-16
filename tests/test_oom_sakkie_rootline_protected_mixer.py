@@ -1,8 +1,13 @@
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
-from modules.oom_sakkie.rootline_protected_mixer import ACTION_KIND, build_preview_payload, execute_claimed_mixer
+from modules.oom_sakkie.protected_action_claims import load_active_child_claim
+from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
+from modules.oom_sakkie.rootline_protected_mixer import (ACTION_KIND,
+    PRESENCE_ACTION_KIND, build_preview_payload, create_presence_refresh_notice,
+    create_mixer_preview, execute_claimed_mixer, execute_presence_refresh)
 from modules.telemetry.rootline_auxiliary_management import build_auxiliary_eligibility
 
 NOW = datetime(2026, 8, 16, 13, 35, 32, tzinfo=timezone.utc)
@@ -59,3 +64,115 @@ def test_tamper_or_wrong_chat_never_reaches_executor():
     result, status = execute_claimed_mixer(claim(payload), parsed=wrong,
         runner=lambda **kwargs: calls.append(kwargs))
     assert status == 409 and result["provider_control_calls"] == 0 and calls == []
+
+def test_expired_presence_notice_has_one_protected_ready_action(monkeypatch):
+    monkeypatch.setattr("modules.oom_sakkie.rootline_protected_mixer.create_claim",
+        lambda **kwargs: {"success": True, "callback_token": "TOKEN", "preview_digest":
+            canonical_preview_digest(kwargs["action_kind"], kwargs["preview_payload"]),
+            "expires_at": "2026-08-17T13:35:32+00:00"})
+    result = create_presence_refresh_notice(owner_result={"specialist_identity": "ROOTLINE",
+        "next_specialist_step": "supervised_fertilizer_mixer_proof"}, parsed=parsed())
+    assert result["hardware_commands"] == result["provider_control_calls"] == 0
+    assert result["reply_markup"]["inline_keyboard"][0][0]["text"] == "I am ready now"
+    assert "Nothing started" in result["answer"]
+
+def test_ready_button_mints_current_preview_without_actuation(monkeypatch):
+    monkeypatch.setattr("modules.oom_sakkie.rootline_protected_mixer.create_claim",
+        lambda **kwargs: {"success": True, "callback_token": "MIXER", "preview_digest":
+            canonical_preview_digest(kwargs["action_kind"], kwargs["preview_payload"]),
+            "expires_at": "2026-08-16T13:40:32+00:00"})
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_child_claim",
+        lambda **_kwargs: None)
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_presence_claim",
+        lambda **_kwargs: None)
+    old = parsed()
+    old_payload = {"contract_version": "oom_rootline_mixer_presence_refresh.v1",
+        "mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "owner_user_id": "5721652188", "private_chat_id": "5721652188",
+        "lost_presence_provider_message_id": "3676",
+        "lost_presence_provider_timestamp": old["provider_timestamp"],
+        "lost_presence_text_sha256": "a" * 64, "specialist_identity": "ROOTLINE",
+        "next_specialist_step": "supervised_fertilizer_mixer_proof"}
+    presence_claim = {"callback_token": "PARENT", "preview_payload": old_payload,
+        "preview_digest": canonical_preview_digest(PRESENCE_ACTION_KIND, old_payload)}
+    callback = parsed(); callback["provider_message_id"] = "CALLBACK-READY"
+    def prepare(**kwargs):
+        assert kwargs["acceptance_loader"]({}, {}) is True
+        return {"success": True, "status": "commissioning_protected_preview_ready",
+            "eligibility": artifact(), "hardware_commands": 0, "provider_control_calls": 0}
+    result, status = execute_presence_refresh(presence_claim, parsed=callback,
+        gateway_authority=issue_gateway_owner_authority("5721652188", "5721652188"),
+        prepare=prepare, now=NOW)
+    assert status == 200 and result["status"] == "mixer_protected_preview_created"
+    assert result["hardware_commands"] == result["provider_control_calls"] == 0
+
+def test_ready_callback_recovers_committed_child_after_parent_crash(monkeypatch):
+    child_payload = build_preview_payload(artifact(), parsed())
+    child_payload["presence_refresh_claim_token"] = "PARENT"
+    child_digest = canonical_preview_digest(ACTION_KIND, child_payload)
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_child_claim",
+        lambda **kwargs: {"success": True, "callback_token": "CHILD",
+            "preview_digest": child_digest, "expires_at": "2026-08-16T13:40:32+00:00",
+            "preview_payload": child_payload, "preview_card_message_id": ""})
+    old_payload = {"contract_version": "oom_rootline_mixer_presence_refresh.v1",
+        "mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "owner_user_id": "5721652188", "private_chat_id": "5721652188",
+        "lost_presence_provider_message_id": "3676",
+        "lost_presence_provider_timestamp": NOW.isoformat(),
+        "lost_presence_text_sha256": "a" * 64, "specialist_identity": "ROOTLINE",
+        "next_specialist_step": "supervised_fertilizer_mixer_proof"}
+    parent = {"callback_token": "PARENT", "preview_payload": old_payload,
+        "preview_digest": canonical_preview_digest(PRESENCE_ACTION_KIND, old_payload)}
+    result, status = execute_presence_refresh(parent, parsed=parsed(),
+        gateway_authority=issue_gateway_owner_authority("5721652188", "5721652188"),
+        prepare=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not rebuild")),
+        now=NOW)
+    assert status == 200 and result["callback_token"] == "CHILD"
+    assert result["hardware_commands"] == result["provider_control_calls"] == 0
+
+def test_expired_unbound_child_is_atomically_retired_for_one_fresh_preview():
+    statements = []
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, sql, params): statements.append((sql, params))
+        def fetchall(self):
+            return [("CHILD", "d" * 64, NOW - timedelta(seconds=1), {}, None)]
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def cursor(self): return Cursor()
+    child = load_active_child_claim(action_kind=ACTION_KIND,
+        mission_id="OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        parent_claim_token="PARENT", owner_user_id="5721652188",
+        private_chat_id="5721652188", connect_factory=Connection)
+    assert child is None
+    assert any("set status='expired'" in sql for sql, _params in statements)
+
+def test_retained_inbound_recovers_committed_preview_before_fresh_rebuild(monkeypatch):
+    payload = build_preview_payload(artifact(), parsed())
+    digest = canonical_preview_digest(ACTION_KIND, payload)
+    monkeypatch.setattr("modules.oom_sakkie.protected_action_claims.load_active_presence_claim",
+        lambda **_kwargs: {"success": True, "callback_token": "EXISTING",
+            "preview_digest": digest, "expires_at": "2026-08-16T13:40:32+00:00",
+            "preview_payload": payload, "preview_card_message_id": ""})
+    result = create_mixer_preview(owner_result={"handled": True,
+        "status": "specialist_accepted", "specialist_identity": "ROOTLINE",
+        "mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "card_mission_id": "OOM-ROOTLINE-FERTILIZER-CONFIG-20260809",
+        "next_specialist_step": "supervised_fertilizer_mixer_proof",
+        "ready_for_supervised_proof": True,
+        "authority": {"configuration_write": False, "hardware_control": False,
+            "farm_write": False, "telegram_send": False}}, parsed=parsed(),
+        gateway_authority=issue_gateway_owner_authority("5721652188", "5721652188"),
+        prepare=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not rebuild")))
+    assert result["callback_token"] == "EXISTING"
+    assert result["hardware_commands"] == result["provider_control_calls"] == 0
+
+def test_migration_admits_both_mixer_claim_kinds_and_preserves_existing_spine():
+    sql = Path("supabase/migrations/202608160002_allow_rootline_mixer_protected_claims.sql").read_text()
+    for kind in ("rootline_fertilizer_mixer_commissioning",
+            "rootline_fertilizer_mixer_presence_refresh", "rootline_irrigation_segment",
+            "sam_sale_payment", "beacon_media_review"):
+        assert f"'{kind}'" in sql
+    assert "revoke all on app_private.oom_protected_action_claims" in sql

@@ -377,6 +377,26 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     if gateway_authority is not None:
         replay_result = recover_contextual_specialist_replay(parsed)
         if replay_result and replay_result.get("handled"):
+            if (str(replay_result.get("status") or "") == "specialist_accepted"
+                    and str(replay_result.get("next_specialist_step") or "") ==
+                        "supervised_fertilizer_mixer_proof"):
+                from modules.oom_sakkie.rootline_protected_mixer import create_mixer_preview
+                replay_result = create_mixer_preview(owner_result=replay_result,
+                    parsed=parsed, gateway_authority=gateway_authority)
+                delivery = deliver_family_result(parsed, replay_result,
+                    specialist="ROOTLINE",
+                    mission_id=str(replay_result.get("mission_id") or ""),
+                    card_mission_id=str(replay_result.get("card_mission_id") or ""))
+                delivery = _bind_protected_preview_card(replay_result, delivery)
+                body, _ = _gateway_result(delivery.get("success") is True,
+                    str(replay_result.get("status") or "contained"), policy, 200)
+                body.update({"telegram_user_id": parsed["telegram_user_id"],
+                    "telegram_chat_id": parsed["telegram_chat_id"], "text": parsed["text"],
+                    "answer": replay_result.get("answer", ""), "message": replay_result,
+                    "delivery": delivery, "records_audit_trace": True,
+                    "reply_transport": "backend_handles_owner_task_delivery",
+                    "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0})
+                return body, 200 if delivery.get("success") else 202
             if replay_result.get("delivery_recovery_required") is True:
                 delivery = deliver_family_result(parsed, replay_result,
                     specialist=str(replay_result.get("specialist_identity") or "OOM_SAKKIE"),
