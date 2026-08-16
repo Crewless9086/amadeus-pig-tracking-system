@@ -30,6 +30,12 @@ class Store:
 
 
 class SamLiveStockOperatingLoopTests(unittest.TestCase):
+    def test_store_uses_existing_render_supabase_database_binding(self):
+        store = loop.PostgresOperatingLoopStore({
+            "SUPABASE_DB_URL": "postgresql://canonical"
+        })
+        self.assertEqual(store.database_url, "postgresql://canonical")
+
     def test_disabled_loop_is_inert(self):
         result = loop.run_sam_live_stock_operating_cycle(environ={})
         self.assertEqual(result["status"], "sam_live_stock_operating_loop_disabled")

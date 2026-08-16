@@ -205,7 +205,12 @@ def _compose_shadow_proposal(payload, source):
 class PostgresOperatingLoopStore:
     """Small private-schema persistence boundary for lease and shadow evidence."""
     def __init__(self, environ):
-        self.database_url = str(environ.get("DATABASE_URL") or "").strip()
+        self.database_url = str(
+            environ.get("DATABASE_URL")
+            or environ.get("SUPABASE_DB_URL")
+            or environ.get("FARM_SUPABASE_DATABASE_URL")
+            or ""
+        ).strip()
         if not self.database_url:
             raise RuntimeError("sam_operating_loop_database_url_missing")
 
