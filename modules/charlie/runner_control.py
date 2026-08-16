@@ -33,6 +33,7 @@ from modules.charlie.process_ownership import (
     validate_termination,
     verify_controller_acknowledgement,
 )
+from modules.charlie.repository_guard import RepositoryOperationLock
 from modules.charlie.secret_redaction import redact_payload
 
 
@@ -353,7 +354,31 @@ def record_emergency_cleanup_refusal(operation, requested_pid, log_path=None):
     return packet
 
 
+def _runner_controller_lock_path():
+    return RUNNER_DIR / "controller-start.lock"
+
+
 def start_runner(status_override=None, respect_stop_marker=True, execution_mode=EXECUTION_MODE_ORDINARY):
+    lock = RepositoryOperationLock(_runner_controller_lock_path(), stale_seconds=300)
+    acquired, owner = lock.acquire()
+    if not acquired:
+        return {
+            "success": False,
+            "status": "runner_controller_start_in_progress",
+            "owner_pid": owner.get("pid"),
+        }, 409
+    try:
+        return _start_runner_unlocked(
+            status_override=status_override,
+            respect_stop_marker=respect_stop_marker,
+            execution_mode=execution_mode,
+        )
+    finally:
+        lock.release()
+
+
+def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
+                           execution_mode=EXECUTION_MODE_ORDINARY):
     execution_mode = str(execution_mode or "").strip().lower()
     if execution_mode not in EXECUTION_MODES:
         return {"success": False, "status": "execution_mode_invalid"}, 400
@@ -903,6 +928,18 @@ def stop_runner():
         field: root.get(field)
         for field in ("runner_generation", "mission_id", "execution_id", "ownership_type")
     }
+    authority = _validate_tree_termination_authority(
+        supervisor, tree, target_kind=target_kind
+    )
+    if not authority["authorized"]:
+        result = {
+            "success": False,
+            "status": "runner_process_ownership_not_proven",
+            "reason": authority["reason"],
+            "pids": [],
+        }
+        _write_stop_evidence(supervisor, tree, result)
+        return result, 409
     decision = validate_process_tree(
         tree,
         expected,
@@ -973,6 +1010,157 @@ def stop_runner():
     }
     _write_stop_evidence(supervisor, tree, result)
     return result, 200
+
+
+def _validate_tree_termination_authority(supervisor, tree, *, target_kind):
+    """Require a controller signature over the exact tree before termination."""
+    packet = supervisor if isinstance(supervisor, dict) else {}
+    public_key = str(packet.get("controller_public_key") or "")
+    if target_kind == "runner":
+        acknowledgement = packet.get("controller_final_acknowledgement")
+        expected_status = "current_process_tree_acknowledged"
+        digest_field = "runner_tree_digest"
+        member_field = "runner_member_pids"
+    elif target_kind == "supervisor":
+        acknowledgement = packet.get("controller_acknowledgement")
+        expected_status = "supervisor_identity_acknowledged"
+        digest_field = "supervisor_tree_digest"
+        member_field = "member_pids"
+    else:
+        return {"authorized": False, "reason": "termination_target_kind_invalid"}
+    if not public_key or not isinstance(acknowledgement, dict):
+        return {"authorized": False, "reason": "controller_tree_authority_missing"}
+    unsigned = {
+        key: value for key, value in acknowledgement.items() if key != "signature"
+    }
+    if not verify_controller_acknowledgement(
+        unsigned, acknowledgement.get("signature"), public_key
+    ):
+        return {"authorized": False, "reason": "controller_tree_signature_invalid"}
+    bindings = {
+        "status": expected_status,
+        "generation": str(packet.get("generation") or ""),
+        "revision": str(packet.get("intended_execution_revision") or ""),
+        "execution_mode": str(
+            packet.get("execution_mode") or EXECUTION_MODE_ORDINARY
+        ),
+        digest_field: process_tree_identity_digest(tree),
+    }
+    if target_kind == "supervisor":
+        bindings["startup_nonce"] = str(packet.get("startup_nonce") or "")
+        bindings["revision"] = str(packet.get("intended_runtime_revision") or "")
+    mismatch = next(
+        (
+            field for field, expected in bindings.items()
+            if not expected or str(acknowledgement.get(field) or "") != expected
+        ),
+        "",
+    )
+    if mismatch:
+        return {
+            "authorized": False,
+            "reason": f"controller_tree_{mismatch}_mismatch",
+        }
+    member_pids = sorted({
+        int(item.get("pid") or 0)
+        for item in (tree.get("members") or [])
+        if isinstance(item, dict) and int(item.get("pid") or 0) > 0
+    })
+    try:
+        acknowledged_pids = sorted({
+            int(pid) for pid in (acknowledgement.get(member_field) or [])
+            if int(pid) > 0
+        })
+    except (TypeError, ValueError):
+        return {"authorized": False, "reason": "controller_tree_member_pids_invalid"}
+    if not member_pids or acknowledged_pids != member_pids:
+        return {"authorized": False, "reason": "controller_tree_member_pids_mismatch"}
+    return {
+        "authorized": True,
+        "reason": "controller_signed_exact_process_tree",
+        "member_pids": member_pids,
+    }
+
+
+def resume_observe_only_runner():
+    """Clear a completed governed stop and start one observation-only runner."""
+    if emergency_process_cleanup_disabled():
+        refusal = record_emergency_cleanup_refusal(
+            "resume_observe_only_runner", "all"
+        )
+        return {"success": False, **refusal}, 423
+    if not process_termination_enabled():
+        return {"success": False, "status": "process_termination_not_enabled"}, 423
+    lock = RepositoryOperationLock(_runner_controller_lock_path(), stale_seconds=300)
+    acquired, owner = lock.acquire()
+    if not acquired:
+        return {"success": False, "status": "runner_controller_start_in_progress",
+                "owner_pid": owner.get("pid")}, 409
+    archive = None
+    try:
+        if not SUPERVISOR_STOP_PATH.exists():
+            return {"success": False, "status": "governed_stop_marker_required"}, 409
+        status = runner_status(include_ledger=False)
+        if status.get("active") or status.get("process_alive"):
+            return {"success": False, "status": "governed_resume_refused_live_runner"}, 409
+        if status.get("orphan_processes"):
+            return {"success": False, "status": "governed_resume_refused_orphan_process"}, 409
+        supervisor = _read_json(SUPERVISOR_PATH)
+        if not _verified_stopped_observe_only_supervisor(supervisor):
+            return {"success": False, "status": "governed_resume_stop_evidence_required"}, 409
+        archive = SUPERVISOR_STOP_PATH.with_name(
+            f"{SUPERVISOR_STOP_PATH.name}.cleared-{uuid.uuid4().hex}"
+        )
+        try:
+            SUPERVISOR_STOP_PATH.replace(archive)
+        except OSError as exc:
+            return {"success": False, "status": "governed_stop_marker_archive_failed",
+                    "error_type": exc.__class__.__name__}, 503
+        result, status_code = _start_runner_unlocked(
+            status_override=status,
+            execution_mode=EXECUTION_MODE_OBSERVE_ONLY,
+        )
+        if status_code >= 400:
+            try:
+                if archive.exists() and not SUPERVISOR_STOP_PATH.exists():
+                    archive.replace(SUPERVISOR_STOP_PATH)
+            except OSError:
+                return {"success": False,
+                        "status": "governed_resume_start_failed_marker_restore_failed",
+                        "start_result": result}, 503
+            return {"success": False, "status": "governed_resume_start_failed",
+                    "start_result": result}, status_code
+        return {**result, "status": "observe_only_runner_resumed",
+                "cleared_stop_marker_evidence": str(archive)}, status_code
+    finally:
+        lock.release()
+
+
+def _verified_stopped_observe_only_supervisor(supervisor):
+    packet = supervisor if isinstance(supervisor, dict) else {}
+    acknowledgement = packet.get("controller_final_acknowledgement")
+    if not isinstance(acknowledgement, dict):
+        return False
+    unsigned = {
+        key: value for key, value in acknowledgement.items() if key != "signature"
+    }
+    generation = str(packet.get("generation") or "")
+    revision = str(packet.get("intended_execution_revision") or "")
+    return bool(
+        str(packet.get("status") or "") == "supervisor_stopped"
+        and str(packet.get("execution_mode") or "") == EXECUTION_MODE_OBSERVE_ONLY
+        and generation
+        and revision
+        and str(acknowledgement.get("generation") or "") == generation
+        and str(acknowledgement.get("revision") or "") == revision
+        and str(acknowledgement.get("execution_mode") or "")
+        == EXECUTION_MODE_OBSERVE_ONLY
+        and verify_controller_acknowledgement(
+            unsigned,
+            acknowledgement.get("signature"),
+            str(packet.get("controller_public_key") or ""),
+        )
+    )
 
 
 def _write_stop_evidence(supervisor, tree, result):
@@ -1414,29 +1602,74 @@ def _contain_spawned_process(process, observed_tree):
             "reason": "spawned_process_handle_incomplete",
             "observed_containment": observed,
         }
+    # The retained Popen handle is the structural ownership proof for this
+    # exceptional startup-failure path.  A completed handle cannot authorize a
+    # PID-based kill: its numeric PID may already have been reused.
+    try:
+        if process.poll() is not None:
+            return {
+                "success": True,
+                "reason": "spawned_process_handle_already_exited",
+                "pid": pid,
+                "observed_containment": observed,
+            }
+    except (OSError, subprocess.SubprocessError):
+        return {
+            "success": False,
+            "reason": "spawned_process_handle_state_unverified",
+            "pid": pid,
+            "observed_containment": observed,
+        }
     descendants = inspect_descendant_processes(pid)
+    descendant_records = []
+    for descendant in descendants:
+        descendant_pid = int(descendant.get("pid") or 0)
+        structural_token = f"fresh-spawn-handle:{pid}"
+        record = make_ownership_record(
+            descendant,
+            structural_token,
+            "charlie-startup-containment",
+            structural_token,
+            "charlie_runner",
+        )
+        expected = {
+            field: record.get(field)
+            for field in (
+                "runner_generation", "mission_id", "execution_id", "ownership_type"
+            )
+        }
+        decision = validate_termination(
+            record,
+            expected,
+            inspect_process,
+            allow_current_descendant=True,
+        )
+        if descendant_pid <= 0 or not decision.get("authorized"):
+            return {
+                "success": False,
+                "reason": (
+                    f"spawned_descendant_identity_unverified:{descendant_pid}:"
+                    f"{decision.get('reason', 'invalid_pid')}"
+                ),
+                "pid": pid,
+                "observed_containment": observed,
+            }
+        descendant_records.append(record)
     descendant_identities = {
-        int(item.get("pid") or 0): str(item.get("creation_time") or "")
-        for item in descendants
-        if int(item.get("pid") or 0) > 0
+        int(record["pid"]): str(record["creation_time"])
+        for record in descendant_records
     }
     try:
         if os.name == "nt":
-            for descendant in reversed(descendants):
-                current = inspect_process(descendant.get("pid"))
-                if (
-                    isinstance(current, dict)
-                    and str(current.get("creation_time") or "")
-                    == str(descendant.get("creation_time") or "")
-                ):
-                    subprocess.run(
-                        ["taskkill", "/PID", str(descendant["pid"]), "/T", "/F"],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                        timeout=15,
-                        **background_run_kwargs(),
-                    )
+            for descendant in reversed(descendant_records):
+                subprocess.run(
+                    ["taskkill", "/PID", str(descendant["pid"]), "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=15,
+                    **background_run_kwargs(),
+                )
             subprocess.run(
                 ["taskkill", "/PID", str(pid), "/T", "/F"],
                 capture_output=True,
@@ -1484,7 +1717,8 @@ def _contain_spawned_process(process, observed_tree):
                 else "spawned_process_termination_not_verified"
             ),
             "pid": pid,
-            "descendant_pids": sorted(descendant_identities),
+            "captured_descendant_pids": sorted(descendant_identities),
+            "surviving_descendant_pids": sorted(survivors),
             "observed_containment": observed,
         }
     return {
