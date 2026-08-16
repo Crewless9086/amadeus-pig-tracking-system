@@ -3,7 +3,9 @@ from zoneinfo import ZoneInfo
 
 from modules.telemetry.rootline_irrigation_history import (
     CONTRACT, EPOCH_EVENT, project_canonical_irrigation_history, _event_digest,
+    _attach_parent_jobs,
 )
+from modules.telemetry.rootline_irrigation_job_contract import build_irrigation_job, project_next_segment
 
 ZA = ZoneInfo("Africa/Johannesburg")
 NOW = datetime(2026, 8, 5, 10, 0, tzinfo=ZA)
@@ -166,3 +168,37 @@ def test_missing_shutdown_start_or_cutoff_never_qualifies():
     result = project_canonical_irrigation_history(rows, snapshot_cutoff=NOW)["zones"]["B12345"]
     assert result["verified_completed_day_count"] == 0
     assert all(not event["qualifies_as_completed_watering"] for event in result["events"])
+
+
+def test_parent_projection_survives_segment_level_completed_today():
+    history=project_canonical_irrigation_history(
+        [epoch("B12345"),completed()],snapshot_cutoff=NOW)
+    job=build_irrigation_job(zone_id="B12345",operating_date="2026-08-05",
+        requested_total_seconds=7200,requested_total_minutes=120,
+        maximum_segment_seconds=3599,expected_segment_count=2,plan_identity="PLAN-1")
+    segment=project_next_segment(job,[])
+    eligibility={"action":"record_eligibility",**job,
+        "requested_total_duration_seconds":7200,"requested_total_duration_minutes":120,
+        "governed_executable_duration_seconds":7198,"plan_generation":"PLAN-1"}
+    completion={"action":"record_completed","job_id":job["job_id"],
+        "segment_number":1,"segment_identity":segment["segment_identity"],
+        "execution_id":"EXEC-1","state":"Completed","verified_runtime_seconds":3599,
+        "shutdown_verified":True}
+    _attach_parent_jobs(history,[eligibility,completion])
+    parent=history["zones"]["B12345"]["incomplete_parent_job"]
+    assert parent["job"]["job_id"]==job["job_id"]
+    assert parent["completed_segment_count"]==1
+    assert parent["remaining_seconds"]==3599
+    assert parent["projection"]["status"]=="segment_ready"
+
+
+def test_eligibility_only_history_never_becomes_continuing_parent():
+    history=project_canonical_irrigation_history([epoch("B12345")],snapshot_cutoff=NOW)
+    job=build_irrigation_job(zone_id="B12345",operating_date="2026-08-05",
+        requested_total_seconds=7200,requested_total_minutes=120,
+        maximum_segment_seconds=3599,expected_segment_count=2,plan_identity="PLAN-OLD")
+    eligibility={"action":"record_eligibility",**job,
+        "requested_total_duration_seconds":7200,"requested_total_duration_minutes":120,
+        "governed_executable_duration_seconds":7198,"plan_generation":"PLAN-OLD"}
+    _attach_parent_jobs(history,[eligibility])
+    assert "incomplete_parent_job" not in history["zones"]["B12345"]
