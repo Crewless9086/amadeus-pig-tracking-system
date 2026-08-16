@@ -66,6 +66,7 @@ from modules.pig_weights.purpose_correction_batch_service import (
     approve_correction_batch,
     create_correction_batch,
     execute_correction_batch,
+    preview_correction_batch,
 )
 from modules.pig_weights.application_grouped_preview_adapter import attach_canonical_preview
 
@@ -125,15 +126,22 @@ def get_purpose_review_queue_data(litter_id: str = ""):
     return get_purpose_review_queue(litter_id=litter_id)
 
 
-def apply_purpose_review_queue_decisions(payload: dict):
+def apply_purpose_review_queue_decisions(payload: dict, *, actor_id: str):
     # The historic direct-apply endpoint is intentionally preview-only.
     payload = payload or {}
-    return apply_purpose_review_decisions(payload.get("decisions", []), dry_run=True)
+    return preview_correction_batch(
+        payload.get("decisions", []), actor_id=actor_id,
+        return_to=payload.get("return_to", ""),
+    )
 
 
 def create_purpose_correction_batch(payload: dict, *, actor_id: str):
     payload = payload or {}
-    return create_correction_batch(payload.get("decisions", []), idempotency_key=payload.get("idempotency_key", ""), actor_id=actor_id)
+    return create_correction_batch(
+        payload.get("decisions", []), idempotency_key=payload.get("idempotency_key", ""),
+        actor_id=actor_id, confirmation_binding=payload.get("confirmation_binding"),
+        return_to=payload.get("return_to", ""),
+    )
 
 
 def approve_purpose_correction_batch(batch_id: str, *, actor_id: str):
@@ -141,7 +149,36 @@ def approve_purpose_correction_batch(batch_id: str, *, actor_id: str):
 
 
 def execute_purpose_correction_batch(batch_id: str, *, actor_id: str):
-    return execute_correction_batch(batch_id, actor_id=actor_id)
+    result, status_code = execute_correction_batch(batch_id, actor_id=actor_id)
+    if not result.get("success"):
+        return result, status_code
+    readback = result.get("canonical_readback") or []
+    try:
+        availability_rows = get_sales_availability()
+        by_id = {str(row.get("pig_id") or "").strip(): row for row in availability_rows
+                 if row.get("source") == "supabase_allocation_readiness"}
+    except Exception:
+        by_id = {}
+    per_pig = []
+    for row in readback:
+        eligibility = by_id.get(row["pig_id"])
+        per_pig.append({
+            **row,
+            "available": eligibility.get("live_stock_sale_eligible") if eligibility else None,
+            "remaining_blocker": (
+                None if eligibility and eligibility.get("live_stock_sale_eligible")
+                else eligibility.get("live_stock_sale_reason") if eligibility
+                else "Canonical sale-eligibility readback is unavailable."
+            ),
+            "eligibility_contract_version": eligibility.get("exact_animal_eligibility_contract_version") if eligibility else None,
+            "sale_category": eligibility.get("sale_category") if eligibility else None,
+            "weight_band": eligibility.get("weight_band") if eligibility else None,
+            "suggested_price_category": eligibility.get("suggested_price_category") if eligibility else None,
+        })
+    result["per_pig_results"] = per_pig
+    result["eligibility_recalculated_from_canonical_readback"] = all(
+        item["available"] is not None for item in per_pig)
+    return result, status_code
 
 
 def get_purpose_review_recheck_packet(payload: dict):

@@ -47,7 +47,16 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
                     where zone_id in ('B12345','C12345') or event_type=%s
                     order by event_at,irrigation_event_id""", (EPOCH_EVENT,))
                 rows = cursor.fetchall()
+                cursor.execute("""select review_json->'rootline_execution'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='rootline_irrigation_execution'
+                      and review_json->'rootline_execution'->>'action'
+                          in ('record_eligibility','claim_before_on','mark_active','record_completed',
+                              'record_job_resolution','contain_zone','record_ambiguous_shutdown')
+                    order by created_at,review_event_id""")
+                execution_rows = [row[0] for row in cursor.fetchall()]
         result = project_canonical_irrigation_history(rows, snapshot_cutoff=min(now, snapshot_cutoff))
+        _attach_parent_jobs(result, execution_rows)
         from modules.telemetry.rootline_water_credit import project_water_credits
         result["water_credits"] = project_water_credits(credit_rows)
         _attach_water_credits(result)
@@ -113,6 +122,99 @@ def _attach_water_credits(history):
                 "credit_method": credit["credit_method"]} if credit else {
                 "status": "Unknown", "delivered_volume_litres": "Unknown",
                 "dependency": "measured_volume_or_supported_calibration_required"})
+
+
+def _attach_parent_jobs(history, rows):
+    """Project incomplete immutable jobs without treating a segment as a day close."""
+    from modules.telemetry.rootline_irrigation_job_contract import project_next_segment
+    grouped = {}
+    for raw in rows or ():
+        row = raw if isinstance(raw, dict) else {}
+        job_id = str(row.get("job_id") or "")
+        if job_id:
+            grouped.setdefault(job_id, []).append(row)
+    by_zone = {}
+    stale_by_zone = {zone: [] for zone in ZONES}
+    contained_by_zone = {zone: [] for zone in ZONES}
+    cutoff = _timestamp(history.get("snapshot_cutoff"))
+    current_date = cutoff.astimezone(SAST).date().isoformat() if cutoff else None
+    for events in grouped.values():
+        authority = next((row for row in events
+            if row.get("action") == "record_eligibility" and row.get("job_sha256")), None)
+        if not authority:
+            continue
+        job = {"contract_version": "rootline_irrigation_job.v1",
+            "job_id": authority.get("job_id"), "job_sha256": authority.get("job_sha256"),
+            "zone_id": authority.get("zone_id"), "operating_date": authority.get("operating_date"),
+            "requested_total_seconds": authority.get("requested_total_duration_seconds"),
+            "requested_total_minutes": authority.get("requested_total_duration_minutes"),
+            "governed_executable_seconds": authority.get("governed_executable_duration_seconds"),
+            "maximum_segment_seconds": 3599,
+            "expected_segment_count": authority.get("expected_segment_count"),
+            "plan_identity": authority.get("plan_generation")}
+        try:
+            projection = project_next_segment(job, events, rearm_readback_off=True)
+        except Exception:
+            projection = {"status": "canonical_job_history_invalid", "command_authority": False}
+        if projection.get("status") in {"job_completed", "job_cancelled"}:
+            continue
+        completed_segments = [row for row in events
+            if row.get("action") == "record_completed"
+            and row.get("state") == "Completed"
+            and row.get("shutdown_verified") is True]
+        contained = [row for row in events if row.get("action") in {
+            "contain_zone", "record_ambiguous_shutdown"}]
+        if contained:
+            zone = str(job.get("zone_id") or "")
+            contained_ids = {str(row.get("execution_id") or "") for row in contained}
+            prior_events = [row for row in events if not (
+                str(row.get("execution_id") or "") in contained_ids
+                and row.get("action") in {"claim_before_on", "mark_active",
+                    "contain_zone", "record_ambiguous_shutdown"})]
+            try:
+                prior = project_next_segment(job, prior_events, rearm_readback_off=True)
+            except Exception:
+                prior = {"current_segment": None,
+                    "cumulative_verified_runtime_seconds": None,
+                    "remaining_seconds": None}
+            if zone in ZONES:
+                contained_by_zone[zone].append({"job": job,
+                    "projection": {"status": "segment_contained",
+                        "command_authority": False,
+                        "current_segment": prior.get("current_segment"),
+                        "cumulative_verified_runtime_seconds": prior.get(
+                            "cumulative_verified_runtime_seconds")},
+                    "completed_segment_count": len(completed_segments),
+                    "remaining_seconds": prior.get("remaining_seconds"),
+                    "resolution_reason": "segment_contained_without_verified_shutdown_or_runtime"})
+            continue
+        # A never-started eligibility is not a continuing parent. Continuity
+        # begins only after a canonical segment completed and proved shutdown.
+        if not completed_segments:
+            continue
+        zone = str(job.get("zone_id") or "")
+        candidate = {"job": job, "projection": projection,
+            "completed_segment_count": len(completed_segments),
+            "remaining_seconds": projection.get("remaining_seconds")}
+        if zone in ZONES:
+            if current_date and job.get("operating_date") != current_date:
+                stale_by_zone[zone].append(candidate)
+                continue
+            if zone in by_zone:
+                by_zone[zone] = {"job": {"job_id": "conflicting_incomplete_parent_jobs",
+                    "zone_id": zone}, "projection": {
+                        "status": "conflicting_incomplete_parent_jobs",
+                        "command_authority": False}, "remaining_seconds": None}
+            else:
+                by_zone[zone] = candidate
+    for zone, value in by_zone.items():
+        history["zones"][zone]["incomplete_parent_job"] = value
+    for zone, values in stale_by_zone.items():
+        if values:
+            history["zones"][zone]["stale_incomplete_parent_jobs"] = values
+    for zone, values in contained_by_zone.items():
+        if values:
+            history["zones"][zone]["contained_parent_jobs"] = values
 
 
 def build_typed_history_event(*, event_id, event_at, event_type, zone_id, details,

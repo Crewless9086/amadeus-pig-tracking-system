@@ -211,6 +211,7 @@
 - Canonical read-only loader: `modules/pig_weights/herdmaster_mortality_evidence.py`.
 - Existing-boundary adapter and durable consumption: `modules/oom_sakkie/herdmaster_mortality_adapter.py`, `modules/oom_sakkie/herdmaster_mortality_runtime.py`.
 - Consolidation/delivery owner: existing `modules/oom_sakkie/farm_manager_runtime.py` and family-message lifecycle; HERDMASTER has no direct Telegram route.
+- ROOTLINE delegated-principal boundary: `modules/telemetry/rootline_delegated_principal.py` accepts only a typed, private-chat-bound `farm_manager` delegation and returns a sealed ROOTLINE outcome. It never aliases owner authority. Routine irrigation remains inside the existing commissioned B/C standing-authority and coordinator claim spine. Commissioning, autonomy configuration, electrical authority, fertilizer, borehole, and unapproved upstream/shared-control equipment remain excluded. Future shared-control topology requires separate governed configuration and physical commissioning.
 - Tests: `tests/test_herdmaster_mortality_intelligence.py`, `tests/test_herdmaster_mortality_evidence.py`, `tests/test_oom_sakkie_herdmaster_mortality_adapter.py`, `tests/test_oom_sakkie_herdmaster_mortality_runtime.py`, and focused manager-runtime coverage.
 - Authority: read-only assessment only; no diagnosis, treatment, medication, mortality/lifecycle/farm write or protected authority.
 - Live lineage: PRs #723/#724, merge `c1913270a0ae16f2cfb971ecc9c6b5db0bacfdcc`, deployment `dep-d9pkn9p5efls73a501tg`. Authenticated read-only consumption is proven; provider-confirmed owner presentation awaits the next genuine manager request.
@@ -667,11 +668,18 @@ Current built gated surface:
 
 - routes: `/sales/beacon-media`, `/api/beacon/media-assets`, `/api/beacon/creative-studio/providers`, `/api/beacon/creative-studio/jobs`, `/api/beacon/creative-studio/jobs/<job_id>/reviews`, `/api/beacon/campaign-draft-selection`, `/api/beacon/campaign-publish-packet`, `/api/beacon/facebook-image-launch-packet`, `/api/beacon/manual-post-evidence`, `/api/beacon/campaign-performance`;
 - owner media-intake workflow: `docs/09-vault-brain/04-workflows/BEACON_MEDIA_INTAKE_WORKFLOW.md`; OOM SAKKIE is the preferred owner-only Telegram intake gateway, while BEACON owns private storage, cataloguing, understanding, visual review, approval state, and usage history. The append-only schema, private bucket and fail-closed Render policy are deployed. Typed media and explicit album completion precede generic context. The current change replaces the advertised typed command with one opaque Finish Album button on the family-lifecycle card. Progress count/digest is canonical and monotonic; completion atomically binds owner, private chat, album, provider card and the exact ordered-item/hash generation. The weaker typed completion route is disabled. Library Accept, Public Use, Campaign Review and publication are separate later authorities;
-- deployed private album review: `modules/oom_sakkie/beacon_media_review_runtime.py`,
+- private album review source: `modules/oom_sakkie/beacon_media_review_runtime.py`,
+  `modules/oom_sakkie/beacon_media_review_worker.py`,
   `modules/beacon/media_intake.py`, the existing protected-action claim rail,
   `/api/oom-sakkie/beacon/media-intakes/groups/<group>/review`, and
   `static/js/beaconMedia.js`. Browser and Telegram consume the same completed
-  album digest and append to the existing Library/public-use event spine.
+  album digest and append to the existing Library/public-use event spine. The
+  worker candidate selects a completed owner-bound album whose Library state is
+  still pending, verifies its existing provider-confirmed album card, creates
+  or re-arms one exact-generation protected claim, and uses the family lifecycle
+  for one replay-safe card edit. PRs #985/#987 are deployed at merge
+  `b32e32757`; the worker provider-confirmed the Bella review on existing
+  Telegram message `3637`, and a later autonomous poll was effect-free;
   `202608150007_allow_beacon_media_review_claims.sql` admits the bound callback;
   `202608150008_add_beacon_album_review_envelope.sql` adds exact album/version/
   digest/order/type/scope evidence to historical-compatible events. Public Use

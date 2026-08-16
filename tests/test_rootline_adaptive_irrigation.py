@@ -86,6 +86,23 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         self.assertTrue(all(row["planning_warnings"] == ["forecast_stale"] for row in result.values()))
         self.assertTrue(all(row["confidence"] != "high" for row in result.values()))
 
+    def test_absent_tank_count_does_not_block_ordinary_bc_under_standing_policy(self):
+        item = evidence(); item["water"] = {}
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))
+        self.assertTrue(all(row["decision"] == "Run now" for row in result.values()))
+        self.assertTrue(all(row["standing_water_policy"]["water_assumed_available"]
+                            for row in result.values()))
+        self.assertTrue(all(row["standing_water_policy"]["storage_replenishment_assumed_required"]
+                            for row in result.values()))
+
+    def test_fresh_explicit_shortage_still_holds_every_zone(self):
+        item = evidence(); item["water"].update(reservoir_available=False,
+                                                insufficient_water=True)
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))
+        self.assertTrue(all(row["decision"] == "Hold" for row in result.values()))
+        self.assertTrue(all(row["standing_water_policy"]["blocks_irrigation"]
+                            for row in result.values()))
+
     def test_low_soc_urgent_water_can_justify_grid_exposure(self):
         item = evidence()
         item["power"].update(battery_soc_pct=35, solar_power_w=0, load_power_w=900)
@@ -102,13 +119,16 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         self.assertNotIn("power_unavailable", result["evidence_gaps"])
         self.assertFalse(result["grid_exposure_may_be_justified"])
 
-    def test_adequate_solar_with_stale_water_blocks_only_execution(self):
+    def test_stale_tank_count_degrades_confidence_but_does_not_invent_shortage(self):
         item = evidence()
         item["water"]["observed_at"] = (NOW - timedelta(days=3)).isoformat()
         result = zones(build_adaptive_irrigation_decisions(item, now=NOW))
-        self.assertTrue(all(row["decision"] == "Needs Data" for row in result.values()))
-        self.assertTrue(all(row["proposed_segment_minutes"] is None for row in result.values()))
+        self.assertTrue(all(row["decision"] == "Run now" for row in result.values()))
+        self.assertTrue(all(row["proposed_segment_minutes"] == 60 for row in result.values()))
         self.assertTrue(all(row["confidence"] in {"low", "medium"} for row in result.values()))
+        self.assertTrue(all(row["standing_water_policy"]["mode"] ==
+                            "standing_owner_policy_no_current_contradiction"
+                            for row in result.values()))
 
     def test_summer_prefers_evening_and_winter_can_prefer_daylight(self):
         summer = evidence()
@@ -135,6 +155,42 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         result = zones(build_adaptive_irrigation_decisions(item, now=NOW))["C12345"]
         self.assertEqual(result["decision"], "Reassess after segment one")
         self.assertTrue(result["fresh_decision_before_second_segment"])
+        self.assertIsNone(result["proposed_segment_minutes"])
+
+    def test_completed_today_does_not_erase_incomplete_parent_job(self):
+        item = evidence()
+        item["zones"][0]["completion_events"] = [{"completed_at": NOW.isoformat(),
+            "state":"Completed","shutdown_verified":True,"objective_satisfied":True}]
+        item["zones"][0]["incomplete_parent_job"] = {"job":{
+            "job_id":"JOB-1","requested_total_minutes":120,"expected_segment_count":2},
+            "projection":{"status":"segment_ready","current_segment":2,
+                "cumulative_verified_runtime_seconds":3599,"remaining_seconds":3599},
+            "remaining_seconds":3599}
+        result = zones(build_adaptive_irrigation_decisions(item, now=NOW))["B12345"]
+        self.assertNotEqual(result["decision"], "Completed")
+        self.assertEqual(result["incomplete_parent_job"]["job"]["job_id"], "JOB-1")
+        self.assertEqual(result["requested_total_duration_minutes"], 120)
+
+    def test_contained_parent_blocks_new_same_zone_job(self):
+        item=evidence()
+        item["zones"][0]["contained_parent_jobs"]=[{"job":{"job_id":"JOB-CONTAINED"},
+            "projection":{"status":"segment_contained","command_authority":False},
+            "remaining_seconds":7198}]
+        result=zones(build_adaptive_irrigation_decisions(item,now=NOW))["B12345"]
+        self.assertEqual(result["decision"],"recovery required")
+        self.assertIsNone(result["proposed_segment_minutes"])
+        self.assertFalse(result["command_authority"])
+
+    def test_containment_dominates_simultaneous_segment_ready_parent(self):
+        item=evidence()
+        item["zones"][0].update(
+            contained_parent_jobs=[{"job":{"job_id":"CONTAINED"},
+                "projection":{"status":"segment_contained"}}],
+            incomplete_parent_job={"job":{"job_id":"READY","requested_total_minutes":120,
+                "expected_segment_count":2},"projection":{"status":"segment_ready",
+                "current_segment":2,"remaining_seconds":3599},"remaining_seconds":3599})
+        result=zones(build_adaptive_irrigation_decisions(item,now=NOW))["B12345"]
+        self.assertEqual(result["decision"],"recovery required")
         self.assertIsNone(result["proposed_segment_minutes"])
 
     def test_unchanged_decision_suppresses_duplicate_notification(self):
@@ -371,7 +427,9 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         plan = build_water_energy_plan(plan_evidence, now=NOW)
         tasks = {row["task_id"]: row for row in plan["candidate_tasks"]}
         self.assertEqual(plan["tank_evidence"]["reservoir_freshness"], "Unavailable")
-        self.assertEqual(tasks["irrigation_C12345"]["zone_decision"], "Needs Data")
+        self.assertEqual(tasks["irrigation_C12345"]["zone_decision"], "Run now")
+        self.assertEqual(tasks["irrigation_C12345"]["standing_water_policy"]["mode"],
+                         "standing_owner_policy_no_current_contradiction")
         self.assertIn(
             "water_observation_unavailable",
             tasks["irrigation_C12345"]["dependencies"],
@@ -402,7 +460,9 @@ class AdaptiveIrrigationTests(unittest.TestCase):
         canonical["tanks"]["reservoir_observed_at"] = (NOW - timedelta(days=3)).isoformat()
         tasks = {row["task_id"]: row for row in
                  build_water_energy_plan(canonical, now=NOW)["candidate_tasks"]}
-        self.assertEqual(tasks["irrigation_C12345"]["zone_decision"], "Needs Data")
+        self.assertEqual(tasks["irrigation_C12345"]["zone_decision"], "Run now")
+        self.assertEqual(tasks["irrigation_C12345"]["standing_water_policy"]["mode"],
+                         "standing_owner_policy_no_current_contradiction")
 
     def test_satisfied_water_balance_holds_without_rewriting_schedule_debt(self):
         item=evidence()

@@ -145,7 +145,6 @@ IMPLEMENTATION_SOURCE_MAP = {
             "docs/09-vault-brain/00-governance/UPDATE_RULES.md",
             "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
             "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
-            "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
         ],
         "app_routes": [
             "/charlie",

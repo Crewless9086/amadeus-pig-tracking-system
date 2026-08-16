@@ -360,6 +360,35 @@ async function submitAllocationPurposeDecision(dryRun) {
     return;
   }
   try {
+    if (!dryRun) {
+      const decision = allocationPurposeDecisionPayload(false);
+      const decisions = decision.decisions || [];
+      const key = `purpose-correction-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const created = await fetch("/api/pig-weights/purpose-review/correction-batches", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decisions, idempotency_key: key,
+          confirmation_binding: latestAllocationPurposePreview.confirmation_binding,
+          return_to: latestAllocationPurposePreview.return_to || "",
+        }),
+      });
+      const createdData = await created.json();
+      if (!created.ok || !createdData.success) throw new Error(createdData.message || createdData.status || "Correction batch creation failed.");
+      const batchId = createdData.batch_id;
+      const approved = await fetch(`/api/pig-weights/purpose-review/correction-batches/${encodeURIComponent(batchId)}/approve`, { method: "POST" });
+      const approvedData = await approved.json();
+      if (!approved.ok || !approvedData.success) throw new Error(approvedData.message || approvedData.status || "Owner approval was not recorded.");
+      const executed = await fetch(`/api/pig-weights/purpose-review/correction-batches/${encodeURIComponent(batchId)}/execute`, { method: "POST" });
+      const executedData = await executed.json();
+      if (!executed.ok || !executedData.success) throw new Error(executedData.message || executedData.status || "Correction batch was not executed.");
+      const item = (executedData.per_pig_results || [])[0];
+      showMessage(item ? `${item.tag_number || item.pig_id}: ${item.available === true ? "available" : item.remaining_blocker || "eligibility Unknown"}` : "Purpose changed with canonical readback.", "success");
+      const returnTo = latestAllocationPurposePreview.return_to;
+      latestAllocationPurposePreview = null;
+      await loadAllocationReadiness();
+      if (returnTo) window.location.assign(returnTo);
+      return;
+    }
     if (previewButton) previewButton.disabled = true;
     if (applyButton) applyButton.disabled = true;
     if (preview) {
@@ -368,7 +397,10 @@ async function submitAllocationPurposeDecision(dryRun) {
     const response = await fetch("/api/pig-weights/purpose-review/apply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(allocationPurposeDecisionPayload(dryRun)),
+      body: JSON.stringify({
+        ...allocationPurposeDecisionPayload(dryRun),
+        return_to: new URLSearchParams(window.location.search).get("return_to") || "",
+      }),
     });
     const data = await response.json();
     if (!response.ok || !data.success) {

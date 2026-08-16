@@ -19,6 +19,7 @@ from modules.sales.sam_live_stock_runtime import (
     parse_chatwoot_inbound,
     resolve_contextual_sales_route,
     resolve_sam_general_inbound_identity,
+    is_natural_customer_close,
 )
 from modules.sales.sam_sales_router import classify_sam_sales_lane
 
@@ -574,10 +575,22 @@ def _inspect_and_operate(
         if parsed
         else {}
     )
+    natural_close = bool(
+        latest_incoming
+        and is_natural_customer_close(latest.get("content") or "")
+    )
     livestock = bool(
         raw_route.get("lane") == "live_stock_sales"
         and float(raw_route.get("confidence") or 0) >= 0.8
     ) or contextual.get("preserve_live_stock_lane") is True
+    if not livestock and latest_incoming and is_natural_customer_close(
+        latest.get("content") or ""
+    ):
+        livestock = any(
+            classify_sam_sales_lane(item.get("content") or "").get("lane")
+            == "live_stock_sales"
+            for item in messages[:-1]
+        )
     exact_claim = bool(
         inbound_id and claim_exists(conversation_id, inbound_id)
     )
@@ -590,6 +603,7 @@ def _inspect_and_operate(
         and livestock
         and open_window
         and not exact_claim
+        and not natural_close
     )
     selected_for_processing = bool(eligible and can_process)
     if selected_for_processing:
@@ -667,20 +681,36 @@ def _inspect_and_operate(
                 + conversation_id
             )
     queue_relevant = bool(livestock or exact_claim)
+    operation_disposition = str(result.get("_operation_disposition") or "")
+    if operation_disposition not in {
+        "shadow_proposed",
+        "shadow_no_reply",
+        "shadow_proposal_replay_suppressed",
+        "pre_activation_backlog_observed",
+    }:
+        operation_disposition = ""
+    shadow_contained = operation_disposition in {
+        "shadow_proposal_replay_suppressed",
+        "pre_activation_backlog_observed",
+    }
     return {
         **identity,
         "conversation_id": conversation_id,
         "inbound_message_id": inbound_id,
         "queue_relevant": queue_relevant,
-        "eligible": eligible,
-        "selected_for_processing": selected_for_processing,
+        "eligible": bool(eligible and not shadow_contained),
+        "selected_for_processing": bool(
+            selected_for_processing and not shadow_contained
+        ),
         "disposition": (
-            "processed"
+            operation_disposition or "processed"
             if selected_for_processing
             else "deferred_to_next_autonomous_cycle"
             if eligible
             else "already_claimed"
             if exact_claim
+            else "terminal_customer_close_no_reply"
+            if livestock and natural_close
             else "awaiting_customer"
             if livestock and not latest_incoming
             else "closed_window_reengagement_required"

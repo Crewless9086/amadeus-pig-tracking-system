@@ -15,6 +15,31 @@ from typing import Any, Callable, Mapping
 EVENT_SOURCE = "oom_sakkie_family_message_lifecycle"
 
 
+def _visible_notification_identity(card_mission_id, text_sha, parsed, specialist):
+    inbound = _inbound_binding(parsed, specialist)
+    inbound_sha = hashlib.sha256(json.dumps(inbound, sort_keys=True,
+        separators=(",", ":")).encode("utf-8")).hexdigest()
+    return (card_mission_id + "-VISIBLE-WAIT-V2-" + text_sha[:20].upper()
+            + "-" + inbound_sha[:20].upper())
+
+
+def _visible_notification_events(events, card_mission_id, text_sha, parsed, specialist):
+    identity = _visible_notification_identity(card_mission_id, text_sha, parsed, specialist)
+    current = [row for row in events
+        if str(row.get("event_id") or "").startswith(identity)]
+    if current:
+        return identity, current
+    # Compatibility for notices written before inbound-bound V2 identity. A
+    # legacy notice can suppress only the same authenticated provider inbound;
+    # identical wording from a later inbound is a distinct must-notice event.
+    legacy = card_mission_id + "-VISIBLE-WAIT-" + text_sha[:20].upper()
+    inbound = _inbound_binding(parsed, specialist)
+    legacy_events = [row for row in events
+        if str(row.get("event_id") or "").startswith(legacy)
+        and all(str(row.get(key) or "") == value for key, value in inbound.items())]
+    return (legacy, legacy_events) if legacy_events else (identity, [])
+
+
 def mission_identity(parsed: Mapping[str, Any], specialist: str) -> str:
     raw = "|".join((str(parsed.get("telegram_user_id") or ""),
                     str(parsed.get("telegram_chat_id") or ""),
@@ -60,7 +85,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             "completed", "grouped_weights_completed", "mortality_lifecycle_recorded",
             "payment_state_recorded", "payment_state_replay_noop",
             "protected_preview_cancelled", "protected_preview_change_requested",
-            "segment_started", "active_segment_owned", "private_media_review_recorded"
+            "segment_started", "active_segment_owned", "private_media_review_recorded",
+            "private_media_review_presented"
         }
     )
     if exclusive_completion and reply_markup is None:
@@ -179,9 +205,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
     if (provider_replay and result.get("requires_visible_notification") is True
             and provider_replay.get("state") == "updated"
             and str(provider_replay.get("text_sha256") or "") == text_sha):
-        notification_id = card_mission_id + "-VISIBLE-WAIT-" + text_sha[:20].upper()
-        notification_events = [row for row in events
-            if str(row.get("event_id") or "").startswith(notification_id)]
+        _notification_id, notification_events = _visible_notification_events(
+            events, card_mission_id, text_sha, parsed, specialist)
         if any(row.get("state") == "notification_delivered" for row in notification_events):
             return {"success": True, "status": "family_message_provider_replay_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
@@ -191,13 +216,38 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 0}
         return _deliver_visible_notification(parsed, payload, text, mission_id,
-            card_mission_id, card_id, text_sha, store, sender, prior_edits=0)
+            card_mission_id, card_id, text_sha, store, sender,
+            specialist=specialist, prior_edits=0)
     if (provider_replay and not material_update and not contextual_delivery_resume
             and not exclusive_completion_restore):
         return {"success": True, "status": "family_message_provider_replay_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": str(provider_replay.get("telegram_message_id") or card_id),
                 "telegram_sends": 0, "telegram_edits": 0}
+    if (card_id and result.get("requires_visible_notification") is True):
+        update_id = card_mission_id + "-UPDATE-" + text_sha[:20].upper()
+        prior_update = [row for row in events
+            if str(row.get("event_id") or "").startswith(update_id)]
+        if any(row.get("state") == "updated" for row in prior_update):
+            # The exact presentation was already provider-confirmed under an
+            # earlier inbound identity. Do not edit it again; the current
+            # must-notice lifecycle gets only its separately claimed notice.
+            _notification_id, notification_events = _visible_notification_events(
+                events, card_mission_id, text_sha, parsed, specialist)
+            if any(row.get("state") == "notification_delivered"
+                    for row in notification_events):
+                return {"success": True, "status": "family_message_replayed_noop",
+                    "mission_id": mission_id, "card_mission_id": card_mission_id,
+                    "telegram_message_id": card_id,
+                    "telegram_sends": 0, "telegram_edits": 0}
+            if notification_events:
+                return {"success": False, "status": "family_message_notification_ambiguous",
+                    "mission_id": mission_id, "card_mission_id": card_mission_id,
+                    "telegram_message_id": card_id,
+                    "telegram_sends": 0, "telegram_edits": 0}
+            return _deliver_visible_notification(parsed, payload, text, mission_id,
+                card_mission_id, card_id, text_sha, store, sender,
+                specialist=specialist, prior_edits=0)
     if latest and str(latest.get("text_sha256") or "") == text_sha:
         return {"success": True, "status": "family_message_replayed_noop",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
@@ -222,12 +272,14 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
             # attempt after either an unconfirmed edit or a process stop after
             # the claim; never send a replacement card.
             update_id += "-RECOVERY-2"
-        if ambiguous_edit and result.get("requires_visible_notification") is True:
+        if ((ambiguous_edit or orphaned_edit_claim)
+                and result.get("requires_visible_notification") is True):
             # Never retry the ambiguous edit. A must-notice lifecycle question
-            # gets one separately claimed provider notification instead.
-            notification_id = card_mission_id + "-VISIBLE-WAIT-" + text_sha[:20].upper()
-            notification_events = [row for row in events
-                if str(row.get("event_id") or "").startswith(notification_id)]
+            # gets one separately claimed provider notification instead. The
+            # same rule applies when the worker stopped after the edit claim:
+            # provider edit truth is then ambiguous and must not be retried.
+            _notification_id, notification_events = _visible_notification_events(
+                events, card_mission_id, text_sha, parsed, specialist)
             if any(row.get("state") == "notification_delivered"
                     for row in notification_events):
                 return {"success": True, "status": "family_message_replayed_noop",
@@ -240,7 +292,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                     "telegram_message_id": card_id,
                     "telegram_sends": 0, "telegram_edits": 0}
             return _deliver_visible_notification(parsed, payload, text, mission_id,
-                card_mission_id, card_id, text_sha, store, sender, prior_edits=0)
+                card_mission_id, card_id, text_sha, store, sender,
+                specialist=specialist, prior_edits=0)
         claimed = store("record", update_id, {**payload, "event_id": update_id,
             "state": "update_attempted", "telegram_message_id": card_id})
         if claimed.get("created") is False:
@@ -266,7 +319,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 "telegram_edits": 1}
         if result.get("requires_visible_notification") is True:
             return _deliver_visible_notification(parsed, payload, text, mission_id,
-                card_mission_id, card_id, text_sha, store, sender, prior_edits=1)
+                card_mission_id, card_id, text_sha, store, sender,
+                specialist=specialist, prior_edits=1)
         return {"success": True, "status": "family_message_card_updated",
                 "mission_id": mission_id, "card_mission_id": card_mission_id,
                 "telegram_message_id": card_id, "telegram_sends": 0, "telegram_edits": 1}
@@ -309,8 +363,10 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
 
 
 def _deliver_visible_notification(parsed, payload, text, mission_id, card_mission_id,
-                                   card_id, text_sha, store, sender, *, prior_edits):
-    notification_id = card_mission_id + "-VISIBLE-WAIT-" + text_sha[:20].upper()
+                                   card_id, text_sha, store, sender, *, specialist,
+                                   prior_edits):
+    notification_id = _visible_notification_identity(
+        card_mission_id, text_sha, parsed, specialist)
     notification_claim = store("record", notification_id, {**payload,
         "event_id": notification_id, "state": "notification_attempted",
         "telegram_message_id": card_id})

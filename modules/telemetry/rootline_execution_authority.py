@@ -15,7 +15,7 @@ from modules.telemetry.rootline_irrigation_job_contract import (
 from modules.telemetry.rootline_device_registry import rootline_device_registry
 
 MAX_SECONDS = 3599
-CONTRACT_VERSION = "rootline_execution_eligibility.v4"
+CONTRACT_VERSION = "rootline_execution_eligibility.v5"
 STANDING_AUTHORITY = "owner_approved_routine_irrigation_v1"
 
 
@@ -30,11 +30,39 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     for task in tasks:
         task_id = str(task.get("task_id") or "")
         zone = task_id.removeprefix("irrigation_")
-        if (zone in zones and task.get("zone_decision") == "Run now"
+        parent = task.get("incomplete_parent_job") if isinstance(
+            task.get("incomplete_parent_job"), dict) else {}
+        parent_job = parent.get("job") if isinstance(parent.get("job"), dict) else {}
+        parent_date_current = (not parent_job or parent_job.get("operating_date") ==
+            str(plan.get("operating_date") or "")[:10])
+        contained = task.get("contained_parent_jobs") if isinstance(
+            task.get("contained_parent_jobs"), list) else []
+        if (zone in zones and not contained and parent_date_current
+                and task.get("zone_decision") == "Run now"
                 and task.get("recommendation") == "Recommend"
                 and int(task.get("planned_duration_minutes") or 0) in range(1, 61)):
             candidates.append((int(task.get("rank") or 999), zone, task))
     if not candidates:
+        unresolved = [task for task in tasks
+            if isinstance(task.get("incomplete_parent_job"), dict)]
+        if unresolved:
+            task = sorted(unresolved, key=lambda item: str(item.get("task_id")))[0]
+            parent = task["incomplete_parent_job"]
+            job = parent.get("job") if isinstance(parent.get("job"), dict) else {}
+            material = {"contract_version": "rootline_irrigation_job_resolution.v1",
+                "resolution": "Deferred", "job_id": job.get("job_id"),
+                "job_sha256": job.get("job_sha256"), "zone_id": job.get("zone_id"),
+                "operating_date": job.get("operating_date"),
+                "current_segment": (parent.get("projection") or {}).get("current_segment"),
+                "expected_segment_count": job.get("expected_segment_count"),
+                "cumulative_verified_runtime_seconds": (parent.get("projection") or {}).get("cumulative_verified_runtime_seconds"),
+                "remaining_seconds": parent.get("remaining_seconds"),
+                "reason": task.get("reason"), "source_plan_generation": plan.get("evidence_generation")}
+            digest = _digest(material)
+            return {"success": True, "status": "durable_parent_job_deferred",
+                "eligible": False, "command_authority": False, "hardware_control": False,
+                "job_resolution": {**material, "resolution_sha256": digest,
+                    "execution_id": "ROOTLINE-JOB-RESOLUTION-" + digest[:24].upper()}}
         return _none("planner_hold_or_no_dispatchable_zone")
     _, zone, task = min(candidates, key=lambda row: (row[0], row[1]))
     irrigation = evidence.get("irrigation") if isinstance(evidence.get("irrigation"), dict) else {}
@@ -60,9 +88,19 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     reservoir_ok = (str(tanks.get("reservoir_state") or "").upper() in {"OK", "FULL"}
                     or _number(tanks.get("reservoir_fraction")) >= .25
                     or _number(tanks.get("reservoir_reported_count")) > 0)
-    if (water_time is None or now < water_time or now-water_time > timedelta(hours=24)
-            or not reservoir_ok):
-        return _none("water_evidence_not_fresh_and_adequate")
+    water_current = (water_time is not None and not now < water_time
+                     and now-water_time <= timedelta(hours=24))
+    explicit_water_fault = water_current and any(tanks.get(key) is True for key in (
+        "insufficient_water", "dry_supply", "supply_fault", "evidence_conflict"))
+    explicit_current_shortage = water_current and not reservoir_ok
+    if explicit_water_fault or explicit_current_shortage:
+        return _none("current_water_shortage_or_fault")
+    water_policy = {"contract_version": "rootline_standing_water_policy.v1",
+        "mode": ("fresh_available" if water_current and reservoir_ok
+                 else "standing_owner_policy_no_current_contradiction"),
+        "water_assumed_available": True,
+        "storage_replenishment_assumed_required": True,
+        "current_contradictory_evidence": False}
     obligation = task.get("weekly_obligation") if isinstance(task.get("weekly_obligation"), dict) else {}
     if (obligation.get("status") != "available"
             or int(obligation.get("delivery_debt_days") or 0) <= 0):
@@ -90,11 +128,20 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
     if requested_minutes <= 0 or expected_segments <= 0:
         return _none("governed_total_duration_unavailable")
     requested_total_seconds = requested_minutes * 60
-    job = build_irrigation_job(zone_id=zone, operating_date=operating_date,
+    parent = task.get("incomplete_parent_job") if isinstance(task.get("incomplete_parent_job"), dict) else {}
+    parent_job = parent.get("job") if isinstance(parent.get("job"), dict) else None
+    job = (dict(parent_job) if parent_job else build_irrigation_job(
+        zone_id=zone, operating_date=operating_date,
         requested_total_seconds=requested_total_seconds,
         maximum_segment_seconds=MAX_SECONDS, plan_identity=plan_generation,
         requested_total_minutes=requested_minutes,
-        expected_segment_count=expected_segments)
+        expected_segment_count=expected_segments))
+    if (job.get("zone_id") != zone
+            or int(job.get("requested_total_seconds") or 0) != requested_total_seconds
+            or int(job.get("expected_segment_count") or 0) != expected_segments):
+        return _none("durable_parent_job_binding_invalid")
+    plan_generation = job["plan_identity"]
+    operating_date = job["operating_date"]
     try:
         segment = project_next_segment(job, job_event_reader(job["job_id"]) or (),
             rearm_readback_off=True)
@@ -109,7 +156,8 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
         "zone_id": zone, "job_id": job["job_id"],
         "segment_number": segment["segment_number"],
     })[:24].upper()
-    cutoff = max(weather_time, water_time, controller_status["retrieved_at"])
+    cutoff = max(value for value in (
+        weather_time, water_time, controller_status["retrieved_at"]) if value is not None)
     notification = "ROOTLINE-IRRIGATION-NOTIFY-" + _digest({
         "plan": plan_generation, "zone": zone, "cutoff": cutoff.isoformat()})[:24].upper()
     material = {
@@ -144,10 +192,11 @@ def build_execution_eligibility(*, plan, evidence, controller, now=None,
             "zone_id": zone, "proven": True,
             "forecast_planning_quality": advisor_zone.get("forecast_planning_quality"),
             "planning_warnings": list(advisor_zone.get("planning_warnings") or [])},
-        "water_evidence": {"observed_at": water_time.isoformat(),
+        "water_evidence": {"observed_at": water_time.isoformat() if water_time else None,
             "reservoir_state": tanks.get("reservoir_state"),
             "reservoir_fraction": tanks.get("reservoir_fraction"),
-            "reservoir_reported_count": tanks.get("reservoir_reported_count")},
+            "reservoir_reported_count": tanks.get("reservoir_reported_count"),
+            "standing_policy": water_policy},
         "controller_safety_generation": controller_status["generation"],
         "provider_output_state": controller_status["outputs"],
         "controller_response_digest": controller_status["response_digest"],

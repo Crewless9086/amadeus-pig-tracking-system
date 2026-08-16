@@ -1,9 +1,11 @@
 from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Lock
+import hashlib
 import pytest
 
-from modules.oom_sakkie.family_message_lifecycle import bind_existing_card,bind_legacy_provider_request,deliver_family_result
+from modules.oom_sakkie.family_message_lifecycle import (_visible_notification_events,
+    bind_existing_card,bind_legacy_provider_request,deliver_family_result)
 
 
 def test_postgres_lifecycle_load_uses_bounded_transaction_read_only(monkeypatch):
@@ -255,6 +257,29 @@ def test_private_media_review_unconfirmed_edit_gets_one_bounded_recovery():
     assert len(memory.sent)==1 and len(memory.edited)==1
 
 
+def test_private_media_review_presentation_edits_album_card_once_and_replay_is_silent():
+    memory=Memory();group="BEACON-INTAKE-GROUP-BELLA"
+    receipt={**RESULT,"status":"completed","answer":"8 photos received — processing complete.",
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    deliver_family_result(PARSED,receipt,specialist="BEACON_MEDIA",mission_id=group,
+        card_mission_id=group,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    trigger={**PARSED,"provider_message_id":"canonical:album-completed:"+group}
+    review={**RESULT,"status":"private_media_review_presented",
+        "answer":"Accept into Private Library or Decline album for Private Library.",
+        "reply_markup":{"inline_keyboard":[[{"text":"Accept into Private Library"}]]},
+        "owner_visible_completion_policy":"verified_edit_or_new_message"}
+    presented=deliver_family_result(trigger,review,specialist="BEACON_MEDIA",
+        mission_id=group+":LIBRARY",card_mission_id=group,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(trigger,review,specialist="BEACON_MEDIA",
+        mission_id=group+":LIBRARY",card_mission_id=group,event_store=memory.store,
+        sender=memory.send,editor=memory.edit)
+    assert presented["status"]=="family_message_completion_card_updated"
+    assert presented["telegram_message_id"]=="700" and presented["telegram_edits"]==1
+    assert replay["telegram_sends"]==replay["telegram_edits"]==0
+    assert len(memory.sent)==1 and len(memory.edited)==1
+
+
 def test_completed_card_regressed_by_unbound_prior_member_is_restored_once():
     memory=Memory();mission="OOM-BEACON-MEDIA-RESTORE"
     receipt={**RESULT,"answer":"Album started. Complete it when ready."}
@@ -372,6 +397,97 @@ def test_ambiguous_edit_is_never_retried_but_one_visible_question_is_sent():
     notice=next(row for row in memory.rows.values()
         if row.get("state")=="notification_delivered")
     assert notice["clarification_question"]=="Are you at the fertilizer valves now?"
+
+
+def test_orphaned_visible_question_edit_claim_is_not_retried_and_gets_one_notice():
+    memory=Memory();mission="OOM-ROOTLINE-WAIT-ORPHAN"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    follow_parsed={**PARSED,"provider_message_id":"retained-expired-presence"}
+    follow={**RESULT,"answer":"Are you back at the fertilizer valves now?",
+        "requires_visible_notification":True,"question_count":1}
+    stopped=True
+    def stop_after_edit_claim(action,identity,payload):
+        nonlocal stopped
+        result=memory.store(action,identity,payload)
+        if action=="record" and payload.get("state")=="update_attempted" and stopped:
+            stopped=False
+            raise RuntimeError("worker stopped after edit claim")
+        return result
+    with pytest.raises(RuntimeError):
+        deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+            card_mission_id=mission,event_store=stop_after_edit_claim,
+            sender=memory.send,editor=memory.edit)
+    recovered=deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result(follow_parsed,follow,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert recovered["status"]=="family_message_card_updated_and_notified"
+    assert recovered["telegram_edits"]==0 and recovered["telegram_sends"]==1
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
+    assert len(memory.edited)==0 and len(memory.sent)==2
+
+
+def test_exact_prior_update_from_different_inbound_gets_current_notice_without_reedit():
+    memory=Memory();mission="OOM-ROOTLINE-WAIT-OLD-UPDATE"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    follow={**RESULT,"answer":"Are you back at the fertilizer valves now?",
+        "requires_visible_notification":False}
+    old=deliver_family_result({**PARSED,"provider_message_id":"old-provider"},follow,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert old["telegram_edits"]==1
+    current={**follow,"requires_visible_notification":True,"question_count":1}
+    recovered=deliver_family_result({**PARSED,"provider_message_id":"retained-presence"},current,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result({**PARSED,"provider_message_id":"retained-presence"},current,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert recovered["status"]=="family_message_card_updated_and_notified"
+    assert recovered["telegram_edits"]==0 and recovered["telegram_sends"]==1
+    assert replay["telegram_edits"]==replay["telegram_sends"]==0
+    assert len(memory.edited)==1 and len(memory.sent)==2
+
+
+def test_same_notice_text_from_later_authenticated_inbound_is_not_old_notice_replay():
+    memory=Memory();mission="OOM-ROOTLINE-RECURRING-WAIT"
+    deliver_family_result(PARSED,RESULT,specialist="ROOTLINE",mission_id=mission,
+        card_mission_id=mission,event_store=memory.store,sender=memory.send,editor=memory.edit)
+    notice={**RESULT,"answer":"Are you back at the fertilizer valves now?",
+        "requires_visible_notification":True,"question_count":1}
+    old=deliver_family_result({**PARSED,"provider_message_id":"old-provider"},notice,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    current=deliver_family_result({**PARSED,"provider_message_id":"current-provider"},notice,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    replay=deliver_family_result({**PARSED,"provider_message_id":"current-provider"},notice,
+        specialist="ROOTLINE",mission_id=mission,card_mission_id=mission,
+        event_store=memory.store,sender=memory.send,editor=memory.edit)
+    assert old["telegram_sends"]==1
+    assert current["telegram_sends"]==1 and current["telegram_edits"]==0
+    assert replay["telegram_sends"]==replay["telegram_edits"]==0
+    assert len(memory.sent)==3
+
+
+def test_visible_notice_identity_uses_canonical_inbound_and_full_legacy_binding():
+    text_sha="a"*64
+    parsed={**PARSED,"provider_message_id":"same-provider","text":" Mixer   ready "}
+    canonical_replay={**parsed,"text":"Mixer ready"}
+    identity,events=_visible_notification_events([],"CARD",text_sha,parsed,"ROOTLINE")
+    replay_identity,replay_events=_visible_notification_events(
+        [],"CARD",text_sha,canonical_replay,"ROOTLINE")
+    assert identity==replay_identity and events==replay_events==[]
+    legacy_id="CARD-VISIBLE-WAIT-"+text_sha[:20].upper()+"-DELIVERED"
+    wrong_owner={"event_id":legacy_id,"state":"notification_delivered",
+        "provider_message_id":"same-provider","provider_timestamp":PARSED["provider_timestamp"],
+        "owner_user_id":"99","chat_id":"99","specialist_identity":"ROOTLINE",
+        "inbound_text_sha256":hashlib.sha256(b"Mixer ready").hexdigest()}
+    selected,legacy_events=_visible_notification_events(
+        [wrong_owner],"CARD",text_sha,canonical_replay,"ROOTLINE")
+    assert selected==identity and legacy_events==[]
 
 
 def test_context_recovery_projection_is_not_mistaken_for_provider_delivery():
