@@ -15,6 +15,17 @@
 - Mission remains WORKING until exact-head deployment and provider-confirmed
   presentation; it becomes OWNER_HOLD only on the exact delivered message.
 
+## 2026-08-16 - Bella Private Library choice is provider-confirmed
+
+- PRs #985/#987 are live at exact merge `b32e32757`; the deployed BEACON worker
+  independently consumed Bella's canonical album-completion trigger.
+- Existing Telegram message `3637` was provider-confirmed edited with one
+  exact owner/album/digest-bound Private Library choice. No terminal callback
+  or owner decision was created.
+- Delayed readback remained one claim and one confirmed edit with eight private
+  originals/hash readbacks/thumbnails and zero Library/Public Use/Campaign/
+  Publication decision. BMQ-20260813-03 is OWNER_HOLD on message `3637`.
+
 ## 2026-08-15 - CORE Shadow worker heartbeat retains independent cycle truth
 
 - Preserved the deployed observation worker's last Shadow cycle, poll count and
