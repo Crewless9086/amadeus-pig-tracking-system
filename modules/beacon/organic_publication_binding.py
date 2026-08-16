@@ -12,13 +12,18 @@ from modules.beacon.organic_publication_authorization import (
     read_authorized_generation,
 )
 from modules.beacon.weekly_owner_review import build_post_one_owner_review
+from modules.beacon.text_only_organic_review import (
+    PACKET_CLASS as TEXT_ONLY_PACKET_CLASS,
+    load_text_only_owner_review,
+    validate_text_only_owner_review,
+)
 
 
 BINDING_VERSION = "beacon-organic-publication-binding/v1"
 
 
 def create_organic_publication_binding(
-    execution_packet, *, target_page_id, database_url=None, now=None
+    execution_packet, *, target_page_id, database_url=None, now=None,
 ):
     """Reconstruct both rails and append their exact one-to-one binding."""
     execution_packet = execution_packet if isinstance(execution_packet, dict) else {}
@@ -26,12 +31,23 @@ def create_organic_publication_binding(
     target_page_id = _text(target_page_id, 180)
     if not database_url or not target_page_id:
         return _failure("publication_binding_configuration_missing", 503)
-    assets_result, assets_status = list_beacon_media_assets(
-        limit=100, approval_status="approved", database_url=database_url
-    )
-    if assets_status != 200:
-        return _failure("publication_binding_media_unavailable", 503)
-    weekly = build_post_one_owner_review(assets_result.get("assets", []))
+    if execution_packet.get("packet_class") == TEXT_ONLY_PACKET_CLASS:
+        weekly = load_text_only_owner_review(
+            _text(execution_packet.get("weekly_packet_id"), 180),
+            database_url=database_url,
+        )
+        validation = validate_text_only_owner_review(weekly)
+        if validation:
+            return _failure(validation, 409)
+        if target_page_id != weekly.get("page_id"):
+            return _failure("publication_binding_target_drift", 409)
+    else:
+        assets_result, assets_status = list_beacon_media_assets(
+            limit=100, approval_status="approved", database_url=database_url
+        )
+        if assets_status != 200:
+            return _failure("publication_binding_media_unavailable", 503)
+        weekly = build_post_one_owner_review(assets_result.get("assets", []))
     mismatch = _execution_packet_mismatch(weekly, execution_packet)
     if mismatch:
         return _failure(mismatch, 409)
@@ -164,10 +180,26 @@ def _execution_packet_mismatch(weekly, execution):
         (execution.get("campaign_lane") == "live_stock_awareness",
          "publication_binding_channel_mismatch"),
     )
+    if weekly.get("packet_class") == TEXT_ONLY_PACKET_CLASS:
+        checks += (
+            (execution.get("packet_class") == TEXT_ONLY_PACKET_CLASS,
+             "publication_binding_packet_class_mismatch"),
+            (execution.get("weekly_packet_id") == weekly.get("packet_id"),
+             "publication_binding_weekly_packet_mismatch"),
+            (execution.get("canonical_sha256") == weekly.get("canonical_sha256"),
+             "publication_binding_canonical_hash_mismatch"),
+            (order == [], "publication_binding_text_only_media_forbidden"),
+            (execution.get("owner_confirmed_subject") == "",
+             "publication_binding_text_only_subject_forbidden"),
+            (execution.get("target_page_id") == weekly.get("page_id"),
+             "publication_binding_target_drift"),
+        )
     return next((status for allowed, status in checks if not allowed), "")
 
 
 def _decision_mismatch(decision, weekly):
+    assets = weekly.get("media", {}).get("assets", [])
+    subject = assets[0].get("owner_confirmed_subject") if assets else ""
     checks = (
         (decision["canonical_sha256"] == weekly["canonical_sha256"],
          "publication_binding_canonical_hash_mismatch"),
@@ -177,7 +209,7 @@ def _decision_mismatch(decision, weekly):
          "publication_binding_caption_mismatch"),
         (decision["exact_media_order"] == weekly["media"]["exact_order"],
          "publication_binding_media_order_mismatch"),
-        (decision["owner_confirmed_subject"] == weekly["media"]["assets"][0]["owner_confirmed_subject"],
+        (decision["owner_confirmed_subject"] == subject,
          "publication_binding_subject_mismatch"),
         (decision["channel"] == weekly["channel"],
          "publication_binding_channel_mismatch"),
@@ -230,7 +262,10 @@ def _binding_params(weekly, decision, execution, target_page_id, now):
         "binding_id": "BEACON-ORGANIC-BINDING-" + digest[:24],
         "exact_media_order": order,
         "exact_media_order_json": json.dumps(order, separators=(",", ":")),
-        "owner_confirmed_subject": weekly["media"]["assets"][0]["owner_confirmed_subject"],
+        "owner_confirmed_subject": (
+            weekly["media"]["assets"][0]["owner_confirmed_subject"]
+            if weekly["media"]["assets"] else ""
+        ),
         "channel": "Facebook Page",
         "bound_at": (now or datetime.now(timezone.utc)).isoformat(),
     }

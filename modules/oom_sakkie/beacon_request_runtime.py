@@ -124,6 +124,7 @@ def build_live_stock_awareness_proposal(opportunities, candidate, media_payload=
     af = str(language).casefold().startswith("af")
     packet = {"contract_version": "beacon_live_stock_awareness_proposal_v1",
         "packet_type": "live_stock_awareness_proposal", "status": "ready_for_owner_review",
+        "locale": "af-ZA" if af else "en-ZA",
         "objective": "Build familiarity and trust through a non-availability Amadeus Farm story",
         "audience": ("Mense wat belangstel in verantwoordelike plaaslike veeboerdery en plaaslewe" if af else
             str(review.get("audience") or "People interested in responsible local livestock and farm life")),

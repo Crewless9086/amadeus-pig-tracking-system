@@ -12,6 +12,11 @@ from modules.beacon.weekly_owner_review import (
     build_post_one_owner_review,
     load_post_one_thumbnail,
 )
+from modules.beacon.text_only_organic_review import (
+    PACKET_CLASS as TEXT_ONLY_PACKET_CLASS,
+    load_text_only_owner_review,
+    validate_text_only_owner_review,
+)
 
 
 DECISIONS = {
@@ -31,7 +36,7 @@ AUTHORITY = {
 
 
 def record_weekly_owner_review_decision(
-    payload, *, owner_identity, database_url=None, environ=None
+    payload, *, owner_identity, database_url=None, environ=None,
 ):
     """Re-read, revalidate and append one exact packet decision."""
     payload = payload if isinstance(payload, dict) else {}
@@ -48,12 +53,21 @@ def record_weekly_owner_review_decision(
     if not database_url:
         return _failure("weekly_owner_review_persistence_unavailable", 503)
 
-    assets_result, assets_status = list_beacon_media_assets(
-        limit=100, database_url=database_url
-    )
-    if assets_status != 200:
-        return _failure("weekly_owner_review_evidence_unavailable", 503)
-    packet = build_post_one_owner_review(assets_result.get("assets", []))
+    if payload.get("packet_class") == TEXT_ONLY_PACKET_CLASS:
+        packet = load_text_only_owner_review(
+            _clean(payload.get("packet_id"), 160), database_url=database_url,
+            environ=environ,
+        )
+        validation = validate_text_only_owner_review(packet)
+        if validation:
+            return _failure(validation, 409)
+    else:
+        assets_result, assets_status = list_beacon_media_assets(
+            limit=100, database_url=database_url
+        )
+        if assets_status != 200:
+            return _failure("weekly_owner_review_evidence_unavailable", 503)
+        packet = build_post_one_owner_review(assets_result.get("assets", []))
     mismatch = _packet_mismatch(payload, packet)
     if mismatch:
         return _failure(mismatch, 409)
@@ -197,7 +211,7 @@ def _packet_mismatch(payload, packet):
     media = packet.get("media", {}).get("assets", [])
     expected = {
         "packet_id": packet.get("packet_id"),
-        "packet_version": "S1",
+        "packet_version": packet.get("packet_version", "S1"),
         "canonical_sha256": packet.get("canonical_sha256"),
         "caption_sha256": packet.get("caption_sha256"),
         "exact_caption": packet.get("caption"),
@@ -205,11 +219,14 @@ def _packet_mismatch(payload, packet):
         "owner_confirmed_subject": (
             media[0].get("owner_confirmed_subject") if media else ""
         ),
-        "album_story": packet.get("album_story"),
+        "album_story": packet.get("album_story", packet.get("campaign_purpose")),
         "channel": packet.get("channel"),
-        "supersedes_packet_id": packet.get("supersedes", {}).get("packet_id"),
+        "supersedes_packet_id": packet.get("supersedes", {}).get("packet_id", ""),
     }
+    if packet.get("packet_class"):
+        expected["packet_class"] = packet["packet_class"]
     statuses = {
+        "packet_class": "weekly_owner_review_packet_class_mismatch",
         "packet_id": "weekly_owner_review_packet_mismatch",
         "packet_version": "weekly_owner_review_packet_version_mismatch",
         "canonical_sha256": "weekly_owner_review_hash_mismatch",
@@ -244,18 +261,18 @@ def _decision_params(packet, status, notes, owner, proposed_at, timezone_name):
     return {
         "decision_event_id": "BEACON-WEEKLY-REVIEW-" + _digest(seed)[:24].upper(),
         "packet_id": packet["packet_id"],
-        "packet_version": "S1",
+        "packet_version": packet.get("packet_version", "S1"),
         "canonical_sha256": packet["canonical_sha256"],
         "caption_sha256": packet["caption_sha256"],
         "exact_caption": packet["caption"],
         "ordered_media_ids_json": json.dumps(packet["media"]["exact_order"]),
         "ordered_media_ids": packet["media"]["exact_order"],
         "owner_confirmed_subject": subject,
-        "album_story": packet["album_story"],
+        "album_story": packet.get("album_story", packet.get("campaign_purpose", "")),
         "channel": packet["channel"],
         "proposed_publication_datetime": proposed_at,
         "proposed_timezone": timezone_name,
-        "supersedes_packet_id": packet["supersedes"]["packet_id"],
+        "supersedes_packet_id": packet.get("supersedes", {}).get("packet_id", ""),
         "decision_status": status,
         "owner_notes": notes,
         "owner_identity": owner,
