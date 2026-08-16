@@ -578,15 +578,13 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         if (str(operational_result.get("status") or "") == "specialist_accepted"
                 and str(operational_result.get("next_specialist_step") or "") ==
                     "supervised_fertilizer_mixer_proof"):
-            from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
-                continue_fertilizer_commissioning,
-            )
-            continued = continue_fertilizer_commissioning(
+            from modules.oom_sakkie.rootline_protected_mixer import create_mixer_preview
+            continued = create_mixer_preview(
                 owner_result=operational_result, parsed=parsed,
                 gateway_authority=gateway_authority)
             operational_result = {**operational_result, **continued,
-                "mission_id": operational_result.get("mission_id"),
-                "card_mission_id": operational_result.get("card_mission_id"),
+                "mission_id": continued.get("mission_id") or operational_result.get("mission_id"),
+                "card_mission_id": continued.get("card_mission_id") or operational_result.get("card_mission_id"),
                 "specialist_identity": "ROOTLINE"}
         answer = str(operational_result.get("answer") or "")
         if str(operational_result.get("status") or "") == "waiting_for_input":
@@ -609,6 +607,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                         specialist=str(operational_result.get("specialist_identity") or "OOM_SAKKIE"),
                         mission_id=str(operational_result.get("mission_id") or ""),
                         card_mission_id=str(operational_result.get("card_mission_id") or "")))
+        delivery = _bind_protected_preview_card(operational_result, delivery)
         body, _ = _gateway_result(
             delivery.get("success") is True,
             str(operational_result.get("status") or "contained"), policy, operational_status,
