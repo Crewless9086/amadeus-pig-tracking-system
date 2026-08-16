@@ -19,6 +19,10 @@ from modules.oom_sakkie.semantic_front_door import interpret_owner_message, sema
 from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline, record_reassessment_delivery
 from modules.oom_sakkie.family_access import FamilyRole, family_access_policy, resolve_family_principal
 from modules.oom_sakkie.family_runtime import handle_family_runtime_message
+from modules.oom_sakkie.family_rootline_callback import (
+    CALLBACK_PREFIX as FAMILY_CALLBACK_PREFIX, bind_family_rootline_preview_card,
+    prepare_family_rootline_preview, handle_family_rootline_callback,
+)
 from modules.oom_sakkie.family_specialist_adapters import (
     family_replay_store, herdmaster_family_observation, load_family_question,
     load_family_summary, retain_family_question_reply, rootline_family_handoff,
@@ -256,6 +260,27 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
     family_principal = resolve_family_principal(parsed, source)
     if family_principal.role is FamilyRole.UNKNOWN_SENDER:
         return _gateway_result(False, "telegram_family_identity_not_authorized", policy, 403)
+    if str(parsed.get("callback_data") or "").startswith(FAMILY_CALLBACK_PREFIX):
+        if family_principal.role is not FamilyRole.FARM_MANAGER:
+            callback_result, callback_status = ({"success": False,
+                "status": "family_rootline_callback_unauthorized", "hardware_commands": 0,
+                "writes_farm_data": False}, 403)
+        else:
+            callback_result, callback_status = handle_family_rootline_callback(parsed,
+                family_principal, callback_data=parsed["callback_data"],
+                rootline_adapter=rootline_family_handoff, replay_store=family_replay_store)
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0}
+            if callback_result.get("suppress_family_delivery") or not callback_result.get("answer")
+            else deliver_family_result(parsed, callback_result, specialist="ROOTLINE"))
+        acknowledgement = _acknowledge_family_callback(parsed["callback_query_id"], source)
+        body, _ = _gateway_result(callback_result.get("success") is True,
+            str(callback_result.get("status") or "family_rootline_callback_contained"),
+            policy, callback_status)
+        body.update({"message": callback_result, "delivery": delivery,
+            "callback_acknowledgement": acknowledgement,
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": False, "hardware_commands": int(callback_result.get("hardware_commands") or 0)})
+        return body, callback_status if acknowledgement.get("success") else 202
     if family_principal.role is not FamilyRole.OWNER:
         family_result, family_status = handle_family_runtime_message(parsed, family_principal,
             summary_loader=load_family_summary,
@@ -263,6 +288,7 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             contextual_loader=load_family_question,
             contextual_adapter=retain_family_question_reply,
             rootline_adapter=rootline_family_handoff,
+            rootline_preview_adapter=prepare_family_rootline_preview,
             replay_store=family_replay_store)
         delivery = (deliver_family_result(parsed, family_result, specialist="OOM_SAKKIE_FAMILY")
                     if str(family_result.get("answer") or "").strip()
@@ -278,6 +304,8 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
             "writes": family_result.get("writes_farm_data") is True,
             "hardware_commands": int(family_result.get("hardware_commands") or 0),
             "physical_controls_enabled": int(family_result.get("hardware_commands") or 0) > 0})
+        if family_result.get("callback_token"):
+            body["preview_card_bound"] = bind_family_rootline_preview_card(family_result, delivery)
         return body, family_status if delivery.get("success") else 202
 
     media = telegram_media_envelope(payload)
@@ -1083,8 +1111,9 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
 
 def parse_telegram_gateway_payload(payload):
     payload = payload or {}
-    message = payload.get("message") or payload.get("edited_message") or {}
-    from_user = message.get("from") or payload.get("from") or {}
+    callback = payload.get("callback_query") if isinstance(payload.get("callback_query"), dict) else {}
+    message = callback.get("message") or payload.get("message") or payload.get("edited_message") or {}
+    from_user = callback.get("from") or message.get("from") or payload.get("from") or {}
     chat = message.get("chat") or payload.get("chat") or {}
     text = payload.get("text") or message.get("text") or message.get("caption") or ""
     telegram_user_id = payload.get("telegram_user_id") or payload.get("from_user_id") or from_user.get("id") or ""
@@ -1099,15 +1128,35 @@ def parse_telegram_gateway_payload(payload):
         "telegram_chat_id": str(telegram_chat_id or "").strip()[:80],
         "telegram_chat_type": str(telegram_chat_type or "").strip()[:20],
         "session_id": f"telegram-{str(session_id or '').strip()[:100]}",
-        "provider_message_id": str(message.get("message_id") or payload.get("message_id") or "").strip()[:120],
-        "provider_timestamp": (
+        "provider_message_id": str(callback.get("id") if callback else
+            message.get("message_id") or payload.get("message_id") or "").strip()[:120],
+        "provider_timestamp": (datetime.now(timezone.utc).isoformat() if callback else
             datetime.fromtimestamp(float(message.get("date")), timezone.utc).isoformat()
-            if isinstance(message.get("date"), (int, float)) else ""
-        ),
+            if isinstance(message.get("date"), (int, float)) else ""),
+        "source_card_timestamp": (datetime.fromtimestamp(float(message.get("date")), timezone.utc).isoformat()
+            if callback and isinstance(message.get("date"), (int, float)) else ""),
         "reply_to_message_id": str(
+            message.get("message_id") if callback else
             (message.get("reply_to_message") or {}).get("message_id") or ""
         ).strip()[:120],
+        "callback_query_id": str(callback.get("id") or payload.get("callback_query_id") or "").strip()[:120],
+        "callback_data": str(callback.get("data") or payload.get("callback_data") or "").strip()[:240],
     }
+
+
+def _acknowledge_family_callback(callback_query_id, source):
+    callback_query_id = str(callback_query_id or "").strip()
+    token = _owner_task_bot_token(source)
+    if not callback_query_id or not token:
+        return {"success": False, "status": "family_callback_acknowledgement_unavailable"}
+    try:
+        from modules.sales.sam_live_stock_launch_control import _telegram_api
+        response = _telegram_api(token, "answerCallbackQuery", {"callback_query_id": callback_query_id})
+    except Exception:
+        return {"success": False, "status": "family_callback_acknowledgement_failed"}
+    return {"success": response.get("ok") is True,
+        "status": "family_callback_acknowledged" if response.get("ok") is True
+                  else "family_callback_acknowledgement_failed"}
 
 
 def _send_owner_task_telegram(chat_id, text, source):

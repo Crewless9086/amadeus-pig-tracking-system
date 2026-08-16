@@ -7,6 +7,7 @@ module does not mint owner authority and does not contain a business writer.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from typing import Any, Callable, Mapping
 
@@ -33,6 +34,8 @@ HEALTH = re.compile(r"\b(?:sick|ill|injur|not eating|limp|bleed|siek|beseer|eet 
 IRRIGATION_ACTION_SHAPED = re.compile(
     r"\b(?:stop|start|pause|reschedule)\s+(?:the\s+)?irrigation\b|"
     r"\b(?:stop|begin|onderbreek|herskeduleer|skuif)\s+(?:die\s+)?besproeiing\b", re.I)
+IRRIGATION_START = re.compile(r"^\s*(?:begin|start)\s+(?:die\s+)?besproeiing[.!?]?\s*$", re.I)
+IRRIGATION_CONTINUE = re.compile(r"^\s*(?:gaan\s+voort\s+met|continue)\s+(?:die\s+)?besproeiing[.!?]?\s*$", re.I)
 
 
 def handle_family_runtime_message(parsed: Mapping[str, Any], principal: FamilyPrincipal, *,
@@ -41,6 +44,7 @@ def handle_family_runtime_message(parsed: Mapping[str, Any], principal: FamilyPr
         contextual_loader: Callable[..., Mapping[str, Any] | None] | None = None,
         contextual_adapter: Callable[..., Mapping[str, Any]] | None = None,
         rootline_adapter: Callable[..., Mapping[str, Any]] | None = None,
+        rootline_preview_adapter: Callable[..., Mapping[str, Any]] | None = None,
         replay_store: Callable[..., Mapping[str, Any]] | None = None) -> tuple[dict[str, Any], int]:
     """Authorize one family capability before invoking its sole typed adapter."""
     if principal.role in {FamilyRole.OWNER, FamilyRole.UNKNOWN_SENDER}:
@@ -91,7 +95,10 @@ def handle_family_runtime_message(parsed: Mapping[str, Any], principal: FamilyPr
                                     replay_identity=decision.replay_identity)
         bounded, code = _bounded_result(result, capability=capability)
         return {**base, **bounded}, code
-    adapter = rootline_adapter if capability.startswith("irrigation_") else observation_adapter
+    confirmed = bool((parsed.get("family_action") or {}).get("confirmed_callback")) if isinstance(
+        parsed.get("family_action"), Mapping) else False
+    adapter = ((rootline_adapter if confirmed else rootline_preview_adapter)
+        if capability.startswith("irrigation_") else observation_adapter)
     if adapter is None:
         return {**base, **_unavailable()}, 503
     claim = _claim_replay(replay_store, decision, principal, parsed, capability)
@@ -118,6 +125,8 @@ def resolve_family_capability(parsed: Mapping[str, Any], principal: FamilyPrinci
             and all(str(action.get(key) or "").strip() for key in
                     ("decision_id", "evidence_generation"))):
         return action_capability, ""
+    if IRRIGATION_START.fullmatch(text): return "irrigation_start", ""
+    if IRRIGATION_CONTINUE.fullmatch(text): return "irrigation_continue", ""
     if IRRIGATION_ACTION_SHAPED.search(text): return "unsupported_family_capability", ""
     if WELFARE_ESCALATE.search(text): return "welfare_escalation", ""
     if WELFARE_HOLD.search(text): return "welfare_hold", ""
@@ -158,6 +167,7 @@ def _summary_domain(text: str) -> str:
 
 def _bounded_result(result: Mapping[str, Any], *, capability="") -> tuple[dict[str, Any], int]:
     if not isinstance(result, Mapping): return _unavailable(), 503
+    family_preview = _verified_family_preview(result, capability)
     verified_rootline = (_verified_rootline_outcome(result.get("rootline_outcome"))
         if capability in {"irrigation_start", "irrigation_continue"} else None)
     hardware_commands = int(result.get("hardware_commands") or 0)
@@ -179,7 +189,33 @@ def _bounded_result(result: Mapping[str, Any], *, capability="") -> tuple[dict[s
     if verified_rootline:
         safe.update({"hardware_commands": hardware_commands,
             "rootline_outcome_sha256": verified_rootline["outcome_sha256"]})
+    if family_preview:
+        safe.update(family_preview)
     return safe, 200 if safe["success"] else 503
+
+
+def _verified_family_preview(result, capability):
+    payload = result.get("preview_payload") if isinstance(result.get("preview_payload"), Mapping) else {}
+    if (capability not in {"irrigation_start", "irrigation_continue"}
+            or result.get("status") != "family_rootline_preview_ready"
+            or payload.get("contract_version") != "oom_family_rootline_preview.v1"
+            or payload.get("allowed_action") != capability
+            or payload.get("owner_authority") is not False
+            or not str(result.get("callback_token") or "")
+            or result.get("preview_digest") != hashlib.sha256(json.dumps(
+                {"kind": "rootline_delegated_family", "payload": payload}, sort_keys=True,
+                separators=(",", ":"), default=str).encode()).hexdigest()):
+        return None
+    token = str(result["callback_token"])
+    verb = "Begin veilig" if capability == "irrigation_start" else "Gaan veilig voort"
+    expected = {"inline_keyboard": [[
+        {"text": verb, "callback_data": f"oomfm:{token}:confirm"},
+        {"text": "Kanselleer", "callback_data": f"oomfm:{token}:cancel"}]]}
+    if result.get("reply_markup") != expected: return None
+    return {"callback_token": str(result["callback_token"]),
+        "preview_digest": str(result["preview_digest"]),
+        "mission_id": str(result.get("mission_id") or ""),
+        "preview_payload": dict(payload), "reply_markup": expected}
 
 
 def _verified_rootline_outcome(value):

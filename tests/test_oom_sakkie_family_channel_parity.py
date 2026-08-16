@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.telegram_direct import handle_telegram_direct_webhook
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
+from modules.oom_sakkie.telegram_gateway import parse_telegram_gateway_payload
 
 
 OWNER = "9001"
@@ -128,3 +129,74 @@ def test_owner_text_requires_exact_private_chat_before_owner_handlers():
                 headers={"X-Telegram-Bot-Api-Secret-Token": SECRET}, environ=owner_env)
         assert status == 403 and result["status"] == "telegram_family_identity_not_authorized"
         owner_handler.assert_not_called(); generic.assert_not_called()
+
+
+@patch("modules.oom_sakkie.telegram_direct.acknowledge_telegram_callback")
+@patch("modules.oom_sakkie.telegram_direct.handle_family_rootline_callback")
+def test_direct_delegated_callback_resolves_anton_and_acknowledges_once(handler, acknowledge):
+    handler.return_value = ({"success": True, "status": "delegated_callback_retained",
+        "answer": "", "hardware_commands": 0, "suppress_family_delivery": True}, 200)
+    acknowledge.return_value = ({"success": True, "status": "telegram_callback_acknowledged"}, 200)
+    result, status = handle_telegram_direct_webhook(callback("oomfm:TOKEN:confirm"),
+        headers={"X-Telegram-Bot-Api-Secret-Token": SECRET}, environ=env())
+    assert status == 200 and result["status"] == "delegated_callback_retained"
+    assert handler.call_count == 1 and handler.call_args.args[1].role.value == "farm_manager"
+    acknowledge.assert_called_once()
+
+
+@patch("modules.oom_sakkie.telegram_direct.acknowledge_telegram_callback")
+@patch("modules.oom_sakkie.telegram_direct.handle_family_rootline_callback")
+def test_family_callback_wrong_chat_or_antoinette_never_reaches_contract(handler, acknowledge):
+    acknowledge.return_value = ({"success": True}, 200)
+    bad = callback("oomfm:TOKEN:confirm")
+    bad["callback_query"]["message"]["chat"]["id"] = 9999
+    result, status = handle_telegram_direct_webhook(bad,
+        headers={"X-Telegram-Bot-Api-Secret-Token": SECRET}, environ=env())
+    assert status == 403 and result["status"] == "family_rootline_callback_unauthorized"
+    handler.assert_not_called(); acknowledge.assert_called_once()
+
+
+@patch("modules.oom_sakkie.family_rootline_callback.bind_claim_card", return_value=True)
+@patch("modules.oom_sakkie.telegram_direct.deliver_family_result")
+def test_direct_webhook_derives_zero_effect_rootline_preview_and_binds_card(deliver, _bind):
+    from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
+    auth = {"active": True, "revoked_at": None, "owner_authority": False,
+        "principal_id": ANTON, "private_chat_id": ANTON, "role": "farm_manager",
+        "capabilities": ["routine_irrigation_execute"], "zones": ["B"],
+        "commissioned_paths": ["PATH-B"], "authorization_digest": "a" * 64}
+    eligibility = {"status": "execution_eligible", "zone_id": "B",
+        "commissioned_path_id": "PATH-B", "maximum_duration_seconds": 300,
+        "plan_generation": "GEN-1", "job_id": "JOB-1", "job_sha256": "b" * 64,
+        "segment_identity": "SEG-1", "current_segment": 1, "execution_id": "EX-1",
+        "eligibility_sha256": "c" * 64, "consumption_key": "CONSUME-1"}
+    deliver.return_value = {"success": True, "telegram_sends": 1, "telegram_edits": 0,
+                            "provider_message_id": "CARD-1"}
+    def claim(**kwargs):
+        return {"success": True, "callback_token": "TOKEN",
+            "preview_digest": canonical_preview_digest("rootline_delegated_family",
+                                                        kwargs["preview_payload"])}
+    with patch("modules.telemetry.rootline_delegated_principal.load_delegated_authorization",
+               return_value=auth), \
+            patch("modules.oom_sakkie.family_specialist_adapters._load_rootline_eligibility",
+                  return_value=eligibility), \
+            patch("modules.telemetry.rootline_execution_authority.validate_execution_eligibility",
+                  return_value=eligibility), \
+            patch("modules.oom_sakkie.family_rootline_callback.create_claim", side_effect=claim), \
+            patch("modules.oom_sakkie.telegram_direct.family_replay_store",
+                  return_value={"success": True, "created": True}):
+        result, status = handle_telegram_direct_webhook(payload("Begin besproeiing"),
+            headers={"X-Telegram-Bot-Api-Secret-Token": SECRET}, environ=env())
+    assert status == 200 and result["message"]["status"] == "family_rootline_preview_ready"
+    assert result["preview_card_bound"] is True
+    assert result["hardware_commands"] == 0 and result["writes"] is False
+
+
+def test_gateway_callback_uses_authenticated_receipt_time_not_old_card_time():
+    item = callback("oomfm:TOKEN:confirm")
+    item["callback_query"]["message"]["date"] = 1_700_000_000
+    parsed = parse_telegram_gateway_payload(item)
+    assert parsed["source_card_timestamp"].startswith("2023-")
+    assert parsed["provider_timestamp"] != parsed["source_card_timestamp"]
+    assert parsed["provider_message_id"] == "CB-1"
+    assert parsed["reply_to_message_id"] == "7101"
+    assert parsed["callback_query_id"] == "CB-1"
