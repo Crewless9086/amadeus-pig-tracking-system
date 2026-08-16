@@ -52,7 +52,7 @@ def read_canonical_irrigation_history(database_url=None, *, connect=None, now=No
                     where event_source='rootline_irrigation_execution'
                       and review_json->'rootline_execution'->>'action'
                           in ('record_eligibility','claim_before_on','mark_active','record_completed',
-                              'record_job_resolution')
+                              'record_job_resolution','contain_zone','record_ambiguous_shutdown')
                     order by created_at,review_event_id""")
                 execution_rows = [row[0] for row in cursor.fetchall()]
         result = project_canonical_irrigation_history(rows, snapshot_cutoff=min(now, snapshot_cutoff))
@@ -135,6 +135,7 @@ def _attach_parent_jobs(history, rows):
             grouped.setdefault(job_id, []).append(row)
     by_zone = {}
     stale_by_zone = {zone: [] for zone in ZONES}
+    contained_by_zone = {zone: [] for zone in ZONES}
     cutoff = _timestamp(history.get("snapshot_cutoff"))
     current_date = cutoff.astimezone(SAST).date().isoformat() if cutoff else None
     for events in grouped.values():
@@ -161,6 +162,19 @@ def _attach_parent_jobs(history, rows):
             if row.get("action") == "record_completed"
             and row.get("state") == "Completed"
             and row.get("shutdown_verified") is True]
+        contained = [row for row in events if row.get("action") in {
+            "contain_zone", "record_ambiguous_shutdown"}]
+        if contained and not completed_segments:
+            zone = str(job.get("zone_id") or "")
+            if zone in ZONES:
+                contained_by_zone[zone].append({"job": job,
+                    "projection": {"status": "segment_contained",
+                        "command_authority": False, "current_segment": 1,
+                        "cumulative_verified_runtime_seconds": 0},
+                    "completed_segment_count": 0,
+                    "remaining_seconds": job.get("governed_executable_seconds"),
+                    "resolution_reason": "segment_contained_without_verified_shutdown_or_runtime"})
+            continue
         # A never-started eligibility is not a continuing parent. Continuity
         # begins only after a canonical segment completed and proved shutdown.
         if not completed_segments:
@@ -185,6 +199,9 @@ def _attach_parent_jobs(history, rows):
     for zone, values in stale_by_zone.items():
         if values:
             history["zones"][zone]["stale_incomplete_parent_jobs"] = values
+    for zone, values in contained_by_zone.items():
+        if values:
+            history["zones"][zone]["contained_parent_jobs"] = values
 
 
 def build_typed_history_event(*, event_id, event_at, event_type, zone_id, details,
