@@ -119,60 +119,58 @@ function identityGroup(title, identities) {
     : `<p>${UNKNOWN}</p>`}</div>`;
 }
 
-function naturalParts(value) {
-  return String(value || "").toLowerCase().split(/(\d+)/).map((part) => /^\d+$/.test(part) ? Number(part) : part);
-}
-
-function naturalIdentityCompare(left, right) {
-  const a = naturalParts(left.tag_number || left.name || left.technical_identity?.pig_id);
-  const b = naturalParts(right.tag_number || right.name || right.technical_identity?.pig_id);
-  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
-    if (a[index] === b[index]) continue;
-    if (a[index] === undefined) return -1;
-    if (b[index] === undefined) return 1;
-    if (typeof a[index] === typeof b[index]) return a[index] < b[index] ? -1 : 1;
-    return String(a[index]).localeCompare(String(b[index]));
-  }
-  return 0;
-}
-
 function offspringState(identity = {}) {
-  return known(identity.current_status || identity.status) ? String(identity.current_status || identity.status) : "Onbekend";
+  return operationalValue(identity, "current_status");
 }
 
 function ownerValue(value) {
   return known(value) ? String(value) : "Onbekend";
 }
 
-function ownerNum(value) {
-  return known(value) && !Number.isNaN(Number(value)) ? String(value) : "Onbekend";
+function operationalValue(identity, field) {
+  if (known(identity[field])) return String(identity[field]);
+  return ownerValue(identity.operational_evidence_state?.[field]);
 }
 
 function offspringHtml(identities, currentName) {
-  const rows = [...(identities || [])].filter(Boolean).sort((left, right) => {
-    const rank = (value) => String(value.on_farm ?? "").toLowerCase() === "true" || String(value.current_status || value.status || "").toLowerCase() === "active" ? 0 : known(value.current_status || value.status || value.on_farm) ? 1 : 2;
-    return rank(left) - rank(right) || naturalIdentityCompare(left, right);
-  });
+  const rows = [...(identities || [])].filter(Boolean);
   if (!rows.length) return `<div class="merit-empty">Geen kanonieke nageslagidentiteite is beskikbaar nie.</div>`;
-  return `<div class="merit-table-wrap"><table class="merit-table merit-offspring-table"><thead><tr><th>Tag / Naam</th><th>Huidige status</th><th>Doel</th><th>Werpsel</th></tr></thead><tbody>${rows.map((identity) => {
+  return `<div class="merit-table-wrap"><table class="merit-table merit-offspring-table"><thead><tr><th>Tag / Naam</th><th>Huidige status</th><th>Doel</th><th>Op plaas</th><th>Werpsel</th></tr></thead><tbody>${rows.map((identity) => {
     const base = safeDestination(identity.destination, "animal");
     const href = base ? withReturn(base, `Terug na ${currentName} se profiel`) : "";
     const pigId = identity.technical_identity?.pig_id || identity.pig_id;
-    const label = identity.tag_number || identity.name || "Naam/Tag onbekend";
-    const identityCell = `<strong>${esc(label)}</strong>${identity.tag_number && identity.name ? `<span>${esc(identity.name)}</span>` : ""}${pigId ? `<small>Pig-ID ${esc(pigId)}</small>` : ""}`;
-    const contents = `<td data-label="Tag / Naam">${href ? `<a href="${esc(href)}" aria-label="Open ${esc(label)} se profiel">${identityCell}</a>` : identityCell}</td><td data-label="Huidige status">${esc(offspringState(identity))}</td><td data-label="Doel">${esc(ownerValue(identity.purpose))}</td><td data-label="Werpsel">${esc(ownerValue(identity.litter_identity?.display_name || identity.litter_id))}</td>`;
+    const label = identity.name || identity.tag_number || "Naam/Tag onbekend";
+    const identityCell = `<strong>${esc(label)}</strong>${identity.tag_number && identity.name ? `<span>Tag ${esc(identity.tag_number)}</span>` : ""}${pigId ? `<small>Pig-ID ${esc(pigId)}</small>` : ""}`;
+    const litter = identity.litter_attribution || {};
+    const litterValue = known(litter.display_name) && litter.display_name !== "Unknown" ? litter.display_name : ownerValue(identity.litter_attribution_state);
+    const contents = `<td data-label="Tag / Naam">${href ? `<a href="${esc(href)}" aria-label="Open ${esc(label)} se profiel">${identityCell}</a>` : identityCell}</td><td data-label="Huidige status">${esc(offspringState(identity))}</td><td data-label="Doel">${esc(operationalValue(identity, "purpose"))}</td><td data-label="Op plaas">${esc(operationalValue(identity, "on_farm"))}</td><td data-label="Werpsel">${esc(litterValue)}</td>`;
     return `<tr>${contents}</tr>`;
   }).join("")}</tbody></table></div>`;
 }
 
-function offspringSummaryHtml(offspring, outcomes) {
-  const summary = offspring.summary || offspring.status_summary || {};
-  return metric("Toeskryfbare werpsels", ownerNum(outcomes.observed_litter_count))
-    + metric("Nageslag aangeteken", ownerNum(offspring.sample_size))
-    + metric("Aktief op plaas", ownerNum(summary.active_on_farm))
-    + metric("Verkoop / toegeken", ownerNum(summary.sold_or_allocated))
-    + metric("Oorlede", ownerNum(summary.deceased))
-    + metric("Ander / onbekend", ownerNum(summary.other_or_unknown));
+function offspringSummaryHtml(offspring) {
+  const summary = offspring.operational_summary || {};
+  return metric("Nageslag aangeteken", num(summary.sample_size))
+    + metric("Identiteite opgelos", num(summary.resolved_identity_count))
+    + metric("Status bekend", num(summary.known_status_count))
+    + metric("Doel bekend", num(summary.known_purpose_count))
+    + metric("Op-plaas bekend", num(summary.known_on_farm_count))
+    + metric("Werpsel gekoppel", num(summary.known_litter_attribution_count))
+    + metric("Unknown / conflicting", num(summary.unknown_or_conflicting_operational_count));
+}
+
+function matingHtml(summaries, currentName) {
+  if (!summaries.length) return '<div class="merit-empty">Geen individuele paringsrekords is beskikbaar nie.</div>';
+  return `<div class="merit-related-list">${summaries.map((summary) => {
+    const partner = summary.partner_identity || {};
+    const litter = summary.litter_identity || {};
+    const partnerBase = safeDestination(partner.destination, "animal");
+    const partnerHref = partnerBase ? withReturn(partnerBase, `Terug na ${currentName} se profiel`) : "";
+    const litterBase = safeDestination(litter.destination, "litter");
+    const litterHref = litterBase ? withReturn(litterBase, `Terug na ${currentName} se profiel`) : "";
+    const litterLabel = litter.display_name || summary.litter_attribution_state || UNKNOWN;
+    return `<article class="merit-mating-row"><div class="merit-mating-heading"><div><strong>${esc(text(summary.mating_date))}</strong><small>Paring-ID ${esc(text(summary.mating_id))}</small></div><span>${esc(text(summary.recorded_status))}</span></div>${partnerHref ? `<a class="merit-inline-identity" href="${esc(partnerHref)}">${identityHtml(partner, { role: partner.role })}</a>` : identityHtml(partner, { role: partner.role })}<div class="merit-mating-litter"><span>Werpsel</span>${litterHref ? `<a href="${esc(litterHref)}">${esc(litterLabel)}</a>` : `<strong>${esc(litterLabel)}</strong>`}</div></article>`;
+  }).join("")}</div>`;
 }
 
 function ids(title, values) {
@@ -312,18 +310,21 @@ function renderProfile(data, row) {
     + item("Missing evidence", interpretation.missing_evidence)
     + item("Next review", interpretation.next_review);
   renderMetrics({ outcomes, opportunities, offspring, growth, finance, confidence, inputs });
+  const matings = row.individual_mating_summaries || [];
   const partners = row.partner_comparisons || [];
-  const trend = [...(row.time_trend || [])].sort((left, right) => String(right.period || "").localeCompare(String(left.period || "")));
-  document.getElementById("merit_partner_count").textContent = `(${num(opportunities.observed_count)})`;
+  const trend = row.time_trend || [];
+  document.getElementById("merit_mating_count").textContent = `(${num(matings.length)})`;
+  document.getElementById("merit_partner_count").textContent = `(${num(row.partner_comparisons_semantics?.aggregate_count)})`;
   document.getElementById("merit_litter_count").textContent = `(${num(outcomes.observed_litter_count)})`;
+  document.getElementById("merit_detail_matings").innerHTML = matingHtml(matings, displayName);
   document.getElementById("merit_detail_partners").innerHTML = partnerHtml(partners, displayName);
   document.getElementById("merit_detail_trend").innerHTML = trendHtml(trend, displayName);
   document.getElementById("merit_detail_context").innerHTML = identityGroup("Ouers", [family.dam_identity, family.sire_identity])
     + ids("Effective observations", (context.observations || []).map((value) => value.observation_event_id))
     + ids("Medical events", (context.medical_events || []).map((value) => value.medical_event_id || value.event_id));
   const offspringIdentities = family.offspring_identities || offspring.identities || [];
-  document.getElementById("merit_offspring_summary").innerHTML = offspringSummaryHtml(offspring, outcomes);
-  document.getElementById("merit_offspring_scope").textContent = `Hierdie is die ondersteunde HERDMASTER-steekproef van ${num(offspring.sample_size)} nageslag. Status-, doel- en werpselverdeling bly Onbekend waar dit nie in die kanonieke pakket verskaf word nie; assosiasie bewys nie oorsaaklikheid nie.`;
+  document.getElementById("merit_offspring_summary").innerHTML = offspringSummaryHtml(offspring);
+  document.getElementById("merit_offspring_scope").textContent = `Hierdie tabel wys die ${num(offspring.sample_size)} nageslagidentiteite en operasionele velde presies soos HERDMASTER dit verskaf. Unknown en conflicting bly sigbaar; assosiasie bewys nie oorsaaklikheid nie.`;
   document.getElementById("merit_offspring_table").innerHTML = offspringHtml(offspringIdentities, displayName);
   document.getElementById("merit_detail_lineage").innerHTML = lineageHtml(data.lineage);
 }
