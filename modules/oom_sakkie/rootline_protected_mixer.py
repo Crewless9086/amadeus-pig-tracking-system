@@ -78,6 +78,7 @@ def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
         {"text": "Cancel", "callback_data": f"{CALLBACK_PREFIX}{token}:cancel"},
     ]]
     return {**prepared, **claim, "status": "mixer_protected_preview_created",
+        "action_kind": ACTION_KIND,
         "answer": ("<b>MIXER CH2 — SUPERVISED TEST</b>\n\n"
             "Mixer CH2 is ready for one supervised five-minute test. "
             "Nothing has started yet.\n\nConfirm / Cancel."),

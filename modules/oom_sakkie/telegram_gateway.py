@@ -879,6 +879,38 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             if observed > requested:
                 return {"success": False, "status": "scheduled_reassessment_evidence_after_cutoff"}
             return current
+        def recover_pending_protected_delivery():
+            """Delivery-only recovery; never enters ROOTLINE execution."""
+            deliver = family_delivery or deliver_family_result
+            try:
+                from modules.oom_sakkie.rootline_protected_mixer import reassess_due_mixer_presence
+                from modules.oom_sakkie.protected_delivery_lifecycle import recover_protected_card
+                manager_owner = str(manual_payload.get("owner_user_id") or "")
+                manager_chat = str(manual_payload.get("chat_id") or "")
+                preview = reassess_due_mixer_presence(owner_user_id=manager_owner,
+                    private_chat_id=manager_chat, gateway_authority=issue_gateway_owner_authority(
+                        manager_owner, manager_chat), now=scheduler_now)
+                if preview.get("status") != "mixer_protected_preview_created":
+                    return preview
+                parsed_delivery = {"telegram_user_id":manager_owner,
+                    "telegram_chat_id":manager_chat,
+                    "provider_message_id":"scheduled:mixer:" + str(
+                        manual_payload.get("trigger_id") or ""),
+                    "provider_timestamp":str(manual_payload.get("trigger_timestamp") or "")}
+                delivery = recover_protected_card(callback_token=preview["callback_token"],
+                    preview_digest=preview["preview_digest"], owner_user_id=manager_owner,
+                    private_chat_id=manager_chat, action_kind=str(preview.get("action_kind")
+                        or "rootline_fertilizer_mixer_commissioning"),
+                    deliver=lambda: deliver(parsed_delivery, preview, specialist="ROOTLINE",
+                        mission_id=preview["mission_id"], card_mission_id=preview["card_mission_id"]))
+                return {**preview, "success":delivery.get("success") is True,
+                    "status":str(delivery.get("status") or preview["status"]),
+                    "delivery":delivery,
+                    "telegram_sends":int(delivery.get("telegram_sends") or 0)}
+            except Exception:
+                return {"success":False,"status":"protected_delivery_recovery_unavailable",
+                    "telegram_sends":0,"hardware_commands":0,"provider_control_calls":0,
+                    "writes_farm_data":False}
         def invoke():
             deliver = family_delivery or deliver_family_result
             if production_persistence:
@@ -895,32 +927,11 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                         "writes_farm_data": False, "automatic_irrigation_authority": False,
                         "answer": ("The scheduled assessment could not load its durable context. "
                                    "No provider or hardware action was attempted.")}
-            try:
-                from modules.oom_sakkie.rootline_protected_mixer import (
-                    reassess_due_mixer_presence,
-                )
-                manager_owner = str(manual_payload.get("owner_user_id") or "")
-                manager_chat = str(manual_payload.get("chat_id") or "")
-                presence_recovery = reassess_due_mixer_presence(
-                    owner_user_id=manager_owner, private_chat_id=manager_chat,
-                    gateway_authority=issue_gateway_owner_authority(
-                        manager_owner, manager_chat), now=scheduler_now)
-                if presence_recovery.get("status") == "mixer_protected_preview_created":
-                    scheduler_parsed = {"telegram_user_id":manager_owner,
-                        "telegram_chat_id":manager_chat,
-                        "provider_message_id":"scheduled:mixer:" + str(
-                            manual_payload.get("trigger_id") or ""),
-                        "provider_timestamp":str(
-                            manual_payload.get("trigger_timestamp") or "")}
-                    presence_delivery = deliver(scheduler_parsed, presence_recovery,
-                        specialist="ROOTLINE", mission_id=presence_recovery["mission_id"],
-                        card_mission_id=presence_recovery["card_mission_id"])
-                    presence_delivery = _bind_protected_preview_card(
-                        presence_recovery, presence_delivery)
-                    return {**presence_recovery, "delivery":presence_delivery,
-                        "telegram_sends":int(presence_delivery.get("telegram_sends") or 0)}
-            except Exception:
-                pass
+            presence_recovery = recover_pending_protected_delivery()
+            if presence_recovery.get("status") not in {"no_reassessable_mixer_presence",
+                    "protected_delivery_terminal_noop",
+                    "protected_delivery_recovery_unavailable"}:
+                return presence_recovery
             mixer_recovery = {"status": "fertilizer_recovery_unproven",
                               "hardware_commands": 0, "telegram_sends": 0}
             try:
@@ -1095,7 +1106,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     "telegram_sends": int(daily.get("telegram_sends") or 0)
                         + int(result.get("telegram_sends") or 0)}
         scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=schedule_store,
-                                         now=scheduler_now)
+            now=scheduler_now, recover_delivery=(recover_pending_protected_delivery
+                if production_persistence else None))
         return scheduled, 200 if scheduled.get("success") else 202
     owner = str((payload or {}).get("owner_user_id") or "").strip()
     chat = str((payload or {}).get("chat_id") or "").strip()

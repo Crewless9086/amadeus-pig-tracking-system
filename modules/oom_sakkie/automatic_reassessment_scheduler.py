@@ -16,7 +16,8 @@ MAX_MISSED_RUN_AGE = timedelta(minutes=CADENCE_MINUTES * 2)
 
 
 def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Mapping[str, Any]],
-                         store: Callable[[str, str, Any], Any], now: datetime | None = None):
+                         store: Callable[[str, str, Any], Any], now: datetime | None = None,
+                         recover_delivery: Callable[[], Mapping[str, Any]] | None = None):
     """Claim and run one due bucket. This contract grants no operational authority."""
     now = _aware(now or datetime.now(timezone.utc))
     specialist = str(payload.get("specialist") or "").upper()
@@ -35,6 +36,11 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
     ).hexdigest()
     prior_identity = store("load_schedule", identity, None) or {}
     if prior_identity.get("status") in {"completed", "contained"}:
+        recovered = dict(recover_delivery() or {}) if recover_delivery else {}
+        if recovered and recovered.get("status") not in {
+                "no_reassessable_mixer_presence", "protected_delivery_terminal_noop"}:
+            return {**recovered, "schedule_identity": identity,
+                "invocation_receipt": digest, "terminal_outcome": prior_identity["status"]}
         return {**_safe("scheduled_reassessment_replayed_noop"), "schedule_identity": identity,
                 "invocation_receipt": digest, "terminal_outcome": prior_identity["status"]}
     latest = store("load_latest_outcome", specialist, None) or {}
@@ -57,16 +63,12 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
         if existing.get("status") in {"completed", "contained"}:
             return {**_safe("scheduled_reassessment_replayed_noop"), "schedule_identity": identity,
                     "invocation_receipt": digest, "terminal_outcome": existing.get("status")}
-        interrupted = {**record, "status": "contained", "terminal_outcome": "schedule_claim_interrupted",
-                       "next_due_at": (_bucket(now.astimezone(SAST)) + timedelta(minutes=CADENCE_MINUTES)).isoformat(),
-                       "telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0,
-                       "writes_farm_data": False}
-        interruption_recorded = store("record_outcome", identity, interrupted)
-        if not isinstance(interruption_recorded, Mapping) or interruption_recorded.get("success") is not True:
-            return _contained("scheduled_reassessment_outcome_unproven")
+        recovered = dict(recover_delivery() or {}) if recover_delivery else {}
+        if recovered:
+            return {**recovered, "schedule_identity": identity,
+                "invocation_receipt": digest, "terminal_outcome": "claimed"}
         return {**_contained("scheduled_reassessment_claim_interrupted"),
-                "schedule_identity": identity, "invocation_receipt": digest,
-                "next_due_at": interrupted["next_due_at"]}
+            "schedule_identity": identity, "invocation_receipt": digest}
     try:
         result = dict(invoke() or {})
     except Exception:
