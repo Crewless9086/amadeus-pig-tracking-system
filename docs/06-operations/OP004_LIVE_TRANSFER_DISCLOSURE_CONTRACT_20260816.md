@@ -46,17 +46,53 @@ Ecomectin events (`MED-9123C224`, `MED-F924E93D`) and two same-signature Panacur
 duplicate treatment evidence, and blocks live-transfer support until the conflict is governed.
 It does not remove or alter the existing order line.
 
+The exact unresolved pairs are:
+
+- Ecomectin 1%, 1.0 ml, treatment date 2026-07-06: `MED-9123C224` recorded
+  2026-07-06T19:18:15.251687+00:00 and `MED-F924E93D` recorded
+  2026-07-06T19:27:59.439910+00:00, both attributed to `web_app`, with no sheet row or import batch.
+- Panacur 4%, 1.25 gram, treatment date 2026-07-06: `MED-9F6BF68A` recorded
+  2026-07-06T19:18:16.345424+00:00 and `MED-576D5EC7` recorded
+  2026-07-06T19:28:00.498868+00:00, both attributed to `web_app`, with no sheet row or import batch.
+
+The rows have identical clinical signatures within each pair but distinct identities and timestamps.
+That cannot establish whether they are duplicated records or separate administrations. An attributable
+owner or treating veterinary professional must state the physical fact for each pair. The current
+`pig_medical_events` schema contains neither predecessor nor supersession fields. The append-only
+`pig_observation_events.supersedes_observation_event_id` rail can preserve factual correction evidence
+for the same pig, but cannot govern or rewrite a medical event. Any future medical correction must add
+governed append-only medical lineage rather than delete, merge, update, or suppress these rows.
+
+The existing line is reported as `existing_line_blocks_duplicate`. The SAM writer checks existing active
+lines, but the database has no unique active `(order_id, pig_id)` constraint. Any later writer work is
+blocked on SAM adding transaction-safe canonical uniqueness or locking; this contract creates no second
+line, reservation, or allocation.
+
 Tag 151, Pig ID `PIG-2026-B156`, is Active, on farm, and purpose Sale. Its latest canonical
 weight is 4.0 kg on 2026-08-11 (`2_to_4_Kg`), which does not match the order's `5_to_6_Kg`
 request, and it has no order line. Medical event `MED-6DEF1FD54736F134C2F1D25B` records
 Ecomectin 1%, 1.0 ml, on 2026-08-11, withdrawal 28 days through 2026-09-08, recorded at
 2026-08-11T16:23:19.682893+00:00 by the attributable owner-admin principal. Its evidence digest
-is `0b4402fadbe30125875b548c66287c04584f6de022fce77c1665beb34032d191`.
+is `d780387645f291403bb2544b86c1bf7a3c3486f837633ff5e3cbe1133a3aff0c`.
 
 Tag 151 is prohibited from food-chain entry through 2026-09-08. Live-transfer support is
 `Unknown`, not approved or prohibited by that withdrawal alone, because the available canonical
 snapshot contains no current attributable clearance for transport fitness, quarantine,
 notifiable/infectious disease, veterinary movement stop, or serious health/welfare state.
+
+Canonical source ownership for those missing gates is: current health/welfare facts from effective
+non-superseded `pig_observation_events`; location chronology from `pig_location_events`; and quarantine,
+disease, veterinary movement-stop, and transport-fitness facts from attributable veterinary or
+competent-authority evidence projected through that canonical health boundary. No current typed clearance
+event exists for either pig. Tag 151 movement event `MOV-C0F1D295929E5AC3461755BE` proves the
+2026-08-11 weaning move only; it does not prove fitness or movement clearance.
+
+The active Supabase price book contains `PRICE-YOUNG_PIGLETS_2_TO_4_KG_ANY`, ZAR 350, effective
+2026-05-21, for Tag 151's current band. The order header requests `5_to_6_Kg`, whose corresponding
+active rule is ZAR 400. The order model supports line-level band and unit price, so a separately priced
+`2_to_4_Kg` line is technically representable, but it is a commercial departure from the requested
+order band. It must be presented later as one protected SAM preview with the exact ZAR 350 consequence;
+this contract does not change the order, price, weight, line, reservation, or allocation.
 
 Safe buyer wording (`livestock_treatment_disclosure_en_v1`):
 
@@ -105,7 +141,7 @@ table, production configuration, pig/order change, document, or buyer acknowledg
 ## Zero-write production proof
 
 The exact live packet digest at the 2026-08-16 cutoff is
-`fa148adf9020550793d4822a9c3e64d66bb02eb33c8f2e01c64003ab74d66371`.
+`d153d3e95aeb65466c560c586e2b529855110a578db43c8ba13f0b697e00ec35`.
 Before and after the bounded read, canonical row counts were identical: pigs 301,
 pig medical events 479, orders 31, order lines 135, order documents 35, and operational events 12.
 The read therefore created no purpose event, order membership, reservation, price, document,

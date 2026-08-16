@@ -36,8 +36,24 @@ def snapshot():
         "order_lines": [{"order_line_id": "OL-2026-01E24C", "order_id": ORDER["order_id"],
                          "pig_id": "PIG-2026-A643", "line_status": "Draft",
                          "reserved_status": "Not_Reserved"}],
+        "observation_events": [],
+        "location_events": [
+            {"location_event_id": "MOV-C0F1D295929E5AC3461755BE",
+             "pig_id": "PIG-2026-B156", "move_date": "2026-08-11"},
+        ],
+        "price_rows": [
+            {"pricing_id": "PRICE-YOUNG_PIGLETS_2_TO_4_KG_ANY",
+             "sale_category": "Young Piglets", "weight_band": "2_to_4_Kg",
+             "sex": None, "unit_price": 350, "currency": "ZAR", "active": True,
+             "effective_from": "2026-05-21T00:00:00+00:00", "created_at": "2026-05-21T00:00:00+00:00"},
+            {"pricing_id": "PRICE-YOUNG_PIGLETS_5_TO_6_KG_ANY",
+             "sale_category": "Young Piglets", "weight_band": "5_to_6_Kg",
+             "sex": None, "unit_price": 400, "currency": "ZAR", "active": True,
+             "effective_from": "2026-05-21T00:00:00+00:00", "created_at": "2026-05-21T00:00:00+00:00"},
+        ],
         "medical_events": [
-            medical("MED-9123C224", "PIG-2026-A643", "Ecomectin 1%", "2026-07-06", "2026-08-03", 28),
+            medical("MED-9123C224", "PIG-2026-A643", "Ecomectin 1%", "2026-07-06", "2026-08-03", 28,
+                    created="2026-07-06T19:18:15+00:00"),
             medical("MED-F924E93D", "PIG-2026-A643", "Ecomectin 1%", "2026-07-06", "2026-08-03", 28,
                     created="2026-07-06T19:27:59+00:00"),
             medical("MED-6DEF1FD54736F134C2F1D25B", "PIG-2026-B156", "Ecomectin 1%",
@@ -84,6 +100,15 @@ def test_tag_151_disclosure_is_exact_and_order_fit_is_independently_blocked():
     assert row["current_order_eligibility"]["state"] == "blocked"
     assert "2_to_4_Kg" in row["current_order_eligibility"]["reason"]
     assert "5_to_6_Kg" in row["current_order_eligibility"]["reason"]
+    price = row["price_band_compatibility"]
+    assert price["state"] == "incompatible"
+    assert price["separately_priced_line_supported"] is True
+    assert price["separate_price_rule"]["pricing_id"] == "PRICE-YOUNG_PIGLETS_2_TO_4_KG_ANY"
+    assert price["separate_price_rule"]["unit_price"] == 350
+    assert "protected owner preview" in price["commercial_consequence"]
+    assert row["canonical_dependency_evidence"]["movement"]["history_event_ids"] == [
+        "MOV-C0F1D295929E5AC3461755BE"
+    ]
 
 
 def test_duplicate_treatment_evidence_fails_closed_without_hiding_order_line():
@@ -94,6 +119,17 @@ def test_duplicate_treatment_evidence_fails_closed_without_hiding_order_line():
     assert row["current_order_eligibility"]["state"] == "included_draft_unreserved"
     assert any(item.get("conflict") == "possible_duplicate_treatment_evidence"
                for item in row["treatment_evidence_conflicts"])
+    assert row["medical_ambiguity"]["state"] == "unresolved_conflicting_evidence"
+    assert row["medical_ambiguity"]["event_pairs"][0]["medical_event_ids"] == [
+        "MED-9123C224", "MED-F924E93D"
+    ]
+    assert "veterinary professional" in row["medical_ambiguity"]["required_resolution"]
+    assert row["medical_correction_authority"]["medical_schema_supports_supersession"] is False
+    protection = row["order_line_duplication_protection"]
+    assert protection["state"] == "existing_line_blocks_duplicate"
+    assert protection["active_line_count"] == 1
+    assert protection["active_order_line_ids"] == ["OL-2026-01E24C"]
+    assert protection["database_unique_order_pig_constraint"] is False
 
 
 def test_changed_medical_evidence_changes_disclosure_and_packet_digest_without_mutation():
@@ -143,6 +179,20 @@ def test_document_and_acknowledgement_contracts_are_design_only_and_append_only_
     assert "history is never rewritten" in acknowledgement["medical_change_rule"]
 
 
+def test_future_or_wrong_sex_price_rule_cannot_create_a_false_commercial_option():
+    evidence = snapshot()
+    evidence["price_rows"] = [
+        {**evidence["price_rows"][0], "sex": "Female"},
+        {**evidence["price_rows"][0], "pricing_id": "PRICE-FUTURE",
+         "sex": None, "effective_from": "2026-08-17T00:00:00+00:00"},
+    ]
+    row = by_tag(compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16)))["151"]
+
+    assert row["price_band_compatibility"]["separately_priced_line_supported"] is False
+    assert row["price_band_compatibility"]["separate_price_rule"] is None
+    assert "No authoritative separate price rule" in row["price_band_compatibility"]["commercial_consequence"]
+
+
 def test_loader_uses_one_repeatable_read_read_only_snapshot_and_no_write_sql():
     class Cursor:
         def __init__(self, rows): self.rows = rows
@@ -165,6 +215,12 @@ def test_loader_uses_one_repeatable_read_read_only_snapshot_and_no_write_sql():
                 return Cursor([ORDER])
             if "from public.order_lines" in normalized:
                 return Cursor(snapshot()["order_lines"])
+            if "from public.pig_observation_events" in normalized:
+                return Cursor(snapshot()["observation_events"])
+            if "from public.pig_location_events" in normalized:
+                return Cursor(snapshot()["location_events"])
+            if "from public.sales_pricing" in normalized:
+                return Cursor(snapshot()["price_rows"])
             raise AssertionError(normalized)
 
     connection = Connection()
