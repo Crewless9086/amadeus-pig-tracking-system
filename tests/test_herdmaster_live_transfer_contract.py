@@ -39,7 +39,8 @@ def snapshot():
         "observation_events": [],
         "location_events": [
             {"location_event_id": "MOV-C0F1D295929E5AC3461755BE",
-             "pig_id": "PIG-2026-B156", "move_date": "2026-08-11"},
+             "pig_id": "PIG-2026-B156", "move_date": "2026-08-11",
+             "created_at": "2026-08-11T16:23:19+00:00"},
         ],
         "price_rows": [
             {"pricing_id": "PRICE-YOUNG_PIGLETS_2_TO_4_KG_ANY",
@@ -269,6 +270,10 @@ def test_cutoff_and_observation_supersession_govern_current_without_hiding_histo
          "observed_at": "2026-08-17T08:00:00+00:00", "recorded_at": "2026-08-17T09:00:00+00:00",
          "supersedes_observation_event_id": None},
     ]
+    evidence["location_events"].append({
+        "location_event_id": "MOV-FUTURE", "pig_id": "PIG-2026-B156",
+        "move_date": "2026-08-17", "created_at": "2026-08-17T09:00:00+00:00",
+    })
     row = by_tag(compose_live_transfer_contract(evidence, as_of=date(2026, 8, 16)))["151"]
     health = row["canonical_dependency_evidence"]["health_and_welfare"]
 

@@ -416,6 +416,11 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
         food_chain, active = _food_chain(events, as_of, completeness)
         observation_projection = _effective_observation_projection(
             [row for row in observations if _text(row.get("pig_id")) == pig_id], as_of)
+        governed_movements = [
+            row for row in movements
+            if _text(row.get("pig_id")) == pig_id
+            and _within_cutoff(row, "move_date", "created_at", as_of)
+        ]
         independent = {
             name: _missing_current_gate(name) for name in (
                 "fit_for_transport", "quarantine", "notifiable_or_infectious_disease",
@@ -484,8 +489,8 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
                 },
                 "movement": {
                     "authority": "pig_location_events plus an attributable veterinary movement-stop fact",
-                    "history_event_ids": [_text(row.get("location_event_id")) for row in movements
-                                          if _text(row.get("pig_id")) == pig_id],
+                    "history_event_ids": [_text(row.get("location_event_id"))
+                                          for row in governed_movements],
                     "limitation": "Movement history establishes location chronology, not fitness or movement clearance.",
                 },
                 "quarantine_and_disease": {
