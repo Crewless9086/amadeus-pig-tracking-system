@@ -137,7 +137,11 @@ function naturalIdentityCompare(left, right) {
 }
 
 function offspringState(identity = {}) {
-  return text(identity.current_status || identity.status);
+  return known(identity.current_status || identity.status) ? String(identity.current_status || identity.status) : "Onbekend";
+}
+
+function ownerValue(value) {
+  return known(value) ? String(value) : "Onbekend";
 }
 
 function offspringHtml(identities, currentName) {
@@ -152,19 +156,19 @@ function offspringHtml(identities, currentName) {
     const pigId = identity.technical_identity?.pig_id || identity.pig_id;
     const label = identity.tag_number || identity.name || "Naam/Tag onbekend";
     const identityCell = `<strong>${esc(label)}</strong>${identity.tag_number && identity.name ? `<span>${esc(identity.name)}</span>` : ""}${pigId ? `<small>Pig-ID ${esc(pigId)}</small>` : ""}`;
-    const contents = `<td data-label="Tag / Naam">${href ? `<a href="${esc(href)}" aria-label="Open ${esc(label)} se profiel">${identityCell}</a>` : identityCell}</td><td data-label="Huidige status">${esc(offspringState(identity))}</td><td data-label="Doel">${esc(text(identity.purpose))}</td><td data-label="Werpsel">${esc(text(identity.litter_identity?.display_name || identity.litter_id))}</td>`;
+    const contents = `<td data-label="Tag / Naam">${href ? `<a href="${esc(href)}" aria-label="Open ${esc(label)} se profiel">${identityCell}</a>` : identityCell}</td><td data-label="Huidige status">${esc(offspringState(identity))}</td><td data-label="Doel">${esc(ownerValue(identity.purpose))}</td><td data-label="Werpsel">${esc(ownerValue(identity.litter_identity?.display_name || identity.litter_id))}</td>`;
     return `<tr>${contents}</tr>`;
   }).join("")}</tbody></table></div>`;
 }
 
 function offspringSummaryHtml(offspring, outcomes) {
   const summary = offspring.summary || offspring.status_summary || {};
-  return metric("Toeskryfbare werpsels", num(outcomes.observed_litter_count))
-    + metric("Nageslag aangeteken", num(offspring.sample_size))
-    + metric("Aktief op plaas", num(summary.active_on_farm))
-    + metric("Verkoop / toegeken", num(summary.sold_or_allocated))
-    + metric("Oorlede", num(summary.deceased))
-    + metric("Ander / onbekend", num(summary.other_or_unknown));
+  return metric("Toeskryfbare werpsels", ownerValue(outcomes.observed_litter_count))
+    + metric("Nageslag aangeteken", ownerValue(offspring.sample_size))
+    + metric("Aktief op plaas", ownerValue(summary.active_on_farm))
+    + metric("Verkoop / toegeken", ownerValue(summary.sold_or_allocated))
+    + metric("Oorlede", ownerValue(summary.deceased))
+    + metric("Ander / onbekend", ownerValue(summary.other_or_unknown));
 }
 
 function ids(title, values) {
