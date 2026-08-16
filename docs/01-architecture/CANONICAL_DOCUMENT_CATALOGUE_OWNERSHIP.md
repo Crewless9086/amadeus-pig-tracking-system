@@ -6,9 +6,9 @@ Status: Mission 1 source foundation. This is descriptive metadata, not a documen
 
 | Identity | Existing owner/generator | Current contract truth |
 | --- | --- | --- |
-| `farm.weekly_weight_sheet.v1` | HERDMASTER; `/print-sheets`, `templates/print-sheets.html`, `static/js/printSheets.js` | HTML preview supported; PDF and Telegram unsupported; physical/direct-print eligibility Unknown |
-| `farm.weight_report.v1` | HERDMASTER; `/weight-report`, `templates/weight-report.html`, `static/js/weightReport.js` | HTML preview supported; PDF and Telegram unsupported; physical/direct-print eligibility Unknown |
-| `farm.mating_litter_record.v1` | HERDMASTER; `/paring-werpselrekord`, template and JS of the same name | Afrikaans HTML preview supported; PDF and Telegram unsupported; physical/direct-print eligibility Unknown |
+| `farm.weekly_weight_sheet.v1` | HERDMASTER; `/print-sheets`, `templates/print-sheets.html`, `static/js/printSheets.js` | HTML preview supported from transitional Supabase-first livestock/pen reads with bounded Sheets fallback; PDF and Telegram unsupported; physical/direct-print eligibility Unknown |
+| `farm.weight_report.v1` | HERDMASTER; `/weight-report`, `templates/weight-report.html`, `static/js/weightReport.js` | HTML preview supported from transitional Supabase-first weight/pig reads with bounded Sheets fallback; PDF and Telegram unsupported; physical/direct-print eligibility Unknown |
+| `farm.mating_litter_record.v1` | HERDMASTER; `/paring-werpselrekord`, template and JS of the same name | Afrikaans HTML preview supported from transitional Supabase-first mating/litter reads with bounded Sheets fallback; PDF and Telegram unsupported; physical/direct-print eligibility Unknown |
 | `sales.loading_sheet.v1` | SAM; `loading_sheet_service.generate_loading_sheet_for_order` | PDF and existing owner-Telegram delivery supported from transitional Supabase reads with Sheets fallback; preview and direct print Unknown |
 | `sales.removal_transport.v1` | SAM; `movement_documents_service.generate_removal_certificate_for_order` | PDF and existing owner-Telegram delivery supported from transitional Supabase reads with Sheets fallback plus operator/default movement facts whose authority may be Unknown; preview and direct print Unknown |
 | `sales.health_declaration.v1` | SAM; `movement_documents_service.generate_health_declaration_for_order` | PDF and existing owner-Telegram delivery supported; medical evidence authority, preview and direct print Unknown; current generator accepts operator health notes |
