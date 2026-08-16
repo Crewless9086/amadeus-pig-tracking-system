@@ -37,6 +37,13 @@ class CanonicalReviewReadbackTests(unittest.TestCase):
         self.assertEqual(owner["current_review"]["canonical_review"], canonical)
         self.assertNotIn("handoff_file", owner["current_review"])
 
+    def test_general_owner_packet_does_not_expose_canonical_missions(self):
+        owner = get_jarvis_owner_review_packet()
+        review = owner["current_review"]["canonical_review"]
+        self.assertEqual(review["status"], "canonical_review_restricted")
+        self.assertEqual(review["missions"], [])
+        self.assertEqual(review["mission_count"], 0)
+
     def test_learning_packet_never_recommends_historical_handoff(self):
         packet, status = build_learning_packet({"kind": "routing_review", "title": "x"})
         self.assertEqual(status, 200)

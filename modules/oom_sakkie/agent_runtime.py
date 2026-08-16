@@ -1424,11 +1424,12 @@ def get_agent_runtime_review_packet(review_reader=get_canonical_review_readback)
     }
 
 
-def get_jarvis_owner_review_packet(review_reader=get_canonical_review_readback):
+def get_jarvis_owner_review_packet(review_reader=None):
     progress = get_jarvis_product_progress()
     command_center = get_agent_command_center()
     safety_gates = get_jarvis_safety_gate_board()
-    runtime_review = get_agent_runtime_review_packet(review_reader=review_reader)
+    runtime_review = get_agent_runtime_review_packet(
+        review_reader=review_reader or _restricted_canonical_review_readback)
     learning_consumption = get_learning_influence_consumption_readiness()
     consumption_audit_rail = get_learning_influence_consumption_audit_rail_blueprint()
     consumer_design = get_learning_influence_consumer_design_packet()
@@ -1442,6 +1443,7 @@ def get_jarvis_owner_review_packet(review_reader=get_canonical_review_readback):
         "locked_gate_count": safety_gates.get("locked_count", 0),
         "manual_check_count": safety_gates.get("manual_check_count", 0),
     }
+
     return {
         "success": True,
         "mode": "jarvis_owner_review_packet_only",
@@ -1488,6 +1490,20 @@ def get_jarvis_owner_review_packet(review_reader=get_canonical_review_readback):
         "claude_prompt": CURRENT_REVIEW_PROMPT,
         "owner_instruction": "Use this as a read-only review checklist. Do not treat it as approval to unlock runtime authority.",
         "next_gate": "owner_and_claude_review_before_any_runtime_authority_change",
+    }
+
+
+def _restricted_canonical_review_readback():
+    """Identity-free result for the general Oom Sakkie message/tool surface."""
+    return {
+        "success": False,
+        "status": "canonical_review_restricted",
+        "state": "Unknown",
+        "source": CURRENT_REVIEW_SOURCE,
+        "mission_count": 0,
+        "missions": [],
+        "historical_pointer_loaded": False,
+        "historical_pointer_authority": False,
     }
 
 

@@ -46,7 +46,6 @@ def _review_identity(mission):
         "mission_id": str(mission.get("mission_id") or ""),
         "status": str(mission.get("status") or "Unknown"),
         "updated_at": str(mission.get("updated_at") or "Unknown"),
-        "review_generation": str(packet.get("review_generation") or "Unknown"),
         "review_status": str(packet.get("review_status") or "Unknown"),
         "recommended_next_action": str(packet.get("recommended_next_action") or "Unknown"),
     }
