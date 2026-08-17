@@ -1123,13 +1123,13 @@ def load_full_lifecycle_merit_evidence(
         )
         meat_processing = _fetch_all(
             """select link.pig_id, link.batch_pig_id, batch.batch_id,
-                      batch.status as batch_status,
+                      batch.status as batch_status, batch.updated_at as batch_status_at,
                       completed.event_id as completion_event_id,
-                      completed.event_type
+                      completed.event_type, completed.event_date as completion_event_date
                  from public.meat_processing_batch_pigs link
                  join public.meat_processing_batches batch on batch.batch_id = link.batch_id
                  left join lateral (
-                     select event.event_id, event.event_type
+                     select event.event_id, event.event_type, event.event_date
                        from public.meat_processing_batch_events event
                       where event.batch_id = batch.batch_id
                         and (event.pig_id is null or event.pig_id = link.pig_id)

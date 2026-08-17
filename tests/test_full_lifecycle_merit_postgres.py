@@ -30,7 +30,7 @@ class FullLifecycleMeritPostgresTests(unittest.TestCase):
             c.execute("create table if not exists public.pig_medical_events(medical_event_id text primary key,pig_id text,treatment_date date)")
             c.execute("create table if not exists public.sales_transactions(sale_id text primary key,sale_date timestamptz,sale_stream text,sale_channel text,sale_status text)")
             c.execute("create table if not exists public.sales_transaction_items(sale_item_id text primary key,sale_id text,pig_id text)")
-            c.execute("create table if not exists public.meat_processing_batches(batch_id text primary key,status text)")
+            c.execute("create table if not exists public.meat_processing_batches(batch_id text primary key,status text,updated_at timestamptz default now())")
             c.execute("create table if not exists public.meat_processing_batch_pigs(batch_pig_id text primary key,batch_id text,pig_id text)")
             c.execute("create table if not exists public.meat_processing_batch_events(event_id text primary key,batch_id text,pig_id text,event_type text,event_date date,created_at timestamptz default now())")
 

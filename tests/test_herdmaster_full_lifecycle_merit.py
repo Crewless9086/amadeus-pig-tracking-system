@@ -162,27 +162,30 @@ def _disposition_evidence():
         })
     data["sales"] = [
         {"pig_id": "C2", "sale_id": "S-LIVE", "sale_item_id": "I-LIVE",
-         "sale_stream": "Livestock", "sale_status": "Completed"},
+         "sale_stream": "Livestock", "sale_status": "Completed", "sale_date": "2026-05-01"},
         {"pig_id": "C2", "sale_id": "S-LIVE", "sale_item_id": "I-LIVE-DUP",
-         "sale_stream": "Livestock", "sale_status": "Completed"},
+         "sale_stream": "Livestock", "sale_status": "Completed", "sale_date": "2026-05-01"},
         {"pig_id": "C3", "sale_id": "S-AUCT", "sale_item_id": "I-AUCT",
-         "sale_stream": "Livestock", "sale_channel": "Auction", "sale_status": "Completed"},
+         "sale_stream": "Livestock", "sale_channel": "Auction", "sale_status": "Completed", "sale_date": "2026-05-02"},
         {"pig_id": "C4", "sale_id": "S-SLAUGHTER", "sale_item_id": "I-SLAUGHTER",
-         "sale_stream": "Slaughter", "sale_status": "Completed"},
+         "sale_stream": "Slaughter", "sale_status": "Completed", "sale_date": "2026-05-03"},
         {"pig_id": "C7", "sale_id": "S-DRAFT", "sale_item_id": "I-DRAFT",
-         "sale_stream": "Livestock", "sale_status": "Draft"},
+         "sale_stream": "Livestock", "sale_status": "Draft", "sale_date": "2026-05-04"},
         {"pig_id": "C8", "sale_id": "S-CONFLICT", "sale_item_id": "I-CONFLICT",
-         "sale_stream": "Livestock", "sale_status": "Completed"},
+         "sale_stream": "Livestock", "sale_status": "Completed", "sale_date": "2026-05-05"},
     ]
     data["meat_processing"] = [
         {"pig_id": "C5", "batch_id": "B-COMPLETE", "batch_pig_id": "BP-5",
-         "batch_status": "Completed", "completion_event_id": "ME-5", "event_type": "completed"},
+         "batch_status": "Completed", "batch_status_at": "2026-05-06",
+         "completion_event_id": "ME-5", "event_type": "completed",
+         "completion_event_date": "2026-05-06"},
         {"pig_id": "C7", "batch_id": "B-PLANNED", "batch_pig_id": "BP-7",
          "batch_status": "Planned"},
     ]
     data["lifecycle"] = [{
         "lifecycle_event_id": "LIFE-DEAD", "pig_id": "C6",
-        "effective_at": "2026-06-01", "event_payload": {"resulting_status": "Dead"},
+        "effective_at": "2026-06-01", "lifecycle_event_type": "exited_farm",
+        "event_payload": {"resulting_status": "Dead"},
     }]
     return data
 
@@ -197,6 +200,9 @@ def test_offspring_dispositions_cover_every_category_and_reconcile_exactly():
     }
     assert projected["C2"]["evidence_state"] == "supported"
     assert len(projected["C2"]["evidence"]) == 2
+    assert projected["C2"]["evidence"][0]["sale_status"] == "Completed"
+    assert projected["C5"]["evidence"][0]["completion_event_date"] == "2026-05-06"
+    assert projected["C6"]["evidence"][0]["matched_structured_facts"] == ["dead"]
     assert projected["C7"]["evidence_state"] == "unknown"
     assert projected["C7"]["identity"] == {
         "name": "Unknown Child", "tag_number": "TAG-C7", "pig_id": "C7",
@@ -230,3 +236,36 @@ def test_empty_litter_and_permuted_duplicate_evidence_are_deterministic():
     second["lifecycle"].reverse()
     assert (compose_full_lifecycle_merit(first, pig_id="S1")["rows"][0]["offspring"] ==
             compose_full_lifecycle_merit(second, pig_id="S1")["rows"][0]["offspring"])
+
+
+def test_future_free_text_and_cancelled_processing_evidence_fail_closed():
+    data = _disposition_evidence()
+    data["sales"].append({
+        "pig_id": "C7", "sale_id": "S-FUTURE", "sale_item_id": "I-FUTURE",
+        "sale_stream": "Livestock", "sale_status": "Completed", "sale_date": "2026-09-01",
+    })
+    data["meat_processing"].append({
+        "pig_id": "C7", "batch_id": "B-FUTURE", "batch_pig_id": "BP-FUTURE",
+        "batch_status": "Completed", "batch_status_at": "2026-09-01",
+        "completion_event_id": "ME-FUTURE", "event_type": "completed",
+        "completion_event_date": "2026-09-01",
+    })
+    data["lifecycle"].append({
+        "lifecycle_event_id": "LIFE-NOTE", "pig_id": "C7", "effective_at": "2026-06-02",
+        "lifecycle_event_type": "other", "event_note": "Dead", "event_payload": {},
+    })
+    data["meat_processing"].append({
+        "pig_id": "C8", "batch_id": "B-CANCELLED", "batch_pig_id": "BP-CANCELLED",
+        "batch_status": "Cancelled", "batch_status_at": "2026-07-01",
+        "completion_event_id": "ME-CANCELLED", "event_type": "completed",
+        "completion_event_date": "2026-06-30",
+    })
+    projected = {
+        item["identity"]["pig_id"]: item
+        for item in compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]["offspring"]["dispositions"]
+    }
+    assert projected["C7"]["primary_disposition"] == "other_unresolved"
+    assert projected["C7"]["candidate_dispositions"] == []
+    assert projected["C8"]["primary_disposition"] == "other_unresolved"
+    assert projected["C8"]["evidence_state"] == "conflicting"
+    assert projected["C8"]["conflicts"] == ["cancelled_batch_has_completion_event"]

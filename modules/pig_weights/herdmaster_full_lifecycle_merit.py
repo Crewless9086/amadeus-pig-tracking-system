@@ -81,6 +81,7 @@ def _offspring_disposition(child, *, sales, processing, lifecycle):
     """Classify one child from completed canonical facts; ambiguity fails closed."""
     pig_id = _text(child.get("pig_id"))
     candidates = defaultdict(list)
+    conflicts = []
 
     for sale in sales:
         if _text(sale.get("pig_id")) != pig_id or _normalized(sale.get("sale_status")) != "completed":
@@ -99,33 +100,53 @@ def _offspring_disposition(child, *, sales, processing, lifecycle):
                 "sale_item_id": _text(sale.get("sale_item_id")) or None,
                 "sale_stream": _text(sale.get("sale_stream")) or None,
                 "sale_channel": _text(sale.get("sale_channel")) or None,
+                "sale_status": _text(sale.get("sale_status")) or None,
+                "sale_date": sale.get("sale_date"),
                 "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
             })
 
     for item in processing:
         if _text(item.get("pig_id")) != pig_id:
             continue
-        completed = _normalized(item.get("batch_status")) == "completed" or _normalized(item.get("event_type")) == "completed"
+        batch_status = _normalized(item.get("batch_status"))
+        event_type = _normalized(item.get("event_type"))
+        completed = batch_status == "completed" or event_type == "completed"
+        processing_evidence = {
+            "source": "meat_processing_batch",
+            "batch_id": _text(item.get("batch_id")) or None,
+            "batch_pig_id": _text(item.get("batch_pig_id")) or None,
+            "batch_status": _text(item.get("batch_status")) or None,
+            "batch_status_at": item.get("batch_status_at"),
+            "completion_event_id": _text(item.get("completion_event_id")) or None,
+            "completion_event_type": _text(item.get("event_type")) or None,
+            "completion_event_date": item.get("completion_event_date"),
+            "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
+        }
+        if batch_status == "cancelled" and event_type == "completed":
+            candidates["meat_processed"].append(processing_evidence)
+            conflicts.append("cancelled_batch_has_completion_event")
+            continue
         if completed:
-            candidates["meat_processed"].append({
-                "source": "meat_processing_batch",
-                "batch_id": _text(item.get("batch_id")) or None,
-                "batch_pig_id": _text(item.get("batch_pig_id")) or None,
-                "completion_event_id": _text(item.get("completion_event_id")) or None,
-                "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
-            })
+            candidates["meat_processed"].append(processing_evidence)
 
     for event in lifecycle:
         if _text(event.get("pig_id")) != pig_id:
             continue
         payload = _payload(event)
-        values = {_normalized(event.get("event_note")), _normalized(payload.get("exit_reason")),
-                  _normalized(payload.get("resulting_status")), _normalized(payload.get("status"))}
-        if values & {"dead", "died", "deceased", "died_after_birth"}:
+        lifecycle_type = _normalized(event.get("lifecycle_event_type"))
+        structured_values = {
+            _normalized(payload.get("exit_reason")),
+            _normalized(payload.get("resulting_status")),
+            _normalized(payload.get("status")),
+        }
+        matched_values = sorted(structured_values & {"dead", "died", "deceased", "died_after_birth"})
+        if lifecycle_type in {"exited_farm", "lifecycle_correction", "status_changed"} and matched_values:
             candidates["deceased"].append({
                 "source": "pig_lifecycle_event",
                 "lifecycle_event_id": _text(event.get("lifecycle_event_id")) or None,
+                "lifecycle_event_type": _text(event.get("lifecycle_event_type")) or None,
                 "effective_at": event.get("effective_at"),
+                "matched_structured_facts": matched_values,
                 "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
             })
 
@@ -138,7 +159,7 @@ def _offspring_disposition(child, *, sales, processing, lifecycle):
         })
 
     categories = sorted(candidates)
-    disposition = categories[0] if len(categories) == 1 else "other_unresolved"
+    disposition = categories[0] if len(categories) == 1 and not conflicts else "other_unresolved"
     evidence = [item for category in categories for item in candidates[category]]
     evidence.sort(key=lambda item: tuple(_text(item.get(key)) for key in (
         "source", "sale_id", "sale_item_id", "batch_id", "batch_pig_id",
@@ -147,8 +168,9 @@ def _offspring_disposition(child, *, sales, processing, lifecycle):
     return {
         "primary_disposition": disposition,
         "rule_id": OFFSPRING_DISPOSITION_RULE_ID,
-        "evidence_state": "supported" if len(categories) == 1 else ("conflicting" if categories else "unknown"),
+        "evidence_state": "supported" if len(categories) == 1 and not conflicts else ("conflicting" if categories or conflicts else "unknown"),
         "candidate_dispositions": categories,
+        "conflicts": sorted(set(conflicts)),
         "evidence": evidence,
     }
 
@@ -211,6 +233,16 @@ def compose_full_lifecycle_merit(snapshot, *, pig_id=None):
         matings_all = [r for r in matings_all if _date(r.get("mating_date")) and _date(r.get("mating_date")) <= cutoff]
         weights_all = [r for r in weights_all if _date(r.get("weight_date")) and _date(r.get("weight_date")) <= cutoff]
         medical_all = [r for r in medical_all if _date(r.get("treatment_date")) and _date(r.get("treatment_date")) <= cutoff]
+        sales_all = [r for r in sales_all if _date(r.get("sale_date")) and _date(r.get("sale_date")) <= cutoff]
+        processing_all = [r for r in processing_all if (
+            (_normalized(r.get("event_type")) == "completed"
+             and _date(r.get("completion_event_date"))
+             and _date(r.get("completion_event_date")) <= cutoff)
+            or (_normalized(r.get("event_type")) != "completed"
+                and _normalized(r.get("batch_status")) == "completed"
+                and _date(r.get("batch_status_at"))
+                and _date(r.get("batch_status_at")) <= cutoff)
+        )]
     else:
         litters_all, observations_all, lifecycle_all = litters_raw, observations_raw, lifecycle_raw
     litters, litter_lineage = _effective(litters_all, "litter_id", "supersedes_litter_id")
