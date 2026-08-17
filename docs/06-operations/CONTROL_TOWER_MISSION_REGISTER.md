@@ -1242,3 +1242,29 @@ No customer message, quote, payment, reservation, allocation, publication,
 spend, farm/stock mutation, n8n authority or Google Sheets authority was
 created. Preserve the historical dirty SAM worktree and its three files; do not
 copy or overwrite them blindly.
+
+### Revenue-loop owner correction: BEACON demand precedes SAM conversion — 2026-08-17
+
+Charl confirmed the governing commercial dependency: BEACON must create and
+amplify qualified demand; SAM then receives, qualifies and converts the resulting
+customer conversations. A zero-item SAM inbox cannot be treated as an independent
+event wait while the governed BEACON publication/boost journey has not generated
+traffic. The two agents retain distinct authorities, but their outcome chain is
+one closed Revenue loop: canonical sale-ready stock and approved media -> BEACON
+proposal -> protected publication/boost authority -> provider-confirmed campaign
+-> attributable customer inbound -> SAM response/qualification -> durable
+follow-up and commercial outcome -> BEACON performance learning.
+
+Revenue Slot 3 therefore remains `WORKING / DEMAND_GENERATION_NOT_COMPLETE`.
+BEACON generation 2 must not stop at an internal opportunity card. It must
+prepare the exact Facebook post, media selection, audience, schedule, boost
+budget/cap, duration, attribution identity and rollback/stop controls. Publication
+and spend remain protected unless an applicable durable standing authority is
+proven; where authority is absent, request one concise exact decision rather than
+leaving SAM event-waiting indefinitely. After authorization, the deployed BEACON
+runtime—not a development terminal—must publish and boost, obtain Meta/provider
+readback and create the attribution boundary that SAM uses for resulting inbound.
+SAM must then handle eligible responses through its canonical provider/claim
+rail. Business completion requires the complete attributed demand-to-conversion
+journey and a later terminal-independent cycle, not merely a BEACON case or SAM
+scanner heartbeat.
