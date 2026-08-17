@@ -1373,3 +1373,32 @@ plan, provider-confirmed actuation, physical water/outcome evidence, automatic
 OFF, canonical accounting, replay silence and a later terminal-independent
 cycle. Development terminals may never operate the devices or manufacture that
 proof.
+
+### CORE checkout-safety repair interruption and durable continuation — 2026-08-17
+
+Continue existing `CMQ-20260813-05` Recovery Slot 1; do not create a duplicate
+mission. The checkout-safety source terminal did not complete a handover. Fresh
+inspection at 16:00 SAST proved launcher PID 100832 had no Codex, test or other
+work child, its durable transcript had stopped at 15:54, the expected final
+handover file was absent, and the retained worktree still held the intended
+two-file uncommitted repair in `modules/charlie/runtime_staging.py` and
+`tests/test_charlie_runtime_staging.py`. The partial full-suite invocation is
+inconclusive. The exact stale launcher and console were closed after that proof;
+no source or evidence was removed.
+
+The same retained worktree and branch were resumed through a new durable
+non-interactive source terminal at 16:00 SAST. Fresh ancestry proves launcher
+41380 owns a live Codex process, code-mode host and current command activity.
+Classify CORE as `WORKING / CHECKOUT_SAFETY_SOURCE_REPAIR_RESUMED`; source-only
+authority remains in force. The target must complete the tracked governance
+preflight, full relevant suite to final exit, static checks, two independent
+reviews, exact-head CI and normal merge, then return the complete
+`CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md` and stop before validation,
+staging, activation or runtime mutation. The durable transcript and final-message
+paths are `C:\tmp\CORE_CHECKOUT_SAFETY_DURABLE_RESUME2_20260817.log` and
+`C:\tmp\CORE_CHECKOUT_SAFETY_DURABLE_RESUME2_LAST_MESSAGE_20260817.md`.
+
+Current authoritative main advanced to `2b8983961df6a70842dddd2276ad6a32c71407e1`
+through FARM/OOM PR #1044 while the CORE source repair was being resumed. That
+integration must be reconciled normally and rechecked for overlap before the CORE
+PR; historical waits or visible shells confer no dependency or ownership.
