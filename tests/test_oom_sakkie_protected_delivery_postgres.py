@@ -19,6 +19,14 @@ class ProtectedDeliveryPostgresTests(unittest.TestCase):
        delivery_state text not null default 'claim_created',delivery_attempt_id text,
        delivery_attempted_at timestamptz,provider_accepted_at timestamptz,delivery_confirmed_at timestamptz,
        delivery_ambiguous_at timestamptz,delivery_result jsonb)""")
+      db.execute("""alter table app_private.oom_protected_action_claims
+       add column if not exists delivery_state text not null default 'claim_created',
+       add column if not exists delivery_attempt_id text,
+       add column if not exists delivery_attempted_at timestamptz,
+       add column if not exists provider_accepted_at timestamptz,
+       add column if not exists delivery_confirmed_at timestamptz,
+       add column if not exists delivery_ambiguous_at timestamptz,
+       add column if not exists delivery_result jsonb""")
   def connect(self):return psycopg.connect(URL)
   def setUp(self):
     self.token="D"+uuid.uuid4().hex;self.digest="G"+uuid.uuid4().hex
