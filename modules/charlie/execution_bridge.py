@@ -8143,6 +8143,9 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
     preserved = set(ledger.get("preserved_upstream_artifacts") if isinstance(ledger.get("preserved_upstream_artifacts"), list) else [])
     findings = []
     warnings = []
+    from modules.charlie.vault_alignment import evaluate_vault_alignment
+    vault_alignment = evaluate_vault_alignment()
+    findings.extend(vault_alignment.get("findings") or [])
     context = build_vault_brain_context(mission)
     retrieval = context.get("retrieval") if isinstance(context.get("retrieval"), dict) else retrieve_vault_sources(mission)
     agent_sequence = _mission_agent_sequence(mission)
@@ -8228,6 +8231,7 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
         "agentic_architecture": agentic_gate,
         "missing_doctrine": missing_doctrine,
         "retrieval": retrieval,
+        "vault_alignment": vault_alignment,
         "owner_preferences": context.get("owner_preferences", {}),
         "vault_context_docs": [entry.get("path", "") for entry in context.get("docs", []) if isinstance(entry, dict)],
         "sensitive_changed_files": sensitive_changes,

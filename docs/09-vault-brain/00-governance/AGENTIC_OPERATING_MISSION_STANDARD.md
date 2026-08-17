@@ -54,6 +54,45 @@ Pages, forms, dashboards, ledgers, packets, and canaries are supporting audit, t
 
 Oom Sakkie should become the ordinary owner interface wherever practical. Specialist agents must perform the underlying reconciliation and work rather than sending Charl through multiple disconnected pages and forms.
 
+## Continuous Operations Acceptance Gate
+
+An agent mission is not the delivery of one brief, page, reply, card, proposal,
+scheduled run or hardware action. Those are outputs of a continuing operating
+loop. The mission remains incomplete until the deployed agent:
+
+1. consumes every relevant genuine event and scheduled reassessment through a
+   durable subscription, queue or scheduler;
+2. maintains current context and reconciles the event with canonical evidence;
+3. completes every safe step inside standing authority without a terminal or
+   Charl waking, relaying or monitoring it;
+4. delegates typed work to the responsible specialist and follows that work to
+   a verified outcome or one exact unresolved exception;
+5. records the result, follow-up owner and next trigger durably;
+6. remains supervised and resumes after restart; and
+7. proves a later terminal-independent cycle after the development terminal is
+   closed.
+
+A daily brief is a summary projection of this continuously maintained state. It
+is never the management loop or the acceptance target. An agent that waits for
+the next brief while new evidence, due work or failed dependencies accumulate is
+`scheduler-degraded` or `dormant`, not operational.
+
+Oom Sakkie is the continuously active farm manager and exception coordinator.
+It must ingest new farm, herd, water, device, sales, marketing, provider and
+runtime evidence as it arrives; investigate contradictions; dispatch the correct
+specialist; track unresolved work; reassess at the earliest relevant evidence or
+time trigger; and inform the appropriate family member when a useful result,
+genuine exception or protected decision exists. It must not merely concatenate
+specialist summaries or wait twenty-four hours to notice a change.
+
+Every terminal assigned to an autonomous agent owns the complete deployed
+acceptance journey. A source/PR/merge/deployment stop is permitted only at a
+genuine authority or serialized-release boundary. The handover must then bind a
+durable automatic promotion trigger and exact next owner; otherwise the mission
+is `INCOMPLETE_HANDOFF`, not ready or complete. Control Tower must reject any
+closeout whose target is an artifact rather than the continuing operational
+result.
+
 ## Standing Authority And Owner-Burden Gate
 
 Charl's default operating intent is delegated operation with the least reasonable
@@ -215,6 +254,14 @@ terminal must return the current
 untracked, stale or unread operational protocol/template evidence blocks a
 Control Tower dispatch rather than permitting remembered or fallback procedure.
 
+The companion protocol's Strategic Autonomy And Global WIP Gate is mandatory.
+An all-terminal sweep identifies truth and eligibility; it does not create a
+duty to keep every terminal busy. Control Tower must prefer the smallest set of
+development missions that removes owner labour and produces terminal-independent
+deployed-agent operation. A deliberately frozen eligible mission is compliant
+when the durable register records the WIP cap, priority outcome and promotion
+trigger.
+
 The control tower must:
 
 1. maintain the current business outcome and the measurable goal for each active specialist;
@@ -261,7 +308,7 @@ Before giving a prompt to Charl:
 - never resend a substantially identical mission to a terminal that is still working;
 - never turn confirming evidence into a duplicate task;
 - prefer a short addendum when only one fact changed;
-- if the priority terminal is already working correctly, look for one useful disjoint parallel mission for another idle terminal;
+- if the priority terminal is already working correctly, dispatch disjoint parallel work only when the global WIP gate permits it and the work measurably removes owner labour or advances terminal-independent deployed-agent operation;
 - if no useful disjoint work exists, say so plainly rather than manufacturing infrastructure work;
 - preserve completed source-ready work without repeatedly polling or reopening it;
 - do not treat an unavailable optional improvement as a blocker to the current supported business outcome.
@@ -326,12 +373,14 @@ enable that specialist's deployed runtime when this can be done within existing
 mission scope and standing authority.
 
 The Control Tower response is incomplete if it silently leaves an eligible
-terminal idle, omits a named terminal, reports a prepared prompt as delivered,
-or asks Charl to notice that a dependency cleared. No safe prompt should be
-manufactured merely to fill a terminal, and active terminals must not be
-interrupted to maximize utilization. The compact all-terminal closure receipt
-must remain visible in Control Tower status and reconciliation responses so
-Charl can verify enforcement without maintaining the register himself.
+terminal unclassified, omits a named terminal, reports a prepared prompt as
+delivered, or asks Charl to notice that a dependency cleared. An eligible
+terminal may be explicitly `FROZEN - STRATEGIC WIP` with the occupied WIP slots
+and promotion trigger recorded. No safe prompt should be manufactured merely to
+fill a terminal, and active terminals must not be interrupted to maximize
+utilization. The compact all-terminal closure receipt must remain visible in
+Control Tower status and reconciliation responses so Charl can verify
+enforcement without maintaining the register himself.
 
 ### Forward Mission Pipeline And Full-Scope Completion
 

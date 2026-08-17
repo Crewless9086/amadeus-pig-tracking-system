@@ -1,12 +1,19 @@
 # Vault Readiness Scorecard
 
-Status: owner review ready, 2026-07-02.
+Status: historical assessment, superseded 2026-08-17.
+
+The percentage below is retained as historical evidence only. It is not current
+readiness truth and must not be used to claim Brain Guard or Vault maintenance is
+operational. Current evidence found stale active labels, incomplete lifecycle
+classification and no autonomous Brain Guard worker. Replacement acceptance is
+the deterministic Vault alignment audit plus a deployed scheduled Brain Guard
+cycle with durable findings, next audit and terminal-independent continuity.
 
 Purpose: give CHARLIE, Brain Guard, and Charl a clear view of how complete the Vault Brain is and what still blocks full trust.
 
 ## Current Estimate
 
-Vault Brain readiness: `88-92%`
+Historical Vault Brain estimate: `88-92%` (not current)
 
 This means the Vault is now strong enough to guide CHARLIE CORE missions and has runtime retrieval, source-coverage checks, owner preference context, Brain Guard blocking, and best-effort normalized write-through. It still needs owner-reviewed gold standards and more real missions before it should be treated as fully bulletproof.
 

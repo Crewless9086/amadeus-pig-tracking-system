@@ -13,7 +13,7 @@ import json
 import re
 
 from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authority
-from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
+from modules.oom_sakkie.protected_action_claims import build_buttons, canonical_preview_digest, create_claim
 from modules.pig_weights.herdmaster_breeding_exposure_recovery import (
     build_grouped_preview,
     execute_grouped_preview,
@@ -91,6 +91,8 @@ def handle_grouped_breeding_message(parsed, authority, *, claim_creator=None, ev
             "mission_id": mission, "card_mission_id": mission,
             "preview": preview["preview"], "preview_sha256": preview["preview_sha256"],
             "confirmation_required": True, "callback_token": claim["callback_token"],
+            "preview_digest":str(claim.get("preview_digest") or canonical_preview_digest(ACTION_KIND,preview)),
+            "action_kind":str(claim.get("action_kind") or ACTION_KIND),
             "reply_markup": build_buttons(claim["callback_token"], grouped=True),
             "answer": _summary(preview["preview"]["rows"]), **_zero()}, 200
 

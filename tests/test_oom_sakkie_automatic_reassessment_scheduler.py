@@ -72,7 +72,7 @@ def test_only_bounded_latest_missed_run_can_execute_after_restart():
     assert recent["success"] is True
 
 
-def test_restart_after_claim_contains_uncertain_bucket_and_preserves_next_due():
+def test_restart_after_claim_reenters_specialist_recovery():
     rows, store = memory_store()
     identity = "OOM-SCHEDULE-ROOTLINE-20260805T101500+0200"
     receipt = __import__("hashlib").sha256(
@@ -80,14 +80,16 @@ def test_restart_after_claim_contains_uncertain_bucket_and_preserves_next_due():
     ).hexdigest()
     rows[identity] = {"invocation_receipt": receipt, "terminal_outcome": "claimed"}
     calls = []
-    result = run_due_reassessment(payload=scheduled_payload(), invoke=lambda: calls.append(1),
-                                  store=store, now=NOW)
-    assert result["status"] == "scheduled_reassessment_claim_interrupted"
-    assert calls == [] and result["terminal_outcome"] == "contained"
-    assert result["next_due_at"] == "2026-08-05T10:30:00+02:00"
+    result = run_due_reassessment(payload=scheduled_payload(), invoke=lambda: calls.append("specialist"),
+        recover_delivery=lambda: (calls.append("delivery") or
+            {"success":True,"status":"protected_delivery_replayed_noop"}),
+        store=store, now=NOW)
+    assert result["status"] == "protected_delivery_replayed_noop"
+    assert calls == ["delivery"] and result["terminal_outcome"] == "claimed"
+    assert result.get("next_due_at") is None
 
 
-def test_restart_does_not_claim_containment_when_outcome_write_fails():
+def test_restart_recovery_does_not_claim_completion_when_outcome_write_fails():
     rows, backing = memory_store()
     identity = "OOM-SCHEDULE-ROOTLINE-20260805T101500+0200"
     receipt = __import__("hashlib").sha256(
@@ -97,7 +99,8 @@ def test_restart_does_not_claim_containment_when_outcome_write_fails():
     def failing(action, item, payload):
         return {"success": False} if action == "record_outcome" else backing(action, item, payload)
     result = run_due_reassessment(payload=scheduled_payload(), invoke=lambda: {}, store=failing, now=NOW)
-    assert result["status"] == "scheduled_reassessment_outcome_unproven"
+    assert result["status"] == "scheduled_reassessment_claim_interrupted"
+    assert result["terminal_outcome"] == "claimed"
     assert result.get("next_due_at") is None and rows[identity]["status"] == "claimed"
 
 

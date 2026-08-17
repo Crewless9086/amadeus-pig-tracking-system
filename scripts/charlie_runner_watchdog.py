@@ -28,6 +28,12 @@ from modules.charlie.process_ownership import (
     verify_controller_acknowledgement,
 )
 from modules.charlie.runtime_integrity import cold_start_readiness
+from modules.charlie.runtime_activation import (
+    WindowsExactTaskController,
+    consume_provider_activation,
+    recover_activation,
+    reconcile_recovered_activation_stop,
+)
 
 
 STATE_PATH = RUNNER_DIR / "watchdog.json"
@@ -85,7 +91,7 @@ def _cold_start_readiness():
     return cold_start_readiness(REPO_ROOT, runtime_dir=RUNNER_DIR)
 
 
-def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock, hold_reader=None, supervisor_state_reader=None, readiness_reader=_cold_start_readiness, stop_path=None):
+def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock, hold_reader=None, supervisor_state_reader=None, readiness_reader=_cold_start_readiness, stop_path=None, activation_consumer=consume_provider_activation, provider_inspector=None, activation_controller_factory=WindowsExactTaskController, activation_recoverer=recover_activation, activation_reconciler=reconcile_recovered_activation_stop):
     state_path = Path(state_path)
     stop_path = Path(stop_path) if stop_path is not None else (
         state_path.with_name("supervisor.stop")
@@ -94,6 +100,31 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
     )
     _configure_git_safe_directory(state_path.with_name("task-gitconfig"))
     if stop_path.exists():
+        pending_path = state_path.with_name("activation-reconciliation-pending.json")
+        if pending_path.exists():
+            pending = json.loads(pending_path.read_text(encoding="utf-8"))
+            previous = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+            if state_path.with_name("activation.lock").exists():
+                activation_recoverer(
+                    state_root=state_path.parent,
+                    task_controller=activation_controller_factory(),
+                    activation_id=str(pending.get("activation_id") or ""),
+                    failure_evidence=previous,
+                )
+            return activation_reconciler(
+                state_root=state_path.parent,
+                activation_id=str(pending.get("activation_id") or ""),
+                failure_evidence=previous,
+            )
+        if state_path.exists():
+            previous = json.loads(state_path.read_text(encoding="utf-8"))
+            if (previous.get("version") == "charlie_activation_recovery_projection_v1"
+                    and previous.get("status") == "governed_stop_active"):
+                return activation_reconciler(
+                    state_root=state_path.parent,
+                    activation_id=str(previous.get("recovered_activation_id") or ""),
+                    failure_evidence=previous,
+                )
         result = {
             "status": "governed_stop_active",
             "started": False,
@@ -103,6 +134,56 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
             **result,
             "checked_at": datetime.now(timezone.utc).isoformat(),
             "runner_status_before": "not_read_while_stopped",
+        }
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return payload
+    activation_packet = state_path.with_name("activation-packet.json")
+    if activation_packet.exists():
+        controller = activation_controller_factory()
+        try:
+            result = activation_consumer(
+                state_root=state_path.parent,
+                starter=starter,
+                provider_inspector=provider_inspector,
+                task_controller=controller,
+            )
+        except Exception as exc:
+            recovery = None
+            try:
+                packet = json.loads(activation_packet.read_text(encoding="utf-8"))
+                activation_id = str(packet.get("activation_id") or "")
+                if activation_id and (state_path.parent / "activation.lock").exists():
+                    recovery = activation_recoverer(
+                        state_root=state_path.parent,
+                        task_controller=controller,
+                        activation_id=activation_id,
+                        failure_evidence={
+                            "status": getattr(exc, "status", "provider_activation_failed"),
+                            "started": False,
+                        },
+                    )
+            except Exception as recovery_exc:
+                recovery = {"success": False, "status": getattr(recovery_exc, "status", "activation_recovery_failed")}
+            result = {
+                "success": False,
+                "status": getattr(exc, "status", "provider_activation_failed"),
+                "started": False,
+                "recovery": recovery,
+            }
+            pending_path = state_path.with_name("activation-reconciliation-pending.json")
+            if pending_path.exists() and (recovery is None or recovery.get("success")):
+                pending = json.loads(pending_path.read_text(encoding="utf-8"))
+                result = activation_reconciler(
+                    state_root=state_path.parent,
+                    activation_id=str(pending.get("activation_id") or ""),
+                    failure_evidence=result,
+                )
+                return result
+        payload = {
+            **result,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "runner_status_before": "not_read_during_provider_activation",
         }
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

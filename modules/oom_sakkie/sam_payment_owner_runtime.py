@@ -82,7 +82,8 @@ def present_sale_payment_preview(payload=None, *, environ=None, connect_factory=
     result = {"handled": True, "success": True, "status": "sale_payment_preview_ready",
         "answer": answer, "mission_id": MISSION_ID,
         "card_mission_id": MISSION_ID + ":PAYMENT:" + payment_digest[:24].upper(),
-        "callback_token": token, "preview_digest": payment_digest,
+        "callback_token": token, "preview_digest": str(claim["preview_digest"]),
+        "action_kind": str(claim.get("action_kind") or ACTION_KIND),
         "reply_markup": _payment_buttons(token), "requires_visible_notification": True,
         "writes_farm_data": False, "writes_to_supabase": False}
     existing_card_id = str(claim.get("preview_card_message_id") or "")

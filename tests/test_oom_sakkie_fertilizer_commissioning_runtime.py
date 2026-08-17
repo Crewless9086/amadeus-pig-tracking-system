@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
 from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import (
-    _evaluation_time, continue_fertilizer_commissioning, recover_fertilizer_commissioning,
+    _evaluation_time, continue_fertilizer_commissioning,
+    execute_protected_fertilizer_commissioning, recover_fertilizer_commissioning,
 )
 from modules.telemetry.rootline_ifttt_transport import RootlineIFTTTTransport
 from modules.telemetry.rootline_auxiliary_management import build_auxiliary_eligibility
@@ -186,6 +187,51 @@ def test_transport_override_is_exactly_scoped_and_does_not_enable_other_auxiliar
     denied = transport.set_state(device_id="100204d497", channel=2, state="ON",
         idempotency_key="SOME-OTHER-EXECUTION:ON")
     assert denied["status"] == "auxiliary_authority_disabled"
+
+
+def test_protected_mixer_never_recovers_an_unrelated_active_auxiliary():
+    store = Store(); transport = Transport()
+    eligibility = build_auxiliary_eligibility(
+        task={"auxiliary_device_id": "FERTILIZER-MIXER-CH2"}, safety=safety(),
+        context={"plan_generation": "PLAN", "injection_active": False,
+            "verified_mixing_minutes_today": 0, "verified_mixing_sessions_today": 0,
+            "mixing_history_complete_through": NOW.isoformat(), "power_suitable": True,
+            "prior_shutdown_unverified": False},
+        flags={"ROOTLINE_FERTILIZER_MIXING_ENABLED": True}, now=NOW)
+    store.active = {"execution_id": "UNRELATED", "consumption_key": "OTHER",
+        "auxiliary_device_id": "FERTILIZER-INJECTION-CH1", "device_id": "100204d497",
+        "channel": 1}
+    result = execute_protected_fertilizer_commissioning(eligibility=eligibility,
+        parsed=parsed(), now=NOW, store=store, transport=transport,
+        power_loader=lambda _now: {"suitable": True, "generation": "POWER-1"})
+    assert result["status"] == "commissioning_active_execution_conflict"
+    assert result["hardware_commands"] == 0 and transport.commands == []
+
+
+def test_protected_callback_recovers_durable_completion_after_claim_write_crash():
+    store = Store(); transport = Transport()
+    eligibility = build_auxiliary_eligibility(
+        task={"auxiliary_device_id": "FERTILIZER-MIXER-CH2"}, safety=safety(),
+        context={"plan_generation": "PLAN", "injection_active": False,
+            "verified_mixing_minutes_today": 0, "verified_mixing_sessions_today": 0,
+            "mixing_history_complete_through": NOW.isoformat(), "power_suitable": True,
+            "prior_shutdown_unverified": False},
+        flags={"ROOTLINE_FERTILIZER_MIXING_ENABLED": True}, now=NOW)
+    completed = {"state": "Completed", "shutdown_verified": True,
+        "execution_id": eligibility["execution_id"],
+        "consumption_key": eligibility["consumption_key"],
+        "auxiliary_device_id": "FERTILIZER-MIXER-CH2", "device_id": "100204d497",
+        "channel": 2, "maximum_duration_seconds": 300,
+        "physical_outcome_verified": False}
+    original = store.__call__
+    def terminal_store(action, payload):
+        if action == "load_auxiliary_history": return [completed]
+        return original(action, payload)
+    result = execute_protected_fertilizer_commissioning(eligibility=eligibility,
+        parsed=parsed(), now=NOW + timedelta(minutes=6), store=terminal_store,
+        transport=transport)
+    assert result["status"] == "auxiliary_completed"
+    assert result["hardware_commands"] == 0 and transport.commands == []
 
 
 def test_afrikaans_and_short_affirmatives_use_same_typed_context_not_phrase_rules():

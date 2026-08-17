@@ -126,6 +126,9 @@ from modules.oom_sakkie.morning_scheduler import (
     run_synthetic_acceptance,
 )
 from modules.oom_sakkie.protected_payment_recovery import run_payment_recovery_cycle
+from modules.oom_sakkie.general_manager_worker import (
+    deliver_farm_manager_case, run_general_manager_cycle,
+)
 from modules.oom_sakkie.rootline_physical_acceptance import attach_physical_acceptance
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
@@ -284,6 +287,19 @@ def oom_sakkie_protected_payment_recovery():
     result = run_payment_recovery_cycle()
     status = 200 if result.get("success") else 503
     return jsonify(result), status
+
+
+@oom_sakkie_bp.route("/oom-sakkie/management/general-manager-cycle", methods=["POST"])
+def oom_sakkie_general_manager_cycle():
+    expected = str(os.environ.get(MORNING_SCHEDULER_TOKEN_ENV) or "").strip()
+    if len(expected) < 32 or not _remote_token_matches(
+            expected, "X-Amadeus-Morning-Scheduler-Key"):
+        return jsonify({"success": False, "status": "general_manager_auth_denied",
+                        "telegram_sends": 0, "telegram_edits": 0,
+                        "customer_sends": 0, "provider_actions": 0,
+                        "hardware_commands": 0, "writes_farm_data": False}), 403
+    result = run_general_manager_cycle(deliver=deliver_farm_manager_case)
+    return jsonify(result), 200 if result.get("success") else 503
 
 
 @oom_sakkie_bp.route("/oom-sakkie/message", methods=["POST"])

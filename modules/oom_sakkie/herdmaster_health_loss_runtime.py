@@ -419,6 +419,7 @@ def handle_authenticated_health_loss_message(
                 "preview_sha256":str((preview.get("confirmation_binding") or {}).get("preview_sha256") or ""),
                 "identity":(preview.get("evaluator") or {}).get("identity") or {}})
             protected={"preview_digest":claim["preview_digest"],"callback_token":claim["callback_token"],
+                       "action_kind":str(claim.get("action_kind") or "mortality"),
                        "reply_markup":build_buttons(claim["callback_token"],grouped=False)}
         except Exception:
             return {"handled":True,"success":False,"status":"health_loss_protected_claim_unavailable",

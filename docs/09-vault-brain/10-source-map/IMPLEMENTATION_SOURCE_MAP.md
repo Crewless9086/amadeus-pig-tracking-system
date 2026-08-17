@@ -94,6 +94,17 @@
   forward mission pipeline from each specialist's authoritative full scope:
   proven capability, active mission, next eligible mission, later outcomes,
   dependencies, collision boundaries and owner reprioritizations.
+- Current continuous-operation acceptance and honest per-agent targets:
+  `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`,
+  `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md` and the Continuous
+  Operating Contract in each canonical agent file. Older Operational V1,
+  Daily Brief, request, canary and portfolio labels are component evidence only.
+- Read-only owner-finding intake before CORE automation is operational:
+  `docs/06-operations/GENERAL_TERMINAL_INTAKE_CONTRACT.md`. GENERAL investigates
+  and scopes reusable end-to-end defects; it never implements or substitutes
+  for Control Tower, CORE or a deployed agent.
+- Alignment audit and relevant-worktree governance status:
+  `docs/06-operations/CONTINUOUS_AGENT_ALIGNMENT_AUDIT_20260817.md`.
 - Mandatory cross-system terminal/agent truth template:
   `docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`. It requires
   separate web/API, worker, trigger, heartbeat, last/next cycle, authority,

@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,6 +7,50 @@ from scripts.charlie_runner_watchdog import _configure_git_safe_directory, watch
 
 
 class CharlieRunnerWatchdogTests(unittest.TestCase):
+    def test_failed_activation_returns_signed_reconciliation_without_rewriting_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "activation-packet.json").write_text(
+                json.dumps({"activation_id": "1" * 32}), encoding="utf-8"
+            )
+            (root / "activation.lock").write_text("owned", encoding="utf-8")
+            projection = {
+                "version": "charlie_activation_recovery_projection_v1",
+                "status": "governed_stop_active",
+                "checked_at": "signed-value",
+                "projection_hmac_sha256": "signed-digest",
+            }
+            def recover(**_kwargs):
+                (root / "activation-reconciliation-pending.json").write_text(
+                    json.dumps({"activation_id": "1" * 32}), encoding="utf-8"
+                )
+                return {"success": True}
+            result = watchdog_tick(
+                starter=lambda **_kwargs: None,
+                state_path=root / "watchdog.json",
+                stop_path=root / "supervisor.stop",
+                activation_consumer=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("failed")),
+                activation_recoverer=recover,
+                activation_reconciler=lambda **_kwargs: projection,
+            )
+        self.assertEqual(result, projection)
+    def test_provider_packet_is_consumed_before_any_ordinary_recovery_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "activation-packet.json").write_text("{}", encoding="utf-8")
+            calls = []
+            def consume(**kwargs):
+                calls.append(("provider", kwargs["state_root"], kwargs["starter"]))
+                return {"success": True, "status": "provider_started_observe_only", "started": True}
+            starter = lambda **_kwargs: calls.append("direct_start")
+            result = watchdog_tick(
+                status_reader=lambda: calls.append("status"), starter=starter,
+                state_path=root / "watchdog.json", stop_path=root / "supervisor.stop",
+                activation_consumer=consume,
+            )
+        self.assertEqual(result["status"], "provider_started_observe_only")
+        self.assertEqual(calls, [("provider", root, starter)])
+
     def test_observe_only_state_disables_watchdog_without_queue_read(self):
         with tempfile.TemporaryDirectory() as tmp:
             calls = []

@@ -41,7 +41,7 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
             if prior[1]=="active" and exact and prior[2]>datetime.now(timezone.utc):
                 return {"success":True,"status":"protected_claim_existing","callback_token":prior[0],
                   "preview_digest":digest,"expires_at":prior[2].isoformat(),
-                  "preview_card_message_id":str(prior[8] or "")}
+                  "preview_card_message_id":str(prior[8] or ""),"action_kind":action_kind}
             if rearmable:
                     cur.execute("""update app_private.oom_protected_action_claims
                       set status='active',expires_at=%s where callback_token=%s
@@ -50,7 +50,7 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                     return {"success":True,"status":"protected_claim_rearmed",
                   "callback_token":prior[0],"preview_digest":digest,
                   "expires_at":expires.isoformat(),
-                  "preview_card_message_id":str(prior[8] or "")}
+                  "preview_card_message_id":str(prior[8] or ""),"action_kind":action_kind}
             raise RuntimeError("protected_claim_identity_or_state_conflict")
         if not supersede_active:
             cur.execute("""select 1 from app_private.oom_protected_action_claims
@@ -66,7 +66,8 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
           values(%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)""",
           (token,action_kind,owner_user_id,private_chat_id,mission_id,provider_message_id,
            digest,evidence_generation,json.dumps(preview_payload,sort_keys=True),expires))
-    return {"success":True,"status":"protected_claim_created","callback_token":token,"preview_digest":digest,"expires_at":expires.isoformat()}
+    return {"success":True,"status":"protected_claim_created","callback_token":token,
+        "preview_digest":digest,"expires_at":expires.isoformat(),"action_kind":action_kind}
 
 def resolve_natural_confirmation(*, owner_user_id, private_chat_id, reply_to_message_id="", connect_factory=None):
     with (connect_factory() if connect_factory else _connect()) as db:
@@ -91,6 +92,110 @@ def bind_claim_card(token, card_message_id, *, connect_factory=None):
           (str(card_message_id),str(token),str(card_message_id)))
         return cur.rowcount==1
 
+def load_active_child_claim(*, action_kind, mission_id, parent_claim_token,
+                            owner_user_id, private_chat_id, connect_factory=None):
+    """Recover one already-committed child preview after a parent crash window."""
+    with (connect_factory() if connect_factory else _connect()) as db:
+      with db.cursor() as cur:
+        cur.execute("""select callback_token,preview_digest,expires_at,preview_payload,
+          preview_card_message_id from app_private.oom_protected_action_claims
+          where action_kind=%s and mission_id=%s and status='active'
+          and owner_user_id=%s and private_chat_id=%s
+          and preview_payload->>'presence_refresh_claim_token'=%s
+          order by created_at desc limit 2""",
+          (str(action_kind),str(mission_id),str(owner_user_id),str(private_chat_id),
+           str(parent_claim_token)))
+        rows=cur.fetchall()
+        if len(rows)==1 and rows[0][2] <= datetime.now(timezone.utc):
+            if rows[0][4]:
+                return {"success":False,"status":"protected_child_expired_bound"}
+            cur.execute("""update app_private.oom_protected_action_claims set status='expired'
+              where callback_token=%s and status='active' and preview_card_message_id is null
+              and expires_at<=now()""",(rows[0][0],))
+            return None
+    if len(rows)!=1:return None
+    return {"success":True,"status":"protected_claim_existing",
+        "callback_token":rows[0][0],"preview_digest":rows[0][1],
+        "expires_at":rows[0][2].isoformat(),"preview_payload":rows[0][3],
+        "preview_card_message_id":str(rows[0][4] or ""),"action_kind":str(action_kind)}
+
+def load_active_presence_claim(*, action_kind, mission_id, owner_user_id,
+                               private_chat_id, provider_message_id,
+                               connect_factory=None):
+    """Recover one preview already committed for an exact retained inbound."""
+    with (connect_factory() if connect_factory else _connect()) as db:
+      with db.cursor() as cur:
+        cur.execute("""select callback_token,preview_digest,expires_at,preview_payload,
+          preview_card_message_id from app_private.oom_protected_action_claims
+          where action_kind=%s and mission_id=%s and status='active'
+          and owner_user_id=%s and private_chat_id=%s and provider_message_id=%s
+          order by created_at desc limit 2""",(str(action_kind),str(mission_id),
+          str(owner_user_id),str(private_chat_id),str(provider_message_id)))
+        rows=cur.fetchall()
+        if len(rows)==1 and rows[0][2] <= datetime.now(timezone.utc):
+            if rows[0][4]:return {"success":False,"status":"protected_preview_expired_bound"}
+            cur.execute("""update app_private.oom_protected_action_claims set status='expired'
+              where callback_token=%s and status='active' and preview_card_message_id is null
+              and expires_at<=now()""",(rows[0][0],))
+            return None
+    if len(rows)!=1:return None
+    return {"success":True,"status":"protected_claim_existing",
+        "callback_token":rows[0][0],"preview_digest":rows[0][1],
+        "expires_at":rows[0][2].isoformat(),"preview_payload":rows[0][3],
+        "preview_card_message_id":str(rows[0][4] or ""),"action_kind":str(action_kind)}
+
+def load_reassessable_contained_presence_claim(*, action_kind, mission_id,
+        owner_user_id, private_chat_id, provider_message_id, connect_factory=None):
+    """Recover one confirmed, still-current transient Hold without another press."""
+    with (connect_factory() if connect_factory else _connect()) as db:
+      with db.cursor() as cur:
+        cur.execute("""select callback_token,preview_digest,evidence_generation,
+          preview_payload,confirmation_provider_message_id,
+          confirmation_provider_timestamp,result_payload,expires_at,status
+          from app_private.oom_protected_action_claims
+          where action_kind=%s and mission_id=%s
+          and ((nullif(%s,'') is null and status in ('contained','executing'))
+            or (nullif(%s,'') is not null
+              and status in ('contained','executing','completed')))
+          and owner_user_id=%s and private_chat_id=%s
+          and (nullif(%s,'') is null or provider_message_id=%s)
+          and expires_at>now() order by created_at desc limit 2 for update""",
+          (str(action_kind),str(mission_id),str(provider_message_id),
+           str(provider_message_id),str(owner_user_id),
+           str(private_chat_id),str(provider_message_id),str(provider_message_id)))
+        rows=cur.fetchall()
+        if len(rows)!=1:return None
+        row=rows[0]
+        result=row[6] if isinstance(row[6],dict) else {}
+        if row[8]=="completed":
+            return {"success":True,
+                "status":"mixer_presence_reassessment_completed_delivery_retry",
+                "callback_token":row[0],"preview_payload":row[3],
+                "preview_digest":row[1],"result":result}
+        valid_hold=(result.get("status")=="commissioning_specific_hold"
+            and result.get("next_reassessment")=="next_scheduler_tick"
+            and int(result.get("hardware_commands") or 0)==0
+            and int(result.get("provider_control_calls") or 0)==0)
+        recovering=(row[8]=="executing"
+            and result.get("status")=="mixer_presence_reassessment_claimed")
+        if ((row[8]!="contained" or not valid_hold) and not recovering
+                or not str(row[4] or "").strip() or row[5] is None):
+            return None
+        if row[8]=="contained":
+            claimed={"success":False,"status":"mixer_presence_reassessment_claimed",
+                "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False}
+            cur.execute("""update app_private.oom_protected_action_claims
+              set status='executing',result_payload=%s::jsonb where callback_token=%s
+              and status='contained'""",(json.dumps(claimed,sort_keys=True),row[0]))
+            if cur.rowcount!=1:return None
+        return {"success":True,"status":"protected_contained_reassessment_recovered",
+            "callback_token":row[0],"action_kind":str(action_kind),
+            "mission_id":str(mission_id),"preview_digest":row[1],
+            "evidence_generation":row[2],"preview_payload":row[3],
+            "confirmation_provider_message_id":str(row[4]),
+            "confirmation_provider_timestamp":row[5].isoformat(),
+            "expires_at":row[7].isoformat(),"result":result}
+
 def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_message_id,
                    provider_timestamp, source_card_message_id="", connect_factory=None):
     data=str(callback_data or "")
@@ -114,7 +219,9 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         if str(row[10])!=str(source_card_message_id or ""):
             return {"success":False,"status":"protected_callback_card_mismatch"},409
         if row[7]=="completed":
-            if row[0] in {"rootline_irrigation_segment", "sam_sale_payment", "beacon_media_review"}:
+            if row[0] in {"rootline_irrigation_segment", "rootline_fertilizer_mixer_commissioning",
+                    "rootline_fertilizer_mixer_presence_refresh",
+                    "sam_sale_payment", "beacon_media_review"}:
                 return {"success":True,"status":"protected_callback_completed_delivery_retry",
                   "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
                   "result":row[9],"telegram_sends":0,"telegram_edits":0},200
