@@ -21,6 +21,7 @@ BREEDING_ATTENTION_READ_STAGES = ALLOCATION_READ_STAGES + (
 FULL_LIFECYCLE_MERIT_READ_STAGES = (
     "canonical_animals", "effective_litters", "litter_correction_lineage", "mating_events",
     "observations", "lifecycle", "offspring_weights", "medical_context",
+    "completed_sales", "completed_meat_processing",
 )
 ALLOCATION_TOTAL_DEADLINE_SECONDS = 20.0
 ALLOCATION_STATEMENT_TIMEOUT_SECONDS = 3.0
@@ -1111,13 +1112,42 @@ def load_full_lifecycle_merit_evidence(
             "select * from public.pig_medical_events order by treatment_date, medical_event_id",
             connect_factory=snapshot,
         )
+        sales = _fetch_all(
+            """select item.pig_id, item.sale_item_id, sale.sale_id, sale.sale_date,
+                      sale.sale_stream, sale.sale_channel, sale.sale_status
+                 from public.sales_transaction_items item
+                 join public.sales_transactions sale on sale.sale_id = item.sale_id
+                where nullif(btrim(item.pig_id), '') is not null
+                order by item.pig_id, sale.sale_date, sale.sale_id, item.sale_item_id""",
+            connect_factory=snapshot,
+        )
+        meat_processing = _fetch_all(
+            """select link.pig_id, link.batch_pig_id, batch.batch_id,
+                      batch.status as batch_status, batch.updated_at as batch_status_at,
+                      completed.event_id as completion_event_id,
+                      completed.event_type, completed.event_date as completion_event_date
+                 from public.meat_processing_batch_pigs link
+                 join public.meat_processing_batches batch on batch.batch_id = link.batch_id
+                 left join lateral (
+                     select event.event_id, event.event_type, event.event_date
+                       from public.meat_processing_batch_events event
+                      where event.batch_id = batch.batch_id
+                        and (event.pig_id is null or event.pig_id = link.pig_id)
+                        and event.event_type = 'completed'
+                      order by event.event_date desc, event.created_at desc, event.event_id desc
+                      limit 1
+                 ) completed on true
+                order by link.pig_id, batch.batch_id, link.batch_pig_id""",
+            connect_factory=snapshot,
+        )
         if snapshot.remaining_seconds() < 0:
             raise TimeoutError("full-lifecycle merit snapshot deadline exhausted during projection")
         return {
             "cutoff": cutoff, "pig_id": pig_id, "pigs": pigs, "litters": litters,
             "litter_history": litter_history,
             "matings": matings, "observations": observations, "lifecycle": lifecycle,
-            "weights": weights, "medical": medical, "read_progress": snapshot.progress(),
+            "weights": weights, "medical": medical, "sales": sales,
+            "meat_processing": meat_processing, "read_progress": snapshot.progress(),
             "writes_performed": False,
         }
 
