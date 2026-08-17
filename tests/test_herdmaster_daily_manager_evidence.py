@@ -116,6 +116,16 @@ def test_twelve_august_weight_is_inside_governed_window_and_wording_is_derived()
     assert "2026-08-11 to 2026-08-12" in item.why
 
 
+def test_early_current_week_bulk_upload_is_included_in_current_snapshot():
+    packet = build_daily_manager_evidence(pigs=[pig("P1", "123"), pig("P2", "151")],
+        window_weights=[weight("P1", day="2026-08-17")], prior_weights=[],
+        analysis_date=date(2026, 8, 17))
+    assert packet["weight"]["window"] == {
+        "start": "2026-08-17", "end": "2026-08-19", "timezone": "Africa/Johannesburg"}
+    assert packet["weight"]["current_snapshot"]["covered"] == 1
+    assert [row["tag"] for row in packet["weight"]["missing_eligible_tagged"]] == ["151"]
+
+
 def test_conflicting_same_day_values_fail_closed():
     packet = build(weights=[weight(kg=10, event="A"), weight(kg=12, event="B")])
     assert packet["weight"]["current_snapshot"]["status"] == "conflicting"
