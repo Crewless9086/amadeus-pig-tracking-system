@@ -12,6 +12,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1017,12 +1018,36 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
                 != str(chain[0].get(field) or "").casefold()
                 for field in stable_fields)):
             return {"inspection_complete": False, "reason": "provider_ancestry_changed"}
+    if current_identity is not None:
+        current_again = current_identity()
+    elif requested_pid == os.getpid():
+        current_again = _local_current_process_identity()
+    else:
+        current_again = _inspect_exact_process(requested_pid, runner=runner)
+    stable_current_fields = (
+        "pid", "parent_pid", "executable_path", "creation_time", "command_line",
+    )
+    if (not isinstance(current_again, dict) or not current_again.get("inspection_complete")
+            or any(
+                str(current_again.get(field) or "").casefold()
+                != str(current.get(field) or "").casefold()
+                for field in stable_current_fields)):
+        return {"inspection_complete": False, "reason": "provider_child_identity_changed"}
     return {**current, "inspection_complete": True, "ancestry": chain}
 
 
 def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
-                                             process_creation_time=None):
-    """Bind this PID to one Task Scheduler instance and its exact service."""
+                                             process_creation_time=None,
+                                             visibility_attempts=5,
+                                             visibility_interval=0.05,
+                                             sleeper=time.sleep):
+    """Bind this PID to one Task Scheduler instance and its exact service.
+
+    Task Scheduler can start the action before its COM running-instance view
+    exposes that action. Retry only the exact EnginePID miss for a short,
+    bounded window; every successful read still has to prove the complete
+    service, task-instance, action, and provider-process identity.
+    """
     script = (
         "$ErrorActionPreference='Stop';"
         "$q=(& sc.exe queryex Schedule 2>&1|Out-String);"
@@ -1036,7 +1061,8 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "$ts=New-Object -ComObject 'Schedule.Service';$ts.Connect();"
         "$task=$ts.GetFolder('\\').GetTask('" + TASK_NAME.replace("'", "''") + "');"
         "$instances=@($task.GetInstances(0)|Where-Object {[int]$_.EnginePID-eq" + str(int(engine_pid)) + "});"
-        "if($instances.Count-ne 1){exit 6};$instance=$instances[0];$instance.Refresh();"
+        "if($instances.Count-eq 0){exit 6};if($instances.Count-ne 1){exit 8};"
+        "$instance=$instances[0];$instance.Refresh();"
         "$actions=@($task.Definition.Actions);if($actions.Count-ne 1-or[int]$actions[0].Type-ne 0){exit 7};"
         "$action=$actions[0];"
         "$dll=(Get-ItemProperty -LiteralPath "
@@ -1054,10 +1080,19 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "ServiceDll=[Environment]::ExpandEnvironmentVariables($dll);SystemRoot=$root}"
         "|ConvertTo-Json -Compress"
     )
-    completed = runner(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True, text=True, timeout=10, check=False,
-    )
+    attempts = max(1, int(visibility_attempts))
+    completed = None
+    for attempt in range(attempts):
+        completed = runner(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        if completed.returncode != 6:
+            break
+        if attempt + 1 < attempts:
+            sleeper(max(0.0, float(visibility_interval)))
+    if completed is None:
+        return {"inspection_complete": False}
     if completed.returncode:
         return {"inspection_complete": False}
     try:

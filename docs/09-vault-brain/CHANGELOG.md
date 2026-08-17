@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-08-17 - CORE scheduled-task instance visibility boundary
+
+- Preserved the exact Task Scheduler service, task, action, command, working
+  directory, EnginePID, InstanceGuid, process-creation, and ancestry proof.
+- Added a short bounded retry only when the exact scheduled child PID is not
+  yet visible through `GetInstances(0)`, covering the Windows startup race in
+  which the action is already running before the COM instance view catches up.
+- All malformed, ambiguous, changed, substituted, or persistently invisible
+  provider identities still fail closed and retain authenticated rollback and
+  immutable failure evidence.
+
 ## 2026-08-17 - HERDMASTER offspring disposition becomes evidence-backed
 
 - Continued existing mission `HMQ-20260813-04` with one read-only backend
