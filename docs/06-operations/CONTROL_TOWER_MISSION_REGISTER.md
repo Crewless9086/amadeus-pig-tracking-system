@@ -221,8 +221,31 @@ Snapshot: 2026-08-13 SAST, reconciled through main `b7c0edcf`.
   then define one names-first, Unknown-safe, confidence/sample-size-aware,
   association-not-causation data/UX contract for herd and animal analytics.
   CODEX UI implementation waits for this contract; no farm writes.
+- `HMQ-20260813-04` latest handoff — `WORKING / OWNER_ACCEPTANCE_FAILED`,
+  HERDMASTER backend stage released to CODEX UI. Exact reviewed head `be735438`
+  in open PR #984 adds the read-only `herdmaster_human_identity_v1` enrichment;
+  CI and livestock/data-integrity/security reviews passed, canonical writes were
+  zero, and its five changed files are disjoint from urgent OP-004 purpose-review
+  repair files. PR #984 remains unmerged and undeployed. CODEX UI must produce
+  the exact desktop/390px Tyson preview and stop at `READY_FOR_OWNER_PREVIEW`;
+  merge/deployment require Charl's approval of that exact preview and revision.
+  The HERDMASTER terminal is released from this stage and may take disjoint urgent
+  OP-004 work without closing or superseding HMQ-04.
 - `HMQ-20260813-05` — waits for a genuine completed weight batch.
 - `HMQ-20260813-06` — waits for physical exposure separation.
+- `HMQ-20260816-01` — `queued_owner_deferred`: build the autonomous HERDMASTER
+  allocation-opportunity operating loop on the existing Pig Allocation read
+  model and alert API. Detect new or materially changed outlet/purpose findings,
+  including an explicit `live_sale_candidate` alert for every qualifying
+  unallocated Livestock Candidate; deliver one name/tag-first advisory through
+  the deployed HERDMASTER -> OOM SAKKIE owner channel; retain acknowledgement,
+  deferment and follow-up state; and suppress unchanged repetition. `Allocated`
+  remains reserved/order-linked and must never be marketed again. HERDMASTER
+  owns suitability, SAM owns approved customer work and BEACON owns approved
+  marketing preparation. No sale, reservation, customer message, public post,
+  purpose/lifecycle mutation or provider effect is authorized by this queued
+  mission. Do not dispatch or establish an implementation worktree until Control
+  Tower explicitly releases it after Charl's urgent operational work.
 
 Detailed HERDMASTER evidence remains in
 `docs/06-operations/HERDMASTER_OPEN_MISSION_REGISTER_20260812.md`.
@@ -262,6 +285,16 @@ Detailed HERDMASTER evidence remains in
   historical reply `3588` remains unretained and unreplayed.
 - `OMQ-20260813-04` — waits for next genuine specialist request.
 - `OMQ-20260813-05` — queued browser/Telegram/voice canonical parity.
+- `OMQ-20260813-05` latest owner-observed defect — queued, do not start while
+  higher-priority operational work is active. At 2026-08-16 07:25 SAST Charl
+  asked Oom Sakkie, `Any news from Beacon`; the deployed Telegram path answered
+  with a new `BEACON — FARM-AWARENESS PROPOSAL` and Approve/Correct/Decline
+  choices instead of current BEACON status. Preserve this genuine message as
+  acceptance evidence for specialist-status intent precedence: a status/news
+  question must return current mission, pending owner decisions, recent results,
+  blockers and next automatic action; it must not create a proposal or approval
+  request unless Charl asks for one. Reconcile this later within OMQ-05's shared
+  canonical action/status contract rather than creating another OOM router.
 - `HERDMASTER-NATURAL-HEALTH-LOSS-1/OOM-INTAKE-SLICE-1` —
   `stage2_operational_readiness_waiting_genuine_acceptance`: PR #898 is live as
   `43b91712`; authenticated routing, canonical chronology/evidence and the real

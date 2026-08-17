@@ -506,6 +506,19 @@ autonomous authority.
 
 ## P3 Planned Build
 
+- OMQ-20260813-05 specialist-status relevance — queued owner-observed Telegram
+  defect, deliberately not started. `Any news from Beacon` returned an unrelated
+  farm-awareness proposal. Later parity work must make status/news intent return
+  current BEACON state and pending decisions without manufacturing a proposal or
+  approval request.
+- HMQ-20260816-01 HERDMASTER Allocation Opportunity Operating Loop — owner-
+  approved queue entry, deliberately not started. Reuse the existing allocation
+  engine and alert API; add autonomous material-change/scheduled evaluation,
+  explicit unallocated Livestock Candidate opportunity alerts, name/tag-first
+  OOM SAKKIE delivery and durable acknowledgement/follow-up without creating a
+  sale, reservation, customer send, public post or farm mutation. `Allocated`
+  means already reserved/order-linked and is excluded from marketing. Dispatch
+  only after Control Tower releases the higher-priority urgent operational work.
 - OP-004 Pig Allocation Purpose Review Workflow.
 - OP-005 Beacon Full-Width Command UI Plan.
 - OP-006 Pig Detail Full-Width Web View Plan.
