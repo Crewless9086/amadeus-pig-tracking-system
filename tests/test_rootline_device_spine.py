@@ -21,6 +21,15 @@ def test_standing_authority_requires_terminal_stage():
     with pytest.raises(ValueError,match="standing_authority_unproven"):
         validate_device(_device(standing_authority=True))
 
+
+def test_discovered_pump_may_preserve_unknown_runtime_without_becoming_actuation_ready():
+    value = _device(device_type="pump", commissioning_stage="provider_discovered",
+        maximum_runtime_seconds=0, native_fail_stop_seconds=0)
+    assert validate_device(value)
+    value["commissioning_stage"] = "bounded_actuation_ready"
+    with pytest.raises(ValueError, match="fail_stop_bound_invalid"):
+        validate_device(value)
+
 def test_borehole_profile_is_stricter_than_valve():
     with pytest.raises(ValueError,match="standing_authority_evidence_missing"):
         validate_device(_device(device_type="pump",commissioning_stage="standing_active",

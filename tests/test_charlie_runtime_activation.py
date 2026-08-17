@@ -452,6 +452,133 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(result["creation_time"], "987654321")
         self.assertEqual(result["action_arguments"], row["arguments"])
 
+    def test_windows_provider_waits_for_exact_fast_start_instance_visibility(self):
+        """The scheduled child may run before GetInstances exposes its EnginePID."""
+        row = self.task[0]
+        provider_json = {
+            "ProcessId": 50, "Name": "Schedule", "State": "Running",
+            "StartName": "LocalSystem",
+            "PathName": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+            "EnginePID": 100, "InstanceGuid": "11111111-1111-1111-1111-111111111111",
+            "TaskPath": "\\CHARLIE CORE Runner Watchdog", "CurrentAction": "Execute",
+            "ActionExecute": row["execute"], "ActionArguments": row["arguments"],
+            "ActionWorkingDirectory": row["working_directory"],
+            "ServiceDll": "C:/Windows/System32/schedsvc.dll", "SystemRoot": "C:/Windows",
+        }
+        responses = iter([
+            subprocess.CompletedProcess([], 6, "", "instance not visible"),
+            subprocess.CompletedProcess([], 6, "", "instance not visible"),
+            subprocess.CompletedProcess([], 0, json.dumps(provider_json), ""),
+        ])
+        sleeps = []
+        result = _inspect_windows_task_scheduler_provider(
+            100, runner=lambda _command, **_kwargs: next(responses),
+            process_creation_time=lambda pid: "987654321" if pid == 50 else "",
+            visibility_attempts=3, visibility_interval=0.05,
+            sleeper=sleeps.append,
+        )
+        self.assertTrue(result["inspection_complete"])
+        self.assertEqual(result["engine_pid"], 100)
+        self.assertEqual(sleeps, [0.05, 0.05])
+
+    def test_windows_provider_visibility_window_is_bounded_and_fails_closed(self):
+        calls = []
+        sleeps = []
+        result = _inspect_windows_task_scheduler_provider(
+            100,
+            runner=lambda command, **_kwargs: (
+                calls.append(command) or subprocess.CompletedProcess(command, 6, "", "")
+            ),
+            visibility_attempts=3, visibility_interval=0.01,
+            sleeper=sleeps.append,
+        )
+        self.assertFalse(result["inspection_complete"])
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleeps, [0.01, 0.01])
+
+    def test_windows_provider_does_not_retry_non_visibility_identity_failure(self):
+        calls = []
+        result = _inspect_windows_task_scheduler_provider(
+            100,
+            runner=lambda command, **_kwargs: (
+                calls.append(command) or subprocess.CompletedProcess(command, 7, "", "")
+            ),
+            visibility_attempts=20, sleeper=lambda _seconds: self.fail("must not sleep"),
+        )
+        self.assertFalse(result["inspection_complete"])
+        self.assertEqual(len(calls), 1)
+
+    def test_windows_provider_does_not_retry_ambiguous_exact_pid_instances(self):
+        calls = []
+        result = _inspect_windows_task_scheduler_provider(
+            100,
+            runner=lambda command, **_kwargs: (
+                calls.append(command) or subprocess.CompletedProcess(command, 8, "", "")
+            ),
+            visibility_attempts=5, sleeper=lambda _seconds: self.fail("must not sleep"),
+        )
+        self.assertFalse(result["inspection_complete"])
+        self.assertEqual(len(calls), 1)
+
+    def test_delayed_instance_visibility_still_rejects_provider_pid_reuse(self):
+        row = self.task[0]
+        provider_json = {
+            "ProcessId": 50, "Name": "Schedule", "State": "Running",
+            "StartName": "LocalSystem",
+            "PathName": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+            "EnginePID": 100, "InstanceGuid": "11111111-1111-1111-1111-111111111111",
+            "TaskPath": "\\CHARLIE CORE Runner Watchdog", "CurrentAction": "Execute",
+            "ActionExecute": row["execute"], "ActionArguments": row["arguments"],
+            "ActionWorkingDirectory": row["working_directory"],
+            "ServiceDll": "C:/Windows/System32/schedsvc.dll", "SystemRoot": "C:/Windows",
+        }
+        responses = iter([
+            subprocess.CompletedProcess([], 6, "", "instance not visible"),
+            subprocess.CompletedProcess([], 0, json.dumps(provider_json), ""),
+            subprocess.CompletedProcess([], 0, json.dumps(provider_json), ""),
+        ])
+        creation_times = iter(["provider-created", "provider-reused"])
+        provider_reader = lambda: _inspect_windows_task_scheduler_provider(
+            100, runner=lambda _command, **_kwargs: next(responses),
+            process_creation_time=lambda _pid: next(creation_times),
+            visibility_attempts=2, visibility_interval=0, sleeper=lambda _seconds: None,
+        )
+        result = inspect_current_provider_chain(
+            100, provider_identity=provider_reader, current_identity=lambda: {
+                "inspection_complete": True, "pid": 100, "parent_pid": 50,
+                "executable_path": row["execute"], "creation_time": "short-lived-child",
+                "command_line": f'"{row["execute"]}" {row["arguments"]}',
+            })
+        self.assertFalse(result["inspection_complete"])
+        self.assertEqual(result["reason"], "provider_ancestry_changed")
+
+    def test_fast_child_exit_during_delayed_instance_visibility_fails_closed(self):
+        row = self.task[0]
+        provider = {
+            "inspection_complete": True, "pid": 50, "creation_time": "provider-created",
+            "service_name": "Schedule", "service_state": "Running", "start_name": "LocalSystem",
+            "executable_path": "C:/Windows/System32/svchost.exe",
+            "service_binary_path": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+            "service_dll": "C:/Windows/System32/schedsvc.dll", "system_root": "C:/Windows",
+            "engine_pid": 100, "instance_guid": "11111111-1111-1111-1111-111111111111",
+            "task_path": "\\CHARLIE CORE Runner Watchdog", "provider_identity_verified": True,
+            "current_action": "Execute", "action_execute": row["execute"],
+            "action_arguments": row["arguments"],
+            "action_working_directory": row["working_directory"],
+        }
+        provider_reads = iter([provider, dict(provider)])
+        current_reads = iter([{
+            "inspection_complete": True, "pid": 100, "parent_pid": 50,
+            "executable_path": row["execute"], "creation_time": "short-lived-child",
+            "command_line": f'"{row["execute"]}" {row["arguments"]}',
+        }, {"inspection_complete": False}])
+        result = inspect_current_provider_chain(
+            100, provider_identity=lambda: next(provider_reads),
+            current_identity=lambda: next(current_reads),
+        )
+        self.assertFalse(result["inspection_complete"])
+        self.assertEqual(result["reason"], "provider_child_identity_changed")
+
     @unittest.skipUnless(os.name == "nt", "Windows kernel identity only")
     def test_local_current_identity_uses_kernel_creation_time_and_native_command_line(self):
         result = _local_current_process_identity()
