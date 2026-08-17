@@ -951,7 +951,9 @@ def get_allocation_input_rows(
     # database is configured; real canonical reads and explicit factories use
     # the shared snapshot below.
     if connect_factory is None and not farm_supabase_reads_available():
-        return _get_allocation_input_rows_queries(connect_factory=None)
+        result = _get_allocation_input_rows_queries(connect_factory=None)
+        result["snapshot_observed_at"] = datetime.now().astimezone().isoformat()
+        return result
     acquired_started = now_fn()
     connection_context = _connect(connect_factory=connect_factory)
     with connection_context as connection:
@@ -970,10 +972,14 @@ def get_allocation_input_rows(
                 cursor.execute("set transaction isolation level repeatable read read only")
             if snapshot.remaining_seconds() <= 0:
                 raise TimeoutError("canonical allocation read deadline exhausted during transaction setup")
+        with connection.cursor() as cursor:
+            cursor.execute("select transaction_timestamp()")
+            snapshot_observed_at = cursor.fetchone()[0]
         result = _get_allocation_input_rows_queries(connect_factory=snapshot)
         if snapshot.remaining_seconds() < 0:
             raise TimeoutError("canonical allocation read deadline exhausted during result projection")
         result["read_progress"] = snapshot.progress()
+        result["snapshot_observed_at"] = snapshot_observed_at.isoformat()
         return result
 
 

@@ -38,19 +38,28 @@ def test_evidence_change_changes_generation_digest():
     assert first["evidence_digest"] != changed["evidence_digest"]
 
 
-@pytest.mark.parametrize("lease_until", [
-    NOW + timedelta(minutes=2), NOW - timedelta(minutes=2)])
-def test_changed_evidence_cannot_replace_a_delegated_generation(lease_until):
+def test_observation_epoch_does_not_create_a_new_material_digest():
+    first = normalize_candidate(_candidate(
+        evidence_refs=["event:one", "observed:2026-08-17T10:00:00+00:00"]), now=NOW)
+    later = normalize_candidate(_candidate(
+        evidence_refs=["event:one", "observed:2026-08-17T10:05:00+00:00"]), now=NOW)
+    assert first["evidence_digest"] == later["evidence_digest"]
+
+
+@pytest.mark.parametrize(("lease_until", "expected"), [
+    (NOW + timedelta(minutes=2), "deferred"),
+    (NOW - timedelta(minutes=2), "replayed")])
+def test_changed_evidence_cannot_replace_a_delegated_generation(lease_until, expected):
     class Cursor:
         def __init__(self): self.commands=[]
         def execute(self, sql, params): self.commands.append((sql, params))
         def fetchone(self):
             return ("a"*64, 1, "delegated", "oom-sakkie-general-manager-v1",
-                    lease_until)
+                    lease_until, ["observed:2026-08-17T10:00:00+00:00"])
     cursor=Cursor()
     candidate=normalize_candidate(_candidate(evidence_refs=["event:new"]), now=NOW)
     result=PostgresManagerCaseStore(connect_factory=lambda: None)._reconcile(cursor,candidate,NOW)
-    assert result == "replayed"
+    assert result == expected
     assert len(cursor.commands) == 1
 
 
@@ -60,7 +69,9 @@ def test_failed_reclaimed_worker_cannot_downgrade_confirmed_generation():
         def __enter__(self): return self
         def __exit__(self,*_args): return False
         def execute(self,sql,params): self.commands.append((sql,params))
-        def fetchone(self): return (1,"d"*64,"d"*64,"waiting_reassessment")
+        def fetchone(self):
+            return (1,"d"*64,"d"*64,"waiting_reassessment","cycle-two",
+                    NOW + timedelta(minutes=2))
     class Connection:
         def __init__(self,cursor): self.value=cursor
         def __enter__(self): return self
@@ -80,7 +91,9 @@ def test_confirmed_duplicate_releases_claim_and_reschedules_without_delivery():
         def __enter__(self): return self
         def __exit__(self,*_args): return False
         def execute(self,sql,params): self.commands.append((sql,params))
-        def fetchone(self): return (1,"d"*64,"d"*64,"delegated")
+        def fetchone(self):
+            return (1,"d"*64,"d"*64,"delegated","cycle-two",
+                    NOW + timedelta(minutes=2))
     class Connection:
         def __init__(self,cursor): self.value=cursor
         def __enter__(self): return self
