@@ -1,0 +1,294 @@
+"""Durable, zero-authority Oom Sakkie manager case worker.
+
+The worker coordinates existing specialist truth.  It never performs a domain
+write, customer/provider send, publication, callback, or hardware command.
+Those effects remain owned by the existing protected and specialist rails.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
+import os
+import re
+from typing import Any, Callable, Iterable, Mapping
+
+from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
+
+CONTRACT_VERSION = "oom_sakkie_general_manager_worker.v1"
+WORKER_ID = "oom-sakkie-general-manager-v1"
+TRIGGER_IDENTITY = "oom-sakkie-morning-scheduler:general-manager"
+CADENCE = timedelta(minutes=5)
+LEASE = timedelta(minutes=4)
+SPECIALISTS = frozenset({"ROOTLINE", "HERDMASTER", "SAM", "BEACON", "RUNTIME"})
+URGENCIES = frozenset({"critical", "urgent", "due", "planned", "watch"})
+OPEN_STATES = frozenset({"open", "delegated", "waiting_reassessment", "exception"})
+_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
+
+
+class ManagerCaseError(ValueError):
+    pass
+
+
+def normalize_candidate(raw: Mapping[str, Any], *, now: datetime) -> dict[str, Any]:
+    specialist = str(raw.get("specialist") or "").upper().strip()
+    urgency = str(raw.get("urgency") or "").lower().strip()
+    dedupe = _identity(raw.get("dedupe_key"), "dedupe_key")
+    if specialist not in SPECIALISTS:
+        raise ManagerCaseError("unsupported_specialist")
+    if urgency not in URGENCIES:
+        raise ManagerCaseError("unsupported_urgency")
+    refs = _bounded_strings(raw.get("evidence_refs"), "evidence_refs", required=True)
+    unknowns = _bounded_strings(raw.get("unknowns") or (), "unknowns")
+    summary = _text(raw.get("summary"), "summary", 500)
+    next_action = _text(raw.get("next_action"), "next_action", 500)
+    next_at = _time(raw.get("next_reassessment_at"), "next_reassessment_at")
+    if next_at < now - timedelta(minutes=5):
+        next_at = now
+    material = {
+        "contract_version": CONTRACT_VERSION,
+        "dedupe_key": dedupe,
+        "specialist": specialist,
+        "urgency": urgency,
+        "evidence_refs": refs,
+        "unknowns": unknowns,
+        "summary": summary,
+        "next_action": next_action,
+        "next_reassessment_at": next_at.isoformat(),
+    }
+    # Scheduling is worker state, not new domain evidence.  Excluding it keeps a
+    # repeated collector observation an exact replay instead of manufacturing a
+    # new case generation every five minutes.
+    digest = _digest({key: value for key, value in material.items()
+                      if key != "next_reassessment_at"})
+    return {**material, "case_id": "OOM-CASE-" + hashlib.sha256(dedupe.encode()).hexdigest()[:24].upper(),
+            "evidence_digest": digest}
+
+
+class PostgresManagerCaseStore:
+    def __init__(self, connect_factory=None):
+        self.connect_factory = connect_factory or (
+            lambda: connect_bounded_postgres(read_only=False))
+
+    def run_cycle(self, candidates: Iterable[Mapping[str, Any]], *, now: datetime,
+                  source_revision: str, deliver: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None):
+        now = _aware(now)
+        cycle_id = "OOM-MANAGER-CYCLE-" + now.strftime("%Y%m%dT%H%M%S%fZ")
+        next_cycle = now + CADENCE
+        created = changed = replayed = 0
+        claimed: list[dict[str, Any]] = []
+        connection = self.connect_factory()
+        try:
+            with connection:
+                with connection.cursor() as cur:
+                    cur.execute("""insert into app_private.oom_manager_worker_cycles
+                        (cycle_id,worker_id,trigger_identity,source_revision,started_at,heartbeat_at,
+                         next_cycle_at,status) values(%s,%s,%s,%s,%s,%s,%s,'started')""",
+                        (cycle_id, WORKER_ID, TRIGGER_IDENTITY, source_revision, now, now, next_cycle))
+                    for raw in candidates:
+                        candidate = normalize_candidate(raw, now=now)
+                        result = self._reconcile(cur, candidate, now)
+                        created += result == "created"
+                        changed += result == "changed"
+                        replayed += result == "replayed"
+                    cur.execute("""select case_id,dedupe_key,specialist,urgency,status,evidence_digest,
+                            evidence_refs,unknowns,summary,next_action,next_reassessment_at,generation,
+                            last_delivery_digest
+                        from app_private.oom_manager_cases
+                        where status in ('open','delegated','waiting_reassessment','exception')
+                          and next_reassessment_at<=%s
+                          and (lease_until is null or lease_until<%s)
+                        order by case urgency when 'critical' then 0 when 'urgent' then 1
+                            when 'due' then 2 when 'planned' then 3 else 4 end,
+                            next_reassessment_at,case_id
+                        for update skip locked limit 20""", (now, now))
+                    for row in cur.fetchall():
+                        case = _case_row(row)
+                        cur.execute("""update app_private.oom_manager_cases set
+                            assigned_worker_id=%s,lease_until=%s,last_heartbeat_at=%s,
+                            status='delegated',updated_at=%s where case_id=%s""",
+                            (WORKER_ID, now + LEASE, now, now, case["case_id"]))
+                        self._event(cur, case, "claimed", now, cycle_id=cycle_id)
+                        self._event(cur, case, "delegated", now, cycle_id=cycle_id,
+                                    specialist=case["specialist"])
+                        claimed.append(case)
+            delivered = suppressed = exceptions = 0
+            case_results = []
+            for case in claimed:
+                if deliver and case.get("last_delivery_digest") != case["evidence_digest"]:
+                    outcome = dict(deliver(case) or {})
+                else:
+                    duplicate = case.get("last_delivery_digest") == case["evidence_digest"]
+                    outcome = {
+                    "success": True, "status": "manager_delivery_disabled",
+                    "delivery_confirmed": False, "telegram_sends": 0,
+                    }
+                    if duplicate:
+                        outcome["status"] = "manager_delivery_duplicate_suppressed"
+                confirmed = bool(outcome.get("success") is True and outcome.get("delivery_confirmed") is True)
+                delivered += confirmed
+                suppressed += not confirmed
+                exceptions += outcome.get("success") is False
+                self._finish_claim(case, outcome, now, cycle_id)
+                case_results.append({"case_id": case["case_id"],
+                    "specialist": case["specialist"], "urgency": case["urgency"],
+                    "summary": case["summary"], "next_action": case["next_action"],
+                    "unknowns": case["unknowns"], "outcome_status": outcome.get("status"),
+                    "delivery_confirmed": confirmed,
+                    "next_reassessment_at": str(outcome.get("next_reassessment_at")
+                        or case["next_reassessment_at"])})
+            counts = {"candidates_created": created, "candidates_changed": changed,
+                "candidate_replays": replayed, "cases_claimed": len(claimed),
+                "deliveries_confirmed": delivered, "deliveries_suppressed": suppressed,
+                "exceptions": exceptions}
+            with self.connect_factory() as cycle_connection:
+                with cycle_connection.cursor() as cur:
+                    cur.execute("""update app_private.oom_manager_worker_cycles set heartbeat_at=%s,
+                        next_cycle_at=%s,status='completed',case_counts=%s::jsonb,completed_at=%s
+                        where cycle_id=%s""", (now, next_cycle, json.dumps(counts), now, cycle_id))
+            return {"success": True, "status": "general_manager_cycle_completed",
+                "contract_version": CONTRACT_VERSION, "worker_id": WORKER_ID,
+                "cycle_id": cycle_id, "heartbeat_at": now.isoformat(),
+                "next_cycle_at": next_cycle.isoformat(), "case_results": case_results,
+                **counts, **_zero_effects()}
+        except Exception as exc:
+            try:
+                with self.connect_factory() as failure_connection:
+                    with failure_connection.cursor() as cur:
+                        cur.execute("""insert into app_private.oom_manager_worker_cycles
+                            (cycle_id,worker_id,trigger_identity,source_revision,started_at,heartbeat_at,
+                             next_cycle_at,status,case_counts,completed_at)
+                            values(%s,%s,%s,%s,%s,%s,%s,'failed','{}'::jsonb,%s)
+                            on conflict(cycle_id) do update set status='failed',heartbeat_at=excluded.heartbeat_at,
+                              next_cycle_at=excluded.next_cycle_at,completed_at=excluded.completed_at""",
+                            (cycle_id, WORKER_ID, TRIGGER_IDENTITY, source_revision, now, now, next_cycle, now))
+            except Exception:
+                pass
+            return {"success": False, "status": "general_manager_cycle_failed",
+                "failure_kind": exc.__class__.__name__,
+                "worker_id": WORKER_ID, "cycle_id": cycle_id,
+                "heartbeat_at": now.isoformat(), "next_cycle_at": next_cycle.isoformat(),
+                **_zero_effects()}
+        finally:
+            connection.close()
+
+    def _reconcile(self, cur, candidate, now):
+        cur.execute("select evidence_digest,generation,status from app_private.oom_manager_cases where dedupe_key=%s for update",
+                    (candidate["dedupe_key"],))
+        prior = cur.fetchone()
+        if prior and prior[0] == candidate["evidence_digest"]:
+            return "replayed"
+        generation = int(prior[1]) + 1 if prior else 1
+        cur.execute("""insert into app_private.oom_manager_cases
+            (case_id,dedupe_key,specialist,urgency,status,evidence_digest,evidence_refs,unknowns,
+             summary,next_action,next_reassessment_at,generation,created_at,updated_at)
+            values(%s,%s,%s,%s,'open',%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s,%s)
+            on conflict(dedupe_key) do update set specialist=excluded.specialist,
+              urgency=excluded.urgency,status='open',evidence_digest=excluded.evidence_digest,
+              evidence_refs=excluded.evidence_refs,unknowns=excluded.unknowns,summary=excluded.summary,
+              next_action=excluded.next_action,next_reassessment_at=excluded.next_reassessment_at,
+              generation=excluded.generation,assigned_worker_id=null,lease_until=null,
+              updated_at=excluded.updated_at""", (candidate["case_id"], candidate["dedupe_key"],
+              candidate["specialist"], candidate["urgency"], candidate["evidence_digest"],
+              json.dumps(candidate["evidence_refs"]), json.dumps(candidate["unknowns"]),
+              candidate["summary"], candidate["next_action"],
+              _time(candidate["next_reassessment_at"], "next_reassessment_at"), generation, now, now))
+        event_case = {**candidate, "generation": generation}
+        self._event(cur, event_case, "created" if not prior else "evidence_changed", now)
+        return "created" if not prior else "changed"
+
+    def _finish_claim(self, case, outcome, now, cycle_id):
+        confirmed = bool(outcome.get("delivery_confirmed") is True)
+        failed = outcome.get("success") is False
+        state = "exception" if failed else "waiting_reassessment"
+        event_type = "exception" if failed else ("delivery_confirmed" if confirmed else "delivery_suppressed")
+        next_at = _time(outcome.get("next_reassessment_at") or case["next_reassessment_at"], "next_reassessment_at")
+        with self.connect_factory() as connection:
+            with connection.cursor() as cur:
+                cur.execute("select generation,evidence_digest from app_private.oom_manager_cases where case_id=%s for update",
+                            (case["case_id"],))
+                current = cur.fetchone()
+                if not current or int(current[0]) != int(case["generation"]) or current[1] != case["evidence_digest"]:
+                    return
+                delivery_digest = case["evidence_digest"] if confirmed else None
+                cur.execute("""update app_private.oom_manager_cases set status=%s,
+                    next_reassessment_at=%s,assigned_worker_id=null,lease_until=null,last_heartbeat_at=%s,
+                    last_delivery_digest=coalesce(%s,last_delivery_digest),
+                    last_delivery_at=case when %s then %s else last_delivery_at end,updated_at=%s
+                    where case_id=%s""", (state, next_at, now, delivery_digest, confirmed, now, now, case["case_id"]))
+                self._event(cur, case, event_type, now, cycle_id=cycle_id,
+                            outcome_status=str(outcome.get("status") or ""))
+                self._event(cur, case, "reassessment_scheduled", now,
+                            next_reassessment_at=next_at.isoformat())
+
+    @staticmethod
+    def _event(cur, case, event_type, now, **payload):
+        material = {"case_id": case["case_id"], "generation": int(case["generation"]),
+                    "event_type": event_type, "occurred_at": now.isoformat(), **payload}
+        event_id = "OOM-MANAGER-EVENT-" + _digest(material)[:32].upper()
+        cur.execute("""insert into app_private.oom_manager_case_events
+            (event_id,case_id,generation,event_type,event_payload,occurred_at)
+            values(%s,%s,%s,%s,%s::jsonb,%s) on conflict(event_id) do nothing""",
+            (event_id, case["case_id"], int(case["generation"]), event_type,
+             json.dumps(material, sort_keys=True), now))
+
+
+def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None,
+                              store=None, collectors=None, deliver=None):
+    now = _aware(now or datetime.now(timezone.utc))
+    if candidates is None:
+        from modules.oom_sakkie.manager_case_sources import collect_manager_candidates
+        candidates = collect_manager_candidates(now=now, collectors=collectors)
+    revision = str(source_revision or os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or "unknown")
+    return (store or PostgresManagerCaseStore()).run_cycle(
+        candidates, now=now, source_revision=revision, deliver=deliver)
+
+
+def _case_row(row):
+    keys = ("case_id","dedupe_key","specialist","urgency","status","evidence_digest",
+            "evidence_refs","unknowns","summary","next_action","next_reassessment_at",
+            "generation","last_delivery_digest")
+    value = dict(zip(keys, row)); value["next_reassessment_at"] = value["next_reassessment_at"].isoformat()
+    return value
+
+
+def _identity(value, field):
+    text = str(value or "").strip()
+    if not _ID.fullmatch(text): raise ManagerCaseError(field + "_invalid")
+    return text
+
+
+def _text(value, field, limit):
+    text = " ".join(str(value or "").split())
+    if not text or len(text) > limit: raise ManagerCaseError(field + "_invalid")
+    return text
+
+
+def _bounded_strings(value, field, required=False):
+    if not isinstance(value, (list, tuple)): raise ManagerCaseError(field + "_invalid")
+    result = tuple(sorted({_text(item, field, 240) for item in value}))
+    if required and not result: raise ManagerCaseError(field + "_required")
+    if len(result) > 20: raise ManagerCaseError(field + "_too_many")
+    return list(result)
+
+
+def _time(value, field):
+    try: parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError) as exc: raise ManagerCaseError(field + "_invalid") from exc
+    if parsed.tzinfo is None: raise ManagerCaseError(field + "_timezone_required")
+    return parsed.astimezone(timezone.utc)
+
+
+def _aware(value):
+    if value.tzinfo is None: raise ManagerCaseError("now_timezone_required")
+    return value.astimezone(timezone.utc)
+
+
+def _digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def _zero_effects():
+    return {"telegram_sends": 0, "telegram_edits": 0, "customer_sends": 0,
+            "provider_actions": 0, "hardware_commands": 0, "writes_farm_data": False,
+            "publishes": False, "callbacks_enabled": False}
