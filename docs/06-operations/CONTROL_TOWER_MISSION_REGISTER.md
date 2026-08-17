@@ -1268,3 +1268,41 @@ SAM must then handle eligible responses through its canonical provider/claim
 rail. Business completion requires the complete attributed demand-to-conversion
 journey and a later terminal-independent cycle, not merely a BEACON case or SAM
 scanner heartbeat.
+
+### ROOTLINE plan delivery ordering defect — 2026-08-17
+
+Fresh provider-origin ROOTLINE cycles
+`OOM-SCHEDULE-ROOTLINE-20260817T151500+0200` and
+`OOM-SCHEDULE-ROOTLINE-20260817T153000+0200` completed independently with
+`zone_contained`, zero hardware commands, zero farm writes and zero plan sends.
+Fresh observation `OOM-ROOTLINE-OBS-DAEB3BC6958EC43020468A16` nevertheless
+supports a bounded advisory plan for B12345 and C12345: run each for 60 minutes,
+based on weekly demand, water evidence and dry observed weather. This is plan
+evidence only; no physical outcome or actuation is inferred.
+
+The reusable defect is ordering, not missing scheduling. With autonomous B/C
+execution enabled, `handle_rootline_reassessment_trigger` immediately returns
+the execution-cycle result. A contained execution therefore prevents the
+independent advisory-plan reassessment and provider-delivery branch from running.
+The manager collector then treats the latest `zone_contained` execution outcome
+as proof that `delivered_current_irrigation_plan` is unknown even when a fresh
+same-date plan observation exists. Telegram card 3708 consequently repeated the
+generic unresolved case instead of the current plan.
+
+Classify Recovery Slot 2 ROOTLINE as `WORKING / AUTONOMOUS_SCHEDULER_HEALTHY /
+PLAN_DELIVERY_ORDERING_DEFECT`. The existing active FARM correction owns the
+shared OOM manager files and has fresh progress in seven preserved files; do not
+interrupt or start a competing implementation. At its next safe handover it must
+incorporate this mandatory addendum: keep execution containment and zero hardware
+authority; complete advisory-plan delivery independently of optional execution;
+return separate `plan_delivery_status` and `execution_status`; close the generic
+unknown only from same-operating-date provider-confirmed plan delivery; and add
+regressions for plan-plus-containment, delivery failure, confirmed suppression,
+material change and replay silence. Operational acceptance requires a new
+provider schedule identity delivering the plan or precise evidence exception and
+a later terminal-independent reassessment.
+
+The ROOTLINE diagnostic terminal had incomplete governance reads and therefore
+supplies admissible current diagnosis, not implementation authority. Its
+read-only assessment is complete and the terminal can close; the deployed
+scheduler continues independently.
