@@ -19,12 +19,16 @@ from modules.beacon.content_operations import (
 )
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
 from modules.oom_sakkie.beacon_media_review_runtime import present_private_media_review
+from modules.oom_sakkie.protected_action_claims import (
+    CALLBACK_PREFIX, canonical_preview_digest, create_claim,
+)
 
 CONTRACT_VERSION = "oom_sakkie_beacon_request_v1"
 EVENT_SOURCE = "oom_sakkie_beacon_request"
 ZERO = {"writes_farm_data": False, "writes_media": False, "publishes": False,
         "spends_money": False, "customer_sends": False,
         "protected_actions_performed": False}
+CAMPAIGN_REVIEW_ACTION = "beacon_campaign_review"
 
 
 def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_opportunity_cards,
@@ -96,10 +100,19 @@ def build_protected_campaign_package(packet, *, now=None):
                 or not str(media.get("library_accept_event_id") or "").strip()
                 or not str(media.get("public_use_event_id") or "").strip()):
             raise ValueError("beacon_campaign_public_media_authority_incomplete")
-    exact_media = ({key: media.get(key) for key in (
-        "asset_id", "media_type", "content_sha256", "storage_readback_proof_id",
-        "library_accept_event_id", "public_use_event_id")}
-        if media.get("status") == "approved_public_media_selected" else {"mode": "text_only"})
+    litter_media = packet.get("litter_media_selection") if isinstance(
+        packet.get("litter_media_selection"), list) else []
+    if litter_media:
+        exact_media = [{key: item.get(key) for key in (
+            "asset_id", "content_sha256", "storage_readback_proof_id",
+            "library_accept_event_id", "public_use_event_id", "thumbnail_url",
+            "capture_date", "source", "litter_id", "pig_ids", "event_id",
+            "public_use_authority")} for item in litter_media]
+    else:
+        exact_media = ({key: media.get(key) for key in (
+            "asset_id", "media_type", "content_sha256", "storage_readback_proof_id",
+            "library_accept_event_id", "public_use_event_id")}
+            if media.get("status") == "approved_public_media_selected" else {"mode": "text_only"})
     exact_copy = str(packet.get("draft_caption") or packet.get("recommended_copy") or "").strip()
     if not exact_copy:
         raise ValueError("beacon_campaign_exact_copy_required")
@@ -276,6 +289,25 @@ def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_a
         "protected_owner_decision": "Approve this exact copy, media mode, publication and boost envelope; Correct it; or Decline it.",
         "authority": dict(ZERO),
     }
+    story = card.get("story_context") if isinstance(card.get("story_context"), Mapping) else {}
+    if story.get("kind") == "litter":
+        subject_text = str(story.get("subject") or f"Litter {story.get('litter_id') or ''}").strip()
+        choice = build_litter_media_choice(media_payload,
+            litter_id=story.get("litter_id"), pig_ids=story.get("pig_ids") or [],
+            event_id=story.get("event_id"), subject=subject_text)
+        packet["story_subject"] = subject_text
+        packet["story_context"] = dict(story)
+        if choice["selected"]:
+            packet["litter_media_selection"] = choice["selected"]
+            first = choice["selected"][0]
+            packet["media"] = {"status": "approved_public_media_selected",
+                "asset_id": first["asset_id"], "media_type": "farm photograph",
+                "content_sha256": first["content_sha256"],
+                "storage_readback_proof_id": first["storage_readback_proof_id"],
+                "library_accept_event_id": first["library_accept_event_id"],
+                "public_use_event_id": first["public_use_event_id"]}
+        else:
+            packet["precise_media_request"] = choice["request"]
     packet["packet_id"] = "BEACON-DEMAND-" + _digest({
         "stock": stock, "copy": caption, "cta": cta, "media": media_plan,
         "sam": packet["sam_response_contract"]})[:24].upper()
@@ -463,6 +495,132 @@ def _public_awareness_media(payload, *, required_tags=None):
     return None
 
 
+def select_litter_story_media(payload, *, litter_id, pig_ids, event_id):
+    """Return only public-use media with exact canonical litter/pig/event linkage."""
+    rows = payload.get("items") if isinstance(payload, Mapping) and payload.get("success") is True else []
+    expected_pigs = {str(value) for value in pig_ids or [] if str(value).strip()}
+    selected = []
+    for row in rows or []:
+        observation = row.get("observation") if isinstance(row.get("observation"), Mapping) else {}
+        linked_pigs = {str(value) for value in observation.get("pig_ids") or [] if str(value).strip()}
+        public_use = row.get("effective_public_use_approved")
+        digest = str(row.get("content_sha256") or "").lower()
+        asset_id = str(row.get("beacon_asset_id") or row.get("binary_asset_id") or "")
+        if (str(observation.get("litter_id") or "") != str(litter_id)
+                or str(observation.get("event_id") or "") != str(event_id)
+                or not expected_pigs or expected_pigs != linked_pigs or not asset_id
+                or row.get("latest_library_event") != "library_accepted"
+                or public_use is not True
+                or not row.get("current_library_accept_event_id")
+                or not row.get("current_public_use_event_id")
+                or not row.get("private_storage_proof_id")
+                or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+            continue
+        selected.append({
+            "asset_id": asset_id,
+            "thumbnail_url": str(row.get("thumbnail_url") or ""),
+            "capture_date": str(observation.get("captured_at") or row.get("observed_at") or ""),
+            "source": str(observation.get("source") or row.get("source") or "canonical BEACON media library"),
+            "litter_id": str(litter_id), "pig_ids": sorted(expected_pigs), "event_id": str(event_id),
+            "content_sha256": digest,
+            "library_accept_event_id": str(row["current_library_accept_event_id"]),
+            "public_use_event_id": str(row["current_public_use_event_id"]),
+            "storage_readback_proof_id": str(row["private_storage_proof_id"]),
+            "public_use_authority": "approved",
+        })
+    return selected
+
+
+def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
+        provider_message_id, packet_generation, claim_creator=create_claim):
+    """Create the compact Telegram card and its exact single-use decision claim."""
+    campaign = packet.get("protected_campaign_package") if isinstance(packet, Mapping) else None
+    if not isinstance(campaign, Mapping):
+        raise ValueError("beacon_protected_campaign_package_required")
+    litter_media = packet.get("litter_media_selection") if isinstance(
+        packet.get("litter_media_selection"), list) else []
+    media = litter_media or campaign.get("selected_approved_media") or {"mode": "text_only"}
+    preview = {
+        "contract_version": "beacon_campaign_owner_card_v1",
+        "packet_id": str(packet.get("packet_id") or ""),
+        "packet_generation": str(packet_generation or ""),
+        "exact_post_copy": str(campaign.get("exact_post_copy") or ""),
+        "selected_media": media,
+        "audience": str(campaign.get("audience") or ""),
+        "location": str(campaign.get("location") or ""),
+        "publication_time": str(campaign.get("publication_time") or ""),
+        "publication_timezone": "Africa/Johannesburg",
+        "budget_cap": campaign.get("budget_cap") or {},
+        "duration": campaign.get("duration") or {},
+        "attribution_identity": str(campaign.get("attribution_identity") or ""),
+        "stock_boundary": str((campaign.get("sale_stock_evidence") or {}).get("claim_boundary") or ""),
+        "sam_boundary": str((campaign.get("sam_response_contract") or {}).get("authority_boundary") or ""),
+        "stop_conditions": campaign.get("stop_conditions") or [],
+        "rollback": campaign.get("rollback") or {},
+        "approval_expires_at": str(campaign.get("approval_expires_at") or ""),
+    }
+    if not preview["packet_generation"]:
+        raise ValueError("beacon_campaign_packet_generation_required")
+    preview["campaign_digest"] = canonical_preview_digest(CAMPAIGN_REVIEW_ACTION, preview)
+    claim = claim_creator(action_kind=CAMPAIGN_REVIEW_ACTION,
+        owner_user_id=str(owner_user_id), private_chat_id=str(private_chat_id),
+        mission_id=str(packet["packet_id"]), provider_message_id=str(provider_message_id),
+        evidence_generation=preview["campaign_digest"], preview_payload=preview,
+        expires_at=preview["approval_expires_at"])
+    token = claim["callback_token"]
+    budget = preview["budget_cap"]
+    duration = preview["duration"]
+    if litter_media:
+        media_summary = "; ".join(
+            f"{item['asset_id']} — {item.get('capture_date') or 'date Unknown'}, "
+            f"{item.get('source') or 'source Unknown'}, Public Use approved"
+            for item in litter_media)
+    else:
+        media_summary = (f"{media.get('asset_id')} (public-use approved)"
+            if isinstance(media, Mapping) and media.get("asset_id") else "Text only")
+    answer = "\n".join([
+        "<b>BEACON campaign approval</b>",
+        f"<b>Story:</b> {html.escape(str(packet.get('story_subject') or packet.get('objective') or 'Generate qualified livestock enquiries'))}",
+        f"<b>Copy preview:</b> {html.escape(preview['exact_post_copy'])}",
+        f"<b>Media:</b> {html.escape(media_summary)}",
+        f"<b>Publish:</b> {html.escape(preview['publication_time'])} SAST",
+        f"<b>Budget:</b> ZAR {html.escape(str(budget.get('total') or '0'))} total; {html.escape(str(duration.get('days') or '0'))} days",
+        "<b>Boundary:</b> Stock supports enquiries only; SAM must re-check stock before any offer. No quote, reservation, allocation, delivery promise or customer send.",
+    ])
+    rows = [[
+        {"text": "Approve", "callback_data": f"{CALLBACK_PREFIX}{token}:confirm"},
+        {"text": "Correct", "callback_data": f"{CALLBACK_PREFIX}{token}:change"},
+        {"text": "Decline", "callback_data": f"{CALLBACK_PREFIX}{token}:cancel"},
+    ]]
+    if litter_media:
+        answer += "\n<b>Use these photos?</b>"
+        rows.append([
+            {"text": "Review photos", "callback_data": f"{CALLBACK_PREFIX}{token}:details"},
+            {"text": "Select/change", "callback_data": f"{CALLBACK_PREFIX}{token}:change"},
+            {"text": "No media", "callback_data": f"{CALLBACK_PREFIX}{token}:nomedia"},
+        ])
+    elif packet.get("precise_media_request"):
+        answer += "\n<b>Media request:</b> " + html.escape(str(packet["precise_media_request"]))
+    rows.append([{"text": "Details", "callback_data": f"{CALLBACK_PREFIX}{token}:details"}])
+    markup = {"inline_keyboard": rows}
+    return {"answer": answer, "reply_markup": markup, "callback_token": token,
+        "preview_digest": claim.get("preview_digest") or preview["campaign_digest"],
+        "action_kind": CAMPAIGN_REVIEW_ACTION,
+        "card_mission_id": packet["packet_id"], "campaign_review_preview": preview}
+
+
+def build_litter_media_choice(payload, *, litter_id, pig_ids, event_id, subject):
+    selected = select_litter_story_media(payload, litter_id=litter_id,
+        pig_ids=pig_ids, event_id=event_id)
+    if selected:
+        return {"status": "eligible_litter_media", "selected": selected,
+            "question": "Use these photos?"}
+    return {"status": "precise_media_request", "selected": [],
+        "request": (f"Please send one current portrait photo of {subject}, linked to litter "
+            f"{litter_id} and event {event_id}, with capture date/source and explicit Public Use approval; "
+            "exclude people, plates, customer locations, illness, prices and sales signage.")}
+
+
 def build_current_beacon_proposal(opportunities, media_payload):
     if not isinstance(opportunities, Mapping) or opportunities.get("success") is not True:
         raise ValueError("canonical_opportunity_evidence_required")
@@ -574,9 +732,11 @@ def render_beacon_packet(packet, *, language="en"):
         if campaign:
             budget = campaign.get("budget_cap") or {}
             selected = campaign.get("selected_approved_media") or {}
+            selected_summary = (", ".join(str(item.get("asset_id") or "") for item in selected)
+                if isinstance(selected, list) else str(selected.get("asset_id") or selected.get("mode") or "none"))
             lines.extend(("", "<b>EXACT PROTECTED FACEBOOK CAMPAIGN</b>",
                 f"<b>Post:</b> {html.escape(str(campaign.get('exact_post_copy') or ''))}",
-                f"<b>Media:</b> {html.escape(str(selected.get('asset_id') or selected.get('mode') or 'none'))}",
+                f"<b>Media:</b> {html.escape(selected_summary)}",
                 f"<b>Audience/location:</b> {html.escape(str(campaign.get('audience') or ''))}; {html.escape(str(campaign.get('location') or ''))}",
                 f"<b>Publish:</b> {html.escape(str(campaign.get('publication_time') or ''))}",
                 f"<b>Boost:</b> {html.escape(str(campaign.get('boost_objective') or ''))}; ZAR {html.escape(str(budget.get('total') or '0'))} total / ZAR {html.escape(str(budget.get('daily') or '0'))} daily; 3 days",
@@ -615,9 +775,11 @@ def render_beacon_packet(packet, *, language="en"):
         if campaign:
             budget = campaign.get("budget_cap") or {}
             selected = campaign.get("selected_approved_media") or {}
+            selected_summary = (", ".join(str(item.get("asset_id") or "") for item in selected)
+                if isinstance(selected, list) else str(selected.get("asset_id") or selected.get("mode") or "none"))
             lines.extend(("", "<b>EXACT PROTECTED FACEBOOK CAMPAIGN</b>",
                 f"<b>Post:</b> {html.escape(str(campaign.get('exact_post_copy') or ''))}",
-                f"<b>Media:</b> {html.escape(str(selected.get('asset_id') or selected.get('mode') or 'none'))}",
+                f"<b>Media:</b> {html.escape(selected_summary)}",
                 f"<b>Audience/location:</b> {html.escape(str(campaign.get('audience') or ''))}; {html.escape(str(campaign.get('location') or ''))}",
                 f"<b>Publish:</b> {html.escape(str(campaign.get('publication_time') or ''))}",
                 f"<b>Boost:</b> {html.escape(str(campaign.get('boost_objective') or ''))}; ZAR {html.escape(str(budget.get('total') or '0'))} total / ZAR {html.escape(str(budget.get('daily') or '0'))} daily; 3 days",

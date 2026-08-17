@@ -375,7 +375,9 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
     observed = _generation_timestamp(case["case_id"], int(case["generation"]))
     mission_id = f"{case['case_id']}:G{int(case['generation'])}"
     if specialist == "BEACON":
-        from modules.oom_sakkie.beacon_request_runtime import build_scheduled_sale_ready_stock_result
+        from modules.oom_sakkie.beacon_request_runtime import (
+            build_scheduled_sale_ready_stock_result, prepare_campaign_owner_card,
+        )
         try:
             result = build_scheduled_sale_ready_stock_result()
         except Exception as exc:
@@ -389,6 +391,17 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
             return {"success": False, "status": "beacon_material_evidence_changed_before_delivery",
                     "delivery_confirmed": False, "telegram_sends": 0, "customer_sends": 0,
                     "publishes": False, "spends_money": False, "writes_farm_data": False}
+        if (result.get("proposal") or {}).get("protected_campaign_package"):
+            try:
+                result.update(prepare_campaign_owner_card(result["proposal"],
+                    owner_user_id=owner, private_chat_id=owner,
+                    provider_message_id="scheduled:" + mission_id,
+                    packet_generation=f"G{int(case['generation'])}"))
+            except Exception as exc:
+                return {"success": False, "status": "beacon_protected_card_contained",
+                    "failure_kind": exc.__class__.__name__, "delivery_confirmed": False,
+                    "telegram_sends": 0, "customer_sends": 0, "publishes": False,
+                    "spends_money": False, "writes_farm_data": False}
     else:
         result = None
     unknowns = tuple(str(value) for value in case.get("unknowns") or ())
@@ -410,6 +423,11 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
         deliver = deliver_family_result
     outcome = dict(deliver(parsed, result, specialist=specialist,
                            mission_id=mission_id, card_mission_id=case["case_id"]) or {})
+    if result.get("callback_token") and outcome.get("telegram_message_id"):
+        from modules.oom_sakkie.protected_action_claims import bind_claim_card
+        if not bind_claim_card(result["callback_token"], outcome["telegram_message_id"]):
+            return {**outcome, "success": False, "delivery_confirmed": False,
+                "status": "beacon_protected_card_binding_failed"}
     confirmed = bool(outcome.get("telegram_message_id") and (
         outcome.get("provider_delivery_confirmed") is True
         or (outcome.get("success") is True and int(outcome.get("telegram_edits") or 0) == 1)))
