@@ -51,3 +51,29 @@ def test_single_case_refresh_rejects_specialist_prefix_mismatch(monkeypatch):
         dedupe_key="herdmaster:weekly-weight-evidence", specialist="BEACON")
     assert result is None
     assert calls == []
+
+
+def test_delivery_refresh_rejects_embedded_specialist_mismatch(monkeypatch):
+    calls = []
+    monkeypatch.setattr("modules.oom_sakkie.manager_case_sources._delivery_gaps",
+        lambda now: calls.append("delivery"))
+    result = collect_manager_candidate(now=NOW,
+        dedupe_key="delivery:rootline:abc", specialist="HERDMASTER")
+    assert result is None
+    assert calls == []
+
+
+def test_injected_collectors_are_narrowed_to_owner():
+    calls = []
+    def _herdmaster(now):
+        calls.append("herdmaster")
+        return [{"dedupe_key": "herdmaster:weekly-weight-evidence",
+                 "specialist": "HERDMASTER"}]
+    def _beacon(now):
+        calls.append("beacon")
+        return []
+    result = collect_manager_candidate(now=NOW,
+        dedupe_key="herdmaster:weekly-weight-evidence", specialist="HERDMASTER",
+        collectors=(_beacon, _herdmaster))
+    assert result["specialist"] == "HERDMASTER"
+    assert calls == ["herdmaster"]
