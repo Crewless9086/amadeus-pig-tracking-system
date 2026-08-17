@@ -1850,3 +1850,23 @@ task, stop marker or runtime state was changed. Lifecycle is
 `WORKING / SOURCE_INTEGRATED`; promote only to a fresh separately governed
 validation gate. Historical activation `65f4f724...` remains sealed and must not
 be retried.
+### ROOTLINE owner reservoir observation acknowledgement defect — 2026-08-17
+
+Charl supplied fresh physical evidence by replying `Reservoir is full` at 18:03
+SAST. Oom Sakkie answered that it had recorded the observation against the active
+farm question. Control Tower read-only canonical inspection at 18:06 SAST found
+no corresponding new `public.rootline_tank_observations` row; the latest stored
+reservoir observation remained dated 15 August. The acknowledgement is therefore
+not accepted as canonical-write proof and the statement is not treated as
+irrigation authority.
+
+Continue the same ROOTLINE Recovery Slot 2 with a bounded typed-intake and
+truthful-acknowledgement repair in
+`C:\tmp\rootline-reservoir-observation-slot2-20260817`. Require exact active
+question/card/provider binding, reservoir-versus-storage semantics, idempotent
+governed write, exact readback before acknowledgement, replay silence and a
+precise contained exception on failure. Do not replay the message, manufacture
+the missing row, send Telegram from a terminal or perform hardware actions. The
+visible external terminal `ROOTLINE - RESERVOIR OBSERVATION` was dispatched at
+18:09 SAST after fresh collision review found its intended intake boundary
+disjoint from the active Revenue BEACON files.
