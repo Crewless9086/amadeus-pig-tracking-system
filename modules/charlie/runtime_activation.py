@@ -1086,7 +1086,7 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
     try:
         completed = runner(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=8, check=False,
+            capture_output=True, text=True, timeout=20, check=False,
         )
     except subprocess.TimeoutExpired:
         return {"inspection_complete": False, "reason": "provider_inspection_deadline_exceeded"}
