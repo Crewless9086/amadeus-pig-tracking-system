@@ -105,7 +105,8 @@ class PostgresManagerCaseStore:
                         where status in ('open','delegated','waiting_reassessment','exception')
                           and next_reassessment_at<=%s
                           and (lease_until is null or lease_until<%s)
-                        order by case urgency when 'critical' then 0 when 'urgent' then 1
+                        order by case when specialist='BEACON' then 0 else 1 end,
+                            case urgency when 'critical' then 0 when 'urgent' then 1
                             when 'due' then 2 when 'planned' then 3 else 4 end,
                             next_reassessment_at,case_id
                         for update skip locked limit 20""", (now, now))
