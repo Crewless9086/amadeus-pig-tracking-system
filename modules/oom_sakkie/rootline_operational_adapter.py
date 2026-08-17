@@ -13,9 +13,82 @@ import re
 
 from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
 from modules.telemetry.rootline_water_energy_plan import record_tank_observations_transactional
-from modules.oom_sakkie.gateway_authority import validates_rootline_observation_write_authority
+from modules.oom_sakkie.gateway_authority import (
+    issue_gateway_owner_authority, issue_rootline_observation_write_authority,
+    validates_rootline_observation_write_authority,
+)
 
 CONTRACT_VERSION = "rootline_operational_dispatch_result_v1"
+
+
+def recover_pending_manager_rootline_observation(*, database_url=None,
+        owner_user_id="", chat_id="", provider_message_id=""):
+    """Bind an already-authenticated manager reply that predates the bridge fix.
+
+    The original Telegram identity, timestamp, content digest and typed fact are
+    loaded from canonical Oom Sakkie intake.  No text is reinterpreted and the
+    tank writer's provider-bound idempotency remains authoritative.
+    """
+    database_url = str(database_url or __import__("os").environ.get("DATABASE_URL") or "").strip()
+    if not database_url:
+        return {"success": False, "status": "database_not_configured", "canonical_writes": 0}
+    try:
+        import psycopg
+        with psycopg.connect(database_url, connect_timeout=10,
+                options="-c default_transaction_read_only=on") as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select review_json->'manager_question_reply'
+                    from public.sam_live_stock_conversation_review_events e
+                    where e.event_source='oom_sakkie_manager_question_reply'
+                      and e.review_json->'manager_question_reply'->>'status'='recorded'
+                      and e.review_json->'manager_question_reply'->>'domain' in ('rootline','water_energy')
+                      and e.review_json->'manager_question_reply'->>'owner_user_id'=%s
+                      and e.review_json->'manager_question_reply'->>'chat_id'=%s
+                      and (%s='' or e.review_json->'manager_question_reply'->>'provider_message_id'=%s)
+                      and not exists(select 1 from public.rootline_tank_observations t
+                        where t.provider_message_id=e.review_json->'manager_question_reply'->>'provider_message_id')
+                    order by e.created_at limit 1""", (str(owner_user_id), str(chat_id),
+                        str(provider_message_id), str(provider_message_id)))
+                row = cursor.fetchone()
+    except Exception:
+        return {"success": False, "status": "manager_observation_recovery_read_failed",
+                "canonical_writes": 0}
+    if not row or not isinstance(row[0], Mapping):
+        return {"success": True, "status": "manager_observation_recovery_noop",
+                "canonical_writes": 0}
+    event = dict(row[0]); facts = (event.get("semantic_facts") or {}).get("observation_facts") or []
+    owner = str(event.get("owner_user_id") or ""); chat = str(event.get("chat_id") or "")
+    provider = str(event.get("provider_message_id") or "")
+    provider_at = str(event.get("provider_timestamp") or "")
+    digest = str(event.get("content_sha256") or "")
+    mission = "OOM-ROOTLINE-RECOVERY-" + provider
+    observations = _recovery_observations(facts, provider, provider_at)
+    if not observations or owner != chat or not all((owner, provider, provider_at, digest)):
+        return {"success": False, "status": "manager_observation_recovery_binding_invalid",
+                "canonical_writes": 0}
+    base = issue_gateway_owner_authority(owner, chat)
+    authority = issue_rootline_observation_write_authority(base, mission_id=mission,
+        provider_message_id=provider, provider_timestamp=provider_at, content_sha256=digest)
+    context = {"mission_id": mission, "owner_user_id": owner, "chat_id": chat,
+        "provider_message_id": provider, "provider_timestamp": provider_at,
+        "content_sha256": digest, "observations": observations}
+    return persist_rootline_observations(context, authority, database_url=database_url)
+
+
+def _recovery_observations(facts, provider, observed_at):
+    rows = []
+    for fact in facts if isinstance(facts, list) else []:
+        if not isinstance(fact, Mapping) or fact.get("subject") not in {"reservoir", "storage_tanks"}:
+            return []
+        state = str(fact.get("state") or "").upper()
+        if state not in {"LOW", "OK", "FULL"}:
+            return []
+        numerator, denominator = {"LOW": (0, 1), "OK": (1, 2), "FULL": (1, 1)}[state]
+        rows.append({"kind": "reservoir_level" if fact["subject"] == "reservoir" else "storage_level",
+            "value": f"{numerator}/{denominator}", "numerator": numerator,
+            "denominator": denominator, "semantic_state": state,
+            "provider_message_id": provider, "observed_at": observed_at})
+    return rows
 
 
 def persist_rootline_observations(context: Mapping[str, Any], authority, *, database_url=None) -> dict[str, Any]:
