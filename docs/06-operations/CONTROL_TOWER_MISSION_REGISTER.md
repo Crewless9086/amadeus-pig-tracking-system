@@ -906,6 +906,34 @@ supervisor/runner ancestry, fresh heartbeat, one independently triggered cycle,
 the next trigger, closure of all development/activation terminals and a later
 terminal-independent cycle.
 
+### CMQ-20260813-05 provider-origin activation failed closed — 2026-08-17
+
+Activation epoch `65f4f724b245421c903fc4a18073e9a9` passed every staged
+source, receipt, key, manifest, task, stop and lane binding before mutation. The
+reviewed rail created sealed observe-only authority, archived the governed stop,
+enabled and requested the exact bound Windows scheduled task, and did not create
+a terminal-origin CORE process. Windows Task Scheduler invoked the watchdog,
+but the runtime rejected the epoch as `provider_identity_incomplete` before a
+supervisor, runner, signed tree, heartbeat or mission cycle existed.
+
+Authenticated rollback then disabled the same exact task, restored the governed
+stop byte-identically, archived the packet and lane, and left runtime/execution
+clean at `64e53354` with the manifest unchanged. Rollback record `34374d28`,
+recovered-lane record `3bb97184` and archived packet `14ad8397` are durable
+evidence. Fresh Control Tower readback confirms authoritative main remains
+`64e5335496d06bde5dba8ba9a840ecb5f0168238` and the scheduled task is Disabled.
+
+Classify Recovery Slot 1 as `WORKING / ACTIVATION_FAILED_CLOSED /
+EXACT_STOPPED_STATE_RESTORED`. CORE remains `authority-disabled /
+deployed-dormant`; no autonomous workload reduction is claimed. The reusable
+blocker is the reviewed scheduled-provider ancestry inspector, not staging,
+owner input or terminal availability. Continue the same mission with one
+source-only correction of the exact `provider_identity_incomplete` boundary,
+using mocked or platform-isolated reproduction and independent process-safety
+review. Do not create another task, runtime, mission, staging epoch or activation
+epoch. After normal merge, stop again before fresh validation/staging and a
+later separately authorized activation.
+
 Automatic prompt delivery to every visible terminal is not proven. Charl must
 paste a prompt unless target-specific delivery and acknowledgement are evidenced.
 The target is the durable CORE queue/runner. Until then, queued, delivered,
