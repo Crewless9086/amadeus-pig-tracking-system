@@ -2039,3 +2039,21 @@ tests, but used the 23-line historical programme pointer instead of the canonica
 was rejected. The same worktree is now active as `SALES - MULTI-LINE QUOTE
 REVIEW` for corrected governance, review and authenticated desktop/mobile preview
 only. Production effects, PR, merge and deployment remain forbidden.
+
+### CORE activation 6410a3d7 contained; task-instance repair active - 2026-08-17 19:55 SAST
+
+Fresh activation `6410a3d7492144d79952632b6b0478ee` failed closed with
+`provider_identity_incomplete`: the exact scheduled task returned 1, but no
+authenticated task-instance/provider ancestry, activation-bound supervisor /
+runner or heartbeat was produced. Authenticated rollback restored the exact stop
+marker and Disabled task; supervisor is stopped, every lane is free and no
+business/provider/farm effect occurred. The epoch is sealed and non-retryable.
+The completed activation shell was closed.
+
+Control Tower started the same `CMQ-20260813-05` mission as source-only
+`CORE - TASK INSTANCE IDENTITY REPAIR` in isolated worktree
+`C:\tmp\cmq05-task-instance-identity-repair-20260817`. It must diagnose the real
+GetInstances/EnginePID/InstanceGuid and startup-handshake failure, add a
+Windows-realistic regression, preserve strict identity controls, complete one
+reviewed source PR and stop after merge. Staging, task mutation and activation
+are forbidden until a later fresh validation gate.
