@@ -3,7 +3,8 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.beacon_request_runtime import (
     build_current_beacon_proposal, build_live_stock_awareness_proposal,
-    handle_beacon_request, render_beacon_packet)
+    build_scheduled_sale_ready_stock_result, handle_beacon_request,
+    render_beacon_packet)
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
 from modules.oom_sakkie.telegram_gateway import (
     _delivery_disabled_internal_proof, handle_telegram_gateway_message)
@@ -93,6 +94,31 @@ def test_missing_media_is_precise_and_afrikaans_rendered():
     assert "Aanbevole kanaal/kopie:" in answer and "Meet later:" in answer
 
 
+def test_scheduled_result_binds_material_stock_and_media_evidence():
+    first = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: opportunity(), media_loader=lambda: media())
+    changed = opportunity()
+    changed["cards"][0]["capacity_calculation"]["demand_cap"] = 2
+    changed_stock = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: changed, media_loader=lambda: media())
+    changed_media = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: opportunity(),
+        media_loader=lambda: {**media(), "items":[{**media()["items"][0], "content_sha256":"b"*64}]})
+    assert first["proposal"]["packet_id"]
+    assert first["result_digest"] != changed_stock["result_digest"]
+    assert first["result_digest"] != changed_media["result_digest"]
+    assert first["publishes"] is False and first["customer_sends"] is False
+
+
+def test_scheduled_missing_media_request_keeps_publication_separate():
+    result = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: opportunity(),
+        media_loader=lambda: media(accepted=False))
+    assert result["proposal"]["packet_type"] == "missing_media_request"
+    assert result["proposal"]["authority"]["publishes"] is False
+    assert "PRECISE MEDIA REQUEST" in result["answer"]
+
+
 def test_missing_commercial_evidence_returns_precise_decision_packet_not_error():
     packet = build_current_beacon_proposal(opportunity(ready=False), media())
     assert packet["packet_type"] == "marketing_evidence_request"
@@ -101,6 +127,13 @@ def test_missing_commercial_evidence_returns_precise_decision_packet_not_error()
     assert "CURRENT EVIDENCE REQUEST" in answer
     assert "One protected decision" in answer
     assert packet["authority"]["publishes"] is False
+
+
+def test_blocked_evidence_identity_ignores_scheduler_observation_time():
+    first = opportunity(ready=False)
+    later = {**opportunity(ready=False), "generated_at":"2026-08-14T09:00:00+00:00"}
+    assert build_current_beacon_proposal(first, media())["packet_id"] == \
+        build_current_beacon_proposal(later, media())["packet_id"]
 
 
 def test_exact_failed_awareness_instruction_survives_semantics_and_zero_demand():

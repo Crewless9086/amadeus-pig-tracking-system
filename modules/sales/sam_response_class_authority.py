@@ -493,10 +493,14 @@ def append_authority_decision(
         (row for row in loaded.get("events", []) if row.get("response_class") == _clean_class(response_class)),
         {},
     )
-    required_prior = {"canary_authorized": "candidate", "promoted": "canary_authorized"}
-    if decision in required_prior and prior.get("decision") != required_prior[decision]:
-        return _result("authority_prior_state_invalid"), 409
-    if decision == "paused" and prior.get("decision") not in {"canary_authorized", "promoted"}:
+    allowed_prior = {
+        "canary_authorized": {"candidate"},
+        "promoted": {"canary_authorized"},
+        "paused": {"canary_authorized", "promoted"},
+        "regressed": {"candidate", "canary_authorized", "promoted"},
+        "retired": {"candidate", "canary_authorized", "promoted", "paused", "regressed"},
+    }
+    if decision in allowed_prior and prior.get("decision") not in allowed_prior[decision]:
         return _result("authority_prior_state_invalid"), 409
     evaluation = {
         "evidence": dict(prior.get("evidence") or {}),
