@@ -69,6 +69,7 @@ def build_protected_campaign_package(packet, *, now=None):
         raise ValueError("beacon_campaign_exact_copy_required")
     envelope = {
         "contract_version": "beacon_protected_facebook_campaign_package_v1",
+        "delivery_due_policy": "same_cycle_on_new_or_changed_evidence",
         "source_packet_id": packet["packet_id"], "exact_post_copy": exact_copy,
         "selected_approved_media": exact_media,
         "audience": str(packet.get("audience") or "Local people interested in responsible livestock and farm life"),

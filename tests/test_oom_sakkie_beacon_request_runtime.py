@@ -113,6 +113,7 @@ def test_scheduled_result_binds_material_stock_and_media_evidence():
     assert first["result_digest"] != changed_media["result_digest"]
     assert first["publishes"] is False and first["customer_sends"] is False
     package = first["proposal"]["protected_campaign_package"]
+    assert package["delivery_due_policy"] == "same_cycle_on_new_or_changed_evidence"
     assert package["publication_time"] == "2026-08-18T18:00:00+02:00"
     assert package["approval_expires_at"] == package["publication_time"]
     assert package["budget_cap"] == {"currency": "ZAR", "total": "300.00", "daily": "100.00"}
