@@ -103,6 +103,25 @@ def build_protected_campaign_package(packet, *, now=None):
     litter_media = packet.get("litter_media_selection") if isinstance(
         packet.get("litter_media_selection"), list) else []
     if litter_media:
+        story = ((packet.get("sale_stock_evidence") or {}).get("story_context")
+            if isinstance(packet.get("sale_stock_evidence"), Mapping) else None)
+        expected_pigs = {str(value) for value in (story or {}).get("pig_ids") or []}
+        if ((story or {}).get("kind") != "litter" or not (story or {}).get("litter_id")
+                or not (story or {}).get("event_id") or not expected_pigs):
+            raise ValueError("beacon_campaign_litter_story_binding_incomplete")
+        for item in litter_media:
+            if (not isinstance(item, Mapping)
+                    or not str(item.get("asset_id") or "").strip()
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(item.get("content_sha256") or "").lower())
+                    or not str(item.get("storage_readback_proof_id") or "").strip()
+                    or not str(item.get("library_accept_event_id") or "").strip()
+                    or not str(item.get("public_use_event_id") or "").strip()
+                    or item.get("public_use_authority") != "approved"):
+                raise ValueError("beacon_campaign_litter_media_authority_incomplete")
+            if (str(item.get("litter_id") or "") != str(story["litter_id"])
+                    or {str(value) for value in item.get("pig_ids") or []} != expected_pigs
+                    or str(item.get("event_id") or "") != str(story["event_id"])):
+                raise ValueError("beacon_campaign_litter_media_binding_mismatch")
         exact_media = [{key: item.get(key) for key in (
             "asset_id", "content_sha256", "storage_readback_proof_id",
             "library_accept_event_id", "public_use_event_id", "thumbnail_url",
@@ -150,6 +169,7 @@ def build_protected_campaign_package(packet, *, now=None):
         "delivery_due_policy": "same_cycle_on_new_or_changed_evidence",
         "source_packet_id": packet["packet_id"], "exact_post_copy": exact_copy,
         "selected_approved_media": exact_media,
+        "media_evidence_exception": str(packet.get("precise_media_request") or ""),
         "audience": str(packet.get("audience") or "Local people interested in responsible livestock and farm life"),
         "location": "Riversdale and Albertinia, Western Cape, South Africa",
         "publication_time": publication.isoformat(), "publication_timezone": "Africa/Johannesburg",
@@ -220,6 +240,7 @@ def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_a
         card.get("capacity_calculation"), Mapping) else {}
     sale_categories = sorted({str(value).strip() for value in
         capacity.get("eligible_categories") or [] if str(value).strip()})
+    story = card.get("story_context") if isinstance(card.get("story_context"), Mapping) else {}
     stock = {
         "source": "beacon_opportunity_scanner",
         "card_id": str(card.get("card_id") or ""),
@@ -243,17 +264,25 @@ def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_a
             "demand_summary": card.get("demand_summary") or {},
             "blockers": sorted(card.get("blockers") or []),
             "observed_at": provenance.get("observed_at"),
+            "story_context": story,
         }),
         "claim_boundary": "Categories support taking enquiries only; no quantity is advertised and SAM must re-read canonical stock before any offer or commitment.",
+        "story_context": dict(story),
     }
     if not stock["card_id"] or not stock["observed_at"]:
         raise ValueError("canonical_sale_stock_identity_required")
     category = stock["category"]
     subjects = [_public_stock_subject(value) for value in sale_categories]
     subject = _natural_list(subjects)
-    caption = (f"Looking for {subject}? Amadeus Farm is currently taking livestock enquiries. "
-        "Message Amadeus Farm with the type of animal, number needed, intended use and your area. "
-        "Our livestock team will check current farm records before any offer or commitment.")
+    if story.get("kind") == "litter":
+        litter_subject = str(story.get("subject") or f"Litter {story.get('litter_id') or ''}").strip()
+        caption = (f"Meet {litter_subject} at Amadeus Farm. We are taking livestock enquiries "
+            "about pigs from this litter. Message us with the number needed, intended use and "
+            "your area. Our livestock team will check current farm records before any offer or commitment.")
+    else:
+        caption = (f"Looking for {subject}? Amadeus Farm is currently taking livestock enquiries. "
+            "Message Amadeus Farm with the type of animal, number needed, intended use and your area. "
+            "Our livestock team will check current farm records before any offer or commitment.")
     cta = ("Message Amadeus Farm with the animal type, number needed, intended use and your area "
         "so our livestock team can qualify your enquiry.")
     media_tags = {token.casefold().replace(" ", "_") for value in sale_categories
@@ -289,7 +318,6 @@ def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_a
         "protected_owner_decision": "Approve this exact copy, media mode, publication and boost envelope; Correct it; or Decline it.",
         "authority": dict(ZERO),
     }
-    story = card.get("story_context") if isinstance(card.get("story_context"), Mapping) else {}
     if story.get("kind") == "litter":
         subject_text = str(story.get("subject") or f"Litter {story.get('litter_id') or ''}").strip()
         choice = build_litter_media_choice(media_payload,
@@ -528,7 +556,9 @@ def select_litter_story_media(payload, *, litter_id, pig_ids, event_id):
             "storage_readback_proof_id": str(row["private_storage_proof_id"]),
             "public_use_authority": "approved",
         })
-    return selected
+    return sorted(selected, key=lambda item: (
+        item["asset_id"], item["content_sha256"], item["library_accept_event_id"],
+        item["public_use_event_id"]))
 
 
 def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
@@ -546,6 +576,7 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
         "packet_generation": str(packet_generation or ""),
         "exact_post_copy": str(campaign.get("exact_post_copy") or ""),
         "selected_media": media,
+        "media_evidence_exception": str(campaign.get("media_evidence_exception") or ""),
         "audience": str(campaign.get("audience") or ""),
         "location": str(campaign.get("location") or ""),
         "publication_time": str(campaign.get("publication_time") or ""),
@@ -599,8 +630,9 @@ def prepare_campaign_owner_card(packet, *, owner_user_id, private_chat_id,
             {"text": "Select/change", "callback_data": f"{CALLBACK_PREFIX}{token}:change"},
             {"text": "No media", "callback_data": f"{CALLBACK_PREFIX}{token}:nomedia"},
         ])
-    elif packet.get("precise_media_request"):
-        answer += "\n<b>Media request:</b> " + html.escape(str(packet["precise_media_request"]))
+    elif preview["media_evidence_exception"]:
+        answer += "\n<b>Media evidence exception:</b> " + html.escape(
+            preview["media_evidence_exception"])
     rows.append([{"text": "Details", "callback_data": f"{CALLBACK_PREFIX}{token}:details"}])
     markup = {"inline_keyboard": rows}
     return {"answer": answer, "reply_markup": markup, "callback_token": token,
