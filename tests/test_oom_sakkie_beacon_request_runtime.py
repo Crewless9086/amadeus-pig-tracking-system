@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from modules.oom_sakkie.beacon_request_runtime import (
     build_current_beacon_proposal, build_live_stock_awareness_proposal,
+    build_protected_campaign_package, build_sale_ready_demand_proposal,
     build_scheduled_sale_ready_stock_result, handle_beacon_request,
     render_beacon_packet)
 from modules.oom_sakkie.gateway_authority import issue_gateway_owner_authority
@@ -13,12 +14,12 @@ from modules.oom_sakkie.semantic_front_door import SemanticInterpretation
 
 
 def opportunity(ready=True):
-    return {"success": True, "generated_at": "2026-08-14T08:00:00+00:00", "cards": [{
+    return {"success": True, "generated_at": "2026-08-17T08:00:00+00:00", "cards": [{
         "card_id": "BEACON-CURRENT", "status": "ready_for_owner_review" if ready else "blocked",
         "lane": "live_stock", "category": "weaner", "unit": "animals",
         "opportunity_reason": "Verified eligible supply and quantified uncommitted demand overlap." if ready else "Evidence is incomplete.",
         "capacity_calculation": {"demand_cap": 3 if ready else 0},
-        "provenance": {"observed_at": "2026-08-14T08:00:00+00:00"}}]}
+        "provenance": {"observed_at": "2026-08-17T08:00:00+00:00"}}]}
 
 
 def media(accepted=True, public=False):
@@ -36,7 +37,7 @@ def public_awareness_media(trusted=True):
         "current_library_accept_event_id": "LIBRARY-ACCEPT-1",
         "current_public_use_event_id": "PUBLIC-USE-1", "effective_public_use_approved": True,
         "private_storage_proof_id": "BEACON-BINARY-1:readback:" + "b" * 64,
-        "observation": {"tags": ["live_stock", "piglets"]}}]}
+        "observation": {"tags": ["live_stock", "piglets", "weaner"]}}]}
 
 
 def parsed(text="Please prepare the current marketing proposal", language="en"):
@@ -113,6 +114,13 @@ def test_scheduled_result_binds_material_stock_and_media_evidence():
     assert first["result_digest"] != changed_media["result_digest"]
     assert first["publishes"] is False and first["customer_sends"] is False
     package = first["proposal"]["protected_campaign_package"]
+    assert first["proposal"]["packet_type"] == "sale_ready_demand_proposal"
+    assert "Message Amadeus Farm" in package["call_to_action"]
+    assert "Follow the farm journey" not in package["exact_post_copy"]
+    assert package["sale_stock_evidence"]["card_id"] == "BEACON-CURRENT"
+    assert package["sam_response_contract"]["lane"] == "live_stock_sales"
+    assert package["sam_response_contract"]["supported_response_class"] == "clarification"
+    assert package["sam_response_contract"]["campaign_attribution_id"] == package["attribution_identity"]
     assert package["delivery_due_policy"] == "same_cycle_on_new_or_changed_evidence"
     assert package["publication_time"] == "2026-08-18T18:00:00+02:00"
     assert package["approval_expires_at"] == package["publication_time"]
@@ -131,10 +139,109 @@ def test_scheduled_missing_media_request_keeps_publication_separate():
         content_evidence_loader=lambda **kwargs: kwargs,
         content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
         now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
-    assert result["proposal"]["packet_type"] == "live_stock_awareness_proposal"
+    assert result["proposal"]["packet_type"] == "sale_ready_demand_proposal"
     assert result["proposal"]["authority"]["publishes"] is False
     assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
-    assert "Text-only is suitable" in result["answer"]
+    assert "Governed text-only campaign" in result["answer"]
+    assert "Message Amadeus Farm" in result["answer"]
+
+
+def test_messages_objective_rejects_generic_awareness_follow_copy():
+    awareness = build_live_stock_awareness_proposal(
+        opportunity(), awareness_candidate(), public_awareness_media())
+    awareness.update({
+        "campaign_objective": "facebook_messaging_conversations",
+        "call_to_action": "Follow the farm journey.",
+        "sale_stock_evidence": {"source": "beacon_opportunity_scanner",
+            "card_id": "BEACON-CURRENT", "observed_at": "2026-08-17T08:00:00+00:00",
+            "status": "ready_for_owner_review", "demand_cap": 3},
+        "sam_response_contract": {"lane": "live_stock_sales",
+            "supported_response_class": "clarification", "campaign_attribution_required": True},
+    })
+    try:
+        build_protected_campaign_package(awareness,
+            now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
+    except ValueError as exc:
+        assert str(exc) == "beacon_campaign_useful_message_cta_required"
+    else:
+        raise AssertionError("awareness copy must not pass a messages objective")
+
+
+def test_messages_objective_rejects_generic_message_cta_without_qualification_context():
+    packet = build_sale_ready_demand_proposal(opportunity(), public_awareness_media())
+    packet["call_to_action"] = "Message us."
+    try:
+        build_protected_campaign_package(packet,
+            now=datetime(2026, 8, 17, 8, tzinfo=timezone.utc))
+    except ValueError as exc:
+        assert str(exc) == "beacon_campaign_useful_message_cta_required"
+    else:
+        raise AssertionError("generic message CTA must not pass")
+
+
+def test_missing_sale_stock_returns_precise_non_publishable_exception():
+    result = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: opportunity(False),
+        media_loader=lambda: public_awareness_media(),
+        now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
+    assert result["status"] == "beacon_sale_ready_stock_evidence_request"
+    assert result["proposal"]["packet_type"] == "sale_ready_stock_evidence_request"
+    assert "positive sale-ready demand cap" in result["proposal"]["precise_exception"]
+    assert "protected_campaign_package" not in result["proposal"]
+    assert result["publishes"] is False and result["spends_money"] is False
+
+
+def test_stock_claim_and_material_generation_bind_to_canonical_card():
+    first = build_sale_ready_demand_proposal(opportunity(), public_awareness_media())
+    altered = opportunity()
+    altered["cards"][0]["card_id"] = "BEACON-NEW-CARD"
+    second = build_sale_ready_demand_proposal(altered, public_awareness_media())
+    assert first["packet_id"] != second["packet_id"]
+    assert first["sale_stock_evidence"]["demand_cap"] == 3
+    assert "3" not in first["draft_caption"]
+    assert first["sam_response_contract"]["qualification_fields"] == [
+        "animal_type", "quantity", "intended_use", "customer_area"]
+
+
+def test_blocked_positive_cap_stock_returns_precise_exception():
+    blocked = opportunity()
+    blocked["cards"][0]["blockers"] = ["canonical_sale_eligibility_conflict"]
+    packet = build_sale_ready_demand_proposal(blocked, public_awareness_media())
+    assert packet["packet_type"] == "sale_ready_stock_evidence_request"
+    assert packet["status"] != "ready_for_owner_review"
+
+
+def test_public_media_must_match_canonical_stock_category():
+    unrelated = public_awareness_media()
+    unrelated["items"][0]["observation"]["tags"] = ["farm_life", "chickens"]
+    packet = build_sale_ready_demand_proposal(opportunity(), unrelated)
+    assert packet["media"]["status"] == "text_only"
+    assert packet["media"]["reason"].startswith("No current public-use-approved")
+
+
+def test_protected_boundary_rejects_incomplete_claimed_public_media_authority():
+    packet = build_sale_ready_demand_proposal(opportunity(), public_awareness_media())
+    packet["media"]["public_use_event_id"] = ""
+    try:
+        build_protected_campaign_package(packet,
+            now=datetime(2026, 8, 17, 8, tzinfo=timezone.utc))
+    except ValueError as exc:
+        assert str(exc) == "beacon_campaign_public_media_authority_incomplete"
+    else:
+        raise AssertionError("incomplete public-media authority must fail closed")
+
+
+def test_unchanged_evidence_is_stable_across_scheduler_day_rollover():
+    first = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=opportunity, media_loader=public_awareness_media,
+        now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
+    later = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=opportunity, media_loader=public_awareness_media,
+        now=datetime(2026, 8, 19, 12, tzinfo=timezone.utc))
+    assert first["proposal"]["packet_id"] == later["proposal"]["packet_id"]
+    assert first["result_digest"] == later["result_digest"]
+    assert first["proposal"]["protected_campaign_package"]["publication_time"] == \
+        "2026-08-18T18:00:00+02:00"
 
 
 def test_scheduled_packet_identity_uses_canonical_observation_not_refresh_time():
