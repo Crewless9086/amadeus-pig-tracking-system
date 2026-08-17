@@ -1043,6 +1043,14 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
             mixer_status = str(mixer_recovery.get("status") or "")
             mixer_owns_controller = mixer_status not in {
                 "no_active_fertilizer_commissioning", "auxiliary_completed"}
+            plan_result, plan_http_status = handle_rootline_reassessment_trigger(
+                manual_payload, headers=headers, environ=source,
+                specialist_loader=scheduled_loader, state_store=state_store,
+                family_delivery=family_delivery)
+            plan_reassessment_status = str(plan_result.get("status") or "")
+            plan_delivery_confirmed = plan_http_status == 200
+            plan_delivery_status = ("delivered_current_irrigation_plan"
+                if plan_delivery_confirmed else "current_irrigation_plan_delivery_unconfirmed")
             if (str(source.get("ROOTLINE_AUTONOMOUS_BC_ENABLED") or "").lower() == "true"
                     and not mixer_owns_controller):
                 cycle = execution_cycle
@@ -1082,32 +1090,53 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                     next_reassessment_at=str(manual_payload.get("next_due_at") or
                                              manual_payload.get("due_at") or ""),
                     observation_store=state_store) or {})
-                return {**cycle_result,
+                compound_success = plan_delivery_confirmed and cycle_result.get("success") is True
+                return {**plan_result,
+                    "success": compound_success,
+                    "status": ("scheduled_rootline_plan_and_execution_completed"
+                        if compound_success else "scheduled_rootline_plan_or_execution_contained"),
+                    "plan_delivery_status": plan_delivery_status,
+                    "plan_reassessment_status": plan_reassessment_status,
+                    "execution_status": str(cycle_result.get("status") or ""),
+                    "hardware_commands": int(cycle_result.get("hardware_commands") or 0),
+                    "writes_farm_data": bool(cycle_result.get("writes_farm_data")),
                     "fertilizer_commissioning_status": str(mixer_recovery.get("status") or ""),
                     "daily_presentation_status": str(daily.get("status") or ""),
                     "daily_presentation_identity": str(daily.get("daily_identity") or ""),
                     "telegram_sends": int(daily.get("telegram_sends") or 0)
                         + int(mixer_recovery.get("telegram_sends") or 0)
+                        + int(plan_result.get("telegram_sends") or 0)
                         + int(cycle_result.get("telegram_sends") or cycle_result.get("telegram_messages") or 0),
                     "telegram_edits": int(daily.get("telegram_edits") or 0)
                         + int(cycle_result.get("telegram_edits") or 0)}
             if mixer_owns_controller:
-                return {**mixer_recovery,
+                return {**plan_result,
+                    "success": plan_delivery_confirmed,
+                    "status": ("scheduled_rootline_plan_delivered_execution_contained"
+                        if plan_delivery_confirmed else "scheduled_rootline_plan_delivery_contained"),
+                    "plan_delivery_status": plan_delivery_status,
+                    "plan_reassessment_status": plan_reassessment_status,
+                    "execution_status": mixer_status,
+                    "hardware_commands": int(mixer_recovery.get("hardware_commands") or 0),
                     "daily_presentation_status": str(daily.get("status") or ""),
                     "daily_presentation_identity": str(daily.get("daily_identity") or ""),
                     "telegram_sends": int(daily.get("telegram_sends") or 0)
-                        + int(mixer_recovery.get("telegram_sends") or 0)}
-            result, nested_status = handle_rootline_reassessment_trigger(
-                manual_payload, headers=headers, environ=source, specialist_loader=scheduled_loader,
-                state_store=state_store, family_delivery=family_delivery)
-            if nested_status != 200:
-                return {**result, "success": False,
-                        "scheduled_underlying_status": str(result.get("status") or ""),
-                        "status": "scheduled_reassessment_delivery_contained"}
-            return {**result, "daily_presentation_status": str(daily.get("status") or ""),
+                        + int(mixer_recovery.get("telegram_sends") or 0)
+                        + int(plan_result.get("telegram_sends") or 0)}
+            if not plan_delivery_confirmed:
+                return {**plan_result, "success": False,
+                        "scheduled_underlying_status": plan_reassessment_status,
+                        "status": "scheduled_reassessment_delivery_contained",
+                        "plan_delivery_status": plan_delivery_status,
+                        "plan_reassessment_status": plan_reassessment_status,
+                        "execution_status": "not_attempted"}
+            return {**plan_result, "daily_presentation_status": str(daily.get("status") or ""),
                     "daily_presentation_identity": str(daily.get("daily_identity") or ""),
                     "telegram_sends": int(daily.get("telegram_sends") or 0)
-                        + int(result.get("telegram_sends") or 0)}
+                        + int(plan_result.get("telegram_sends") or 0),
+                    "plan_delivery_status": plan_delivery_status,
+                    "plan_reassessment_status": plan_reassessment_status,
+                    "execution_status": "not_enabled"}
         scheduled = run_due_reassessment(payload=payload, invoke=invoke, store=schedule_store,
             now=scheduler_now, recover_delivery=(recover_pending_protected_delivery
                 if production_persistence else None))
@@ -1145,6 +1174,8 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
     recorded = record_reassessment_delivery(identity=result["notification_identity"], owner_user_id=owner,
         chat_id=chat, material_digest=result["material_digest"],
         operating_date=str(result.get("operating_date") or ""),
+        result_id=str(result.get("result_id") or ""),
+        evidence_generation=str(result.get("evidence_generation") or ""),
         delivery=delivery_proof, state_store=state_store)
     return {**result, "delivery": delivery, "delivery_record": recorded,
             "telegram_sends": int(delivery.get("telegram_sends") or 0)}, 200 if delivery_proof["provider_delivery_confirmed"] else 202

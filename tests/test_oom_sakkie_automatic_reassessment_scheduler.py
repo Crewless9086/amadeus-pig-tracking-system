@@ -145,7 +145,9 @@ def test_gateway_scheduled_unchanged_records_receipt_and_zero_io():
             return {"success": True, "created": created}
         if action == "load_delivered":
             return {"owner_user_id": "42", "chat_id": "42", "material_digest": digest,
-                    "delivery_state": "delivered", "provider_message_id": "3240"}
+                    "operating_date": "", "result_id": "R1",
+                    "evidence_generation": "G1", "delivery_state": "delivered",
+                    "provider_message_id": "3240"}
         return state_rows.get(identity)
     env = {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "true",
            "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "x" * 40,
@@ -162,8 +164,9 @@ def test_gateway_scheduled_unchanged_records_receipt_and_zero_io():
     assert result["writes_farm_data"] is False and len(rows) == 2
 
 
-def test_enabled_scheduler_uses_canonical_execution_cycle_not_readonly_packet_authority():
+def test_fresh_plan_is_delivered_before_contained_execution_with_zero_hardware_commands():
     rows,schedules=memory_store(); cycles=[]; deliveries=[]
+    lifecycle = {}
     env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"true",
          "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
          "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42",
@@ -172,23 +175,72 @@ def test_enabled_scheduler_uses_canonical_execution_cycle_not_readonly_packet_au
            "trigger_id":"AUTO-1","trigger_timestamp":"2026-08-05T10:15:00+02:00"}
     def cycle(**kwargs):
         cycles.append(kwargs)
-        proof=kwargs["notify"]("Started",{"zone_id":"B12345","execution_id":"EXEC-1",
-                                           "notification_identity":"NOTE-1"})
-        return {"success":True,"status":"segment_started","hardware_commands":1,
-                "telegram_messages":int(proof["provider_delivery_confirmed"]),
-                "writes_farm_data":False}
+        return {"success":True,"status":"zone_contained","hardware_commands":0,
+                "telegram_messages":0,"writes_farm_data":False}
     def deliver(*args,**kwargs):
         deliveries.append((args,kwargs)); return {"success":True,"status":"family_message_delivered",
             "telegram_message_id":"9100","telegram_sends":1}
+    current = {"success":True,"overall_status":"Hold","operating_date":"2026-08-05",
+        "result_id":"RESULT-1","generation":"GEN-1",
+        "evidence_cutoff":"2026-08-05T10:14:00+02:00",
+        "recommendations":[{"subject":"B12345","status":"Hold","reason":"Contained."}],
+        "owner_brief":{"family_fact_needed":""}}
+    def state(action, identity, payload):
+        if action == "load_delivered":
+            delivered = [row for row in lifecycle.values() if row.get("delivery_state") == "delivered"]
+            return delivered[-1] if delivered else None
+        if action == "load_identity": return lifecycle.get(identity)
+        if action in {"record_observation", "claim_pending"}:
+            created = identity not in lifecycle; lifecycle.setdefault(identity, payload)
+            return {"success":True,"created":created}
+        if action == "mark_delivered":
+            lifecycle[identity] = {**lifecycle[identity], **payload}; return {"success":True}
     value,status=handle_rootline_reassessment_trigger(bound,
         {"X-Oom-Sakkie-Telegram-Token":"x"*40},env,schedule_store=schedules,
-        state_store=lambda action, identity, payload: {"success": True, "created": True},
+        state_store=state,
         scheduler_now=NOW,family_delivery=deliver,execution_cycle=cycle,
-        specialist_loader=lambda:(_ for _ in ()).throw(AssertionError("read-only packet used")))
-    assert status==200 and value["status"]=="segment_started"
-    assert len(cycles)==len(deliveries)==1 and value["hardware_commands"]==1
+        specialist_loader=lambda:current)
+    assert status==200 and value["status"]=="scheduled_rootline_plan_and_execution_completed"
+    assert value["plan_delivery_status"]=="delivered_current_irrigation_plan"
+    assert value["plan_reassessment_status"]=="rootline_reassessment_changed"
+    assert value["execution_status"]=="zone_contained"
+    assert len(cycles)==len(deliveries)==1 and value["hardware_commands"]==0
+    assert value["telegram_sends"]==1
     assert cycles[0]["owner_user_id"]==cycles[0]["chat_id"]=="42"
     assert cycles[0]["observation_store"] is not None
+
+
+def test_plan_delivery_failure_and_containment_return_exact_separate_statuses():
+    _, schedules = memory_store(); events = {}
+    env={"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED":"true",
+         "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN":"x"*40,
+         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"42",
+         "ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"}
+    bound={**scheduled_payload(),"owner_user_id":"42","chat_id":"42","trigger":"declared_time",
+           "trigger_id":"AUTO-FAIL","trigger_timestamp":"2026-08-05T10:15:00+02:00"}
+    current={"success":True,"overall_status":"Hold","operating_date":"2026-08-05",
+        "result_id":"RESULT-FAIL","generation":"GEN-FAIL",
+        "evidence_cutoff":"2026-08-05T10:14:00+02:00","recommendations":[],
+        "owner_brief":{"family_fact_needed":""}}
+    def state(action, identity, payload):
+        if action == "load_delivered": return None
+        if action == "load_identity": return events.get(identity)
+        if action in {"record_observation","claim_pending"}:
+            created=identity not in events; events.setdefault(identity,payload)
+            return {"success":True,"created":created}
+        return {"success":False}
+    result,status=handle_rootline_reassessment_trigger(bound,
+        {"X-Oom-Sakkie-Telegram-Token":"x"*40},env,schedule_store=schedules,
+        state_store=state,scheduler_now=NOW,specialist_loader=lambda:current,
+        family_delivery=lambda *a,**k:{"success":False,"status":"family_message_delivery_failed",
+            "telegram_sends":0},
+        execution_cycle=lambda **k:{"success":True,"status":"zone_contained",
+            "hardware_commands":0,"writes_farm_data":False})
+    assert status==202 and result["status"]=="scheduled_rootline_plan_or_execution_contained"
+    assert result["plan_delivery_status"]=="current_irrigation_plan_delivery_unconfirmed"
+    assert result["plan_reassessment_status"]=="rootline_reassessment_changed"
+    assert result["execution_status"]=="zone_contained"
+    assert result["hardware_commands"]==result["telegram_sends"]==0
 
 
 def test_scheduler_denies_unknown_or_configured_family_before_load_delivery_or_execution():
