@@ -1,6 +1,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import pytest
 
 from modules.oom_sakkie.protected_action_claims import canonical_preview_digest
 from modules.oom_sakkie.protected_action_claims import (load_active_child_claim,
@@ -46,6 +47,14 @@ def test_preview_binds_exact_non_actuating_mixer_contract():
     assert payload["injection_enabled"] is False
     assert payload["physical_observations_required"] == ["normal_recirculation", "pump_stopped"]
 
+def test_preview_requires_exact_canonical_device_registry_record():
+    with pytest.raises(ValueError,match="device_registry_missing"):
+        build_preview_payload(artifact(),parsed(),device_loader=lambda _key:None)
+    baseline=build_preview_payload(artifact(),parsed())["device_record"]
+    with pytest.raises(ValueError,match="device_registry_binding_changed"):
+        build_preview_payload(artifact(),parsed(),device_loader=lambda _key:{
+          "device_record":{**baseline,"registry_generation":2}})
+
 def test_exact_claim_delegates_once_to_existing_executor():
     payload = build_preview_payload(artifact(), parsed()); calls = []
     def runner(**kwargs):
@@ -65,6 +74,14 @@ def test_tamper_or_wrong_chat_never_reaches_executor():
     result, status = execute_claimed_mixer(claim(payload), parsed=wrong,
         runner=lambda **kwargs: calls.append(kwargs))
     assert status == 409 and result["provider_control_calls"] == 0 and calls == []
+
+def test_canonical_registry_change_blocks_execution_before_runner():
+    payload=build_preview_payload(artifact(),parsed());calls=[]
+    changed={**payload["device_record"],"registry_generation":2}
+    result,status=execute_claimed_mixer(claim(payload),parsed=parsed(),
+      runner=lambda **_kwargs:calls.append(1),device_loader=lambda _key:{"device_record":changed})
+    assert status==409 and result["status"]=="mixer_protected_binding_mismatch"
+    assert calls==[]
 
 def test_expired_presence_notice_has_one_protected_ready_action(monkeypatch):
     monkeypatch.setattr("modules.oom_sakkie.rootline_protected_mixer.create_claim",

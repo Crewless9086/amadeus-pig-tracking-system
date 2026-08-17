@@ -5,7 +5,7 @@ from datetime import datetime
 from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authority
 from modules.oom_sakkie.herdmaster_weight_preview import preview_grouped_herd_weights
 from modules.oom_sakkie.owner_response_composer import compose_weight_preview
-from modules.oom_sakkie.protected_action_claims import build_buttons, create_claim
+from modules.oom_sakkie.protected_action_claims import build_buttons, canonical_preview_digest, create_claim
 from modules.pig_weights.canonical_grouped_preview import preview_prepared_owner_text
 
 _MULTI_WEIGHT = re.compile(r"(?:(?:pig|vark)\s+)?[A-Za-z0-9-]+\s+\d+(?:[.,]\d+)?\s*kg", re.I)
@@ -79,7 +79,10 @@ def handle_grouped_weight_message(parsed, authority, *, readiness_loader=None, p
         "specialist_identity": "HERDMASTER", "mission_id": mission, "card_mission_id": mission,
         "preview_id": preview["preview_id"], "weight_date": canonical["effective_date"],
         "mappings": canonical["rows"], "confirmation_required": canonical["confirmation_required"],
-        "preview_digest":canonical["preview_digest"],"protected_claim_digest":claim["preview_digest"],
+        "preview_digest":str(claim.get("preview_digest") or canonical_preview_digest("grouped_weights",payload)),
+        "canonical_preview_digest":canonical["preview_digest"],
+        "protected_claim_digest":str(claim.get("preview_digest") or canonical_preview_digest("grouped_weights",payload)),
+        "action_kind":str(claim.get("action_kind") or "grouped_weights"),
         "canonical_preview":canonical,"evidence_generation":generation,
         "callback_token":claim["callback_token"],"reply_markup":build_buttons(claim["callback_token"],grouped=True),
         "answer": compose_weight_preview(preview["rows"],

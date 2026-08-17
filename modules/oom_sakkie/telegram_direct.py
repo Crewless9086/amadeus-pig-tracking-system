@@ -15,6 +15,15 @@ from modules.oom_sakkie.protected_action_claims import CALLBACK_PREFIX
 from modules.oom_sakkie.protected_action_runtime import handle_protected_action_input
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie.family_access import FamilyRole, resolve_family_principal
+from modules.oom_sakkie.family_runtime import handle_family_runtime_message
+from modules.oom_sakkie.family_specialist_adapters import (
+    family_replay_store, herdmaster_family_observation, load_family_question,
+    load_family_summary, retain_family_question_reply, rootline_family_handoff,
+)
+from modules.oom_sakkie.family_rootline_callback import (
+    CALLBACK_PREFIX as FAMILY_CALLBACK_PREFIX, bind_family_rootline_preview_card,
+    prepare_family_rootline_preview, handle_family_rootline_callback,
+)
 from modules.oom_sakkie.telegram_gateway import (
     ALLOWED_USER_IDS_ENV,
     MAX_TELEGRAM_TEXT_CHARS,
@@ -175,6 +184,40 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         return _direct_result(False, "telegram_direct_auth_denied", policy, 403)
 
     callback = _parse_telegram_callback_payload(payload)
+    if callback["callback_data"].startswith(FAMILY_CALLBACK_PREFIX):
+        allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
+        source = environ if environ is not None else os.environ
+        parsed = {"telegram_user_id": callback["telegram_user_id"],
+            "telegram_chat_id": callback["telegram_chat_id"], "telegram_chat_type": "private",
+            "provider_message_id": callback["callback_query_id"],
+            "provider_timestamp": datetime.now(timezone.utc).isoformat(),
+            "reply_to_message_id": callback["telegram_message_id"],
+            "callback_query_id": callback["callback_query_id"],
+            "callback_data": callback["callback_data"], "text": ""}
+        principal = resolve_family_principal(parsed, source)
+        if (callback["telegram_user_id"] not in allowed_ids
+                or callback["telegram_user_id"] != callback["telegram_chat_id"]
+                or callback.get("telegram_chat_type") != "private"
+                or principal.role is not FamilyRole.FARM_MANAGER):
+            action_result, action_status = ({"success": False,
+                "status": "family_rootline_callback_unauthorized", "hardware_commands": 0,
+                "writes_farm_data": False}, 403)
+        else:
+            action_result, action_status = handle_family_rootline_callback(parsed, principal,
+                callback_data=callback["callback_data"], rootline_adapter=rootline_family_handoff,
+                replay_store=family_replay_store)
+        delivery = ({"success": True, "telegram_sends": 0, "telegram_edits": 0}
+            if action_result.get("suppress_family_delivery") or not action_result.get("answer")
+            else deliver_family_result(parsed, action_result, specialist="ROOTLINE"))
+        ack_result, ack_status = acknowledge_telegram_callback(callback["callback_query_id"], environ=environ)
+        body, _ = _direct_result(action_result.get("success") is True and ack_status < 400,
+            str(action_result.get("status") or "family_rootline_callback_contained"), policy,
+            action_status)
+        body.update({"message": action_result, "delivery": delivery,
+            "callback_acknowledgement": ack_result,
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": False, "hardware_commands": int(action_result.get("hardware_commands") or 0)})
+        return body, ack_status if ack_status >= 400 else action_status
     if callback["callback_data"].startswith(CALLBACK_PREFIX):
         allowed_ids=_allowed_user_ids(environ if environ is not None else os.environ)
         if callback["telegram_user_id"] not in allowed_ids or callback["telegram_user_id"]!=callback["telegram_chat_id"]:
@@ -206,7 +249,10 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
           else action_status)
     if callback["callback_data"].startswith("sam_live_"):
         allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
-        if callback["telegram_user_id"] not in allowed_ids:
+        source = environ if environ is not None else os.environ
+        if (callback["telegram_user_id"] not in allowed_ids
+                or not _is_owner_private_principal(callback["telegram_user_id"],
+                                                    callback["telegram_chat_id"], source, allowed_ids)):
             body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
             body["telegram_user_id"] = callback["telegram_user_id"]
             return body, status_code
@@ -243,7 +289,11 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
     media = telegram_media_envelope(payload)
     if media is not None:
         allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
-        if media["owner_user_id"] not in allowed_ids:
+        source = environ if environ is not None else os.environ
+        if (media["owner_user_id"] not in allowed_ids
+                or media.get("chat_type") != "private"
+                or not _is_owner_private_principal(media["owner_user_id"], media.get("chat_id"),
+                                                    source, allowed_ids)):
             body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
             return body, status_code
 
@@ -270,6 +320,42 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
         body["telegram_user_id"] = parsed["telegram_user_id"]
         return body, status_code
+
+    source = environ if environ is not None else os.environ
+    family_principal = resolve_family_principal(parsed, source)
+    is_owner_ingress = (parsed.get("telegram_chat_type") == "private"
+        and _is_owner_private_principal(parsed["telegram_user_id"],
+            parsed["telegram_chat_id"], source, allowed_ids))
+    if family_principal.role is FamilyRole.UNKNOWN_SENDER and not is_owner_ingress:
+        return _direct_result(False, "telegram_family_identity_not_authorized", policy, 403)
+    if not is_owner_ingress and family_principal.role is not FamilyRole.OWNER:
+        family_result, family_status = handle_family_runtime_message(
+            parsed, family_principal, summary_loader=load_family_summary,
+            observation_adapter=herdmaster_family_observation,
+            contextual_loader=load_family_question,
+            contextual_adapter=retain_family_question_reply,
+            rootline_adapter=rootline_family_handoff,
+            rootline_preview_adapter=prepare_family_rootline_preview,
+            replay_store=family_replay_store)
+        delivery = (deliver_family_result(parsed, family_result, specialist="OOM_SAKKIE_FAMILY")
+                    if str(family_result.get("answer") or "").strip()
+                    else {"success": True, "status": "family_private_denial_no_delivery",
+                          "telegram_sends": 0, "telegram_edits": 0})
+        body, _ = _direct_result(family_result.get("success") is True,
+            str(family_result.get("status") or "family_request_contained"), policy, family_status)
+        body.update({"message": family_result, "answer": family_result.get("answer", ""),
+            "delivery": delivery, "family_role": family_principal.role.value,
+            "authorization_id": family_principal.authorization_id,
+            "binding_digest": family_principal.binding_digest, "language": family_principal.language,
+            "records_audit_trace": family_result.get("audit_trace_recorded") is True,
+            "reply_transport": "backend_handles_family_delivery",
+            "sends_telegram": int(delivery.get("telegram_sends") or 0) > 0,
+            "writes": family_result.get("writes_farm_data") is True,
+            "hardware_commands": int(family_result.get("hardware_commands") or 0),
+            "physical_controls_enabled": int(family_result.get("hardware_commands") or 0) > 0})
+        if family_result.get("callback_token"):
+            body["preview_card_bound"] = bind_family_rootline_preview_card(family_result, delivery)
+        return body, family_status if delivery.get("success") else 202
 
     owner_task, owner_task_status = handle_owner_task_input(
         payload,
@@ -328,6 +414,16 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
     return body, send_status
 
 
+def _is_owner_private_principal(user_id, chat_id, source, allowed_ids):
+    user_id, chat_id = str(user_id or "").strip(), str(chat_id or "").strip()
+    configured_owner = str(source.get("OOM_SAKKIE_TELEGRAM_OWNER_USER_ID") or "").strip()
+    if user_id != chat_id:
+        return False
+    if configured_owner:
+        return user_id == configured_owner
+    return len(allowed_ids) == 1 and user_id in allowed_ids
+
+
 def _parse_telegram_callback_payload(payload):
     payload = payload if isinstance(payload, dict) else {}
     callback = payload.get("callback_query") if isinstance(payload.get("callback_query"), dict) else {}
@@ -340,6 +436,7 @@ def _parse_telegram_callback_payload(payload):
         "telegram_user_id": str(payload.get("telegram_user_id") or from_user.get("id") or "").strip()[:80],
         "telegram_chat_id": str(payload.get("telegram_chat_id") or chat.get("id") or "").strip()[:80],
         "telegram_message_id": str(payload.get("telegram_message_id") or message.get("message_id") or "").strip()[:80],
+        "telegram_chat_type": str(chat.get("type") or "").strip()[:40],
     }
 
 
