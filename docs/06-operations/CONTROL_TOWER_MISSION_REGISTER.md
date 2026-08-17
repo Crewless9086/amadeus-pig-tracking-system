@@ -1143,3 +1143,31 @@ tree, fresh heartbeat, a genuine independently triggered durable mission cycle,
 the next trigger, and a later cycle after every development and activation
 terminal is closed. Terminal-created mission output or direct process startup is
 not acceptable evidence.
+
+### ROOTLINE current irrigation-plan delivery failure — 2026-08-17
+
+The deployed OOM SAKKIE manager delivered a fresh owner-visible ROOTLINE case
+stating that reassessment remains `zone_contained` and that
+`delivered_current_irrigation_plan` is still unproven. This is useful continuous
+failure visibility, but it is not ROOTLINE business completion and must not be
+normalised as an acceptable daily wait. Current source confirms the manager
+collector deliberately maps `zone_contained` into this unresolved case, while
+the canonical irrigation plan service and ROOTLINE coordinator remain the
+responsible evidence-to-plan path.
+
+Classify the ROOTLINE portion of Recovery Slot 2 as `WORKING /
+AUTONOMOUS_REASSESSMENT_ACTIVE / CURRENT_PLAN_DELIVERY_FAILED`. The next bounded
+ROOTLINE increment must inspect fresh canonical telemetry, zone state, plan
+inputs, provider schedule receipts and the exact containment reason; produce the
+current evidence-backed irrigation plan or one precise missing-evidence/system
+exception with the earliest acquisition trigger; deliver that result through
+the deployed OOM SAKKIE channel; retain reassessment until verified closure; and
+prove a later terminal-independent cycle. It may not infer irrigation, actuate
+hardware, ask Charl to repeat available canonical facts, or create a competing
+plan/action/device ledger.
+
+The active FARM weighing-freshness correction owns shared OOM manager delivery
+surfaces. ROOTLINE work must remain within the existing irrigation plan service,
+coordinator and provider reassessment boundary unless a fresh collision review
+proves a shared change is necessary; any shared-file requirement becomes an
+addendum at FARM's next safe handover, not concurrent editing.
