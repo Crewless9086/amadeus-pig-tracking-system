@@ -1,7 +1,10 @@
 from copy import deepcopy
 from datetime import date
 
-from modules.pig_weights.herdmaster_full_lifecycle_merit import compose_full_lifecycle_merit
+from modules.pig_weights.herdmaster_full_lifecycle_merit import (
+    _safe_route_segment,
+    compose_full_lifecycle_merit,
+)
 
 
 def evidence():
@@ -141,3 +144,174 @@ def test_conflicting_exact_parent_roles_fail_closed():
     row = compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]
     assert row["breeding_role"] == "Unknown-conflicting"
     assert row["litter_outcomes"]["observed_litter_count"] == 0
+
+
+def test_human_identity_relationships_are_names_first_and_route_safe():
+    contexts = {f"{name}_context": "same governed cohort" for name in (
+        "management", "season", "environment", "feed", "health")}
+    data = {
+        "cutoff": date(2026, 8, 13),
+        "pigs": [
+            {"pig_id": "PIG-2026-TYSON", "name": "Tyson", "tag_number": "T-014", "animal_type": "Boar"},
+            {"pig_id": "PIG-2026-MOLLY", "name": "Molly", "tag_number": "M-027", "animal_type": "Sow"},
+            {"pig_id": "PIG-2026-PRINCE", "name": "Prince", "tag_number": "P-009", "animal_type": "Boar"},
+            {"pig_id": "PIG-2026-0632", "name": "Bella", "tag_number": "0632", "litter_id": "LIT-2026-5C36"},
+            {"pig_id": "PIG/unsafe?next=https://evil.example", "name": None, "tag_number": None,
+             "litter_id": "LIT-2026-5C36"},
+        ],
+        "litters": [{
+            "litter_id": "LIT-2026-5C36", "sow_pig_id": "PIG-2026-MOLLY",
+            "boar_pig_id": "PIG-2026-TYSON", "farrowing_date": "2026-05-20",
+            "litter_status": "Weaned", "born_alive": 8, "weaned_count": 7, **contexts,
+        }],
+        "observations": [], "lifecycle": [], "matings": [], "weights": [], "medical": [],
+    }
+    result = compose_full_lifecycle_merit(data, pig_id="PIG-2026-TYSON")
+    row = result["rows"][0]
+
+    assert result["identity_contract_version"] == "herdmaster_human_identity_v1"
+    assert row["identity"]["display_name"] == "Tyson"
+    assert row["identity"]["secondary_identity"] == "T-014"
+    assert row["identity"]["technical_identity"] == {"pig_id": "PIG-2026-TYSON"}
+    assert row["partner_comparisons"][0]["partner_identity"]["display_name"] == "Molly"
+    assert row["partner_comparisons"][0]["destination"]["href"] == "/breeding-analytics/PIG-2026-MOLLY"
+
+    litter = row["time_trend"][0]["litter_identity"]
+    assert litter["sow_identity"]["display_name"] == "Molly"
+    assert litter["destination"]["href"].startswith("/litter/LIT-2026-5C36?")
+    assert "return_to=%2Fbreeding-analytics%2FPIG-2026-TYSON" in litter["destination"]["href"]
+
+    offspring = row["family_relationships"]["offspring_identities"]
+    assert offspring[0]["display_name"] == "Bella"
+    unknown = next(item for item in offspring if item["pig_id"].startswith("PIG/unsafe"))
+    assert unknown["display_name"] == "Unknown"
+    assert unknown["presentation_state"] == "unknown"
+    assert unknown["technical_identity"]["pig_id"].startswith("PIG/unsafe")
+    assert unknown["destination"]["href"] is None
+    assert unknown["destination"]["unavailable_reason"] == "unsafe_route_identity"
+
+
+def test_unresolved_partner_identity_fails_closed_without_a_destination():
+    data = evidence()
+    data["pigs"] = [row for row in data["pigs"] if row["pig_id"] != "B1"]
+    partner = compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]["partner_comparisons"][0]
+    assert partner["partner_identity"]["display_name"] == "Unknown"
+    assert partner["partner_identity"]["technical_identity"] == {"pig_id": "B1"}
+    assert partner["destination"]["href"] is None
+    assert partner["destination"]["unavailable_reason"] == "canonical_animal_identity_unresolved"
+
+
+def test_dot_encoded_separator_and_control_route_segments_fail_closed():
+    for value in (".", "..", "%2e%2e", "%252e%252e", "pig/child", "pig\\child", "pig\nchild"):
+        assert _safe_route_segment(value) is None
+
+    data = evidence()
+    data["pigs"][0]["pig_id"] = ".."
+    for litter in data["litters"]:
+        litter["sow_pig_id"] = ".."
+    row = compose_full_lifecycle_merit(data, pig_id="..")["rows"][0]
+    assert row["identity"]["destination"]["href"] is None
+    assert row["identity"]["destination"]["unavailable_reason"] == "unsafe_route_identity"
+    assert all(item["destination"]["href"] is None for item in row["time_trend"])
+
+    data = evidence()
+    data["litters"][1]["litter_id"] = "."
+    data["litters"][1].pop("supersedes_litter_id")
+    row = compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]
+    unsafe_litter = next(item for item in row["time_trend"] if item["litter_id"] == ".")
+    assert unsafe_litter["destination"]["href"] is None
+
+
+def test_tyson_individual_matings_are_distinct_from_partner_aggregates_and_offspring_keep_state():
+    cutoff = date(2026, 8, 13)
+    partner_ids = ["PIG-2025-MOLLY", "PIG-2025-BONNIE", "PIG-2025-WAKI", "PIG-2025-TEENA"]
+    pigs = [{"pig_id": "PIG-2025-TYSON", "pig_name": "Tyson", "tag_number": "014",
+             "animal_type": "Boar", "status": "Active", "purpose": "Breeding", "on_farm": True}]
+    pigs.extend({"pig_id": partner, "pig_name": partner.split("-")[-1].title(),
+                 "animal_type": "Sow", "status": "Active", "purpose": "Breeding", "on_farm": True}
+                for partner in partner_ids)
+    litters, matings = [], []
+    for index in range(6):
+        partner = partner_ids[index % 4]
+        litter_id = f"LIT-2026-TYSON-{index + 1:02d}"
+        mating_id = f"MAT-2026-TYSON-{index + 1:02d}"
+        matings.append({"mating_id": mating_id, "mating_date": f"2026-0{index + 1}-01",
+                        "sow_pig_id": partner, "boar_pig_id": "PIG-2025-TYSON",
+                        "related_litter_id": litter_id, "status": "Farrowed"})
+        litters.append({"litter_id": litter_id, "mating_id": mating_id, "sow_pig_id": partner,
+                        "boar_pig_id": "PIG-2025-TYSON", "farrowing_date": f"2026-0{index + 2}-01",
+                        "litter_status": "Weaned", "born_alive": 7, "weaned_count": 6})
+    for index in range(37):
+        pigs.append({"pig_id": f"PIG-2026-TYSON-OFFSPRING-{index + 1:02d}",
+                     "pig_name": f"Tyson offspring {index + 1}", "tag_number": f"T{index + 1:03d}",
+                     "litter_id": litters[index % 6]["litter_id"], "animal_type": "Weaner",
+                     "status": "Active", "purpose": "Grower", "on_farm": index % 5 != 0})
+    source = {"cutoff": cutoff, "pigs": pigs, "litters": litters, "litter_history": litters,
+              "matings": matings, "observations": [], "lifecycle": [], "weights": [], "medical": []}
+
+    first = compose_full_lifecycle_merit(source, pig_id="PIG-2025-TYSON")
+    second = compose_full_lifecycle_merit(source, pig_id="PIG-2025-TYSON")
+    row = first["rows"][0]
+    assert row["breeding_opportunities"]["observed_count"] == 6
+    assert len(row["individual_mating_summaries"]) == 6
+    assert [item["mating_id"] for item in row["individual_mating_summaries"]] == sorted(
+        item["mating_id"] for item in row["individual_mating_summaries"])
+    assert len(row["partner_comparisons"]) == 4
+    assert row["partner_comparisons_semantics"] == {
+        "structure": "unique_partner_litter_aggregates", "aggregate_count": 4,
+        "not_individual_mating_records": True,
+    }
+    offspring = row["family_relationships"]["offspring_identities"]
+    assert len(offspring) == 37
+    assert all(item["current_status"] == "Active" and item["purpose"] == "Grower" for item in offspring)
+    assert all(item["on_farm"] is not None and item["litter_attribution_state"] == "supported" for item in offspring)
+    assert row["offspring"]["operational_summary"]["resolved_identity_count"] == 37
+    assert first["semantic_digest"] == second["semantic_digest"]
+    assert first["writes_performed"] is False
+
+
+def test_offspring_operational_unknown_and_conflict_are_explicit_without_breaking_identity():
+    data = evidence()
+    child = data["pigs"][-1]
+    child.update({"status": None, "purpose": "Sale", "purpose_conflict": True,
+                  "on_farm": True, "on_farm_conflict": True})
+    projected = compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]["offspring"]["identities"][0]
+    assert projected["current_status"] is None
+    assert projected["purpose"] is None
+    assert projected["on_farm"] is None
+    assert projected["operational_evidence_state"] == {
+        "current_status": "Unknown", "purpose": "conflicting", "on_farm": "conflicting",
+    }
+    assert projected["technical_identity"]["pig_id"] == child["pig_id"]
+
+
+def test_equivalent_permuted_evidence_has_identical_render_order_and_semantic_digest():
+    original = evidence()
+    permuted = deepcopy(original)
+    for collection in ("pigs", "litters", "litter_history", "matings", "observations",
+                       "lifecycle", "weights", "medical"):
+        if collection in permuted:
+            permuted[collection] = list(reversed(permuted[collection]))
+    first = compose_full_lifecycle_merit(original, pig_id="S1")
+    second = compose_full_lifecycle_merit(permuted, pig_id="S1")
+    assert first["semantic_digest"] == second["semantic_digest"]
+    assert first["rows"][0]["time_trend"] == second["rows"][0]["time_trend"]
+    assert first["rows"][0]["health_observation_context"] == second["rows"][0]["health_observation_context"]
+    assert first["lineage"] == second["lineage"]
+
+
+def test_individual_mating_litter_binding_fails_closed_on_parent_or_mating_mismatch():
+    data = evidence()
+    data["matings"] = [{"mating_id": "MAT-EXACT-01", "mating_date": "2026-01-01",
+                        "sow_pig_id": "S1", "boar_pig_id": "B1",
+                        "related_litter_id": "L1"}]
+    data["litters"][1]["mating_id"] = "MAT-DIFFERENT"
+    summary = compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]["individual_mating_summaries"][0]
+    assert summary["litter_attribution_state"] == "conflicting"
+    assert summary["litter_identity"] is None
+
+    data["litters"][1]["mating_id"] = "MAT-EXACT-01"
+    data["litters"][1]["boar_pig_id"] = "B2"
+    summary = compose_full_lifecycle_merit(data, pig_id="S1")["rows"][0]["individual_mating_summaries"][0]
+    assert summary["litter_attribution_state"] == "conflicting"
+    assert summary["litter_identity"] is None

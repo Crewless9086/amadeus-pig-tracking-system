@@ -43,8 +43,11 @@ target is superseded by the owner's page-specific direction here.
 
 ## 3. Non-negotiable interpretation rules
 
-1. Display authoritative animal name first. Show tag and Pig ID as secondary
-   identity. If the name is genuinely Unknown, use the tag, then Pig ID.
+1. Display authoritative animal name first and tag as secondary identity. If
+   the name is genuinely Unknown, use the tag as the primary fallback. If both
+   are unavailable, display an explicit `Unknown` presentation state; retain
+   Pig ID only as muted technical evidence and never promote it to the human
+   identity label.
 2. Missing, unresolved or incomplete evidence stays `Unknown`; it is never
    converted to zero, failure, clearance or poor merit.
 3. Every rate shows numerator, denominator, eligible/missing counts, cutoff and
@@ -227,6 +230,20 @@ Return:
   offspring and litter, plus the current animal's Breeding Attention target.
   Missing/unavailable targets render as non-link text with the supplied reason.
 
+The compatible identity enrichment is identified by
+`identity_contract_version: herdmaster_human_identity_v1` while the biological
+packet remains `herdmaster_full_lifecycle_merit_v1`. Each animal identity
+contains `{display_name, name, tag_number, presentation_state,
+technical_identity, role, animal_type, canonical_identity_resolved,
+destination}`. `technical_identity.pig_id` is evidence, not display fallback.
+`partner_comparisons` contains `partner_identity`; `time_trend` contains
+`litter_identity`, its resolved `sow_identity`, and the validated litter
+destination; `family_relationships` contains structured dam, sire and offspring
+identities while retaining the v1 ID fields for compatibility. Destinations are
+backend-generated internal application paths. Litter destinations carry only a
+backend-generated return to the current animal profile; request-supplied return
+URLs are not accepted by this composer.
+
 ## 6. Plain-language interpretation contract
 
 Every herd row and named profile must contain all four labelled sections:
@@ -281,6 +298,19 @@ All charts require accessible tabular equivalents, keyboard focus, text summary,
 units, cutoff, sample size, missing count and source limitation.
 
 ## 8. Deployed backend read model
+
+The named-animal packet keeps two deliberately separate mating collections:
+
+- `individual_mating_summaries` is an ordered one-row-per-attributable-mating projection carrying
+  exact mating, sow, boar, partner, chronology and supported litter identity. It must not infer
+  conception, pregnancy, service dates or litter attribution when the canonical binding is absent.
+- `partner_comparisons` remains a `unique_partner_litter_aggregates` structure. Its row count is a
+  unique-partner aggregate count and must never be presented as the number of mating records.
+
+Resolved offspring identities additionally carry nullable canonical `current_status`, `purpose`,
+`on_farm`, per-field evidence state and litter attribution. Missing or conflicting operational facts
+remain `Unknown`; summary counts disclose known coverage and never substitute zero for absent facts.
+CODEX UI renders these fields and backend ordering verbatim without recalculating livestock facts.
 
 HERDMASTER owns this capability list. The deployed v1 provides items 1-5, 7
 and 9 within the explicit evidence limitations below; items 6 and 8 remain
