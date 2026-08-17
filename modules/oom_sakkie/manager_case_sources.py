@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from typing import Callable, Iterable
+from zoneinfo import ZoneInfo
 
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_read
 
@@ -61,38 +62,67 @@ def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str
 
 
 def _rootline(now):
+    local_date = _aware(now).astimezone(ZoneInfo("Africa/Johannesburg")).date().isoformat()
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
             cur.execute("""select review_event_id,created_at,
-                    review_json->'automatic_reassessment'
+                    review_json->'rootline_reassessment'
                 from public.sam_live_stock_conversation_review_events
-                where event_source='oom_sakkie_automatic_reassessment'
-                  and review_json->'automatic_reassessment'->>'status'='completed'
-                order by created_at desc,review_event_id desc limit 1""")
-            row = cur.fetchone()
-            cur.execute("""select count(*) from public.sam_live_stock_conversation_review_events
-                where event_source='oom_sakkie_automatic_reassessment'
-                  and created_at>=%s
-                  and review_json->'automatic_reassessment'->>'terminal_outcome'='zone_contained'""",
-                (now - timedelta(hours=2),))
-            contained_count = int(cur.fetchone()[0])
-    if not row:
+                where event_source='oom_sakkie_rootline_reassessment'
+                  and review_json->'rootline_reassessment'->>'delivery_state'='observation_only'
+                  and review_json->'rootline_reassessment'->>'operating_date'=%s
+                order by created_at desc,review_event_id desc limit 1""", (local_date,))
+            observation_row = cur.fetchone()
+            delivered_row = None
+            if observation_row:
+                observation = observation_row[2] or {}
+                cur.execute("""select review_event_id,created_at,
+                        review_json->'rootline_reassessment'
+                    from public.sam_live_stock_conversation_review_events
+                    where event_source='oom_sakkie_rootline_reassessment'
+                      and review_json->'rootline_reassessment'->>'delivery_state'='delivered'
+                      and review_json->'rootline_reassessment'->>'operating_date'=%s
+                      and review_json->'rootline_reassessment'->>'material_digest'=%s
+                      and review_json->'rootline_reassessment'->>'result_id'=%s
+                      and review_json->'rootline_reassessment'->>'evidence_generation'=%s
+                      and review_json->'rootline_reassessment'->>'owner_user_id'=%s
+                      and review_json->'rootline_reassessment'->>'chat_id'=%s
+                      and coalesce(review_json->'rootline_reassessment'->>'provider_message_id','')<>''
+                    order by created_at desc,review_event_id desc limit 1""",
+                    (local_date, str(observation.get("material_digest") or ""),
+                     str(observation.get("result_id") or ""),
+                     str(observation.get("evidence_generation") or ""),
+                     str(observation.get("owner_user_id") or ""),
+                     str(observation.get("chat_id") or "")))
+                delivered_row = cur.fetchone()
+    retry_at = now + timedelta(minutes=5)
+    retry_text = retry_at.astimezone(ZoneInfo("Africa/Johannesburg")).strftime("%Y-%m-%d %H:%M SAST")
+    if not observation_row:
         return [_candidate("rootline:current-plan", "ROOTLINE", "urgent",
-            ["canonical:automatic_reassessment:none"], ["current_irrigation_plan"],
-            "ROOTLINE has no durable completed reassessment outcome.",
-            "Run the existing ROOTLINE reassessment rail and retain ownership until a current plan or precise contained reason exists.", now)]
-    event_id, observed, payload = row; payload = payload or {}
-    outcome = str(payload.get("terminal_outcome") or "")
-    next_at = _time(payload.get("next_due_at"), now + timedelta(minutes=15))
-    if outcome not in {"zone_contained", "rootline_reassessment_legacy_delivery_unresolved"}:
+            [f"operating_date:{local_date}", "canonical:rootline_observation:none"],
+            ["current_date_canonical_rootline_observation"],
+            f"ROOTLINE current-plan delivery exception: the current-date canonical ROOTLINE observation for {local_date} is missing.",
+            ("Automatic acquisition owner: the existing Oom Sakkie ROOTLINE schedule must load "
+             f"and persist the canonical observation; retry at {retry_text}. No hardware action is permitted."),
+            retry_at)]
+    event_id, observed, payload = observation_row; payload = payload or {}
+    if delivered_row:
         return []
+    identities = {"material": str(payload.get("material_digest") or ""),
+        "result": str(payload.get("result_id") or ""),
+        "generation": str(payload.get("evidence_generation") or "")}
+    missing = ["provider_confirmed_family_delivery_bound_to_current_plan"]
+    missing.extend(f"current_plan_{key}_identity" for key, value in identities.items() if not value)
     return [_candidate("rootline:current-plan", "ROOTLINE", "urgent",
-        [f"event:{event_id}", f"material:{payload.get('material_digest') or 'unknown'}",
-         f"contained_cycles_2h:{contained_count}",
-         f"observed:{observed.isoformat()}"],
-        ["delivered_current_irrigation_plan"],
-        "ROOTLINE reassessment remains contained without a delivered current irrigation plan.",
-        "Delegate current evidence reconciliation to ROOTLINE and reassess at the durable due time; do not infer irrigation or actuate hardware.", next_at)]
+        [f"event:{event_id}", f"operating_date:{local_date}",
+         f"material:{identities['material'] or 'missing'}",
+         f"result:{identities['result'] or 'missing'}",
+         f"generation:{identities['generation'] or 'missing'}",
+         f"observed:{observed.isoformat()}"], missing,
+        "ROOTLINE current-plan delivery exception: provider-confirmed family delivery is missing for the exact current-date material, result and generation.",
+        ("Automatic acquisition owner: the existing Oom Sakkie ROOTLINE delivery lifecycle must "
+         f"obtain and persist exact Telegram provider confirmation; retry at {retry_text}. "
+         "Do not infer delivery or actuate hardware."), retry_at)]
 
 
 def _herdmaster(now):

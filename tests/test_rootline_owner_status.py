@@ -87,7 +87,9 @@ def test_consumer_query_requires_exact_persisted_operating_date():
     from modules.telemetry.rootline_owner_status import _canonical_evidence
     from modules.oom_sakkie.rootline_reassessment_lifecycle import reassess_rootline
     assert "->>'operating_date'=%s" in inspect.getsource(_canonical_evidence)
-    assert '"operating_date": str(current.get("operating_date")' in inspect.getsource(reassess_rootline)
+    source = inspect.getsource(reassess_rootline)
+    assert 'operating_date = str(current.get("operating_date")' in source
+    assert '"operating_date": operating_date' in source
 
 
 def test_run_with_persisted_technical_blocker_projects_run_blocked():

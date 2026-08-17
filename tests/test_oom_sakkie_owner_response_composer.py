@@ -153,7 +153,7 @@ def test_automatic_reassessment_suppresses_unchanged_and_emits_one_material_chan
     assert all(item["hardware_commands"]==0 for item in (first,unchanged,changed,replay))
 
 
-def test_dynamic_next_read_timestamp_does_not_create_duplicate_notification():
+def test_later_result_generation_requires_new_delivery_even_when_material_is_stable():
     rows,state=store()
     first_packet=rootline()
     first_packet["next_reassessment"]={"trigger":"new_canonical_evidence",
@@ -162,15 +162,16 @@ def test_dynamic_next_read_timestamp_does_not_create_duplicate_notification():
         specialist_loader=lambda:first_packet,state_store=state)
     record_reassessment_delivery(identity=first["notification_identity"],owner_user_id="42",chat_id="42",
         material_digest=first["material_digest"],delivery={"provider_delivery_confirmed":True,
-        "provider_message_id":"7001"},state_store=state)
+        "provider_message_id":"7001"},operating_date=first["operating_date"],
+        result_id=first["result_id"],evidence_generation=first["evidence_generation"],state_store=state)
     later_packet={**first_packet,"generation":"G2","result_id":"R2",
         "current_power":{**first_packet["current_power"],"battery_soc_pct":40},
         "next_reassessment":{"trigger":"new_canonical_evidence",
             "at":"2026-08-04T10:40:41+02:00"}}
-    unchanged=reassess_rootline(owner_user_id="42",chat_id="42",trigger="declared_time",
+    changed=reassess_rootline(owner_user_id="42",chat_id="42",trigger="declared_time",
         specialist_loader=lambda:later_packet,state_store=state)
-    assert unchanged["status"]=="rootline_reassessment_unchanged"
-    assert unchanged["notify_owner"] is False and unchanged["telegram_sends"]==0
+    assert changed["status"]=="rootline_reassessment_changed"
+    assert changed["notify_owner"] is True and changed["telegram_sends"]==0
 
 
 def test_fixed_reassessment_deadline_change_remains_material():
