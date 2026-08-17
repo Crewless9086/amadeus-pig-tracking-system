@@ -9,9 +9,23 @@ from modules.oom_sakkie.operational_specialist_intake import (
 from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
 from modules.oom_sakkie import operational_specialist_intake
 from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
+from modules.oom_sakkie.rootline_operational_adapter import _recovery_observations
 
 NOW = datetime(2026, 8, 2, 15, 0, tzinfo=timezone.utc)
 TEXT = "I am at the B and C valve area now, can observe both camps, and can intervene immediately for supervised commissioning."
+
+
+def test_retained_manager_reservoir_fact_reconstructs_only_exact_provider_bound_observation():
+    assert _recovery_observations(
+        [{"subject": "reservoir", "state": "FULL"}], "3717",
+        "2026-08-17T16:03:17+00:00") == [{
+            "kind": "reservoir_level", "value": "1/1", "numerator": 1,
+            "denominator": 1, "semantic_state": "FULL",
+            "provider_message_id": "3717",
+            "observed_at": "2026-08-17T16:03:17+00:00"}]
+    assert _recovery_observations(
+        [{"subject": "it", "state": "FULL"}], "3717",
+        "2026-08-17T16:03:17+00:00") == []
 
 @pytest.fixture(autouse=True)
 def operation_store(monkeypatch):

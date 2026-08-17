@@ -111,7 +111,8 @@ def run(store,transport,rain=0,notify=None,clock=lambda:NOW):
             environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=store,
             token_store=object(),transport=transport,evidence_loader=loader,
             readback=lambda **_kwargs:controller(),clock=clock,
-            owner_user_id="42",chat_id="42",observation_store=observation_store)
+            owner_user_id="42",chat_id="42",observation_store=observation_store,
+            authority_checker=lambda _database_url, _artifact: True)
 
 
 def test_scheduler_owner_binding_persists_hold_observation_without_notification_or_command():
@@ -149,6 +150,23 @@ def test_dry_b_creates_artifact_and_exactly_one_coordinator_execution():
     assert [call["state"] for call in transport.calls]==["ON"]
     artifacts=[row for name,row in store.rows if name=="record_eligibility"]
     assert len(artifacts)==1 and artifacts[0]["zone_id"]=="B12345"
+
+
+def test_eligible_artifact_without_canonical_database_fails_closed_before_on():
+    store=Store(); transport=Transport(); loader=lambda **_kwargs:(evidence(),"2026-08-08",NOW)
+    observations={}
+    def observation_store(action,identity,payload):
+        observations.setdefault(identity,payload); return {"success":True,"created":True}
+    with mock.patch("modules.telemetry.rootline_execution_runtime.build_water_energy_plan",
+                    return_value=plan()):
+        result=run_rootline_execution_cycle(notify=lambda *_:None,
+            environ={"ROOTLINE_AUTONOMOUS_BC_ENABLED":"true"},now=NOW,store=store,
+            token_store=object(),transport=transport,evidence_loader=loader,
+            readback=lambda **_kwargs:controller(),owner_user_id="42",chat_id="42",
+            observation_store=observation_store)
+    assert result["status"]=="canonical_standing_authority_unproven"
+    assert result["hardware_commands"]==0 and transport.calls==[]
+    assert not any(action=="record_eligibility" for action,_ in store.rows)
 
 
 def test_notification_ambiguity_is_quarantined_without_retry_or_false_count():

@@ -31,7 +31,8 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
                                  evidence_loader=read_current_water_energy_evidence,
                                  readback=read_current_device, clock=None,
                                  owner_user_id="", chat_id="", next_reassessment_at="",
-                                 observation_store=None, expected_artifact=None):
+                                 observation_store=None, expected_artifact=None,
+                                 authority_checker=None):
     source = environ if environ is not None else os.environ
     clock = clock or (lambda: datetime.now(timezone.utc))
     now = _aware(now or clock())
@@ -69,6 +70,12 @@ def run_rootline_execution_cycle(*, notify, environ=None, now=None, database_url
                                          next_reassessment_at)
         return {**_safe(artifact.get("status") or "not_eligible"),
                 "execution_eligibility": artifact, **blocked}
+    canonical_database_url = str(database_url or source.get("DATABASE_URL") or "").strip()
+    authority_checker = authority_checker or _canonical_standing_authority_proven
+    if not authority_checker(canonical_database_url, artifact):
+        return {**_safe("canonical_standing_authority_unproven"),
+                "execution_eligibility": {**artifact, "eligible": False,
+                    "command_authority": False, "hardware_control": False}}
     try:
         stored = store("record_eligibility", artifact)
     except RootlineExecutionStoreUnavailable:
@@ -285,6 +292,72 @@ def _commissioned_output(zone):
                output.get("commissioning_generation")):
         raise ValueError("rootline_irrigation_commissioning_binding_invalid")
     return output, baseline, commissioning_id
+
+
+def _canonical_standing_authority_proven(database_url, artifact):
+    """Resolve the complete B/C evidence and explicit policy contract, or fail closed."""
+    if not str(database_url or "").strip():
+        return False
+    try:
+        import psycopg
+        from modules.telemetry.rootline_device_spine import load_device_record
+        def connect():
+            return psycopg.connect(database_url, connect_timeout=10,
+                options="-c default_transaction_read_only=on")
+        keys = (
+            "ifttt_ewelink:ewelink_owner_account:100204e9bc:1",
+            "ifttt_ewelink:ewelink_owner_account:100204e9bc:2",
+        )
+        records = [load_device_record(key, connect_factory=connect)["device_record"]
+                   for key in keys]
+        if any(record.get("standing_authority") is not True or
+               record.get("commissioning_stage") != "standing_active"
+               for record in records):
+            return False
+        selected_zone = str((artifact or {}).get("zone_id") or "")
+        selected_channel = (artifact or {}).get("channel")
+        expected = {"B12345": 1, "C12345": 2}
+        selected = next((record for record in records
+            if record.get("channel") == expected.get(selected_zone)), None)
+        if (selected is None or selected_channel != expected.get(selected_zone)
+                or selected.get("provider") != "ifttt_ewelink"
+                or selected.get("provider_account_binding") != "ewelink_owner_account"
+                or selected.get("device_id") != "100204e9bc"
+                or selected.get("physical_effect") != selected_zone + " irrigation water flow"
+                or selected.get("native_fail_stop_seconds") != 3599
+                or selected.get("maximum_runtime_seconds") != 3599):
+            return False
+        envelopes = [record.get("authority_envelope") or {} for record in records]
+        if len({(item.get("standing_authority_id"), item.get("version"))
+                for item in envelopes}) != 1:
+            return False
+        with connect() as connection:
+            with connection.cursor() as cursor:
+                envelope = envelopes[0]
+                cursor.execute("""select issuer,policy_payload from
+                    app_private.rootline_standing_authorities where
+                    standing_authority_id=%s and version=%s""",
+                    (envelope.get("standing_authority_id"), envelope.get("version")))
+                row = cursor.fetchone()
+        if not row or str(row[0]) != str(envelope.get("issuer") or ""):
+            return False
+        policy = row[1] if isinstance(row[1], dict) else {}
+        return (policy.get("contract_version") == "rootline_bc_standing_authority.v1"
+            and set(policy.get("device_keys") or ()) == set(keys)
+            and set(policy.get("zone_ids") or ()) == {"B12345", "C12345"}
+            and type(policy.get("maximum_runtime_seconds")) is int
+            and 0 < policy["maximum_runtime_seconds"] <= 3599
+            and type((artifact or {}).get("maximum_duration_seconds")) is int
+            and 0 < artifact["maximum_duration_seconds"] <= policy["maximum_runtime_seconds"]
+            and policy.get("simultaneous_outputs_allowed") is False
+            and bool(str(policy.get("emergency_off_owner") or "").strip())
+            and bool(str(policy.get("emergency_off_procedure") or "").strip())
+            and policy.get("provider_fail_stop_proven") is True
+            and policy.get("physical_fail_safe_proven") is True
+            and policy.get("power_restoration_off_proven") is True
+            and policy.get("automatic_on_retry") is False)
+    except Exception:
+        return False
 
 
 def _safe(status):

@@ -869,9 +869,22 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
                           if key not in {"scheduler_identity", "specialist", "due_at", "evidence_cutoff"}}
         base_scheduled_loader = specialist_loader
         if base_scheduled_loader is None:
-            from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
-            base_scheduled_loader = lambda: build_current_rootline_specialist_result(
-                now=datetime.fromisoformat(str(payload.get("evidence_cutoff")).replace("Z", "+00:00")))
+            cutoff = lambda: datetime.fromisoformat(str(
+                payload.get("evidence_cutoff")).replace("Z", "+00:00"))
+            if production_persistence:
+                from modules.oom_sakkie.rootline_operational_adapter import recover_pending_manager_rootline_observation
+                recovery = recover_pending_manager_rootline_observation(database_url=str(
+                    source.get("DATABASE_URL") or "") or None, owner_user_id=scheduled_owner,
+                    chat_id=scheduled_chat, provider_message_id="3717")
+                if recovery.get("success") is not True:
+                    return {"success":False,"status":str(recovery.get("status") or
+                        "rootline_manager_observation_recovery_failed"),"hardware_commands":0,
+                        "telegram_sends":0,"writes_farm_data":False}, 202
+                from modules.telemetry.rootline_specialist_result import refresh_current_rootline_specialist_result
+                base_scheduled_loader = lambda: refresh_current_rootline_specialist_result(now=cutoff())
+            else:
+                from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
+                base_scheduled_loader = lambda: build_current_rootline_specialist_result(now=cutoff())
         def scheduled_loader():
             current = base_scheduled_loader()
             try:
@@ -1149,8 +1162,16 @@ def handle_rootline_reassessment_trigger(payload, headers=None, environ=None, *,
     if owner != chat or owner not in _allowed_user_ids(source) or not trigger_id or not trigger_at:
         return _gateway_result(False, "rootline_reassessment_binding_invalid", policy, 403)
     if specialist_loader is None:
-        from modules.telemetry.rootline_specialist_result import build_current_rootline_specialist_result
-        specialist_loader = build_current_rootline_specialist_result
+        from modules.oom_sakkie.rootline_operational_adapter import recover_pending_manager_rootline_observation
+        recovery = recover_pending_manager_rootline_observation(
+            database_url=str(source.get("DATABASE_URL") or "") or None,
+            owner_user_id=owner, chat_id=chat, provider_message_id="3717")
+        if recovery.get("success") is not True:
+            return {"success": False, "status": str(recovery.get("status") or
+                "rootline_manager_observation_recovery_failed"), "hardware_commands": 0,
+                "telegram_sends": 0, "writes_farm_data": False}, 202
+        from modules.telemetry.rootline_specialist_result import refresh_current_rootline_specialist_result
+        specialist_loader = refresh_current_rootline_specialist_result
     if state_store is None:
         from modules.oom_sakkie.rootline_reassessment_store import rootline_reassessment_state_store
         state_store = rootline_reassessment_state_store

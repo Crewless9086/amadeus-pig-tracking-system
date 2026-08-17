@@ -15,7 +15,9 @@ from zoneinfo import ZoneInfo
 
 from modules.telemetry.rootline_water_energy_plan import (
     UNAVAILABLE,
+    append_water_energy_plan,
     build_water_energy_plan,
+    get_current_water_energy_plan,
     read_current_water_energy_evidence,
 )
 
@@ -138,6 +140,43 @@ def build_current_rootline_specialist_result(
         now=generated_at,
         evidence_origin="canonical_read_models",
     )
+
+
+def refresh_current_rootline_specialist_result(
+    operating_date=None, database_url=None, now=None,
+    actor_identity="OOM_SAKKIE_ROOTLINE_SCHEDULER",
+):
+    """Publish and project one exact canonical evidence snapshot.
+
+    The scheduled runtime is the existing plan owner.  This safe write creates
+    no hardware or Telegram authority; it only prevents the durable current-plan
+    endpoint from disagreeing with the scheduler's in-memory recommendation.
+    """
+    generated_at = _as_za(now or datetime.now(timezone.utc))
+    evidence, selected_date, generated_at = read_current_water_energy_evidence(
+        operating_date=operating_date, database_url=database_url, now=generated_at)
+    plan = build_water_energy_plan(evidence, selected_date, now=generated_at)
+    persisted, status = append_water_energy_plan(
+        plan, actor_identity, database_url=database_url)
+    if status >= 400 or persisted.get("success") is not True:
+        return _unavailable_result(selected_date, generated_at,
+                                   persisted.get("status") or "canonical_plan_append_failed")
+    current, current_status = get_current_water_energy_plan(
+        selected_date, database_url=database_url)
+    if (current_status >= 400 or current.get("success") is not True
+            or current.get("plan_id") != plan.get("plan_id")
+            or current.get("evidence_sha256") != plan.get("evidence_sha256")):
+        return _unavailable_result(selected_date, generated_at,
+                                   "canonical_plan_readback_mismatch")
+    result = build_rootline_specialist_result(
+        evidence, selected_date, now=generated_at,
+        evidence_origin="canonical_current_plan")
+    result["canonical_plan"] = {
+        "plan_id": current.get("plan_id"), "generation": current.get("generation"),
+        "evidence_sha256": current.get("evidence_sha256"),
+        "evidence_observed_at": current.get("evidence_observed_at"),
+    }
+    return result
 
 
 def reconsider_rootline_forecast_hold(
