@@ -97,7 +97,7 @@ def test_missing_media_is_precise_and_afrikaans_rendered():
 
 def test_scheduled_result_binds_material_stock_and_media_evidence():
     fixed = {"content_evidence_loader": lambda **kwargs: kwargs,
-        "content_candidate_builder": lambda evidence: awareness_candidate(),
+        "content_candidate_builder": lambda evidence, **kwargs: awareness_candidate(),
         "now": datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc)}
     first = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: opportunity(), media_loader=lambda: public_awareness_media(), **fixed)
@@ -129,12 +129,25 @@ def test_scheduled_missing_media_request_keeps_publication_separate():
         opportunity_loader=lambda: opportunity(),
         media_loader=lambda: media(accepted=False),
         content_evidence_loader=lambda **kwargs: kwargs,
-        content_candidate_builder=lambda evidence: awareness_candidate(),
+        content_candidate_builder=lambda evidence, **kwargs: awareness_candidate(),
         now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
     assert result["proposal"]["packet_type"] == "live_stock_awareness_proposal"
     assert result["proposal"]["authority"]["publishes"] is False
     assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
     assert "Text-only is suitable" in result["answer"]
+
+
+def test_scheduled_packet_identity_uses_canonical_observation_not_refresh_time():
+    first = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: opportunity(), media_loader=lambda: public_awareness_media(),
+        now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
+    refreshed = opportunity()
+    refreshed["generated_at"] = "2026-08-17T12:01:00+00:00"
+    second = build_scheduled_sale_ready_stock_result(
+        opportunity_loader=lambda: refreshed, media_loader=lambda: public_awareness_media(),
+        now=datetime(2026, 8, 17, 12, 1, tzinfo=timezone.utc))
+    assert first["proposal"]["packet_id"] == second["proposal"]["packet_id"]
+    assert first["result_digest"] == second["result_digest"]
 
 
 def test_missing_commercial_evidence_returns_precise_decision_packet_not_error():
