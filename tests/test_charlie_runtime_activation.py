@@ -231,17 +231,71 @@ class RuntimeActivationTests(unittest.TestCase):
     def test_bounded_provider_inspection_queries_only_exact_ancestry_pids(self):
         calls = []
         rows = {
-            100: {"ProcessId": 100, "ParentProcessId": 50, "ExecutablePath": "pythonw.exe"},
-            50: {"ProcessId": 50, "ParentProcessId": 0, "ExecutablePath": "svchost.exe"},
+            50: {"ProcessId": 50, "ParentProcessId": 0, "ExecutablePath": "svchost.exe",
+                 "CreationDate": "provider-created", "CommandLine": "svchost.exe -k netsvcs"},
         }
         def runner(command, **_kwargs):
             calls.append(command[-1])
-            pid = 100 if "ProcessId=100" in command[-1] else 50
-            return subprocess.CompletedProcess(command, 0, json.dumps(rows[pid]), "")
-        result = inspect_current_provider_chain(100, runner=runner)
+            return subprocess.CompletedProcess(command, 0, json.dumps(rows[50]), "")
+        result = inspect_current_provider_chain(100, runner=runner, current_identity=lambda: {
+            "inspection_complete": True, "pid": 100, "parent_pid": 50,
+            "executable_path": "pythonw.exe", "creation_time": "child-created",
+            "command_line": "pythonw.exe watchdog.py",
+        })
         self.assertTrue(result["inspection_complete"])
         self.assertEqual(len(calls), 2)
         self.assertTrue(all("Get-CimInstance Win32_Process -Filter \"ProcessId=" in call for call in calls))
+        self.assertTrue(all("ProcessId=50" in call for call in calls))
+
+    def test_scheduled_child_self_cim_denial_uses_local_identity_and_proves_provider(self):
+        row = self.task[0]
+        calls = []
+        parent = {"ProcessId": 50, "ParentProcessId": 0,
+                  "ExecutablePath": "C:/Windows/System32/svchost.exe",
+                  "CreationDate": "provider-created", "CommandLine": "svchost.exe -k netsvcs"}
+        def runner(command, **_kwargs):
+            calls.append(command[-1])
+            return subprocess.CompletedProcess(command, 0, json.dumps(parent), "")
+        inspected = inspect_current_provider_chain(100, runner=runner, current_identity=lambda: {
+            "inspection_complete": True, "pid": 100, "parent_pid": 50,
+            "executable_path": row["execute"], "creation_time": "child-created",
+            "command_line": f'"{row["execute"]}" {row["arguments"]}',
+        })
+        self.assertTrue(verify_provider_origin(lambda _pid: inspected, expected_task=self.task)["authorized"])
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all("ProcessId=100" not in call for call in calls))
+
+    def test_provider_pid_substitution_during_bounded_read_fails_closed(self):
+        rows = iter([
+            {"ProcessId": 50, "ParentProcessId": 0, "ExecutablePath": "svchost.exe",
+             "CreationDate": "first", "CommandLine": "svchost.exe"},
+            {"ProcessId": 50, "ParentProcessId": 0, "ExecutablePath": "svchost.exe",
+             "CreationDate": "replacement", "CommandLine": "svchost.exe"},
+        ])
+        result = inspect_current_provider_chain(100, runner=lambda command, **_kwargs:
+            subprocess.CompletedProcess(command, 0, json.dumps(next(rows)), ""),
+            current_identity=lambda: {
+                "inspection_complete": True, "pid": 100, "parent_pid": 50,
+                "executable_path": "pythonw.exe", "creation_time": "child-created",
+                "command_line": "pythonw.exe watchdog.py",
+            })
+        self.assertFalse(result["inspection_complete"])
+        self.assertEqual(result["reason"], "provider_ancestry_changed")
+
+    def test_terminal_above_scheduled_child_remains_rejected(self):
+        row = self.task[0]
+        inspected = {
+            "inspection_complete": True, "pid": 100, "parent_pid": 50,
+            "executable_path": row["execute"],
+            "command_line": f'"{row["execute"]}" {row["arguments"]}',
+            "ancestry": [
+                {"pid": 50, "parent_pid": 40, "executable_path": "svchost.exe"},
+                {"pid": 40, "parent_pid": 0, "executable_path": "powershell.exe"},
+            ],
+        }
+        result = verify_provider_origin(lambda _pid: inspected, expected_task=self.task)
+        self.assertFalse(result["authorized"])
+        self.assertEqual(result["reason"], "terminal_ancestry_rejected")
 
     def test_exact_pid_inspector_returns_complete_identity_on_success(self):
         row = {"ProcessId": 42, "ParentProcessId": 7, "ExecutablePath": "pythonw.exe",

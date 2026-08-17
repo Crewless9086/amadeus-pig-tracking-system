@@ -10,6 +10,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -523,43 +524,93 @@ def verify_provider_origin(inspector, *, expected_task):
             "parent_executable": parent_name}
 
 
-def inspect_current_provider_chain(pid=None, runner=subprocess.run):
-    """Inspect only this process and its exact parent chain, never a host snapshot."""
-    current_pid = int(pid or os.getpid())
+def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_identity=None):
+    """Inspect this process locally and only its exact parent PIDs through CIM."""
+    requested_pid = int(pid or os.getpid())
+    if current_identity is not None:
+        current = current_identity()
+    elif requested_pid == os.getpid():
+        current = _local_current_process_identity()
+    else:
+        current = _inspect_exact_process(requested_pid, runner=runner)
+    required = ("pid", "parent_pid", "executable_path", "creation_time", "command_line")
+    if (not isinstance(current, dict) or not current.get("inspection_complete")
+            or int(current.get("pid") or -1) != requested_pid
+            or any(not str(current.get(field) or "") for field in required[2:])):
+        return {"inspection_complete": False, "reason": "provider_identity_unreadable"}
+
     chain = []
-    current = {}
-    for index in range(12):
-        script = (
-            "$ErrorActionPreference='Stop';"
-            f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId={current_pid}\";"
-            "if($null-eq$p){exit 4};"
-            "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,CreationDate,CommandLine|ConvertTo-Json -Compress"
-        )
-        completed = runner(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=10, check=False,
-        )
-        if completed.returncode:
-            return {"inspection_complete": False, "reason": "provider_identity_unreadable"}
-        try:
-            row = json.loads(completed.stdout)
-            item = {
-                "pid": int(row["ProcessId"]),
-                "parent_pid": int(row["ParentProcessId"]),
-                "executable_path": str(row.get("ExecutablePath") or ""),
-                "creation_time": str(row.get("CreationDate") or ""),
-                "command_line": str(row.get("CommandLine") or ""),
-            }
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            return {"inspection_complete": False, "reason": "provider_identity_invalid"}
-        if index == 0:
-            current = item
-        else:
-            chain.append(item)
-        current_pid = item["parent_pid"]
-        if current_pid <= 0:
+    next_pid = int(current.get("parent_pid") or 0)
+    seen = {requested_pid}
+    terminated = False
+    for _index in range(12):
+        if next_pid <= 0:
+            terminated = True
             break
-    return {**current, "inspection_complete": bool(chain), "ancestry": chain}
+        if next_pid in seen:
+            return {"inspection_complete": False, "reason": "provider_ancestry_cycle"}
+        item = _inspect_exact_process(next_pid, runner=runner)
+        if (not item.get("inspection_complete") or int(item.get("pid") or -1) != next_pid
+                or not str(item.get("executable_path") or "")
+                or not str(item.get("creation_time") or "")):
+            return {"inspection_complete": False, "reason": "provider_ancestry_unreadable"}
+        chain.append({key: value for key, value in item.items() if key != "inspection_complete"})
+        seen.add(next_pid)
+        next_pid = int(item.get("parent_pid") or 0)
+    else:
+        return {"inspection_complete": False, "reason": "provider_ancestry_depth_exceeded"}
+    if not terminated or not chain:
+        return {"inspection_complete": False, "reason": "provider_ancestry_incomplete"}
+
+    # A second exact read binds the immediate provider identity across the
+    # inspection window and fails closed if a PID was reused or reparented.
+    parent_again = _inspect_exact_process(int(current["parent_pid"]), runner=runner)
+    stable_fields = ("pid", "parent_pid", "executable_path", "creation_time")
+    if (not parent_again.get("inspection_complete") or any(
+            str(parent_again.get(field) or "").casefold()
+            != str(chain[0].get(field) or "").casefold()
+            for field in stable_fields)):
+        return {"inspection_complete": False, "reason": "provider_ancestry_changed"}
+    return {**current, "inspection_complete": True, "ancestry": chain}
+
+
+def _local_current_process_identity():
+    """Read self identity without requiring WMI access to the scheduled child."""
+    command_line = subprocess.list2cmdline([sys.executable, *sys.argv])
+    creation_time = "local-current-process"
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.GetCommandLineW.restype = wintypes.LPWSTR
+            kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            kernel32.GetProcessTimes.argtypes = [
+                wintypes.HANDLE,
+                ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME),
+                ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME),
+            ]
+            kernel32.GetProcessTimes.restype = wintypes.BOOL
+            command_line = str(kernel32.GetCommandLineW() or "")
+            created = wintypes.FILETIME()
+            exited = wintypes.FILETIME()
+            kernel = wintypes.FILETIME()
+            user = wintypes.FILETIME()
+            if not kernel32.GetProcessTimes(
+                    kernel32.GetCurrentProcess(), ctypes.byref(created), ctypes.byref(exited),
+                    ctypes.byref(kernel), ctypes.byref(user)):
+                return {"inspection_complete": False}
+            creation_time = str((int(created.dwHighDateTime) << 32) | int(created.dwLowDateTime))
+        except (AttributeError, OSError, ValueError):
+            return {"inspection_complete": False}
+    return {
+        "inspection_complete": True,
+        "pid": os.getpid(),
+        "parent_pid": os.getppid(),
+        "executable_path": sys.executable,
+        "creation_time": creation_time,
+        "command_line": command_line,
+    }
 
 
 class WindowsExactTaskController:
