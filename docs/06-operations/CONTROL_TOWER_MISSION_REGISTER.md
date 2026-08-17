@@ -550,6 +550,17 @@ next cycle and later terminal-independent cycle. Any identity disagreement,
 unexpected process target, main movement or stop-evidence mismatch fails closed
 without broad cleanup or activation claims.
 
+### BEACON freeze acknowledgement — 2026-08-17
+
+BEACON BMQ-20260813-05 remains `WORKING / FROZEN_STRATEGIC_WIP /
+REVIEWED_PR_PRESERVED`. PR #1024 head `f9c682a3` and its retained worktree are
+untouched. The acknowledgement reported no action and supplied no fresh runtime,
+trigger, worker, campaign, provider-publication or performance evidence. It is
+therefore a preservation receipt only, not a compliant operational handover or
+active-work claim. PR #1024 predates current main and is not eligible for
+reconciliation, merge, deployment or owner preview during the serialized CORE
+activation window. Revenue Slot 3 remains unchanged.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
