@@ -2,6 +2,25 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-08-16 HERDMASTER Prince-Lolly interruption queue
+
+- **Mission ownership:** Extend the existing 17-day breeding-exposure recovery
+  mission and canonical exposure/event authority; no duplicate ledger or
+  mission.
+- **Dispatch state:** `queued`; HERDMASTER is
+  `delivered_assumed_active` on OP-004 and must not be interrupted.
+- **Physical fact:** Prince was removed after appearing sick around 2026-08-15.
+- **Unknown/not claimed:** diagnosis, canonical interruption, service,
+  conception, pregnancy result, fatherhood, breeding hold, movement write or
+  replacement exposure.
+- **Required first slice:** a zero-write protected Prince/Lolly interruption
+  preview using the existing exposure, health-hold and movement authorities.
+- **Outcome:** preserve the interrupted exposure, hold Prince without diagnosis,
+  release Lolly for replacement selection, recompute an eligible boar and keep
+  the fresh 17-day replacement exposure behind Charl's separate approval.
+- **Promotion trigger:** latest OP-004 HERDMASTER feedback proves that terminal
+  released or reached a safe addendum boundary.
+
 ## Purpose
 
 This is the canonical planning and dispatch ledger for the visible development
