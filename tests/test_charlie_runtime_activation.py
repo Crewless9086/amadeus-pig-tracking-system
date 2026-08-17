@@ -465,36 +465,55 @@ class RuntimeActivationTests(unittest.TestCase):
             "ActionWorkingDirectory": row["working_directory"],
             "ServiceDll": "C:/Windows/System32/schedsvc.dll", "SystemRoot": "C:/Windows",
         }
-        responses = iter([
-            subprocess.CompletedProcess([], 6, "", "instance not visible"),
-            subprocess.CompletedProcess([], 6, "", "instance not visible"),
-            subprocess.CompletedProcess([], 0, json.dumps(provider_json), ""),
-        ])
-        sleeps = []
         result = _inspect_windows_task_scheduler_provider(
-            100, runner=lambda _command, **_kwargs: next(responses),
+            100, runner=lambda _command, **_kwargs: subprocess.CompletedProcess(
+                [], 0, json.dumps(provider_json), ""),
             process_creation_time=lambda pid: "987654321" if pid == 50 else "",
-            visibility_attempts=3, visibility_interval=0.05,
-            sleeper=sleeps.append,
         )
         self.assertTrue(result["inspection_complete"])
         self.assertEqual(result["engine_pid"], 100)
-        self.assertEqual(sleeps, [0.05, 0.05])
 
     def test_windows_provider_visibility_window_is_bounded_and_fails_closed(self):
         calls = []
-        sleeps = []
         result = _inspect_windows_task_scheduler_provider(
             100,
             runner=lambda command, **_kwargs: (
                 calls.append(command) or subprocess.CompletedProcess(command, 6, "", "")
             ),
-            visibility_attempts=3, visibility_interval=0.01,
-            sleeper=sleeps.append,
         )
         self.assertFalse(result["inspection_complete"])
-        self.assertEqual(len(calls), 3)
-        self.assertEqual(sleeps, [0.01, 0.01])
+        self.assertEqual(result["reason"], "task_instance_visibility_timeout")
+        self.assertEqual(len(calls), 1)
+
+    def test_windows_provider_default_uses_one_in_process_visibility_window(self):
+        calls = []
+        result = _inspect_windows_task_scheduler_provider(
+            100,
+            runner=lambda command, **_kwargs: (
+                calls.append(command) or subprocess.CompletedProcess(command, 6, "", "")
+            ),
+        )
+        self.assertFalse(result["inspection_complete"])
+        self.assertEqual(result["reason"], "task_instance_visibility_timeout")
+        self.assertEqual(len(calls), 1)
+        script = calls[0][-1]
+        self.assertIn("AddSeconds(5)", script)
+        self.assertIn("Start-Sleep -Milliseconds 100", script)
+
+    def test_windows_provider_subprocess_deadline_fails_closed(self):
+        def timeout(_command, **kwargs):
+            self.assertEqual(kwargs["timeout"], 8)
+            raise subprocess.TimeoutExpired(_command, kwargs["timeout"])
+        result = _inspect_windows_task_scheduler_provider(100, runner=timeout)
+        self.assertFalse(result["inspection_complete"])
+        self.assertEqual(result["reason"], "provider_inspection_deadline_exceeded")
+
+    def test_windows_provider_subprocess_launch_failure_fails_closed(self):
+        def unavailable(_command, **_kwargs):
+            raise OSError("powershell unavailable")
+        result = _inspect_windows_task_scheduler_provider(100, runner=unavailable)
+        self.assertFalse(result["inspection_complete"])
+        self.assertEqual(result["reason"], "provider_inspector_unavailable")
 
     def test_windows_provider_does_not_retry_non_visibility_identity_failure(self):
         calls = []
@@ -503,9 +522,9 @@ class RuntimeActivationTests(unittest.TestCase):
             runner=lambda command, **_kwargs: (
                 calls.append(command) or subprocess.CompletedProcess(command, 7, "", "")
             ),
-            visibility_attempts=20, sleeper=lambda _seconds: self.fail("must not sleep"),
         )
         self.assertFalse(result["inspection_complete"])
+        self.assertEqual(result["reason"], "task_action_identity_invalid")
         self.assertEqual(len(calls), 1)
 
     def test_windows_provider_does_not_retry_ambiguous_exact_pid_instances(self):
@@ -515,10 +534,19 @@ class RuntimeActivationTests(unittest.TestCase):
             runner=lambda command, **_kwargs: (
                 calls.append(command) or subprocess.CompletedProcess(command, 8, "", "")
             ),
-            visibility_attempts=5, sleeper=lambda _seconds: self.fail("must not sleep"),
         )
         self.assertFalse(result["inspection_complete"])
+        self.assertEqual(result["reason"], "task_instance_identity_ambiguous")
         self.assertEqual(len(calls), 1)
+
+    def test_provider_origin_preserves_fail_closed_inspector_reason(self):
+        result = verify_provider_origin(
+            lambda _pid: {"inspection_complete": False,
+                          "reason": "task_instance_visibility_timeout"},
+            expected_task=self.task,
+        )
+        self.assertFalse(result["authorized"])
+        self.assertEqual(result["reason"], "task_instance_visibility_timeout")
 
     def test_delayed_instance_visibility_still_rejects_provider_pid_reuse(self):
         row = self.task[0]
@@ -533,7 +561,6 @@ class RuntimeActivationTests(unittest.TestCase):
             "ServiceDll": "C:/Windows/System32/schedsvc.dll", "SystemRoot": "C:/Windows",
         }
         responses = iter([
-            subprocess.CompletedProcess([], 6, "", "instance not visible"),
             subprocess.CompletedProcess([], 0, json.dumps(provider_json), ""),
             subprocess.CompletedProcess([], 0, json.dumps(provider_json), ""),
         ])
@@ -541,7 +568,6 @@ class RuntimeActivationTests(unittest.TestCase):
         provider_reader = lambda: _inspect_windows_task_scheduler_provider(
             100, runner=lambda _command, **_kwargs: next(responses),
             process_creation_time=lambda _pid: next(creation_times),
-            visibility_attempts=2, visibility_interval=0, sleeper=lambda _seconds: None,
         )
         result = inspect_current_provider_chain(
             100, provider_identity=provider_reader, current_identity=lambda: {
