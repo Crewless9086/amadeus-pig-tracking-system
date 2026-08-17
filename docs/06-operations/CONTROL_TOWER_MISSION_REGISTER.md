@@ -2113,3 +2113,27 @@ validation, and CODEX UI offspring summaries executing. This classification is
 based on current Codex child processes bound to exact worktrees, not open windows
 or historical waits. CORE continues in parallel and does not gate the four
 business/UI lanes.
+
+### CORE validation passed; HERDMASTER contract merged; overnight continuations dispatched - 2026-08-17 21:08 SAST
+
+Fresh process and exit-file proof established that CORE validation and the
+HERDMASTER contract terminal both exited normally with code 0; neither crashed.
+CORE issued fresh isolated receipt `2efe3caa...` for exact validated source
+`08a54ddb`, with 251 tests passing and zero runtime effects. HERDMASTER integrated
+the OP-004 typed Orders contract through its current main lineage and released its
+clean terminal; the preserved dirty SALES worktree remains the exact consumer.
+Both completed wrapper shells were closed.
+
+Control Tower authorized the existing CORE Recovery Slot 1 to continue overnight
+through fresh-current reconciliation/validation, stop-preserving staging, one
+fresh activation epoch and terminal-independent continuity, with every internal
+gate separately evidenced and fail-closed. It may repair a newly proven reusable
+defect through normal reviewed integration, but may not reuse failed identities or
+weaken provider identity.
+
+The existing SALES/HERDMASTER Orders journey was resumed directly in
+`C:\tmp\sales-multiline-livestock-quote-20260817`. It must preserve and reconcile
+the dirty preview implementation against the merged HERDMASTER contract, then
+complete tests, review, one normal PR, deployment and zero-write authenticated
+acceptance. It may not create an order, reserve/allocate/re-purpose pigs, send a
+quote or create a competing health/movement authority.
