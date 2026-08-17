@@ -1665,3 +1665,50 @@ and repair. It must inspect exact failure evidence and scheduled-provider ancest
 without broad process discovery, preserve the stopped runtime and all historical
 artifacts, strengthen rather than weaken provider proof, complete tests/reviews/
 PR/CI/merge, and stop before a fresh validation/staging/activation epoch.
+
+### Recovery Slot 2 weekly weighing freshness outcome — 2026-08-17
+
+The OOM SAKKIE/HERDMASTER stale weighing case achieved its owner-visible business
+result through the deployed worker. Canonical batch
+`69086c13-4436-4548-8ab0-bed5453f6000` contains 79 valid distinct 2026-08-17
+weights against 81 eligible tagged pigs: 97.53% coverage, with only tags 123 and
+151 missing and no conflicts. The 79 records were not deleted, changed, replayed
+or re-uploaded. The stale retained 0/81 payload was superseded.
+
+Repair revisions from PRs #1044, #1045 and #1047 are contained in authoritative
+main. The reusable manager now refreshes the owning specialist immediately before
+delivery; binds payload/digest/generation/lease to refreshed evidence; requires
+stable changed evidence; fences provider confirmation by exact generation/digest;
+requires provider success plus confirmation; preserves retry identity; rejects
+stale epochs; and includes Monday's canonical weights in the current weekly window.
+Focused evidence reported 192 tests plus 16 subtests, targeted 73 plus 17 subtests,
+17 boundary tests, 11/11 disposable-Postgres checks, independent reviews and all
+three CI gates passing.
+
+Deployed OOM worker cycle
+`OOM-MANAGER-CYCLE-20260817T150526546210Z-CA82DA58E2BE4DABA76322BBB48BA385`
+updated existing Telegram message 3707 as generation G2, mission
+`OOM-CASE-443218B6C4C7E41336C95CC6:G2`, with provider confirmation at
+15:06:40 UTC. The delivered text correctly states 79/81 and tags 123 and 151.
+Three later Render-origin cycles advanced leases and heartbeats with no later
+provider event, proving replay silence through the evidence cutoff. Prince's
+physical-observation request and pig 151's withdrawal/sales hold remain unchanged;
+no sale, clearance, allocation or veterinary conclusion was inferred.
+
+Classify this bounded case `BUSINESS RESULT ACHIEVED / POST-DELIVERY OBSERVATION`.
+The completed FARM terminal and clean retained worktree are released; its exact
+visible launcher was closed after handover. Keep the existing deployed OOM worker
+and schedules running; do not resend message 3707 or request another upload. A
+later provider-owned cycle should confirm durable completion, and the volatile
+HERDMASTER envelope identity should be normalized only if it continues producing
+non-material internal generations.
+
+FARM's release is the automatic promotion boundary for the retained ROOTLINE Slot
+2 addendum. Dispatch the smallest fresh-current-main source increment first:
+decouple advisory current-plan reassessment/delivery from optional contained
+hardware execution, preserve zero hardware authority, return separate plan and
+execution statuses, and close the generic unknown only from same-date provider-
+confirmed plan delivery. Require new schedule-origin delivery and a later replay-
+silent cycle after deployment. Typed device/standing-authority commissioning
+remains separately sequenced after the plan-delivery contract and never authorizes
+terminal actuation.
