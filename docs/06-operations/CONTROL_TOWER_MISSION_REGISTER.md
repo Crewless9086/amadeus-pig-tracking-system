@@ -934,6 +934,31 @@ review. Do not create another task, runtime, mission, staging epoch or activatio
 epoch. After normal merge, stop again before fresh validation/staging and a
 later separately authorized activation.
 
+### CMQ-20260813-05 provider-ancestry correction integrated — 2026-08-17
+
+The interrupted source repair was recovered without discarding its two-file
+working diff. Exact source commit `3b800edf437083ab229a2b3afa0f2676ddf0abb8`
+repairs the scheduled-child self-CIM failure by obtaining the current process
+identity locally through bounded Windows APIs while continuing to query only
+exact parent PIDs. PID reuse/reparenting, ancestry cycles, unreadable or
+unterminated ancestry, terminal ancestry and scheduled-task substitutions still
+fail closed; no broad process enumeration or authority expansion was added.
+
+The exact head passed 156 relevant tests with one retained platform skip and 13
+subtests, plus focused/adjacent suites, static compilation, diff checks and a
+real non-actuating Windows local-identity probe. Independent process-safety and
+release-integrity reviews both returned GO with no findings. PR #1040 passed all
+three exact-head CI lanes and merged normally as authoritative commit
+`a0038c42a5903f39154ddc04945870046bb061c1`.
+
+Classify Slot 1 as `WORKING / PROVIDER_ANCESTRY_SOURCE_INTEGRATED /
+FRESH_VALIDATION_REQUIRED`. Failed activation `65f4f724...` remains contained,
+rolled back and non-replayable. The stopped runtime still contains the preceding
+revision and no worker, heartbeat or independent cycle is inferred. The next
+bounded mission is fresh isolated validation and stopped-state staging of exact
+current main; it may not activate CORE. Only a later separately authorized
+provider-origin epoch may test the repaired ancestry boundary.
+
 Automatic prompt delivery to every visible terminal is not proven. Charl must
 paste a prompt unless target-specific delivery and acknowledgement are evidenced.
 The target is the durable CORE queue/runner. Until then, queued, delivered,
