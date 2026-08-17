@@ -5,10 +5,12 @@ It grants no farm, health, customer, payment, or hardware write authority.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
 import os
+import re
 
 from modules.oom_sakkie.gateway_authority import bind_gateway_owner_authority
 from modules.oom_sakkie.bounded_postgres_read import (
@@ -90,6 +92,11 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
     active = question or load_active_manager_question(parsed, loader=question_loader)
     if not active:
         return {"handled": False, **ZERO}, 200
+    presented = _timestamp(active.get("presented_at") or active.get("observed_at"))
+    provider_at_value = _timestamp(parsed.get("provider_timestamp"))
+    if (presented is None or provider_at_value is None
+            or not 0 <= (provider_at_value - presented).total_seconds() <= MAX_AGE_SECONDS):
+        return {"handled": False, **ZERO}, 200
     # A protected specialist packet owns its own preview/confirmation lifecycle.
     # Broad manager context must never consume it merely because it is conversational.
     if semantic is not None and (getattr(semantic, "protected_preview_required", False)
@@ -99,10 +106,23 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
     reply_to = str(parsed.get("reply_to_message_id") or "").strip()
     exact_reply = bool(reply_to and reply_to == str(active.get("telegram_message_id") or ""))
     expected_domain = str((active.get("question_binding") or {}).get("domain") or "")
+    rootline_question = expected_domain in {"rootline", "water_energy"}
+    if rootline_question and semantic is not None:
+        semantic = _bind_literal_rootline_observation(parsed, semantic)
+        parsed = {**parsed, "semantic": semantic.as_hint()}
     semantic_domain = str(getattr(semantic, "domain", "") or "")
     compatible = _compatible(expected_domain, semantic_domain)
     semantic_continuation = bool(semantic is not None
         and getattr(semantic, "continuation", False) and compatible)
+    if rootline_question and exact_reply and semantic is not None \
+            and not _typed_rootline_fact(semantic, parsed):
+        return {"handled": True, "success": False,
+            "status": "manager_question_rootline_observation_ambiguous",
+            "answer": "Which is full: the reservoir or the storage tanks?",
+            "requires_visible_notification": True, "question_count": 1,
+            "retry_owner": "same_provider_message_identity", **ZERO}, 409
+    if reply_to and not exact_reply:
+        return {"handled": False, **ZERO}, 200
     if not exact_reply and not semantic_continuation:
         return {"handled": False, **ZERO}, 200
     if exact_reply and semantic is not None and not semantic_continuation:
@@ -112,6 +132,12 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             "status": "manager_question_meaning_unavailable",
             "answer": str(active.get("question") or "Could you clarify that answer?")[:240],
             "requires_visible_notification": True, "question_count": 1, **ZERO}, 409
+    if rootline_question and not _typed_rootline_fact(semantic, parsed):
+        return {"handled": True, "success": False,
+            "status": "manager_question_rootline_observation_ambiguous",
+            "answer": "Which is full: the reservoir or the storage tanks?",
+            "requires_visible_notification": True, "question_count": 1,
+            "retry_owner": "same_provider_message_identity", **ZERO}, 409
     bound = bind_gateway_owner_authority(authority, "farm_manager_round")
     if (bound is None or str(bound.owner_user_id) != str(parsed.get("telegram_user_id") or "")
             or str(bound.private_chat_id) != str(parsed.get("telegram_chat_id") or "")):
@@ -149,6 +175,15 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
                     _load_manager_question_record(event_id) if event_store is None else {})
         completed = ((event_loader)(completion_event_id) if event_loader is not None else
                     _load_manager_question_record(completion_event_id) if event_store is None else {})
+        retry_failures = []
+        for retry_number in range(1, 9):
+            retry_identity = f"{event_id}-RETRY-OWNED-{retry_number}"
+            failure = ((event_loader)(retry_identity) if event_loader is not None else
+                       _load_manager_question_record(retry_identity) if event_store is None else {})
+            if not failure:
+                break
+            retry_failures.append(failure)
+        retry_owned = retry_failures[-1] if retry_failures else {}
     except Exception as exc:
         return {"handled": True, "success": False,
             "status": "manager_question_receipt_lookup_unavailable",
@@ -166,7 +201,8 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         recovered = (terminal.get("downstream_result")
             if isinstance(terminal.get("downstream_result"), dict) else None)
         if recovered:
-            return {**recovered, "handled": True,
+            return {**recovered, "handled": True, "answer": "",
+                "suppress_owner_delivery": True, "replay_suppressed": True,
                 "manager_question_status": "manager_question_reply_replay_recovered",
                 "manager_question_event_id": event_id,
                 "records_audit_trace": True}, int(terminal.get("downstream_status") or 200)
@@ -203,9 +239,9 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         "content_sha256": binding["content_sha256"]}
     downstream = None
     downstream_status = 200
-    if expected_domain == "rootline" and semantic_domain == "rootline":
+    if rootline_question and semantic_domain == "rootline":
         store = event_store or manager_question_event_store
-        if existing:
+        if existing and existing.get("status") != "dispatch_claimed":
             if existing.get("provider_binding") != binding:
                 return {"handled": True, "success": False,
                     "status": "manager_question_concurrent_reply_conflict",
@@ -214,6 +250,37 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
             return {"handled": True, "success": True,
                 "status": "manager_question_reply_replay_suppressed", "answer": "",
                 "suppress_owner_delivery": True, **ZERO}, 200
+        elif existing:
+            if not retry_owned or retry_owned.get("provider_binding") != binding:
+                return {"handled": True, "success": False,
+                    "status": "manager_question_rootline_dispatch_in_progress",
+                    "answer": "", "suppress_owner_delivery": True,
+                    "retry_owner": "same_provider_message_identity", **ZERO}, 202
+            if len(retry_failures) >= 8:
+                return {"handled": True, "success": False,
+                    "status": "manager_question_rootline_retry_exhausted",
+                    "answer": ("The ROOTLINE observation is still unproven after eight contained retries. "
+                               "It was not recorded; technical recovery owns the exception and no hardware command was issued."),
+                    "requires_visible_notification": True,
+                    "retry_owner": "rootline_technical_recovery", **ZERO}, 503
+            retained = retry_owned.get("downstream_result")
+            if isinstance(retained, dict) and _exact_rootline_readback(parsed, retained):
+                downstream = dict(retained)
+                downstream_status = int(retry_owned.get("downstream_status") or 200)
+            else:
+                retry_claim_event_id = f"{event_id}-RETRY-CLAIMED-{len(retry_failures)}"
+                try:
+                    retry_claim = store(retry_claim_event_id, {**record,
+                        "event_id": retry_claim_event_id, "status": "retry_claimed",
+                        "claim_started_at": datetime.now(timezone.utc).isoformat()})
+                except Exception:
+                    retry_claim = {}
+                if (not isinstance(retry_claim, dict) or retry_claim.get("success") is not True
+                        or retry_claim.get("created") is not True):
+                    return {"handled": True, "success": False,
+                        "status": "manager_question_rootline_retry_in_progress",
+                        "answer": "", "suppress_owner_delivery": True,
+                        "retry_owner": "same_provider_message_identity", **ZERO}, 202
         else:
             claim = {**record, "status": "dispatch_claimed",
                 "claim_started_at": datetime.now(timezone.utc).isoformat()}
@@ -237,15 +304,56 @@ def handle_manager_question_reply(parsed, authority, semantic, *, question=None,
         from modules.oom_sakkie.operational_specialist_intake import (
             handle_operational_specialist_message,
         )
-        downstream, downstream_status = handle_operational_specialist_message(
-            parsed, authority)
+        if downstream is None:
+            downstream, downstream_status = handle_operational_specialist_message(
+                parsed, authority)
         if not downstream.get("handled"):
             return {"handled": False, **ZERO}, 200
+        if not _exact_rootline_readback(parsed, downstream):
+            failure_event_id = f"{event_id}-RETRY-OWNED-{len(retry_failures) + 1}"
+            failure = {**record, "event_id": failure_event_id,
+                "status": "retry_owned", "downstream_result": dict(downstream),
+                "downstream_status": int(downstream_status)}
+            try:
+                retained = store(failure_event_id, failure)
+            except Exception:
+                retained = {}
+            if (not isinstance(retained, dict) or retained.get("success") is not True
+                    or retained.get("created") is not True):
+                return {"handled": True, "success": False,
+                    "status": "manager_question_receipt_unavailable",
+                    "answer": ("I could not prove the ROOTLINE observation or durable retry ownership. "
+                               "It was not acknowledged as recorded; no hardware command was issued."),
+                    "requires_visible_notification": True, **ZERO}, 503
+            return {**downstream, "handled": True, "success": False,
+                "status": "manager_question_rootline_observation_unproven",
+                "answer": ("I could not prove the ROOTLINE observation in exact canonical readback. "
+                           "It was not recorded; the same provider message owns the retry."),
+                "manager_question_status": "manager_question_rootline_retry_owned",
+                "manager_question_event_id": event_id,
+                "retry_owner": "same_provider_message_identity",
+                "records_audit_trace": True}, downstream_status
         completion = {**record, "event_id": completion_event_id,
             "status": "recorded", "downstream_result": dict(downstream),
             "downstream_status": int(downstream_status)}
         stored = store(completion_event_id, completion)
         if not isinstance(stored, dict) or stored.get("success") is not True:
+            failure_event_id = f"{event_id}-RETRY-OWNED-{len(retry_failures) + 1}"
+            try:
+                retry_retained = store(failure_event_id, {**record, "event_id": failure_event_id,
+                    "status": "retry_owned", "downstream_result": dict(downstream),
+                    "downstream_status": int(downstream_status)})
+            except Exception:
+                retry_retained = {}
+            if (not isinstance(retry_retained, dict) or retry_retained.get("success") is not True
+                    or retry_retained.get("created") is not True):
+                return {"handled": True, "success": False,
+                    "status": "manager_question_receipt_unavailable",
+                    "answer": ("ROOTLINE canonical readback succeeded, but neither the linked manager receipt "
+                               "nor durable retry ownership is proven. It was not acknowledged as recorded; "
+                               "no hardware command was issued."),
+                    "downstream_retention_possible": True,
+                    "requires_visible_notification": True, **ZERO}, 503
             retained_identity = {key: downstream.get(key) for key in
                 ("specialist_identity", "mission_id", "card_mission_id",
                  "provider_message_id", "provider_timestamp")
@@ -440,6 +548,83 @@ def _compatible(expected, actual):
     groups = ({"herd", "herd_health", "herd_management"},
               {"sales", "sam"}, {"water_energy", "rootline"})
     return expected == actual or any(expected in group and actual in group for group in groups)
+
+
+_LITERAL_TANK_STATE = re.compile(
+    r"^\s*(reservoir|storage(?:\s+tanks?)?)\s+(?:is|are)\s+(full|low|ok)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _bind_literal_rootline_observation(parsed, semantic):
+    """Recover only an explicit named tank state; never resolve pronouns here."""
+    match = _LITERAL_TANK_STATE.fullmatch(str(parsed.get("text") or ""))
+    if not match:
+        return semantic
+    subject = "reservoir" if match.group(1).lower() == "reservoir" else "storage_tanks"
+    return replace(semantic, domain="rootline", intent="water_levels_observed",
+        message_kind="observation", continuation=True,
+        observation=str(parsed.get("text") or "").strip(),
+        observation_facts=({"subject": subject, "state": match.group(2).upper()},),
+        needs_clarification=False, clarification_question="")
+
+
+_LITERAL_TANK_FRACTION = re.compile(
+    r"\b(reservoir|storage(?:\s+tanks?)?)\s+(?:(?:is|are)\s+)?\d+\s*/\s*\d+\b",
+    re.IGNORECASE,
+)
+
+
+def _typed_rootline_fact(semantic, parsed=None):
+    facts = tuple(getattr(semantic, "observation_facts", ()) or ())
+    typed = bool(facts) and all(isinstance(fact, dict)
+        and fact.get("subject") in {"reservoir", "storage_tanks", "storage"}
+        for fact in facts)
+    text = str((parsed or {}).get("text") or "")
+    return bool(_LITERAL_TANK_STATE.fullmatch(text) or _LITERAL_TANK_FRACTION.search(text)) and typed
+
+
+def _expected_rootline_readback(parsed):
+    semantic = parsed.get("semantic") if isinstance(parsed.get("semantic"), dict) else {}
+    expected = []
+    for fact in semantic.get("observation_facts") or ():
+        if not isinstance(fact, dict):
+            return []
+        subject = fact.get("subject")
+        kind = "storage" if subject in {"storage", "storage_tanks"} else "reservoir" if subject == "reservoir" else ""
+        state = str(fact.get("state") or "").upper()
+        if state in {"LOW", "OK", "FULL"}:
+            fraction = {"LOW": [0, 1], "OK": [1, 2], "FULL": [1, 1]}[state]
+        elif (type(fact.get("numerator")) is int and type(fact.get("denominator")) is int):
+            fraction = [fact["numerator"], fact["denominator"]]
+            state = "LOW" if fraction[0] == 0 else "FULL" if fraction[0] == fraction[1] else "OK"
+        else:
+            return []
+        expected.append({"kind": kind, "fraction": fraction, "state": state,
+            "provider_message_id": str(parsed.get("provider_message_id") or ""),
+            "observed_at": _normalized_instant(parsed.get("provider_timestamp"))})
+    return expected
+
+
+def _exact_rootline_readback(parsed, downstream):
+    if (downstream.get("success") is not True
+            or downstream.get("writes_farm_data") not in {True, False}):
+        return False
+    canonical = downstream.get("canonical_observation")
+    if not isinstance(canonical, dict) or canonical.get("success") is not True:
+        return False
+    expected = _expected_rootline_readback(parsed)
+    actual = [{**{key: row.get(key) for key in
+        ("kind", "fraction", "state", "provider_message_id")},
+        "observed_at": _normalized_instant(row.get("observed_at"))}
+        for row in canonical.get("readback") or () if isinstance(row, dict)]
+    key = lambda row: str(row.get("kind") or "")
+    return bool(expected) and sorted(actual, key=key) == sorted(expected, key=key)
+
+
+def _normalized_instant(value):
+    parsed = _timestamp(value)
+    return parsed.isoformat() if parsed is not None else ""
 
 
 def _semantic_facts(semantic):

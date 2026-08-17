@@ -70,7 +70,10 @@ def test_morning_card_rootline_update_records_manager_receipt_before_canonical_d
         "status": "specialist_accepted", "specialist_identity": "ROOTLINE",
         "mission_id": "ROOTLINE-1", "card_mission_id": "ROOTLINE-1",
         "answer": "Water evidence retained; ROOTLINE will reassess.",
-        "writes_farm_data": True, "hardware_commands": 0}, 200)
+        "writes_farm_data": True, "canonical_observation": {"success": True, "readback": [
+            {"kind":"storage","fraction":[4,4],"state":"FULL","provider_message_id":"3600","observed_at":NOW.isoformat()},
+            {"kind":"reservoir","fraction":[4,4],"state":"FULL","provider_message_id":"3600","observed_at":NOW.isoformat()}]},
+        "hardware_commands": 0}, 200)
     card = {"daily_identity": "OOM-DAILY-FARM-MANAGER-2026-08-15",
         "telegram_message_id": "3599", "presented_at": NOW.isoformat(),
         "question": "Contextual update to the delivered morning farm plan",
@@ -80,9 +83,8 @@ def test_morning_card_rootline_update_records_manager_receipt_before_canonical_d
     rootline = SemanticInterpretation(domain="rootline", intent="water_observation",
         message_kind="observation", continuation=True,
         observation="Reservoir 4/4, storage 4/4, and C Camp needs water.",
-        observation_facts=({"subject": "reservoir", "value": "4/4"},
-            {"subject": "storage", "value": "4/4"},
-            {"subject": "C Camp", "needs_water": True}), confidence=.99)
+        observation_facts=({"subject": "reservoir", "numerator": 4, "denominator": 4},
+            {"subject": "storage_tanks", "numerator": 4, "denominator": 4}), confidence=.99)
     inbound = parsed("Reservoir is 4/4 and Storage is 4/4. C Camp needs water",
         message="3600", reply="")
     inbound["semantic"] = rootline.as_hint()
@@ -100,13 +102,13 @@ def test_morning_card_rootline_update_records_manager_receipt_before_canonical_d
     assert receipt["manager_card_message_id"] == "3599"
     assert receipt["provider_message_id"] == "3600"
     assert len(state.rows) == 2
-    assert len(receipt["semantic_facts"]["observation_facts"]) == 3
+    assert len(receipt["semantic_facts"]["observation_facts"]) == 2
     replay, replay_status = handle_manager_question_reply(inbound,
         issue_gateway_owner_authority(OWNER, OWNER), rootline,
         question=card, event_store=state, event_loader=lambda key: state.rows.get(key, {}))
     assert replay_status == 200
     assert replay["manager_question_status"] == "manager_question_reply_replay_recovered"
-    assert replay["answer"] == value["answer"]
+    assert replay["answer"] == "" and replay["suppress_owner_delivery"] is True
     dispatch.assert_called_once()
     from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
     lifecycle = []
@@ -133,19 +135,159 @@ def test_morning_card_rootline_update_records_manager_receipt_before_canonical_d
     assert len(sends) == 1
 
 
+def rootline_question(at=NOW-timedelta(minutes=5)):
+    return {"daily_identity": "OOM-DAILY-FARM-MANAGER-2026-08-12",
+        "telegram_message_id": "3529", "presented_at": at.isoformat(),
+        "question": "What is the current reservoir level?",
+        "question_binding": {"task_id": "ROOTLINE-TANK-1",
+            "dedupe_key": "rootline:reservoir-level", "domain": "rootline"}}
+
+
+def rootline_semantic(text="Reservoir is full"):
+    return SemanticInterpretation(domain="manager_round", intent="manager_question_reply",
+        message_kind="observation", continuation=True, observation=text,
+        language="en", confidence=.98)
+
+
+@patch("modules.oom_sakkie.operational_specialist_intake.handle_operational_specialist_message")
+def test_exact_reservoir_full_is_typed_written_read_back_then_acknowledged_once(dispatch):
+    canonical = {"success": True, "readback": [{"kind": "reservoir",
+        "fraction": [1, 1], "state": "FULL", "provider_message_id": "3530",
+        "observed_at": "2026-08-12T06:05:00Z"}]}
+    dispatch.return_value = ({"handled": True, "success": True,
+        "status": "specialist_accepted", "specialist_identity": "ROOTLINE",
+        "mission_id": "OOM-ROOTLINE-1", "card_mission_id": "OOM-ROOTLINE-1",
+        "answer": "Reservoir FULL recorded after canonical readback.",
+        "writes_farm_data": True, "canonical_observation": canonical,
+        "hardware_commands": 0}, 200)
+    state = memory(); inbound = parsed("Reservoir is full")
+    first, status = handle_manager_question_reply(inbound,
+        issue_gateway_owner_authority(OWNER, OWNER), rootline_semantic(),
+        question=rootline_question(), event_store=state,
+        event_loader=lambda key: state.rows.get(key, {}))
+    replay, replay_status = handle_manager_question_reply(inbound,
+        issue_gateway_owner_authority(OWNER, OWNER), rootline_semantic(),
+        question=rootline_question(), event_store=state,
+        event_loader=lambda key: state.rows.get(key, {}))
+    typed = dispatch.call_args.args[0]["semantic"]["observation_facts"]
+    assert typed == ({"subject": "reservoir", "state": "FULL"},)
+    assert status == 200 and first["answer"].endswith("canonical readback.")
+    assert first["manager_question_status"] == "manager_question_reply_recorded"
+    assert replay_status == 200 and replay["manager_question_status"] == "manager_question_reply_replay_recovered"
+    assert replay["answer"] == "" and replay["suppress_owner_delivery"] is True
+    dispatch.assert_called_once()
+
+
+@patch("modules.oom_sakkie.operational_specialist_intake.handle_operational_specialist_message")
+def test_ambiguous_or_wrong_or_stale_rootline_card_never_writes_or_claims(dispatch):
+    state = memory(); authority = issue_gateway_owner_authority(OWNER, OWNER)
+    ambiguous, status = handle_manager_question_reply(parsed("it is full"), authority,
+        rootline_semantic("it is full"), question=rootline_question(), event_store=state)
+    inferred = SemanticInterpretation(domain="rootline", intent="water_levels_observed",
+        message_kind="observation", continuation=True, observation="it is full",
+        observation_facts=({"subject":"reservoir","state":"FULL"},), confidence=.99)
+    inferred_result, inferred_status = handle_manager_question_reply(parsed("it is full"), authority,
+        inferred, question=rootline_question(), event_store=state)
+    wrong, _ = handle_manager_question_reply(parsed("Reservoir is full", reply="9999"), authority,
+        rootline_semantic(), question=rootline_question(), event_store=state)
+    stale, _ = handle_manager_question_reply(parsed("Reservoir is full"), authority,
+        rootline_semantic(), question=rootline_question(NOW-timedelta(days=2)), event_store=state)
+    assert status == 409 and ambiguous["status"] == "manager_question_rootline_observation_ambiguous"
+    assert inferred_status == 409 and inferred_result["status"] == "manager_question_rootline_observation_ambiguous"
+    assert ambiguous["answer"] == "Which is full: the reservoir or the storage tanks?"
+    assert wrong["handled"] is False and stale["handled"] is False
+    assert state.rows == {}
+    dispatch.assert_not_called()
+
+
+@patch("modules.oom_sakkie.operational_specialist_intake.handle_operational_specialist_message")
+def test_typed_write_failure_and_readback_mismatch_are_not_acknowledged_and_provider_retry_owns_recovery(dispatch):
+    failure = ({"handled": True, "success": False, "status": "contained",
+        "systemic_exception": "rootline_canonical_observation_bridge_failed",
+        "answer": "ROOTLINE could not prove canonical readback.",
+        "writes_farm_data": False, "canonical_observation": {"success": False,
+            "status": "tank_observation_write_failed"}, "hardware_commands": 0}, 503)
+    mismatch = ({"handled": True, "success": False, "status": "contained",
+        "systemic_exception": "rootline_canonical_observation_bridge_failed",
+        "answer": "ROOTLINE could not prove canonical readback.",
+        "writes_farm_data": True, "canonical_observation": {"success": True,
+            "status": "recorded", "readback": [{"kind":"storage","fraction":[1,1],
+                "state":"FULL","provider_message_id":"WRONG","observed_at":NOW.isoformat()}]},
+        "hardware_commands": 0}, 503)
+    success = ({"handled": True, "success": True, "status": "specialist_accepted",
+        "specialist_identity": "ROOTLINE", "mission_id": "OOM-ROOTLINE-1",
+        "card_mission_id": "OOM-ROOTLINE-1", "answer": "Reservoir FULL recorded.",
+        "writes_farm_data": False, "canonical_observation": {"success": True,
+            "readback": [{"kind": "reservoir", "fraction": [1, 1], "state": "FULL",
+                "provider_message_id": "3530", "observed_at": NOW.isoformat()}]},
+        "hardware_commands": 0}, 200)
+    dispatch.side_effect = [failure, mismatch, success]
+    state = memory(); authority = issue_gateway_owner_authority(OWNER, OWNER)
+    inbound = parsed("Reservoir is full")
+    first, first_status = handle_manager_question_reply(inbound, authority,
+        rootline_semantic(), question=rootline_question(), event_store=state,
+        event_loader=lambda key: state.rows.get(key, {}))
+    second, second_status = handle_manager_question_reply(inbound, authority,
+        rootline_semantic(), question=rootline_question(), event_store=state,
+        event_loader=lambda key: state.rows.get(key, {}))
+    recovered, recovered_status = handle_manager_question_reply(inbound, authority,
+        rootline_semantic(), question=rootline_question(), event_store=state,
+        event_loader=lambda key: state.rows.get(key, {}))
+    assert first_status == second_status == 503
+    assert first["manager_question_status"] == second["manager_question_status"] == "manager_question_rootline_retry_owned"
+    assert "recorded against" not in first["answer"]
+    assert "not recorded" in second["answer"]
+    assert first["retry_owner"] == second["retry_owner"] == "same_provider_message_identity"
+    assert recovered_status == 200 and recovered["manager_question_status"] == "manager_question_reply_recorded"
+    assert recovered["answer"] == "Reservoir FULL recorded."
+    assert dispatch.call_count == 3
+
+    mismatch_state = memory()
+    dispatch.reset_mock(); dispatch.side_effect = None; dispatch.return_value = mismatch
+    mismatched, mismatch_status = handle_manager_question_reply(inbound, authority,
+        rootline_semantic(), question=rootline_question(), event_store=mismatch_state,
+        event_loader=lambda key: mismatch_state.rows.get(key, {}))
+    assert mismatch_status == 503
+    assert mismatched["manager_question_status"] == "manager_question_rootline_retry_owned"
+
+
+@patch("modules.oom_sakkie.operational_specialist_intake.handle_operational_specialist_message")
+def test_repeated_provider_failures_end_in_precise_containment_not_false_in_progress(dispatch):
+    dispatch.return_value = ({"handled": True, "success": False, "status": "contained",
+        "answer": "unproven", "writes_farm_data": False,
+        "canonical_observation": {"success": False}, "hardware_commands": 0}, 503)
+    state = memory(); authority = issue_gateway_owner_authority(OWNER, OWNER)
+    inbound = parsed("Reservoir is full")
+    results = [handle_manager_question_reply(inbound, authority, rootline_semantic(),
+        question=rootline_question(), event_store=state,
+        event_loader=lambda key: state.rows.get(key, {})) for _ in range(9)]
+    assert all(status == 503 for _, status in results)
+    assert results[-1][0]["status"] == "manager_question_rootline_retry_exhausted"
+    assert "not recorded" in results[-1][0]["answer"]
+    assert results[-1][0]["retry_owner"] == "rootline_technical_recovery"
+    assert dispatch.call_count == 8
+
+
 @patch("modules.oom_sakkie.operational_specialist_intake.handle_operational_specialist_message")
 def test_rootline_success_manager_receipt_failure_retains_identity_and_replay_is_silent(dispatch):
     first_downstream = {"handled": True, "success": True, "status": "specialist_accepted",
         "specialist_identity": "ROOTLINE", "mission_id": "ROOTLINE-2",
         "card_mission_id": "ROOTLINE-2", "answer": "Evidence retained.",
-        "writes_farm_data": True, "hardware_commands": 0}
+        "writes_farm_data": True, "canonical_observation": {"success": True, "readback": [
+            {"kind":"storage","fraction":[4,4],"state":"FULL","provider_message_id":"3600","observed_at":NOW.isoformat()},
+            {"kind":"reservoir","fraction":[4,4],"state":"FULL","provider_message_id":"3600","observed_at":NOW.isoformat()}]},
+        "hardware_commands": 0}
     dispatch.return_value = (first_downstream, 200)
     card = {"daily_identity": "OOM-DAILY-FARM-MANAGER-2026-08-15",
         "telegram_message_id": "3599", "presented_at": NOW.isoformat(),
         "question": "Contextual update to the delivered morning farm plan",
         "question_binding": {"task_id": "OOM-DAILY-FARM-MANAGER-2026-08-15:contextual-update",
             "dedupe_key": "OOM-DAILY-FARM-MANAGER-2026-08-15:contextual-update", "domain": "rootline"}}
-    rootline = semantic(domain="rootline")
+    rootline = SemanticInterpretation(domain="rootline", intent="water_levels_observed",
+        message_kind="observation", continuation=True,
+        observation="Reservoir 4/4 and storage 4/4",
+        observation_facts=({"subject":"reservoir","numerator":4,"denominator":4},
+            {"subject":"storage_tanks","numerator":4,"denominator":4}), confidence=.99)
     inbound = parsed("Reservoir 4/4 and storage 4/4", message="3600", reply="")
     inbound["semantic"] = rootline.as_hint()
     state = memory(); attempts = {"count": 0}
@@ -164,8 +306,9 @@ def test_rootline_success_manager_receipt_failure_retains_identity_and_replay_is
     assert failed["specialist_identity"] == "ROOTLINE"
     assert failed["mission_id"] == failed["card_mission_id"] == "ROOTLINE-2"
     assert "ROOTLINE retained" in failed["answer"] and "Nothing was applied" not in failed["answer"]
-    assert replay_status == 200 and replay["suppress_owner_delivery"] is True
-    assert len(state.rows) == 1 and dispatch.call_count == 1
+    assert replay_status == 200 and replay["manager_question_status"] == "manager_question_reply_recorded"
+    assert replay["answer"] == "Evidence retained."
+    assert len(state.rows) == 3 and dispatch.call_count == 1
 
 
 def test_afrikaans_non_reply_continuation_binds_same_active_question():

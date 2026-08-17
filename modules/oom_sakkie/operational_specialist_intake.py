@@ -337,7 +337,13 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         result["answer"] = "<b>IRRIGATION FOLLOW-UP IN PROGRESS</b>\n\nThis exact handover is already being processed. No duplicate dispatch or irrigation command was created."
         return result, 202
     context_identity = _digest(context)[:20].upper()
+    prior_bridge_failures = sum(1 for row in prior
+        if row.get("state") == "completed"
+        and isinstance(row.get("outcome"), Mapping)
+        and row["outcome"].get("systemic_exception") == "rootline_canonical_observation_bridge_failed")
     claim_id = mission + "-DISPATCH-" + context_identity
+    if recoverable:
+        claim_id += f"-RECOVERY-{prior_bridge_failures}"
     try:
         claimed = store("record", claim_id, {"event_id": claim_id, "mission_id": mission,
             "state": "claimed", "context": context})
@@ -367,7 +373,8 @@ def _handle_rootline_operation(parsed, gateway_authority, dispatcher, observatio
         result = _contained(parsed, "rootline_canonical_observation_bridge_failed", now)
         _apply_write_truth(result, observation_result, write_truth)
         result["answer"] = "<b>ROOTLINE OBSERVATION CONTAINED</b>\n\nThe owner evidence could not be proven in canonical readback. No irrigation command was sent."
-        if _record_terminal(store, mission, context, result).get("success") is not True:
+        if _record_terminal(store, mission, context, result,
+                suffix=f"BRIDGE-FAILURE-{prior_bridge_failures + 1}").get("success") is not True:
             failed, failed_status = _persistence_failed(parsed, now)
             _apply_write_truth(failed, observation_result, write_truth)
             return failed, failed_status
@@ -758,8 +765,10 @@ def _operation_event_store(action, identity, payload):
             "created": result.get("created", result.get("success") is True)}
 
 
-def _record_terminal(store, mission, context, outcome):
+def _record_terminal(store, mission, context, outcome, *, suffix=""):
     identity = mission + "-COMPLETED-" + _digest(context)[:20].upper()
+    if suffix:
+        identity += "-" + suffix
     try:
         return store("record", identity, {"event_id": identity, "mission_id": mission,
             "state": "completed", "context": context, "outcome": outcome})
