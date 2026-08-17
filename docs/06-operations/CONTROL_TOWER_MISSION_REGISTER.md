@@ -1203,3 +1203,42 @@ receipt, one new staging identity, and separately governed provider-origin
 activation. Business completion remains false until exact loaded revision,
 signed supervisor/runner ancestry, heartbeat, an independent durable mission
 cycle, the next trigger and a later post-terminal cycle are proven.
+
+### Revenue Slot 3 SAM/BEACON enablement — 2026-08-17
+
+Reviewed source `498c820dca59ce12c9d19cf6c094e2261b693a48` merged through PR
+#1043 as authoritative main `069377406e02fa2c177b28889463a171e61c6751`.
+Exact-head tests and independent security/privacy, sales-authority and
+replay/concurrency reviews passed. Render web and the five-minute OOM manager
+cron loaded the merge. Provider-origin cycle
+`OOM-MANAGER-CYCLE-20260817T133020892715Z` completed with ten cases claimed,
+one material BEACON evidence change, nine unchanged deliveries suppressed, and
+BEACON case `OOM-CASE-63E41A327E76EB895B4B76B8` advanced to generation 2.
+This proves terminal-independent stock/media change observation and durable
+case generation, not yet the protected proposal/media-request delivery.
+
+Classify BEACON `WORKING / AUTONOMOUS_OBSERVER /
+PROTECTED_DELIVERY_DUE_20260817T140020Z`. Its next governed reassessment is
+2026-08-17 14:00:20 UTC (16:00:20 SAST), which had not arrived at Control Tower
+observation 15:33:54 SAST. This is a genuine future provider time, not an old
+wait or terminal dependency. The deployed OOM/BEACON worker owns the transition
+and must deliver generation 2 once or record a precise protected exception,
+then prove a later unchanged cycle is silent. The Revenue development terminal
+may observe only and may be closed after that handover because Render and
+Supabase own continuation.
+
+SAM remains `WORKING / AUTHORITY_DISABLED / GENUINE_EVENT_WAITING`. A fresh scan
+found zero eligible current cohort identities among 1,791 conversations; the
+latest inbound (conversation 2101, message 797102915) predates activation and is
+not replay authority. Broad dispatch remains disabled. SAM's trigger is the next
+fresh Chatwoot inbound satisfying the exact reviewed Level 1 cohort, chronology,
+claim, evidence and provider-binding rules. This is event waiting, not permission
+to leave development work ambiguous or manufacture customer traffic. Operational
+acceptance requires the deployed SAM runtime to claim, answer or contain that
+new event, obtain provider readback, retain follow-up ownership and suppress
+replay.
+
+No customer message, quote, payment, reservation, allocation, publication,
+spend, farm/stock mutation, n8n authority or Google Sheets authority was
+created. Preserve the historical dirty SAM worktree and its three files; do not
+copy or overwrite them blindly.
