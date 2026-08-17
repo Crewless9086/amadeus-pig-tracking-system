@@ -2023,3 +2023,19 @@ leave CORE enabled only after exact Task Scheduler identity, supervisor/runner,
 heartbeat, independent result, next trigger and later terminal-independent cycle
 are proven. Any ambiguity must restore the governed stop, disable the task,
 archive the fresh epoch and prohibit retry. Historical epochs remain sealed.
+
+### Revenue event wait and SALES review recovery - 2026-08-17 19:40 SAST
+
+Revenue acceptance exited 0. Render web and OOM cron are live on exact
+`adb3658e`; six post-deploy cycles prove continuity and generation-11 replay
+suppression. No post-PR #1054 material generation exists, so corrected card/media
+behavior remains `EVENT_WAITING_ACCEPTANCE`. The completed Revenue shell was
+closed; the deployed worker owns the natural trigger and no terminal may
+manufacture it.
+
+Initial SALES quote work also exited 0 with seven preserved files and 83 passing
+tests, but used the 23-line historical programme pointer instead of the canonical
+278-line Runtime Programme and omitted required visual screenshots. Acceptance
+was rejected. The same worktree is now active as `SALES - MULTI-LINE QUOTE
+REVIEW` for corrected governance, review and authenticated desktop/mobile preview
+only. Production effects, PR, merge and deployment remain forbidden.
