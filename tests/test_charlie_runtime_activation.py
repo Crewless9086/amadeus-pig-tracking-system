@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import json
@@ -17,11 +18,13 @@ from modules.charlie.runtime_activation import (
     inspect_current_provider_chain,
     plan_activation,
     prepare_activation,
+    reconcile_recovered_activation_stop,
     recover_activation,
     verify_or_recover_activation,
     verify_provider_origin,
     _inspect_exact_process,
 )
+from modules.charlie.runtime_staging import _validate_recovery_projection
 
 
 SOURCE = "e3e3587430f21f05fa49d4a057497ca599bfc17c"
@@ -85,6 +88,10 @@ class RuntimeActivationTests(unittest.TestCase):
             "promoted_commit": SOURCE,
             "validation_receipt_sha256": self._sha(self.receipt),
         }), encoding="utf-8")
+        (self.state / "supervisor.json").write_text(
+            json.dumps({"status": "supervisor_stopped", "pid": 987654,
+                        "child_pid": 987655}), encoding="utf-8"
+        )
         self.git = FakeGit(self.runtime, self.execution)
         self.task = self._task()
         self.authority_path = canonical / "authority.json"
@@ -316,6 +323,15 @@ class RuntimeActivationTests(unittest.TestCase):
                                task_reader=lambda: self.task, git_runner=self.git)
         self.assertEqual(caught.exception.status, "activation_lane_already_owned")
 
+    def test_prepare_rechecks_reconciliation_lane_after_plan(self):
+        plan = self._plan()
+        (self.state / "activation-reconciliation.lock").write_text(
+            "owned", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ActivationError, "activation_reconciliation_lane_active"):
+            prepare_activation(plan, task_controller=Controller(),
+                               task_reader=lambda: self.task, git_runner=self.git)
+
     def test_interrupted_prepare_restores_stop_and_disables_exact_task(self):
         plan = self._plan()
         controller = Controller(fail_start=True)
@@ -395,10 +411,278 @@ class RuntimeActivationTests(unittest.TestCase):
         result = recover_activation(
             state_root=self.state, task_controller=controller,
             activation_id=plan["activation_id"],
+            failure_evidence={"status": "test_activation_failure"},
         )
         self.assertEqual(result["status"], "activation_recovered")
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
         self.assertEqual(self._sha(self.stop), plan["stop_marker_sha256"])
+
+    def _reconcile(self, plan, **changes):
+        values = {
+            "state_root": self.state,
+            "activation_id": plan["activation_id"],
+            "failure_evidence": {"status": "provider_identity_incomplete", "started": False},
+            "task_reader": lambda: self.task,
+            "process_presence_reader": lambda _pid: "absent",
+        }
+        values.update(changes)
+        return reconcile_recovered_activation_stop(**values)
+
+    def test_authenticated_recovery_projects_governed_stop_and_preserves_failure(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"], failure_evidence={"status": "provider_identity_incomplete"})
+        result = self._reconcile(plan)
+        self.assertEqual(result["status"], "governed_stop_active")
+        failure_path = Path(result["historical_failure_path"])
+        self.assertTrue(failure_path.is_file())
+        failure = json.loads(failure_path.read_text())
+        self.assertEqual(
+            json.loads(base64.b64decode(failure["failure_bytes_b64"])),
+            {"status": "provider_identity_incomplete"},
+        )
+        self.assertTrue(Path(result["recovered_packet_path"]).is_file())
+        self.assertFalse((self.state / "activation-reconciliation-pending.json").exists())
+        _validate_recovery_projection(result, self.state)
+
+    def test_reconciliation_replay_is_no_effect_and_keeps_history(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"], failure_evidence={"status": "provider_identity_incomplete"})
+        first = self._reconcile(plan)
+        before = Path(first["historical_failure_path"]).read_bytes()
+        watchdog_before = (self.state / "watchdog.json").read_bytes()
+        second = self._reconcile(plan, failure_evidence=first)
+        self.assertEqual(second["status"], "governed_stop_active")
+        self.assertEqual(Path(second["historical_failure_path"]).read_bytes(), before)
+        self.assertEqual((self.state / "watchdog.json").read_bytes(), watchdog_before)
+
+    def test_reconciliation_resumes_after_pending_archive_before_projection_write(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"],
+                           failure_evidence={"status": "provider_identity_incomplete"})
+        original_atomic = __import__(
+            "modules.charlie.runtime_activation", fromlist=["_atomic_json"]
+        )._atomic_json
+
+        def interrupt_projection(path, payload):
+            if Path(path).name == "watchdog.json":
+                raise OSError("simulated projection interruption")
+            return original_atomic(path, payload)
+
+        with patch("modules.charlie.runtime_activation._atomic_json", interrupt_projection):
+            with self.assertRaisesRegex(OSError, "projection interruption"):
+                self._reconcile(plan)
+        self.assertTrue((self.state / "activation-reconciliation.lock").exists())
+        self.assertTrue((self.state / "activation-ledger" /
+                         f"{plan['activation_id']}-reconciled.json").exists())
+        result = self._reconcile(plan)
+        self.assertEqual(result["status"], "governed_stop_active")
+        self.assertFalse((self.state / "activation-reconciliation.lock").exists())
+
+    def test_reconciliation_replay_finishes_interrupted_lock_archive(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"],
+                           failure_evidence={"status": "provider_identity_incomplete"})
+        original_replace = Path.replace
+
+        def interrupt_lock(source, target):
+            if source.name == "activation-reconciliation.lock":
+                raise OSError("simulated lock archive interruption")
+            return original_replace(source, target)
+
+        with patch.object(Path, "replace", interrupt_lock):
+            with self.assertRaisesRegex(OSError, "lock archive interruption"):
+                self._reconcile(plan)
+        before = (self.state / "watchdog.json").read_bytes()
+        result = self._reconcile(plan)
+        self.assertEqual(result["status"], "governed_stop_active")
+        self.assertEqual((self.state / "watchdog.json").read_bytes(), before)
+        self.assertFalse((self.state / "activation-reconciliation.lock").exists())
+
+    def test_reconciliation_replay_binds_reconciled_bytes(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"],
+                           failure_evidence={"status": "provider_identity_incomplete"})
+        result = self._reconcile(plan)
+        Path(result["reconciled_path"]).write_text("{}", encoding="utf-8")
+        with self.assertRaisesRegex(ActivationError, "activation_reconciliation_replay_conflict"):
+            self._reconcile(plan)
+
+    def test_reconciliation_rejects_recorded_process_that_is_still_live(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"],
+                           failure_evidence={"status": "provider_identity_incomplete"})
+        (self.state / "supervisor.json").write_text(
+            json.dumps({"status": "supervisor_stopped", "pid": 1234}), encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ActivationError, "activation_reconciliation_process_still_live"):
+            self._reconcile(plan, process_presence_reader=lambda _pid: "live")
+
+    def test_reconciliation_rejects_surviving_process_tree_member(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"],
+                           failure_evidence={"status": "provider_identity_incomplete"})
+        (self.state / "supervisor.json").write_text(json.dumps({
+            "status": "supervisor_stopped", "pid": 987654, "child_pid": 987655,
+            "process_tree_identity": {"members": [{"pid": 1234}]},
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(ActivationError, "activation_reconciliation_process_still_live"):
+            self._reconcile(
+                plan,
+                process_presence_reader=lambda pid: "live" if int(pid) == 1234 else "absent",
+            )
+
+    def test_reconciliation_rejects_surviving_process_tree_root(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"],
+                           failure_evidence={"status": "provider_identity_incomplete"})
+        (self.state / "supervisor.json").write_text(json.dumps({
+            "status": "supervisor_stopped", "pid": 987654,
+            "process_tree_identity": {"root": {"pid": 1234}, "members": []},
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(ActivationError, "activation_reconciliation_process_still_live"):
+            self._reconcile(
+                plan,
+                process_presence_reader=lambda pid: "live" if int(pid) == 1234 else "absent",
+            )
+
+    def test_reconciliation_rejects_missing_or_unreadable_process_proof(self):
+        for mode in ("missing", "unknown"):
+            with self.subTest(mode=mode):
+                if mode == "unknown":
+                    self.tearDown(); self.setUp()
+                plan, controller, _ = self._prepared()
+                recover_activation(state_root=self.state, task_controller=controller,
+                                   activation_id=plan["activation_id"],
+                                   failure_evidence={"status": "provider_identity_incomplete"})
+                if mode == "missing":
+                    (self.state / "supervisor.json").write_text(
+                        json.dumps({"status": "supervisor_stopped"}), encoding="utf-8"
+                    )
+                    expected = "activation_reconciliation_process_identity_missing"
+                else:
+                    expected = "activation_reconciliation_process_proof_unavailable"
+                with self.assertRaisesRegex(ActivationError, expected):
+                    self._reconcile(
+                        plan,
+                        process_presence_reader=lambda _pid: (
+                            "unknown" if mode == "unknown" else "absent"
+                        ),
+                    )
+
+    def test_interrupted_owned_reconciliation_resumes_only_after_owner_is_absent(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"],
+                           failure_evidence={"status": "provider_identity_incomplete"})
+        lock = self.state / "activation-reconciliation.lock"
+        lock.write_text(json.dumps({
+            "version": "charlie_activation_recovery_projection_v1",
+            "activation_id": plan["activation_id"],
+            "status": "activation_reconciliation_owned",
+            "owner_pid": 1234,
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(ActivationError, "activation_reconciliation_lane_active"):
+            self._reconcile(plan, process_presence_reader=lambda _pid: "live")
+        result = self._reconcile(plan, process_presence_reader=lambda _pid: "absent")
+        self.assertEqual(result["status"], "governed_stop_active")
+
+    def test_staging_rejects_missing_recovered_lane_archive(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"],
+                           failure_evidence={"status": "provider_identity_incomplete"})
+        result = self._reconcile(plan)
+        Path(result["recovered_lane_path"]).unlink()
+        with self.assertRaisesRegex(RuntimeError, "watchdog_recovery_projection_archive_mismatch"):
+            _validate_recovery_projection(result, self.state)
+
+    def test_historical_completed_recovery_can_be_reconciled_exactly(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"], failure_evidence={"status": "provider_identity_incomplete"})
+        (self.state / "activation-reconciliation-pending.json").unlink()
+        (self.state / "activation-ledger" / f"{plan['activation_id']}-recovery-completed.json").unlink()
+        result = self._reconcile(plan)
+        self.assertEqual(result["status"], "governed_stop_active")
+        self.assertTrue((self.state / "activation-ledger" /
+                         f"{plan['activation_id']}-reconciled.json").is_file())
+
+    def test_partial_rollback_or_substituted_task_stop_packet_is_rejected(self):
+        mutations = ("task", "stop", "packet")
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                if mutation != mutations[0]:
+                    self.tearDown(); self.setUp()
+                plan, controller, _ = self._prepared()
+                recover_activation(state_root=self.state, task_controller=controller,
+                                   activation_id=plan["activation_id"], failure_evidence={"status": "provider_identity_incomplete"})
+                task_reader = lambda: self.task
+                if mutation == "task":
+                    substituted = [dict(self.task[0], arguments="substituted")]
+                    task_reader = lambda: substituted
+                elif mutation == "stop":
+                    self.stop.write_text("substituted", encoding="utf-8")
+                else:
+                    packet = self.state / "activation-ledger" / f"{plan['activation_id']}-recovered-activation-packet.json"
+                    packet.write_text("{}", encoding="utf-8")
+                with self.assertRaises(ActivationError):
+                    self._reconcile(plan, task_reader=task_reader)
+                self.assertFalse((self.state / "watchdog.json").exists())
+
+    def test_reconciliation_rejects_active_lane_and_running_supervisor(self):
+        for partial in ("lane", "supervisor"):
+            with self.subTest(partial=partial):
+                if partial == "supervisor":
+                    self.tearDown(); self.setUp()
+                plan, controller, _ = self._prepared()
+                recover_activation(state_root=self.state, task_controller=controller,
+                                   activation_id=plan["activation_id"], failure_evidence={"status": "provider_identity_incomplete"})
+                if partial == "lane":
+                    (self.state / "release-staging.lock").write_text("owned", encoding="utf-8")
+                else:
+                    (self.state / "supervisor.json").write_text(
+                        json.dumps({"status": "supervisor_running"}), encoding="utf-8")
+                with self.assertRaises(ActivationError):
+                    self._reconcile(plan)
+
+    def test_reconciliation_rejects_supervisor_lock(self):
+        plan, controller, _ = self._prepared()
+        recover_activation(state_root=self.state, task_controller=controller,
+                           activation_id=plan["activation_id"],
+                           failure_evidence={"status": "provider_identity_incomplete"})
+        (self.state / "supervisor.lock").write_text("owned", encoding="utf-8")
+        with self.assertRaisesRegex(ActivationError, "activation_reconciliation_lane_active"):
+            self._reconcile(plan)
+
+    def test_interrupted_archive_recovery_resumes_without_replaying_activation(self):
+        plan, controller, _ = self._prepared()
+        packet = self.state / "activation-packet.json"
+        archive = self.state / "activation-ledger" / f"{plan['activation_id']}-recovered-activation-packet.json"
+        def interrupted(*_args):
+            packet.replace(archive)
+            raise OSError("simulated interruption")
+        with patch("modules.charlie.runtime_activation._archive_activation_artifacts", interrupted):
+            with self.assertRaises(OSError):
+                recover_activation(
+                    state_root=self.state, task_controller=controller,
+                    activation_id=plan["activation_id"],
+                    failure_evidence={"status": "provider_identity_incomplete"},
+                )
+        self.assertTrue((self.state / "activation.lock").exists())
+        result = recover_activation(
+            state_root=self.state, task_controller=controller,
+            activation_id=plan["activation_id"],
+            failure_evidence={"status": "provider_identity_incomplete"},
+        )
+        self.assertEqual(result["status"], "activation_recovered")
 
     def test_no_codex_terminal_relay_or_unrelated_targeting_api_exists(self):
         source = Path(__file__).parents[1] / "modules" / "charlie" / "runtime_activation.py"

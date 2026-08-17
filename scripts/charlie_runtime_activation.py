@@ -15,6 +15,7 @@ from modules.charlie.runtime_activation import (
     plan_activation,
     prepare_activation,
     read_activation_runtime_evidence,
+    reconcile_recovered_activation_stop,
     recover_activation,
     verify_or_recover_activation,
 )
@@ -22,7 +23,7 @@ from modules.charlie.runtime_activation import (
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Govern provider-origin observe-only CORE activation.")
-    parser.add_argument("action", choices=("dry-run", "prepare", "verify", "recover"))
+    parser.add_argument("action", choices=("dry-run", "prepare", "verify", "recover", "reconcile-stop"))
     parser.add_argument("--state-root", required=True)
     parser.add_argument("--runtime-root")
     parser.add_argument("--execution-root")
@@ -54,13 +55,33 @@ def main(argv=None):
                 ),
                 task_controller=controller,
             )
-        else:
+        elif args.action == "recover":
             if not args.activation_id:
                 parser.error("recover requires --activation-id")
+            state_root = Path(args.state_root)
+            try:
+                failure = json.loads((state_root / "watchdog.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise ActivationError("activation_failure_evidence_unreadable") from exc
             result = recover_activation(
-                state_root=args.state_root,
+                state_root=state_root,
                 task_controller=controller,
                 activation_id=args.activation_id,
+                failure_evidence=failure,
+            )
+        else:
+            if not args.activation_id:
+                parser.error("reconcile-stop requires --activation-id")
+            state_root = Path(args.state_root)
+            watchdog_path = state_root / "watchdog.json"
+            try:
+                failure = json.loads(watchdog_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise ActivationError("activation_failure_evidence_unreadable") from exc
+            result = reconcile_recovered_activation_stop(
+                state_root=state_root,
+                activation_id=args.activation_id,
+                failure_evidence=failure,
             )
     except ActivationError as exc:
         result = {"success": False, "status": exc.status, **exc.evidence}
