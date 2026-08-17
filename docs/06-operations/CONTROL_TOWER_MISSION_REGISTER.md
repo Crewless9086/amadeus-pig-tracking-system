@@ -1990,3 +1990,10 @@ binding, and a later unchanged replay-silent cycle remain unproven. No duplicate
 terminal or prompt is authorized. Automatically resume acceptance only on fresh
 provider/runtime evidence; do not manufacture a card, callback, publication,
 boost, spend, customer message, media-public-use grant, reservation or farm write.
+
+### CORE staging and Revenue acceptance restarted - 2026-08-17 19:10 SAST
+
+Prior terminals exited 0 with no Codex child. Fresh detached exact-main
+worktrees now run CORE staging-only and Revenue read-only deployed acceptance.
+Activation, terminal-created provider cycles, Telegram effects, publication and
+spend remain forbidden. Fresh process evidence began at 19:09 SAST.
