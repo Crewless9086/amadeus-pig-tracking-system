@@ -6,6 +6,23 @@ from scripts.charlie_runner_watchdog import _configure_git_safe_directory, watch
 
 
 class CharlieRunnerWatchdogTests(unittest.TestCase):
+    def test_provider_packet_is_consumed_before_any_ordinary_recovery_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "activation-packet.json").write_text("{}", encoding="utf-8")
+            calls = []
+            def consume(**kwargs):
+                calls.append(("provider", kwargs["state_root"], kwargs["starter"]))
+                return {"success": True, "status": "provider_started_observe_only", "started": True}
+            starter = lambda **_kwargs: calls.append("direct_start")
+            result = watchdog_tick(
+                status_reader=lambda: calls.append("status"), starter=starter,
+                state_path=root / "watchdog.json", stop_path=root / "supervisor.stop",
+                activation_consumer=consume,
+            )
+        self.assertEqual(result["status"], "provider_started_observe_only")
+        self.assertEqual(calls, [("provider", root, starter)])
+
     def test_observe_only_state_disables_watchdog_without_queue_read(self):
         with tempfile.TemporaryDirectory() as tmp:
             calls = []
