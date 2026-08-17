@@ -32,15 +32,20 @@ def collect_manager_candidates(*, now: datetime, collectors=None):
 def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str):
     """Refresh one case from only its canonical owning collector."""
     prefix = str(dedupe_key or "").split(":", 1)[0].casefold()
-    collector = {
-        "rootline": _rootline, "herdmaster": _herdmaster, "sam": _sam,
-        "beacon": _beacon, "delivery": _delivery_gaps, "runtime": _runtime,
+    selected = {
+        "rootline": (_rootline, "ROOTLINE"),
+        "herdmaster": (_herdmaster, "HERDMASTER"),
+        "sam": (_sam, "SAM"), "beacon": (_beacon, "BEACON"),
+        "delivery": (_delivery_gaps, None), "runtime": (_runtime, "RUNTIME"),
     }.get(prefix)
-    if collector is None:
+    claimed_specialist = str(specialist or "").upper()
+    if selected is None or (selected[1] and selected[1] != claimed_specialist):
         return None
+    collector = selected[0]
     rows = collect_manager_candidates(now=now, collectors=(collector,))
     return next((row for row in rows
-                 if str(row.get("dedupe_key") or "") == str(dedupe_key)), None)
+                 if str(row.get("dedupe_key") or "") == str(dedupe_key)
+                 and str(row.get("specialist") or "").upper() == claimed_specialist), None)
 
 
 def _rootline(now):

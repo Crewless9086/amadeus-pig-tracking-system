@@ -33,9 +33,21 @@ def test_single_case_refresh_invokes_only_owning_collector(monkeypatch):
     calls = []
     def herdmaster(now):
         calls.append("herdmaster")
-        return [{"dedupe_key": "herdmaster:weekly-weight-evidence"}]
+        return [{"dedupe_key": "herdmaster:weekly-weight-evidence",
+                 "specialist": "HERDMASTER"}]
     monkeypatch.setattr("modules.oom_sakkie.manager_case_sources._herdmaster", herdmaster)
     result = collect_manager_candidate(now=NOW,
         dedupe_key="herdmaster:weekly-weight-evidence", specialist="HERDMASTER")
-    assert result == {"dedupe_key": "herdmaster:weekly-weight-evidence"}
+    assert result == {"dedupe_key": "herdmaster:weekly-weight-evidence",
+                      "specialist": "HERDMASTER"}
     assert calls == ["herdmaster"]
+
+
+def test_single_case_refresh_rejects_specialist_prefix_mismatch(monkeypatch):
+    calls = []
+    monkeypatch.setattr("modules.oom_sakkie.manager_case_sources._herdmaster",
+        lambda now: calls.append("herdmaster"))
+    result = collect_manager_candidate(now=NOW,
+        dedupe_key="herdmaster:weekly-weight-evidence", specialist="BEACON")
+    assert result is None
+    assert calls == []
