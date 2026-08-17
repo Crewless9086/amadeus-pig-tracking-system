@@ -658,6 +658,49 @@ supervise these durable workers, stalled cases, backlogs and delivery failures;
 it does not replace their specialist work. Analytics/UI/document expansion
 remains subordinate until these operational proofs reduce recurring owner work.
 
+### OOM SAKKIE Slot 2 deployed-spine closeout and manager-worker dispatch — 2026-08-17
+
+PR #1026 head `6a6005b7` merged once as authoritative main `37a6a4c3` after
+exact-head CI. The three reviewed protected-delivery/family-action/device-registry
+migrations were applied atomically and read back. Render web plus the ROOTLINE
+15-minute reassessment cron and Oom Sakkie five-minute recovery cron loaded the
+exact merge. Fresh provider-scheduled cycles prove narrow terminal-independent
+operation: payment recovery reached `payment_recovery_idle`; ROOTLINE completed
+`OOM-SCHEDULE-ROOTLINE-20260817T113000+0200` as `zone_contained`, with zero
+Telegram sends, hardware commands or farm writes, and retained an earliest next
+assessment. The release lane is durably released. No owner-visible manager case,
+positive Telegram delivery, hardware effect or physical result was manufactured.
+
+Slot 2 remains `WORKING / DEPLOYED_NARROW_RAILS / GENERAL_MANAGER_DEGRADED`.
+The next bounded mission stays in the existing OOM SAKKIE Recovery Slot 2
+lineage: extend the existing canonical Supabase/action spine with one durable
+general manager intake, case ownership and worker loop covering material
+canonical/provider events and unresolved specialist cases. It must delegate,
+retain the earliest evidence/time reassessment, resume after restart, deliver a
+useful result or one precise exception through Oom Sakkie, and prove a later
+terminal-independent cycle. No duplicate claims/action/device ledger, n8n or
+Sheets business authority is permitted. Source, tests, PR, merge, deployment,
+health and narrow cron receipts cannot close this mission. A continuation prompt
+is prepared, but delivery is not claimed: the historical OOM Codex process is
+still open while its clean worktree and current handover classify it released;
+an open process is not active work and a second writer must not be started in
+the same worktree without explicit terminal closeout or acknowledgement.
+
+### All-terminal fresh sweep after Slot 2 release — 2026-08-17
+
+CORE has fresh modified/untracked activation-rail source and a currently running
+isolated Docker test invocation; classify `ACTIVE_SOURCE_PROOF`, not deployed
+CORE operation. ROOTLINE and HERDMASTER have old open Codex processes attached
+to dirty worktrees at 2026-08-13 heads; without new feedback, file movement or
+runtime evidence they are `HOLD / VERIFY`, not active work, and must not be
+interrupted or duplicated. BEACON has an open process in a clean worktree at
+historical head `3d0bd01d`; no fresh progress or operational cycle is proved, so
+it is `HOLD / VERIFY`. OOM SAKKIE's old process remains open against clean merged
+branch `6a6005b7` but its handover says released-retain; classify `DEPENDENCY
+IDLE / PROMPT_PREPARED_NOT_DELIVERED`. No fresh SAM, DOCUMENTS or CODEX UI
+terminal progress was proved. These classifications expire on fresh feedback or
+new execution evidence; process existence alone never preserves them as active.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
