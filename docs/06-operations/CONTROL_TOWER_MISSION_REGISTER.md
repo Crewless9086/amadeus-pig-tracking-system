@@ -1812,3 +1812,41 @@ active work. Resume the same mission, branch, worktree and evidence lineage;
 do not create a duplicate activation identity or claim CORE live. The exact
 retained repair was relaunched at 17:35 SAST for completion and mandatory
 Control Tower feedback.
+### ROOTLINE current-plan delivery integration and live acceptance — 2026-08-17
+
+Existing OOM SAKKIE/ROOTLINE Recovery Slot 2 merged its ordering repair through
+PR #1050 as `11b03a6aaf7f2fcdc56227e7dcd916fe4e37ac1b`. The clean source terminal
+returned exit 0 and is released-retain. The repair orders advisory current-plan
+reassessment/delivery independently of optional contained execution and binds
+manager reconciliation to operating date, material/result identity, generation
+and provider confirmation. It grants no hardware authority.
+
+Control Tower did not retain the terminal's initial `EXTERNAL_HOLD` as a passive
+wait. Fresh Render readback at 18:02 SAST proved both
+`rootline-autonomous-reassessment` (`*/15`) and
+`oom-sakkie-morning-scheduler` (`*/5`) unsuspended and live on authoritative
+main `e95a9f88a493f0b1f96998a8bc6c71611697947d`, which contains PR #1050.
+Canonical/provider readback then proved provider-owned schedule identity
+`scheduled:ROOTLINE-AUTO-20260817T160000Z` delivered Telegram message `3716` at
+18:02 SAST under mission `OOM-ROOTLINE-REASSESS-7E6D0B06A9B53C374B0FD15D`,
+evidence generation `483462973CAD7DB0`. The terminal did not invoke or send it.
+
+Keep lifecycle `OPERATIONAL_ACCEPTANCE_IN_PROGRESS`: exact deployed revision,
+fresh provider schedule and Telegram confirmation now pass. Closure still
+requires the later provider-owned replay-silent cycle and explicit zero hardware
+command/readback proof. Do not send another terminal prompt or ask Charl for an
+action. The automatic trigger is the next quarter-hour ROOTLINE schedule plus
+the following manager reconciliation.
+
+### CORE provider-identity source repair integrated — 2026-08-17
+
+Existing `CMQ-20260813-05` Recovery Slot 1 recovered its interrupted two-file
+provider-identity repair without resetting evidence. Commit `50fca0f6` passed 73
+tests, 36 subtests, compilation, diff check, two independent GO reviews and all
+three hosted CI gates; PR #1051 merged normally as
+`2b03a0284c0c33a350193109963737693c080d85`. The source terminal returned its
+mandatory handover and is released-retain. No validation, staging, activation,
+task, stop marker or runtime state was changed. Lifecycle is
+`WORKING / SOURCE_INTEGRATED`; promote only to a fresh separately governed
+validation gate. Historical activation `65f4f724...` remains sealed and must not
+be retried.
