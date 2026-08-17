@@ -27,6 +27,29 @@ create table if not exists app_private.rootline_device_registry_history (
   primary key(device_key,registry_generation)
 );
 
+create table if not exists app_private.rootline_device_commissioning_evidence (
+  evidence_id text primary key,
+  source text not null check (source in ('canonical','provider','physical_review')),
+  observed_at timestamptz not null,
+  evidence_sha256 text not null check (length(evidence_sha256)=64),
+  current boolean not null default true,
+  evidence_payload jsonb not null,
+  recorded_at timestamptz not null default now()
+);
+
+create table if not exists app_private.rootline_standing_authorities (
+  standing_authority_id text not null,
+  version text not null,
+  issuer text not null,
+  policy_sha256 text not null check (length(policy_sha256)=64),
+  active boolean not null default false,
+  revoked boolean not null default false,
+  policy_payload jsonb not null,
+  recorded_at timestamptz not null default now(),
+  primary key(standing_authority_id,version),
+  check (not (active and revoked))
+);
+
 create or replace function app_private.reject_rootline_device_history_mutation()
 returns trigger language plpgsql as $$
 begin
@@ -38,9 +61,21 @@ drop trigger if exists rootline_device_registry_history_append_only
 create trigger rootline_device_registry_history_append_only
 before update or delete on app_private.rootline_device_registry_history
 for each row execute function app_private.reject_rootline_device_history_mutation();
+drop trigger if exists rootline_device_evidence_append_only
+  on app_private.rootline_device_commissioning_evidence;
+create trigger rootline_device_evidence_append_only
+before update or delete on app_private.rootline_device_commissioning_evidence
+for each row execute function app_private.reject_rootline_device_history_mutation();
+drop trigger if exists rootline_standing_authority_append_only
+  on app_private.rootline_standing_authorities;
+create trigger rootline_standing_authority_append_only
+before update or delete on app_private.rootline_standing_authorities
+for each row execute function app_private.reject_rootline_device_history_mutation();
 
 revoke all on app_private.rootline_device_registry from public, anon, authenticated;
 revoke all on app_private.rootline_device_registry_history from public, anon, authenticated;
+revoke all on app_private.rootline_device_commissioning_evidence from public, anon, authenticated;
+revoke all on app_private.rootline_standing_authorities from public, anon, authenticated;
 
 insert into app_private.rootline_device_registry(
   device_key,contract_version,device_record,commissioning_stage,evidence_digest,registry_generation)

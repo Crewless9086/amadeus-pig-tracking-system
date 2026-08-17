@@ -1,5 +1,6 @@
 import pytest
-from modules.telemetry.rootline_device_spine import manager_stage_projection, validate_device
+from modules.telemetry.rootline_device_spine import (CanonicalAuthorityResolver,
+    manager_stage_projection, validate_device)
 
 def _device(**changes):
     row={"provider":"ewelink","provider_account_binding":"owner-vault","device_id":"D1",
@@ -31,6 +32,12 @@ def _evidence():
       "bounded_actuation_ready","physical_identity_proven","fail_stop_proven",
       "replay_proven","operational_dependencies_proven","supervised")}
 
+def _resolver():
+    value=CanonicalAuthorityResolver(lambda:None)
+    value.evidence=lambda ref:{**ref,"current":True}
+    value.authority=lambda ref:{**ref,"active":True}
+    return value
+
 def test_ordinary_relay_standing_authority_requires_complete_evidence_and_envelope():
     with pytest.raises(ValueError,match="standing_authority_evidence_missing"):
         validate_device(_device(device_type="generic_relay_output",
@@ -40,8 +47,7 @@ def test_ordinary_relay_standing_authority_requires_complete_evidence_and_envelo
       commissioning_evidence=_evidence(),authority_envelope={
         "standing_authority_id":"ROOTLINE-RELAY-1","version":"1","issuer":"owner_policy",
         "policy_sha256":"b"*64,"revoked":False}),
-      evidence_resolver=lambda ref:{**ref,"current":True},
-      authority_resolver=lambda ref:{**ref,"active":True})
+      resolver=_resolver())
 
 def test_strict_device_requires_independent_physical_and_fail_stop_proof():
     row=_device(device_type="pump",commissioning_stage="standing_active",standing_authority=True,
@@ -49,8 +55,7 @@ def test_strict_device_requires_independent_physical_and_fail_stop_proof():
         "standing_authority_id":"ROOTLINE-PUMP-1","version":"1","issuer":"owner_policy",
         "policy_sha256":"b"*64,"revoked":False})
     with pytest.raises(ValueError,match="strict_device_proof_missing"):
-        validate_device(row,evidence_resolver=lambda ref:{**ref,"current":True},
-          authority_resolver=lambda ref:{**ref,"active":True})
+        validate_device(row,resolver=_resolver())
 
 def test_standing_authority_cannot_be_self_asserted_without_canonical_resolvers():
     row=_device(device_type="generic_relay_output",commissioning_stage="standing_active",

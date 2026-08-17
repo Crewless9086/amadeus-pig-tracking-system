@@ -1,12 +1,14 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import hashlib
 import uuid
 
 import psycopg
 import pytest
 
-from modules.telemetry.rootline_device_spine import load_device_record, store_device_record
+from modules.telemetry.rootline_device_spine import (load_device_record,
+    manager_stage_projection, store_device_record)
 
 URL = os.getenv("OOM_PROTECTED_ACTION_POSTGRES_URL", "").strip()
 pytestmark = pytest.mark.skipif(not URL, reason="disposable PostgreSQL URL is required")
@@ -75,3 +77,41 @@ def test_generation_conflict_digest_tamper_and_history_mutation_fail_closed():
         with connect() as db:
             db.execute("delete from app_private.rootline_device_registry_history where device_key=%s",
               (first["device_key"],))
+
+def test_standing_authority_resolves_only_from_canonical_evidence_and_policy():
+    suffix=uuid.uuid4().hex
+    observed="2026-08-17T10:00:00+02:00"
+    stages=("provider_discovered","readback_proven","bounded_actuation_ready",
+      "physical_identity_proven","fail_stop_proven","replay_proven",
+      "operational_dependencies_proven","supervised")
+    evidence={}
+    with connect() as db:
+        for stage in stages:
+            evidence_id=f"{suffix}:{stage}"
+            digest=hashlib.sha256(evidence_id.encode()).hexdigest()
+            evidence[stage]={"source":"canonical","evidence_id":evidence_id,
+              "observed_at":observed,"sha256":digest}
+            db.execute("""insert into app_private.rootline_device_commissioning_evidence(
+              evidence_id,source,observed_at,evidence_sha256,evidence_payload)
+              values(%s,'canonical',%s,%s,%s::jsonb)""",
+              (evidence_id,observed,digest,'{"test_only":true}'))
+        authority_id="AUTH-"+suffix
+        policy_sha=hashlib.sha256(authority_id.encode()).hexdigest()
+        db.execute("""insert into app_private.rootline_standing_authorities(
+          standing_authority_id,version,issuer,policy_sha256,active,revoked,policy_payload)
+          values(%s,'1','owner_policy',%s,true,false,'{}')""",(authority_id,policy_sha))
+    row=device("standing-"+suffix,commissioning_stage="standing_active",
+      standing_authority=True,commissioning_evidence=evidence,authority_envelope={
+        "standing_authority_id":authority_id,"version":"1","issuer":"owner_policy",
+        "policy_sha256":policy_sha,"revoked":False})
+    stored=store_device_record(row,connect_factory=connect)
+    loaded=load_device_record(stored["device_key"],connect_factory=connect)
+    assert loaded["device_record"]["standing_authority"] is True
+    projection=manager_stage_projection(loaded["device_record"],connect_factory=connect)
+    assert projection["standing_authority_evidence_bound"] is True
+    assert projection["execution_authority"] is False
+    forged={**row,"device_id":"forged-"+suffix,"registry_generation":1,
+      "commissioning_evidence":{**evidence,"supervised":{
+        **evidence["supervised"],"sha256":"0"*64}}}
+    with pytest.raises(ValueError,match="evidence_unresolved"):
+        store_device_record(forged,connect_factory=connect)
