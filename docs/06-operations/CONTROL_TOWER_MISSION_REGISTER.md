@@ -724,6 +724,50 @@ separately governed scheduled-provider activation, signed owned-tree proof,
 heartbeat, independently triggered next cycle and terminal-close continuity.
 No source, test, PR or CI result establishes that CORE is alive.
 
+### SMQ-20260813-05 natural payment journey defect — 2026-08-17
+
+Fresh read-only provider trace proves two genuine authenticated private Telegram
+messages failed under deployed revision `ebc661b5`. Message `3699` stated that
+Michaels was paid Cash on 2026-07-10; n8n execution `64988` normalized it, but
+`owner_context_front_door` returned `owner_context_clarification_required` and
+delivered irrelevant reply `3700`. Message `3701` asked which payments remained
+outstanding; execution `64991` followed the same incorrect route and delivered
+reply `3702`. No payment-specific reader or preview was selected. Charl manually
+updated the affected payments afterward; those real messages and records are
+retired as immutable regression evidence and must never be replayed, rewritten
+or re-confirmed.
+
+The systemic defect remains on current deployed source `37a6a4c3`.
+`sam_payment_owner_runtime.py` still hard-codes EFT, exact invoice/counterparty
+bindings and `Livestock — Auction`, although the canonical
+`sales_payment_receipt.py` authority supports Cash/EFT and full/partial protected
+receipts. Extend existing mission `SMQ-20260813-05`; create no new payment
+ledger, write service or business authority. Required reusable correction:
+semantic-first intents for listing outstanding payments, showing payment state,
+preparing a receipt and correcting a preview; preservation of the specific
+intent through deterministic dispatch; one canonical current-payment reader;
+bounded brief/context retention; unique customer resolution; Cash/EFT and
+full/partial preview support; explicit confirmation before write; exact
+canonical readback; immediate manager-worklist refresh; replay silence; and
+continuous ownership without waiting for another daily brief. Deterministic
+patterns are resilience only, never the primary language brain.
+
+The retained SAM payment worktree at `f0bbb63f` is clean but 182 commits behind
+current main and has no matching active terminal; it is historical evidence, not
+an authorized continuation base. The OOM SAKKIE Recovery Slot 2 worktree has
+freshly advanced from `6a6005b7` to current main `37a6a4c3`, which is fresh
+progress evidence beyond its old open process. Therefore classify this defect
+`LOGGED / ACTIVE_OOM_ADDENDUM / NO_SEPARATE_DISPATCH`: do not interrupt or start
+a competing OOM/protected-action writer. At the active terminal's next safe
+feedback boundary, require it to incorporate this case into the general-manager
+intake/ownership contract or explicitly release the shared gateway/payment
+adapter paths. Only then allocate the smallest disjoint SAM canonical-reader
+slice if useful. Operational acceptance requires the next genuinely new payment
+question/report to be handled by the deployed Oom Sakkie agent through protected
+preview, provider delivery, owner confirmation, canonical readback, refreshed
+outstanding projection and a later terminal-independent cycle; no terminal may
+manufacture that event or perform the payment.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
