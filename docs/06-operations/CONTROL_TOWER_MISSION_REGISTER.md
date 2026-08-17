@@ -1942,3 +1942,31 @@ process/worktree binding is limited to CORE isolated validation, ROOTLINE typed
 reservoir observation, Revenue BEACON owner-card/media, and CODEX UI offspring
 summary. Process presence was cross-checked against current worktree changes or
 the bounded validation task; completed shells were not counted as work.
+### CORE e95 validation passed but staging withheld after main advance — 2026-08-17
+
+Validation terminal for exact main `e95a9f88a493f0b1f96998a8bc6c71611697947d`
+returned exit 0 and signed receipt
+`ee975b3d-048a-4a89-8e65-db3117f4665d` (SHA-256
+`a127443400e0d228531d022301a7c8253f584b493101c20ff3a16fa5d62eef2c`).
+The definitive isolated gate ran 245 tests: 239 passed, six explicit skips, zero
+failures. Control Tower closed the completed validation shell.
+
+Before staging, fresh fetch proved authoritative main advanced to
+`adb3658e23947ddbf2c8966765c82b677554f3e3` through disjoint ROOTLINE PR #1053
+and Revenue PR #1054. Although CORE merge #1051 remains contained and the task
+is Disabled with no activation/staging locks, the e95 receipt is exact-source
+bound and cannot authorize adb staging. No staging occurred. A visible fresh
+validation-only terminal was dispatched in detached exact adb worktree
+`C:\tmp\cmq05-provider-identity-validation-adb3658e-20260817`; it must create a
+new receipt and may not stage or activate.
+
+### ROOTLINE typed observation source merged and terminal closed — 2026-08-17
+
+PR #1053 merged as `6526adc15aeec1f2b3581ed285fbe5bc45fed21b`; the
+source terminal returned exit 0 and its empty shell was closed. The repair binds
+named reservoir/storage replies to the exact active provider question, requires
+idempotent canonical readback before saying `recorded`, and contains failures.
+The historical 18:03 reply remains uncaptured and was not replayed or inserted.
+Render web, OOM and ROOTLINE now run descendant `adb3658e`, satisfying deployment
+proof. Operational acceptance waits for a future genuine named observation; do
+not ask Charl to repeat the old message and do not infer hardware authority.
