@@ -1402,3 +1402,22 @@ Current authoritative main advanced to `2b8983961df6a70842dddd2276ad6a32c71407e1
 through FARM/OOM PR #1044 while the CORE source repair was being resumed. That
 integration must be reconciled normally and rechecked for overlap before the CORE
 PR; historical waits or visible shells confer no dependency or ownership.
+
+The resumed durable source terminal also ended without a handover. Its transcript
+proves the direct cause: the full pytest command was terminated by the terminal's
+tool router after 5,020 ms with exit 124. The `-NoExit` launcher then remained as
+an empty visible PowerShell window, creating misleading terminal presence. A
+Control Tower foreground test was subsequently invalidated when a new chat turn
+replaced its yielded execution cell; this is orchestration loss, not test or
+product evidence. Do not run this long suite inside a short-lived tool cell again.
+
+Control Tower closed exact stale launcher 41380 only after proving it had no live
+worker. It then ran the unchanged suite through detached hidden host launcher
+53300 with durable stdout, stderr and exit receipt. The receipt records
+`exit_code=0` at `2026-08-17T16:07:48.8718110+02:00`; paths are
+`C:\tmp\CORE_CHECKOUT_SAFETY_TESTS_20260817.out.log`,
+`C:\tmp\CORE_CHECKOUT_SAFETY_TESTS_20260817.err.log` and
+`C:\tmp\CORE_CHECKOUT_SAFETY_TESTS_20260817.exit.txt`. The next bounded CORE
+source continuation must consume this fresh evidence, reconcile current main,
+complete reviews/PR/CI/integration and return the mandatory handover; it must not
+repeat the long test through the five-second command route.
