@@ -5,6 +5,8 @@ import hashlib
 import html
 import json
 import re
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Callable, Mapping
 
 from modules.beacon.marketing_proposal import prepare_marketing_proposal
@@ -26,12 +28,16 @@ ZERO = {"writes_farm_data": False, "writes_media": False, "publishes": False,
 
 
 def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_opportunity_cards,
-        media_loader=list_media_intakes):
+        media_loader=list_media_intakes, content_evidence_loader=gather_beacon_content_evidence,
+        content_candidate_builder=build_beacon_content_candidate, now=None):
     """Compose one internal BEACON result from current canonical evidence."""
     opportunities = opportunity_loader()
     media_result = media_loader()
     media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
-    packet = build_current_beacon_proposal(opportunities, media_payload)
+    evidence = content_evidence_loader(opportunity_result=opportunities)
+    packet = build_live_stock_awareness_proposal(
+        opportunities, content_candidate_builder(evidence), media_payload)
+    packet = build_protected_campaign_package(packet, now=now)
     return {
         "success": True,
         "status": "beacon_sale_ready_stock_proposal_ready",
@@ -42,6 +48,51 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
         "next_trigger": "material canonical stock or media evidence change",
         **ZERO,
     }
+
+
+def build_protected_campaign_package(packet, *, now=None):
+    """Bind the complete exact campaign envelope without granting authority."""
+    if not isinstance(packet, Mapping) or not packet.get("packet_id"):
+        raise ValueError("beacon_campaign_packet_identity_required")
+    observed = now or datetime.now(timezone.utc)
+    if observed.tzinfo is None:
+        raise ValueError("beacon_campaign_package_time_requires_timezone")
+    local = observed.astimezone(ZoneInfo("Africa/Johannesburg"))
+    publication = (local + timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
+    media = packet.get("media") if isinstance(packet.get("media"), Mapping) else {}
+    exact_media = ({key: media.get(key) for key in (
+        "asset_id", "media_type", "content_sha256", "storage_readback_proof_id",
+        "library_accept_event_id", "public_use_event_id")}
+        if media.get("status") == "approved_public_media_selected" else {"mode": "text_only"})
+    exact_copy = str(packet.get("draft_caption") or packet.get("recommended_copy") or "").strip()
+    if not exact_copy:
+        raise ValueError("beacon_campaign_exact_copy_required")
+    envelope = {
+        "contract_version": "beacon_protected_facebook_campaign_package_v1",
+        "source_packet_id": packet["packet_id"], "exact_post_copy": exact_copy,
+        "selected_approved_media": exact_media,
+        "audience": str(packet.get("audience") or "Local people interested in responsible livestock and farm life"),
+        "location": "Riversdale and Albertinia, Western Cape, South Africa",
+        "publication_time": publication.isoformat(), "publication_timezone": "Africa/Johannesburg",
+        "approval_expires_at": publication.isoformat(),
+        "boost_objective": "Facebook messaging conversations",
+        "budget_cap": {"currency": "ZAR", "total": "300.00", "daily": "100.00"},
+        "duration": {"days": 3},
+        "stop_conditions": ["total_spend_reaches_ZAR_300", "three_day_duration_expires",
+            "public_use_or_campaign_authority_is_revoked", "canonical_sale_eligibility_materially_changes",
+            "provider_rejects_or_returns_ambiguous_publication_or_spend_state"],
+        "rollback": {
+            "on_publication_failure": "do_not_retry; retain provider chronology and stop boost",
+            "on_boost_failure": "stop the campaign; do not retry spend; retain the organic post only if provider-confirmed",
+            "on_authority_or_evidence_change": "pause/stop provider campaign and preserve immutable readback"},
+        "authority": {"publication_authorized": False, "boost_authorized": False,
+            "spend_authorized": False, "customer_send_authorized": False, "approval_required": True}}
+    envelope["attribution_identity"] = "BEACON-CAMPAIGN-" + _digest(envelope)[:24].upper()
+    envelope["approval_card"] = {
+        "decision": "Approve this exact Facebook publication and boost envelope before its publication time / Correct / Decline",
+        "approval_effect": "authorization only; BEACON must execute and obtain Meta readback",
+        "requested_authority": "one publication attempt and one Meta boost capped at ZAR 300 for 3 days"}
+    return {**packet, "protected_campaign_package": envelope}
 
 
 def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
@@ -312,6 +363,20 @@ def render_beacon_packet(packet, *, language="en"):
             f"<b>{'Meting' if af else 'Measure'}:</b> {html.escape(str(packet.get('performance_measurement') or ''))}",
             ("<b>Kies:</b> Keur goed / Korrigeer / Wys af. Niks word deur hierdie besluit gepubliseer of bestee nie." if af else
              "<b>Choose:</b> Approve / Correct / Decline. Nothing is published or spent by this decision response.")]
+        campaign = packet.get("protected_campaign_package") or {}
+        if campaign:
+            budget = campaign.get("budget_cap") or {}
+            selected = campaign.get("selected_approved_media") or {}
+            lines.extend(("", "<b>EXACT PROTECTED FACEBOOK CAMPAIGN</b>",
+                f"<b>Post:</b> {html.escape(str(campaign.get('exact_post_copy') or ''))}",
+                f"<b>Media:</b> {html.escape(str(selected.get('asset_id') or selected.get('mode') or 'none'))}",
+                f"<b>Audience/location:</b> {html.escape(str(campaign.get('audience') or ''))}; {html.escape(str(campaign.get('location') or ''))}",
+                f"<b>Publish:</b> {html.escape(str(campaign.get('publication_time') or ''))}",
+                f"<b>Boost:</b> {html.escape(str(campaign.get('boost_objective') or ''))}; ZAR {html.escape(str(budget.get('total') or '0'))} total / ZAR {html.escape(str(budget.get('daily') or '0'))} daily; 3 days",
+                f"<b>Attribution:</b> {html.escape(str(campaign.get('attribution_identity') or ''))}",
+                "<b>Stop:</b> spend cap, duration, revoked authority/evidence change, or ambiguous/provider failure.",
+                "<b>Rollback:</b> no automatic publication or spend retry; stop boost and preserve provider chronology.",
+                "<b>Protected decision:</b> Approve this exact publication and boost envelope / Correct / Decline. Approval authorizes BEACON—not this message—to execute and obtain Meta readback."))
     elif packet.get("packet_type") == "marketing_evidence_request":
         blockers = ", ".join(packet.get("missing_evidence") or [])
         lines = ["<b>BEACON — CURRENT EVIDENCE REQUEST</b>", "",

@@ -1,4 +1,5 @@
 import threading
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from modules.oom_sakkie.beacon_request_runtime import (
@@ -95,28 +96,44 @@ def test_missing_media_is_precise_and_afrikaans_rendered():
 
 
 def test_scheduled_result_binds_material_stock_and_media_evidence():
+    fixed = {"content_evidence_loader": lambda **kwargs: kwargs,
+        "content_candidate_builder": lambda evidence: awareness_candidate(),
+        "now": datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc)}
     first = build_scheduled_sale_ready_stock_result(
-        opportunity_loader=lambda: opportunity(), media_loader=lambda: media())
+        opportunity_loader=lambda: opportunity(), media_loader=lambda: public_awareness_media(), **fixed)
     changed = opportunity()
-    changed["cards"][0]["capacity_calculation"]["demand_cap"] = 2
+    changed["cards"][0]["demand_summary"] = {"qualified_units": 2}
     changed_stock = build_scheduled_sale_ready_stock_result(
-        opportunity_loader=lambda: changed, media_loader=lambda: media())
+        opportunity_loader=lambda: changed, media_loader=lambda: public_awareness_media(), **fixed)
     changed_media = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: opportunity(),
-        media_loader=lambda: {**media(), "items":[{**media()["items"][0], "content_sha256":"b"*64}]})
+        media_loader=lambda: public_awareness_media(trusted=False), **fixed)
     assert first["proposal"]["packet_id"]
     assert first["result_digest"] != changed_stock["result_digest"]
     assert first["result_digest"] != changed_media["result_digest"]
     assert first["publishes"] is False and first["customer_sends"] is False
+    package = first["proposal"]["protected_campaign_package"]
+    assert package["publication_time"] == "2026-08-18T18:00:00+02:00"
+    assert package["approval_expires_at"] == package["publication_time"]
+    assert package["budget_cap"] == {"currency": "ZAR", "total": "300.00", "daily": "100.00"}
+    assert package["duration"] == {"days": 3}
+    assert package["authority"]["publication_authorized"] is False
+    assert package["authority"]["boost_authorized"] is False
+    assert package["attribution_identity"].startswith("BEACON-CAMPAIGN-")
+    assert "EXACT PROTECTED FACEBOOK CAMPAIGN" in first["answer"]
 
 
 def test_scheduled_missing_media_request_keeps_publication_separate():
     result = build_scheduled_sale_ready_stock_result(
         opportunity_loader=lambda: opportunity(),
-        media_loader=lambda: media(accepted=False))
-    assert result["proposal"]["packet_type"] == "missing_media_request"
+        media_loader=lambda: media(accepted=False),
+        content_evidence_loader=lambda **kwargs: kwargs,
+        content_candidate_builder=lambda evidence: awareness_candidate(),
+        now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
+    assert result["proposal"]["packet_type"] == "live_stock_awareness_proposal"
     assert result["proposal"]["authority"]["publishes"] is False
-    assert "PRECISE MEDIA REQUEST" in result["answer"]
+    assert result["proposal"]["protected_campaign_package"]["selected_approved_media"] == {"mode": "text_only"}
+    assert "Text-only is suitable" in result["answer"]
 
 
 def test_missing_commercial_evidence_returns_precise_decision_packet_not_error():
