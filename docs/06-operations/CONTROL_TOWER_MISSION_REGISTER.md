@@ -2086,3 +2086,30 @@ media-backed campaign card leading to Meta and SAM after exact approval; and
 PR #1001/order integration unlocking the preserved four-line quote journey.
 CORE PR #1055 is merged in main `08a54ddb`; its completed source shell was closed.
 CORE is not an operational-plane dependency.
+
+### Revenue false external hold recovered - 2026-08-17 21:00 SAST
+
+The first outcome-bound Revenue shell exited 0 without a business result and
+classified BEACON as `EXTERNAL_HOLD` because its checkout did not expose
+provider/canonical credentials. That is not accepted as a current external
+dependency: the existing Revenue acceptance lineage already proved governed
+read-only Render and PostgreSQL access using retained non-secret helper paths.
+The completed wrapper PID 19460 was closed; no deployed Oom Sakkie or BEACON
+worker was stopped.
+
+Existing Revenue Recovery Slot 3 was resumed in the same clean worktree as
+`REVENUE - BEACON TO SAM OPERATIONAL RECOVERY`. It must exhaust the proven
+read-only access route, treat Charl's litter-specific library-media and concise
+button-card correction as possible genuine material mission input, and drive the
+deployed worker to one exact protected card or one precise media-evidence
+exception. It may not infer approval, publish, spend, manufacture customer input,
+or ask Charl for credentials. A coincidental future stock change is not an
+acceptable idle dependency if the current owner correction is itself unconsumed
+canonical mission evidence.
+
+Fresh attributable process/worktree proof at dispatch shows ROOTLINE operational
+recovery, HERDMASTER Orders, Revenue BEACON/SAM recovery, CORE isolated
+validation, and CODEX UI offspring summaries executing. This classification is
+based on current Codex child processes bound to exact worktrees, not open windows
+or historical waits. CORE continues in parallel and does not gate the four
+business/UI lanes.
