@@ -98,11 +98,17 @@ def _herdmaster(now):
         sow = str(row.get("Sow_Tag_Number") or "").strip()
         status = str(row.get("Litter_Status") or "").strip().casefold()
         if sow.casefold() == "molly" and status not in {"completed", "closed", "weaned"}:
+            litter_id = str(row.get("Litter_ID") or "unknown")
+            farrowing = str(row.get("Farrowing_Date") or "unknown")
+            wean = str(row.get("Wean_Date") or "unknown")
+            weaned = row.get("Weaned_Count")
             candidates.append(_candidate("herdmaster:molly-active-litter", "HERDMASTER", "due",
-                [f"litter:{row.get('Litter_ID') or 'unknown'}", f"status:{status or 'unknown'}"],
-                ["current_litter_next_care_or_weaning_step"],
-                "Molly has an active canonical litter requiring retained HERDMASTER ownership.",
-                "Delegate the current litter evidence to HERDMASTER and reassess at the earliest care or weaning boundary.",
+                [f"litter:{litter_id}", f"status:{status or 'unknown'}",
+                 f"farrowing:{farrowing}", f"wean_due:{wean}",
+                 f"weaned_count:{weaned if weaned is not None else 'unknown'}"],
+                ([] if wean != "unknown" else ["current_litter_weaning_due_date"]),
+                f"Molly's litter {litter_id} is Active; farrowed {farrowing}, planned weaning {wean}, and recorded weaned count is {weaned if weaned is not None else 'Unknown'}.",
+                "HERDMASTER retains care ownership now; prepare the exact piglet, tag, weight and movement preview at the planned weaning boundary, and record nothing without confirmation.",
                 now + timedelta(minutes=30)))
     return candidates
 

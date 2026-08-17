@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import hashlib
+import html
 import json
 import os
 import re
@@ -242,6 +243,45 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
     revision = str(source_revision or os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or "unknown")
     return (store or PostgresManagerCaseStore()).run_cycle(
         candidates, now=now, source_revision=revision, deliver=deliver)
+
+
+def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None):
+    """Present changed farm cases through the existing owner-only lifecycle."""
+    specialist = str(case.get("specialist") or "").upper()
+    if specialist not in {"HERDMASTER", "ROOTLINE"}:
+        return {"success": True, "status": "non_farm_case_delivery_suppressed",
+                "delivery_confirmed": False, "telegram_sends": 0}
+    owners = [value.strip() for value in str(
+        os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS") or "").split(",")
+        if value.strip()]
+    if not owners:
+        return {"success": False, "status": "manager_owner_binding_unavailable",
+                "delivery_confirmed": False, "telegram_sends": 0}
+    owner = owners[0]
+    observed = _aware(now or datetime.now(timezone.utc))
+    mission_id = f"{case['case_id']}:G{int(case['generation'])}"
+    unknowns = tuple(str(value) for value in case.get("unknowns") or ())
+    lines = [f"<b>OOM SAKKIE — {specialist} CURRENT CASE</b>", "",
+             html.escape(str(case.get("summary") or "Current farm case.")), "",
+             "<b>Next:</b> " + html.escape(str(case.get("next_action") or "Reassess current canonical evidence.")),
+             "<b>Next evidence check:</b> " + html.escape(str(case.get("next_reassessment_at") or "Unavailable"))]
+    if unknowns:
+        lines.extend(("", "<b>Still unproven:</b> " + html.escape("; ".join(unknowns))))
+    result = {"success": True, "status": "general_manager_case_ready",
+              "answer": "\n".join(lines), "result_digest": case["evidence_digest"],
+              "hardware_commands": 0, "writes_farm_data": False}
+    parsed = {"telegram_user_id": owner, "telegram_chat_id": owner,
+              "provider_message_id": "scheduled:" + mission_id,
+              "provider_timestamp": observed.isoformat(), "text": "General Manager case"}
+    if deliver is None:
+        from modules.oom_sakkie.family_message_lifecycle import deliver_family_result
+        deliver = deliver_family_result
+    outcome = dict(deliver(parsed, result, specialist=specialist,
+                           mission_id=mission_id, card_mission_id=case["case_id"]) or {})
+    confirmed = bool(outcome.get("provider_delivery_confirmed") is True
+                     and outcome.get("telegram_message_id"))
+    return {**outcome, "delivery_confirmed": confirmed,
+            "success": outcome.get("success") is True and confirmed}
 
 
 def _case_row(row):
