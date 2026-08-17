@@ -21,12 +21,13 @@ BOUND_KEYS = ("contract_version", "eligibility_contract_version", "mission_id",
     "presence_provider_timestamp", "presence_text_sha256", "auxiliary_device_id",
     "device_id", "channel", "maximum_duration_seconds", "native_auto_off_seconds",
     "emergency_off_required", "injection_enabled", "execution_id", "consumption_key",
-    "eligibility_sha256", "plan_generation", "controller_safety_generation")
+    "eligibility_sha256", "plan_generation", "controller_safety_generation",
+    "device_contract_version")
 
 
 def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
                          connect_factory=None, prepare=None,
-                         parent_claim_token="", **runtime_overrides):
+                         parent_claim_token="", device_loader=None, **runtime_overrides):
     from modules.oom_sakkie.rootline_fertilizer_commissioning_runtime import _bound
     if _bound(owner_result, parsed, gateway_authority):
         from modules.oom_sakkie.protected_action_claims import load_active_presence_claim
@@ -63,7 +64,7 @@ def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
     if prepared.get("status") != "commissioning_protected_preview_ready":
         return prepared
     artifact = prepared.get("eligibility")
-    payload = build_preview_payload(artifact, parsed)
+    payload = build_preview_payload(artifact, parsed, device_loader=device_loader)
     if parent_claim_token:
         payload["presence_refresh_claim_token"] = str(parent_claim_token)
     claim = create_claim(action_kind=ACTION_KIND,
@@ -78,6 +79,7 @@ def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
         {"text": "Cancel", "callback_data": f"{CALLBACK_PREFIX}{token}:cancel"},
     ]]
     return {**prepared, **claim, "status": "mixer_protected_preview_created",
+        "action_kind": ACTION_KIND,
         "answer": ("<b>MIXER CH2 — SUPERVISED TEST</b>\n\n"
             "Mixer CH2 is ready for one supervised five-minute test. "
             "Nothing has started yet.\n\nConfirm / Cancel."),
@@ -279,10 +281,41 @@ def execute_presence_refresh(claim, *, parsed, gateway_authority, connect_factor
     return result, 200 if result.get("success") is True else 409
 
 
-def build_preview_payload(artifact, parsed):
+def build_preview_payload(artifact, parsed, *, device_loader=None):
     if not isinstance(artifact, dict):
         raise ValueError("mixer_preview_eligibility_missing")
+    from modules.telemetry.rootline_device_spine import CONTRACT_VERSION as DEVICE_CONTRACT, validate_device
+    from modules.telemetry.rootline_device_registry import get_device_contract
+    legacy = get_device_contract(MIXER_ID)
+    if not isinstance(legacy, dict):
+        raise ValueError("mixer_source_device_registry_missing")
+    source_record = {"provider":legacy.get("provider"),
+        "provider_account_binding":legacy.get("provider_account_binding"),
+        "device_id":legacy.get("device_id"), "channel":legacy.get("channel"),
+        "physical_name":legacy.get("physical_name"), "device_type":"independent_mixer_valve",
+        "adapter_profile":"ifttt_ewelink_relay", "safe_state":"OFF",
+        "maximum_runtime_seconds":artifact.get("maximum_duration_seconds"),
+        "native_fail_stop_seconds":legacy.get("native_fail_stop_seconds"),
+        "readback":"provider_state", "physical_effect":"fertilizer_recirculation",
+        "dependencies":legacy.get("dependencies"), "manual_isolation":legacy.get("manual_isolation"),
+        "commissioning_stage":"bounded_actuation_ready", "standing_authority":False,
+        "registry_generation":1}
+    key = "ifttt_ewelink:ewelink_owner_account:100204d497:2"
+    if device_loader is None and __import__("os").environ.get("DATABASE_URL"):
+        from modules.telemetry.rootline_device_spine import load_device_record
+        from modules.oom_sakkie.bounded_postgres_read import connect_bounded_rootline_postgres
+        device_loader=lambda identity:load_device_record(identity,connect_factory=lambda:
+          connect_bounded_rootline_postgres(database_url=__import__("os").environ.get("DATABASE_URL",)))
+    loaded = device_loader(key) if device_loader else {"device_record":source_record}
+    if not isinstance(loaded, dict) or not isinstance(loaded.get("device_record"), dict):
+        raise ValueError("mixer_device_registry_missing")
+    device_record = loaded["device_record"]
+    validate_device(device_record)
+    if (device_record != source_record or device_record["commissioning_stage"] != "bounded_actuation_ready"
+            or device_record["standing_authority"] is not False):
+        raise ValueError("mixer_device_registry_binding_changed")
     payload = {"contract_version": PREVIEW_CONTRACT,
+        "device_contract_version": DEVICE_CONTRACT, "device_record": device_record,
         "eligibility_contract_version": artifact.get("contract_version"),
         "mission_id": MISSION_ID,
         "owner_user_id": str(parsed.get("telegram_user_id") or ""),
@@ -311,6 +344,7 @@ def build_preview_payload(artifact, parsed):
             or payload["auxiliary_device_id"] != MIXER_ID
             or payload["device_id"] != DEVICE_ID or payload["channel"] != 2
             or payload["maximum_duration_seconds"] != 300
+            or payload["device_contract_version"] != DEVICE_CONTRACT
             or payload["injection_enabled"] is not False):
         raise ValueError("mixer_preview_binding_invalid")
     return payload
@@ -326,7 +360,7 @@ def execute_claimed_mixer(claim, *, parsed, runner=None, **runtime_overrides):
             "provider_message_id": payload.get("presence_provider_message_id"),
             "provider_timestamp": payload.get("presence_provider_timestamp"),
             "text": "",
-        })
+        }, device_loader=runtime_overrides.pop("device_loader", None))
         rebuilt["presence_text_sha256"] = payload.get("presence_text_sha256")
         if payload.get("presence_refresh_claim_token"):
             rebuilt["presence_refresh_claim_token"] = payload["presence_refresh_claim_token"]
