@@ -169,6 +169,22 @@ def test_delivery_without_refresh_callback_fails_closed():
     assert result["case_results"][0]["outcome_status"] == "manager_delivery_refresh_unavailable"
 
 
+def test_unsuccessful_provider_confirmation_cannot_suppress_retry():
+    now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=40)
+    current = candidate("event:ambiguous-provider-confirmation", now)
+    result = PostgresManagerCaseStore(connect_factory=connect).run_cycle(
+        [current], now=now, source_revision="test", refresh=lambda claimed: current,
+        deliver=lambda case: {"success": False, "status": "ambiguous",
+                              "delivery_confirmed": True})
+    assert result["deliveries_confirmed"] == 0
+    assert result["exceptions"] == 1
+    with connect() as db:
+        row = db.execute("""select status,last_delivery_digest,evidence_digest
+            from app_private.oom_manager_cases where dedupe_key='rootline:current-plan'""").fetchone()
+    assert row[0] == "exception"
+    assert row[1] != row[2]
+
+
 def test_older_observation_epoch_cannot_replace_newer_herd_evidence():
     now = datetime.now(timezone.utc) + timedelta(minutes=4, seconds=45)
     newer = candidate("observed:2026-08-17T13:10:00+00:00", now,

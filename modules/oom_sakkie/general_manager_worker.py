@@ -251,7 +251,8 @@ class PostgresManagerCaseStore:
         return "created" if not prior else "changed"
 
     def _finish_claim(self, case, outcome, now, cycle_id):
-        confirmed = bool(outcome.get("delivery_confirmed") is True)
+        confirmed = bool(outcome.get("success") is True
+                         and outcome.get("delivery_confirmed") is True)
         failed = outcome.get("success") is False
         state = "exception" if failed else "waiting_reassessment"
         event_type = "exception" if failed else ("delivery_confirmed" if confirmed else "delivery_suppressed")
