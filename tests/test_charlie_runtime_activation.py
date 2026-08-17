@@ -502,7 +502,7 @@ class RuntimeActivationTests(unittest.TestCase):
 
     def test_windows_provider_subprocess_deadline_fails_closed(self):
         def timeout(_command, **kwargs):
-            self.assertEqual(kwargs["timeout"], 8)
+            self.assertEqual(kwargs["timeout"], 20)
             raise subprocess.TimeoutExpired(_command, kwargs["timeout"])
         result = _inspect_windows_task_scheduler_provider(100, runner=timeout)
         self.assertFalse(result["inspection_complete"])
