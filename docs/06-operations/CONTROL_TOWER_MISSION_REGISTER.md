@@ -1924,3 +1924,21 @@ production release lane, mutate runtime/task/stop/manifest state, invoke the
 provider or activate CORE. Successful completion promotes only to a separately
 authorized exact-current staging gate. All historical validation, staging and
 activation identities remain sealed and non-replayable.
+### Completed terminal-shell closeout and operational reality — 2026-08-17 18:32 SAST
+
+Fresh process/handover reconciliation proved three visible development shells
+were completed but still open: ROOTLINE current-plan delivery (PID 16940),
+Revenue demand-package repair (PID 99604), and CORE provider-identity source
+repair (PID 84560). Each had its mandatory final handover and exit 0, and none
+had a Codex work child. Control Tower closed those three shells; source
+worktrees and durable evidence remain retained and recoverable.
+
+Fresh operational readback: `CHARLIE CORE Runner Watchdog` is Disabled with
+`Enabled=False`; no heartbeat, activation lock or staging lock exists. CORE is
+not live. Render web, OOM manager (`*/5`) and ROOTLINE (`*/15`) are live on exact
+revision `e95a9f88a493f0b1f96998a8bc6c71611697947d`; both provider schedules
+completed again around 18:31 SAST. Active development work with fresh exact
+process/worktree binding is limited to CORE isolated validation, ROOTLINE typed
+reservoir observation, Revenue BEACON owner-card/media, and CODEX UI offspring
+summary. Process presence was cross-checked against current worktree changes or
+the bounded validation task; completed shells were not counted as work.
