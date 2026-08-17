@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-08-17 - OP-004 live-transfer contract integrated for multi-line Orders consumption
+
+- Integrated PR #1001 on current authoritative main as `355f1154`, preserving typed,
+  zero-write HERDMASTER purpose, treatment, food-chain, transport, quarantine, disease,
+  movement, welfare, order-line and price-band disclosure authority.
+- Added the collision-safe SALES handoff for the preserved four-line 22-pig quote worktree.
+  SALES retains matching and shortfall presentation but must consume the HERDMASTER packet
+  rather than duplicate live-transfer or purpose decisions.
+- Kept request, recommendation, reservation and fulfilment separate. No customer send,
+  order, reservation, allocation, purpose/farm write or protected commitment was performed.
+
 ## 2026-08-17 - CORE scheduled-task instance visibility boundary
 
 - Preserved the exact Task Scheduler service, task, action, command, working
