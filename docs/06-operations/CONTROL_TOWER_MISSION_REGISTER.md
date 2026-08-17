@@ -1112,3 +1112,34 @@ the affected weighing case. It must retain replay suppression and may neither
 delete the successful batch nor manufacture weights. Completion requires the
 deployed manager to report 79/81 with only tags 123 and 151 missing, followed by
 a later provider-origin cycle that stays silent while evidence is unchanged.
+
+### CMQ-20260813-05 watchdog recovery source integration — 2026-08-17
+
+Recovery Slot 1 source commit `521aef36cbe6e66d4f76f437a315f6f60fcc503e`
+passed 118 relevant tests (one platform skip), static compilation, diff checks,
+two independent GO reviews and all three exact-head hosted CI gates. PR #1042
+merged normally as authoritative main
+`94efdd708de4c7cf2ad0bd9380a0e97eff03c155`. The correction preserves
+authenticated activation-failure evidence while providing serialized,
+replay-safe reconciliation into the governed stopped projection after recovery
+or interruption. No staging, activation, task, runtime, provider or business
+effect occurred in the source epoch.
+
+Classify CMQ-20260813-05 as `WORKING / SOURCE_INTEGRATED /
+DEPLOYMENT_ACCEPTANCE_ELIGIBLE`. Fresh Control Tower readback found the exact
+watchdog task Disabled, the governed stop marker present, no release, staging or
+activation lock, and no fresh CORE heartbeat or independent cycle. Historical
+CORE source-terminal processes are not active-work proof; its clean worktree is
+released-retain and the terminal may be closed. Recovery Slot 1 is therefore
+promoted to one separately governed deployment/acceptance epoch. That epoch must
+revalidate exact current main, reconcile stopped-state evidence only through the
+reviewed rail, create a fresh receipt and staging identity, stage exact current
+runtime/execution/manifest, and use only the exact scheduled-provider activation
+rail. It must fail closed and preserve rollback evidence on any mismatch.
+
+Operational completion remains false until the deployed CHARLIE CORE runtime
+proves exact loaded revision, provider-origin ancestry, signed supervisor/runner
+tree, fresh heartbeat, a genuine independently triggered durable mission cycle,
+the next trigger, and a later cycle after every development and activation
+terminal is closed. Terminal-created mission output or direct process startup is
+not acceptable evidence.
