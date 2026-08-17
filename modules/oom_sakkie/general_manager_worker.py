@@ -105,7 +105,8 @@ class PostgresManagerCaseStore:
                         where status in ('open','delegated','waiting_reassessment','exception')
                           and next_reassessment_at<=%s
                           and (lease_until is null or lease_until<%s)
-                        order by case urgency when 'critical' then 0 when 'urgent' then 1
+                        order by case when specialist='BEACON' then 0 else 1 end,
+                            case urgency when 'critical' then 0 when 'urgent' then 1
                             when 'due' then 2 when 'planned' then 3 else 4 end,
                             next_reassessment_at,case_id
                         for update skip locked limit 20""", (now, now))
@@ -345,13 +346,13 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
     now = _aware(now or datetime.now(timezone.utc))
     refresh = None
     if candidates is None:
-        from modules.oom_sakkie.manager_case_sources import collect_manager_candidates
+        from modules.oom_sakkie.manager_case_sources import (
+            collect_manager_candidate, collect_manager_candidates)
         candidates = collect_manager_candidates(now=now, collectors=collectors)
         def refresh(case):
-            current = collect_manager_candidates(
-                now=datetime.now(timezone.utc), collectors=collectors)
-            return next((row for row in current
-                         if str(row.get("dedupe_key") or "") == case["dedupe_key"]), None)
+            return collect_manager_candidate(now=datetime.now(timezone.utc),
+                dedupe_key=case["dedupe_key"], specialist=case["specialist"],
+                collectors=collectors)
     revision = str(source_revision or os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or "unknown")
     return (store or PostgresManagerCaseStore()).run_cycle(
         candidates, now=now, source_revision=revision, deliver=deliver,
