@@ -2007,3 +2007,19 @@ worktree `C:\tmp\sales-multiline-livestock-quote-20260817` on exact main
 local preview. No order, quote send, purpose change, reservation, allocation,
 customer contact, production write or deployment is authorized. CODEX UI remains
 disjoint on breeding analytics; CORE and Revenue remain on their existing gates.
+
+### CORE exact-current staging passed; fresh activation dispatched - 2026-08-17 19:34 SAST
+
+CORE staging gate exited 0 and proved exact `adb3658e` in clean runtime and
+execution worktrees, receipt/key binding, manifest and rollback tuple, with the
+governed stop preserved, task Disabled, supervisor stopped and every release /
+activation lock absent. Staging lane `6f6b18c229d040efa7f4acd140700e08` was
+released. The completed staging shell was closed.
+
+Fresh fetch still resolved authoritative main to exact `adb3658e`. Control Tower
+therefore separately authorized and started one new provider-origin activation
+epoch in `C:\tmp\cmq05-provider-identity-activation-adb3658e-20260817`. It may
+leave CORE enabled only after exact Task Scheduler identity, supervisor/runner,
+heartbeat, independent result, next trigger and later terminal-independent cycle
+are proven. Any ambiguity must restore the governed stop, disable the task,
+archive the fresh epoch and prohibit retry. Historical epochs remain sealed.
