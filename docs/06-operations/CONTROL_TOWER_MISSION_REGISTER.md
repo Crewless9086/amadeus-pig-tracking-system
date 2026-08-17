@@ -959,6 +959,33 @@ bounded mission is fresh isolated validation and stopped-state staging of exact
 current main; it may not activate CORE. Only a later separately authorized
 provider-origin epoch may test the repaired ancestry boundary.
 
+### CMQ-20260813-05 repaired-main staging refused on stopped-state contradiction — 2026-08-17
+
+Exact current main `a0038c42a5903f39154ddc04945870046bb061c1` passed fresh
+offline isolation: 5/5 provider-ancestry tests and 95 complete runner-control,
+staging and activation tests passed with 3 Windows-only skips. Fresh signed
+validation receipt `72f0e9baf590480b86b96675484daaf2` has SHA-256
+`a0bc6ddf52f02ef2599cc39975743a21e13ec42208ce56f3dab9775dd021f676`;
+the prior receipt and failed activation were not replayed.
+
+The reviewed staging rail then refused before acquiring a lane or mutating the
+runtime because durable `watchdog.json` retained the recovered activation result
+`provider_identity_incomplete`, while the stopped-state contract requires
+`governed_stop_active`. Fresh Control Tower readback confirms authoritative main
+is unchanged, the exact task remains Disabled, no staging/activation/release
+lane is active, and runtime/execution/manifest remain clean and mutually aligned
+at historical staged revision `64e53354`. The stop marker remains present and no
+supervisor, runner, heartbeat or cycle exists.
+
+Classify Slot 1 as `WORKING / RELEASE_HOLD /
+WATCHDOG_STATE_RECONCILIATION_REQUIRED`. This is a zero-effect refusal, not an
+owner task and not authority to overwrite failed-activation evidence manually.
+The next bounded same-mission source/state-contract assessment must preserve the
+archived activation and rollback evidence, determine the reviewed canonical
+transition from authenticated recovery to governed stopped state, add replay and
+audit coverage, and stop before staging or activation. A later fresh staging
+epoch must use a new identity and freshly validated receipt.
+
 Automatic prompt delivery to every visible terminal is not proven. Charl must
 paste a prompt unless target-specific delivery and acknowledgement are evidenced.
 The target is the durable CORE queue/runner. Until then, queued, delivered,
