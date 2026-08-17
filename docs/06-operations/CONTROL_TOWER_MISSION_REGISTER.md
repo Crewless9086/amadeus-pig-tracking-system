@@ -578,6 +578,20 @@ task-digest-bound provider-origin activation contract, fail-closed rollback and
 duplicate-start proof, then reconcile, review, merge, restage and separately
 authorize activation.
 
+### ROOTLINE stale-feedback containment — 2026-08-17
+
+The repeated Mixer packet naming deployed revision `dc0b67ca`, cards 3687/3689
+and expired physical-presence evidence is historical, lacks a new observation
+time and does not satisfy the current feedback template. Fresh provider readback
+shows the web service live at `e3e35874` (`dep-da1bkpou01pc73fo9e1g`), so the
+packet's deployed-revision claim is no longer current. No ROOTLINE development
+terminal or autonomous ROOTLINE cycle was freshly proven. The old wait for
+physical presence is retired as a current dependency; Charl must not press or
+repeat anything from those cards. Slot 2 remains owned by the shared OOM SAKKIE/
+ROOTLINE current-lineage reconciliation. A future Mixer action requires a fresh
+deployed-manager assessment, new current-world evidence and a newly bound
+protected journey after the CORE activation window closes.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
