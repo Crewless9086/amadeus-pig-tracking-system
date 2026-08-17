@@ -20,6 +20,7 @@ from modules.charlie.runtime_activation import (
     recover_activation,
     verify_or_recover_activation,
     verify_provider_origin,
+    _inspect_exact_process,
 )
 
 
@@ -241,6 +242,17 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertTrue(result["inspection_complete"])
         self.assertEqual(len(calls), 2)
         self.assertTrue(all("Get-CimInstance Win32_Process -Filter \"ProcessId=" in call for call in calls))
+
+    def test_exact_pid_inspector_returns_complete_identity_on_success(self):
+        row = {"ProcessId": 42, "ParentProcessId": 7, "ExecutablePath": "pythonw.exe",
+               "CreationDate": "20260817120000.000000+120", "CommandLine": "pythonw.exe watchdog.py"}
+        result = _inspect_exact_process(
+            42, runner=lambda command, **_kwargs: subprocess.CompletedProcess(
+                command, 0, json.dumps(row), ""
+            )
+        )
+        self.assertTrue(result["inspection_complete"])
+        self.assertEqual((result["pid"], result["parent_pid"]), (42, 7))
 
     def test_duplicate_and_concurrent_activation_have_one_lane(self):
         plan, controller, _result = self._prepared()

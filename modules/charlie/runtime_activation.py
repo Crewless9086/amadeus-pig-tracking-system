@@ -402,6 +402,17 @@ def _inspect_exact_process(pid, runner=subprocess.run):
     )
     if completed.returncode:
         return {"inspection_complete": False}
+    try:
+        row = json.loads(completed.stdout)
+        return {
+            "inspection_complete": True, "pid": int(row["ProcessId"]),
+            "parent_pid": int(row["ParentProcessId"]),
+            "executable_path": str(row.get("ExecutablePath") or ""),
+            "creation_time": str(row.get("CreationDate") or ""),
+            "command_line": str(row.get("CommandLine") or ""),
+        }
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return {"inspection_complete": False}
 
 
 def _inspect_exact_children(parent_pid, runner=subprocess.run):
@@ -427,17 +438,6 @@ def _inspect_exact_children(parent_pid, runner=subprocess.run):
         } for row in rows]
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
-    try:
-        row = json.loads(completed.stdout)
-        return {
-            "inspection_complete": True, "pid": int(row["ProcessId"]),
-            "parent_pid": int(row["ParentProcessId"]),
-            "executable_path": str(row.get("ExecutablePath") or ""),
-            "creation_time": str(row.get("CreationDate") or ""),
-            "command_line": str(row.get("CommandLine") or ""),
-        }
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-        return {"inspection_complete": False}
 
 
 def recover_activation(*, state_root, task_controller, activation_id):
@@ -733,13 +733,19 @@ def _close_prepare_failure(state_root, plan, controller, archive, stop,
             controller.disable_exact(plan["task_action_sha256"])
         except Exception as exc:
             errors.append({"component": "scheduled_task", "status": getattr(exc, "status", exc.__class__.__name__)})
-        try:
-            if not stop.exists():
-                archive.replace(stop)
-            if _sha256(stop) != plan["stop_marker_sha256"]:
-                raise ActivationError("governed_stop_restore_failed")
-        except Exception as exc:
-            errors.append({"component": "governed_stop", "status": getattr(exc, "status", exc.__class__.__name__)})
+    try:
+        if stop.exists() and _sha256(stop) != plan["stop_marker_sha256"]:
+            raise ActivationError("governed_stop_conflict_during_prepare_recovery")
+        if not stop.exists():
+            rollback = _read_json(rollback_path, "activation_rollback_missing")
+            expected = base64.b64decode(rollback["stop_marker_bytes_b64"], validate=True)
+            if hashlib.sha256(expected).hexdigest() != plan["stop_marker_sha256"]:
+                raise ActivationError("governed_stop_rollback_identity_invalid")
+            _atomic_bytes(stop, expected)
+        if _sha256(stop) != plan["stop_marker_sha256"]:
+            raise ActivationError("governed_stop_restore_failed")
+    except Exception as exc:
+        errors.append({"component": "governed_stop", "status": getattr(exc, "status", exc.__class__.__name__)})
     if errors:
         raise ActivationError("activation_prepare_recovery_incomplete", errors=errors)
     ledger = Path(state_root) / "activation-ledger"
