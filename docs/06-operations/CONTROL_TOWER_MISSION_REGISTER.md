@@ -1632,3 +1632,36 @@ running independent Brain Guard worker. Fresh autonomous status depends on the
 separate CORE validation/staging/provider-activation mission and its independent-
 cycle evidence. Do not claim Brain Guard live merely because its code and doctrine
 exist.
+
+### CORE activation `aa3be93a` failed safe — 2026-08-17
+
+Existing mission `CMQ-20260813-05` Recovery Slot 1 validated and staged exact then-
+current main `d3a3b71a2163a5199d0a6863a24a5f8dfdf87b1b`, but CORE remains
+`WORKING / ACTIVATION_FAILED_SAFE / STOPPED`. Isolated validation identity
+`cmq05-validate-d3a3b71a-u2-20260817` ran 136 tests with 136 passed, three
+platform harnesses skipped and exit 0; signed receipt SHA-256 is
+`dd8cd7f19547ba33295182860f154cbc797da08009300971d6ba2a0ee7fa2292`.
+Staging lane `90565dee3b2040b48a47fbe93d8904e9` aligned runtime, execution
+and manifest to `d3a3b71a`, preserved governed stop and disabled task binding,
+then released normally.
+
+Fresh provider-origin activation `aa3be93a85974373bc29bd9b5375bbef` passed dry-run
+and requested only the exact scheduled task, but the scheduled child reported
+`provider_identity_incomplete`. No provider ancestry, supervisor, runner,
+heartbeat or independent cycle was accepted. Authenticated rollback restored the
+exact original stop bytes, disabled task, `supervisor_stopped`, absent live packet
+and zero locks; rollback SHA-256 `396c8654...`, failure `58ffd36e...`, recovery
+completion `6a56de51...` and reconciliation `3101c72d...` are retained. The epoch
+is archived and non-replayable. No database, farm, customer, Telegram, n8n,
+Sheets or hardware effect occurred.
+
+The activation terminal returned exit zero only for correct fail-closed handling;
+it did not make CORE live. Its released empty launcher was closed after handover.
+Current authoritative main has since advanced to
+`ee736fce95e8130a26207f495750f486d41b5bd3`, so no further staging or activation
+may reuse the d3a3b71a validation receipt or activation identity. Automatically
+promote one bounded current-main CORE source/read-only provider-identity diagnosis
+and repair. It must inspect exact failure evidence and scheduled-provider ancestry
+without broad process discovery, preserve the stopped runtime and all historical
+artifacts, strengthen rather than weaken provider proof, complete tests/reviews/
+PR/CI/merge, and stop before a fresh validation/staging/activation epoch.
