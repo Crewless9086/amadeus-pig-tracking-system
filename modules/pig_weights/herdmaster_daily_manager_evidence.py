@@ -34,8 +34,7 @@ def build_daily_manager_evidence(*, pigs, window_weights, prior_weights,
                                  analysis_date):
     """Build one deterministic zero-I/O specialist contract."""
     analysis_date = _day(analysis_date)
-    window_start = analysis_date - timedelta(days=analysis_date.weekday()) + timedelta(days=1)
-    window_end = window_start + timedelta(days=1)
+    window_start, window_end = _weight_window(analysis_date)
     schedule_state = {}
     for row in sorted(lifecycle_events or (), key=lambda value: (
             _day(value.get("effective_at")), str(value.get("effective_at") or ""))):
@@ -210,8 +209,7 @@ def load_daily_manager_evidence(*, analysis_date, database_url=None, connect=Non
                                 mortality_packet_builder=None):
     """Load canonical Supabase truth through bounded read-only sessions."""
     analysis_date = _day(analysis_date)
-    window_start = analysis_date - timedelta(days=analysis_date.weekday()) + timedelta(days=1)
-    window_end = window_start + timedelta(days=1)
+    window_start, window_end = _weight_window(analysis_date)
     with connect_bounded_read(
             database_url=database_url or os.environ.get("DATABASE_URL"),
             connect=connect) as connection:
@@ -317,6 +315,12 @@ def _day(value):
     if isinstance(value, date):
         return value
     return date.fromisoformat(str(value)[:10])
+
+
+def _weight_window(analysis_date):
+    """Include an early current-week upload without changing the governed close."""
+    scheduled_start = analysis_date - timedelta(days=analysis_date.weekday()) + timedelta(days=1)
+    return min(analysis_date, scheduled_start), scheduled_start + timedelta(days=1)
 
 
 def _instant(value):
