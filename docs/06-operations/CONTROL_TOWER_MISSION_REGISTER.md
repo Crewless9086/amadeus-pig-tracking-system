@@ -1338,3 +1338,38 @@ or offset syntax: `Today, 15:20`, `Tomorrow, 08:00`, or `17 Sep 2026, 08:00`.
 Use an owner-language label such as `Next check`, not internal `Next evidence
 check`; keep the exact UTC instant only in canonical/audit evidence. Add DST/time
 zone, day-boundary, malformed/Unknown and Telegram HTML regression coverage.
+
+### ROOTLINE irrigation and auxiliary-device auto-mode outcome — 2026-08-17
+
+Charl restated the required owner outcome: ROOTLINE must deliver and execute
+governed irrigation, and bring the outstanding fertiliser controls and borehole
+plug into safe automatic management. Current truth is not that irrigation is
+running. The latest cycles produced advisory B/C evidence but zero hardware
+commands and zero physical outcomes. Hardware/execution flags remain unproven or
+disabled; only the Mixer generation-one seed is established in the typed device
+registry, while fertiliser injection and the Borehole MINI R4 are disabled and
+uncommissioned. Containment and recurring status cards are not Business
+completion.
+
+Continue existing Recovery Slot 2 with two serialized tracks. FARM retains the
+shared OOM manager/plan-delivery ordering fix. A disjoint ROOTLINE auto-mode
+readiness track may now inspect and prepare the existing typed device spine,
+provider adapters and commissioning contracts without editing FARM-owned manager
+files or actuating hardware. It must inventory each exact valve/controller,
+fertiliser mixer, injection relay and borehole plug; bind provider/device/channel
+identity; prove current ON/OFF readback; define fail-OFF, maximum runtime,
+mutual-exclusion, water/tank/pump/power/weather/manual-isolation and fertiliser
+interlocks; define standing-authority scope, revocation and emergency stop; and
+produce one staged commissioning sequence per risk profile.
+
+No device enters auto mode from configuration alone. Ordinary valves require
+provider/readback proof and supervised commissioning. Fertiliser mixer and
+injection require separate flow/recirculation evidence and verified shutdown.
+The borehole plug/pump requires the stricter pump/tank/full-controller, dry-run,
+power-loss and manual-isolation evidence. Only after exact protected approval and
+physical/provider OFF verification may the deployed ROOTLINE runtime enable a
+bounded authority envelope. Operational closure requires a genuine scheduled
+plan, provider-confirmed actuation, physical water/outcome evidence, automatic
+OFF, canonical accounting, replay silence and a later terminal-independent
+cycle. Development terminals may never operate the devices or manufacture that
+proof.
