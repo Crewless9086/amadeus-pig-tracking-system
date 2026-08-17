@@ -561,6 +561,23 @@ active-work claim. PR #1024 predates current main and is not eligible for
 reconciliation, merge, deployment or owner preview during the serialized CORE
 activation window. Revenue Slot 3 remains unchanged.
 
+### CORE provider-origin activation blocker — 2026-08-17
+
+The exact `e3e35874` activation preflight completed with zero mutation and
+correctly refused activation. The reviewed governed-resume path archives the
+stop marker and immediately starts the supervisor with `subprocess.Popen()` from
+the invoking terminal, while the scheduled watchdog path refuses persisted
+observe-only recovery. No reviewed path therefore allows the exact scheduled
+provider to originate an observe-only supervisor without terminal ancestry or
+manual stop-marker bypass. CORE remains `ACTIVATION_BLOCKED_SAFE /
+ZERO_MUTATION`; exact staging remains intact. This is a reusable Slot 1 operating-
+spine defect, not a separate business mission. Historical observe-only/startup
+worktrees are over 1,100 commits behind current main and supply no current
+authority. The next bounded source mission must implement a serialized,
+task-digest-bound provider-origin activation contract, fail-closed rollback and
+duplicate-start proof, then reconcile, review, merge, restage and separately
+authorize activation.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
