@@ -345,9 +345,13 @@ def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None
     now = _aware(now or datetime.now(timezone.utc))
     refresh = None
     if candidates is None:
-        from modules.oom_sakkie.manager_case_sources import collect_manager_candidates
+        from modules.oom_sakkie.manager_case_sources import (
+            collect_manager_candidate, collect_manager_candidates)
         candidates = collect_manager_candidates(now=now, collectors=collectors)
         def refresh(case):
+            if collectors is None:
+                return collect_manager_candidate(now=datetime.now(timezone.utc),
+                    dedupe_key=case["dedupe_key"], specialist=case["specialist"])
             current = collect_manager_candidates(
                 now=datetime.now(timezone.utc), collectors=collectors)
             return next((row for row in current

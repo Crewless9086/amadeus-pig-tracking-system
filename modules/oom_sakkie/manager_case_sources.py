@@ -29,6 +29,20 @@ def collect_manager_candidates(*, now: datetime, collectors=None):
     return result
 
 
+def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str):
+    """Refresh one case from only its canonical owning collector."""
+    prefix = str(dedupe_key or "").split(":", 1)[0].casefold()
+    collector = {
+        "rootline": _rootline, "herdmaster": _herdmaster, "sam": _sam,
+        "beacon": _beacon, "delivery": _delivery_gaps, "runtime": _runtime,
+    }.get(prefix)
+    if collector is None:
+        return None
+    rows = collect_manager_candidates(now=now, collectors=(collector,))
+    return next((row for row in rows
+                 if str(row.get("dedupe_key") or "") == str(dedupe_key)), None)
+
+
 def _rootline(now):
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:

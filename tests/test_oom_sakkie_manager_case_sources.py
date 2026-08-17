@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
-from modules.oom_sakkie.manager_case_sources import collect_manager_candidates
+from modules.oom_sakkie.manager_case_sources import (
+    collect_manager_candidate, collect_manager_candidates)
 
 
 NOW = datetime(2026, 8, 17, 10, 0, tzinfo=timezone.utc)
@@ -26,3 +27,15 @@ def test_collector_failure_becomes_one_owned_runtime_case():
     assert case["urgency"] == "urgent"
     assert case["evidence_refs"] == ["collector:beacon:RuntimeError"]
     assert "secret detail" not in str(case)
+
+
+def test_single_case_refresh_invokes_only_owning_collector(monkeypatch):
+    calls = []
+    def herdmaster(now):
+        calls.append("herdmaster")
+        return [{"dedupe_key": "herdmaster:weekly-weight-evidence"}]
+    monkeypatch.setattr("modules.oom_sakkie.manager_case_sources._herdmaster", herdmaster)
+    result = collect_manager_candidate(now=NOW,
+        dedupe_key="herdmaster:weekly-weight-evidence", specialist="HERDMASTER")
+    assert result == {"dedupe_key": "herdmaster:weekly-weight-evidence"}
+    assert calls == ["herdmaster"]
