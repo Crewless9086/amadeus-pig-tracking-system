@@ -908,9 +908,26 @@ def verify_provider_origin(inspector, *, expected_task):
     parent = ancestry[0]
     parent_name = Path(str(parent.get("executable_path") or "")).name.casefold()
     current_name = Path(str(current.get("executable_path") or "")).name.casefold()
-    if current_name != "pythonw.exe" or parent_name not in PROVIDER_PARENTS:
+    if (current_name != "pythonw.exe" or parent_name not in PROVIDER_PARENTS
+            or not parent.get("provider_identity_verified")):
         return {"authorized": False, "reason": "scheduled_provider_origin_required"}
     row = expected_task[0] if isinstance(expected_task, list) and len(expected_task) == 1 else {}
+    provider_action = {
+        "execute": str(parent.get("action_execute") or ""),
+        "arguments": str(parent.get("action_arguments") or ""),
+        "working_directory": str(parent.get("action_working_directory") or ""),
+    }
+    expected_action = {
+        "execute": str(row.get("execute") or ""),
+        "arguments": str(row.get("arguments") or ""),
+        "working_directory": str(row.get("working_directory") or ""),
+    }
+    if any(
+            str(Path(provider_action[field]).resolve()).casefold()
+            != str(Path(expected_action[field]).resolve()).casefold()
+            if field != "arguments" else provider_action[field] != expected_action[field]
+            for field in expected_action):
+        return {"authorized": False, "reason": "provider_task_action_mismatch"}
     current_executable = str(Path(str(current.get("executable_path") or "")).resolve()).casefold()
     expected_executable = str(Path(str(row.get("execute") or "")).resolve()).casefold()
     current_tokens = _command_tokens(current.get("command_line"))
@@ -924,7 +941,8 @@ def verify_provider_origin(inspector, *, expected_task):
             "parent_executable": parent_name}
 
 
-def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_identity=None):
+def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_identity=None,
+                                   provider_identity=None):
     """Inspect this process locally and only its exact parent PIDs through CIM."""
     requested_pid = int(pid or os.getpid())
     if current_identity is not None:
@@ -939,6 +957,15 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
             or any(not str(current.get(field) or "") for field in required[2:])):
         return {"inspection_complete": False, "reason": "provider_identity_unreadable"}
 
+    provider_reader = provider_identity or (
+        (lambda: _inspect_windows_task_scheduler_provider(requested_pid, runner=runner))
+        if os.name == "nt" else lambda: {"inspection_complete": False}
+    )
+    provider = provider_reader()
+    if (not _valid_task_scheduler_provider(provider)
+            or int(provider.get("engine_pid") or -1) != requested_pid):
+        return {"inspection_complete": False, "reason": "provider_identity_unreadable"}
+
     chain = []
     next_pid = int(current.get("parent_pid") or 0)
     seen = {requested_pid}
@@ -949,6 +976,24 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
             break
         if next_pid in seen:
             return {"inspection_complete": False, "reason": "provider_ancestry_cycle"}
+        if next_pid == int(provider["pid"]):
+            provider_again = provider_reader()
+            stable_provider_fields = (
+                "pid", "creation_time", "service_name", "service_state",
+                "start_name", "executable_path", "service_binary_path", "service_dll",
+                "system_root",
+                "engine_pid", "instance_guid", "task_path", "current_action",
+                "action_execute", "action_arguments", "action_working_directory",
+            )
+            if (not _valid_task_scheduler_provider(provider_again) or any(
+                    str(provider_again.get(field) or "").casefold()
+                    != str(provider.get(field) or "").casefold()
+                    for field in stable_provider_fields)):
+                return {"inspection_complete": False, "reason": "provider_ancestry_changed"}
+            chain.append({key: value for key, value in provider.items()
+                          if key != "inspection_complete"})
+            terminated = True
+            break
         item = _inspect_exact_process(next_pid, runner=runner)
         if (not item.get("inspection_complete") or int(item.get("pid") or -1) != next_pid
                 or not str(item.get("executable_path") or "")
@@ -964,14 +1009,152 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
 
     # A second exact read binds the immediate provider identity across the
     # inspection window and fails closed if a PID was reused or reparented.
-    parent_again = _inspect_exact_process(int(current["parent_pid"]), runner=runner)
-    stable_fields = ("pid", "parent_pid", "executable_path", "creation_time")
-    if (not parent_again.get("inspection_complete") or any(
-            str(parent_again.get(field) or "").casefold()
-            != str(chain[0].get(field) or "").casefold()
-            for field in stable_fields)):
-        return {"inspection_complete": False, "reason": "provider_ancestry_changed"}
+    if not chain[0].get("provider_identity_verified"):
+        parent_again = _inspect_exact_process(int(current["parent_pid"]), runner=runner)
+        stable_fields = ("pid", "parent_pid", "executable_path", "creation_time")
+        if (not parent_again.get("inspection_complete") or any(
+                str(parent_again.get(field) or "").casefold()
+                != str(chain[0].get(field) or "").casefold()
+                for field in stable_fields)):
+            return {"inspection_complete": False, "reason": "provider_ancestry_changed"}
     return {**current, "inspection_complete": True, "ancestry": chain}
+
+
+def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
+                                             process_creation_time=None):
+    """Bind this PID to one Task Scheduler instance and its exact service."""
+    script = (
+        "$ErrorActionPreference='Stop';"
+        "$q=(& sc.exe queryex Schedule 2>&1|Out-String);"
+        "$c=(& sc.exe qc Schedule 2>&1|Out-String);"
+        "if($LASTEXITCODE-ne 0){exit 4};"
+        "$providerPid=[int]([regex]::Match($q,'(?m)^\\s*PID\\s*:\\s*(\\d+)\\s*$').Groups[1].Value);"
+        "$state=[regex]::Match($q,'(?m)^\\s*STATE\\s*:\\s*\\d+\\s+(\\S+)').Groups[1].Value;"
+        "$binary=[regex]::Match($c,'(?m)^\\s*BINARY_PATH_NAME\\s*:\\s*(.+?)\\s*$').Groups[1].Value;"
+        "$start=[regex]::Match($c,'(?m)^\\s*SERVICE_START_NAME\\s*:\\s*(.+?)\\s*$').Groups[1].Value;"
+        "if($providerPid-le 0-or-not$binary){exit 5};"
+        "$ts=New-Object -ComObject 'Schedule.Service';$ts.Connect();"
+        "$task=$ts.GetFolder('\\').GetTask('" + TASK_NAME.replace("'", "''") + "');"
+        "$instances=@($task.GetInstances(0)|Where-Object {[int]$_.EnginePID-eq" + str(int(engine_pid)) + "});"
+        "if($instances.Count-ne 1){exit 6};$instance=$instances[0];$instance.Refresh();"
+        "$actions=@($task.Definition.Actions);if($actions.Count-ne 1-or[int]$actions[0].Type-ne 0){exit 7};"
+        "$action=$actions[0];"
+        "$dll=(Get-ItemProperty -LiteralPath "
+        "'Registry::HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Schedule\\Parameters' "
+        "-Name ServiceDll).ServiceDll;"
+        "$root=(Get-ItemProperty -LiteralPath "
+        "'Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion' "
+        "-Name SystemRoot).SystemRoot;"
+        "[pscustomobject]@{ProcessId=$providerPid;"
+        "Name='Schedule';State=$state;StartName=$start;PathName=$binary;"
+        "EnginePID=[int]$instance.EnginePID;InstanceGuid=[string]$instance.InstanceGuid;"
+        "TaskPath=[string]$instance.Path;CurrentAction=[string]$instance.CurrentAction;"
+        "ActionExecute=[string]$action.Path;ActionArguments=[string]$action.Arguments;"
+        "ActionWorkingDirectory=[string]$action.WorkingDirectory;"
+        "ServiceDll=[Environment]::ExpandEnvironmentVariables($dll);SystemRoot=$root}"
+        "|ConvertTo-Json -Compress"
+    )
+    completed = runner(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    if completed.returncode:
+        return {"inspection_complete": False}
+    try:
+        row = json.loads(completed.stdout)
+        creation_time = (process_creation_time or _windows_process_creation_time)(
+            int(row["ProcessId"])
+        )
+        if not creation_time:
+            return {"inspection_complete": False}
+        binary_tokens = _command_tokens(row.get("PathName"))
+        return {
+            "inspection_complete": True,
+            "pid": int(row["ProcessId"]),
+            "creation_time": str(creation_time),
+            "service_name": str(row.get("Name") or ""),
+            "service_state": str(row.get("State") or ""),
+            "start_name": str(row.get("StartName") or ""),
+            "executable_path": binary_tokens[0] if binary_tokens else "",
+            "service_binary_path": str(row.get("PathName") or ""),
+            "service_dll": str(row.get("ServiceDll") or ""),
+            "system_root": str(row.get("SystemRoot") or ""),
+            "engine_pid": int(row.get("EnginePID") or 0),
+            "instance_guid": str(row.get("InstanceGuid") or ""),
+            "task_path": str(row.get("TaskPath") or ""),
+            "current_action": str(row.get("CurrentAction") or ""),
+            "action_execute": str(row.get("ActionExecute") or ""),
+            "action_arguments": str(row.get("ActionArguments") or ""),
+            "action_working_directory": str(row.get("ActionWorkingDirectory") or ""),
+            "provider_identity_verified": True,
+        }
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return {"inspection_complete": False}
+
+
+def _valid_task_scheduler_provider(value):
+    if not isinstance(value, dict) or not value.get("inspection_complete"):
+        return False
+    required = ("pid", "creation_time", "service_name", "service_state",
+                "start_name", "executable_path", "service_binary_path", "service_dll",
+                "system_root", "engine_pid", "instance_guid", "task_path",
+                "current_action", "action_execute", "action_working_directory")
+    if int(value.get("pid") or 0) <= 0 or any(
+            not str(value.get(field) or "") for field in required[1:]):
+        return False
+    binary_tokens = _command_tokens(value.get("service_binary_path"))
+    expected_executable = Path(str(value["system_root"])) / "System32" / "svchost.exe"
+    expected_dll = Path(str(value["system_root"])) / "System32" / "schedsvc.dll"
+    return bool(
+        value.get("provider_identity_verified")
+        and str(value["service_name"]).casefold() == "schedule"
+        and str(value["service_state"]).casefold() == "running"
+        and str(value["start_name"]).casefold() in {"localsystem", "local system"}
+        and len(binary_tokens) >= 4
+        and str(Path(binary_tokens[0])).casefold()
+        == str(Path(str(value["executable_path"]))).casefold()
+        and str(Path(binary_tokens[0])).casefold() == str(expected_executable).casefold()
+        and binary_tokens[1:] == ["-k", "netsvcs", "-p"]
+        and str(Path(str(value["service_dll"]))).casefold() == str(expected_dll).casefold()
+        and int(value["engine_pid"]) > 0
+        and re.fullmatch(r"\{?[0-9a-fA-F-]{36}\}?", str(value["instance_guid"]))
+        and str(value["task_path"]).casefold() == ("\\" + TASK_NAME).casefold()
+    )
+
+
+def _windows_process_creation_time(pid):
+    """Read one exact Windows PID's kernel creation timestamp without enumeration."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.GetProcessTimes.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME),
+            ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME),
+        ]
+        kernel32.GetProcessTimes.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.OpenProcess(0x1000, False, int(pid))
+        if not handle:
+            return ""
+        try:
+            created = wintypes.FILETIME()
+            exited = wintypes.FILETIME()
+            kernel = wintypes.FILETIME()
+            user = wintypes.FILETIME()
+            if not kernel32.GetProcessTimes(
+                    handle, ctypes.byref(created), ctypes.byref(exited),
+                    ctypes.byref(kernel), ctypes.byref(user)):
+                return ""
+            return str((int(created.dwHighDateTime) << 32) | int(created.dwLowDateTime))
+        finally:
+            kernel32.CloseHandle(handle)
+    except (AttributeError, OSError, TypeError, ValueError):
+        return ""
 
 
 def _local_current_process_identity():
