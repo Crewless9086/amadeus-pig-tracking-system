@@ -4296,7 +4296,7 @@ def _live_stock_sale_eligibility(pig, thresholds=None):
     if _is_breeding_or_retained_stage(animal_type, calculated_stage):
         return _live_stock_sale_block("breeding_or_retained", "Breeding and retained animals are excluded from SAM Live stock sales.")
     if withdrawal_state not in {"not_applicable", "cleared"}:
-        return _live_stock_sale_block("withdrawal_evidence_blocked", "Withdrawal evidence is held or incomplete.", withdrawal_clear, withdrawal_state)
+        return _live_stock_sale_block("live_transfer_evidence_unknown", "Food-chain withdrawal alone does not prohibit live transfer, but current live-transfer fitness and movement evidence is not affirmatively clear.", withdrawal_clear, withdrawal_state)
     if any(token in health_status for token in ("sick", "injured", "quarantine", "hold")):
         return _live_stock_sale_block("health_hold", "Pig health status blocks SAM Live stock sales.", withdrawal_clear)
     if medical_status != "clear":

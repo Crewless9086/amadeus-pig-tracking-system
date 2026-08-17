@@ -63,6 +63,9 @@ from modules.orders.order_validation import (
     validate_update_order_line_payload,
     validate_sync_order_lines_payload,
 )
+from modules.orders.livestock_quote_preview import build_livestock_quote_preview
+from modules.pig_weights.pig_weights_service import get_pig_allocation_readiness
+from modules.auth.owner_access import require_owner_read_access
 from modules.orders.order_shadow_read import compare_shadow_order
 from modules.sales.sam_live_stock_sales_pack import prepare_live_stock_sales_pack
 
@@ -229,6 +232,37 @@ def available_pigs():
         "count": len(pigs),
         "pigs": pigs,
     })
+
+
+@orders_bp.route("/orders/livestock-quote-preview", methods=["POST"])
+def livestock_quote_preview():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "errors": ["JSON body must be an object."], "writes_performed": False}), 400
+    requested_items = payload.get("requested_items", [])
+    if isinstance(requested_items, list) and len(requested_items) > 20:
+        return jsonify({"success": False, "errors": ["Preview requests are limited to 20 lines and 100 pigs per line."], "writes_performed": False}), 400
+    validation = validate_sync_order_lines_payload({"requested_items": requested_items})
+    if not validation["is_valid"]:
+        return jsonify({"success": False, "errors": validation["errors"], "writes_performed": False}), 400
+    if any(item["quantity"] > 100 for item in validation["cleaned_data"]["requested_items"]):
+        return jsonify({"success": False, "errors": ["Preview requests are limited to 20 lines and 100 pigs per line."], "writes_performed": False}), 400
+    try:
+        allocation = get_pig_allocation_readiness()
+        if not isinstance(allocation, dict) or allocation.get("success") is False:
+            return jsonify({"success": False, "errors": ["Preview evidence is currently unavailable."], "writes_performed": False}), 503
+        pigs = allocation.get("pigs", []) if isinstance(allocation, dict) else []
+        return jsonify(build_livestock_quote_preview(
+            validation["cleaned_data"]["requested_items"], pigs,
+            observed_at=allocation.get("generated_date") if isinstance(allocation, dict) else None,
+            evidence_source=allocation.get("source") if isinstance(allocation, dict) else None,
+        )), 200
+    except Exception as exc:
+        logger.exception("Livestock quote preview failed")
+        return jsonify({"success": False, "errors": ["Preview evidence is currently unavailable."], "writes_performed": False}), 503
 
 
 @orders_bp.route("/orders/<order_id>/reserve", methods=["POST"])

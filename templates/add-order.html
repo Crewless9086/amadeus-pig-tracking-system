@@ -11,8 +11,8 @@
     <div class="page-card">
       <div class="page-header page-header-with-link">
         <div>
-          <h1>Create Order</h1>
-          <p>Create a draft order in ORDER_MASTER.</p>
+          <h1>Livestock request &amp; draft quote preview</h1>
+          <p>Capture the customer request once. Previewing does not create an order or attach pigs.</p>
         </div>
         <a href="/orders" class="secondary-link">← Orders</a>
       </div>
@@ -72,41 +72,10 @@
           </div>
         </div>
 
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="order_stream">Sales stream</label>
-            <select id="order_stream" name="order_stream" required>
-                <option value="Livestock">Livestock</option>
-                <option value="Meat">Meat</option>
-                <option value="Slaughter">Slaughter</option>
-            </select>
-
-            <label for="requested_category">Requested Category</label>
-            <input id="requested_category" name="requested_category" type="text" />
-          </div>
-
-          <div class="form-group">
-            <label for="requested_weight_range">Requested Weight Range</label>
-            <input id="requested_weight_range" name="requested_weight_range" type="text" />
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="requested_sex">Requested Sex</label>
-            <select id="requested_sex" name="requested_sex">
-              <option value="">Any</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Castrated_Male">Castrated_Male</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="requested_quantity">Requested Quantity</label>
-            <input id="requested_quantity" name="requested_quantity" type="number" step="1" />
-          </div>
-        </div>
+        <section class="operation-section">
+          <div class="section-title-row"><div><h2>Customer request</h2><p>Requested quantities only — no animal selection or reservation.</p></div><button id="add_request_line" type="button" class="small-action-button">Add line</button></div>
+          <div id="requested_items_editor"></div>
+        </section>
 
         <div class="form-grid">
           <div class="form-group">
@@ -126,10 +95,11 @@
         </div>
 
         <div class="form-actions">
-          <button type="submit">Create Draft Order</button>
+          <button type="submit">Build local draft quote preview</button>
         </div>
 
         <div id="add_order_message" class="message-box hidden"></div>
+        <section id="livestock_preview" class="operation-section hidden" aria-live="polite"></section>
       </form>
     </div>
   </div>
