@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import re
+import shlex
 import subprocess
 import uuid
 from datetime import datetime, timezone
@@ -15,8 +16,9 @@ from pathlib import Path
 
 from modules.charlie.runtime_staging import read_watchdog_task
 from modules.charlie.process_ownership import (
+    normalize_command_fingerprint,
     process_tree_identity_digest,
-    validate_live_bootstrap_tree,
+    validate_bootstrap_tree,
     verify_controller_acknowledgement,
 )
 
@@ -87,6 +89,8 @@ def plan_activation(*, authority_path, authority_sha256, state_root,
     if manifest.get("validation_receipt_sha256") != receipt_sha:
         raise ActivationError("activation_manifest_receipt_mismatch")
     _validate_exact_task(task, runtime_root)
+    if runtime["head"] != execution["head"]:
+        raise ActivationError("activation_staged_revisions_disagree")
     plan = {
         "version": ACTIVATION_VERSION,
         "status": "activation_plan_ready",
@@ -100,6 +104,7 @@ def plan_activation(*, authority_path, authority_sha256, state_root,
         "key_sha256": _sha256(key_path),
         "runtime": runtime,
         "execution": execution,
+        "task_ownership": task,
         "manifest_bytes_b64": base64.b64encode(manifest_path.read_bytes()).decode("ascii"),
         **expected,
         "zero_effect": True,
@@ -128,6 +133,11 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
     packet_path = state_root / "activation-packet.json"
     stop_path = state_root / "supervisor.stop"
     archive_path = state_root / f"supervisor.stop.activation-{activation_id}"
+    for historical in (rollback_path, packet_path, archive_path,
+                       state_root / f"activation-consumed-{activation_id}.json"):
+        if historical.exists():
+            lane_path.replace(ledger / f"{activation_id}-replay-refused-lane.json")
+            raise ActivationError("activation_identity_already_used", path=str(historical))
     rollback = {
         "version": ACTIVATION_VERSION, "activation_id": activation_id,
         "status": "activation_rollback_recorded", "recorded_at": _now(now),
@@ -136,22 +146,32 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
         "task_action_sha256": plan["task_action_sha256"],
         "task_prior_state": "Disabled", "authority_sha256": plan["authority_sha256"],
     }
-    _atomic_json(rollback_path, rollback)
+    rollback["rollback_hmac_sha256"] = _sign_record(rollback, _read_key(state_root / "activation-authority.key"), "rollback_hmac_sha256")
     packet = {
         "version": ACTIVATION_VERSION, "status": "provider_pending",
         "activation_id": activation_id, "authority": plan["authority"],
+        "authority_path": plan["authority_path"],
         "authority_sha256": plan["authority_sha256"], "prepared_at": _now(now),
         "runtime_root": plan["runtime_root"], "execution_root": plan["execution_root"],
+        "task_ownership": plan["task_ownership"],
     }
     packet["packet_hmac_sha256"] = _sign_packet(packet, _read_key(state_root / "activation-authority.key"))
-    _atomic_json(packet_path, packet)
     try:
+        if (state_root / "release-staging.lock").exists():
+            raise ActivationError("release_lane_active")
+        _atomic_json(rollback_path, rollback)
+        _atomic_json(packet_path, packet)
         if _sha256(stop_path) != plan["stop_marker_sha256"]:
             raise ActivationError("governed_stop_changed_before_archive")
         stop_path.replace(archive_path)
+        if hasattr(task_controller, "bind_exact"):
+            task_controller.bind_exact(plan["task_ownership"])
         task_controller.enable_and_trigger_exact(plan["task_action_sha256"])
     except Exception:
-        _recover_prepare_failure(state_root, plan, task_controller, archive_path, stop_path)
+        if rollback_path.exists():
+            _recover_prepare_failure(state_root, plan, task_controller, archive_path, stop_path)
+        elif lane_path.exists():
+            lane_path.replace(ledger / f"{activation_id}-prepare-write-failed-lane.json")
         raise
     return {
         "success": True, "status": "provider_activation_requested",
@@ -162,12 +182,16 @@ def prepare_activation(plan, *, task_controller, task_reader=read_watchdog_task,
 
 
 def consume_provider_activation(*, state_root, starter, task_reader=read_watchdog_task,
-                                provider_inspector=None, git_runner=subprocess.run, now=None):
+                                provider_inspector=None, git_runner=subprocess.run,
+                                task_controller=None, now=None):
     state_root = Path(state_root).resolve()
     packet_path = state_root / "activation-packet.json"
     packet = _read_json(packet_path, "activation_packet_invalid")
     _validate_packet(packet, state_root, task_reader, git_runner=git_runner, now=now)
-    provider = verify_provider_origin(provider_inspector or inspect_current_provider_chain)
+    provider = verify_provider_origin(
+        provider_inspector or inspect_current_provider_chain,
+        expected_task=packet["task_ownership"],
+    )
     if not provider.get("authorized"):
         raise ActivationError(provider.get("reason") or "provider_origin_invalid")
     consumed_path = state_root / f"activation-consumed-{packet['activation_id']}.json"
@@ -181,6 +205,11 @@ def consume_provider_activation(*, state_root, starter, task_reader=read_watchdo
     os.environ["CHARLIE_ACTIVATION_ID"] = packet["activation_id"]
     try:
         result, status_code = starter(execution_mode=MODE)
+    except Exception as exc:
+        if task_controller is not None:
+            recover_activation(state_root=state_root, task_controller=task_controller,
+                               activation_id=packet["activation_id"])
+        raise ActivationError("provider_start_failed", error_type=exc.__class__.__name__) from exc
     finally:
         if previous is None:
             os.environ.pop("CHARLIE_ACTIVATION_ID", None)
@@ -192,6 +221,9 @@ def consume_provider_activation(*, state_root, starter, task_reader=read_watchdo
     updated["packet_hmac_sha256"] = _sign_packet(updated, _read_key(state_root / "activation-authority.key"))
     _atomic_json(packet_path, updated)
     if status_code >= 300:
+        if task_controller is not None:
+            recover_activation(state_root=state_root, task_controller=task_controller,
+                               activation_id=packet["activation_id"])
         raise ActivationError("provider_start_failed", start_result=result)
     return {"success": True, "status": status, "activation_id": packet["activation_id"],
             "terminal_spawned_core": False, "provider": provider, "start_result": result}
@@ -202,9 +234,17 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
                                  git_runner=subprocess.run, now=None):
     state_root = Path(state_root).resolve()
     packet = _read_json(state_root / "activation-packet.json", "activation_packet_invalid")
-    _validate_packet(packet, state_root, task_reader, git_runner=git_runner,
-                     now=now, allow_consumed=True)
-    evidence = verification_reader(packet)
+    try:
+        _validate_packet(packet, state_root, task_reader, git_runner=git_runner,
+                         now=now, allow_consumed=True, allow_expired=True)
+        if _parse_time(packet["authority"].get("expires_at")) <= (now or datetime.now(timezone.utc)):
+            raise ActivationError("activation_authority_expired")
+        evidence = verification_reader(packet)
+    except Exception as exc:
+        recover_activation(state_root=state_root, task_controller=task_controller,
+                           activation_id=str(packet.get("activation_id") or ""))
+        raise ActivationError("activation_verification_failed",
+                              evidence_status=getattr(exc, "status", exc.__class__.__name__)) from exc
     required = (
         "loaded_revision_exact", "execution_mode_observe_only",
         "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
@@ -215,6 +255,7 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
         archive = state_root / "activation-ledger" / f"{packet['activation_id']}-lane.json"
         lane.replace(archive)
         _atomic_json(state_root / "activation-ledger" / f"{packet['activation_id']}-verified.json", evidence)
+        _archive_activation_artifacts(state_root, packet["activation_id"], "verified")
         return {"success": True, "status": "activation_verified", "evidence": evidence}
     recover_activation(state_root=state_root, task_controller=task_controller,
                        activation_id=packet["activation_id"])
@@ -222,7 +263,7 @@ def verify_or_recover_activation(*, state_root, verification_reader, task_contro
 
 
 def read_activation_runtime_evidence(packet, *, state_root, now=None,
-                                     live_validator=validate_live_bootstrap_tree):
+                                     live_validator=None):
     """Validate exact signed runtime evidence; never infer ownership by name."""
     state_root = Path(state_root)
     supervisor = _read_json(state_root / "supervisor.json", "supervisor_state_invalid")
@@ -250,6 +291,7 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
     )
     supervisor_tree = supervisor.get("supervisor_tree_identity")
     runner_tree = supervisor.get("process_tree_identity")
+    live_validator = live_validator or _bounded_validate_live_tree
     supervisor_live = live_validator(
         supervisor_tree,
         generation=str(supervisor.get("generation") or ""),
@@ -274,7 +316,11 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
         heartbeat_fresh = False
     unrelated_absent = bool(
         supervisor_live.get("authorized") and runner_live.get("authorized")
-        and set(runner_live.get("member_pids") or []).issubset(set(supervisor_live.get("member_pids") or []))
+        and not any(
+            Path(str(item.get("executable_path") or "")).name.casefold() in PROTECTED_ANCESTRY
+            for item in [*(supervisor_tree or {}).get("members", []), *(runner_tree or {}).get("members", [])]
+            if isinstance(item, dict)
+        )
     )
     return {
         "loaded_revision_exact": revision_exact,
@@ -292,6 +338,62 @@ def read_activation_runtime_evidence(packet, *, state_root, now=None,
     }
 
 
+def _bounded_validate_live_tree(tree, *, generation, revision, startup_nonce,
+                                allowed_descendant_tree=None,
+                                inspector=None):
+    static = validate_bootstrap_tree(
+        tree, generation=generation, revision=revision,
+        startup_nonce=startup_nonce, require_interpreter=True,
+    )
+    if not static.get("authorized"):
+        return static
+    inspector = inspector or _inspect_exact_process
+    members = tree.get("members") if isinstance(tree, dict) else []
+    for record in members:
+        current = inspector(int(record.get("pid") or -1))
+        if not isinstance(current, dict) or not current.get("inspection_complete"):
+            return {"authorized": False, "reason": "owned_pid_inspection_failed"}
+        checks = (
+            int(current.get("pid") or -1) == int(record.get("pid") or -2),
+            int(current.get("parent_pid") or -1) == int(record.get("parent_pid") or -2),
+            str(current.get("creation_time") or "") == str(record.get("creation_time") or ""),
+            str(Path(str(current.get("executable_path") or "")).resolve()).casefold()
+            == str(Path(str(record.get("executable_path") or "")).resolve()).casefold(),
+            normalize_command_fingerprint(current.get("command_line"))
+            == str(record.get("command_fingerprint") or ""),
+        )
+        if not all(checks):
+            return {"authorized": False, "reason": "owned_pid_identity_changed"}
+    return {"authorized": True, "reason": "exact_owned_members_live",
+            "member_pids": sorted(int(item["pid"]) for item in members)}
+
+
+def _inspect_exact_process(pid, runner=subprocess.run):
+    script = (
+        "$ErrorActionPreference='Stop';"
+        f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId={int(pid)}\";"
+        "if($null-eq$p){exit 4};"
+        "$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,CreationDate,CommandLine|ConvertTo-Json -Compress"
+    )
+    completed = runner(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    if completed.returncode:
+        return {"inspection_complete": False}
+    try:
+        row = json.loads(completed.stdout)
+        return {
+            "inspection_complete": True, "pid": int(row["ProcessId"]),
+            "parent_pid": int(row["ParentProcessId"]),
+            "executable_path": str(row.get("ExecutablePath") or ""),
+            "creation_time": str(row.get("CreationDate") or ""),
+            "command_line": str(row.get("CommandLine") or ""),
+        }
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return {"inspection_complete": False}
+
+
 def recover_activation(*, state_root, task_controller, activation_id):
     state_root = Path(state_root).resolve()
     lane = _read_json(state_root / "activation.lock", "activation_lane_missing")
@@ -301,6 +403,24 @@ def recover_activation(*, state_root, task_controller, activation_id):
         state_root / "activation-ledger" / f"{activation_id}-rollback.json",
         "activation_rollback_missing",
     )
+    packet = _read_json(state_root / "activation-packet.json", "activation_packet_invalid")
+    key = _read_key(state_root / "activation-authority.key")
+    if not hmac.compare_digest(
+        str(rollback.get("rollback_hmac_sha256") or ""),
+        _sign_record(rollback, key, "rollback_hmac_sha256"),
+    ):
+        raise ActivationError("activation_rollback_signature_invalid")
+    authority = packet.get("authority") if isinstance(packet.get("authority"), dict) else {}
+    if any((
+        rollback.get("version") != ACTIVATION_VERSION,
+        rollback.get("activation_id") != activation_id,
+        rollback.get("authority_sha256") != packet.get("authority_sha256"),
+        rollback.get("stop_marker_sha256") != authority.get("stop_marker_sha256"),
+        rollback.get("task_action_sha256") != authority.get("task_action_sha256"),
+    )):
+        raise ActivationError("activation_rollback_binding_invalid")
+    if hasattr(task_controller, "bind_exact"):
+        task_controller.bind_exact(packet.get("task_ownership"))
     errors = []
     try:
         task_controller.disable_exact(rollback["task_action_sha256"])
@@ -324,10 +444,11 @@ def recover_activation(*, state_root, task_controller, activation_id):
         raise ActivationError("activation_recovery_incomplete", errors=errors)
     lane_path = state_root / "activation.lock"
     lane_path.replace(state_root / "activation-ledger" / f"{activation_id}-lane-recovered.json")
+    _archive_activation_artifacts(state_root, activation_id, "recovered")
     return {"success": True, "status": "activation_recovered", "activation_id": activation_id}
 
 
-def verify_provider_origin(inspector):
+def verify_provider_origin(inspector, *, expected_task):
     current = inspector(os.getpid())
     if not isinstance(current, dict) or not current.get("inspection_complete"):
         return {"authorized": False, "reason": "provider_identity_incomplete"}
@@ -342,6 +463,15 @@ def verify_provider_origin(inspector):
     current_name = Path(str(current.get("executable_path") or "")).name.casefold()
     if current_name != "pythonw.exe" or parent_name not in PROVIDER_PARENTS:
         return {"authorized": False, "reason": "scheduled_provider_origin_required"}
+    row = expected_task[0] if isinstance(expected_task, list) and len(expected_task) == 1 else {}
+    current_executable = str(Path(str(current.get("executable_path") or "")).resolve()).casefold()
+    expected_executable = str(Path(str(row.get("execute") or "")).resolve()).casefold()
+    current_tokens = _command_tokens(current.get("command_line"))
+    expected_tokens = _command_tokens(str(row.get("arguments") or ""))
+    if (current_executable != expected_executable or not current_tokens
+            or str(Path(current_tokens[0]).resolve()).casefold() != expected_executable
+            or current_tokens[1:] != expected_tokens):
+        return {"authorized": False, "reason": "provider_task_action_mismatch"}
     return {"authorized": True, "reason": "scheduled_provider_origin_verified",
             "pid": int(current["pid"]), "parent_pid": int(current["parent_pid"]),
             "parent_executable": parent_name}
@@ -389,6 +519,12 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run):
 class WindowsExactTaskController:
     def __init__(self, task_reader=read_watchdog_task, runner=subprocess.run):
         self.task_reader, self.runner = task_reader, runner
+        self.expected_task = None
+
+    def bind_exact(self, rows):
+        if not isinstance(rows, list) or len(rows) != 1:
+            raise ActivationError("scheduled_task_ownership_ambiguous")
+        self.expected_task = rows
 
     def enable_and_trigger_exact(self, digest):
         self._mutate(digest, "Enable-ScheduledTask -InputObject $t|Out-Null")
@@ -403,14 +539,26 @@ class WindowsExactTaskController:
     def _mutate(self, digest, action):
         if _task_action_sha256(self.task_reader()) != digest:
             raise ActivationError("scheduled_task_identity_changed")
-        script = "$ErrorActionPreference='Stop';$t=Get-ScheduledTask -TaskName 'CHARLIE CORE Runner Watchdog';" + action
+        if not self.expected_task:
+            raise ActivationError("scheduled_task_binding_missing")
+        encoded = base64.b64encode(_canonical(self.expected_task[0])).decode("ascii")
+        script = (
+            "$ErrorActionPreference='Stop';"
+            f"$e=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded}'))|ConvertFrom-Json;"
+            "$ts=@(Get-ScheduledTask -TaskName $e.task_name -TaskPath $e.task_path);"
+            "if($ts.Count-ne 1){throw 'task identity ambiguous'};$t=$ts[0];$a=@($t.Actions);"
+            "if($a.Count-ne 1-or[string]$a[0].Execute-ne[string]$e.execute-or"
+            "[string]$a[0].Arguments-ne[string]$e.arguments-or"
+            "[string]$a[0].WorkingDirectory-ne[string]$e.working_directory){throw 'task action changed'};"
+            + action
+        )
         completed = self.runner(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
                                 capture_output=True, text=True, timeout=30, check=False)
         if completed.returncode != 0:
             raise ActivationError("scheduled_task_provider_mutation_failed")
 
 
-def _validate_authority(authority, key, now=None):
+def _validate_authority(authority, key, now=None, allow_expired=False):
     signature = str(authority.get("signature_hmac_sha256") or "")
     unsigned = {k: v for k, v in authority.items() if k != "signature_hmac_sha256"}
     expected = hmac.new(key, _canonical(unsigned), hashlib.sha256).hexdigest()
@@ -420,7 +568,7 @@ def _validate_authority(authority, key, now=None):
             or authority.get("issuer") != "control_tower_activation_authority_v1"
             or not re.fullmatch(r"[0-9a-f]{32}", str(authority.get("activation_id") or ""))
             or not hmac.compare_digest(signature, expected)
-            or expiry <= current.astimezone(timezone.utc)
+            or (not allow_expired and expiry <= current.astimezone(timezone.utc))
             or authority.get("execution_mode") != MODE):
         raise ActivationError("activation_authority_not_valid")
 
@@ -454,15 +602,37 @@ def _validate_pre_mutation(plan, *, task_reader, git_runner):
 
 
 def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
-                     now=None, allow_consumed=False):
+                     now=None, allow_consumed=False, allow_expired=False):
     key = _read_key(state_root / "activation-authority.key")
     signature = packet.get("packet_hmac_sha256")
     if not hmac.compare_digest(str(signature or ""), _sign_packet(packet, key)):
         raise ActivationError("activation_packet_signature_invalid")
+    authority = packet.get("authority") if isinstance(packet.get("authority"), dict) else {}
+    if (packet.get("version") != ACTIVATION_VERSION
+            or packet.get("activation_id") != authority.get("activation_id")):
+        raise ActivationError("activation_packet_binding_invalid")
     if packet.get("status") not in ({"provider_pending", "provider_started_observe_only"} if allow_consumed else {"provider_pending"}):
         raise ActivationError("activation_packet_replayed")
-    _validate_authority(packet["authority"], key, now=now)
-    authority = packet["authority"]
+    _validate_authority(authority, key, now=now, allow_expired=allow_expired)
+    if (_sha256(packet.get("authority_path")) != packet.get("authority_sha256")
+            or Path(packet.get("runtime_root", "")).resolve() != state_root / "core-runtime-current"
+            or Path(packet.get("execution_root", "")).resolve() != state_root / "core-execution-current"):
+        raise ActivationError("activation_packet_authority_or_roots_invalid")
+    lane = _read_json(state_root / "activation.lock", "activation_lane_missing")
+    rollback = _read_json(
+        state_root / "activation-ledger" / f"{packet['activation_id']}-rollback.json",
+        "activation_rollback_missing",
+    )
+    if lane.get("activation_id") != packet["activation_id"]:
+        raise ActivationError("activation_lane_identity_mismatch")
+    if (not hmac.compare_digest(
+            str(rollback.get("rollback_hmac_sha256") or ""),
+            _sign_record(rollback, key, "rollback_hmac_sha256"))
+            or rollback.get("activation_id") != packet["activation_id"]
+            or rollback.get("authority_sha256") != packet.get("authority_sha256")
+            or rollback.get("stop_marker_sha256") != authority.get("stop_marker_sha256")
+            or rollback.get("task_action_sha256") != authority.get("task_action_sha256")):
+        raise ActivationError("activation_rollback_binding_invalid")
     manifest_path = state_root / "runtime-manifest.json"
     if _sha256(manifest_path) != authority["manifest_sha256"]:
         raise ActivationError("activation_manifest_sha256_mismatch")
@@ -479,7 +649,9 @@ def _validate_packet(packet, state_root, task_reader, git_runner=subprocess.run,
 
 
 def _validate_exact_task(rows, runtime_root):
-    if not isinstance(rows, list) or len(rows) != 1 or rows[0].get("task_name") != TASK_NAME:
+    if (not isinstance(rows, list) or len(rows) != 1
+            or rows[0].get("task_name") != TASK_NAME
+            or str(rows[0].get("task_path") or "") != "\\"):
         raise ActivationError("scheduled_task_ownership_ambiguous")
     if int(rows[0].get("action_count") or 0) != 1 or str(rows[0].get("state")) != "Disabled":
         raise ActivationError("scheduled_task_not_exact_disabled")
@@ -573,6 +745,30 @@ def _task_action_sha256(rows):
 
 def _canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _command_tokens(value):
+    try:
+        return [token.strip('"') for token in shlex.split(str(value or ""), posix=False)]
+    except ValueError:
+        return []
+
+
+def _sign_record(record, key, signature_field):
+    unsigned = {k: v for k, v in record.items() if k != signature_field}
+    return hmac.new(key, _canonical(unsigned), hashlib.sha256).hexdigest()
+
+
+def _archive_activation_artifacts(state_root, activation_id, suffix):
+    ledger = Path(state_root) / "activation-ledger"
+    ledger.mkdir(parents=True, exist_ok=True)
+    for path in (
+        Path(state_root) / "activation-packet.json",
+        Path(state_root) / f"activation-consumed-{activation_id}.json",
+        Path(state_root) / f"supervisor.stop.activation-{activation_id}",
+    ):
+        if path.exists():
+            path.replace(ledger / f"{activation_id}-{suffix}-{path.name}")
 
 
 def _parse_time(value):

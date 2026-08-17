@@ -111,7 +111,7 @@ class RuntimeActivationTests(unittest.TestCase):
             "runpy.run_path(r'{1}', run_name='__main__')\""
         ).format(canonical / ".env", watchdog)
         return [{
-            "task_name": "CHARLIE CORE Runner Watchdog", "state": "Disabled",
+            "task_name": "CHARLIE CORE Runner Watchdog", "task_path": "\\", "state": "Disabled",
             "action_count": 1,
             "execute": str(canonical / "venv" / "Scripts" / "pythonw.exe"),
             "arguments": arguments, "working_directory": str(self.runtime),
@@ -158,6 +158,17 @@ class RuntimeActivationTests(unittest.TestCase):
                                     task_reader=lambda: self.task, git_runner=self.git)
         return plan, controller, result
 
+    def _mark_started(self):
+        packet_path = self.state / "activation-packet.json"
+        packet = json.loads(packet_path.read_text(encoding="utf-8"))
+        packet["status"] = "provider_started_observe_only"
+        unsigned = {k: v for k, v in packet.items() if k != "packet_hmac_sha256"}
+        packet["packet_hmac_sha256"] = hmac.new(
+            self.key, json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(), hashlib.sha256
+        ).hexdigest()
+        packet_path.write_text(json.dumps(packet), encoding="utf-8")
+        return packet
+
     def test_exact_task_action_digest_and_executable_are_required(self):
         for field, value in (("execute", "C:/substituted/pythonw.exe"),
                              ("arguments", "watchdog.py --extra")):
@@ -187,20 +198,33 @@ class RuntimeActivationTests(unittest.TestCase):
                 self._write_authority()
 
     def test_provider_origin_requires_exact_scheduled_ancestry(self):
+        row = self.task[0]
         provider = lambda _pid: {
             "inspection_complete": True, "pid": os.getpid(), "parent_pid": 20,
-            "executable_path": "C:/Python/pythonw.exe",
+            "executable_path": row["execute"],
+            "command_line": f'"{row["execute"]}" {row["arguments"]}',
             "ancestry": [{"pid": 20, "executable_path": "C:/Windows/System32/svchost.exe"}],
         }
-        self.assertTrue(verify_provider_origin(provider)["authorized"])
+        self.assertTrue(verify_provider_origin(provider, expected_task=self.task)["authorized"])
+
+    def test_provider_origin_rejects_exact_parent_with_substituted_command(self):
+        row = self.task[0]
+        result = verify_provider_origin(lambda _pid: {
+            "inspection_complete": True, "pid": 10, "parent_pid": 20,
+            "executable_path": row["execute"],
+            "command_line": f'"{row["execute"]}" -c "substituted"',
+            "ancestry": [{"pid": 20, "executable_path": "svchost.exe"}],
+        }, expected_task=self.task)
+        self.assertEqual(result["reason"], "provider_task_action_mismatch")
 
     def test_direct_terminal_spawn_and_protected_ancestry_are_rejected(self):
         for executable in ("powershell.exe", "codex.exe", "cmd.exe"):
             result = verify_provider_origin(lambda _pid, executable=executable: {
                 "inspection_complete": True, "pid": 10, "parent_pid": 20,
-                "executable_path": "C:/Python/pythonw.exe",
+                "executable_path": self.task[0]["execute"],
+                "command_line": f'"{self.task[0]["execute"]}" {self.task[0]["arguments"]}',
                 "ancestry": [{"pid": 20, "executable_path": f"C:/{executable}"}],
-            })
+            }, expected_task=self.task)
             self.assertFalse(result["authorized"])
 
     def test_bounded_provider_inspection_queries_only_exact_ancestry_pids(self):
@@ -239,7 +263,8 @@ class RuntimeActivationTests(unittest.TestCase):
         plan, controller, _ = self._prepared()
         inspector = lambda _pid: {
             "inspection_complete": True, "pid": 10, "parent_pid": 20,
-            "executable_path": "pythonw.exe",
+            "executable_path": self.task[0]["execute"],
+            "command_line": f'"{self.task[0]["execute"]}" {self.task[0]["arguments"]}',
             "ancestry": [{"pid": 20, "executable_path": "svchost.exe"}],
         }
         with self.assertRaises(ActivationError) as caught:
@@ -252,14 +277,7 @@ class RuntimeActivationTests(unittest.TestCase):
 
     def test_missing_signed_runner_ack_or_heartbeat_recovers_deterministically(self):
         plan, controller, _ = self._prepared()
-        packet_path = self.state / "activation-packet.json"
-        packet = json.loads(packet_path.read_text(encoding="utf-8"))
-        packet["status"] = "provider_started_observe_only"
-        unsigned = {k: v for k, v in packet.items() if k != "packet_hmac_sha256"}
-        packet["packet_hmac_sha256"] = hmac.new(
-            self.key, json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode(), hashlib.sha256
-        ).hexdigest()
-        packet_path.write_text(json.dumps(packet), encoding="utf-8")
+        self._mark_started()
         with self.assertRaises(ActivationError) as caught:
             verify_or_recover_activation(
                 state_root=self.state,
@@ -274,6 +292,35 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertEqual(caught.exception.status, "activation_verification_failed")
         self.assertTrue(self.stop.exists())
         self.assertEqual(controller.disabled, [plan["task_action_sha256"]])
+
+    def test_successful_verification_retires_packet_and_lane(self):
+        _plan, controller, _ = self._prepared()
+        self._mark_started()
+        evidence = {name: True for name in (
+            "loaded_revision_exact", "execution_mode_observe_only",
+            "signed_supervisor_tree", "signed_runner_tree", "heartbeat_fresh",
+            "activation_id_exact", "unrelated_processes_absent",
+        )}
+        result = verify_or_recover_activation(
+            state_root=self.state, verification_reader=lambda _packet: evidence,
+            task_controller=controller, task_reader=lambda: self.task,
+            git_runner=self.git,
+        )
+        self.assertEqual(result["status"], "activation_verified")
+        self.assertFalse((self.state / "activation-packet.json").exists())
+        self.assertFalse((self.state / "activation.lock").exists())
+
+    def test_tampered_rollback_fails_closed_and_retains_lane(self):
+        plan, controller, _ = self._prepared()
+        rollback_path = self.state / "activation-ledger" / f"{plan['activation_id']}-rollback.json"
+        rollback = json.loads(rollback_path.read_text(encoding="utf-8"))
+        rollback["stop_marker_sha256"] = "0" * 64
+        rollback_path.write_text(json.dumps(rollback), encoding="utf-8")
+        with self.assertRaises(ActivationError) as caught:
+            recover_activation(state_root=self.state, task_controller=controller,
+                               activation_id=plan["activation_id"])
+        self.assertEqual(caught.exception.status, "activation_rollback_signature_invalid")
+        self.assertTrue((self.state / "activation.lock").exists())
 
     def test_recovery_disables_only_exact_task_and_restores_exact_stop(self):
         plan, controller, _ = self._prepared()

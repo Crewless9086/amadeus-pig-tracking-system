@@ -39,6 +39,8 @@ def plan_runtime_staging(
         lambda value: Path(value).resolve(), (runtime_root, execution_root, state_root)
     )
     _validate_target_roots(runtime_root, execution_root, state_root)
+    if (state_root / "activation.lock").exists():
+        raise RuntimeStagingError("activation_lane_active")
     git_safety = {
         "runtime": (git_safety_checker or inspect_git_checkout_safety)(runtime_root, runner),
         "execution": (git_safety_checker or inspect_git_checkout_safety)(execution_root, runner),
@@ -153,6 +155,8 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
     mutated = False
     recovery_error = None
     try:
+        if (state_root / "activation.lock").exists():
+            raise RuntimeStagingError("activation_lane_active")
         if _sha256(plan["receipt_path"]) != plan["receipt_sha256"]:
             raise RuntimeStagingError("sealed_receipt_changed")
         receipt_key_path = state_root / "validation-receipt.key"
@@ -260,7 +264,7 @@ def read_watchdog_task(runner=subprocess.run):
     script = (
         "$ErrorActionPreference='Stop';$t=@(Get-ScheduledTask -TaskName 'CHARLIE CORE Runner Watchdog');"
         "$rows=@($t|ForEach-Object{$a=@($_.Actions);[pscustomobject]@{task_name=$_.TaskName;"
-        "state=[string]$_.State;action_count=$a.Count;execute=[string]$a[0].Execute;"
+        "task_path=[string]$_.TaskPath;state=[string]$_.State;action_count=$a.Count;execute=[string]$a[0].Execute;"
         "arguments=[string]$a[0].Arguments;working_directory=[string]$a[0].WorkingDirectory}});"
         "$rows|ConvertTo-Json -Compress"
     )
