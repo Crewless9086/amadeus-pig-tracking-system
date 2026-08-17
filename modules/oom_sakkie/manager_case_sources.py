@@ -80,6 +80,30 @@ def _herdmaster(now):
             "herdmaster:" + str(item.dedupe_key), "HERDMASTER", urgency,
             [f"result:{result.result_id}", *item.provenance.source_refs], unknowns,
             item.title + ": " + item.why, item.next_action, due))
+    from modules.pig_weights.farm_supabase_read_service import get_allocation_input_rows
+    snapshot = get_allocation_input_rows()
+    for row in snapshot.get("overview_rows") or ():
+        if str(row.get("Tag_Number") or "").strip().casefold() != "151":
+            continue
+        withdrawal = str(row.get("Withdrawal_Evidence_State") or "unknown").casefold()
+        if withdrawal not in {"cleared", "not_applicable"}:
+            candidates.append(_candidate("herdmaster:pig-151-withdrawal-sales", "HERDMASTER", "urgent",
+                [f"pig:{row.get('Pig_ID') or 'tag-151'}", f"withdrawal:{withdrawal}",
+                 f"allocation:{row.get('Allocation_Evidence_State') or 'unknown'}"],
+                ["withdrawal_clearance", "sales_eligibility"],
+                "Pig 151 does not have proved withdrawal clearance and sales eligibility.",
+                "Delegate to HERDMASTER; retain the hold until canonical withdrawal and allocation evidence both support eligibility.",
+                now + timedelta(minutes=5)))
+    for row in snapshot.get("litter_rows") or ():
+        sow = str(row.get("Sow_Tag_Number") or "").strip()
+        status = str(row.get("Litter_Status") or "").strip().casefold()
+        if sow.casefold() == "molly" and status not in {"completed", "closed", "weaned"}:
+            candidates.append(_candidate("herdmaster:molly-active-litter", "HERDMASTER", "due",
+                [f"litter:{row.get('Litter_ID') or 'unknown'}", f"status:{status or 'unknown'}"],
+                ["current_litter_next_care_or_weaning_step"],
+                "Molly has an active canonical litter requiring retained HERDMASTER ownership.",
+                "Delegate the current litter evidence to HERDMASTER and reassess at the earliest care or weaning boundary.",
+                now + timedelta(minutes=30)))
     return candidates
 
 
@@ -128,7 +152,8 @@ def _beacon(now):
     beacon_time = beacon[1] if beacon else None
     sam_time = sam[1] if sam else None
     payload = (beacon[2] or {}) if beacon else {}; proposal = ((payload.get("result") or {}).get("proposal") or {})
-    current = bool(proposal and beacon_time and now - beacon_time <= timedelta(hours=24)
+    delivered = str((payload.get("result") or {}).get("provider_delivery_confirmed") or "").lower() == "true"
+    current = bool(proposal and delivered and beacon_time and now - beacon_time <= timedelta(hours=24)
                    and (not sam_time or beacon_time >= sam_time))
     if current: return []
     refs = [f"beacon:{beacon[0] if beacon else 'none'}", f"sam:{sam[0] if sam else 'none'}"]
