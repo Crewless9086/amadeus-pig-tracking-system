@@ -2,6 +2,26 @@
 
 Status: Active owner-facing dispatch authority
 
+## 2026-08-16 OP-004 owner rule correction
+
+- **Mission:** Existing OP-004; no duplicate mission.
+- **Status:** `WORKING`; prior protected preview is
+  `SUPERSEDED_BY_OWNER_RULE_CORRECTION` and must not be confirmed.
+- **Owner rule:** Food-chain withdrawal and live-transfer eligibility are
+  separate decisions. Active withdrawal continues to prohibit slaughter/meat
+  entry but does not by itself prohibit an otherwise supported live transfer.
+- **Safety:** Live transfer still fails closed on quarantine, notifiable or
+  infectious-disease concern, veterinary movement stop, transport unfitness,
+  serious welfare/health hold, or missing/conflicting treatment evidence.
+- **Disclosure:** Canonical treatment facts must be projected into the order and
+  movement/handover documents with an append-only buyer-disclosure snapshot.
+  Disclosure does not clear or shorten the underlying medical event.
+- **Evidence boundary:** Primary residue guidance supports slaughter withdrawal
+  and traceability; it is not recorded as blanket legal authorization for live
+  transfer. Veterinary/legal compliance remains independently applicable.
+- **Next action:** HERDMASTER produces a zero-write replacement contract for
+  Tags 123/151 and order `ORD-2026-A6EC6D` before any new confirmation.
+
 ## Purpose
 
 This is the canonical planning and dispatch ledger for the visible development

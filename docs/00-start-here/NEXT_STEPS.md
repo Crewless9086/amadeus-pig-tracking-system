@@ -1,5 +1,29 @@
 # Next Steps
 
+## OP-004 — Live-transfer eligibility with food-chain disclosure
+
+Charl rejected the deployed Tags 123/151 purpose preview because it treated an
+active food-chain withdrawal as a blanket prohibition on live transfer. That
+preview is `SUPERSEDED_BY_OWNER_RULE_CORRECTION` and must not be confirmed or
+replayed.
+
+The replacement contract must keep separate `livestock_transfer_eligibility`
+and `food_chain_eligibility`. An active withdrawal may permit a live transfer
+only when current canonical welfare, fitness-for-transport, movement, disease,
+quarantine and evidence gates all pass. It continues to hard-block slaughter,
+assisted-slaughter and meat entry until the supported withdrawal end date.
+
+Known treatment and withdrawal facts must flow from the canonical medical event
+into an immutable disclosure packet and every applicable order, loading,
+movement, health and handover document. Buyer acknowledgement records receipt of
+the disclosure; it does not alter the medical event or independently establish
+legal or veterinary compliance. Missing, conflicting or uncertain evidence
+fails closed for the affected action.
+
+HERDMASTER first returns a zero-write replacement contract for Tags 123 and 151
+and order `ORD-2026-A6EC6D`. No pig, order, document or medical record changes
+until that contract and the subsequent owner-facing preview are reviewed.
+
 ## ROOTLINE RMQ-20260813-05 — Water-Credit Lifecycle
 
 RMQ-20260813-05 reached its bounded current-world outcome: its append-only,
