@@ -803,6 +803,39 @@ location review and preservation of the deployed grouped-weight executor. Until
 then `/bulk-weights` movement-only preview is the temporary governed path; a
 blank weight must remain Unknown and the preview must show zero weight entries.
 
+### HMQ-20260813-05 Weight Report discoverability and facelift — 2026-08-17
+
+Current main retains a working `/weight-report` route, canonical report loader,
+Today/date-range/pen controls and browser print action, but neither
+`templates/dashboard.html` nor the Bulk Weights template/JS contains a
+`/weight-report` link. The report is therefore operational but undiscoverable,
+the completed bulk-weighing journey has no obvious report handoff, and the page
+still predates the approved Dashboard-family visual standard. This is an owner-
+facing usability defect on existing mission `HMQ-20260813-05`, not authority for
+a new report calculation or competing analytics backend.
+
+Classify `HMQ-20260813-05` as `WORKING / UI_DISCOVERABILITY_AND_FACELIFT_QUEUED`.
+The bounded CODEX UI slice must restore Weight Report under Dashboard > Farm
+Workflows > Herd records, add visible report access to Bulk Weights, and after a
+successful batch expose View/Print actions carrying the completed weighing date.
+It must redesign `/weight-report` under the authoritative Amadeus Farm UI
+Facelift Standard with names/tags primary, Pig ID secondary, canonically
+supported summary and warning separation, preserved date/pen filters, navigable
+pig rows, explicit loading/empty/unavailable/error states and independently
+usable desktop, 390px and print/PDF layouts. UI code must not recalculate or
+reinterpret HERDMASTER metrics. Exact authenticated local screen/mobile/print
+previews require Charl's approval before merge or deployment.
+
+No CODEX UI process or target-file mutation is currently present. The inspected
+Dashboard, UIQ, HMQ-04 and bulk-weight worktrees preserve their histories and
+have clean target paths, but they are historical and none is an authorized base.
+No implementation is dispatched while Autonomy Recovery slots are occupied by
+CORE and OOM SAKKIE continuous-operation work. Promotion requires a free WIP
+slot, fresh current-main/worktree collision review, HMQ-05 canonical meaning
+review and one explicitly authorized current-lineage CODEX UI worktree. Until
+then the direct `/weight-report` route remains the temporary working access; no
+merge or deployment may occur without owner visual approval.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
