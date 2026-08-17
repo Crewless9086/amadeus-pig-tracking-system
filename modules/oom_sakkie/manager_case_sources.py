@@ -29,6 +29,37 @@ def collect_manager_candidates(*, now: datetime, collectors=None):
     return result
 
 
+def collect_manager_candidate(*, now: datetime, dedupe_key: str, specialist: str,
+                              collectors=None):
+    """Refresh one case from only its canonical owning collector."""
+    prefix = str(dedupe_key or "").split(":", 1)[0].casefold()
+    configured = {
+        "rootline": (_rootline, "ROOTLINE"),
+        "herdmaster": (_herdmaster, "HERDMASTER"),
+        "sam": (_sam, "SAM"), "beacon": (_beacon, "BEACON"),
+        "delivery": (_delivery_gaps, None), "runtime": (_runtime, "RUNTIME"),
+    }
+    selected = configured.get(prefix)
+    claimed_specialist = str(specialist or "").upper()
+    if selected is None or (selected[1] and selected[1] != claimed_specialist):
+        return None
+    if prefix == "delivery":
+        parts = str(dedupe_key).split(":", 2)
+        if len(parts) < 3 or parts[1].upper() != claimed_specialist:
+            return None
+    collector = selected[0]
+    if collectors is not None:
+        expected_name = "delivery_gaps" if prefix == "delivery" else prefix
+        collector = next((value for value in collectors
+            if getattr(value, "__name__", "").strip("_").casefold() == expected_name), None)
+        if collector is None:
+            return None
+    rows = collect_manager_candidates(now=now, collectors=(collector,))
+    return next((row for row in rows
+                 if str(row.get("dedupe_key") or "") == str(dedupe_key)
+                 and str(row.get("specialist") or "").upper() == claimed_specialist), None)
+
+
 def _rootline(now):
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
