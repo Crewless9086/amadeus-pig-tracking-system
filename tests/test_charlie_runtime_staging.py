@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from modules.charlie.runtime_staging import (
     RECEIPT_VERSION,
@@ -213,11 +214,152 @@ class RuntimeStagingTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeStagingError, "scheduled_task_ownership_ambiguous"):
             self._plan(task_reader=lambda: task)
 
-    def test_executable_git_checkout_extension_fails_closed(self):
+    def _checkout_config_runner(self, output, hook_path=None):
         def configured(command, **_kwargs):
-            return subprocess.CompletedProcess(command, 0, "file:C:/config filter.bad.process evil.exe\n", "")
-        with self.assertRaisesRegex(RuntimeStagingError, "git_executable_checkout_extension_present"):
-            inspect_git_checkout_safety(self.runtime, configured)
+            if command[1:4] == ["config", "-z", "--show-scope"]:
+                return subprocess.CompletedProcess(command, 0 if output else 1, output, "")
+            if command[1:4] == ["rev-parse", "--git-path", "hooks/post-checkout"]:
+                return subprocess.CompletedProcess(
+                    command, 0, str(hook_path or (self.runtime / ".git" / "hooks" / "post-checkout")), ""
+                )
+            return subprocess.CompletedProcess(command, 1, "", "unexpected command")
+        return configured
+
+    def _governed_lfs_output(self, scope="system"):
+        origin = "file:C:/Program Files/Git/etc/gitconfig"
+        return "".join(
+            f"{scope}\0{origin}\0{key}\n{value}\0"
+            for key, value in (
+                ("filter.lfs.clean", "git-lfs clean -- %f"),
+                ("filter.lfs.smudge", "git-lfs smudge -- %f"),
+                ("filter.lfs.process", "git-lfs filter-process"),
+                ("filter.lfs.required", "true"),
+            )
+        )
+
+    def test_system_and_global_governed_lfs_are_accepted(self):
+        executable_dir = self.runtime.parent / "git-bin"
+        executable_dir.mkdir()
+        git = executable_dir / "git.exe"
+        lfs = executable_dir / "git-lfs.exe"
+        git.touch()
+        lfs.touch()
+        resolver = lambda name: str(lfs if name == "git-lfs" else git)
+        for scope in ("system", "global"):
+            with self.subTest(scope=scope), mock.patch(
+                "modules.charlie.runtime_staging.shutil.which", side_effect=resolver
+            ), mock.patch(
+                "modules.charlie.runtime_staging._TRUSTED_GIT_EXECUTABLE_DIRS", (executable_dir,)
+            ):
+                result = inspect_git_checkout_safety(
+                    self.runtime, self._checkout_config_runner(self._governed_lfs_output(scope))
+                )
+                self.assertEqual(result["extensions"], "governed_git_lfs")
+
+    def test_checkout_configuration_injection_fails_closed(self):
+        governed = self._governed_lfs_output()
+        cases = {
+            "local_override": governed + "local\0file:.git/config\0filter.lfs.process\ngit-lfs filter-process\0",
+            "worktree_override": governed + "worktree\0file:.git/config.worktree\0filter.lfs.smudge\ngit-lfs smudge -- %f\0",
+            "command_substitution": governed + "command\0command line:\0filter.lfs.process\ngit-lfs filter-process\0",
+            "altered_process": governed.replace("git-lfs filter-process", "git-lfs filter-process --skip"),
+            "altered_tokenization": governed.replace("git-lfs smudge -- %f", '"git-lfs" smudge -- %f'),
+            "unexpected_filter": governed + "global\0file:C:/config\0filter.bad.process\nevil.exe\0",
+            "include": governed + "global\0file:C:/config\0include.path\nC:/injected.config\0",
+            "include_if": governed + "global\0file:C:/config\0includeIf.gitdir:C:/repo.path\nC:/injected.config\0",
+            "hooks_path": governed + "global\0file:C:/config\0core.hookspath\nC:/hooks\0",
+            "partial_lfs": governed.replace(
+                "system\0file:C:/Program Files/Git/etc/gitconfig\0filter.lfs.required\ntrue\0", ""
+            ),
+        }
+        executable_dir = self.runtime.parent / "git-bin"
+        executable_dir.mkdir()
+        git = executable_dir / "git.exe"
+        lfs = executable_dir / "git-lfs.exe"
+        git.touch()
+        lfs.touch()
+        resolver = lambda name: str(lfs if name == "git-lfs" else git)
+        for name, output in cases.items():
+            with self.subTest(name=name), mock.patch(
+                "modules.charlie.runtime_staging.shutil.which", side_effect=resolver
+            ), mock.patch(
+                "modules.charlie.runtime_staging._TRUSTED_GIT_EXECUTABLE_DIRS", (executable_dir,)
+            ), self.assertRaisesRegex(
+                RuntimeStagingError, "git_executable_checkout_extension_present"
+            ):
+                inspect_git_checkout_safety(self.runtime, self._checkout_config_runner(output))
+
+        with mock.patch(
+            "modules.charlie.runtime_staging.shutil.which", side_effect=resolver
+        ), mock.patch(
+            "modules.charlie.runtime_staging._TRUSTED_GIT_EXECUTABLE_DIRS", (executable_dir,)
+        ), self.assertRaisesRegex(RuntimeStagingError, "git_checkout_extensions_unreadable"):
+            inspect_git_checkout_safety(
+                self.runtime,
+                self._checkout_config_runner(governed + "global\0file:C:/config\0filter.bad.process"),
+            )
+
+    def test_governed_lfs_requires_safe_executable_identity_and_resolution(self):
+        executable_dir = self.runtime.parent / "git-bin"
+        other_dir = self.runtime.parent / "other-bin"
+        executable_dir.mkdir()
+        other_dir.mkdir()
+        git = executable_dir / "git.exe"
+        git.touch()
+        cases = {
+            "missing": None,
+            "different_directory": other_dir / "git-lfs.exe",
+            "wrong_identity": executable_dir / "wrapper.exe",
+        }
+        for name, candidate in cases.items():
+            if candidate:
+                candidate.touch()
+            resolver = lambda executable, candidate=candidate: str(git) if executable == "git" else (
+                str(candidate) if candidate else None
+            )
+            with self.subTest(name=name), mock.patch(
+                "modules.charlie.runtime_staging.shutil.which", side_effect=resolver
+            ), mock.patch(
+                "modules.charlie.runtime_staging._TRUSTED_GIT_EXECUTABLE_DIRS", (executable_dir,)
+            ), self.assertRaisesRegex(RuntimeStagingError, "git_executable_checkout_extension_present"):
+                inspect_git_checkout_safety(
+                    self.runtime, self._checkout_config_runner(self._governed_lfs_output())
+                )
+
+    def test_same_name_executables_from_untrusted_directory_fail_closed(self):
+        executable_dir = self.runtime.parent / "substituted-bin"
+        executable_dir.mkdir()
+        git = executable_dir / "git.exe"
+        lfs = executable_dir / "git-lfs.exe"
+        git.touch()
+        lfs.touch()
+        resolver = lambda name: str(lfs if name == "git-lfs" else git)
+        with mock.patch(
+            "modules.charlie.runtime_staging.shutil.which", side_effect=resolver
+        ), mock.patch(
+            "modules.charlie.runtime_staging._TRUSTED_GIT_EXECUTABLE_DIRS", (self.runtime.parent / "trusted",)
+        ), self.assertRaisesRegex(RuntimeStagingError, "git_executable_checkout_extension_present"):
+            inspect_git_checkout_safety(
+                self.runtime, self._checkout_config_runner(self._governed_lfs_output())
+            )
+
+    def test_post_checkout_hook_still_fails_closed(self):
+        hook = self.runtime.parent / "hooks" / "post-checkout"
+        hook.parent.mkdir()
+        hook.touch()
+        executable_dir = self.runtime.parent / "git-bin"
+        executable_dir.mkdir()
+        git = executable_dir / "git.exe"
+        lfs = executable_dir / "git-lfs.exe"
+        git.touch()
+        lfs.touch()
+        resolver = lambda name: str(lfs if name == "git-lfs" else git)
+        with mock.patch(
+            "modules.charlie.runtime_staging.shutil.which", side_effect=resolver
+        ), mock.patch(
+            "modules.charlie.runtime_staging._TRUSTED_GIT_EXECUTABLE_DIRS", (executable_dir,)
+        ), self.assertRaisesRegex(RuntimeStagingError, "git_post_checkout_hook_present"):
+            inspect_git_checkout_safety(self.runtime, self._checkout_config_runner("", hook))
 
     def test_plan_rejects_substituted_or_overlapping_roots(self):
         with self.assertRaisesRegex(RuntimeStagingError, "non_authoritative_staging_roots"):
