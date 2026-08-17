@@ -1598,3 +1598,37 @@ warning, existing 37-row operational table, Dashboard-family styling, desktop/
 approval before merge or deployment. The UI must not become livestock authority
 or invent categories. Both target terminals must return the complete
 `CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md` and Control Tower receipt.
+
+### DMQ-20260816-01 external completion and Brain Guard distinction — 2026-08-17
+
+The Cursor-era DOCUMENTS worktree `C:\tmp\documents-catalogue-20260816` is clean
+at `e228f74ac0fac71779ff0259e4518960ffd9915d`, with no process owner. PR #1016
+remains open and mergeable; all three historical exact-head checks completed
+successfully. Its bounded delta remains three disjoint files: canonical catalogue
+ownership doctrine, `modules/documents/catalogue.py`, and its test. The branch is
+three commits ahead and 123 commits behind current main, so old PR monitoring is
+not active work and the Cursor terminal can close. Move only the completion step
+to a controlled external terminal: merge current main non-destructively, inspect
+collisions/doctrine, rerun tests and both authority/privacy reviews, push the same
+branch/PR, require fresh exact-head CI, merge normally if compatible, verify the
+merged source and stop. No Mission 2 adapter, PDF, Telegram, scheduler, printer,
+route, deployment or production mutation is authorized.
+
+DOCUMENTS and Brain Guard are distinct. DOCUMENTS owns the governed catalogue and
+future generation/delivery contracts while each business domain retains document
+meaning. Brain Guard is CORE's knowledge-integrity reviewer: it checks Vault Brain
+citations, source coverage, contradictions and update discipline, may write
+governed Vault/learning records, and blocks review-ready status when doctrine is
+missing or stale. It cannot build documents, approve business actions, merge,
+deploy, send, allocate, price or mutate production.
+
+The tracked Vault Readiness Scorecard currently reports `88–92%`: governance 94%,
+identity/hierarchy 90%, agent structure 85%, business doctrine 80%, workflows 90%,
+data doctrine 85%, standards 90%, playbooks 80%, source map/cleanup 82%, and gold
+examples 70%. Source contains the `charlie_brain_guard_gate_v1` review gate,
+ranked Vault retrieval, source-coverage enforcement, normalized write-through and
+permission tests. This is source/runtime capability, not proof of a continuously
+running independent Brain Guard worker. Fresh autonomous status depends on the
+separate CORE validation/staging/provider-activation mission and its independent-
+cycle evidence. Do not claim Brain Guard live merely because its code and doctrine
+exist.
