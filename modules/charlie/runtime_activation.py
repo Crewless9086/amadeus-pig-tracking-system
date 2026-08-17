@@ -12,7 +12,6 @@ import re
 import shlex
 import subprocess
 import sys
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -899,7 +898,9 @@ def _process_presence(pid, runner=subprocess.run):
 def verify_provider_origin(inspector, *, expected_task):
     current = inspector(os.getpid())
     if not isinstance(current, dict) or not current.get("inspection_complete"):
-        return {"authorized": False, "reason": "provider_identity_incomplete"}
+        reason = (str(current.get("reason") or "provider_identity_incomplete")
+                  if isinstance(current, dict) else "provider_identity_incomplete")
+        return {"authorized": False, "reason": reason}
     ancestry = current.get("ancestry")
     if not isinstance(ancestry, list) or not ancestry:
         return {"authorized": False, "reason": "provider_ancestry_incomplete"}
@@ -965,7 +966,9 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
     provider = provider_reader()
     if (not _valid_task_scheduler_provider(provider)
             or int(provider.get("engine_pid") or -1) != requested_pid):
-        return {"inspection_complete": False, "reason": "provider_identity_unreadable"}
+        reason = (str(provider.get("reason") or "provider_identity_unreadable")
+                  if isinstance(provider, dict) else "provider_identity_unreadable")
+        return {"inspection_complete": False, "reason": reason}
 
     chain = []
     next_pid = int(current.get("parent_pid") or 0)
@@ -1037,10 +1040,7 @@ def inspect_current_provider_chain(pid=None, runner=subprocess.run, current_iden
 
 
 def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
-                                             process_creation_time=None,
-                                             visibility_attempts=5,
-                                             visibility_interval=0.05,
-                                             sleeper=time.sleep):
+                                             process_creation_time=None):
     """Bind this PID to one Task Scheduler instance and its exact service.
 
     Task Scheduler can start the action before its COM running-instance view
@@ -1060,7 +1060,10 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "if($providerPid-le 0-or-not$binary){exit 5};"
         "$ts=New-Object -ComObject 'Schedule.Service';$ts.Connect();"
         "$task=$ts.GetFolder('\\').GetTask('" + TASK_NAME.replace("'", "''") + "');"
-        "$instances=@($task.GetInstances(0)|Where-Object {[int]$_.EnginePID-eq" + str(int(engine_pid)) + "});"
+        "$deadline=[DateTime]::UtcNow.AddSeconds(5);"
+        "do{$instances=@($task.GetInstances(0)|Where-Object {[int]$_.EnginePID-eq" + str(int(engine_pid)) + "});"
+        "if($instances.Count-eq 0-and[DateTime]::UtcNow-lt$deadline){Start-Sleep -Milliseconds 100}}"
+        "while($instances.Count-eq 0-and[DateTime]::UtcNow-lt$deadline);"
         "if($instances.Count-eq 0){exit 6};if($instances.Count-ne 1){exit 8};"
         "$instance=$instances[0];$instance.Refresh();"
         "$actions=@($task.Definition.Actions);if($actions.Count-ne 1-or[int]$actions[0].Type-ne 0){exit 7};"
@@ -1080,21 +1083,25 @@ def _inspect_windows_task_scheduler_provider(engine_pid, runner=subprocess.run,
         "ServiceDll=[Environment]::ExpandEnvironmentVariables($dll);SystemRoot=$root}"
         "|ConvertTo-Json -Compress"
     )
-    attempts = max(1, int(visibility_attempts))
-    completed = None
-    for attempt in range(attempts):
+    try:
         completed = runner(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=10, check=False,
+            capture_output=True, text=True, timeout=8, check=False,
         )
-        if completed.returncode != 6:
-            break
-        if attempt + 1 < attempts:
-            sleeper(max(0.0, float(visibility_interval)))
-    if completed is None:
-        return {"inspection_complete": False}
+    except subprocess.TimeoutExpired:
+        return {"inspection_complete": False, "reason": "provider_inspection_deadline_exceeded"}
+    except (OSError, subprocess.SubprocessError):
+        return {"inspection_complete": False, "reason": "provider_inspector_unavailable"}
     if completed.returncode:
-        return {"inspection_complete": False}
+        reasons = {
+            4: "task_scheduler_service_query_failed",
+            5: "task_scheduler_service_identity_missing",
+            6: "task_instance_visibility_timeout",
+            7: "task_action_identity_invalid",
+            8: "task_instance_identity_ambiguous",
+        }
+        return {"inspection_complete": False,
+                "reason": reasons.get(completed.returncode, "provider_identity_unreadable")}
     try:
         row = json.loads(completed.stdout)
         creation_time = (process_creation_time or _windows_process_creation_time)(
