@@ -59,6 +59,22 @@ def test_delivery_and_duplicate_update_are_exact_once():
     assert first["telegram_sends"]==1 and replay["telegram_sends"]==0
     assert len(memory.sent)==1 and memory.edited==[]
 
+def test_protected_preview_owns_durable_attempt_before_provider_send():
+    memory=Memory(); order=[]
+    protected={**RESULT,"callback_token":"TOKEN","preview_digest":"DIGEST",
+        "action_kind":"rootline_device_commissioning"}
+    def lifecycle(**kwargs):
+        order.append(("owned",kwargs["callback_token"],kwargs["action_kind"]))
+        delivered=kwargs["deliver"]()
+        order.append(("confirmed",delivered["telegram_message_id"]))
+        return {**delivered,"status":"protected_delivery_confirmed",
+            "delivery_confirmed":True}
+    result=deliver_family_result(PARSED,protected,specialist="ROOTLINE",
+        event_store=memory.store,sender=memory.send,editor=memory.edit,
+        protected_delivery=lifecycle)
+    assert order==[("owned","TOKEN","rootline_device_commissioning"),("confirmed","700")]
+    assert len(memory.sent)==1 and result["delivery_confirmed"] is True
+
 
 def test_same_provider_inbound_never_recomputes_into_a_second_edit_when_live_evidence_changes():
     memory=Memory();mission="OOM-ROOTLINE-3236"

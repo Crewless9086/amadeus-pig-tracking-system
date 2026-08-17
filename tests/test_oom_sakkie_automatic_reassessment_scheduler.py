@@ -100,6 +100,7 @@ def test_restart_recovery_does_not_claim_completion_when_outcome_write_fails():
         return {"success": False} if action == "record_outcome" else backing(action, item, payload)
     result = run_due_reassessment(payload=scheduled_payload(), invoke=lambda: {}, store=failing, now=NOW)
     assert result["status"] == "scheduled_reassessment_claim_interrupted"
+    assert result["terminal_outcome"] == "claimed"
     assert result.get("next_due_at") is None and rows[identity]["status"] == "claimed"
 
 

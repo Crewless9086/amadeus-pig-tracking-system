@@ -21,6 +21,33 @@ def test_standing_authority_requires_terminal_stage():
         validate_device(_device(standing_authority=True))
 
 def test_borehole_profile_is_stricter_than_valve():
-    with pytest.raises(ValueError,match="strict_device_proof_missing"):
+    with pytest.raises(ValueError,match="standing_authority_evidence_missing"):
         validate_device(_device(device_type="pump",commissioning_stage="standing_active",
           standing_authority=True))
+
+def _evidence():
+    return {key:"proof:"+key for key in ("provider_discovered","readback_proven",
+      "bounded_actuation_ready","physical_identity_proven","fail_stop_proven",
+      "replay_proven","operational_dependencies_proven","supervised")}
+
+def test_ordinary_relay_standing_authority_requires_complete_evidence_and_envelope():
+    with pytest.raises(ValueError,match="standing_authority_evidence_missing"):
+        validate_device(_device(device_type="generic_relay_output",
+          commissioning_stage="standing_active",standing_authority=True))
+    assert validate_device(_device(device_type="generic_relay_output",
+      commissioning_stage="standing_active",standing_authority=True,
+      commissioning_evidence=_evidence(),authority_envelope={
+        "standing_authority_id":"ROOTLINE-RELAY-1","version":"1","revoked":False}))
+
+def test_strict_device_requires_independent_physical_and_fail_stop_proof():
+    row=_device(device_type="pump",commissioning_stage="standing_active",standing_authority=True,
+      commissioning_evidence=_evidence(),authority_envelope={
+        "standing_authority_id":"ROOTLINE-PUMP-1","version":"1","revoked":False})
+    with pytest.raises(ValueError,match="strict_device_proof_missing"):
+        validate_device(row)
+
+def test_profile_safe_state_and_runtime_bounds_are_enforced():
+    with pytest.raises(ValueError,match="safe_state_mismatch"):
+        validate_device(_device(safe_state="ON"))
+    with pytest.raises(ValueError,match="fail_stop_bound_invalid"):
+        validate_device(_device(native_fail_stop_seconds=301))

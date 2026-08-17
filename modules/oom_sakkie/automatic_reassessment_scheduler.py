@@ -67,8 +67,9 @@ def run_due_reassessment(*, payload: Mapping[str, Any], invoke: Callable[[], Map
         if recovered:
             return {**recovered, "schedule_identity": identity,
                 "invocation_receipt": digest, "terminal_outcome": "claimed"}
-        return {**_contained("scheduled_reassessment_claim_interrupted"),
-            "schedule_identity": identity, "invocation_receipt": digest}
+        return {**_safe("scheduled_reassessment_claim_interrupted"),
+            "success": False, "schedule_identity": identity,
+            "invocation_receipt": digest, "terminal_outcome": "claimed"}
     try:
         result = dict(invoke() or {})
     except Exception:

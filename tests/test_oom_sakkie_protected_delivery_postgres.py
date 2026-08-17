@@ -27,6 +27,15 @@ class ProtectedDeliveryPostgresTests(unittest.TestCase):
        add column if not exists delivery_confirmed_at timestamptz,
        add column if not exists delivery_ambiguous_at timestamptz,
        add column if not exists delivery_result jsonb""")
+      db.execute("""alter table app_private.oom_protected_action_claims
+       drop constraint if exists oom_protected_action_claims_delivery_state_check""")
+      db.execute("""alter table app_private.oom_protected_action_claims add constraint
+       oom_protected_action_claims_delivery_state_check check (delivery_state in
+       ('claim_created','delivery_pending','provider_accepted','delivery_confirmed',
+        'delivery_ambiguous','completed','contained','cancelled','expired'))""")
+      db.execute("""create unique index if not exists oom_protected_action_delivery_attempt_unique
+       on app_private.oom_protected_action_claims(delivery_attempt_id)
+       where delivery_attempt_id is not null""")
   def connect(self):return psycopg.connect(URL)
   def setUp(self):
     self.token="D"+uuid.uuid4().hex;self.digest="G"+uuid.uuid4().hex
@@ -61,3 +70,16 @@ class ProtectedDeliveryPostgresTests(unittest.TestCase):
     self.assertEqual((wrong["status"],calls),("protected_delivery_binding_mismatch",[]))
     with self.connect() as db:db.execute("update app_private.oom_protected_action_claims set expires_at=now()-interval '1 second' where callback_token=%s",(self.token,))
     expired=self.call(lambda:calls.append(1));self.assertEqual((expired["status"],calls),("protected_delivery_terminal_noop",[]))
+  def test_migrated_constraints_reject_invalid_state_and_duplicate_attempt(self):
+    with self.assertRaises(psycopg.errors.CheckViolation):
+      with self.connect() as db:db.execute("update app_private.oom_protected_action_claims set delivery_state='invalid' where callback_token=%s",(self.token,))
+    with self.connect() as db:
+      db.execute("update app_private.oom_protected_action_claims set delivery_attempt_id='A' where callback_token=%s",(self.token,))
+    other='D'+uuid.uuid4().hex
+    with self.assertRaises(psycopg.errors.UniqueViolation):
+      with self.connect() as conflicting:
+        conflicting.execute("""insert into app_private.oom_protected_action_claims
+         (callback_token,action_kind,owner_user_id,private_chat_id,mission_id,provider_message_id,
+          preview_digest,evidence_generation,preview_payload,expires_at,delivery_attempt_id)
+         values(%s,'rootline_fertilizer_mixer_presence_refresh','42','42','M2','IN2','G2','E','{}',%s,'A')""",
+         (other,datetime.now(timezone.utc)+timedelta(minutes=5)))

@@ -21,7 +21,8 @@ BOUND_KEYS = ("contract_version", "eligibility_contract_version", "mission_id",
     "presence_provider_timestamp", "presence_text_sha256", "auxiliary_device_id",
     "device_id", "channel", "maximum_duration_seconds", "native_auto_off_seconds",
     "emergency_off_required", "injection_enabled", "execution_id", "consumption_key",
-    "eligibility_sha256", "plan_generation", "controller_safety_generation")
+    "eligibility_sha256", "plan_generation", "controller_safety_generation",
+    "device_contract_version")
 
 
 def create_mixer_preview(*, owner_result, parsed, gateway_authority, now=None,
@@ -283,7 +284,19 @@ def execute_presence_refresh(claim, *, parsed, gateway_authority, connect_factor
 def build_preview_payload(artifact, parsed):
     if not isinstance(artifact, dict):
         raise ValueError("mixer_preview_eligibility_missing")
+    from modules.telemetry.rootline_device_spine import CONTRACT_VERSION as DEVICE_CONTRACT, validate_device
+    device_record = {"provider":"ewelink", "provider_account_binding":"owner-vault",
+        "device_id":artifact.get("device_id"), "channel":artifact.get("channel"),
+        "physical_name":"Fertilizer Mixer CH2", "device_type":"independent_mixer_valve",
+        "adapter_profile":"ewelink_relay", "safe_state":"OFF",
+        "maximum_runtime_seconds":artifact.get("maximum_duration_seconds"),
+        "native_fail_stop_seconds":300, "readback":"provider_state",
+        "physical_effect":"fertilizer_recirculation", "dependencies":["injection_off"],
+        "manual_isolation":"fertilizer_valve", "commissioning_stage":"bounded_actuation_ready",
+        "standing_authority":False}
+    validate_device(device_record)
     payload = {"contract_version": PREVIEW_CONTRACT,
+        "device_contract_version": DEVICE_CONTRACT, "device_record": device_record,
         "eligibility_contract_version": artifact.get("contract_version"),
         "mission_id": MISSION_ID,
         "owner_user_id": str(parsed.get("telegram_user_id") or ""),
@@ -312,6 +325,7 @@ def build_preview_payload(artifact, parsed):
             or payload["auxiliary_device_id"] != MIXER_ID
             or payload["device_id"] != DEVICE_ID or payload["channel"] != 2
             or payload["maximum_duration_seconds"] != 300
+            or payload["device_contract_version"] != DEVICE_CONTRACT
             or payload["injection_enabled"] is not False):
         raise ValueError("mixer_preview_binding_invalid")
     return payload

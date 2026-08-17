@@ -41,7 +41,7 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
             if prior[1]=="active" and exact and prior[2]>datetime.now(timezone.utc):
                 return {"success":True,"status":"protected_claim_existing","callback_token":prior[0],
                   "preview_digest":digest,"expires_at":prior[2].isoformat(),
-                  "preview_card_message_id":str(prior[8] or "")}
+                  "preview_card_message_id":str(prior[8] or ""),"action_kind":action_kind}
             if rearmable:
                     cur.execute("""update app_private.oom_protected_action_claims
                       set status='active',expires_at=%s where callback_token=%s
@@ -50,7 +50,7 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                     return {"success":True,"status":"protected_claim_rearmed",
                   "callback_token":prior[0],"preview_digest":digest,
                   "expires_at":expires.isoformat(),
-                  "preview_card_message_id":str(prior[8] or "")}
+                  "preview_card_message_id":str(prior[8] or ""),"action_kind":action_kind}
             raise RuntimeError("protected_claim_identity_or_state_conflict")
         if not supersede_active:
             cur.execute("""select 1 from app_private.oom_protected_action_claims
@@ -66,7 +66,8 @@ def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
           values(%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)""",
           (token,action_kind,owner_user_id,private_chat_id,mission_id,provider_message_id,
            digest,evidence_generation,json.dumps(preview_payload,sort_keys=True),expires))
-    return {"success":True,"status":"protected_claim_created","callback_token":token,"preview_digest":digest,"expires_at":expires.isoformat()}
+    return {"success":True,"status":"protected_claim_created","callback_token":token,
+        "preview_digest":digest,"expires_at":expires.isoformat(),"action_kind":action_kind}
 
 def resolve_natural_confirmation(*, owner_user_id, private_chat_id, reply_to_message_id="", connect_factory=None):
     with (connect_factory() if connect_factory else _connect()) as db:
