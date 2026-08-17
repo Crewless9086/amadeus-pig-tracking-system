@@ -1,5 +1,11 @@
 # ROOTLINE Control Architecture
 
+> **Current status semantics:** the historical Daily Brief route is a bounded
+> read-only projection, not an operating ROOTLINE agent. Continuous operation
+> requires durable evidence-change/due-time triggers, a supervised worker,
+> maintained current plan, outcome/reassessment ownership and terminal-close
+> continuity as defined by ROOTLINE's Continuous Operating Contract.
+
 Status: authoritative target architecture and authority boundary.
 
 Evidence cut: `2026-07-25`, repository revision

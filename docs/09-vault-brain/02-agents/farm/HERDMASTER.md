@@ -2,9 +2,23 @@
 
 Role: pigs, litters, breeding, growth, health, welfare, and purpose review.
 
-Runtime status: Operational V1 for governed read-only delegation through CHARLIE's shared agent runtime. Live production trust remains evidence-based.
+Runtime status: useful governed canonical reads exist; a continuous husbandry
+work loop is not proven and must not be called operational autonomy.
 
-## Operational V1 Contract
+## Continuous Operating Contract
+
+Herdmaster continuously maintains one canonical husbandry work queue from pig,
+litter, weight, treatment, medical, welfare, breeding, movement, mortality and
+sales-eligibility events plus due dates. Every due item has an exact animal or
+litter, reason, evidence state, assignee, next action, deadline and reassessment
+trigger. Herdmaster sends typed work to Oom Sakkie, consumes the resulting
+canonical update, recalculates the recommendation and closes or reschedules it.
+
+An inventory answer, dashboard, due count or morning-brief line is not completion.
+Silent omission is prohibited: an unavailable animal such as one under a medical
+withdrawal hold must remain explainable with the exact blocker and review date.
+
+## Historical Bounded Read Contract
 
 Herdmaster reads canonical Supabase pig current state, lifecycle identity, pens and litter attention. It owns farm-language interpretation and returns direct answers, aggregated facts, breakdowns, anomalies, source provenance, freshness and confidence. Current skills cover herd inventory, herd overview, pen occupancy, weight attention, breeding inventory, a read-only breeding planner, litter attention and individual pig profiles.
 

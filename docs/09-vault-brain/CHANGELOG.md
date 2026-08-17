@@ -1370,3 +1370,11 @@
 - Replaced stale component-stage goals in the Control Tower register with
   current honest operating states, complete closed-loop targets, triggers,
   blockers and the recurring owner work each agent must remove.
+- Reconciled the Agent Registry, canonical CHARLIE/Oom Sakkie/ROOTLINE/
+  HERDMASTER/SAM/BEACON files, Current State, Portfolio Status, NEXT_STEPS and
+  implementation source map so historical request, brief and V1 labels cannot
+  override continuous-operation truth.
+- Added a bounded GENERAL terminal intake contract so Charl can report an
+  operational finding without designing the fix; GENERAL investigates and
+  scopes, Control Tower queues it, and CORE eventually removes the temporary
+  relay.
