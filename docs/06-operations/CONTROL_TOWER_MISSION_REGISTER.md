@@ -1171,3 +1171,35 @@ surfaces. ROOTLINE work must remain within the existing irrigation plan service,
 coordinator and provider reassessment boundary unless a fresh collision review
 proves a shared change is necessary; any shared-file requirement becomes an
 addendum at FARM's next safe handover, not concurrent editing.
+
+### CMQ-20260813-05 exact-main deployment containment — 2026-08-17
+
+The separately governed CORE deployment epoch validated authoritative main
+`94efdd708de4c7cf2ad0bd9380a0e97eff03c155` with fresh signed receipt
+`fcdd752358624ba487fe2b96c836b1d4` (114 passed, three platform skips) and
+successfully reconciled historical failed activation
+`65f4f724b245421c903fc4a18073e9a9` into the authenticated
+`governed_stop_active` projection without erasing or replaying its
+`provider_identity_incomplete` evidence. Staging then refused before lane
+acquisition with `git_executable_checkout_extension_present`. Runtime,
+execution and manifest remain clean at `64e5335496d06bde5dba8ba9a840ecb5f0168238`;
+the exact scheduled task remains Disabled; no staging or activation identity,
+worker, heartbeat, cycle, provider effect or business effect was created.
+
+The refusal was caused by the checkout-safety classifier treating globally
+installed Git LFS executable filters (`filter.lfs.smudge` and
+`filter.lfs.process`) as prohibited checkout extensions. Classify Recovery Slot
+1 as `WORKING / RELEASE_HOLD / CHECKOUT_SAFETY_CLASSIFICATION_DEFECT`. Preserve
+the fail-closed gate: the next source-only correction must distinguish governed,
+exactly validated Git LFS support from repository-local or otherwise executable
+hook/filter/config injection without weakening hook, filter, include, config or
+checkout protections. It must cover scope precedence, executable resolution,
+unexpected filters, altered LFS commands and repository-local overrides, obtain
+independent process-safety and release-integrity reviews, merge normally, and
+stop before validation, staging or activation.
+
+Automatic promotion after that source integration is a new exact-main signed
+receipt, one new staging identity, and separately governed provider-origin
+activation. Business completion remains false until exact loaded revision,
+signed supervisor/runner ancestry, heartbeat, an independent durable mission
+cycle, the next trigger and a later post-terminal cycle are proven.
