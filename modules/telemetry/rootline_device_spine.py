@@ -47,9 +47,11 @@ class CanonicalAuthorityResolver:
 
     def evidence(self, reference: Mapping) -> Mapping | None:
         with self._connect_factory() as db, db.cursor() as cur:
-            cur.execute("""select evidence_id,evidence_sha256,current
-              from app_private.rootline_device_commissioning_evidence
-              where evidence_id=%s and source=%s and observed_at=%s""",
+            cur.execute("""select e.evidence_id,e.evidence_sha256,
+              e.current and not exists(select 1 from app_private.rootline_device_evidence_events x
+                where x.evidence_id=e.evidence_id and x.event_type='invalidated')
+              from app_private.rootline_device_commissioning_evidence e
+              where e.evidence_id=%s and e.source=%s and e.observed_at=%s""",
               (str(reference.get("evidence_id") or ""), str(reference.get("source") or ""),
                str(reference.get("observed_at") or "")))
             row = cur.fetchone()
@@ -58,9 +60,13 @@ class CanonicalAuthorityResolver:
 
     def authority(self, reference: Mapping) -> Mapping | None:
         with self._connect_factory() as db, db.cursor() as cur:
-            cur.execute("""select standing_authority_id,version,policy_sha256,
-              active and not revoked from app_private.rootline_standing_authorities
-              where standing_authority_id=%s and version=%s and issuer=%s""",
+            cur.execute("""select a.standing_authority_id,a.version,a.policy_sha256,
+              a.active and not a.revoked and not exists(
+                select 1 from app_private.rootline_authority_events x
+                where x.standing_authority_id=a.standing_authority_id and x.version=a.version
+                and x.event_type in ('revoked','superseded'))
+              from app_private.rootline_standing_authorities a
+              where a.standing_authority_id=%s and a.version=%s and a.issuer=%s""",
               (str(reference.get("standing_authority_id") or ""),
                str(reference.get("version") or ""), str(reference.get("issuer") or "")))
             row = cur.fetchone()

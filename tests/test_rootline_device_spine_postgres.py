@@ -7,7 +7,7 @@ import uuid
 import psycopg
 import pytest
 
-from modules.telemetry.rootline_device_spine import (load_device_record,
+from modules.telemetry.rootline_device_spine import (CanonicalAuthorityResolver, load_device_record,
     manager_stage_projection, store_device_record)
 
 URL = os.getenv("OOM_PROTECTED_ACTION_POSTGRES_URL", "").strip()
@@ -110,6 +110,18 @@ def test_standing_authority_resolves_only_from_canonical_evidence_and_policy():
     projection=manager_stage_projection(loaded["device_record"],connect_factory=connect)
     assert projection["standing_authority_evidence_bound"] is True
     assert projection["execution_authority"] is False
+    resolver=CanonicalAuthorityResolver(connect)
+    with connect() as db:
+        db.execute("""insert into app_private.rootline_device_evidence_events(
+          event_id,evidence_id,event_type,reason) values(%s,%s,'invalidated','test invalidation')""",
+          ("EVT-E-"+suffix,evidence["supervised"]["evidence_id"]))
+        db.execute("""insert into app_private.rootline_authority_events(
+          event_id,standing_authority_id,version,event_type,reason)
+          values(%s,%s,'1','revoked','test revocation')""",("EVT-A-"+suffix,authority_id))
+    assert resolver.evidence(evidence["supervised"])["current"] is False
+    assert resolver.authority(row["authority_envelope"])["active"] is False
+    with pytest.raises(ValueError,match="evidence_unresolved"):
+        load_device_record(stored["device_key"],connect_factory=connect)
     forged={**row,"device_id":"forged-"+suffix,"registry_generation":1,
       "commissioning_evidence":{**evidence,"supervised":{
         **evidence["supervised"],"sha256":"0"*64}}}
