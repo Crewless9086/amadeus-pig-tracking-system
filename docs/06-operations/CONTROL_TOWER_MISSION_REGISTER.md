@@ -701,6 +701,29 @@ IDLE / PROMPT_PREPARED_NOT_DELIVERED`. No fresh SAM, DOCUMENTS or CODEX UI
 terminal progress was proved. These classifications expire on fresh feedback or
 new execution evidence; process existence alone never preserves them as active.
 
+### CORE provider-origin activation checkpoint reconciliation — 2026-08-17
+
+Recovery Slot 1 checkpoint `6d7e84fe` preserves nine provider-origin activation-
+rail paths on base `e3e35874`. Safe mocked tests passed 30 cases and disposable
+Docker passed 123 with four platform skips. The terminal stopped correctly when
+authoritative main advanced to `37a6a4c3`; no review, push, PR, staging,
+activation or runtime effect occurred. Fresh comparison proves zero path overlap
+between the checkpoint and the 30 OOM/ROOTLINE paths introduced by current main.
+The worktree is clean, one commit ahead and sixteen behind, and no matching CORE
+development or Docker-test process remains. Process existence is therefore not
+being used as activity evidence.
+
+Classify Slot 1 `WORKING / SOURCE_CHECKPOINTED /
+CURRENT_MAIN_RECONCILIATION_AUTHORIZED`. Continue in the existing isolated
+worktree and branch; do not create another worktree or reconstruct the source.
+Perform one non-destructive current-main reconciliation, repeat complete current
+governance verification, isolated validation and both independent reviews, then
+open one source-only PR and require exact-head CI. Stop before merge, staging or
+activation. The later acceptance journey remains exact-current staging,
+separately governed scheduled-provider activation, signed owned-tree proof,
+heartbeat, independently triggered next cycle and terminal-close continuity.
+No source, test, PR or CI result establishes that CORE is alive.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
