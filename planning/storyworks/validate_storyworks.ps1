@@ -246,21 +246,90 @@ if ($editScenes.Count -ne 20 -or ($editScenes | Select-Object -Unique).Count -ne
 }
 $candidateText = Read-Utf8Strict (Join-Path $petra 'PREPRODUCTION_DECISION_CANDIDATE.md')
 foreach ($boundary in @(
-    'does not authorise editing',
-    'No asset is permanently rejected',
-    'Charl is not the default business narrator',
-    'no narration, music or external SFX'
+    'Charl is not asked to approve factual claims or invent pronunciations',
+    'No production authority',
+    'explicit answer to question five can authorise',
+    'It cannot authorise narration, external assets, provider activity, spend'
 )) {
     if ($candidateText.IndexOf($boundary, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
         Add-Failure "Pre-production candidate is missing boundary: $boundary"
     }
 }
-$pronunciationText = Read-Utf8Strict (Join-Path $petra 'PRONUNCIATION_REVIEW_SHEET.md')
-if ($pronunciationText.IndexOf('No phonetics have been invented', [System.StringComparison]::Ordinal) -lt 0 -or
-        $pronunciationText.IndexOf('____________________', [System.StringComparison]::Ordinal) -lt 0) {
-    Add-Failure 'Pronunciation sheet lacks its no-invention boundary or blank approval fields.'
+$auditText = Read-Utf8Strict (Join-Path $petra 'CLAIM_SOURCE_AUDIT.md')
+$auditIds = @([regex]::Matches($auditText, '(?m)^\| (P\d{3}) \|') |
+    ForEach-Object { $_.Groups[1].Value })
+if ($auditIds.Count -ne 17 -or ($auditIds | Select-Object -Unique).Count -ne 17) {
+    Add-Failure 'Claim-to-source audit must contain exactly P001-P017 once each.'
 }
-$syntheticText = Read-Utf8Strict (Join-Path $petra 'SYNTHETIC_NARRATION_EVALUATION.md')
+foreach ($field in @('Retained script sentence(s)', 'Supporting source', 'Evidence',
+        'Certainty', 'Allowed wording', 'Prohibited stronger wording',
+        'Unresolved specialist need')) {
+    if ($auditText.IndexOf($field, [System.StringComparison]::Ordinal) -lt 0) {
+        Add-Failure "Claim-to-source audit is missing field: $field"
+    }
+}
+$redlineText = Read-Utf8Strict (Join-Path $petra 'SCRIPT_REDLINE_SUMMARY.md')
+$scriptRequired = @(
+    'modern synthesis of surviving evidence',
+    'One inferred function',
+    'was intended to divert part of the dangerous flow',
+    'may have shaped design choices',
+    'interprets sequential features as allowing suspended material to settle',
+    'regional influences alongside locally adapted technical choices',
+    'maintenance is central to interpreting the system',
+    'Across different periods',
+    'could help slow runoff',
+    'could help redirect dangerous flow',
+    'could help remove suspended material',
+    'repeated inspection, cleaning and repair'
+)
+foreach ($wording in $scriptRequired) {
+    if ($scriptText.IndexOf($wording, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        Add-Failure "Corrected script is missing conservative wording: $wording"
+    }
+    if ($redlineText.IndexOf($wording, [System.StringComparison]::OrdinalIgnoreCase) -lt 0 -and
+            $wording -notin @('could help slow runoff', 'could help redirect dangerous flow',
+                'could help remove suspended material')) {
+        Add-Failure "Redline summary is missing correction: $wording"
+    }
+}
+$pronunciationText = Read-Utf8Strict (Join-Path $petra 'PRONUNCIATION_REVIEW_SHEET.md')
+foreach ($boundary in @(
+    'No phonetics are inferred from spelling',
+    'Unresolved terms block narration, not a silent timing edit',
+    'Authoritative source', 'Language/context', 'Published pronunciation evidence',
+    'Confidence', 'Recommended narration form'
+)) {
+    if ($pronunciationText.IndexOf($boundary, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        Add-Failure "Pronunciation research is missing: $boundary"
+    }
+}
+$ownerFormText = Read-Utf8Strict (Join-Path $petra 'OWNER_DECISION_FORM.md')
+$ownerQuestions = @([regex]::Matches($ownerFormText, '(?m)^\d\. \*\*'))
+if ($ownerQuestions.Count -ne 5) {
+    Add-Failure 'Owner decision form must contain exactly five numbered choices.'
+}
+foreach ($choice in @('Working title', 'Audience and tone', 'Diagram direction',
+        'Scalable narration strategy', 'Private silent rough cut after QA')) {
+    if ($ownerFormText.IndexOf($choice, [System.StringComparison]::Ordinal) -lt 0) {
+        Add-Failure "Owner decision form is missing: $choice"
+    }
+}
+$prototypeQaText = Read-Utf8Strict (Join-Path $petra 'prototypes\QA.md')
+foreach ($finding in @(
+    'A003 verdict:', 'factual/visual QA is **not passed**',
+    'A004 verdict:', 'passes with required visual corrections',
+    'Charl is not the factual verifier'
+)) {
+    if ($prototypeQaText.IndexOf($finding, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        Add-Failure "Prototype QA is missing internal finding: $finding"
+    }
+}
+$expertText = Read-Utf8Strict (Join-Path $petra 'EXPERT_REVIEW_EXCEPTIONS.md')
+if ($expertText.IndexOf('Silent 14:20 timing work is not blocked by pronunciation',
+        [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+    Add-Failure 'Expert exceptions do not preserve the silent-edit boundary.'
+}$syntheticText = Read-Utf8Strict (Join-Path $petra 'SYNTHETIC_NARRATION_EVALUATION.md')
 foreach ($criterion in @('Voice quality and suitability', 'Pronunciation control',
         'Commercial-use rights', 'Provider terms', 'Cost per finished video',
         'Repeatability and automation', 'Owner approval controls')) {

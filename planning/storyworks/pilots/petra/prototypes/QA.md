@@ -30,3 +30,40 @@ SVGs are original StoryWorks code-native illustrations. PNGs are local renders o
 ## Verdict
 
 **PASS AS PRIVATE STYLE/COMPREHENSION PROTOTYPES. NOT FINAL MEDIA.**
+
+## Internal factual/editorial/visual QA — 2026-07-25
+
+### Review roles and evidence
+
+- **Source-verification role:** compared diagram labels/descriptions with P003–P007, P015–P017 and S01/S04/S05/S09.
+- **Conservative editorial role:** tested whether labels imply measured performance, identical structures, complete control or exact geography.
+- **Visual-review role:** inspected the original 1600×900 SVG structure, labels, hierarchy, accessibility text, original-provenance record and existing PNG checksum/render record. A fresh raster-view tool was unavailable at the Windows sandbox boundary; no claim of a new pixel-level raster inspection is made.
+
+### A003 system overview — correction required before timing assembly
+
+| Check | Result | Internal finding/action |
+|---|---|---|
+| Five operations distinct | **Fail** | Title/description promise slow, divert, convey, settle and store, but the graphic numbers only four; `settling` is subordinate and unnumbered. Revise to five equal numbered operations. |
+| Risk moderation, not elimination | Pass with correction | No “all floods stopped” text, but the split-flow geometry needs an explicit `HELPS REDUCE / REDIRECT FLOW` qualifier in any motion version. |
+| Geography | Pass as concept | `SIMPLIFIED RECONSTRUCTION • NOT TO SCALE` is present. Never present it as a Petra survey/map. |
+| Evidence linkage | Pass | P003/P004/P015/P017 support the bounded system framing; P010 supports settling only as analysis/interpretation. |
+| Rights/provenance | Pass | Original StoryWorks SVG; no external media embedded. |
+| Visual readability | Conditional | Large labels and contrast are structurally clear; fresh raster inspection unavailable. Recheck at intended size after correction. |
+
+**A003 verdict:** direction remains approved, but factual/visual QA is **not passed** until the five-operation hierarchy and moderation qualifier are corrected and rechecked. It is not currently permitted in a timing assembly except as a neutral placeholder.
+
+### A004 headwater control — concept passes; motion correction required
+
+| Check | Result | Internal finding/action |
+|---|---|---|
+| Catchment-specific boundary | Conditional pass | Current title is generic. Add `WADI HREMIYYEH CONCEPT` or equivalent before use so P005/P006 are not universalised. |
+| Concept versus measured event | Pass | Footer states `CONCEPTUAL FLOW • NOT A MEASURED EVENT • STRUCTURES AND TERRAIN SIMPLIFIED`. |
+| Structure diversity | Correction required | Three checks use near-identical marks. Vary form/spacing or label them illustrative so identical geometry/function is not implied. |
+| Attenuation/delay | Motion correction required | Static flow is understandable, but no measured attenuation is shown. Any motion must stagger arrival qualitatively and retain the non-measured label. |
+| Evidence linkage | Pass | P005/P006 and S04/S05 support a catchment-specific qualitative moderation concept. |
+| Rights/provenance | Pass | Original StoryWorks SVG; no external media embedded. |
+| Visual readability | Conditional | Hierarchy is structurally clear; fresh raster inspection unavailable. Recheck after correction. |
+
+**A004 verdict:** factual concept **passes with required visual corrections**. It may be represented by a neutral placeholder now; the prototype itself enters a timing assembly only after catchment naming, non-identical structure treatment and final visual recheck.
+
+Charl may judge attractiveness and comprehension after these corrections. Charl is not the factual verifier.
