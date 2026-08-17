@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import re
+import shutil
 import subprocess
 import uuid
 from datetime import datetime, timezone
@@ -557,23 +558,107 @@ def _validate_target_roots(runtime_root, execution_root, state_root):
         raise RuntimeStagingError("non_authoritative_staging_roots")
 
 
+_GOVERNED_LFS_CONFIG = {
+    "filter.lfs.clean": "git-lfs clean -- %f",
+    "filter.lfs.smudge": "git-lfs smudge -- %f",
+    "filter.lfs.process": "git-lfs filter-process",
+    "filter.lfs.required": "true",
+}
+_GOVERNED_LFS_SCOPES = frozenset({"system", "global"})
+_TRUSTED_GIT_EXECUTABLE_DIRS = (
+    (Path("C:/Program Files/Git/cmd"), Path("C:/Program Files (x86)/Git/cmd"))
+    if os.name == "nt"
+    else (Path("/usr/bin"), Path("/usr/local/bin"), Path("/opt/homebrew/bin"))
+)
+
+
+def _resolved_sibling_executables(left, right):
+    left_path = shutil.which(left)
+    right_path = shutil.which(right)
+    if not left_path or not right_path:
+        return False
+    try:
+        left_path = Path(left_path).resolve(strict=True)
+        right_path = Path(right_path).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False
+    trusted_directories = set()
+    for candidate in _TRUSTED_GIT_EXECUTABLE_DIRS:
+        try:
+            trusted_directories.add(candidate.resolve(strict=True))
+        except (OSError, RuntimeError):
+            continue
+    if not trusted_directories:
+        return None
+    return (
+        left_path
+        if (
+        left_path.is_file()
+        and right_path.is_file()
+        and left_path.parent == right_path.parent
+        and left_path.parent in trusted_directories
+        and left_path.name.lower() in {"git", "git.exe"}
+        and right_path.name.lower() in {"git-lfs", "git-lfs.exe"}
+        )
+        else None
+    )
+
+
 def inspect_git_checkout_safety(root, runner=subprocess.run):
+    git_executable = _resolved_sibling_executables("git", "git-lfs")
+    if not git_executable:
+        raise RuntimeStagingError("git_executable_checkout_extension_present", root=str(root))
     completed = runner(
-        ["git", "config", "--show-origin", "--get-regexp",
-         r"^(core\.hooksPath|core\.fsmonitor|filter\..*\.(process|smudge))$"],
+        [str(git_executable), "config", "-z", "--show-scope", "--show-origin", "--list"],
         cwd=str(root), capture_output=True, text=True, timeout=30, check=False,
     )
     if completed.returncode not in (0, 1):
         raise RuntimeStagingError("git_checkout_extensions_unreadable", root=str(root))
-    if completed.returncode == 0 and str(completed.stdout or "").strip():
-        raise RuntimeStagingError("git_executable_checkout_extension_present", root=str(root))
-    hook = _git(root, ["rev-parse", "--git-path", "hooks/post-checkout"], runner)
+    governed_lfs = set()
+    fields = str(completed.stdout or "").split("\0")
+    if fields and fields[-1] == "":
+        fields.pop()
+    if len(fields) % 3:
+        raise RuntimeStagingError("git_checkout_extensions_unreadable", root=str(root))
+    for offset in range(0, len(fields), 3):
+        scope, _origin, setting = fields[offset:offset + 3]
+        if "\n" not in setting:
+            raise RuntimeStagingError("git_checkout_extensions_unreadable", root=str(root))
+        key, value = setting.split("\n", 1)
+        key = key.lower()
+        if not (
+            key.startswith("filter.")
+            or key in {"core.hookspath", "core.fsmonitor"}
+            or key.startswith("include.")
+            or key.startswith("includeif.")
+        ):
+            continue
+        if (
+            scope not in _GOVERNED_LFS_SCOPES
+            or key not in _GOVERNED_LFS_CONFIG
+            or value != _GOVERNED_LFS_CONFIG[key]
+        ):
+            raise RuntimeStagingError("git_executable_checkout_extension_present", root=str(root))
+        governed_lfs.add(key)
+    if governed_lfs:
+        if governed_lfs != set(_GOVERNED_LFS_CONFIG):
+            raise RuntimeStagingError("git_executable_checkout_extension_present", root=str(root))
+    completed = runner(
+        [str(git_executable), "rev-parse", "--git-path", "hooks/post-checkout"],
+        cwd=str(root), capture_output=True, text=True, timeout=30, check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeStagingError("git_read_failed", command=["rev-parse", "--git-path", "hooks/post-checkout"])
+    hook = str(completed.stdout or "").strip()
     hook_path = Path(hook)
     if not hook_path.is_absolute():
         hook_path = root / hook_path
     if hook_path.is_file():
         raise RuntimeStagingError("git_post_checkout_hook_present", root=str(root))
-    return {"extensions": "none", "post_checkout_hook": "absent"}
+    return {
+        "extensions": "governed_git_lfs" if governed_lfs else "none",
+        "post_checkout_hook": "absent",
+    }
 
 
 def _worktree_identity(root, runner):
