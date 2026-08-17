@@ -625,6 +625,39 @@ outcomes—the live herd worklist, weighing/litter/welfare follow-through and
 resolving operational blockers such as order eligibility—outrank this analytics
 presentation mission.
 
+### Continuous-agent operational reality gate — 2026-08-17
+
+Fresh production readback confirms that source and scheduler progress has not
+yet produced closed operational agents. ROOTLINE is independently reassessed at
+roughly fifteen-minute intervals, but recent cycles end `zone_contained` with
+zero Telegram sends and zero hardware commands; the owner API returns
+`no_current_water_energy_plan`. HERDMASTER canonical loading produces 17 cases
+and 14 tasks and contains Molly's active 2026-08-11 litter, but no durable worker,
+Oom Sakkie delivery, retained case owner or resolved follow-through was proved.
+Pig 151 remains absent from the order dropdown because the live projection
+retains a withdrawal/medical hold through 2026-09-08; whether that restriction
+is correct remains an unresolved operational case, not a UI defect closure.
+BEACON has no recorded Facebook execution after 2026-08-01 and no campaign-
+performance event after 2026-07-25; a visible development process is not an
+operational BEACON cycle. Oom Sakkie health HTTP 200 does not establish manager
+operation because none of these specialist outcomes reached the owner through a
+proved continuous loop.
+
+The mandatory acceptance sequence for each specialist is: genuine event,
+durable intake, specialist assessment, useful Oom Sakkie delivery, action or
+protected decision, provider/canonical/physical verification as applicable,
+durable unresolved-case ownership, earliest reassessment, and a later terminal-
+independent cycle. No PR, CI, deployment, endpoint health, stored worklist,
+observation-only result or daily brief may substitute for that sequence. Slot 2
+must first deploy and prove one ROOTLINE case beyond `zone_contained`; the next
+HERDMASTER operating-spine mission must close one genuine current case (with
+Molly/livestock allocation and withdrawal truth included in the live backlog);
+the revenue lane must then prove one genuine BEACON opportunity produces a
+current proposal or exact media request through Oom Sakkie. CORE activation must
+supervise these durable workers, stalled cases, backlogs and delivery failures;
+it does not replace their specialist work. Analytics/UI/document expansion
+remains subordinate until these operational proofs reduce recurring owner work.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
