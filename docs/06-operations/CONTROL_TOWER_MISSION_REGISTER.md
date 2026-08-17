@@ -1970,3 +1970,23 @@ The historical 18:03 reply remains uncaptured and was not replayed or inserted.
 Render web, OOM and ROOTLINE now run descendant `adb3658e`, satisfying deployment
 proof. Operational acceptance waits for a future genuine named observation; do
 not ask Charl to repeat the old message and do not infer hardware authority.
+
+### Revenue BEACON owner-card/media source terminal completed - 2026-08-17 18:41 SAST
+
+Fresh exit and worktree reconciliation recovered the handover that was not visible
+in Cursor. `TERMINAL REVENUE - BEACON OWNER CARD + MEDIA` exited successfully
+with code 0; no attributable Codex child remains. Its clean retained worktree is
+`C:\tmp\revenue-beacon-owner-card-media-slot3-20260817`, source commit
+`55ab012d7e641356531d8e440b9444c2eb359da5`. PR #1054 passed all three hosted
+gates and merged as authoritative main
+`adb3658e23947ddbf2c8966765c82b677554f3e3`.
+
+Classify the visible development terminal as `CLOSED / RELEASED-RETAIN`, not
+active and not crashed. The existing Revenue Recovery Slot 3 operational mission
+remains `RELEASE_HOLD`: exact deployed revision, a fresh deployed Oom
+Sakkie/BEACON worker cycle, one concise Telegram card with protected
+Approve/Correct/Decline buttons and exact eligible-media review, provider/card
+binding, and a later unchanged replay-silent cycle remain unproven. No duplicate
+terminal or prompt is authorized. Automatically resume acceptance only on fresh
+provider/runtime evidence; do not manufacture a card, callback, publication,
+boost, spend, customer message, media-public-use grant, reservation or farm write.
