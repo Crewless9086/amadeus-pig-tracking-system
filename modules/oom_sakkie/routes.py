@@ -126,7 +126,9 @@ from modules.oom_sakkie.morning_scheduler import (
     run_synthetic_acceptance,
 )
 from modules.oom_sakkie.protected_payment_recovery import run_payment_recovery_cycle
-from modules.oom_sakkie.general_manager_worker import run_general_manager_cycle
+from modules.oom_sakkie.general_manager_worker import (
+    deliver_farm_manager_case, run_general_manager_cycle,
+)
 from modules.oom_sakkie.rootline_physical_acceptance import attach_physical_acceptance
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
@@ -296,7 +298,7 @@ def oom_sakkie_general_manager_cycle():
                         "telegram_sends": 0, "telegram_edits": 0,
                         "customer_sends": 0, "provider_actions": 0,
                         "hardware_commands": 0, "writes_farm_data": False}), 403
-    result = run_general_manager_cycle()
+    result = run_general_manager_cycle(deliver=deliver_farm_manager_case)
     return jsonify(result), 200 if result.get("success") else 503
 
 
