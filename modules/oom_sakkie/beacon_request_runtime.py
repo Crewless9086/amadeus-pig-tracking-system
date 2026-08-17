@@ -25,6 +25,25 @@ ZERO = {"writes_farm_data": False, "writes_media": False, "publishes": False,
         "protected_actions_performed": False}
 
 
+def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_opportunity_cards,
+        media_loader=list_media_intakes):
+    """Compose one internal BEACON result from current canonical evidence."""
+    opportunities = opportunity_loader()
+    media_result = media_loader()
+    media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
+    packet = build_current_beacon_proposal(opportunities, media_payload)
+    return {
+        "success": True,
+        "status": "beacon_sale_ready_stock_proposal_ready",
+        "answer": render_beacon_packet(packet, language="en"),
+        "proposal": packet,
+        "result_digest": _digest(packet),
+        "follow_up_owner": "BEACON",
+        "next_trigger": "material canonical stock or media evidence change",
+        **ZERO,
+    }
+
+
 def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
         opportunity_loader: Callable = build_beacon_opportunity_cards,
         media_loader: Callable = list_media_intakes,
@@ -245,8 +264,7 @@ def _current_evidence_request(cards, opportunities):
         "decision_options": ["wait_for_quantified_demand", "prepare_non_availability_awareness_campaign"],
         "protected_owner_decision": "Wait for quantified buyer demand, or choose a non-availability farm-awareness objective",
         "authority": dict(ZERO)}
-    packet["packet_id"] = "BEACON-EVIDENCE-" + _digest({"generated_at": opportunities.get("generated_at"),
-        "evidence": evidence})[:24].upper()
+    packet["packet_id"] = "BEACON-EVIDENCE-" + _digest({"evidence": evidence})[:24].upper()
     return packet
 
 
