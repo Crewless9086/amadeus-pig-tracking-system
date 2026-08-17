@@ -1870,3 +1870,22 @@ the missing row, send Telegram from a terminal or perform hardware actions. The
 visible external terminal `ROOTLINE - RESERVOIR OBSERVATION` was dispatched at
 18:09 SAST after fresh collision review found its intended intake boundary
 disjoint from the active Revenue BEACON files.
+### ROOTLINE current-plan live acceptance result — 2026-08-17 18:18 SAST
+
+Provider/canonical acceptance now proves PR #1050's primary ordering outcome:
+ROOTLINE schedule `*/15` and OOM manager `*/5` ran on exact deployed main
+`e95a9f88a493f0b1f96998a8bc6c71611697947d`; the 18:00 provider epoch delivered
+Telegram `3716` for current-date result
+`ROOTLINE-RESULT-20260817-483462973CAD7DB0`. The delivered advisory plan contained
+two bounded recommendations: B12345 `Run` for 60 minutes and C12345 `Run` for 60
+minutes. This was advisory only. No post-deploy `claim_before_on`,
+`record_on_outcome`, provider-control or hardware-command event was found.
+
+The later 18:15 ROOTLINE provider schedule completed successfully on the same
+revision, and the 18:15 OOM manager cycle completed without another ROOTLINE
+Telegram delivery. This proves terminal-independent schedule continuity and
+replay silence for the delivered generation. However, the current manager case
+is again open with a precise provider-confirmation exception for a later/current
+material-result-generation tuple. Combined with the unpersisted 18:03 reservoir
+reply, keep Recovery Slot 2 `WORKING / ACCEPTANCE_DEFECT_REPAIR_ACTIVE`; do not
+claim irrigation ran or close the broader operational mission.
