@@ -202,6 +202,7 @@ def supervise_runner(
     generation = str(generation or os.getenv("CHARLIE_SUPERVISOR_GENERATION") or uuid.uuid4().hex)
     startup_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or uuid.uuid4().hex)
     execution_mode = str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or "ordinary").strip().lower()
+    activation_id = str(os.getenv("CHARLIE_ACTIVATION_ID") or "")
     if execution_mode not in {"ordinary", "observe_only"}:
         return {"status": "infrastructure_hold", "failure_status": "execution_mode_invalid"}
     test_mode = popen_factory is not subprocess.Popen
@@ -365,6 +366,8 @@ def supervise_runner(
             "CHARLIE_CONTROLLER_PUBLIC_KEY": controller_public_key,
             "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
         })
+        if activation_id:
+            child_env["CHARLIE_ACTIVATION_ID"] = activation_id
         # The legacy alias can still be present in the scheduled-task
         # environment.  Child configuration is a single supervisor-owned
         # value, so keep both names identical instead of triggering the
@@ -444,6 +447,7 @@ def supervise_runner(
                 "member_pids": runner_observation["validation"]["member_pids"],
                 "runner_tree_digest": process_tree_identity_digest(runner_tree),
                 "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+                **({"activation_id": activation_id} if activation_id else {}),
             },
         )
         waiter = acknowledgement_fn
@@ -1424,6 +1428,7 @@ def _write_status(status, **extra):
             "intended_runtime_revision",
             "intended_execution_revision",
             "execution_mode",
+            "activation_id",
         ):
             if key not in payload and key in previous:
                 payload[key] = previous[key]

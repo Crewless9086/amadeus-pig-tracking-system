@@ -258,6 +258,7 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "supervisor_generation": str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or ""),
         "startup_nonce": str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or ""),
         "execution_mode": str(os.getenv("CHARLIE_CORE_EXECUTION_MODE") or EXECUTION_MODE_ORDINARY),
+        "activation_id": str(os.getenv("CHARLIE_ACTIVATION_ID") or ""),
     }
     for key in (
         "elapsed_seconds",
@@ -508,6 +509,9 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
         "CHARLIE_CONTROLLER_PUBLIC_KEY": controller_public_key,
         "CHARLIE_CORE_EXECUTION_MODE": execution_mode,
     }
+    activation_id = str(os.getenv("CHARLIE_ACTIVATION_ID") or "")
+    if activation_id:
+        child_env["CHARLIE_ACTIVATION_ID"] = activation_id
     if os.name == "nt":
         venv_site = Path(sys.prefix) / "Lib" / "site-packages"
         child_env["PYTHONPATH"] = os.pathsep.join(
@@ -588,6 +592,8 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
         "supervisor_tree_digest": process_tree_identity_digest(supervisor_tree),
         "acknowledged_at": datetime.now(timezone.utc).isoformat(),
     }
+    if activation_id:
+        controller_acknowledgement["activation_id"] = activation_id
     controller_acknowledgement["signature"] = sign_controller_acknowledgement(
         controller_acknowledgement, controller_private_key
     )
@@ -608,6 +614,8 @@ def _start_runner_unlocked(status_override=None, respect_stop_marker=True,
         "controller_acknowledgement": controller_acknowledgement,
         "ownership_history": history,
     }
+    if activation_id:
+        controller_packet["activation_id"] = activation_id
     atomic_write_json(SUPERVISOR_PATH, controller_packet)
     reread = _read_json(SUPERVISOR_PATH)
     valid, reason = validate_supervisor_packet(
@@ -791,6 +799,9 @@ def _wait_for_supervisor_ack(
                     "execution_mode": execution_mode,
                     "acknowledged_at": datetime.now(timezone.utc).isoformat(),
                 }
+                activation_id = str(packet.get("activation_id") or "")
+                if activation_id:
+                    final_acknowledgement["activation_id"] = activation_id
                 final_acknowledgement["signature"] = sign_controller_acknowledgement(
                     final_acknowledgement, controller_private_key
                 )

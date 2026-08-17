@@ -38,6 +38,7 @@ def _identity():
         "runtime_revision": str(os.getenv("CHARLIE_INTENDED_RUNTIME_REVISION") or ""),
         "execution_revision": str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or ""),
         "public_key": str(os.getenv("CHARLIE_CONTROLLER_PUBLIC_KEY") or ""),
+        "activation_id": str(os.getenv("CHARLIE_ACTIVATION_ID") or ""),
     }
 
 
@@ -123,6 +124,8 @@ def _validate_final(packet):
         "runner_pid": str(os.getpid()),
         "execution_mode": EXECUTION_MODE_OBSERVE_ONLY,
     }
+    if identity.get("activation_id"):
+        expected["activation_id"] = identity["activation_id"]
     mismatch = next(
         (
             field
