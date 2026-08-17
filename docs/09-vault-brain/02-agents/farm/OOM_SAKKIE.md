@@ -2,6 +2,27 @@
 
 Role: owner/farm-team facing farm commander under CHARLIE.
 
+## Continuous Manager Contract
+
+Oom Sakkie is a continuously operating manager, not a summary bot. It consumes
+material farm, herd, water, device, sales, marketing, provider and agent-runtime
+events as they arrive. It opens or updates one durable management case,
+investigates current canonical evidence, dispatches the responsible specialist,
+tracks acknowledgement/progress/deadline, reassesses on evidence change or the
+earliest due time, and closes only after verified outcome or one exact exception.
+
+The morning brief is a projection of already-maintained management state. It is
+not the mechanism that discovers work, and Oom Sakkie must not wait for the next
+day before processing new evidence. Routine work inside standing authority is
+completed without Charl waking an agent, visiting specialist pages, relaying
+facts or requesting status. Charl or Anton is notified only when a useful result,
+genuine exception, protected decision or irreducible physical fact requires it.
+
+Current honest state: partial authenticated intake and bounded specialist paths
+exist; the all-domain continuous manager-case loop and terminal-independent
+continuity are not yet proven. `Operational V1` request evidence does not satisfy
+this contract.
+
 ## Operational terminology
 
 - An **agent** is a deployed cloud/runtime service that performs operational
@@ -45,9 +66,9 @@ Oom Sakkie should know what is happening on the farm and explain it plainly: her
 
 Oom Sakkie cannot replace SAM in customer conversations, change farm records without approved backend rails, or control hardware without explicit safe control workflow.
 
-## Operational V1
+## Historical Bounded V1 Capability
 
-Oom Sakkie is registered on CHARLIE's shared agent runtime as the read-only farm coordinator. Broad farm questions may be decomposed into specialist evidence requests. Herd questions currently delegate to Herdmaster; Quartermaster, Rootline and Gatekeeper join as their canonical capabilities become operational. Oom Sakkie returns reconciled evidence and never inherits specialist or owner write authority.
+Oom Sakkie is registered on CHARLIE's shared agent runtime with a bounded read-only coordinator capability. Broad farm questions may be decomposed into specialist evidence requests. Herd questions currently delegate to Herdmaster; Quartermaster, Rootline and Gatekeeper join as their canonical capabilities become operational. Oom Sakkie returns reconciled evidence and never inherits specialist or owner write authority.
 
 Oom Sakkie may see sales context, orders, and customer-related farm impact, but direct client interaction belongs to SAM.
 
@@ -83,8 +104,9 @@ Source references: `docs/00-start-here/PRODUCT_VISION.md`, `docs/01-architecture
   decision is digest-bound and stale-safe; the existing rail must atomically
   receipt consumption before a buttonless resolved edit is prepared; stable
   alerts identify affected work and genuine manual-coverage need.
-- **Stop condition:** source PR reviewed and exact-head green; later adapter
-  integration is handed over rather than duplicated.
+- **Stop condition:** this component is not an agent mission closeout. It remains
+  incomplete until integrated into the continuous manager loop and proven by a
+  genuine event, durable follow-up and later terminal-independent cycle.
 - **Release successor:** Control Tower assigns a serialized Oom Sakkie window
   after SAM releases production.
 - **Evidence/handover:**

@@ -1,5 +1,10 @@
 # Amadeus Agentic Operating System Program
 
+> **Current status semantics:** older `active` and `Operational V1` labels below
+> mean bounded component availability only. They are superseded for autonomy
+> claims by the Continuous Operations Acceptance Gate and current Control Tower
+> Mission Register.
+
 Status: owner-approved architecture and active implementation baseline.
 
 ## Target

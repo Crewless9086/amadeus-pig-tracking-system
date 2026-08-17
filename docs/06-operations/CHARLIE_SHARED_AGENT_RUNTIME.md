@@ -1,5 +1,11 @@
 # CHARLIE Shared Agent Runtime
 
+> **Current status semantics:** the `Operational V1` sections below document
+> bounded request/response components. They do not prove continuously operating
+> agents. Current autonomy requires the Continuous Operations Acceptance Gate,
+> durable trigger/worker/heartbeat, useful independent result, next trigger and
+> terminal-close continuity.
+
 ## Operating Model
 
 CHARLIE is Charl's private executive and the only layer expected to combine evidence across departments. Domain agents interpret their own business truth. The shared runtime supplies registration, bounded delegation, evidence sufficiency checks, one repair pass, telemetry and an explicit authority envelope.

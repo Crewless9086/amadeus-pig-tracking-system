@@ -1,6 +1,7 @@
 import unittest
 
 from modules.charlie.vault_retrieval import (
+    _eligible_current_vault_text,
     autonomy_readiness_packet,
     evaluate_vault_source_coverage,
     owner_preference_packet,
@@ -9,6 +10,18 @@ from modules.charlie.vault_retrieval import (
 
 
 class CharlieVaultRetrievalTests(unittest.TestCase):
+    def test_current_governance_has_priority_over_matching_legacy_text(self):
+        packet = retrieve_vault_sources({"title": "agent operations"}, limit=6, excerpt_chars=0)
+        paths = [item["path"] for item in packet["sources"]]
+
+        self.assertEqual(paths[0], "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md")
+        self.assertIn("docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md", paths)
+
+    def test_historical_or_superseded_text_is_not_ordinary_current_context(self):
+        self.assertFalse(_eligible_current_vault_text("docs/09-vault-brain/old.md", "Status: historical\nOld target"))
+        self.assertFalse(_eligible_current_vault_text("docs/09-vault-brain/09-examples/example.md", "Current-looking text"))
+        self.assertTrue(_eligible_current_vault_text("docs/09-vault-brain/current.md", "Status: current\nCurrent target"))
+
     def test_retrieve_vault_sources_selects_keyword_and_base_docs(self):
         packet = retrieve_vault_sources({
             "title": "Fix bulk weight upload",

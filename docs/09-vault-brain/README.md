@@ -38,11 +38,12 @@ Read:
 If guidance conflicts, use this order until the owner approves a different hierarchy:
 
 1. Latest direct owner instruction.
-2. Supabase/runtime records for live state.
-3. This Vault Brain, once owner-reviewed.
-4. Active `docs/00-start-here/` docs.
-5. Module-specific active docs.
-6. Planning scratchpads and archived docs.
+2. `00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md` for operating method.
+3. Supabase/provider/runtime records for live state.
+4. Current Control Tower Mission Register and canonical Runtime Programme.
+5. Current focused Vault doctrine under the lifecycle standard.
+6. Active `docs/00-start-here/` and module-specific technical references.
+7. Planning scratchpads, superseded evidence and archived docs; never authority.
 
 ## Brain Guard Rule
 

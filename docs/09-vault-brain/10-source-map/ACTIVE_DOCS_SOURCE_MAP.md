@@ -9,10 +9,15 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 ## Highest-Level Sources
 
 - `docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`
+- `docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md`
 - `docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md`
 - `docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`
+- `docs/06-operations/CONTROL_TOWER_FEEDBACK_HANDOVER_TEMPLATE.md`
+- `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`
+- `docs/06-operations/GENERAL_TERMINAL_INTAKE_CONTRACT.md`
 - `docs/00-start-here/README.md`
 - `docs/00-start-here/CURRENT_STATE.md`
+- `docs/00-start-here/NEXT_STEPS.md`
 - `docs/00-start-here/WORKFLOW.md`
 - `docs/00-start-here/DEPLOYMENT_SOP.md`
 - `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`
@@ -65,7 +70,6 @@ architecture. Their use is bounded by the Agentic Farm Runtime Programme.
 
 ## Operations And Evidence
 
-- `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md`
 - `docs/06-operations/AGENTIC_FARM_RUNTIME_PHASE0_DEPENDENCY_RETIREMENT_REGISTER.md`
 - `docs/06-operations/RUNBOOK.md`
 - `docs/06-operations/TESTING_CHECKLIST.md`

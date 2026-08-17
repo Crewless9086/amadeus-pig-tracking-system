@@ -2,6 +2,21 @@
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
+## Current continuous-operation truth — 2026-08-17
+
+No principal agent is presently proven as a complete continuously operating
+worker. CORE has integrated source/staging rails but no proven coherent deployed
+mission worker. Oom Sakkie has partial intake and bounded specialist paths but no
+proven continuous all-domain manager-case loop. ROOTLINE is request-driven and
+its current plan has been unavailable. HERDMASTER supplies useful canonical
+reads but no continuous husbandry work queue. SAM cycles autonomously in shadow
+mode while customer dispatch is disabled. BEACON has no proven proactive
+marketing trigger/publication/performance loop.
+
+Older `Operational V1`, `active`, Daily Brief and canary statements below are
+historical component evidence. They do not override the current Control Tower
+register or Continuous Operations Acceptance Gate.
+
 ## Agentic Operating Architecture Enforcement - 2026-07-18
 
 - CORE freezes an Agentic Architecture Packet before Builder and carries it through planning, implementation, review and Brain Guard.

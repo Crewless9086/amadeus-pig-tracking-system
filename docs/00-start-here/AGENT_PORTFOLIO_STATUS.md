@@ -1,5 +1,13 @@
 # Amadeus Agent Portfolio Status
 
+> **Superseded status semantics — 2026-08-17:** historical rows below describe
+> bounded components at their stated evidence dates. They must not be used to
+> call an agent live, autonomous or continuously operational. Current truth is
+> the Continuous Agent Operations Reset in
+> `docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md` and each canonical agent
+> file's Continuous Operating Contract. Request answers, Daily Briefs, source,
+> CI, deployment and one canary are component evidence only.
+
 Evidence cut: **2026-07-25 21:10 UTC**
 
 Repository revision:
