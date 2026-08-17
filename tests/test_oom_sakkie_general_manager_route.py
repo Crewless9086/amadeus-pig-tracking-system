@@ -31,4 +31,5 @@ def test_general_manager_route_runs_authenticated_worker(run_cycle):
         headers={"Authorization": "Bearer " + TOKEN})
     assert response.status_code == 200
     assert response.get_json()["worker_id"] == "oom-sakkie-general-manager-v1"
-    run_cycle.assert_called_once_with()
+    assert run_cycle.call_count == 1
+    assert callable(run_cycle.call_args.kwargs["deliver"])
