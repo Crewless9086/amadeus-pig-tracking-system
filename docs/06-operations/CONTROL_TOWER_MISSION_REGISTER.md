@@ -1997,3 +1997,13 @@ Prior terminals exited 0 with no Codex child. Fresh detached exact-main
 worktrees now run CORE staging-only and Revenue read-only deployed acceptance.
 Activation, terminal-created provider cycles, Telegram effects, publication and
 spend remain forbidden. Fresh process evidence began at 19:09 SAST.
+
+### Multi-line livestock quote blocker dispatched - 2026-08-17 19:19 SAST
+
+Fresh collision checks found no active terminal bound to the requested-items/order
+journey. Control Tower started `SALES - MULTI-LINE LIVESTOCK QUOTE` in isolated
+worktree `C:\tmp\sales-multiline-livestock-quote-20260817` on exact main
+`adb3658e`. It owns the four-line customer request and must stop at an authenticated
+local preview. No order, quote send, purpose change, reservation, allocation,
+customer contact, production write or deployment is authorized. CODEX UI remains
+disjoint on breeding analytics; CORE and Revenue remain on their existing gates.
