@@ -49,7 +49,7 @@ def build_livestock_quote_preview(requested_items, herdmaster_packet, observed_a
             rendered = _render_candidate(authority, match_state, projected_target_date)
             row = (_rank(match_state), distance,
                    str(identity.get("tag_number") or pig_id).lower(), rendered)
-            if _recommendable(authority):
+            if _recommendable(authority) and match_state != "weight_evidence_review":
                 eligible.append(row)
             else:
                 review.append(row)
@@ -127,6 +127,12 @@ def _render_candidate(authority, match_state, projected_target_date=None):
             "canonical_dependency_evidence", "canonical_treatment_events",
         )
     }
+    if match_state == "weight_evidence_review":
+        axes["weight_evidence"] = {
+            "state": "blocked",
+            "reason": "Latest weight evidence is missing, future-dated, or older than 14 days at the packet cutoff.",
+            "evidence_ids": [str(current.get("latest_weight_date") or "missing_weight_date")],
+        }
     return {
         "pig_id": str(identity.get("pig_id") or ""),
         "tag_number": str(identity.get("tag_number") or ""),
@@ -134,7 +140,8 @@ def _render_candidate(authority, match_state, projected_target_date=None):
         "current_weight_kg": _number(current.get("latest_weight_kg")),
         "weight_date": current.get("latest_weight_date"), "match_state": match_state,
         "projected_target_date": projected_target_date,
-        "purpose": current.get("purpose"), "recommendable": _recommendable(authority),
+        "purpose": current.get("purpose"),
+        "recommendable": _recommendable(authority) and match_state != "weight_evidence_review",
         "treatment_disclosure": authority.get("treatment_disclosure"),
         "authority_axes": axes,
     }
@@ -153,18 +160,22 @@ def _add_grouped_review(groups, candidate):
             "blocking_axis": axis_name, "state": axis.get("state"), "reason": reason,
             "evidence_ids": list(axis.get("evidence_ids") or []), "candidates": [],
         })
+        group["evidence_ids"] = sorted(set(group["evidence_ids"]) | set(axis.get("evidence_ids") or []))
         if not any(row["pig_id"] == candidate["pig_id"] for row in group["candidates"]):
             group["candidates"].append(candidate)
 
 
 def _candidate_state(weight, low, high, average_daily_gain, latest_weight_date, cutoff):
+    measured = _date(latest_weight_date)
+    if not measured or not 0 <= (cutoff - measured).days <= MAX_WEIGHT_AGE_DAYS:
+        distance = 0 if low <= weight <= high else low - weight if weight < low else weight - high
+        return "weight_evidence_review", distance, None
     if low <= weight <= high:
         return "exact_match", 0, None
     distance = low - weight if weight < low else weight - high
     if 0 < distance <= 2:
         gain = _number(average_daily_gain) or 0
-        measured = _date(latest_weight_date)
-        if weight < low and gain > 0 and measured and 0 <= (cutoff - measured).days <= MAX_WEIGHT_AGE_DAYS:
+        if weight < low and gain > 0:
             projection_days = int(-(-distance // gain))
             if projection_days <= MAX_PROJECTION_DAYS:
                 return "projected_growth", distance, (cutoff + timedelta(days=projection_days)).isoformat()

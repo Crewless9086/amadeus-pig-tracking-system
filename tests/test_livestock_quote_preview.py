@@ -91,8 +91,21 @@ class LivestockQuotePreviewTests(unittest.TestCase):
         ], packet([wrong_category, stale, future]))
         line = result["recommendations"][0]
         self.assertEqual(line["projected_count"], 0)
-        self.assertEqual(line["near_match_count"], 2)
-        self.assertEqual(line["shortfall_quantity"], 1)
+        self.assertEqual(line["near_match_count"], 0)
+        self.assertEqual(line["supported_count"], 0)
+        self.assertEqual(line["shortfall_quantity"], 3)
+        weight_review = next(group for group in result["purpose_or_evidence_review"]
+                             if group["blocking_axis"] == "weight_evidence")
+        self.assertEqual({row["pig_id"] for row in weight_review["candidates"]}, {"OLD", "FUT"})
+
+    def test_stale_exact_weight_is_review_only(self):
+        stale = candidate("OLD-EXACT", "OE", "Male", 5.5)
+        stale["current_state"]["latest_weight_date"] = "2026-07-01"
+        result = build_livestock_quote_preview([
+            {"request_item_key": "m", "category": "Piglet", "weight_range": "5_to_6_Kg", "sex": "Male", "quantity": 1}
+        ], packet([stale]))
+        self.assertEqual(result["recommendations"][0]["supported_count"], 0)
+        self.assertEqual(result["recommendations"][0]["shortfall_quantity"], 1)
 
     def test_unknown_and_non_sale_are_grouped_and_never_counted(self):
         disclosure = {"medical_event_id": "MED-1", "safe_buyer_wording": "Food-chain withdrawal applies."}
