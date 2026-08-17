@@ -1889,3 +1889,21 @@ is again open with a precise provider-confirmation exception for a later/current
 material-result-generation tuple. Combined with the unpersisted 18:03 reservoir
 reply, keep Recovery Slot 2 `WORKING / ACCEPTANCE_DEFECT_REPAIR_ACTIVE`; do not
 claim irrigation ran or close the broader operational mission.
+### Revenue generation 11 semantic repair complete; owner-card/media continues — 2026-08-17
+
+Revenue's bounded demand-package repair returned exit 0, merged PR #1052 and
+deployed exact main `e95a9f88a493f0b1f96998a8bc6c71611697947d`. Deployed
+generation 11 corrected the messages objective, truthful canonical sale-ready
+categories, explicit `Message Amadeus Farm` qualification CTA, SAM routing and
+replay silence. Telegram card `3714` was provider-confirmed; no publication,
+spend, customer send or business commitment occurred.
+
+Do not promote generation 11 to Charl's protected decision yet: the handover did
+not prove actual inline Approve/Correct/Decline buttons or litter-linked governed
+media selection requested after its original dispatch. Continue the same Slot 3
+in visible terminal `REVENUE - BEACON OWNER CARD + MEDIA`, worktree
+`C:\tmp\revenue-beacon-owner-card-media-slot3-20260817`. Acceptance requires a
+compact non-duplicative card, exact callback authority/replay binding, canonical
+litter-media candidates with public-use truth, and deployed provider delivery
+plus later silence. No approval, publication, boost, spend or media-use authority
+is granted.
