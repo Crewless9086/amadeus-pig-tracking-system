@@ -23,6 +23,8 @@ from modules.charlie.runtime_activation import (
     verify_or_recover_activation,
     verify_provider_origin,
     _inspect_exact_process,
+    _inspect_windows_task_scheduler_provider,
+    _local_current_process_identity,
 )
 from modules.charlie.runtime_staging import _validate_recovery_projection
 
@@ -211,7 +213,11 @@ class RuntimeActivationTests(unittest.TestCase):
             "inspection_complete": True, "pid": os.getpid(), "parent_pid": 20,
             "executable_path": row["execute"],
             "command_line": f'"{row["execute"]}" {row["arguments"]}',
-            "ancestry": [{"pid": 20, "executable_path": "C:/Windows/System32/svchost.exe"}],
+            "ancestry": [{"pid": 20, "executable_path": "C:/Windows/System32/svchost.exe",
+                          "provider_identity_verified": True,
+                          "action_execute": row["execute"],
+                          "action_arguments": row["arguments"],
+                          "action_working_directory": row["working_directory"]}],
         }
         self.assertTrue(verify_provider_origin(provider, expected_task=self.task)["authorized"])
 
@@ -221,7 +227,25 @@ class RuntimeActivationTests(unittest.TestCase):
             "inspection_complete": True, "pid": 10, "parent_pid": 20,
             "executable_path": row["execute"],
             "command_line": f'"{row["execute"]}" -c "substituted"',
-            "ancestry": [{"pid": 20, "executable_path": "svchost.exe"}],
+            "ancestry": [{"pid": 20, "executable_path": "svchost.exe",
+                          "provider_identity_verified": True,
+                          "action_execute": row["execute"],
+                          "action_arguments": row["arguments"],
+                          "action_working_directory": row["working_directory"]}],
+        }, expected_task=self.task)
+        self.assertEqual(result["reason"], "provider_task_action_mismatch")
+
+    def test_provider_origin_rejects_substituted_scheduler_action_definition(self):
+        row = self.task[0]
+        result = verify_provider_origin(lambda _pid: {
+            "inspection_complete": True, "pid": 10, "parent_pid": 20,
+            "executable_path": row["execute"],
+            "command_line": f'"{row["execute"]}" {row["arguments"]}',
+            "ancestry": [{"pid": 20, "executable_path": "svchost.exe",
+                          "provider_identity_verified": True,
+                          "action_execute": row["execute"],
+                          "action_arguments": "-c substituted",
+                          "action_working_directory": row["working_directory"]}],
         }, expected_task=self.task)
         self.assertEqual(result["reason"], "provider_task_action_mismatch")
 
@@ -244,15 +268,27 @@ class RuntimeActivationTests(unittest.TestCase):
         def runner(command, **_kwargs):
             calls.append(command[-1])
             return subprocess.CompletedProcess(command, 0, json.dumps(rows[50]), "")
-        result = inspect_current_provider_chain(100, runner=runner, current_identity=lambda: {
+        provider = lambda: {
+            "inspection_complete": True, "pid": 50, "creation_time": "provider-created",
+            "service_name": "Schedule", "service_state": "Running", "start_name": "LocalSystem",
+            "executable_path": "C:/Windows/System32/svchost.exe",
+            "service_binary_path": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+            "service_dll": "C:/Windows/System32/schedsvc.dll", "system_root": "C:/Windows",
+            "engine_pid": 100, "instance_guid": "11111111-1111-1111-1111-111111111111",
+            "task_path": "\\CHARLIE CORE Runner Watchdog",
+            "provider_identity_verified": True, "current_action": "Execute",
+            "action_execute": self.task[0]["execute"],
+            "action_arguments": self.task[0]["arguments"],
+            "action_working_directory": self.task[0]["working_directory"],
+        }
+        result = inspect_current_provider_chain(100, runner=runner, provider_identity=provider,
+                                                current_identity=lambda: {
             "inspection_complete": True, "pid": 100, "parent_pid": 50,
             "executable_path": "pythonw.exe", "creation_time": "child-created",
             "command_line": "pythonw.exe watchdog.py",
         })
         self.assertTrue(result["inspection_complete"])
-        self.assertEqual(len(calls), 2)
-        self.assertTrue(all("Get-CimInstance Win32_Process -Filter \"ProcessId=" in call for call in calls))
-        self.assertTrue(all("ProcessId=50" in call for call in calls))
+        self.assertEqual(calls, [])
 
     def test_scheduled_child_self_cim_denial_uses_local_identity_and_proves_provider(self):
         row = self.task[0]
@@ -263,24 +299,101 @@ class RuntimeActivationTests(unittest.TestCase):
         def runner(command, **_kwargs):
             calls.append(command[-1])
             return subprocess.CompletedProcess(command, 0, json.dumps(parent), "")
-        inspected = inspect_current_provider_chain(100, runner=runner, current_identity=lambda: {
+        provider = lambda: {
+            "inspection_complete": True, "pid": 50, "creation_time": "provider-created",
+            "service_name": "Schedule", "service_state": "Running", "start_name": "LocalSystem",
+            "executable_path": "C:/Windows/System32/svchost.exe",
+            "service_binary_path": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+            "service_dll": "C:/Windows/System32/schedsvc.dll", "system_root": "C:/Windows",
+            "engine_pid": 100, "instance_guid": "11111111-1111-1111-1111-111111111111",
+            "task_path": "\\CHARLIE CORE Runner Watchdog",
+            "provider_identity_verified": True, "current_action": "Execute",
+            "action_execute": row["execute"], "action_arguments": row["arguments"],
+            "action_working_directory": row["working_directory"],
+        }
+        inspected = inspect_current_provider_chain(100, runner=runner, provider_identity=provider,
+                                                   current_identity=lambda: {
             "inspection_complete": True, "pid": 100, "parent_pid": 50,
             "executable_path": row["execute"], "creation_time": "child-created",
             "command_line": f'"{row["execute"]}" {row["arguments"]}',
         })
         self.assertTrue(verify_provider_origin(lambda _pid: inspected, expected_task=self.task)["authorized"])
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 0)
         self.assertTrue(all("ProcessId=100" not in call for call in calls))
 
-    def test_provider_pid_substitution_during_bounded_read_fails_closed(self):
-        rows = iter([
-            {"ProcessId": 50, "ParentProcessId": 0, "ExecutablePath": "svchost.exe",
-             "CreationDate": "first", "CommandLine": "svchost.exe"},
-            {"ProcessId": 50, "ParentProcessId": 0, "ExecutablePath": "svchost.exe",
-             "CreationDate": "replacement", "CommandLine": "svchost.exe"},
+    def test_aa3be93a_shape_accepts_scm_identity_when_provider_process_path_is_acl_hidden(self):
+        row = self.task[0]
+        provider_reads = iter([
+            {"inspection_complete": True, "pid": 50, "creation_time": "provider-created",
+             "service_name": "Schedule", "service_state": "Running", "start_name": "LocalSystem",
+             "executable_path": "C:/Windows/System32/svchost.exe",
+             "service_binary_path": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+             "service_dll": "C:/Windows/System32/schedsvc.dll", "system_root": "C:/Windows",
+             "engine_pid": 100, "instance_guid": "11111111-1111-1111-1111-111111111111",
+             "task_path": "\\CHARLIE CORE Runner Watchdog",
+             "provider_identity_verified": True, "current_action": "Execute",
+             "action_execute": row["execute"], "action_arguments": row["arguments"],
+             "action_working_directory": row["working_directory"]},
+            {"inspection_complete": True, "pid": 50, "creation_time": "provider-created",
+             "service_name": "Schedule", "service_state": "Running", "start_name": "LocalSystem",
+             "executable_path": "C:/Windows/System32/svchost.exe",
+             "service_binary_path": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+             "service_dll": "C:/Windows/System32/schedsvc.dll", "system_root": "C:/Windows",
+             "engine_pid": 100, "instance_guid": "11111111-1111-1111-1111-111111111111",
+             "task_path": "\\CHARLIE CORE Runner Watchdog",
+             "provider_identity_verified": True, "current_action": "Execute",
+             "action_execute": row["execute"], "action_arguments": row["arguments"],
+             "action_working_directory": row["working_directory"]},
         ])
-        result = inspect_current_provider_chain(100, runner=lambda command, **_kwargs:
-            subprocess.CompletedProcess(command, 0, json.dumps(next(rows)), ""),
+        inspected = inspect_current_provider_chain(
+            100, provider_identity=lambda: next(provider_reads), current_identity=lambda: {
+                "inspection_complete": True, "pid": 100, "parent_pid": 50,
+                "executable_path": row["execute"], "creation_time": "child-created",
+                "command_line": f'"{row["execute"]}" {row["arguments"]}',
+            })
+        result = verify_provider_origin(lambda _pid: inspected, expected_task=self.task)
+        self.assertTrue(result["authorized"])
+
+    def test_scm_provider_identity_fails_closed_on_reuse_reparent_or_configuration_change(self):
+        base = {"inspection_complete": True, "pid": 50, "creation_time": "provider-created",
+                "service_name": "Schedule", "service_state": "Running", "start_name": "LocalSystem",
+                "executable_path": "C:/Windows/System32/svchost.exe",
+                "service_binary_path": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+                "service_dll": "C:/Windows/System32/schedsvc.dll", "system_root": "C:/Windows",
+                "engine_pid": 100, "instance_guid": "11111111-1111-1111-1111-111111111111",
+                "task_path": "\\CHARLIE CORE Runner Watchdog",
+                "provider_identity_verified": True, "current_action": "Execute",
+                "action_execute": self.task[0]["execute"],
+                "action_arguments": self.task[0]["arguments"],
+                "action_working_directory": self.task[0]["working_directory"]}
+        for field, replacement in (("pid", 51), ("creation_time", "reused"),
+                                   ("service_binary_path", "C:/evil/svchost.exe -k netsvcs -p"),
+                                   ("service_dll", "C:/evil/schedsvc.dll"),
+                                   ("start_name", "LocalService")):
+            with self.subTest(field=field):
+                reads = iter([dict(base), {**base, field: replacement}])
+                result = inspect_current_provider_chain(
+                    100, provider_identity=lambda: next(reads), current_identity=lambda: {
+                        "inspection_complete": True, "pid": 100, "parent_pid": 50,
+                        "executable_path": "pythonw.exe", "creation_time": "child-created",
+                        "command_line": "pythonw.exe watchdog.py",
+                    })
+                self.assertFalse(result["inspection_complete"])
+
+    def test_provider_pid_substitution_during_bounded_read_fails_closed(self):
+        base = {"inspection_complete": True, "pid": 50, "creation_time": "first",
+                "service_name": "Schedule", "service_state": "Running", "start_name": "LocalSystem",
+                "executable_path": "C:/Windows/System32/svchost.exe",
+                "service_binary_path": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+                "service_dll": "C:/Windows/System32/schedsvc.dll", "system_root": "C:/Windows",
+                "engine_pid": 100, "instance_guid": "11111111-1111-1111-1111-111111111111",
+                "task_path": "\\CHARLIE CORE Runner Watchdog",
+                "provider_identity_verified": True, "current_action": "Execute",
+                "action_execute": self.task[0]["execute"],
+                "action_arguments": self.task[0]["arguments"],
+                "action_working_directory": self.task[0]["working_directory"]}
+        rows = iter([base, {**base, "creation_time": "replacement"}])
+        result = inspect_current_provider_chain(100, provider_identity=lambda: next(rows),
             current_identity=lambda: {
                 "inspection_complete": True, "pid": 100, "parent_pid": 50,
                 "executable_path": "pythonw.exe", "creation_time": "child-created",
@@ -315,6 +428,38 @@ class RuntimeActivationTests(unittest.TestCase):
         self.assertTrue(result["inspection_complete"])
         self.assertEqual((result["pid"], result["parent_pid"]), (42, 7))
 
+    def test_windows_provider_uses_exact_pid_kernel_creation_time_and_exact_action(self):
+        row = self.task[0]
+        provider_json = {
+            "ProcessId": 50, "Name": "Schedule", "State": "Running",
+            "StartName": "LocalSystem",
+            "PathName": "C:/Windows/System32/svchost.exe -k netsvcs -p",
+            "EnginePID": 100, "InstanceGuid": "11111111-1111-1111-1111-111111111111",
+            "TaskPath": "\\CHARLIE CORE Runner Watchdog", "CurrentAction": "Execute",
+            "ActionExecute": row["execute"], "ActionArguments": row["arguments"],
+            "ActionWorkingDirectory": row["working_directory"],
+            "ServiceDll": "C:/Windows/System32/schedsvc.dll", "SystemRoot": "C:/Windows",
+        }
+        creation_calls = []
+        result = _inspect_windows_task_scheduler_provider(
+            100,
+            runner=lambda command, **_kwargs: subprocess.CompletedProcess(
+                command, 0, json.dumps(provider_json), ""),
+            process_creation_time=lambda pid: creation_calls.append(pid) or "987654321",
+        )
+        self.assertTrue(result["inspection_complete"])
+        self.assertEqual(creation_calls, [50])
+        self.assertEqual(result["creation_time"], "987654321")
+        self.assertEqual(result["action_arguments"], row["arguments"])
+
+    @unittest.skipUnless(os.name == "nt", "Windows kernel identity only")
+    def test_local_current_identity_uses_kernel_creation_time_and_native_command_line(self):
+        result = _local_current_process_identity()
+        self.assertTrue(result["inspection_complete"])
+        self.assertEqual(result["pid"], os.getpid())
+        self.assertTrue(result["creation_time"].isdigit())
+        self.assertTrue(result["command_line"])
+
     def test_duplicate_and_concurrent_activation_have_one_lane(self):
         plan, controller, _result = self._prepared()
         self.assertEqual(len(controller.enabled), 1)
@@ -347,7 +492,11 @@ class RuntimeActivationTests(unittest.TestCase):
             "inspection_complete": True, "pid": 10, "parent_pid": 20,
             "executable_path": self.task[0]["execute"],
             "command_line": f'"{self.task[0]["execute"]}" {self.task[0]["arguments"]}',
-            "ancestry": [{"pid": 20, "executable_path": "svchost.exe"}],
+            "ancestry": [{"pid": 20, "executable_path": "svchost.exe",
+                          "provider_identity_verified": True,
+                          "action_execute": self.task[0]["execute"],
+                          "action_arguments": self.task[0]["arguments"],
+                          "action_working_directory": self.task[0]["working_directory"]}],
         }
         with self.assertRaises(ActivationError) as caught:
             consume_provider_activation(
