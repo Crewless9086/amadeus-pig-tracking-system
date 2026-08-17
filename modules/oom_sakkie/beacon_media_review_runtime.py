@@ -12,7 +12,7 @@ from modules.beacon.media_intake import (
     record_media_group_review,
     telegram_media_owner_binding,
 )
-from modules.oom_sakkie.protected_action_claims import CALLBACK_PREFIX, create_claim
+from modules.oom_sakkie.protected_action_claims import CALLBACK_PREFIX, canonical_preview_digest, create_claim
 
 ACTION_KIND="beacon_media_review"
 ZERO={"publishes":False,"schedules":False,"customer_sends":False,"spends_money":False,
@@ -101,6 +101,8 @@ def _present_packet(packet, parsed, *, claim_creator=create_claim):
         "specialist":"BEACON_MEDIA","mission_id":packet["intake_group_id"]+":"+decision_type.upper(),
         "card_mission_id":packet["intake_group_id"]+":"+decision_type.upper(),
         "answer":answer,"reply_markup":buttons,"callback_token":claim["callback_token"],
+        "preview_digest":str(claim.get("preview_digest") or canonical_preview_digest(ACTION_KIND,preview)),
+        "action_kind":str(claim.get("action_kind") or ACTION_KIND),
         "review_packet":packet,**ZERO},200
 
 

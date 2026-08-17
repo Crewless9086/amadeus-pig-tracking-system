@@ -40,9 +40,11 @@ class Actuator(Protocol):
     def verify_off(self, device: Mapping, execution: Mapping) -> Mapping: ...
     def repeat_safe_off(self, device: Mapping, execution: Mapping) -> Mapping: ...
 
-def store_device_record(record: Mapping, *, connect_factory) -> dict:
+def store_device_record(record: Mapping, *, connect_factory, evidence_resolver=None,
+                        authority_resolver=None) -> dict:
     """Persist validated commissioning truth; this does not grant execution authority."""
-    validate_device(record)
+    validate_device(record, evidence_resolver=evidence_resolver,
+        authority_resolver=authority_resolver)
     material = json.dumps(dict(record), sort_keys=True, separators=(",", ":"), default=str)
     digest = hashlib.sha256(material.encode()).hexdigest()
     authority = record.get("authority_envelope") if isinstance(
@@ -88,7 +90,8 @@ def store_device_record(record: Mapping, *, connect_factory) -> dict:
     return {"success": True, "device_key": key, "evidence_digest": digest,
         "registry_generation": generation, "replayed": False, "execution_authority": False}
 
-def load_device_record(device_key: str, *, connect_factory) -> dict | None:
+def load_device_record(device_key: str, *, connect_factory, evidence_resolver=None,
+                       authority_resolver=None) -> dict | None:
     with connect_factory() as db, db.cursor() as cur:
         cur.execute("""select contract_version,device_record,evidence_digest,registry_generation
           from app_private.rootline_device_registry where device_key=%s""", (str(device_key),))
@@ -96,7 +99,8 @@ def load_device_record(device_key: str, *, connect_factory) -> dict | None:
     if not row:
         return None
     record = row[1] if isinstance(row[1], Mapping) else {}
-    validate_device(record)
+    validate_device(record, evidence_resolver=evidence_resolver,
+        authority_resolver=authority_resolver)
     material = json.dumps(dict(record), sort_keys=True, separators=(",", ":"), default=str)
     if row[0] != CONTRACT_VERSION or hashlib.sha256(material.encode()).hexdigest() != row[2]:
         raise ValueError("rootline_device_registry_digest_mismatch")
@@ -106,7 +110,7 @@ def load_device_record(device_key: str, *, connect_factory) -> dict | None:
         "evidence_digest": str(row[2]), "registry_generation":int(row[3]),
         "execution_authority": False}
 
-def validate_device(record: Mapping) -> bool:
+def validate_device(record: Mapping, *, evidence_resolver=None, authority_resolver=None) -> bool:
     required = ("provider", "provider_account_binding", "device_id", "channel",
         "physical_name", "device_type", "adapter_profile", "safe_state",
         "maximum_runtime_seconds", "native_fail_stop_seconds", "readback",
@@ -141,6 +145,9 @@ def validate_device(record: Mapping) -> bool:
         if (not isinstance(evidence, Mapping)
                 or any(not _valid_evidence(evidence.get(key)) for key in required)):
             raise ValueError("rootline_standing_authority_evidence_missing")
+        if evidence_resolver is None or any(not _resolved_evidence(
+                evidence[key], evidence_resolver(evidence[key])) for key in required):
+            raise ValueError("rootline_standing_authority_evidence_unresolved")
         authority = record.get("authority_envelope")
         if (not isinstance(authority, Mapping)
                 or not str(authority.get("standing_authority_id") or "").strip()
@@ -149,6 +156,15 @@ def validate_device(record: Mapping) -> bool:
                 or not _sha256(authority.get("policy_sha256"))
                 or authority.get("revoked") is not False):
             raise ValueError("rootline_standing_authority_envelope_invalid")
+        resolved_authority = authority_resolver(authority) if authority_resolver else None
+        if (not isinstance(resolved_authority, Mapping)
+                or resolved_authority.get("active") is not True
+                or str(resolved_authority.get("standing_authority_id") or "") !=
+                   str(authority.get("standing_authority_id") or "")
+                or str(resolved_authority.get("version") or "") != str(authority.get("version") or "")
+                or str(resolved_authority.get("policy_sha256") or "") !=
+                   str(authority.get("policy_sha256") or "")):
+            raise ValueError("rootline_standing_authority_unresolved")
         if profile.get("strict") and (
                 record.get("independent_physical_identity_proven") is not True
                 or record.get("independent_fail_stop_proven") is not True):
@@ -165,6 +181,11 @@ def _valid_evidence(value) -> bool:
         and bool(str(value.get("evidence_id") or "").strip())
         and bool(str(value.get("observed_at") or "").strip())
         and _sha256(value.get("sha256")))
+
+def _resolved_evidence(reference, resolved) -> bool:
+    return (isinstance(resolved, Mapping) and resolved.get("current") is True
+        and str(resolved.get("evidence_id") or "") == str(reference.get("evidence_id") or "")
+        and str(resolved.get("sha256") or "") == str(reference.get("sha256") or ""))
 
 def manager_stage_projection(record: Mapping) -> dict:
     """Project asserted evidence for review; never returns action authority."""

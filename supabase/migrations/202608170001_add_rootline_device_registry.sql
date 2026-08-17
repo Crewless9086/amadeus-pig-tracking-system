@@ -27,6 +27,18 @@ create table if not exists app_private.rootline_device_registry_history (
   primary key(device_key,registry_generation)
 );
 
+create or replace function app_private.reject_rootline_device_history_mutation()
+returns trigger language plpgsql as $$
+begin
+  raise exception 'rootline_device_registry_history_append_only';
+end;
+$$;
+drop trigger if exists rootline_device_registry_history_append_only
+  on app_private.rootline_device_registry_history;
+create trigger rootline_device_registry_history_append_only
+before update or delete on app_private.rootline_device_registry_history
+for each row execute function app_private.reject_rootline_device_history_mutation();
+
 revoke all on app_private.rootline_device_registry from public, anon, authenticated;
 revoke all on app_private.rootline_device_registry_history from public, anon, authenticated;
 

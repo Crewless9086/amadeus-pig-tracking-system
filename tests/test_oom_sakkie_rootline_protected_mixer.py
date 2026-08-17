@@ -75,6 +75,14 @@ def test_tamper_or_wrong_chat_never_reaches_executor():
         runner=lambda **kwargs: calls.append(kwargs))
     assert status == 409 and result["provider_control_calls"] == 0 and calls == []
 
+def test_canonical_registry_change_blocks_execution_before_runner():
+    payload=build_preview_payload(artifact(),parsed());calls=[]
+    changed={**payload["device_record"],"registry_generation":2}
+    result,status=execute_claimed_mixer(claim(payload),parsed=parsed(),
+      runner=lambda **_kwargs:calls.append(1),device_loader=lambda _key:{"device_record":changed})
+    assert status==409 and result["status"]=="mixer_protected_binding_mismatch"
+    assert calls==[]
+
 def test_expired_presence_notice_has_one_protected_ready_action(monkeypatch):
     monkeypatch.setattr("modules.oom_sakkie.rootline_protected_mixer.create_claim",
         lambda **kwargs: {"success": True, "callback_token": "TOKEN", "preview_digest":

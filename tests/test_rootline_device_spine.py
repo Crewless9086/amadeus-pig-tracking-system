@@ -39,7 +39,9 @@ def test_ordinary_relay_standing_authority_requires_complete_evidence_and_envelo
       commissioning_stage="standing_active",standing_authority=True,
       commissioning_evidence=_evidence(),authority_envelope={
         "standing_authority_id":"ROOTLINE-RELAY-1","version":"1","issuer":"owner_policy",
-        "policy_sha256":"b"*64,"revoked":False}))
+        "policy_sha256":"b"*64,"revoked":False}),
+      evidence_resolver=lambda ref:{**ref,"current":True},
+      authority_resolver=lambda ref:{**ref,"active":True})
 
 def test_strict_device_requires_independent_physical_and_fail_stop_proof():
     row=_device(device_type="pump",commissioning_stage="standing_active",standing_authority=True,
@@ -47,6 +49,15 @@ def test_strict_device_requires_independent_physical_and_fail_stop_proof():
         "standing_authority_id":"ROOTLINE-PUMP-1","version":"1","issuer":"owner_policy",
         "policy_sha256":"b"*64,"revoked":False})
     with pytest.raises(ValueError,match="strict_device_proof_missing"):
+        validate_device(row,evidence_resolver=lambda ref:{**ref,"current":True},
+          authority_resolver=lambda ref:{**ref,"active":True})
+
+def test_standing_authority_cannot_be_self_asserted_without_canonical_resolvers():
+    row=_device(device_type="generic_relay_output",commissioning_stage="standing_active",
+      standing_authority=True,commissioning_evidence=_evidence(),authority_envelope={
+        "standing_authority_id":"ROOTLINE-RELAY-1","version":"1","issuer":"owner_policy",
+        "policy_sha256":"b"*64,"revoked":False})
+    with pytest.raises(ValueError,match="evidence_unresolved"):
         validate_device(row)
 
 def test_profile_safe_state_and_runtime_bounds_are_enforced():

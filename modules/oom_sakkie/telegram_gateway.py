@@ -351,6 +351,9 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
                          "album_progress_verified": intake.get("album_progress_verified") is True,
                          "album_stored_count": stored_count,
                          "album_canonical_digest": str(intake.get("canonical_digest") or ""),
+                         "callback_token":str((claim or {}).get("callback_token") or ""),
+                         "preview_digest":str((claim or {}).get("preview_digest") or ""),
+                         "action_kind":str((claim or {}).get("action_kind") or ""),
                          "reply_markup": {"inline_keyboard": [[{"text": "Finish Album",
                              "callback_data": f"{CALLBACK_PREFIX}{claim['callback_token']}:confirm"}]]}
                              if claim else {"inline_keyboard": []},
