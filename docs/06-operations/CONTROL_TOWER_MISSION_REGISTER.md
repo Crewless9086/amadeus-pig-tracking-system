@@ -1749,3 +1749,66 @@ agent—not a terminal—must produce and deliver the corrected protected card. 
 then is one exact approve/correct/decline owner decision eligible; publication and
 spend remain blocked until approval, and Meta/SAM/commercial readback remain later
 acceptance gates.
+### Revenue Slot 3 owner-card and litter-media addendum — 2026-08-17
+
+Charl's provider-visible generation-9 BEACON card is not approval-ready. It
+duplicates the post copy, exposes dense audit/authority prose, says
+`Approve / Correct / Decline` without supplying actionable Telegram buttons,
+and selects `text_only` without reconciling the governed media library to the
+specific litter/story subject. This is a current acceptance defect in the same
+Revenue Slot 3 package-quality repair, not a new BEACON mission and not owner
+approval.
+
+At the existing Revenue terminal's next safe handover boundary, require one
+compact owner card with: the business goal and story subject first; one copy
+preview; local SAST date/time; budget and duration; a short truthful stock/SAM
+boundary; and actual protected inline actions for `Approve`, `Correct`, and
+`Decline`. Put full attribution, stop, rollback, digests, and provider chronology
+behind a details action rather than duplicating them in the primary message.
+
+For a litter-specific story, BEACON must query the existing canonical media
+library by exact litter/pig/event linkage and present the matching candidate
+thumbnails or exact media identities, capture date/source, and current
+public-use authority. Ask `Use these photos?` with select/change/no-media
+controls. Library presence is evidence availability, not publication consent.
+Private, ambiguous, unlinked, or public-use-Unknown media remains ineligible;
+when no eligible media exists, deliver one precise media request instead of
+silently defaulting to text-only. The protected approval digest must bind the
+selected media identities together with copy, audience, schedule, budget,
+attribution, stop conditions, and rollback. No post, boost, spend, or media-use
+authority is granted by this register entry.
+
+### HMQ-20260813-04 backend merged; CODEX UI promoted — 2026-08-17
+
+HERDMASTER's offspring-disposition contract merged through PR #1048 as
+`f18deadebad417d799a4d7274e9fa5607f7e8e6a`. The backend terminal returned a
+complete exit-zero handover and was then closed. Its automatic trigger is
+satisfied: continue the existing HMQ mission in one fresh external CODEX UI
+worktree based on authoritative main. Render only canonical
+`offspring.dispositions[]` and `offspring.disposition_summary`; do not infer or
+recalculate classifications. Produce local desktop/mobile owner previews for
+the useful `Nageslagte` summaries and stop for owner review without merge or
+deployment.
+
+### DMQ-20260816-01 source completion captured — 2026-08-17
+
+The DOCUMENTS catalogue terminal returned a complete exit-zero handover before
+closure. PR #1016 merged normally as `6c5921b1`; authoritative main later
+advanced without changing the three catalogue files. Mark DMQ-01
+`SOURCE_INTEGRATED / TERMINAL_RELEASED`. This catalogue defines document
+families, ownership, generators, evidence and delivery contracts. Brain Guard
+is separate governance that constrains evidence, authority and memory across
+agents. No document runtime, adapter, PDF generation, delivery, schedule or
+Mission 2 was started.
+
+### CMQ-20260813-05 provider-identity repair interruption — 2026-08-17
+
+Fresh inspection at 17:35 SAST found the CORE provider-identity repair had no
+Codex child and no final/exit handover. The retained worktree
+`C:\tmp\cmq05-provider-identity-repair-ee736fce-20260817` preserved exactly two
+modified files: `modules/charlie/runtime_activation.py` and
+`tests/test_charlie_runtime_activation.py`. An empty shell was not treated as
+active work. Resume the same mission, branch, worktree and evidence lineage;
+do not create a duplicate activation identity or claim CORE live. The exact
+retained repair was relaunched at 17:35 SAST for completion and mandatory
+Control Tower feedback.
