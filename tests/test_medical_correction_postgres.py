@@ -8,7 +8,10 @@ import pytest
 from psycopg import sql
 from psycopg.rows import dict_row
 
-from modules.pig_weights.herdmaster_live_transfer_contract import build_live_transfer_contract
+from modules.pig_weights.herdmaster_live_transfer_contract import (
+    build_live_transfer_contract,
+    build_live_transfer_preview_contract,
+)
 from modules.pig_weights.herdmaster_transfer_evidence_action import (
     execute_evidence_action,
     preview_evidence_action,
@@ -67,12 +70,20 @@ def _seed_action_database(url):
             weight_band text,sex text,unit_price numeric,currency text,effective_from timestamptz,
             effective_to timestamptz,active boolean,change_reason text,created_by text,created_at timestamptz)""")
         db.execute("create table public.current_canonical_pig_state(pig_id text primary key,current_weight_kg numeric,last_weight_date date)")
+        db.execute("""create table public.pig_weight_events(
+            weight_event_id text primary key,pig_id text,weight_date date,weight_kg numeric,
+            created_at timestamptz default now())""")
         db.execute("create view public.current_canonical_pigs as select * from public.pigs")
         db.execute(migration)
         db.execute("""insert into public.pigs values
             ('PIG-2026-A643','123',null,'Weaner','Active',true,'Sale',null),
             ('PIG-2026-B156','151',null,'Weaner','Active',true,'Sale',null)""")
         db.execute("insert into public.current_canonical_pig_state values ('PIG-2026-A643',5.6,'2026-08-11'),('PIG-2026-B156',4.0,'2026-08-11')")
+        db.execute("""insert into public.pig_weight_events values
+            ('W-123-1','PIG-2026-A643','2026-08-01',4.0,'2026-08-01'),
+            ('W-123-2','PIG-2026-A643','2026-08-11',5.6,'2026-08-11'),
+            ('W-151-1','PIG-2026-B156','2026-08-01',3.0,'2026-08-01'),
+            ('W-151-2','PIG-2026-B156','2026-08-11',4.0,'2026-08-11')""")
         db.execute("insert into public.orders values ('ORD-2026-A6EC6D','Draft','Pending','5_to_6_Kg',2)")
         db.execute("insert into public.order_lines(order_line_id,order_id,pig_id,line_status,reserved_status) values ('OL-2026-01E24C','ORD-2026-A6EC6D','PIG-2026-A643','Draft','Not_Reserved')")
         db.execute("""insert into public.pig_medical_events values
@@ -214,6 +225,39 @@ def test_action_receipt_exact_replay_collision_and_atomic_rollback(monkeypatch):
             assert verify.execute("select count(*) from public.herdmaster_transfer_evidence_receipts").fetchone()[0] == 1
             assert verify.execute("select count(*) from public.pig_medical_correction_events").fetchone()[0] == 2
             assert verify.execute("select count(*) from public.pig_observation_events").fetchone()[0] == 1
+    finally:
+        with psycopg.connect(URL, autocommit=True) as admin:
+            admin.execute(sql.SQL("drop database {} with (force)").format(sql.Identifier(database)))
+
+
+@pytest.mark.skipif(not URL, reason="CHARLIE_DISPOSABLE_POSTGRES_URL not configured")
+def test_order_free_preview_uses_repeatable_read_and_writes_nothing():
+    database = "op004_preview_" + uuid.uuid4().hex[:10]
+    with psycopg.connect(URL, autocommit=True) as admin:
+        preview_url = _create_action_database(admin, database)
+    try:
+        _seed_action_database(preview_url)
+        connect = lambda _url: psycopg.connect(preview_url, row_factory=dict_row)
+        with psycopg.connect(preview_url) as db:
+            before = {
+                table: db.execute(sql.SQL("select count(*) from {}").format(sql.Identifier(table))).fetchone()[0]
+                for table in ("orders", "order_lines", "pig_medical_events", "pig_weight_events")
+            }
+        packet = build_live_transfer_preview_contract(
+            as_of=datetime(2026, 8, 16, tzinfo=timezone.utc).date(), connect_factory=connect
+        )
+        with psycopg.connect(preview_url) as db:
+            after = {
+                table: db.execute(sql.SQL("select count(*) from {}").format(sql.Identifier(table))).fetchone()[0]
+                for table in before
+            }
+        assert before == after
+        assert packet["order"]["order_id"] == ""
+        assert packet["order"]["existing_line_count"] == 0
+        assert packet["writes_performed"] is False
+        assert len(packet["pigs"]) == 2
+        assert all(row["current_state"]["latest_weight_date"] == "2026-08-11"
+                   for row in packet["pigs"])
     finally:
         with psycopg.connect(URL, autocommit=True) as admin:
             admin.execute(sql.SQL("drop database {} with (force)").format(sql.Identifier(database)))

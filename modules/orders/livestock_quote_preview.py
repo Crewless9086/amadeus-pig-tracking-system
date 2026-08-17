@@ -1,94 +1,200 @@
 """Pure, zero-write livestock request and HERDMASTER recommendation preview."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
-CONTRACT_VERSION = "livestock_quote_preview_v1"
-WEIGHT_RANGES = {"2_to_4_Kg": (2, 4), "5_to_6_Kg": (5, 6), "7_to_9_Kg": (7, 9), "10_to_14_Kg": (10, 14), "15_to_19_Kg": (15, 19), "20_to_24_Kg": (20, 24), "25_to_29_Kg": (25, 29)}
+CONTRACT_VERSION = "livestock_quote_preview_v2"
+WEIGHT_RANGES = {
+    "2_to_4_Kg": (2, 4), "5_to_6_Kg": (5, 6), "7_to_9_Kg": (7, 9),
+    "10_to_14_Kg": (10, 14), "15_to_19_Kg": (15, 19),
+    "20_to_24_Kg": (20, 24), "25_to_29_Kg": (25, 29),
+}
+MAX_WEIGHT_AGE_DAYS = 14
+MAX_PROJECTION_DAYS = 14
 
 
-def build_livestock_quote_preview(requested_items, pigs, observed_at=None, evidence_source=None):
+def build_livestock_quote_preview(requested_items, herdmaster_packet, observed_at=None,
+                                   evidence_source=None):
+    """Rank only HERDMASTER-approved candidates; never infer livestock authority."""
     observed_at = observed_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    used, recommendations = set(), []
+    packet_pigs = list((herdmaster_packet or {}).get("pigs") or [])
+    cutoff = _date(herdmaster_packet.get("evidence_cutoff_date")) or date.today()
+    used = set()
+    recommendations = []
+    grouped_review = {}
+
     for item in requested_items:
         quantity = int(item.get("quantity") or 0)
-        sex, band = str(item.get("sex") or "Any"), str(item.get("weight_range") or "")
+        sex = str(item.get("sex") or "Any")
+        band = str(item.get("weight_range") or "")
         low, high = WEIGHT_RANGES.get(band, (None, None))
-        candidates = []
-        for pig in pigs or []:
-            pig_id = str(pig.get("pig_id") or pig.get("Pig_ID") or "")
-            weight = _number(pig.get("latest_weight_kg", pig.get("current_weight_kg", pig.get("Current_Weight_Kg"))))
+        eligible = []
+        review = []
+        for authority in packet_pigs:
+            identity = authority.get("identity") or {}
+            current = authority.get("current_state") or {}
+            pig_id = str(identity.get("pig_id") or "")
+            weight = _number(current.get("latest_weight_kg"))
             if not pig_id or pig_id in used or weight is None or low is None:
                 continue
-            if sex not in {"", "Any"} and str(pig.get("sex") or pig.get("Sex") or "") != sex:
+            if sex not in {"", "Any"} and str(current.get("sex") or "") != sex:
                 continue
-            state, distance = _candidate_state(pig, weight, low, high)
-            if state:
-                preview = _render_candidate(pig, state, weight)
-                candidates.append((
-                    0 if preview["recommendable"] and not preview["purpose_review_required"] else 1,
-                    _rank(state), distance, str(pig.get("tag_number") or pig_id), pig, preview,
-                ))
-        candidates.sort(key=lambda row: (row[0], row[1], row[2], row[3].lower()))
-        selected = candidates[:quantity]
-        used.update(str(row[4].get("pig_id") or row[4].get("Pig_ID")) for row in selected)
-        rendered = [row[5] for row in selected]
-        usable = [row for row in rendered if row["recommendable"] and not row["purpose_review_required"]]
-        exact = sum(row["match_state"] == "exact_match" for row in usable)
-        projected = sum(row["match_state"] == "projected_growth" for row in usable)
-        shortfall = max(0, quantity - len(usable))
-        status = "unavailable" if shortfall == quantity else "partial" if shortfall else "projected" if projected else "confirmed"
+            if not _category_matches(item.get("category"), identity.get("animal_type")):
+                continue
+            match_state, distance, projected_target_date = _candidate_state(
+                weight, low, high, current.get("average_daily_gain_kg"),
+                current.get("latest_weight_date"), cutoff,
+            )
+            if not match_state:
+                continue
+            rendered = _render_candidate(authority, match_state, projected_target_date)
+            row = (_rank(match_state), distance,
+                   str(identity.get("tag_number") or pig_id).lower(), rendered)
+            if _recommendable(authority):
+                eligible.append(row)
+            else:
+                review.append(row)
+                _add_grouped_review(grouped_review, rendered)
+
+        eligible.sort(key=lambda row: row[:3])
+        review.sort(key=lambda row: row[:3])
+        selected = eligible[:quantity]
+        used.update(row[3]["pig_id"] for row in selected)
+        rendered = [row[3] for row in selected]
+        counts = {state: sum(candidate["match_state"] == state for candidate in rendered)
+                  for state in ("exact_match", "near_match", "projected_growth")}
+        supported = len(rendered)
+        shortfall = max(0, quantity - supported)
+        status = ("unavailable" if shortfall == quantity else "partial" if shortfall
+                  else "projected" if counts["projected_growth"] else "supported")
         recommendations.append({
-            "request_item_key": item.get("request_item_key"), "category": item.get("category"),
-            "weight_range": band, "sex": sex, "requested_quantity": quantity,
-            "status": status, "exact_match_count": exact, "projected_count": projected,
-            "shortfall_quantity": shortfall, "candidates": rendered,
+            "request_item_key": item.get("request_item_key"),
+            "category": item.get("category"), "weight_range": band, "sex": sex,
+            "requested_quantity": quantity, "status": status,
+            "exact_match_count": counts["exact_match"],
+            "near_match_count": counts["near_match"],
+            "projected_count": counts["projected_growth"],
+            "supported_count": supported, "shortfall_quantity": shortfall,
+            "candidates": rendered,
+            "purpose_or_evidence_review_count": len(review),
         })
+
     return {
-        "success": True, "contract_version": CONTRACT_VERSION, "observed_at": observed_at,
-        "evidence_source": str(evidence_source or "bounded_allocation_snapshot"),
-        "request_state": "customer_request_captured", "recommendation_state": "herdmaster_advisory_only",
+        "success": True, "contract_version": CONTRACT_VERSION,
+        "herdmaster_contract_version": herdmaster_packet.get("contract_version"),
+        "herdmaster_packet_digest": herdmaster_packet.get("packet_digest"),
+        "evidence_cutoff_date": herdmaster_packet.get("evidence_cutoff_date"),
+        "observed_at": observed_at,
+        "evidence_source": str(evidence_source or "canonical_repeatable_read"),
+        "request_state": "customer_request_captured",
+        "recommendation_state": "herdmaster_advisory_only",
         "reservation_state": "not_reserved", "fulfilment_state": "not_fulfilled",
-        "requested_items": requested_items, "recommendations": recommendations, "writes_performed": False,
-        "authority_boundary": "No pig is attached, allocated, reserved, promised, re-purposed or sold by this preview.",
+        "requested_items": requested_items, "recommendations": recommendations,
+        "purpose_or_evidence_review": list(grouped_review.values()),
+        "writes_performed": False, "creates_order": False,
+        "creates_order_line": False, "creates_reservation": False,
+        "generates_document": False, "creates_buyer_acknowledgement": False,
+        "authority_boundary": (
+            "No pig is attached, allocated, reserved, promised, re-purposed or sold by this preview."
+        ),
     }
 
 
-def _candidate_state(pig, weight, low, high):
-    if str(pig.get("status") or pig.get("Status") or "").lower() != "active": return None, 999
-    if str(pig.get("on_farm") or pig.get("On_Farm") or "").lower() not in {"yes", "true", "1", "on farm"}: return None, 999
-    if str(pig.get("reserved_status") or pig.get("Reserved_Status") or "").lower() in {"reserved", "allocated"} or pig.get("reserved_for_order_id"): return None, 999
-    if low <= weight <= high: return "exact_match", 0
+def _recommendable(authority):
+    order_state = (authority.get("current_order_eligibility") or {}).get("state")
+    duplicate_state = (authority.get("order_line_duplication_protection") or {}).get("state")
+    return (
+        (authority.get("livestock_transfer_eligibility") or {}).get("state")
+        == "eligible_on_current_evidence"
+        and (authority.get("current_purpose_eligibility") or {}).get("state") == "eligible"
+        and (authority.get("active_on_farm_eligibility") or {}).get("state") == "eligible"
+        and order_state in {"candidate_not_added", "included_draft_unreserved"}
+        and duplicate_state not in {"conflicting_duplicate_lines", "existing_line_blocks_duplicate"}
+    )
+
+
+def _render_candidate(authority, match_state, projected_target_date=None):
+    identity = authority.get("identity") or {}
+    current = authority.get("current_state") or {}
+    axes = {
+        name: authority.get(name) for name in (
+            "livestock_transfer_eligibility", "food_chain_eligibility",
+            "fit_for_transport", "quarantine", "notifiable_or_infectious_disease",
+            "veterinary_movement_stop", "serious_health_or_welfare_hold",
+            "treatment_evidence_completeness", "treatment_evidence_conflicts",
+            "medical_ambiguity", "current_purpose_eligibility",
+            "active_on_farm_eligibility", "current_order_eligibility",
+            "order_line_duplication_protection", "price_band_compatibility",
+            "canonical_dependency_evidence", "canonical_treatment_events",
+        )
+    }
+    return {
+        "pig_id": str(identity.get("pig_id") or ""),
+        "tag_number": str(identity.get("tag_number") or ""),
+        "sex": str(current.get("sex") or ""),
+        "current_weight_kg": _number(current.get("latest_weight_kg")),
+        "weight_date": current.get("latest_weight_date"), "match_state": match_state,
+        "projected_target_date": projected_target_date,
+        "purpose": current.get("purpose"), "recommendable": _recommendable(authority),
+        "treatment_disclosure": authority.get("treatment_disclosure"),
+        "authority_axes": axes,
+    }
+
+
+def _add_grouped_review(groups, candidate):
+    for axis_name, axis in candidate["authority_axes"].items():
+        if not isinstance(axis, dict) or axis.get("state") in {
+            None, "eligible", "eligible_on_current_evidence", "candidate_not_added",
+            "included_draft_unreserved", "no_existing_line", "clear", "compatible",
+        }:
+            continue
+        reason = str(axis.get("reason") or axis.get("state"))
+        key = f"{axis_name}:{axis.get('state')}:{reason}"
+        group = groups.setdefault(key, {
+            "blocking_axis": axis_name, "state": axis.get("state"), "reason": reason,
+            "evidence_ids": list(axis.get("evidence_ids") or []), "candidates": [],
+        })
+        if not any(row["pig_id"] == candidate["pig_id"] for row in group["candidates"]):
+            group["candidates"].append(candidate)
+
+
+def _candidate_state(weight, low, high, average_daily_gain, latest_weight_date, cutoff):
+    if low <= weight <= high:
+        return "exact_match", 0, None
     distance = low - weight if weight < low else weight - high
     if 0 < distance <= 2:
-        if weight < low and (_number(pig.get("average_daily_gain_kg")) or 0) > 0: return "projected_growth", distance
-        return "near_match", distance
-    return None, distance
+        gain = _number(average_daily_gain) or 0
+        measured = _date(latest_weight_date)
+        if weight < low and gain > 0 and measured and 0 <= (cutoff - measured).days <= MAX_WEIGHT_AGE_DAYS:
+            projection_days = int(-(-distance // gain))
+            if projection_days <= MAX_PROJECTION_DAYS:
+                return "projected_growth", distance, (cutoff + timedelta(days=projection_days)).isoformat()
+        return "near_match", distance, None
+    return None, distance, None
 
 
-def _render_candidate(pig, state, weight):
-    purpose = str(pig.get("purpose") or pig.get("Purpose") or "Unknown") or "Unknown"
-    withdrawal = str(pig.get("withdrawal_evidence_state") or "unknown").lower()
-    health = str(pig.get("health_status") or "").lower()
-    hold = str(pig.get("hold_status") or pig.get("sale_hold_status") or "").lower()
-    blockers = []
-    if any(token in health for token in ("sick", "injured", "quarantine", "hold")): blockers.append("Current health or quarantine evidence blocks live transfer.")
-    if hold in {"hold", "held", "yes", "true", "medical", "health", "sale", "movement", "quarantine"}: blockers.append("A current explicit live-sale, welfare, movement or quarantine hold blocks transfer.")
-    warnings = []
-    if purpose.lower() != "sale": warnings.append("Purpose review required; current purpose is not Sale.")
-    if withdrawal not in {"not_applicable", "cleared", ""}:
-        warnings.append("Food-chain withdrawal must be disclosed; it does not alone prohibit live transfer.")
-        blockers.append("Live-transfer support is Unknown until current transport, quarantine, disease, welfare and movement evidence is attributable and clear.")
-    return {
-        "pig_id": str(pig.get("pig_id") or pig.get("Pig_ID") or ""), "tag_number": str(pig.get("tag_number") or pig.get("Tag_Number") or ""),
-        "sex": str(pig.get("sex") or pig.get("Sex") or ""), "current_weight_kg": weight,
-        "weight_date": str(pig.get("latest_weight_date") or pig.get("last_weight_date") or ""), "match_state": state,
-        "purpose": purpose, "purpose_review_required": purpose.lower() != "sale", "warnings": warnings,
-        "blocking_restrictions": blockers, "recommendable": not blockers,
-        "withdrawal_disclosure": {"required": withdrawal not in {"not_applicable", "cleared", ""}, "food_chain_state": withdrawal or "unknown", "withdrawal_end_date": str(pig.get("current_withdrawal_end_date") or ""), "wording": "Food-chain withdrawal applies. Do not slaughter or enter the animal into the food chain during the governed period. Withdrawal alone neither approves nor prohibits live transfer and does not certify transport, veterinary, welfare, disease, quarantine or movement clearance."},
-    }
+def _category_matches(requested, animal_type):
+    requested = str(requested or "").strip().lower()
+    animal_type = str(animal_type or "").strip().lower()
+    if not requested:
+        return True
+    if requested == "piglet":
+        return animal_type in {"piglet", "weaner", "young piglet", "young piglets"}
+    return requested == animal_type
 
 
-def _rank(state): return {"exact_match": 0, "near_match": 1, "projected_growth": 2}.get(state, 9)
+def _date(value):
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
+def _rank(state):
+    return {"exact_match": 0, "near_match": 1, "projected_growth": 2}.get(state, 9)
+
+
 def _number(value):
-    try: return float(value)
-    except (TypeError, ValueError): return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

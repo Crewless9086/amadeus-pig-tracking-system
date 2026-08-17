@@ -51,10 +51,19 @@ async function previewRequest(event) {
 function renderPreview(result) {
   const host = document.getElementById("livestock_preview");
   host.classList.remove("hidden");
-  host.innerHTML = `<div class="section-title-row"><div><h2>Draft quote availability</h2><p>${esc(result.authority_boundary)}</p><p class="field-helper">Evidence: ${esc(evidenceLabel(result.evidence_source))} · observed ${esc(result.observed_at || "time unknown")}</p></div></div>` + result.recommendations.map(line => {
-    const candidates = line.candidates.map(pig => `<li><strong>Tag ${esc(pig.tag_number || pig.pig_id)}</strong> · ${pig.current_weight_kg} kg (${esc(pig.weight_date || "weight date unknown")}) · ${esc(pig.match_state)} · purpose ${esc(pig.purpose)}${pig.warnings.length ? `<br><span class="field-helper">${pig.warnings.map(esc).join(" ")}</span>` : ""}${pig.blocking_restrictions.length ? `<br><span class="message-error">${pig.blocking_restrictions.map(esc).join(" ")}</span>` : ""}</li>`).join("");
-    return `<article class="detail-card"><h3>${line.requested_quantity} ${esc(line.sex)} · ${esc(weightLabel(line.weight_range))}</h3><p><strong>${esc(line.status)}</strong> · exact ${line.exact_match_count} · projected ${line.projected_count} · shortfall ${line.shortfall_quantity}</p><ul>${candidates || "<li>No bounded candidate found.</li>"}</ul></article>`;
-  }).join("") + `<p class="field-helper">Customer request: captured · HERDMASTER recommendation: advisory · Reservation: none · Final fulfilment: none.</p>`;
+  const lines = result.recommendations.map(line => {
+    const candidates = line.candidates.map(pig => `<li><strong>Tag ${esc(pig.tag_number || pig.pig_id)}</strong> · ${pig.current_weight_kg} kg (${esc(pig.weight_date || "weight date unknown")}) · ${esc(pig.match_state)}${pig.projected_target_date ? ` by ${esc(pig.projected_target_date)}` : ""} · purpose ${esc(pig.purpose)}${treatmentDisclosure(pig)}</li>`).join("");
+    return `<article class="detail-card"><h3>${line.requested_quantity} ${esc(line.sex)} · ${esc(weightLabel(line.weight_range))}</h3><p><strong>${esc(line.status)}</strong> · exact ${line.exact_match_count} · near ${line.near_match_count} · projected ${line.projected_count} · supported ${line.supported_count} · shortfall ${line.shortfall_quantity}</p><ul>${candidates || "<li>No supported candidate on current evidence.</li>"}</ul></article>`;
+  }).join("");
+  const review = (result.purpose_or_evidence_review || []).map(group => `<article class="detail-card"><h3>${esc(group.blocking_axis)} · ${esc(group.state)}</h3><p>${esc(group.reason)}</p><p class="field-helper">Evidence: ${esc((group.evidence_ids || []).join(", ") || "no attributable evidence ID")}</p><ul>${group.candidates.map(pig => `<li>Tag ${esc(pig.tag_number || pig.pig_id)} · ${pig.current_weight_kg} kg · purpose ${esc(pig.purpose)}${treatmentDisclosure(pig)}</li>`).join("")}</ul></article>`).join("");
+  host.innerHTML = `<div class="section-title-row"><div><h2>Draft quote availability</h2><p>${esc(result.authority_boundary)}</p><p class="field-helper">HERDMASTER ${esc(result.herdmaster_contract_version)} · packet ${esc(result.herdmaster_packet_digest || "unavailable")} · cutoff ${esc(result.evidence_cutoff_date || "unknown")}</p></div></div>${lines}${review ? `<div class="section-title-row"><div><h2>Purpose or evidence review</h2><p>These pigs are not counted toward supported fulfilment and no purpose is changed.</p></div></div>${review}` : ""}<p class="field-helper">Customer request: captured · HERDMASTER recommendation: advisory · Reservation: none · Final fulfilment: none.</p>`;
+}
+
+function treatmentDisclosure(pig) {
+  const disclosure = pig.treatment_disclosure;
+  if (!disclosure) return "";
+  const end = disclosure.withdrawal_end_date ? ` Withdrawal through ${esc(disclosure.withdrawal_end_date)}.` : "";
+  return `<br><strong>Livestock treatment disclosure:</strong> ${esc(disclosure.safe_buyer_wording || "Food-chain withdrawal applies.")}${end}`;
 }
 
 function esc(value) { const node = document.createElement("div"); node.textContent = String(value ?? ""); return node.innerHTML; }

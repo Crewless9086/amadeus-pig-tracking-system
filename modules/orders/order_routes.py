@@ -64,7 +64,9 @@ from modules.orders.order_validation import (
     validate_sync_order_lines_payload,
 )
 from modules.orders.livestock_quote_preview import build_livestock_quote_preview
-from modules.pig_weights.pig_weights_service import get_pig_allocation_readiness
+from modules.pig_weights.herdmaster_live_transfer_contract import (
+    build_live_transfer_preview_contract,
+)
 from modules.auth.owner_access import require_owner_read_access
 from modules.orders.order_shadow_read import compare_shadow_order
 from modules.sales.sam_live_stock_sales_pack import prepare_live_stock_sales_pack
@@ -251,14 +253,13 @@ def livestock_quote_preview():
     if any(item["quantity"] > 100 for item in validation["cleaned_data"]["requested_items"]):
         return jsonify({"success": False, "errors": ["Preview requests are limited to 20 lines and 100 pigs per line."], "writes_performed": False}), 400
     try:
-        allocation = get_pig_allocation_readiness()
-        if not isinstance(allocation, dict) or allocation.get("success") is False:
+        herdmaster_packet = build_live_transfer_preview_contract()
+        if not isinstance(herdmaster_packet, dict) or not herdmaster_packet.get("packet_digest"):
             return jsonify({"success": False, "errors": ["Preview evidence is currently unavailable."], "writes_performed": False}), 503
-        pigs = allocation.get("pigs", []) if isinstance(allocation, dict) else []
         return jsonify(build_livestock_quote_preview(
-            validation["cleaned_data"]["requested_items"], pigs,
-            observed_at=allocation.get("generated_date") if isinstance(allocation, dict) else None,
-            evidence_source=allocation.get("source") if isinstance(allocation, dict) else None,
+            validation["cleaned_data"]["requested_items"], herdmaster_packet,
+            observed_at=herdmaster_packet.get("evidence_cutoff_date"),
+            evidence_source="canonical_repeatable_read",
         )), 200
     except Exception as exc:
         logger.exception("Livestock quote preview failed")
