@@ -20,10 +20,13 @@ def build_buttons(token, *, grouped=False):
 
 def create_claim(*, action_kind, owner_user_id, private_chat_id, mission_id,
                  provider_message_id, evidence_generation, preview_payload,
-                 ttl_minutes=30, connect_factory=None, supersede_active=True):
+                 ttl_minutes=30, expires_at=None, connect_factory=None, supersede_active=True):
     digest=canonical_preview_digest(action_kind,preview_payload)
     token=secrets.token_urlsafe(12).replace("-","").replace("_","")[:16]
-    expires=datetime.now(timezone.utc)+timedelta(minutes=ttl_minutes)
+    expires=(datetime.fromisoformat(str(expires_at).replace("Z","+00:00"))
+        if expires_at else datetime.now(timezone.utc)+timedelta(minutes=ttl_minutes))
+    if expires.tzinfo is None or expires <= datetime.now(timezone.utc):
+        raise ValueError("protected_claim_expiry_invalid")
     with (connect_factory() if connect_factory else _connect()) as db:
       with db.cursor() as cur:
         cur.execute("""select callback_token,status,expires_at,owner_user_id,private_chat_id,
@@ -207,7 +210,7 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         return {"success":False,"status":"protected_callback_provider_identity_required"},409
     if not data.startswith(CALLBACK_PREFIX) or data.count(":")!=2:return {"success":False,"status":"protected_callback_invalid"},400
     _,token,action=data.split(":")
-    if action not in {"confirm","change","cancel"}:return {"success":False,"status":"protected_callback_invalid"},400
+    if action not in {"confirm","change","cancel","details","nomedia"}:return {"success":False,"status":"protected_callback_invalid"},400
     with (connect_factory() if connect_factory else _connect()) as db:
       with db.cursor() as cur:
         cur.execute("select action_kind,owner_user_id,private_chat_id,mission_id,preview_digest,evidence_generation,preview_payload,status,expires_at,result_payload,preview_card_message_id from app_private.oom_protected_action_claims where callback_token=%s for update",(token,))
@@ -256,14 +259,18 @@ def claim_callback(callback_data, *, owner_user_id, private_chat_id, provider_me
         if row[8]<=datetime.now(timezone.utc):
             cur.execute("update app_private.oom_protected_action_claims set status='expired' where callback_token=%s",(token,))
             return {"success":False,"status":"protected_callback_expired"},409
-        if action in {"change","cancel"}:
+        if action=="details":
+            return {"success":True,"status":"protected_preview_details",
+              "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
+              "preview_payload":row[6],"preview_card_message_id":str(row[10] or "")},200
+        if action in {"change","cancel","nomedia"}:
             if row[0]=="beacon_media_review" and action=="cancel":
                 cur.execute("update app_private.oom_protected_action_claims set status='executing',confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s and status='active'",(provider_message_id,provider_timestamp,token))
                 return {"success":True,"status":"protected_callback_claimed","callback_token":token,
                   "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
                   "evidence_generation":row[5],"preview_payload":row[6],"selected_action":"decline"},200
-            cur.execute("update app_private.oom_protected_action_claims set status=%s,confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s",("changed" if action=="change" else "cancelled",provider_message_id,provider_timestamp,token))
-            return {"success":True,"status":"protected_preview_change_requested" if action=="change" else "protected_preview_cancelled",
+            cur.execute("update app_private.oom_protected_action_claims set status=%s,confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s",("changed" if action in {"change","nomedia"} else "cancelled",provider_message_id,provider_timestamp,token))
+            return {"success":True,"status":("protected_preview_media_removed" if action=="nomedia" else "protected_preview_change_requested" if action=="change" else "protected_preview_cancelled"),
               "action_kind":row[0],"mission_id":row[3],"preview_digest":row[4],
               "preview_payload":row[6],"preview_card_message_id":str(row[10] or "")},200
         cur.execute("update app_private.oom_protected_action_claims set status='executing',confirmation_provider_message_id=%s,confirmation_provider_timestamp=%s::timestamptz where callback_token=%s and status='active'",(provider_message_id,provider_timestamp,token))

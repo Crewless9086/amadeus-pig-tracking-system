@@ -2,7 +2,7 @@
 from __future__ import annotations
 import re
 from modules.oom_sakkie.protected_action_claims import (
-    CALLBACK_PREFIX, claim_callback, complete_claim, contain_claim, execute_grouped_weight_claim,
+    CALLBACK_PREFIX, canonical_preview_digest, claim_callback, complete_claim, contain_claim, execute_grouped_weight_claim,
     resolve_natural_confirmation,
 )
 from modules.oom_sakkie.gateway_authority import validates_gateway_owner_authority
@@ -79,9 +79,31 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
           "owner_visible_completion_policy":"verified_edit_or_new_message",
           "hardware_commands":0,"provider_control_calls":0,"writes_farm_data":False},200
     if status>=400 or claimed.get("status") not in {"protected_callback_claimed","protected_callback_recovered"}:
-        if claimed.get("status") in {"protected_preview_change_requested","protected_preview_cancelled"}:
+        if claimed.get("status")=="protected_preview_details" and claimed.get("action_kind")=="beacon_campaign_review":
+            preview=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
+            selected=preview.get("selected_media")
+            if isinstance(selected,list):
+                photos="; ".join(f"{item.get('asset_id')} ({item.get('capture_date') or 'date Unknown'}, "
+                    f"{item.get('source') or 'source Unknown'}, Public Use approved, "
+                    f"thumbnail {item.get('thumbnail_url') or 'unavailable'})" for item in selected)
+            else:
+                photos=str((selected or {}).get("asset_id") or (selected or {}).get("mode") or "none")
+            return {"handled":True,**claimed,"answer":(
+                "<b>Campaign details</b>\n"
+                f"Selected photos: {photos}\n"
+                f"Attribution: {preview.get('attribution_identity') or 'Unknown'}\n"
+                f"Packet/digest: {preview.get('packet_id') or ''} / {preview.get('campaign_digest') or ''}\n"
+                f"Stops: {'; '.join(str(value).replace('_', ' ') for value in preview.get('stop_conditions') or [])}\n"
+                "Rollback/provider chronology: publication failure is never retried automatically; "
+                "boost failure stops spend; authority or evidence change pauses/stops the campaign; "
+                "provider receipts remain immutable."),
+                "suppress_owner_delivery":False,"writes_farm_data":False},200
+        if claimed.get("status") in {"protected_preview_change_requested","protected_preview_cancelled",
+                "protected_preview_media_removed"}:
             claimed["answer"]=("Send the corrected facts when ready; nothing was recorded."
                 if claimed["status"]=="protected_preview_change_requested" else
+                "Media removed. BEACON must issue a new exact text-only preview before approval."
+                if claimed["status"]=="protected_preview_media_removed" else
                 "Cancelled. Nothing was recorded.")
             if claimed.get("action_kind")=="sam_sale_payment":
                 bound=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
@@ -91,6 +113,28 @@ def handle_protected_action_input(parsed, gateway_authority, *, callback_data=""
                   "owner_visible_completion_policy":"verified_edit_or_new_message"})
         return {"handled":True,**claimed,"writes_farm_data":False,"suppress_owner_delivery":claimed.get("status")=="protected_callback_replayed_noop"},status
     claimed["callback_token"]=data.split(":")[1]
+    if claimed["action_kind"]=="beacon_campaign_review":
+        preview=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
+        if (preview.get("contract_version")!="beacon_campaign_owner_card_v1"
+                or canonical_preview_digest("beacon_campaign_review",
+                    {k:v for k,v in preview.items() if k!="campaign_digest"}) != preview.get("campaign_digest")
+                or claimed.get("evidence_generation") != preview.get("campaign_digest")):
+            result={"success":False,"status":"beacon_campaign_review_binding_mismatch",
+                "publishes":False,"spends_money":False,"customer_sends":False}
+            contain_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+            return {"handled":True,**result,"suppress_owner_delivery":True},409
+        result={"success":True,"status":"beacon_campaign_review_approved",
+            "packet_id":preview.get("packet_id"),"campaign_digest":preview.get("campaign_digest"),
+            "answer":"Approved for BEACON execution under the exact protected envelope. Nothing was published or spent by this callback.",
+            "reply_markup":{"inline_keyboard":[]},"publishes":False,"spends_money":False,
+            "customer_sends":False,"writes_farm_data":False}
+        completion=complete_claim(claimed["callback_token"],result,connect_factory=connect_factory)
+        if completion.get("replayed") is True:
+            return {"handled":True,"success":True,"status":"protected_callback_replayed_noop",
+                "answer":"","suppress_owner_delivery":True,"telegram_sends":0,
+                "telegram_edits":0,"publishes":False,"spends_money":False,
+                "customer_sends":False,"writes_farm_data":False},200
+        return {"handled":True,**result},200
     if claimed["action_kind"]=="beacon_private_album_finish":
         preview=claimed.get("preview_payload") if isinstance(claimed.get("preview_payload"),dict) else {}
         if (preview.get("contract_version")!="beacon_private_album_finish_v1"
