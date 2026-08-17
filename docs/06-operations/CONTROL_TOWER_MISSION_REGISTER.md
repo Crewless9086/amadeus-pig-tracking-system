@@ -605,6 +605,26 @@ not enable callbacks, hardware, historical-card replay or owner-visible sends.
 Business acceptance remains the deployed continuous-manager loop, not merge or
 health.
 
+### HERDMASTER HMQ-04 stale-feedback containment — 2026-08-17
+
+The repeated HMQ-04 packet is historical evidence observed on 2026-08-16. It
+uses the superseded 986-line Mission Standard, 259-line Control Tower Protocol
+and 208-line handover template, and compares PR #984 head `c665311d` with old
+main `847d616e` rather than current authoritative main `e3e35874`. Fresh GitHub
+readback confirms PR #984 remains open, clean and mergeable at that unchanged
+historical head with its three historical CI checks green. No current
+HERDMASTER terminal process, deployed candidate revision, autonomous worker,
+fresh canonical snapshot, owner preview or terminal-independent cycle was
+proved. The old `UI_UNBLOCK_PENDING_CONTROL_TOWER` wait is therefore retired as
+a current dependency. Preserve PR #984 and its unique worktree, but classify
+HMQ-04 `WORKING / FROZEN_STRATEGIC_WIP / REVIEWED_PR_PRESERVED`; do not dispatch,
+reconcile, merge, deploy or wake CODEX UI during the active Slot 2 release
+sequence. Future eligibility requires Slot 2 closeout plus a fresh current-main,
+collision, governance and owner-workload assessment. Continuous HERDMASTER
+outcomes—the live herd worklist, weighing/litter/welfare follow-through and
+resolving operational blockers such as order eligibility—outrank this analytics
+presentation mission.
+
 ## Delivery limitation
 
 Automatic prompt delivery to every visible terminal is not proven. Charl must
