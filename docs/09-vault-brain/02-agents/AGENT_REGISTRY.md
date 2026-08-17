@@ -2,6 +2,12 @@
 
 Status: structured draft inventory for owner review.
 
+Operational status is governed by the Continuous Operations Acceptance Gate in
+`AGENTIC_OPERATING_MISSION_STANDARD.md`. `Active`, `built`, `deployed`, a named
+workflow stage or a successful request does not mean an agent is continuously
+operating. Only a fresh deployed trigger, worker/heartbeat, independent result,
+next trigger and terminal-close continuity may establish that state.
+
 ## Registry Rules
 
 Every agent must have:
@@ -24,9 +30,9 @@ Confidence rule:
 
 | Agent | Home | Commander | Status | File |
 | --- | --- | --- | --- | --- |
-| CHARLIE | Owner Command | Charl | Active/maturing | `owner-command/CHARLIE.md` |
-| CHARLIE CORE | Workflow System | CHARLIE | Active/maturing | `../01-identity/CHARLIE_CORE.md` |
-| Brain Guard | CHARLIE CORE / Governance | CHARLIE | Draft/required | `charlie-core/BRAIN_GUARD.md` |
+| CHARLIE | Owner Command | Charl | Partial; continuous supervision not proven | `owner-command/CHARLIE.md` |
+| CHARLIE CORE | Workflow System | CHARLIE | Source staging integrated; deployed continuous mission supervision not proven | `../01-identity/CHARLIE_CORE.md` |
+| Brain Guard | CHARLIE CORE / Governance | CHARLIE | Partial review gate; autonomous steward dormant/unproven | `charlie-core/BRAIN_GUARD.md` |
 | Idea Expander | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/IDEA_EXPANDER.md` |
 | Concept Strategist | CHARLIE CORE | CHARLIE CORE | Active strategy stage | `charlie-core/CONCEPT_STRATEGIST.md` |
 | Product Architect | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/PRODUCT_ARCHITECT.md` |
@@ -57,12 +63,12 @@ Confidence rule:
 
 | Agent | Environment | Department | Commander | Status | File |
 | --- | --- | --- | --- | --- | --- |
-| Oom Sakkie | Amadeus Farm | Farm Command | CHARLIE | Operational V1 read-only coordinator | `farm/OOM_SAKKIE.md` |
-| Herdmaster | Amadeus Farm | Farm Operations | Oom Sakkie / delegated by CHARLIE | Operational V1 read-only; production trust measured | `farm/HERDMASTER.md` |
-| Rootline | Amadeus Farm | Farm Operations | Oom Sakkie | Read-only/gated | `farm/ROOTLINE.md` |
+| Oom Sakkie | Amadeus Farm | Farm Command | CHARLIE | Partial intake; continuous manager loop not proven | `farm/OOM_SAKKIE.md` |
+| Herdmaster | Amadeus Farm | Farm Operations | Oom Sakkie / delegated by CHARLIE | Useful canonical reads; continuous husbandry loop not proven | `farm/HERDMASTER.md` |
+| Rootline | Amadeus Farm | Farm Operations | Oom Sakkie | Request-driven/degraded; continuous current-plan loop not proven | `farm/ROOTLINE.md` |
 | Gatekeeper | Amadeus Farm | Farm Operations / Safety | Oom Sakkie | Active/planned | `farm/GATEKEEPER.md` |
 | Quartermaster | Amadeus Farm | Farm Operations | Oom Sakkie | Planned | `farm/QUARTERMASTER.md` |
-| SAM | Amadeus Farm | Farm Sales | Oom Sakkie / CHARLIE | Active owner-reviewed shared-agent sales path | `sales/SAM.md` |
+| SAM | Amadeus Farm | Farm Sales | Oom Sakkie / CHARLIE | Autonomous shadow intake; customer dispatch authority disabled | `sales/SAM.md` |
 | Meat Sales Agent | Amadeus Farm | Farm Sales | SAM | Planned specialization | `sales/MEAT_SALES_AGENT.md` |
 | Live Pig Sales Agent | Amadeus Farm | Farm Sales | SAM | Planned | `sales/LIVE_PIG_SALES_AGENT.md` |
 | Slaughter / Abattoir Sales Agent | Amadeus Farm | Farm Sales | SAM | Planned | `sales/SLAUGHTER_ABATTOIR_SALES_AGENT.md` |
@@ -75,7 +81,7 @@ Confidence rule:
 
 | Agent | Shared Department | Commander | Status | File |
 | --- | --- | --- | --- | --- |
-| Beacon | Marketing | CHARLIE | Partially active/controlled | `marketing/BEACON.md` |
+| Beacon | Marketing | CHARLIE | Request-driven source capability; proactive marketing loop not proven | `marketing/BEACON.md` |
 | Beacon Strategy | Marketing | Beacon | Future module | `marketing/BEACON_STRATEGY.md` |
 | Beacon Creative | Marketing | Beacon | Future module | `marketing/BEACON_CREATIVE.md` |
 | Beacon Media Librarian | Marketing | Beacon | Future module | `marketing/BEACON_MEDIA_LIBRARIAN.md` |

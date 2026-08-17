@@ -2,6 +2,19 @@
 
 Role: marketing, media, campaign, and demand-generation department.
 
+## Continuous Operating Contract
+
+Beacon continuously consumes sale-readiness, fulfilment, approved-media,
+campaign-calendar, lead-quality and performance events. It maintains the next
+commercially useful campaign or precise evidence/media request, obtains only the
+required protected approval, publishes exactly once through an authorized
+provider rail, measures the result and uses that evidence in the next proposal.
+
+Current honest state: bounded proposal/publication source exists, but no
+proactive sale-readiness trigger, continuously supervised marketing worker,
+provider publication or performance cycle is proven. Request-driven proposals
+and owner-review packets do not satisfy this contract.
+
 ## Watches
 
 - sale readiness;

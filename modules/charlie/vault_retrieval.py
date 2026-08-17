@@ -11,6 +11,11 @@ VAULT_RETRIEVAL_VERSION = "charlie_vault_retrieval_v1"
 OWNER_PREFERENCE_VERSION = "charlie_owner_preferences_v1"
 
 BASE_REQUIRED_DOCS = [
+    "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md",
+    "docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md",
+    "docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md",
+    "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md",
+    "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md",
     "docs/09-vault-brain/INDEX.md",
     "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
     "docs/09-vault-brain/00-governance/UPDATE_RULES.md",
@@ -134,6 +139,8 @@ OWNER_PREFERENCES = [
     "Do not present weak UI, missing screenshots, stale evidence, or vague review packets as ready.",
     "Keep CHARLIE distinct from CHARLIE CORE: CHARLIE is the AI command identity; CHARLIE CORE is the workflow system.",
     "Owner approval is mandatory before merge, deploy, customer sends, public posts, payments, reservations, migrations, or farm lifecycle writes.",
+    "Deployed agents must continuously observe, act, verify and follow up; briefs, request answers, source, PRs, deployments and terminal canaries are not agent completion.",
+    "Reduce Charl's routine relay, monitoring, investigation and approval work; never convert missing automation into recurring owner labour.",
 ]
 
 
@@ -147,6 +154,17 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent=""):
     agent_docs = _agent_required_docs(agent)
     required = _unique(BASE_REQUIRED_DOCS + agent_docs + TEMPLATE_REQUIRED_DOCS.get(template, []))
     candidates = {path: {"path": path, "reasons": ["required_base_or_template"], "score": 40} for path in required}
+    authority_priority = {
+        "docs/09-vault-brain/00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md": 100,
+        "docs/09-vault-brain/00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md": 95,
+        "docs/01-architecture/AGENTIC_FARM_RUNTIME_PROGRAMME.md": 90,
+        "docs/06-operations/CONTROL_TOWER_MISSION_REGISTER.md": 85,
+        "docs/09-vault-brain/00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md": 80,
+        "docs/09-vault-brain/INDEX.md": 75,
+    }
+    for path, score in authority_priority.items():
+        if path in candidates:
+            candidates[path]["score"] = score
 
     for token, paths in KEYWORD_DOCS.items():
         if token in tokens or token in query.lower():
@@ -159,6 +177,8 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent=""):
         if path in candidates:
             continue
         text = _read_repo_text(path)
+        if not _eligible_current_vault_text(path, text):
+            continue
         text_tokens = _tokens(path + " " + text[:5000])
         overlap = len(tokens.intersection(text_tokens))
         if overlap:
@@ -349,6 +369,23 @@ def _vault_markdown_files():
             continue
         paths.append(str(relative).replace("\\", "/"))
     return sorted(paths)
+
+
+def _eligible_current_vault_text(path, text):
+    """Keep superseded evidence out of ordinary current-world retrieval."""
+    normalized_path = str(path or "").replace("\\", "/").lower()
+    if "/09-examples/" in normalized_path or normalized_path.endswith("/changelog.md"):
+        return False
+    header = str(text or "")[:1200].lower()
+    stale_markers = (
+        "status: historical",
+        "status: superseded",
+        "status: retired",
+        "status: quarantined",
+        "historical snapshot",
+        "superseded for current operational use",
+    )
+    return not any(marker in header for marker in stale_markers)
 
 
 def _read_repo_text(relative_path):

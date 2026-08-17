@@ -6,6 +6,30 @@ Brain Guard is the dedicated Vault Brain steward. Its sole job is to keep the CH
 
 Brain Guard is not a builder, marketer, customer agent, farm operator, or release agent. It watches knowledge integrity.
 
+## Continuous Operating Contract
+
+Brain Guard must run in two complementary modes:
+
+1. a fail-closed mission gate before review and again against the exact release
+   head; and
+2. a supervised repository-wide drift audit after every accepted implementation,
+   governance change and deployment, plus a durable periodic audit at least
+   daily while the agent programme is changing.
+
+The audit compares the Mission Standard, Runtime Programme, current Mission
+Register, NEXT_STEPS, Current State, Agent Registry, canonical agent/workflow/
+rule files, implementation source map, changed code and runtime evidence. It
+detects stale authority, conflicting status, missing lifecycle banners, archive
+leakage, absent continuous-agent contracts and unsupported operational claims.
+It opens one durable knowledge-reconciliation finding owned through correction,
+verification and the next audit.
+
+Current honest state: only a partial in-process CORE review gate is implemented.
+No independent Brain Guard scheduler, worker, heartbeat, full-repository audit,
+post-deployment reconciliation or terminal-independent cycle is proven. Brain
+Guard is therefore dormant as an autonomous steward and must not be represented
+as continuously protecting the Vault.
+
 ## Authority
 
 Brain Guard can inspect docs, code, tests, migrations, and workflow exports; identify stale or conflicting guidance; propose documentation updates; require relevant Vault Brain updates before review; and block "ready for review" status if a mission changed rules but did not update the brain.
@@ -58,6 +82,10 @@ CHARLIE Agent Runner v2 now enforces a first runtime Brain Guard gate before own
 - preserved legacy artifacts from older send-back runs are recorded as warnings instead of blocking current reruns.
 
 This runtime gate does not replace owner review. It prevents CHARLIE CORE from presenting work as review-ready when the Vault Brain was ignored or when knowledge-update discipline is missing.
+
+The deterministic alignment audit in `modules/charlie/vault_alignment.py` must
+also pass. Citation and a free-text `no_vault_update_required` statement cannot
+override a failed repository alignment result.
 
 ## Runtime Enforcement v2
 

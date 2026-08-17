@@ -1,5 +1,20 @@
 # Next Steps
 
+## Current priority — continuous deployed agents (2026-08-17)
+
+All older feature and bounded-acceptance items below are subordinate to the
+three strategic lanes in `CONTROL_TOWER_MISSION_REGISTER.md`:
+
+1. CORE autonomous development mission delivery and supervision.
+2. Oom Sakkie with ROOTLINE and HERDMASTER as one continuous farm-management
+   loop.
+3. SAM with BEACON as one continuous revenue loop.
+
+Do not promote a brief, request answer, page, source branch, PR, deployment,
+manual canary, shadow cycle or isolated protected action as the current goal.
+Each lane closes only with a genuine deployed trigger, useful verified outcome,
+durable next trigger and a later cycle after its development terminal closes.
+
 ## ROOTLINE RMQ-20260813-05 — Water-Credit Lifecycle
 
 RMQ-20260813-05 reached its bounded current-world outcome: its append-only,
