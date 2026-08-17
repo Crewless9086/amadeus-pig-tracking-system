@@ -1907,3 +1907,20 @@ compact non-duplicative card, exact callback authority/replay binding, canonical
 litter-media candidates with public-use truth, and deployed provider delivery
 plus later silence. No approval, publication, boost, spend or media-use authority
 is granted.
+### CORE provider-identity isolated validation dispatched — 2026-08-17
+
+Fresh Control Tower recheck proved authoritative main
+`e95a9f88a493f0b1f96998a8bc6c71611697947d` contains PR #1051 merge
+`2b03a0284c0c33a350193109963737693c080d85`, no current CORE source terminal
+owns the worktree, and the source release lane is free. Automatically promote
+existing `CMQ-20260813-05` Recovery Slot 1 to the distinct isolated validation
+gate in detached exact-main worktree
+`C:\tmp\cmq05-provider-identity-validation-e95a9f88-20260817`.
+
+The visible terminal `CORE - PROVIDER IDENTITY VALIDATION` may produce only a
+fresh signed receipt from a network-disabled, read-only, private-PID, no-socket,
+no-production-state validation environment. It may not stage, acquire the
+production release lane, mutate runtime/task/stop/manifest state, invoke the
+provider or activate CORE. Successful completion promotes only to a separately
+authorized exact-current staging gate. All historical validation, staging and
+activation identities remain sealed and non-replayable.
