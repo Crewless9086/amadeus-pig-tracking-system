@@ -41,6 +41,8 @@ def plan_runtime_staging(
     _validate_target_roots(runtime_root, execution_root, state_root)
     if (state_root / "activation.lock").exists():
         raise RuntimeStagingError("activation_lane_active")
+    if (state_root / "activation-reconciliation.lock").exists():
+        raise RuntimeStagingError("activation_reconciliation_lane_active")
     git_safety = {
         "runtime": (git_safety_checker or inspect_git_checkout_safety)(runtime_root, runner),
         "execution": (git_safety_checker or inspect_git_checkout_safety)(execution_root, runner),
@@ -85,6 +87,8 @@ def plan_runtime_staging(
         raise RuntimeStagingError("supervisor_not_governed_stopped")
     if watchdog.get("status") != "governed_stop_active":
         raise RuntimeStagingError("watchdog_governed_stop_not_active")
+    if watchdog.get("version") == "charlie_activation_recovery_projection_v1":
+        _validate_recovery_projection(watchdog, state_root)
     task = (task_reader or read_watchdog_task)()
     _validate_task(task, runtime_root)
     task_sha256 = _payload_sha256(task)
@@ -126,6 +130,62 @@ def plan_runtime_staging(
     return plan
 
 
+def _validate_recovery_projection(projection, state_root):
+    activation_id = str(projection.get("recovered_activation_id") or "")
+    if not re.fullmatch(r"[0-9a-f]{32}", activation_id):
+        raise RuntimeStagingError("watchdog_recovery_projection_identity_invalid")
+    try:
+        key = (state_root / "activation-authority.key").read_bytes()
+    except OSError as exc:
+        raise RuntimeStagingError("watchdog_recovery_projection_key_unavailable") from exc
+    if len(key) < 32 or not hmac.compare_digest(
+            str(projection.get("projection_hmac_sha256") or ""),
+            _record_hmac(projection, key, "projection_hmac_sha256")):
+        raise RuntimeStagingError("watchdog_recovery_projection_signature_invalid")
+    ledger = state_root / "activation-ledger"
+    expected = {
+        "historical_failure": ledger / f"{activation_id}-failure.json",
+        "recovered_packet": ledger / f"{activation_id}-recovered-activation-packet.json",
+        "recovered_lane": ledger / f"{activation_id}-lane-recovered.json",
+        "rollback": ledger / f"{activation_id}-rollback.json",
+        "recovery_completion": ledger / f"{activation_id}-recovery-completed.json",
+        "reconciled": ledger / f"{activation_id}-reconciled.json",
+    }
+    for field, path in expected.items():
+        path_field = f"{field}_path"
+        digest_field = f"{field}_sha256"
+        if (str(Path(str(projection.get(path_field) or "")).resolve()).casefold()
+                != str(path.resolve()).casefold()
+                or not path.is_file()
+                or _sha256(path) != projection.get(digest_field)):
+            raise RuntimeStagingError("watchdog_recovery_projection_archive_mismatch", field=field)
+    failure = _read_json(expected["historical_failure"], "activation_failure_record_invalid")
+    completion = _read_json(expected["recovery_completion"], "activation_recovery_completion_invalid")
+    reconciled = _read_json(expected["reconciled"], "activation_reconciliation_record_invalid")
+    for record, signature_field, status in (
+        (failure, "failure_hmac_sha256", "activation_failure_preserved"),
+        (completion, "completion_hmac_sha256", "activation_recovery_completed"),
+        (reconciled, "recovery_hmac_sha256", "governed_stop_reconciliation_pending"),
+    ):
+        if (record.get("activation_id") != activation_id or record.get("status") != status
+                or not hmac.compare_digest(
+                    str(record.get(signature_field) or ""),
+                    _record_hmac(record, key, signature_field))):
+            raise RuntimeStagingError("watchdog_recovery_projection_record_invalid")
+    if (any(completion.get(name) != projection.get(name) for name in (
+            "historical_failure_sha256", "recovered_packet_sha256", "rollback_sha256"
+            ))
+            or completion.get("lane_sha256") != projection.get("recovered_lane_sha256")):
+        raise RuntimeStagingError("watchdog_recovery_projection_completion_mismatch")
+
+
+def _record_hmac(record, key, signature_field):
+    unsigned = {k: v for k, v in record.items() if k != signature_field}
+    return hmac.new(key, json.dumps(
+        unsigned, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_checker=None):
     if not isinstance(plan, dict) or plan.get("status") != "runtime_staging_plan_ready":
         raise RuntimeStagingError("validated_staging_plan_required")
@@ -155,7 +215,8 @@ def stage_runtime(plan, *, task_reader=None, runner=subprocess.run, git_safety_c
     mutated = False
     recovery_error = None
     try:
-        if (state_root / "activation.lock").exists():
+        if ((state_root / "activation.lock").exists()
+                or (state_root / "activation-reconciliation.lock").exists()):
             raise RuntimeStagingError("activation_lane_active")
         if _sha256(plan["receipt_path"]) != plan["receipt_sha256"]:
             raise RuntimeStagingError("sealed_receipt_changed")

@@ -2,7 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from modules.oom_sakkie.general_manager_worker import ManagerCaseError, normalize_candidate
+from modules.oom_sakkie.general_manager_worker import (
+    ManagerCaseError, PostgresManagerCaseStore, normalize_candidate)
 
 
 NOW = datetime(2026, 8, 17, 10, 0, tzinfo=timezone.utc)
@@ -43,6 +44,67 @@ def test_observation_epoch_does_not_create_a_new_material_digest():
     later = normalize_candidate(_candidate(
         evidence_refs=["event:one", "observed:2026-08-17T10:05:00+00:00"]), now=NOW)
     assert first["evidence_digest"] == later["evidence_digest"]
+
+
+@pytest.mark.parametrize(("lease_until", "expected"), [
+    (NOW + timedelta(minutes=2), "deferred"),
+    (NOW - timedelta(minutes=2), "replayed")])
+def test_changed_evidence_cannot_replace_a_delegated_generation(lease_until, expected):
+    class Cursor:
+        def __init__(self): self.commands=[]
+        def execute(self, sql, params): self.commands.append((sql, params))
+        def fetchone(self):
+            return ("a"*64, 1, "delegated", "oom-sakkie-general-manager-v1",
+                    lease_until, ["observed:2026-08-17T10:00:00+00:00"])
+    cursor=Cursor()
+    candidate=normalize_candidate(_candidate(evidence_refs=["event:new"]), now=NOW)
+    result=PostgresManagerCaseStore(connect_factory=lambda: None)._reconcile(cursor,candidate,NOW)
+    assert result == expected
+    assert len(cursor.commands) == 1
+
+
+def test_failed_reclaimed_worker_cannot_downgrade_confirmed_generation():
+    class Cursor:
+        def __init__(self): self.commands=[]
+        def __enter__(self): return self
+        def __exit__(self,*_args): return False
+        def execute(self,sql,params): self.commands.append((sql,params))
+        def fetchone(self):
+            return (1,"d"*64,"d"*64,"waiting_reassessment","cycle-two",
+                    NOW + timedelta(minutes=2))
+    class Connection:
+        def __init__(self,cursor): self.value=cursor
+        def __enter__(self): return self
+        def __exit__(self,*_args): return False
+        def cursor(self): return self.value
+    cursor=Cursor()
+    store=PostgresManagerCaseStore(connect_factory=lambda: Connection(cursor))
+    case={"case_id":"OOM-CASE-ONE","generation":1,"evidence_digest":"d"*64,
+          "next_reassessment_at":NOW.isoformat()}
+    store._finish_claim(case,{"success":False,"status":"ambiguous"},NOW,"cycle-two")
+    assert len(cursor.commands) == 1
+
+
+def test_confirmed_duplicate_releases_claim_and_reschedules_without_delivery():
+    class Cursor:
+        def __init__(self): self.commands=[]
+        def __enter__(self): return self
+        def __exit__(self,*_args): return False
+        def execute(self,sql,params): self.commands.append((sql,params))
+        def fetchone(self):
+            return (1,"d"*64,"d"*64,"delegated","cycle-two",
+                    NOW + timedelta(minutes=2))
+    class Connection:
+        def __init__(self,cursor): self.value=cursor
+        def __enter__(self): return self
+        def __exit__(self,*_args): return False
+        def cursor(self): return self.value
+    cursor=Cursor(); store=PostgresManagerCaseStore(connect_factory=lambda: Connection(cursor))
+    case={"case_id":"OOM-CASE-ONE","generation":1,"evidence_digest":"d"*64,
+          "next_reassessment_at":NOW.isoformat()}
+    store._finish_claim(case,{"success":True,"status":"manager_delivery_duplicate_suppressed",
+        "next_reassessment_at":(NOW+timedelta(minutes=5)).isoformat()},NOW,"cycle-two")
+    assert any("update app_private.oom_manager_cases set status" in sql for sql,_ in cursor.commands)
 
 
 @pytest.mark.parametrize("field,value", [

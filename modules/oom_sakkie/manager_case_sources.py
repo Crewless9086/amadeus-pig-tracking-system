@@ -149,29 +149,24 @@ def _sam(now):
 
 
 def _beacon(now):
+    from modules.oom_sakkie.beacon_request_runtime import build_scheduled_sale_ready_stock_result
+    scheduled = build_scheduled_sale_ready_stock_result()
+    result_digest = str(scheduled.get("result_digest") or "")
+    packet = scheduled.get("proposal") if isinstance(scheduled.get("proposal"), dict) else {}
+    if len(result_digest) != 64 or not packet.get("packet_id"):
+        raise ValueError("beacon_scheduled_result_identity_unavailable")
     with connect_bounded_read() as connection:
         with connection.cursor() as cur:
-            cur.execute("""select review_event_id,created_at,review_json->'beacon_request'
-                from public.sam_live_stock_conversation_review_events
-                where event_source='oom_sakkie_beacon_request'
-                order by created_at desc,review_event_id desc limit 1""")
-            beacon = cur.fetchone()
             cur.execute("""select review_event_id,created_at from public.sam_live_stock_conversation_review_events
                 where event_source='sam_live_stock_direct_inbound'
                 order by created_at desc,review_event_id desc limit 1""")
             sam = cur.fetchone()
-    beacon_time = beacon[1] if beacon else None
-    sam_time = sam[1] if sam else None
-    payload = (beacon[2] or {}) if beacon else {}; proposal = ((payload.get("result") or {}).get("proposal") or {})
-    delivered = str((payload.get("result") or {}).get("provider_delivery_confirmed") or "").lower() == "true"
-    current = bool(proposal and delivered and beacon_time and now - beacon_time <= timedelta(hours=24)
-                   and (not sam_time or beacon_time >= sam_time))
-    if current: return []
-    refs = [f"beacon:{beacon[0] if beacon else 'none'}", f"sam:{sam[0] if sam else 'none'}"]
+    refs = [f"beacon_result:{result_digest}", f"packet:{packet['packet_id']}",
+            f"sam:{sam[0] if sam else 'none'}"]
     return [_candidate("beacon:current-sale-opportunity", "BEACON", "due", refs,
         ["current_sale_opportunity_proposal_or_exact_media_request"],
         "BEACON has no current proposal or exact media request reconciled after the latest sales evidence.",
-        "Delegate a delivery-disabled BEACON proposal refresh from current canonical sales, inventory and media evidence.",
+        "Delegate a protected internal BEACON proposal or exact media request from current canonical sales, inventory and media evidence; never publish, spend, contact customers, reserve stock or infer public-use authority.",
         now + timedelta(minutes=30))]
 
 

@@ -32,6 +32,50 @@ def test_non_farm_case_remains_silent():
     assert value["telegram_sends"] == 0
 
 
+@patch("modules.oom_sakkie.beacon_request_runtime.build_scheduled_sale_ready_stock_result")
+@patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"5721652188"})
+def test_beacon_case_uses_protected_oom_delivery_without_public_effects(build):
+    build.return_value={"success":True,"status":"beacon_sale_ready_stock_proposal_ready",
+        "answer":"<b>BEACON proposal</b>","result_digest":"a"*64,
+        "publishes":False,"spends_money":False,"customer_sends":False,
+        "writes_farm_data":False,"protected_actions_performed":False}
+    case=_case("BEACON")
+    case["evidence_refs"]=["beacon_result:"+"a"*64]
+    captured={}
+    def deliver(parsed,result,**kwargs):
+        captured.update(result=result,kwargs=kwargs)
+        return {"success":True,"provider_delivery_confirmed":True,
+                "telegram_message_id":"4002","telegram_sends":1}
+    value=deliver_farm_manager_case(case,deliver=deliver)
+    assert value["success"] is True and value["delivery_confirmed"] is True
+    assert captured["kwargs"]["specialist"] == "BEACON"
+    assert captured["result"]["publishes"] is False
+    assert captured["result"]["customer_sends"] is False
+
+
+@patch("modules.oom_sakkie.beacon_request_runtime.build_scheduled_sale_ready_stock_result",
+       side_effect=RuntimeError("private detail"))
+@patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"5721652188"})
+def test_beacon_dependency_failure_is_not_misreported_or_delivered(_build):
+    value=deliver_farm_manager_case(_case("BEACON"),
+        deliver=lambda *_a,**_k: (_ for _ in ()).throw(AssertionError()))
+    assert value["delivery_confirmed"] is False
+    assert value["status"] == "beacon_canonical_evidence_unavailable"
+    assert value["publishes"] is False and value["customer_sends"] == 0
+    assert "private detail" not in str(value)
+
+
+@patch("modules.oom_sakkie.beacon_request_runtime.build_scheduled_sale_ready_stock_result")
+@patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"5721652188"})
+def test_beacon_changed_evidence_is_suppressed_before_provider_delivery(build):
+    build.return_value={"success":True,"answer":"new","result_digest":"b"*64}
+    case=_case("BEACON"); case["evidence_refs"]=["beacon_result:"+"a"*64]
+    value=deliver_farm_manager_case(case,
+        deliver=lambda *_a,**_k: (_ for _ in ()).throw(AssertionError()))
+    assert value["status"] == "beacon_material_evidence_changed_before_delivery"
+    assert value["delivery_confirmed"] is False and value["telegram_sends"] == 0
+
+
 @patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"5721652188"})
 def test_provider_ambiguity_is_not_claimed_as_delivery():
     value=deliver_farm_manager_case(_case(),deliver=lambda *a,**k:{"success":True,"telegram_sends":0})
