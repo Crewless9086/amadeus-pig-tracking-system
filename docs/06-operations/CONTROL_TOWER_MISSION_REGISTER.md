@@ -876,6 +876,36 @@ CORE stopped-state staging authority, not the completed source-development
 terminal. Automatic delivery is not proven, so the prompt is prepared for Charl
 to paste unless target delivery and acknowledgement are independently recorded.
 
+### CMQ-20260813-05 exact-current stopped-state staging accepted — 2026-08-17
+
+Fresh staging authority `50f20473818f4eeeb206c0f56a939573` aligned runtime
+HEAD, execution HEAD and manifest commit to authoritative main
+`64e5335496d06bde5dba8ba9a840ecb5f0168238`. Offline isolated validation used
+fresh identity `cmq05-290c649ca0d5901c28b17f53bef45d4d`; the focused
+runner-control suite passed 57 tests with 3 platform skips and the complete
+runner-control/staging/activation group passed 92 with 3 platform skips. The
+fresh signed receipt SHA-256 is `6544e778cb43cf60ed3ed48acf6f944bb54c8c7de473a58a776c08f746aaaa38`.
+
+The staging lane is archived and no staging or activation lock remains. The
+governed stop marker remains byte-identical at `8887c0c0`; the exact scheduled
+task remains Disabled with one action and digest `5ed7dc9b`. Rollback record
+`4abaff0c` preserves the prior `e3e35874` runtime/execution/manifest tuple. No
+watchdog, supervisor, runner, provider, database, farm or business action
+occurred. The dirty owner preservation workspace was not touched.
+
+Classify Slot 1 as `WORKING / EXACT_CURRENT_MAIN_STAGED /
+ACTIVATION_AUTHORITY_ELIGIBLE`. Staging is accepted but CORE remains
+`authority-disabled / deployed-dormant`: no provider-created process, heartbeat,
+independent cycle or terminal-close continuity exists. With current main still
+exact, the task/receipt/stop bindings unchanged and the durable shared release
+ledger ending in `release_coordination_released`, the next mission is one
+separate provider-origin activation epoch using the reviewed activation rail.
+The activation terminal may activate and observe only; it may not manufacture a
+CORE mission result. Acceptance requires exact loaded revision, signed
+supervisor/runner ancestry, fresh heartbeat, one independently triggered cycle,
+the next trigger, closure of all development/activation terminals and a later
+terminal-independent cycle.
+
 Automatic prompt delivery to every visible terminal is not proven. Charl must
 paste a prompt unless target-specific delivery and acknowledgement are evidenced.
 The target is the durable CORE queue/runner. Until then, queued, delivered,
