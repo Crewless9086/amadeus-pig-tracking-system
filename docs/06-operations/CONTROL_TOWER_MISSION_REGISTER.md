@@ -1528,3 +1528,35 @@ never prompt or duplicate the active Revenue terminal. Then dispatch one bounded
 read-only reconciliation/contract packet followed by implementation, local owner
 desktop/mobile preview and this exact four-line acceptance journey. No production
 order, quote send, purpose change or reservation is authorized by this entry.
+
+### CORE checkout-safety source integrated — PR #1046 — 2026-08-17
+
+Existing mission `CMQ-20260813-05` Recovery Slot 1 completed its bounded source
+gate. Reviewed source head `db86e8498b5c41ae2dfd3c01bae42c823c64939a`
+merged normally through PR #1046 as authoritative main
+`d3a3b71a2163a5199d0a6863a24a5f8dfdf87b1b`. The exact repair accepts only the
+four governed standard Git LFS settings at system/global scope after trusted
+Git/Git-LFS resolution and invokes trusted Git by absolute path. Altered or partial
+configuration, unsafe scopes, extra filters, includes/includeIf, hooksPath,
+fsmonitor, malformed records, post-checkout hooks, missing executables and
+same-name untrusted substitution continue to fail closed.
+
+Verification: durable host receipt SHA-256
+`1ba0c82f35c1c53ad66232895cd58510d2363b207d66e54f0d7fb3696e2d5291`
+records exit 0 at 16:07:48 SAST; focused exact-head tests passed 26 tests plus 17
+subtests; static compilation and diff checks passed; independent process-safety
+and release-integrity reviews passed; `charlie-core`, disposable-Postgres audit
+and Playwright exact-head CI all passed. No staging, activation, task, governed-
+stop, worker, manifest, runtime, provider, database or production action occurred.
+
+Classify the source terminal `CLOSE / RELEASED-RETAIN` and mission
+`WORKING / SOURCE_INTEGRATED / VALIDATION_STAGING_ACTIVATION_GATE`. The empty
+source launcher was closed after final handover and exit-code-zero receipt. Promote
+automatically under a fresh separately governed execution identity only after
+fresh authoritative-main, lane, task, stop, runtime, execution and manifest
+readback. The next gate must create a fresh isolated validation receipt, stage
+exact current main while stopped, then use the reviewed provider-origin activation
+rail only if every binding remains exact. It must prove loaded revision, signed
+supervisor/runner ancestry, heartbeat, one independent cycle, next trigger and a
+later cycle after all development and activation terminals close. Source merge or
+terminal-created cycles do not make CORE live.
