@@ -2137,3 +2137,12 @@ the dirty preview implementation against the merged HERDMASTER contract, then
 complete tests, review, one normal PR, deployment and zero-write authenticated
 acceptance. It may not create an order, reserve/allocate/re-purpose pigs, send a
 quote or create a competing health/movement authority.
+
+A separate detached, read-only Control Tower overnight watch was started from
+main `4aeb0f3b` in `C:\tmp\control-tower-overnight-watch-20260817`, scheduled by
+mission instruction to observe through 06:00 SAST. It may close proven empty
+wrappers and continue only the same authorized missions at safe released
+boundaries; it may not infer activity from windows, replay failed epochs, operate
+hardware, publish/spend, send customer messages, write farm/order state or create
+duplicate infrastructure. Its durable external log is
+`C:\tmp\CONTROL_TOWER_OVERNIGHT_WATCH_LOG_20260817.md`.
