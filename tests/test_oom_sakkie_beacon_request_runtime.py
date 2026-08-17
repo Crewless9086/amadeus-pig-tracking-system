@@ -150,6 +150,17 @@ def test_scheduled_packet_identity_uses_canonical_observation_not_refresh_time()
     assert first["result_digest"] == second["result_digest"]
 
 
+def test_content_packet_identity_does_not_treat_observation_time_as_new_campaign():
+    from modules.beacon.content_operations import build_beacon_content_candidate
+    evidence = {"opportunities": {"availability": "usable", "records": []}}
+    first = build_beacon_content_candidate(
+        evidence, now=datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc))
+    second = build_beacon_content_candidate(
+        evidence, now=datetime(2026, 8, 17, 12, 5, tzinfo=timezone.utc))
+    assert first["generated_at"] != second["generated_at"]
+    assert first["owner_review_packet"]["packet_id"] == second["owner_review_packet"]["packet_id"]
+
+
 def test_missing_commercial_evidence_returns_precise_decision_packet_not_error():
     packet = build_current_beacon_proposal(opportunity(ready=False), media())
     assert packet["packet_type"] == "marketing_evidence_request"
