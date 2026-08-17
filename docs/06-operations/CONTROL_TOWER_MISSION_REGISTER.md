@@ -1421,3 +1421,54 @@ worker. It then ran the unchanged suite through detached hidden host launcher
 source continuation must consume this fresh evidence, reconcile current main,
 complete reviews/PR/CI/integration and return the mandatory handover; it must not
 repeat the long test through the five-second command route.
+
+### ROOTLINE typed auto-mode readiness audit — 2026-08-17
+
+Continue existing Recovery Slot 2; no duplicate ROOTLINE mission, device spine,
+provider adapter or authority ledger is authorized. The read-only readiness audit
+completed with `NO BUSINESS OUTCOME`: no provider control, hardware command,
+configuration change, authority activation, farm write or physical irrigation
+result occurred. Focused evidence reported 101 tests passing with eight database-
+specific skips, plus fresh authenticated provider and canonical readback.
+
+Current safe truth is `WORKING / CONTAINED_AUTO_AUTHORITY`. The deployed 5-minute
+OOM scheduler and 15-minute ROOTLINE reassessment are autonomous, but hardware is
+authority-disabled by canonical gaps. B12345 and C12345 are online and OFF on
+eWeLink device `100204e9bc` channels 1 and 2 with native 3,599-second fail-stop;
+neither has a current typed standing-authority record. C has historical supervised
+flow/OFF evidence; B's static commissioned claim conflicts with the absence of a
+supervised B canary and must be treated as uncommissioned. Fertiliser injection
+(`100204d497`, CH1) is online/OFF but lacks typed registry, flow/preflow/flush and
+shutdown evidence. The mixer (`100204d497`, CH2) is online/OFF and has typed
+generation 1 `bounded_actuation_ready`, but standing authority is false and
+recirculation/pump-stop proof is absent. The Borehole MINI R4 is actually bound
+through Tuya/SmartLife EU, is offline/OFF at 0 W/0 mA with five disabled legacy
+timers, and must not retain the conflicting static eWeLink provider identity.
+
+Mandatory reusable corrections are: physical uniqueness by provider-account
+binding plus device ID plus channel; exact canonical authority ID/version/policy/
+revocation resolution before ON; typed registry/history population for B, C,
+injection and borehole from verified evidence only; semantic dependency/freshness
+validation; fertiliser recirculation/flow/flush protections; strict borehole tank-
+full, dry-run, pump-current/protection, manual-isolation and power-loss protections;
+and one protected emergency-stop contract that revokes future ON, issues bounded
+idempotent exact-channel OFF, requires provider OFF plus physical cessation,
+records containment and escalates once to manual isolation only if OFF remains
+unverified. All flags and standing authority remain inactive.
+
+No owner-presence or physical commissioning request is eligible until the corrected
+non-actuating spine is deployed, all electronic/provider/canonical gates pass, and
+independent device-safety plus authority/replay reviews approve. Commission one
+risk profile at a time through the deployed ROOTLINE runtime, never a terminal;
+prove intended physical effect, native automatic OFF, provider OFF, physical
+cessation, canonical evidence, replay silence, a normal later scheduled cycle and
+terminal-independent continuity.
+
+Fresh Control Tower sweep supersedes the audit's stale `FARM TERMINAL ACTIVE`
+assumption. FARM is nevertheless genuinely active now because its retained Slot 2
+worktree has fresh uncommitted changes in
+`herdmaster_daily_manager_evidence.py` and its test; it must not be interrupted.
+Retain this as an ADDENDUM for FARM's next complete handover, then allocate the
+collision-free ROOTLINE typed-source correction within the same serialized Slot 2.
+The completed read-only ROOTLINE audit terminal was closed after its handover;
+deployed schedules continue independently.
