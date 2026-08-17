@@ -79,7 +79,8 @@ def test_antoinette_gets_filtered_read_only_summary_and_cannot_report_or_act():
 def test_anton_rootline_handoff_is_typed_and_requires_reviewed_action():
     item, anton = principal("1002", "Begin besproeiing")
     item["family_action"] = {"capability": "irrigation_start", "decision_id": "D1",
-        "commissioned_path_id": "B-COMMISSIONED", "evidence_generation": "E1"}
+        "commissioned_path_id": "B-COMMISSIONED", "evidence_generation": "E1",
+        "confirmed_callback": True}
     calls = []
     result, status = handle_family_runtime_message(item, anton,
         rootline_adapter=lambda **kwargs: calls.append(kwargs) or {
@@ -127,11 +128,26 @@ def test_exact_binding_and_replay_identity_are_stable_and_change_with_provider_i
 def test_afrikaans_protected_intents_and_ambiguous_text_never_reach_observation_adapter():
     _, anton = principal("1002", "Pig 11 is sick")
     for text in ("Bevestig die dood", "Behandel haar met medikasie", "Dek die sog",
-                 "Verander die lewensiklus", "Doen sommer iets"):
+                 "Verander die lewensiklus"):
         item = parsed("1002", text); calls = []
         result, status = handle_family_runtime_message(item, anton,
             observation_adapter=lambda **_: calls.append(1) or {}, replay_store=claims())
         assert status == 403 and calls == [] and result["status"] == "family_capability_denied"
+
+
+def test_unclassified_manager_request_asks_one_precise_afrikaans_question_without_loading_context():
+    item, anton = principal("1002", "Wat kort my aandag?")
+    calls = []
+    result, status = handle_family_runtime_message(item, anton,
+        summary_loader=lambda **_: calls.append("summary"),
+        observation_adapter=lambda **_: calls.append("observation"),
+        contextual_loader=lambda **_: calls.append("context"),
+        replay_store=lambda *_: calls.append("claim"))
+    assert status == 200 and result["status"] == "family_clarification_required"
+    assert result["language"] == "af" and result["audit_trace_recorded"] is False
+    assert result["writes_farm_data"] is False and result["hardware_commands"] == 0
+    assert result["answer"].count("?") == 1 and "plaaswaarneming" in result["answer"]
+    assert calls == []
 
 
 def test_faulty_adapter_cannot_cross_mutation_or_hardware_boundary():
@@ -155,7 +171,8 @@ def test_faulty_adapter_cannot_cross_mutation_or_hardware_boundary():
 def test_only_a_valid_sealed_rootline_outcome_can_report_a_hardware_command():
     item, anton = principal("1002", "Begin besproeiing")
     item["family_action"] = {"capability": "irrigation_start", "decision_id": "D1",
-        "commissioned_path_id": "B-COMMISSIONED", "evidence_generation": "E1"}
+        "commissioned_path_id": "B-COMMISSIONED", "evidence_generation": "E1",
+        "confirmed_callback": True}
     material = {"contract_version": "rootline_delegated_outcome.v1",
         "status": "segment_started", "hardware_commands": 1, "provider_control_calls": 1,
         "owner_authority": False, "n8n_authority": False,
@@ -175,6 +192,30 @@ def test_only_a_valid_sealed_rootline_outcome_can_report_a_hardware_command():
         rootline_adapter=lambda **_: {"success": True, "hardware_commands": 1,
             "rootline_outcome": forged}, replay_store=claims())
     assert status == 503 and result["hardware_commands"] == 0
+
+
+def test_family_preview_markup_is_exactly_sealed_to_its_token():
+    item, anton = principal("1002", "Begin besproeiing")
+    import modules.oom_sakkie.family_rootline_callback as callback
+    action = parsed("1002", "Begin besproeiing")["text"]
+    base = {"contract_version": callback.PREVIEW_CONTRACT, "allowed_action": "irrigation_start",
+        "owner_authority": False}
+    digest = hashlib.sha256(json.dumps({"kind": callback.ACTION_KIND, "payload": base},
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    expected = {"inline_keyboard": [[
+        {"text": "Begin veilig", "callback_data": "oomfm:TOKEN:confirm"},
+        {"text": "Kanselleer", "callback_data": "oomfm:TOKEN:cancel"}]]}
+    adapter = lambda **_: {"success": True, "status": "family_rootline_preview_ready",
+        "answer": "Preview", "callback_token": "TOKEN", "preview_digest": digest,
+        "preview_payload": base, "reply_markup": expected}
+    result, status = handle_family_runtime_message(item, anton,
+        rootline_preview_adapter=adapter, replay_store=claims())
+    assert status == 200 and result["reply_markup"] == expected
+    forged = {"inline_keyboard": [[{"text": "Open", "url": "https://example.test"}]]}
+    result, status = handle_family_runtime_message({**item, "provider_message_id": "502"}, anton,
+        rootline_preview_adapter=lambda **_: {**adapter(), "reply_markup": forged},
+        replay_store=claims())
+    assert status == 200 and "reply_markup" not in result
 
 
 def test_concurrent_replay_invokes_typed_adapter_once():

@@ -50,10 +50,32 @@ def mission_identity(parsed: Mapping[str, Any], specialist: str) -> str:
 def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], *,
                           specialist: str, mission_id: str = "", card_mission_id: str = "",
                           event_store=None, sender=None, editor=None,
-                          delivery_retry_authority=None) -> dict[str, Any]:
+                          delivery_retry_authority=None, protected_delivery=None) -> dict[str, Any]:
     """Persist and visibly deliver one result; duplicate input is a no-op."""
     mission_id = mission_id or mission_identity(parsed, specialist)
     card_mission_id = card_mission_id or mission_id
+    protected_fields = tuple(bool(result.get(key)) for key in
+        ("callback_token", "preview_digest", "action_kind"))
+    if any(protected_fields) and not all(protected_fields):
+        return {"success": False, "status": "protected_delivery_binding_incomplete",
+            "mission_id": mission_id, "card_mission_id": card_mission_id,
+            "telegram_sends": 0, "telegram_edits": 0, "hardware_commands": 0,
+            "writes_farm_data": False}
+    if all(protected_fields) and result.get("_protected_delivery_owned") is not True:
+        if protected_delivery is None:
+            from modules.oom_sakkie.protected_delivery_lifecycle import recover_protected_card
+            protected_delivery = recover_protected_card
+        return protected_delivery(callback_token=str(result["callback_token"]),
+            preview_digest=str(result["preview_digest"]),
+            owner_user_id=str(parsed.get("telegram_user_id") or ""),
+            private_chat_id=str(parsed.get("telegram_chat_id") or ""),
+            action_kind=str(result["action_kind"]),
+            deliver=lambda: deliver_family_result(parsed,
+                {**result, "_protected_delivery_owned": True}, specialist=specialist,
+                mission_id=mission_id, card_mission_id=card_mission_id,
+                event_store=event_store, sender=sender, editor=editor,
+                delivery_retry_authority=delivery_retry_authority,
+                protected_delivery=protected_delivery))
     if (result.get("album_progress_serialization_required") is True
             and result.get("album_progress_verified") is True
             and result.get("_album_progress_lock_held") is not True):
@@ -66,7 +88,8 @@ def deliver_family_result(parsed: Mapping[str, Any], result: Mapping[str, Any], 
                 return deliver_family_result(parsed,{**result,"_album_progress_lock_held":True},
                     specialist=specialist,mission_id=mission_id,card_mission_id=card_mission_id,
                     event_store=event_store,sender=sender,editor=editor,
-                    delivery_retry_authority=delivery_retry_authority)
+                    delivery_retry_authority=delivery_retry_authority,
+                    protected_delivery=protected_delivery)
         except Exception:
             return {"success":False,"status":"family_message_album_progress_lock_unavailable",
                 "mission_id":mission_id,"card_mission_id":card_mission_id,

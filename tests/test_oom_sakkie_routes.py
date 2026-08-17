@@ -604,7 +604,7 @@ class OomSakkieRouteTests(unittest.TestCase):
                 "message": {
                     "text": "what needs attention today",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -625,7 +625,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         mock_handle.assert_called_once_with({
             "text": "what needs attention today",
             "channel": "telegram_read_only",
-            "session_id": "telegram-67890",
+            "session_id": "telegram-12345",
         })
         mock_send.assert_called_once()
 
@@ -664,7 +664,7 @@ class OomSakkieRouteTests(unittest.TestCase):
                 "callback_query": {
                     "data": "sam_live_review_quote:SAM-LIVE-REVIEW-ABC123",
                     "from": {"id": 12345},
-                    "message": {"message_id": 987, "chat": {"id": 67890}},
+                    "message": {"message_id": 987, "chat": {"id": 12345}},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -685,7 +685,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertNotIn("n8n", str(data["sam_live_callback"]).lower())
         mock_callback.assert_called_once_with({
             "callback_data": "sam_live_review_quote:SAM-LIVE-REVIEW-ABC123",
-            "telegram_chat_id": "67890",
+            "telegram_chat_id": "12345",
             "telegram_message_id": "987",
             "owner": "telegram_owner",
         }, environ=None)
@@ -723,7 +723,7 @@ class OomSakkieRouteTests(unittest.TestCase):
                 "callback_query": {
                     "data": f"sam_live_card_resolve:{action_identity}",
                     "from": {"id": 12345},
-                    "message": {"message_id": 2865, "chat": {"id": 67890}},
+                    "message": {"message_id": 2865, "chat": {"id": 12345}},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -741,7 +741,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["sam_live_callback"]["reserves_stock"])
         mock_callback.assert_called_once_with({
             "callback_data": f"sam_live_card_resolve:{action_identity}",
-            "telegram_chat_id": "67890",
+            "telegram_chat_id": "12345",
             "telegram_message_id": "2865",
             "owner": "telegram_owner",
         }, environ=None)
@@ -771,7 +771,7 @@ class OomSakkieRouteTests(unittest.TestCase):
             json={"callback_query": {
                 "data": f"sam_live_card_send:{action_identity}",
                 "from": {"id": 12345},
-                "message": {"message_id": 987, "chat": {"id": 67890}},
+                "message": {"message_id": 987, "chat": {"id": 12345}},
             }},
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
@@ -782,7 +782,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(data["sam_live_callback"]["delivery_state"], "chatwoot_accepted_unverified")
         mock_callback.assert_called_once_with({
             "callback_data": f"sam_live_card_send:{action_identity}",
-            "telegram_chat_id": "67890",
+            "telegram_chat_id": "12345",
             "telegram_message_id": "987",
             "owner": "telegram_owner",
         }, environ=None)
@@ -806,7 +806,7 @@ class OomSakkieRouteTests(unittest.TestCase):
                 "message": {
                     "text": "/start",
                     "from": {"id": 12345},
-                    "chat": {"id": 67890},
+                    "chat": {"id": 12345, "type": "private"},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -852,7 +852,7 @@ class OomSakkieRouteTests(unittest.TestCase):
                 "callback_query": {
                     "data": "sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123",
                     "from": {"id": 12345},
-                    "message": {"message_id": 987, "chat": {"id": 67890}},
+                    "message": {"message_id": 987, "chat": {"id": 12345}},
                 },
             },
             headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
@@ -871,7 +871,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         mock_callback.assert_called_once()
         callback_payload = mock_callback.call_args.args[0]
         self.assertEqual(callback_payload["callback_data"], "sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123")
-        self.assertEqual(callback_payload["telegram_chat_id"], "67890")
+        self.assertEqual(callback_payload["telegram_chat_id"], "12345")
         self.assertFalse(data["confirmation_message_created"])
         mock_send.assert_not_called()
 
