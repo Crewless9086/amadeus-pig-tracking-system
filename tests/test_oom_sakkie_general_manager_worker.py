@@ -37,6 +37,14 @@ def test_evidence_change_changes_generation_digest():
     assert first["evidence_digest"] != changed["evidence_digest"]
 
 
+def test_observation_epoch_does_not_create_a_new_material_digest():
+    first = normalize_candidate(_candidate(
+        evidence_refs=["event:one", "observed:2026-08-17T10:00:00+00:00"]), now=NOW)
+    later = normalize_candidate(_candidate(
+        evidence_refs=["event:one", "observed:2026-08-17T10:05:00+00:00"]), now=NOW)
+    assert first["evidence_digest"] == later["evidence_digest"]
+
+
 @pytest.mark.parametrize("field,value", [
     ("specialist", "UNKNOWN"), ("urgency", "panic"),
     ("evidence_refs", []), ("dedupe_key", "bad key"),

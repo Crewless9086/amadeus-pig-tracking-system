@@ -36,3 +36,15 @@ def test_non_farm_case_remains_silent():
 def test_provider_ambiguity_is_not_claimed_as_delivery():
     value=deliver_farm_manager_case(_case(),deliver=lambda *a,**k:{"success":True,"telegram_sends":0})
     assert value["success"] is False and value["delivery_confirmed"] is False
+
+
+@patch.dict("os.environ", {"OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS":"5721652188"})
+def test_generation_retry_uses_stable_provider_binding_timestamp():
+    timestamps=[]
+    def ambiguous(parsed,result,**kwargs):
+        timestamps.append(parsed["provider_timestamp"])
+        return {"success":False,"status":"provider_ambiguous","telegram_sends":0}
+    deliver_farm_manager_case(_case(),now=datetime(2026,8,17,12,tzinfo=timezone.utc),deliver=ambiguous)
+    deliver_farm_manager_case(_case(),now=datetime(2026,8,17,12,5,tzinfo=timezone.utc),deliver=ambiguous)
+    assert len(set(timestamps)) == 1
+    assert timestamps[0].endswith("+00:00")

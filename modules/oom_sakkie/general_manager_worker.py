@@ -12,6 +12,7 @@ import html
 import json
 import os
 import re
+import uuid
 from typing import Any, Callable, Iterable, Mapping
 
 from modules.oom_sakkie.bounded_postgres_read import connect_bounded_postgres
@@ -60,8 +61,11 @@ def normalize_candidate(raw: Mapping[str, Any], *, now: datetime) -> dict[str, A
     # Scheduling is worker state, not new domain evidence.  Excluding it keeps a
     # repeated collector observation an exact replay instead of manufacturing a
     # new case generation every five minutes.
-    digest = _digest({key: value for key, value in material.items()
-                      if key != "next_reassessment_at"})
+    digest_material = {key: value for key, value in material.items()
+                       if key != "next_reassessment_at"}
+    digest_material["evidence_refs"] = [ref for ref in refs
+                                        if not str(ref).startswith("observed:")]
+    digest = _digest(digest_material)
     return {**material, "case_id": "OOM-CASE-" + hashlib.sha256(dedupe.encode()).hexdigest()[:24].upper(),
             "evidence_digest": digest}
 
@@ -72,9 +76,11 @@ class PostgresManagerCaseStore:
             lambda: connect_bounded_postgres(read_only=False))
 
     def run_cycle(self, candidates: Iterable[Mapping[str, Any]], *, now: datetime,
-                  source_revision: str, deliver: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None):
+                  source_revision: str, deliver: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+                  refresh: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None):
         now = _aware(now)
-        cycle_id = "OOM-MANAGER-CYCLE-" + now.strftime("%Y%m%dT%H%M%S%fZ")
+        cycle_id = ("OOM-MANAGER-CYCLE-" + now.strftime("%Y%m%dT%H%M%S%fZ-")
+                    + uuid.uuid4().hex.upper())
         next_cycle = now + CADENCE
         created = changed = replayed = 0
         claimed: list[dict[str, Any]] = []
@@ -108,7 +114,7 @@ class PostgresManagerCaseStore:
                         cur.execute("""update app_private.oom_manager_cases set
                             assigned_worker_id=%s,lease_until=%s,last_heartbeat_at=%s,
                             status='delegated',updated_at=%s where case_id=%s""",
-                            (WORKER_ID, now + LEASE, now, now, case["case_id"]))
+                            (cycle_id, now + LEASE, now, now, case["case_id"]))
                         self._event(cur, case, "claimed", now, cycle_id=cycle_id)
                         self._event(cur, case, "delegated", now, cycle_id=cycle_id,
                                     specialist=case["specialist"])
@@ -116,28 +122,49 @@ class PostgresManagerCaseStore:
             delivered = suppressed = exceptions = 0
             case_results = []
             for case in claimed:
-                if deliver and case.get("last_delivery_digest") != case["evidence_digest"]:
-                    outcome = dict(deliver(case) or {})
+                current_case = case
+                if (deliver and case.get("last_delivery_digest") != case["evidence_digest"]):
+                    current_case = (self._refresh_claim(case, refresh(case),
+                        _aware(datetime.now(timezone.utc)), cycle_id) if refresh else None)
+                if current_case is None:
+                    current_case = case
+                    outcome = {"success": False,
+                        "status": "manager_delivery_refresh_unavailable",
+                        "delivery_confirmed": False, "telegram_sends": 0}
+                elif current_case.pop("_refreshed_generation", False):
+                    outcome = {"success": True,
+                        "status": "manager_delivery_refreshed_generation_deferred",
+                        "delivery_confirmed": False, "telegram_sends": 0}
+                elif (deliver and current_case.get("last_delivery_digest")
+                        != current_case["evidence_digest"]):
+                    outcome = dict(deliver(current_case) or {})
                 else:
-                    duplicate = case.get("last_delivery_digest") == case["evidence_digest"]
+                    duplicate = (current_case.get("last_delivery_digest")
+                                 == current_case["evidence_digest"])
                     outcome = {
                     "success": True, "status": "manager_delivery_disabled",
                     "delivery_confirmed": False, "telegram_sends": 0,
                     }
                     if duplicate:
                         outcome["status"] = "manager_delivery_duplicate_suppressed"
-                confirmed = bool(outcome.get("success") is True and outcome.get("delivery_confirmed") is True)
+                provider_confirmed = bool(outcome.get("success") is True
+                    and outcome.get("delivery_confirmed") is True)
+                persisted = self._finish_claim(current_case, outcome,
+                    _aware(datetime.now(timezone.utc)), cycle_id)
+                confirmed = provider_confirmed and persisted
+                if provider_confirmed and not persisted:
+                    outcome = {**outcome, "success": False,
+                        "status": "manager_delivery_confirmation_persistence_unproven"}
                 delivered += confirmed
                 suppressed += not confirmed
                 exceptions += outcome.get("success") is False
-                self._finish_claim(case, outcome, now, cycle_id)
-                case_results.append({"case_id": case["case_id"],
-                    "specialist": case["specialist"], "urgency": case["urgency"],
-                    "summary": case["summary"], "next_action": case["next_action"],
-                    "unknowns": case["unknowns"], "outcome_status": outcome.get("status"),
+                case_results.append({"case_id": current_case["case_id"],
+                    "specialist": current_case["specialist"], "urgency": current_case["urgency"],
+                    "summary": current_case["summary"], "next_action": current_case["next_action"],
+                    "unknowns": current_case["unknowns"], "outcome_status": outcome.get("status"),
                     "delivery_confirmed": confirmed,
                     "next_reassessment_at": str(outcome.get("next_reassessment_at")
-                        or case["next_reassessment_at"])})
+                        or current_case["next_reassessment_at"])})
             counts = {"candidates_created": created, "candidates_changed": changed,
                 "candidate_replays": replayed, "cases_claimed": len(claimed),
                 "deliveries_confirmed": delivered, "deliveries_suppressed": suppressed,
@@ -173,12 +200,27 @@ class PostgresManagerCaseStore:
         finally:
             connection.close()
 
-    def _reconcile(self, cur, candidate, now):
-        cur.execute("select evidence_digest,generation,status from app_private.oom_manager_cases where dedupe_key=%s for update",
+    def _reconcile(self, cur, candidate, now, *, lease_owner=None):
+        cur.execute("""select evidence_digest,generation,status,assigned_worker_id,lease_until,
+                evidence_refs
+            from app_private.oom_manager_cases where dedupe_key=%s for update""",
                     (candidate["dedupe_key"],))
         prior = cur.fetchone()
+        if (prior and prior[4] and prior[4] >= now
+                and str(prior[3] or "") != str(lease_owner or "")):
+            return "deferred"
         if prior and prior[0] == candidate["evidence_digest"]:
+            candidate_epoch = _evidence_epoch(candidate["evidence_refs"])
+            prior_epoch = _evidence_epoch(prior[5])
+            if candidate_epoch and (not prior_epoch or candidate_epoch > prior_epoch):
+                cur.execute("""update app_private.oom_manager_cases
+                    set evidence_refs=%s::jsonb,updated_at=%s where dedupe_key=%s""",
+                    (json.dumps(candidate["evidence_refs"]), now, candidate["dedupe_key"]))
             return "replayed"
+        if (prior and _evidence_epoch(candidate["evidence_refs"])
+                and _evidence_epoch(prior[5])
+                and _evidence_epoch(candidate["evidence_refs"]) < _evidence_epoch(prior[5])):
+            return "stale"
         generation = int(prior[1]) + 1 if prior else 1
         cur.execute("""insert into app_private.oom_manager_cases
             (case_id,dedupe_key,specialist,urgency,status,evidence_digest,evidence_refs,unknowns,
@@ -206,11 +248,15 @@ class PostgresManagerCaseStore:
         next_at = _time(outcome.get("next_reassessment_at") or case["next_reassessment_at"], "next_reassessment_at")
         with self.connect_factory() as connection:
             with connection.cursor() as cur:
-                cur.execute("select generation,evidence_digest from app_private.oom_manager_cases where case_id=%s for update",
+                cur.execute("""select generation,evidence_digest,assigned_worker_id,lease_until
+                    from app_private.oom_manager_cases where case_id=%s for update""",
                             (case["case_id"],))
                 current = cur.fetchone()
-                if not current or int(current[0]) != int(case["generation"]) or current[1] != case["evidence_digest"]:
-                    return
+                if (not current or int(current[0]) != int(case["generation"])
+                        or current[1] != case["evidence_digest"]
+                        or str(current[2] or "") != cycle_id
+                        or not current[3] or current[3] < now):
+                    return False
                 delivery_digest = case["evidence_digest"] if confirmed else None
                 cur.execute("""update app_private.oom_manager_cases set status=%s,
                     next_reassessment_at=%s,assigned_worker_id=null,lease_until=null,last_heartbeat_at=%s,
@@ -221,6 +267,45 @@ class PostgresManagerCaseStore:
                             outcome_status=str(outcome.get("status") or ""))
                 self._event(cur, case, "reassessment_scheduled", now,
                             next_reassessment_at=next_at.isoformat())
+        return True
+
+    def _refresh_claim(self, claimed, raw, now, cycle_id):
+        """Bind delivery to the newest canonical generation under the case lock."""
+        if raw is None:
+            return None
+        candidate = normalize_candidate(raw, now=now)
+        if candidate["dedupe_key"] != claimed["dedupe_key"]:
+            raise ManagerCaseError("refreshed_dedupe_key_mismatch")
+        with self.connect_factory() as connection:
+            with connection.cursor() as cur:
+                cur.execute("""select generation,evidence_digest,assigned_worker_id,lease_until
+                    from app_private.oom_manager_cases where dedupe_key=%s for update""",
+                    (candidate["dedupe_key"],))
+                ownership = cur.fetchone()
+                if (not ownership
+                        or int(ownership[0]) != int(claimed["generation"])
+                        or ownership[1] != claimed["evidence_digest"]
+                        or str(ownership[2] or "") != cycle_id
+                        or not ownership[3] or ownership[3] < now):
+                    return None
+                self._reconcile(cur, candidate, now, lease_owner=cycle_id)
+                cur.execute("""select case_id,dedupe_key,specialist,urgency,status,evidence_digest,
+                        evidence_refs,unknowns,summary,next_action,next_reassessment_at,generation,
+                        last_delivery_digest
+                    from app_private.oom_manager_cases where dedupe_key=%s for update""",
+                    (candidate["dedupe_key"],))
+                current = _case_row(cur.fetchone())
+                cur.execute("""update app_private.oom_manager_cases set
+                    assigned_worker_id=%s,lease_until=%s,last_heartbeat_at=%s,
+                    status='delegated',updated_at=%s where case_id=%s""",
+                    (cycle_id, now + LEASE, now, now, current["case_id"]))
+                refreshed_generation = (int(current["generation"])
+                                        != int(claimed["generation"]))
+                if refreshed_generation:
+                    self._event(cur, current, "claimed", now, cycle_id=cycle_id)
+                    self._event(cur, current, "delegated", now, cycle_id=cycle_id,
+                                specialist=current["specialist"])
+        return {**current, "_refreshed_generation": refreshed_generation}
 
     @staticmethod
     def _event(cur, case, event_type, now, **payload):
@@ -237,12 +322,19 @@ class PostgresManagerCaseStore:
 def run_general_manager_cycle(*, candidates=None, now=None, source_revision=None,
                               store=None, collectors=None, deliver=None):
     now = _aware(now or datetime.now(timezone.utc))
+    refresh = None
     if candidates is None:
         from modules.oom_sakkie.manager_case_sources import collect_manager_candidates
         candidates = collect_manager_candidates(now=now, collectors=collectors)
+        def refresh(case):
+            current = collect_manager_candidates(
+                now=datetime.now(timezone.utc), collectors=collectors)
+            return next((row for row in current
+                         if str(row.get("dedupe_key") or "") == case["dedupe_key"]), None)
     revision = str(source_revision or os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or "unknown")
     return (store or PostgresManagerCaseStore()).run_cycle(
-        candidates, now=now, source_revision=revision, deliver=deliver)
+        candidates, now=now, source_revision=revision, deliver=deliver,
+        refresh=refresh)
 
 
 def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None):
@@ -258,7 +350,7 @@ def deliver_farm_manager_case(case: Mapping[str, Any], *, now=None, deliver=None
         return {"success": False, "status": "manager_owner_binding_unavailable",
                 "delivery_confirmed": False, "telegram_sends": 0}
     owner = owners[0]
-    observed = _aware(now or datetime.now(timezone.utc))
+    observed = _generation_timestamp(case["case_id"], int(case["generation"]))
     mission_id = f"{case['case_id']}:G{int(case['generation'])}"
     unknowns = tuple(str(value) for value in case.get("unknowns") or ())
     lines = [f"<b>OOM SAKKIE — {specialist} CURRENT CASE</b>", "",
@@ -326,6 +418,23 @@ def _aware(value):
 
 def _digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def _evidence_epoch(refs):
+    values = []
+    for ref in refs or ():
+        if not str(ref).startswith("observed:"):
+            continue
+        try:
+            values.append(_time(str(ref).split(":", 1)[1], "evidence_observed_at"))
+        except ManagerCaseError:
+            continue
+    return max(values) if values else None
+
+
+def _generation_timestamp(case_id, generation):
+    seconds = int(hashlib.sha256(f"{case_id}:G{generation}".encode()).hexdigest()[:8], 16)
+    return datetime(2000, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=seconds)
 
 
 def _zero_effects():
