@@ -160,6 +160,26 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
         self.assertEqual(live['status'], 'ready_for_owner_review')
         self.assertFalse(any(live['authority'].values()))
 
+    def test_sale_eligible_litter_becomes_deterministic_story_input_without_demand(self):
+        pigs = [eligible_pig('P3'), eligible_pig('P1'), eligible_pig('P2')]
+        for pig in pigs:
+            pig['litter_id'] = 'LITTER-7'
+        result = build_beacon_opportunity_cards(
+            allocation=authoritative_availability(pigs), live_intakes=[],
+            meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        story = live['story_context']
+        self.assertEqual(story['kind'], 'litter')
+        self.assertEqual(story['litter_id'], 'LITTER-7')
+        self.assertEqual(story['pig_ids'], ['P1', 'P2', 'P3'])
+        self.assertTrue(story['event_id'].startswith('sale-eligibility:'))
+        self.assertEqual(live['demand_cap'], 0)
+        reordered = build_beacon_opportunity_cards(
+            allocation=authoritative_availability(list(reversed(pigs))), live_intakes=[],
+            meat_leads=[], now=NOW)
+        reordered_live = next(card for card in reordered['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(story, reordered_live['story_context'])
+
     def test_degraded_source_and_unknown_quantity_fail_closed(self):
         result = build_beacon_opportunity_cards(allocation={'source': 'google_sheets', 'generated_date': '2026-07-12', 'pigs': [eligible_pig()]}, live_intakes=[{'conversation_id': 'C1', 'intake_status': 'Open'}], meat_leads=[], now=NOW)
         live = next(card for card in result['cards'] if card['lane'] == 'live_stock')

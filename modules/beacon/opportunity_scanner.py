@@ -272,11 +272,12 @@ def _fingerprint(lane, category, source_ids):
     return sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _card(*, lane, category, now, observed_at, demand, capacity, blockers, risks, source_ids):
+def _card(*, lane, category, now, observed_at, demand, capacity, blockers, risks, source_ids,
+          story_context=None):
     fingerprint = _fingerprint(lane, category, source_ids)
     expires_at = min(now + timedelta(hours=FRESHNESS_HOURS), observed_at + timedelta(hours=FRESHNESS_HOURS)) if observed_at else now
     status = "ready_for_owner_review" if capacity["demand_cap"] > 0 and not blockers else "blocked"
-    return {
+    card = {
         "card_id": f"BEACON-{fingerprint[:16].upper()}",
         "fingerprint": fingerprint,
         "lane": lane,
@@ -297,6 +298,35 @@ def _card(*, lane, category, now, observed_at, demand, capacity, blockers, risks
         "recommended_next_gate": "owner_reviews_opportunity_before_any_campaign_draft_or_public_action",
         "authority": dict(AUTHORITY),
     }
+    if isinstance(story_context, dict) and story_context:
+        card["story_context"] = story_context
+    return card
+
+
+def _sale_litter_story(eligible):
+    """Select one deterministic canonical litter story from sale-eligible animals."""
+    grouped = {}
+    for pig in eligible:
+        litter_id = str(pig.get("litter_id") or "").strip()
+        pig_id = str(pig.get("pig_id") or "").strip()
+        if litter_id and pig_id:
+            grouped.setdefault(litter_id, []).append(pig)
+    if not grouped:
+        return None
+    litter_id, pigs = sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0]))[0]
+    pigs = sorted(pigs, key=lambda pig: str(pig["pig_id"]))
+    pig_ids = [str(pig["pig_id"]) for pig in pigs]
+    categories = sorted({str(pig.get("sale_category") or pig.get("weight_band") or "livestock")
+                         for pig in pigs})
+    evidence_identity = sha256("|".join([
+        SCANNER_VERSION, litter_id, *pig_ids,
+        *[str(pig.get("eligibility_observed_at") or "") for pig in pigs],
+    ]).encode("utf-8")).hexdigest()
+    return {"kind": "litter", "subject": f"Litter {litter_id}", "litter_id": litter_id,
+        "pig_ids": pig_ids, "sale_ready_categories": categories,
+        "event_id": f"sale-eligibility:{evidence_identity}",
+        "claim_boundary": ("This litter identity and its listed animals are current sale-eligibility "
+            "evidence only; SAM must re-read canonical stock before any offer or commitment.")}
 
 
 def build_beacon_opportunity_cards(
@@ -429,7 +459,10 @@ def build_beacon_opportunity_cards(
         cap = sum(item["demand_cap"] for item in capacity_by_category.values()) if not blockers else 0
         capacity = {"verified_available": verified, "eligible_categories": categories, "demanded_categories": sorted(demanded_categories), "capacity_by_category": capacity_by_category, "existing_commitments": 0, "operational_reserve": operational_reserve, "safety_buffer": safety_buffer, "available_after_buffers": available_after_buffers, "demand_cap": cap, "formula": "sum_by_compatible_category(min(qualified_demand, max(0, verified_available - existing_commitments - operational_reserve - safety_buffer)))"}
         source_ids = [str(pig.get("pig_id")) for pig in pigs if pig.get("pig_id")] + live_demand["source_ids"]
-        cards.append(_card(lane="live_stock", category=category, now=now, observed_at=observed_at, demand=live_demand, capacity=capacity, blockers=blockers, risks=["owner_review_required", "availability_can_change_before_reservation"], source_ids=source_ids))
+        cards.append(_card(lane="live_stock", category=category, now=now, observed_at=observed_at,
+            demand=live_demand, capacity=capacity, blockers=blockers,
+            risks=["owner_review_required", "availability_can_change_before_reservation"],
+            source_ids=source_ids, story_context=_sale_litter_story(eligible)))
 
     meat_demand = _deduplicated_demand(meat_leads, "meat")
     meat_blockers = ["butcher_loop_not_proven"]

@@ -84,6 +84,25 @@ def test_litter_story_without_eligible_media_delivers_one_precise_request():
     card = prepare_campaign_owner_card(protected, owner_user_id="42", private_chat_id="42",
         provider_message_id="scheduled:case:G11", packet_generation="G11", claim_creator=fake_claim)
     assert card["answer"].count("Please send one current portrait photo") == 1
+    assert card["campaign_review_preview"]["media_evidence_exception"] == \
+        protected["protected_campaign_package"]["media_evidence_exception"]
+
+
+def test_litter_story_copy_and_stock_digest_bind_exact_litter_context():
+    stock = opportunity()
+    stock["cards"][0]["story_context"] = {"kind": "litter", "subject": "Litter 7",
+        "litter_id": "LITTER-7", "pig_ids": ["PIG-1", "PIG-2"],
+        "event_id": "sale-eligibility:abc", "claim_boundary": "SAM recheck required"}
+    value = build_sale_ready_demand_proposal(stock, {"success": True, "items": []})
+    assert value["draft_caption"].startswith("Meet Litter 7 at Amadeus Farm.")
+    assert value["sale_stock_evidence"]["story_context"]["litter_id"] == "LITTER-7"
+    changed = opportunity()
+    changed["cards"][0]["story_context"] = {**stock["cards"][0]["story_context"],
+        "litter_id": "LITTER-8", "subject": "Litter 8"}
+    other = build_sale_ready_demand_proposal(changed, {"success": True, "items": []})
+    assert value["packet_id"] != other["packet_id"]
+    assert (value["sale_stock_evidence"]["canonical_evidence_digest"] !=
+            other["sale_stock_evidence"]["canonical_evidence_digest"])
 
 
 def media_item(public=True, linked=True):
@@ -105,6 +124,60 @@ def test_litter_media_requires_exact_linkage_and_positive_public_use():
     assert selected[0]["asset_id"] == "ASSET-1"
     assert selected[0]["capture_date"] == "2026-08-16"
     assert selected[0]["public_use_authority"] == "approved"
+
+
+def test_litter_media_order_is_stable_across_provider_permutations():
+    second = media_item()
+    second["binary_asset_id"] = "ASSET-2"
+    second["content_sha256"] = "b" * 64
+    forward = select_litter_story_media({"success": True, "items": [second, media_item()]},
+        litter_id="LITTER-7", pig_ids=["PIG-1", "PIG-2"], event_id="EVENT-7")
+    reverse = select_litter_story_media({"success": True, "items": [media_item(), second]},
+        litter_id="LITTER-7", pig_ids=["PIG-1", "PIG-2"], event_id="EVENT-7")
+    assert forward == reverse
+    assert [item["asset_id"] for item in forward] == ["ASSET-1", "ASSET-2"]
+
+
+def test_protected_package_rejects_incomplete_litter_media_authority():
+    value = packet()
+    value["sale_stock_evidence"]["story_context"] = {"kind": "litter",
+        "subject": "Litter 7", "litter_id": "LITTER-7",
+        "pig_ids": ["PIG-1", "PIG-2"], "event_id": "EVENT-7"}
+    item = select_litter_story_media({"success": True, "items": [media_item()]},
+        litter_id="LITTER-7", pig_ids=["PIG-1", "PIG-2"], event_id="EVENT-7")[0]
+    for field in ("content_sha256", "storage_readback_proof_id", "library_accept_event_id",
+                  "public_use_event_id", "public_use_authority"):
+        broken = dict(item)
+        broken[field] = ""
+        value["litter_media_selection"] = [broken]
+        try:
+            build_protected_campaign_package(value,
+                now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
+        except ValueError as exc:
+            assert str(exc) == "beacon_campaign_litter_media_authority_incomplete"
+        else:
+            raise AssertionError(f"missing {field} must fail closed")
+
+
+def test_protected_package_rejects_litter_media_linkage_mismatch():
+    story = {"kind": "litter", "subject": "Litter 7", "litter_id": "LITTER-7",
+        "pig_ids": ["PIG-1", "PIG-2"], "event_id": "EVENT-7"}
+    for field, value in (("litter_id", "OTHER-LITTER"),
+                         ("pig_ids", ["PIG-1", "PIG-3"]),
+                         ("event_id", "OTHER-EVENT")):
+        value_packet = packet()
+        value_packet["sale_stock_evidence"]["story_context"] = story
+        item = select_litter_story_media({"success": True, "items": [media_item()]},
+            litter_id="LITTER-7", pig_ids=["PIG-1", "PIG-2"], event_id="EVENT-7")[0]
+        item[field] = value
+        value_packet["litter_media_selection"] = [item]
+        try:
+            build_protected_campaign_package(value_packet,
+                now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
+        except ValueError as exc:
+            assert str(exc) == "beacon_campaign_litter_media_binding_mismatch"
+        else:
+            raise AssertionError(f"mismatched {field} must fail closed")
 
 
 def test_litter_media_no_eligible_result_supports_one_precise_request():
