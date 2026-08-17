@@ -577,8 +577,10 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
                          "name": _text(pig.get("pig_name")) or None,
                          "animal_type": _text(pig.get("animal_type")) or None},
             "current_state": {"purpose": purpose, "status": status, "on_farm": on_farm,
+                              "sex": _text(pig.get("sex")) or None,
                               "latest_weight_kg": _number(pig.get("current_weight_kg")),
                               "latest_weight_date": _text(pig.get("last_weight_date"))[:10] or None,
+                              "average_daily_gain_kg": _number(pig.get("average_daily_gain_kg")),
                               "derived_weight_band": _weight_band(_number(pig.get("current_weight_kg")))},
             "livestock_transfer_eligibility": transfer,
             "food_chain_eligibility": food_chain,
@@ -671,7 +673,8 @@ def compose_live_transfer_contract(snapshot, *, as_of=None):
     return packet
 
 
-def load_live_transfer_snapshot(pig_ids, order_id, *, connect_factory=None):
+def load_live_transfer_snapshot(pig_ids, order_id, *, connect_factory=None,
+                                evidence_cutoff=None):
     database_url = os.getenv(DATABASE_URL_ENV, "").strip()
     if connect_factory:
         connection = connect_factory(database_url)
@@ -683,26 +686,60 @@ def load_live_transfer_snapshot(pig_ids, order_id, *, connect_factory=None):
         connection = psycopg.connect(database_url, row_factory=dict_row, connect_timeout=10)
     with connection:
         connection.execute("set transaction isolation level repeatable read read only")
-        pigs = connection.execute("""
-            select p.*,s.current_weight_kg,s.last_weight_date
-            from public.current_canonical_pigs p
-            left join public.current_canonical_pig_state s using(pig_id)
-            where p.pig_id=any(%s) order by p.pig_id
-        """, (list(pig_ids),)).fetchall()
+        preview_mode = pig_ids is None
+        evidence_cutoff = evidence_cutoff or date.today()
+        if preview_mode:
+            pigs = connection.execute("""
+                select p.*,w.weight_kg as current_weight_kg,w.weight_date as last_weight_date
+                from public.current_canonical_pigs p
+                left join lateral (
+                    select weight_kg,weight_date from public.pig_weight_events
+                    where pig_id=p.pig_id and weight_date<=%s
+                    order by weight_date desc,created_at desc,weight_event_id desc limit 1
+                ) w on true
+                order by p.pig_id
+            """, (evidence_cutoff,)).fetchall()
+            pig_ids = [_text(row.get("pig_id")) for row in pigs]
+        else:
+            pig_ids = list(pig_ids)
+            pigs = connection.execute("""
+                select p.*,s.current_weight_kg,s.last_weight_date
+                from public.current_canonical_pigs p
+                left join public.current_canonical_pig_state s using(pig_id)
+                where p.pig_id=any(%s) order by p.pig_id
+            """, (pig_ids,)).fetchall()
         if {_text(row.get("pig_id")) for row in pigs} != set(pig_ids):
             raise ValueError("canonical_pig_identity_mismatch")
+        growth_rows = (connection.execute("""
+                select pig_id,
+                       case when max(weight_date)>min(weight_date)
+                            then (max(weight_kg)-min(weight_kg)) /
+                                 nullif(max(weight_date)-min(weight_date),0)
+                            else null end as average_daily_gain_kg
+                from public.pig_weight_events where pig_id=any(%s) and weight_date<=%s
+                group by pig_id
+            """, (pig_ids, evidence_cutoff)).fetchall() if preview_mode else [])
+        growth_by_pig = {_text(row.get("pig_id")): row.get("average_daily_gain_kg")
+                         for row in growth_rows}
+        pigs = [{**dict(row), "average_daily_gain_kg": growth_by_pig.get(_text(row.get("pig_id")))}
+                for row in pigs]
         medical = connection.execute("""
             select * from public.pig_medical_events
             where pig_id=any(%s)
             order by pig_id,treatment_date,created_at,medical_event_id
         """, (list(pig_ids),)).fetchall()
-        orders = connection.execute("select * from public.orders where order_id=%s", (order_id,)).fetchall()
-        if len(orders) != 1:
-            raise ValueError("canonical_order_identity_mismatch")
-        lines = connection.execute("""
-            select * from public.order_lines where order_id=%s
-            order by created_at,order_line_id
-        """, (order_id,)).fetchall()
+        if order_id:
+            orders = connection.execute("select * from public.orders where order_id=%s", (order_id,)).fetchall()
+            if len(orders) != 1:
+                raise ValueError("canonical_order_identity_mismatch")
+            lines = connection.execute("""
+                select * from public.order_lines where order_id=%s
+                order by created_at,order_line_id
+            """, (order_id,)).fetchall()
+            order = dict(orders[0])
+        else:
+            lines = []
+            order = {}
         observations = connection.execute("""
             select observation_event_id,pig_id,observed_at,recorded_at,observer_reference,
                    observation_category,severity,factual_note,source_system,source_reference,
@@ -738,7 +775,6 @@ def load_live_transfer_snapshot(pig_ids, order_id, *, connect_factory=None):
         ).fetchone()
         unique_guard_value = (next(iter(unique_guard.values())) if isinstance(unique_guard, dict)
                               else unique_guard[0] if unique_guard else None)
-        order = dict(orders[0])
         order["active_pig_line_unique_guard"] = unique_guard_value is not None
     return {"pigs": list(pigs), "medical_events": list(medical),
             "order": order, "order_lines": list(lines),
@@ -750,5 +786,14 @@ def load_live_transfer_snapshot(pig_ids, order_id, *, connect_factory=None):
 def build_live_transfer_contract(pig_ids, order_id, *, as_of=None, connect_factory=None):
     return compose_live_transfer_contract(
         load_live_transfer_snapshot(pig_ids, order_id, connect_factory=connect_factory),
+        as_of=as_of,
+    )
+
+
+def build_live_transfer_preview_contract(*, as_of=None, connect_factory=None):
+    """Compose an order-free candidate packet from one canonical repeatable-read snapshot."""
+    return compose_live_transfer_contract(
+        load_live_transfer_snapshot(None, None, connect_factory=connect_factory,
+                                    evidence_cutoff=as_of),
         as_of=as_of,
     )

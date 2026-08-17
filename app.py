@@ -404,6 +404,9 @@ def litters_page():
 
 @app.route("/orders/new")
 def add_order_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
     return render_template("add-order.html")
 
 

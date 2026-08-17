@@ -363,6 +363,11 @@ def test_loader_uses_one_repeatable_read_read_only_snapshot_and_no_write_sql():
                 return Cursor(snapshot()["pigs"])
             if "from public.pig_medical_events" in normalized:
                 return Cursor(snapshot()["medical_events"])
+            if "from public.pig_weight_events" in normalized:
+                return Cursor([
+                    {"pig_id": "PIG-2026-A643", "average_daily_gain_kg": 0.2},
+                    {"pig_id": "PIG-2026-B156", "average_daily_gain_kg": 0.1},
+                ])
             if "from public.orders" in normalized:
                 return Cursor([ORDER])
             if "from public.order_lines" in normalized:

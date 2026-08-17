@@ -63,6 +63,11 @@ from modules.orders.order_validation import (
     validate_update_order_line_payload,
     validate_sync_order_lines_payload,
 )
+from modules.orders.livestock_quote_preview import build_livestock_quote_preview
+from modules.pig_weights.herdmaster_live_transfer_contract import (
+    build_live_transfer_preview_contract,
+)
+from modules.auth.owner_access import require_owner_read_access
 from modules.orders.order_shadow_read import compare_shadow_order
 from modules.sales.sam_live_stock_sales_pack import prepare_live_stock_sales_pack
 
@@ -229,6 +234,36 @@ def available_pigs():
         "count": len(pigs),
         "pigs": pigs,
     })
+
+
+@orders_bp.route("/orders/livestock-quote-preview", methods=["POST"])
+def livestock_quote_preview():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"success": False, "errors": ["JSON body must be an object."], "writes_performed": False}), 400
+    requested_items = payload.get("requested_items", [])
+    if isinstance(requested_items, list) and len(requested_items) > 20:
+        return jsonify({"success": False, "errors": ["Preview requests are limited to 20 lines and 100 pigs per line."], "writes_performed": False}), 400
+    validation = validate_sync_order_lines_payload({"requested_items": requested_items})
+    if not validation["is_valid"]:
+        return jsonify({"success": False, "errors": validation["errors"], "writes_performed": False}), 400
+    if any(item["quantity"] > 100 for item in validation["cleaned_data"]["requested_items"]):
+        return jsonify({"success": False, "errors": ["Preview requests are limited to 20 lines and 100 pigs per line."], "writes_performed": False}), 400
+    try:
+        herdmaster_packet = build_live_transfer_preview_contract()
+        if not isinstance(herdmaster_packet, dict) or not herdmaster_packet.get("packet_digest"):
+            return jsonify({"success": False, "errors": ["Preview evidence is currently unavailable."], "writes_performed": False}), 503
+        return jsonify(build_livestock_quote_preview(
+            validation["cleaned_data"]["requested_items"], herdmaster_packet,
+            observed_at=herdmaster_packet.get("evidence_cutoff_date"),
+            evidence_source="canonical_repeatable_read",
+        )), 200
+    except Exception as exc:
+        logger.exception("Livestock quote preview failed")
+        return jsonify({"success": False, "errors": ["Preview evidence is currently unavailable."], "writes_performed": False}), 503
 
 
 @orders_bp.route("/orders/<order_id>/reserve", methods=["POST"])
