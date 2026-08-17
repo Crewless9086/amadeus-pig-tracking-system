@@ -35,13 +35,18 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
     media_result = media_loader()
     media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
     evidence_time = _stable_opportunity_time(opportunities, fallback=now)
-    evidence = content_evidence_loader(opportunity_result=opportunities, now=evidence_time)
-    packet = build_live_stock_awareness_proposal(
-        opportunities, content_candidate_builder(evidence, now=evidence_time), media_payload)
-    packet = build_protected_campaign_package(packet, now=now)
+    # Keep the legacy awareness dependencies injectable for caller compatibility,
+    # but a scheduled revenue case must use the sale-ready demand contract.  An
+    # awareness/follow packet is never silently upgraded into a messages campaign.
+    packet = build_sale_ready_demand_proposal(opportunities, media_payload,
+        observed_at=evidence_time)
+    if packet.get("status") == "ready_for_owner_review":
+        packet = build_protected_campaign_package(packet, now=evidence_time)
     return {
         "success": True,
-        "status": "beacon_sale_ready_stock_proposal_ready",
+        "status": ("beacon_sale_ready_stock_proposal_ready" if
+            packet.get("protected_campaign_package") else
+            "beacon_sale_ready_stock_evidence_request"),
         "answer": render_beacon_packet(packet, language="en"),
         "proposal": packet,
         "result_digest": _digest(packet),
@@ -84,6 +89,13 @@ def build_protected_campaign_package(packet, *, now=None):
     local = observed.astimezone(ZoneInfo("Africa/Johannesburg"))
     publication = (local + timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
     media = packet.get("media") if isinstance(packet.get("media"), Mapping) else {}
+    if media.get("status") == "approved_public_media_selected":
+        if (not str(media.get("asset_id") or "").strip()
+                or not re.fullmatch(r"[0-9a-f]{64}", str(media.get("content_sha256") or "").lower())
+                or not str(media.get("storage_readback_proof_id") or "").strip()
+                or not str(media.get("library_accept_event_id") or "").strip()
+                or not str(media.get("public_use_event_id") or "").strip()):
+            raise ValueError("beacon_campaign_public_media_authority_incomplete")
     exact_media = ({key: media.get(key) for key in (
         "asset_id", "media_type", "content_sha256", "storage_readback_proof_id",
         "library_accept_event_id", "public_use_event_id")}
@@ -91,6 +103,35 @@ def build_protected_campaign_package(packet, *, now=None):
     exact_copy = str(packet.get("draft_caption") or packet.get("recommended_copy") or "").strip()
     if not exact_copy:
         raise ValueError("beacon_campaign_exact_copy_required")
+    objective = str(packet.get("campaign_objective") or "").strip()
+    cta = str(packet.get("call_to_action") or "").strip()
+    stock = packet.get("sale_stock_evidence") if isinstance(
+        packet.get("sale_stock_evidence"), Mapping) else {}
+    sam = packet.get("sam_response_contract") if isinstance(
+        packet.get("sam_response_contract"), Mapping) else {}
+    if objective != "facebook_messaging_conversations":
+        raise ValueError("beacon_campaign_messages_objective_required")
+    qualification_fields = {str(value) for value in sam.get("qualification_fields") or []}
+    required_qualification = {"animal_type", "quantity", "intended_use", "customer_area"}
+    if (not re.search(r"\bmessage\s+(?:amadeus(?:\s+farm)?|us)\b", cta, re.I)
+            or not re.search(r"\b(?:animal|livestock|pig|weaner)\b", cta, re.I)
+            or not re.search(r"\b(?:number|quantity|how many)\b", cta, re.I)
+            or not re.search(r"\b(?:intended use|need them for|looking for)\b", cta, re.I)
+            or not re.search(r"\b(?:area|location|town)\b", cta, re.I)):
+        raise ValueError("beacon_campaign_useful_message_cta_required")
+    if re.search(r"\bfollow\b", exact_copy, re.I) and not re.search(
+            r"\b(?:enquir|looking for|need)\w*\b", exact_copy, re.I):
+        raise ValueError("beacon_campaign_awareness_copy_messages_mismatch")
+    if (stock.get("source") != "beacon_opportunity_scanner"
+            or stock.get("status") != "ready_for_owner_review"
+            or int(stock.get("demand_cap") or 0) <= 0
+            or not stock.get("card_id") or not stock.get("observed_at")):
+        raise ValueError("beacon_campaign_canonical_sale_stock_required")
+    if (sam.get("lane") != "live_stock_sales"
+            or sam.get("supported_response_class") != "clarification"
+            or not sam.get("campaign_attribution_required")
+            or qualification_fields != required_qualification):
+        raise ValueError("beacon_campaign_sam_response_contract_required")
     envelope = {
         "contract_version": "beacon_protected_facebook_campaign_package_v1",
         "delivery_due_policy": "same_cycle_on_new_or_changed_evidence",
@@ -101,6 +142,10 @@ def build_protected_campaign_package(packet, *, now=None):
         "publication_time": publication.isoformat(), "publication_timezone": "Africa/Johannesburg",
         "approval_expires_at": publication.isoformat(),
         "boost_objective": "Facebook messaging conversations",
+        "campaign_objective": objective,
+        "call_to_action": cta,
+        "sale_stock_evidence": dict(stock),
+        "sam_response_contract": dict(sam),
         "budget_cap": {"currency": "ZAR", "total": "300.00", "daily": "100.00"},
         "duration": {"days": 3},
         "stop_conditions": ["total_spend_reaches_ZAR_300", "three_day_duration_expires",
@@ -113,11 +158,114 @@ def build_protected_campaign_package(packet, *, now=None):
         "authority": {"publication_authorized": False, "boost_authorized": False,
             "spend_authorized": False, "customer_send_authorized": False, "approval_required": True}}
     envelope["attribution_identity"] = "BEACON-CAMPAIGN-" + _digest(envelope)[:24].upper()
+    envelope["sam_response_contract"]["campaign_attribution_id"] = envelope["attribution_identity"]
     envelope["approval_card"] = {
         "decision": "Approve this exact Facebook publication and boost envelope before its publication time / Correct / Decline",
         "approval_effect": "authorization only; BEACON must execute and obtain Meta readback",
         "requested_authority": "one publication attempt and one Meta boost capped at ZAR 300 for 3 days"}
     return {**packet, "protected_campaign_package": envelope}
+
+
+def build_sale_ready_demand_proposal(opportunities, media_payload, *, observed_at=None):
+    """Build commercially coherent, claim-bounded demand copy or one exception."""
+    if not isinstance(opportunities, Mapping) or opportunities.get("success") is not True:
+        raise ValueError("canonical_opportunity_evidence_required")
+    cards = [row for row in opportunities.get("cards") or [] if isinstance(row, Mapping)]
+    ready = [row for row in cards if row.get("lane") == "live_stock"
+        and row.get("status") == "ready_for_owner_review"
+        and not (row.get("blockers") or [])
+        and int((row.get("capacity_calculation") or {}).get("demand_cap") or 0) > 0]
+    if not ready:
+        packet = _current_evidence_request(cards, opportunities)
+        packet.update({
+            "contract_version": "beacon_sale_ready_demand_exception_v1",
+            "packet_type": "sale_ready_stock_evidence_request",
+            "objective": "Generate qualified livestock enquiries through Facebook messages",
+            "precise_exception": "No current unblocked canonical live-stock opportunity has a positive sale-ready demand cap.",
+            "required_evidence": "A fresh BEACON opportunity card backed by canonical sale-eligible stock and a positive fulfilment cap.",
+            "decision_options": ["wait_for_canonical_stock_evidence", "correct"],
+            "protected_owner_decision": "None: publication and spend are ineligible until canonical sale-ready stock exists.",
+        })
+        packet["packet_id"] = "BEACON-DEMAND-EXCEPTION-" + _digest({
+            "evidence": packet.get("factual_evidence"),
+            "required_evidence": packet["required_evidence"]})[:24].upper()
+        return packet
+    card = ready[0]
+    provenance = card.get("provenance") if isinstance(card.get("provenance"), Mapping) else {}
+    stock = {
+        "source": "beacon_opportunity_scanner",
+        "card_id": str(card.get("card_id") or ""),
+        "observed_at": str(provenance.get("observed_at") or observed_at or opportunities.get("generated_at") or ""),
+        "status": "ready_for_owner_review",
+        "category": str(card.get("category") or "livestock").replace("_", " "),
+        "unit": str(card.get("unit") or "animals"),
+        "demand_cap": int((card.get("capacity_calculation") or {}).get("demand_cap") or 0),
+        "canonical_evidence_digest": _digest({
+            "card_id": card.get("card_id"),
+            "status": card.get("status"),
+            "lane": card.get("lane"),
+            "category": card.get("category"),
+            "unit": card.get("unit"),
+            "opportunity_reason": card.get("opportunity_reason"),
+            "capacity_calculation": card.get("capacity_calculation") or {},
+            "demand_summary": card.get("demand_summary") or {},
+            "blockers": sorted(card.get("blockers") or []),
+            "observed_at": provenance.get("observed_at"),
+        }),
+        "claim_boundary": "Supports taking enquiries only; SAM must re-read canonical stock before any offer or commitment.",
+    }
+    if not stock["card_id"] or not stock["observed_at"]:
+        raise ValueError("canonical_sale_stock_identity_required")
+    category = stock["category"]
+    subject = _public_stock_subject(category)
+    caption = (f"Looking for {subject}? Amadeus Farm is currently taking livestock enquiries. "
+        "Message Amadeus Farm with the type of animal, number needed, intended use and your area. "
+        "Our livestock team will check current farm records before any offer or commitment.")
+    cta = ("Message Amadeus Farm with the animal type, number needed, intended use and your area "
+        "so our livestock team can qualify your enquiry.")
+    media = _public_awareness_media(media_payload, required_tags={category.casefold()})
+    media_plan = media or {
+        "status": "text_only",
+        "reason": "No current public-use-approved, hash-verified livestock asset is available.",
+            "request": (f"Optional governed media request: one portrait photo or short vertical video of {subject} "
+            "in their current farm context, with no people, plates, customer locations, illness, prices or sales signage."),
+    }
+    packet = {
+        "contract_version": "beacon_sale_ready_demand_proposal_v1",
+        "packet_type": "sale_ready_demand_proposal",
+        "status": "ready_for_owner_review",
+        "campaign_objective": "facebook_messaging_conversations",
+        "objective": f"Generate qualified messages about current {category}",
+        "audience": "Local prospective livestock buyers near Riversdale and Albertinia",
+        "intended_channel": "Facebook Page organic plus separately approved messages boost",
+        "draft_caption": caption,
+        "call_to_action": cta,
+        "media": media_plan,
+        "sale_stock_evidence": stock,
+        "sam_response_contract": {
+            "lane": "live_stock_sales",
+            "supported_response_class": "clarification",
+            "qualification_fields": ["animal_type", "quantity", "intended_use", "customer_area"],
+            "campaign_attribution_required": True,
+            "authority_boundary": "No quote, price, reservation, allocation, delivery promise, order, payment or stock commitment.",
+        },
+        "performance_measurement": "Record attributed messages, qualified SAM leads, conversions, completed paid sales and gross profit separately; never infer missing outcomes.",
+        "decision_options": ["approve", "correct", "decline"],
+        "protected_owner_decision": "Approve this exact copy, media mode, publication and boost envelope; Correct it; or Decline it.",
+        "authority": dict(ZERO),
+    }
+    packet["packet_id"] = "BEACON-DEMAND-" + _digest({
+        "stock": stock, "copy": caption, "cta": cta, "media": media_plan,
+        "sam": packet["sam_response_contract"]})[:24].upper()
+    return packet
+
+
+def _public_stock_subject(category):
+    """Render canonical scanner categories without inventing product detail."""
+    value = str(category or "livestock").strip().replace("_", " ")
+    plurals = {"piglet": "piglets", "weaner": "weaners", "grower": "growers",
+        "finisher": "finishers", "animal": "livestock", "animals": "livestock"}
+    return plurals.get(value.casefold(), value)
 
 
 def handle_beacon_request(parsed: Mapping[str, Any], authority: Any, *,
@@ -256,20 +404,24 @@ def _awareness_capacity_context(opportunities):
         "explanation": "Herd capacity and buyer demand are independent signals. Neither animal counts nor this awareness proposal establish sale availability."}
 
 
-def _public_awareness_media(payload):
+def _public_awareness_media(payload, *, required_tags=None):
     rows = payload.get("items") if isinstance(payload, Mapping) and payload.get("success") is True else []
     for row in rows or []:
         digest = str(row.get("content_sha256") or "").lower()
         observation = row.get("observation") if isinstance(row.get("observation"), Mapping) else {}
         tags = {str(tag).casefold() for tag in
             (observation.get("tags") or observation.get("subject_tags") or [])}
+        relevant = (bool(tags.intersection({str(tag).casefold() for tag in required_tags}))
+            if required_tags else bool(tags.intersection(
+                {"live_stock", "livestock", "piglet", "piglets", "litter", "weaner", "farm_life"})))
         if (row.get("latest_library_event") == "library_accepted"
+                and (row.get("beacon_asset_id") or row.get("binary_asset_id"))
                 and row.get("effective_public_use_approved") is True
                 and row.get("current_library_accept_event_id")
                 and row.get("current_public_use_event_id")
                 and row.get("private_storage_proof_id")
                 and re.fullmatch(r"[0-9a-f]{64}", digest)
-                and tags.intersection({"live_stock", "livestock", "piglet", "piglets", "litter", "weaner", "farm_life"})):
+                and relevant):
             return {"status": "approved_public_media_selected",
                 "asset_id": str(row.get("beacon_asset_id") or row.get("binary_asset_id") or ""),
                 "media_type": str(row.get("observed_mime_type") or "farm media"),
@@ -368,7 +520,47 @@ def _project_media(payload, tags):
 
 def render_beacon_packet(packet, *, language="en"):
     af = str(language).casefold().startswith("af")
-    if packet.get("packet_type") == "live_stock_awareness_proposal":
+    if packet.get("packet_type") == "sale_ready_demand_proposal":
+        media = packet.get("media") or {}
+        stock = packet.get("sale_stock_evidence") or {}
+        sam = packet.get("sam_response_contract") or {}
+        media_text = ("Public-use-approved, hash-verified livestock media selected."
+            if media.get("status") == "approved_public_media_selected" else
+            "Governed text-only campaign; no private-media authority is inferred. " +
+            str(media.get("request") or ""))
+        lines = ["<b>BEACON — SALE-READY DEMAND PROPOSAL</b>", "",
+            f"<b>Objective:</b> {html.escape(str(packet.get('objective') or ''))}",
+            f"<b>Audience:</b> {html.escape(str(packet.get('audience') or ''))}",
+            f"<b>Current canonical proposition:</b> {html.escape(str(stock.get('category') or ''))} enquiries; evidence card {html.escape(str(stock.get('card_id') or ''))}, observed {html.escape(str(stock.get('observed_at') or ''))}. The evidence cap is retained internally and no quantity is promised in public copy.",
+            f"<b>Exact copy:</b>\n{html.escape(str(packet.get('draft_caption') or ''))}",
+            f"<b>CTA:</b> {html.escape(str(packet.get('call_to_action') or ''))}",
+            f"<b>Media:</b> {html.escape(media_text)}",
+            f"<b>SAM handoff:</b> {html.escape(str(sam.get('lane') or ''))} / {html.escape(str(sam.get('supported_response_class') or ''))}; qualify {html.escape(', '.join(sam.get('qualification_fields') or []))}.",
+            f"<b>Authority boundary:</b> {html.escape(str(sam.get('authority_boundary') or ''))}",
+            f"<b>Measure:</b> {html.escape(str(packet.get('performance_measurement') or ''))}",
+            "<b>Choose:</b> Approve / Correct / Decline. Nothing is published or spent by this decision response."]
+        campaign = packet.get("protected_campaign_package") or {}
+        if campaign:
+            budget = campaign.get("budget_cap") or {}
+            selected = campaign.get("selected_approved_media") or {}
+            lines.extend(("", "<b>EXACT PROTECTED FACEBOOK CAMPAIGN</b>",
+                f"<b>Post:</b> {html.escape(str(campaign.get('exact_post_copy') or ''))}",
+                f"<b>Media:</b> {html.escape(str(selected.get('asset_id') or selected.get('mode') or 'none'))}",
+                f"<b>Audience/location:</b> {html.escape(str(campaign.get('audience') or ''))}; {html.escape(str(campaign.get('location') or ''))}",
+                f"<b>Publish:</b> {html.escape(str(campaign.get('publication_time') or ''))}",
+                f"<b>Boost:</b> {html.escape(str(campaign.get('boost_objective') or ''))}; ZAR {html.escape(str(budget.get('total') or '0'))} total / ZAR {html.escape(str(budget.get('daily') or '0'))} daily; 3 days",
+                f"<b>Attribution:</b> {html.escape(str(campaign.get('attribution_identity') or ''))}",
+                "<b>Stop:</b> spend cap, duration, revoked authority/evidence change, or ambiguous/provider failure.",
+                "<b>Rollback:</b> no automatic publication or spend retry; stop boost and preserve provider chronology.",
+                "<b>Protected decision:</b> Approve this exact publication and boost envelope / Correct / Decline. Approval authorizes BEACON—not this message—to execute and obtain Meta readback."))
+    elif packet.get("packet_type") == "sale_ready_stock_evidence_request":
+        lines = ["<b>BEACON — PRECISE SALE-STOCK EVIDENCE REQUEST</b>", "",
+            f"<b>Objective:</b> {html.escape(str(packet.get('objective') or ''))}",
+            f"<b>Exception:</b> {html.escape(str(packet.get('precise_exception') or ''))}",
+            f"<b>Required evidence:</b> {html.escape(str(packet.get('required_evidence') or ''))}",
+            "<b>Media/copy:</b> Not selected or drafted because no supportable sale-stock proposition exists.",
+            "<b>Protected decision:</b> None. Publication and spend remain blocked."]
+    elif packet.get("packet_type") == "live_stock_awareness_proposal":
         media = packet.get("media") or {}
         media_text = (("'n Goedgekeurde plaasfoto is gekies; openbare-gebruiktoestemming en lêerintegriteit is bevestig."
                 if af else "An approved farm photo is selected; public-use authority and file integrity are verified.")
