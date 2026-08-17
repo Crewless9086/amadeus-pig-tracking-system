@@ -167,7 +167,7 @@ def _beacon(now):
         ["current_sale_opportunity_proposal_or_exact_media_request"],
         "BEACON has no current proposal or exact media request reconciled after the latest sales evidence.",
         "Delegate a protected internal BEACON proposal or exact media request from current canonical sales, inventory and media evidence; never publish, spend, contact customers, reserve stock or infer public-use authority.",
-        now + timedelta(minutes=30))]
+        now)]
 
 
 def _delivery_gaps(now):

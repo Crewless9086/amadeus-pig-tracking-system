@@ -34,9 +34,10 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
     opportunities = opportunity_loader()
     media_result = media_loader()
     media_payload = media_result[0] if isinstance(media_result, tuple) else media_result
-    evidence = content_evidence_loader(opportunity_result=opportunities)
+    evidence_time = _stable_opportunity_time(opportunities, fallback=now)
+    evidence = content_evidence_loader(opportunity_result=opportunities, now=evidence_time)
     packet = build_live_stock_awareness_proposal(
-        opportunities, content_candidate_builder(evidence), media_payload)
+        opportunities, content_candidate_builder(evidence, now=evidence_time), media_payload)
     packet = build_protected_campaign_package(packet, now=now)
     return {
         "success": True,
@@ -48,6 +49,29 @@ def build_scheduled_sale_ready_stock_result(*, opportunity_loader=build_beacon_o
         "next_trigger": "material canonical stock or media evidence change",
         **ZERO,
     }
+
+
+def _stable_opportunity_time(opportunities, *, fallback=None):
+    """Anchor derived packet IDs to canonical evidence, not delivery wall time."""
+    observed = []
+    if isinstance(opportunities, Mapping):
+        for card in opportunities.get("cards") or []:
+            if not isinstance(card, Mapping):
+                continue
+            provenance = card.get("provenance") if isinstance(card.get("provenance"), Mapping) else {}
+            value = provenance.get("observed_at")
+            if value:
+                observed.append(str(value))
+    value = max(observed) if observed else fallback
+    if value is None and isinstance(opportunities, Mapping):
+        value = opportunities.get("generated_at")
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("beacon_opportunity_time_requires_timezone")
+    return parsed.astimezone(timezone.utc)
 
 
 def build_protected_campaign_package(packet, *, now=None):
@@ -69,6 +93,7 @@ def build_protected_campaign_package(packet, *, now=None):
         raise ValueError("beacon_campaign_exact_copy_required")
     envelope = {
         "contract_version": "beacon_protected_facebook_campaign_package_v1",
+        "delivery_due_policy": "same_cycle_on_new_or_changed_evidence",
         "source_packet_id": packet["packet_id"], "exact_post_copy": exact_copy,
         "selected_approved_media": exact_media,
         "audience": str(packet.get("audience") or "Local people interested in responsible livestock and farm life"),
