@@ -18,7 +18,9 @@ def opportunity(ready=True):
         "card_id": "BEACON-CURRENT", "status": "ready_for_owner_review" if ready else "blocked",
         "lane": "live_stock", "category": "weaner", "unit": "animals",
         "opportunity_reason": "Verified eligible supply and quantified uncommitted demand overlap." if ready else "Evidence is incomplete.",
-        "capacity_calculation": {"demand_cap": 3 if ready else 0},
+        "capacity_calculation": {"demand_cap": 3 if ready else 0,
+            "eligible_categories": ["weaner"] if ready else []},
+        "freshness": {"fresh": True},
         "provenance": {"observed_at": "2026-08-17T08:00:00+00:00"}}]}
 
 
@@ -186,7 +188,7 @@ def test_missing_sale_stock_returns_precise_non_publishable_exception():
         now=datetime(2026, 8, 17, 12, tzinfo=timezone.utc))
     assert result["status"] == "beacon_sale_ready_stock_evidence_request"
     assert result["proposal"]["packet_type"] == "sale_ready_stock_evidence_request"
-    assert "positive sale-ready demand cap" in result["proposal"]["precise_exception"]
+    assert "sale-ready stock category" in result["proposal"]["precise_exception"]
     assert "protected_campaign_package" not in result["proposal"]
     assert result["publishes"] is False and result["spends_money"] is False
 
@@ -209,6 +211,25 @@ def test_blocked_positive_cap_stock_returns_precise_exception():
     packet = build_sale_ready_demand_proposal(blocked, public_awareness_media())
     assert packet["packet_type"] == "sale_ready_stock_evidence_request"
     assert packet["status"] != "ready_for_owner_review"
+
+
+def test_missing_existing_demand_does_not_block_canonical_sale_ready_categories():
+    stock = opportunity()
+    stock["cards"][0].update({"status": "blocked", "category": "live_stock",
+        "blockers": ["unknown_live_stock_demand_quantity",
+            "no_quantified_uncommitted_live_stock_demand"]})
+    stock["cards"][0]["capacity_calculation"] = {
+        "demand_cap": 0,
+        "eligible_categories": ["Finisher Pigs", "Grower Pigs", "Weaner Piglets"]}
+    packet = build_sale_ready_demand_proposal(stock, public_awareness_media())
+    assert packet["packet_type"] == "sale_ready_demand_proposal"
+    assert packet["sale_stock_evidence"]["demand_evidence_status"] == "not_yet_quantified"
+    assert packet["sale_stock_evidence"]["sale_ready_categories"] == [
+        "Finisher Pigs", "Grower Pigs", "Weaner Piglets"]
+    assert "Finisher Pigs, Grower Pigs or Weaner Piglets" in packet["draft_caption"]
+    assert "number needed" in packet["draft_caption"]
+    assert "demand_cap" not in packet["draft_caption"]
+    assert "available" not in packet["draft_caption"].casefold()
 
 
 def test_public_media_must_match_canonical_stock_category():
