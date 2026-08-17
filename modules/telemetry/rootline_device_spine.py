@@ -159,7 +159,12 @@ def validate_device(record: Mapping, *, resolver=None) -> bool:
     for field in ("maximum_runtime_seconds", "native_fail_stop_seconds"):
         if not isinstance(record[field], int) or record[field] < 0:
             raise ValueError("rootline_device_runtime_bound_invalid")
-    if not profile.get("read_only") and (
+    actuation_ready = STAGE_ORDER.index(record["commissioning_stage"]) >= STAGE_ORDER.index(
+        CommissioningStage.BOUNDED_ACTUATION_READY.value)
+    unknown_pre_actuation_bounds = (not actuation_ready
+        and record["maximum_runtime_seconds"] == 0
+        and record["native_fail_stop_seconds"] == 0)
+    if not profile.get("read_only") and not unknown_pre_actuation_bounds and (
             record["maximum_runtime_seconds"] <= 0
             or record["native_fail_stop_seconds"] <= 0
             or record["native_fail_stop_seconds"] > record["maximum_runtime_seconds"]):

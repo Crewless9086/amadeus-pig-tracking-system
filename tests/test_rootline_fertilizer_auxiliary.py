@@ -82,7 +82,8 @@ def test_exact_typed_registry_mappings_and_source_flags_are_off():
     assert injection["collection"]==mixer["collection"]=="irrigation_auxiliary_devices"
     assert source_authority_defaults({})=={
         "ROOTLINE_FERTILIZER_MIXING_ENABLED":False,
-        "ROOTLINE_FERTILIZER_INJECTION_ENABLED":False}
+        "ROOTLINE_FERTILIZER_INJECTION_ENABLED":False,
+        "ROOTLINE_BOREHOLE_ENABLED":False}
     assert not injection["commissioned"] and not mixer["commissioned"]
 
 
