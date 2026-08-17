@@ -32,7 +32,7 @@ Confidence rule:
 | --- | --- | --- | --- | --- |
 | CHARLIE | Owner Command | Charl | Partial; continuous supervision not proven | `owner-command/CHARLIE.md` |
 | CHARLIE CORE | Workflow System | CHARLIE | Source staging integrated; deployed continuous mission supervision not proven | `../01-identity/CHARLIE_CORE.md` |
-| Brain Guard | CHARLIE CORE / Governance | CHARLIE | Draft/required | `charlie-core/BRAIN_GUARD.md` |
+| Brain Guard | CHARLIE CORE / Governance | CHARLIE | Partial review gate; autonomous steward dormant/unproven | `charlie-core/BRAIN_GUARD.md` |
 | Idea Expander | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/IDEA_EXPANDER.md` |
 | Concept Strategist | CHARLIE CORE | CHARLIE CORE | Active strategy stage | `charlie-core/CONCEPT_STRATEGIST.md` |
 | Product Architect | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/PRODUCT_ARCHITECT.md` |

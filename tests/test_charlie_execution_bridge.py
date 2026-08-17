@@ -3715,7 +3715,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             }
         }
 
-        result = execution_bridge._brain_guard_review_gate(MISSION, artifacts, ["README.md"])
+        with patch(
+            "modules.charlie.agentic_architecture.evaluate_agentic_architecture",
+            return_value={"findings": []},
+        ):
+            result = execution_bridge._brain_guard_review_gate(MISSION, artifacts, ["README.md"])
 
         self.assertTrue(result["passed"])
         self.assertFalse(result["findings"])

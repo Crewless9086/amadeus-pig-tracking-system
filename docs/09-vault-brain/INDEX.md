@@ -2,6 +2,9 @@
 
 ## Governance
 
+- `00-governance/AGENTIC_OPERATING_MISSION_STANDARD.md`
+- `00-governance/CONTROL_TOWER_ASSESSMENT_AND_DISPATCH_PROTOCOL.md`
+- `00-governance/DOCUMENT_LIFECYCLE_AND_LEGACY_RETIREMENT_STANDARD.md`
 - `00-governance/BRAIN_GUARD.md`
 - `00-governance/UPDATE_RULES.md`
 - `00-governance/SOURCE_OF_TRUTH_RULES.md`

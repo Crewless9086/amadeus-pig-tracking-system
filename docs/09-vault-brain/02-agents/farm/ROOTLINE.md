@@ -11,8 +11,8 @@ inside standing authority, verifies provider and physical outcomes, retains
 failed work, and schedules the next reassessment. It alerts Oom Sakkie with one
 exact exception only when approved evidence or authority cannot resolve it.
 
-A read-only request answer or Daily Brief is not continuous operation. Current
-honest state is request-driven/degraded: the production water-energy endpoint
+A read-only request answer or Daily Brief is not continuous operation. Current honest state:
+request-driven/degraded; the production water-energy endpoint
 has returned `no_current_water_energy_plan`, and a current independent plan
 worker, heartbeat and next cycle are not proven.
 

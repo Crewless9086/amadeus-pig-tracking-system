@@ -5,6 +5,10 @@ Role: pigs, litters, breeding, growth, health, welfare, and purpose review.
 Runtime status: useful governed canonical reads exist; a continuous husbandry
 work loop is not proven and must not be called operational autonomy.
 
+Current honest state: canonical reads are useful, while continuous work
+discovery, assignment, follow-through and terminal-independent cycles remain
+unproven.
+
 ## Continuous Operating Contract
 
 Herdmaster continuously maintains one canonical husbandry work queue from pig,
